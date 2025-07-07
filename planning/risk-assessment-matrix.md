@@ -33,7 +33,55 @@ This document provides a comprehensive risk assessment for all major features of
 
 ## Feature Risk Assessment Matrix
 
-### **1. Authentication & User Management**
+### **1. Testing Framework & Quality Assurance**
+
+#### **Risk 1.1: Insufficient Test Coverage**
+- **Probability**: Medium (3)
+- **Impact**: High (4)
+- **Risk Score**: 12 (High Priority)
+- **Description**: Failure to achieve >80% backend, >70% frontend test coverage requirements
+
+**Mitigation Strategies**:
+- Establish testing framework in Sprint 0 before feature development
+- Implement automated coverage reporting with quality gates
+- Require test-driven development for all new features
+- Add coverage requirements to code review process
+- Use branch protection rules requiring passing tests
+
+**Contingency Plans**:
+- Dedicated testing sprint to improve coverage
+- Automated test generation tools
+- External testing consultant engagement
+- Phased coverage improvement plan
+
+**Monitoring**:
+- Daily coverage reporting in CI/CD
+- Sprint-end coverage review
+- Feature-specific coverage tracking
+- Technical debt tracking for test gaps
+
+#### **Risk 1.2: Testing Framework Complexity**
+- **Probability**: Medium (3)
+- **Impact**: Medium (3)
+- **Risk Score**: 9 (Medium Priority)
+- **Description**: Complexity of comprehensive testing framework (unit, integration, E2E, performance, accessibility) causing delays
+
+**Mitigation Strategies**:
+- Start with basic framework and iterate
+- Use established testing libraries (pytest, vitest, Playwright)
+- Create testing templates and best practices guide
+- Implement testing utilities and helpers
+- Prioritize critical path testing first
+
+**Contingency Plans**:
+- Simplified testing approach for MVP
+- Phased testing implementation
+- External testing tool evaluation
+- Community testing patterns adoption
+
+---
+
+### **2. Authentication & User Management**
 
 #### **Risk 1.1: Security Vulnerabilities**
 - **Probability**: Medium (3)
@@ -97,9 +145,53 @@ This document provides a comprehensive risk assessment for all major features of
 - Account lockout override process
 - Emergency admin access procedures
 
+#### **Risk 2.4: Role-Based Access Control Implementation**
+- **Probability**: Medium (3)
+- **Impact**: High (4)
+- **Risk Score**: 12 (High Priority)
+- **Description**: Complex implementation of admin vs. regular user permissions causing security gaps or usability issues
+
+**Mitigation Strategies**:
+- Implement permission framework early in Sprint 1
+- Use established authorization patterns (decorators, middleware)
+- Comprehensive permission testing at API and UI levels
+- Clear permission documentation and audit trails
+- Default to least-privilege access principle
+
+**Contingency Plans**:
+- Simplified permission model for MVP
+- Manual admin role assignment procedures
+- Permission migration and upgrade tools
+- External authorization service integration
+
+**Monitoring**:
+- Permission access attempt logging
+- Role escalation monitoring
+- Admin action audit trails
+- Permission denial tracking
+
+#### **Risk 2.5: Admin Interface Security**
+- **Probability**: Low (2)
+- **Impact**: Very High (5)
+- **Risk Score**: 10 (High Priority)
+- **Description**: Security vulnerabilities in admin interfaces allowing unauthorized platform/storefront management
+
+**Mitigation Strategies**:
+- Strict admin role validation on all admin endpoints
+- Admin session timeout and re-authentication
+- Admin action confirmation dialogs
+- IP-based admin access restrictions (optional)
+- Comprehensive admin audit logging
+
+**Contingency Plans**:
+- Emergency admin access revocation
+- Admin interface temporary disabling
+- Manual admin operation procedures
+- External admin access management
+
 ---
 
-### **2. Game Data Management**
+### **3. Game Data Management**
 
 #### **Risk 2.1: IGDB API Rate Limiting**
 - **Probability**: High (4)
@@ -145,7 +237,32 @@ This document provides a comprehensive risk assessment for all major features of
 - Cached data fallback
 - Community-driven metadata
 
-#### **Risk 2.3: Data Quality Issues**
+#### **Risk 2.3: Enhanced IGDB Workflow Complexity**
+- **Probability**: High (4)
+- **Impact**: Medium (3)
+- **Risk Score**: 12 (High Priority)
+- **Description**: Complex 8-step game addition workflow with candidate selection and metadata confirmation causing user confusion or errors
+
+**Mitigation Strategies**:
+- Progressive disclosure in UI design
+- Clear workflow step indicators and navigation
+- Comprehensive user testing of workflow
+- Simplified fallback for basic game addition
+- Extensive workflow documentation and tooltips
+
+**Contingency Plans**:
+- Simplified 3-step workflow fallback
+- Manual game addition without IGDB integration
+- Batch import tools for power users
+- Workflow customization options
+
+**Monitoring**:
+- Workflow abandonment rate tracking
+- Step completion analytics
+- User feedback on workflow complexity
+- Support ticket analysis for workflow issues
+
+#### **Risk 2.4: Data Quality Issues**
 - **Probability**: Medium (3)
 - **Impact**: Medium (3)
 - **Risk Score**: 9 (Medium Priority)
@@ -168,7 +285,32 @@ This document provides a comprehensive risk assessment for all major features of
 
 ### **3. Database & Data Storage**
 
-#### **Risk 3.1: Database Migration Failures**
+#### **Risk 3.1: Complex Database Schema Implementation**
+- **Probability**: Medium (3)
+- **Impact**: High (4)
+- **Risk Score**: 12 (High Priority)
+- **Description**: Implementation complexity of 12-table schema with UUID keys, 25+ indexes, and cross-database compatibility
+
+**Mitigation Strategies**:
+- Incremental schema implementation and testing
+- Database-agnostic design validation on both PostgreSQL and SQLite
+- Comprehensive index performance testing
+- Foreign key constraint validation
+- SQLModel configuration testing for timestamp management
+
+**Contingency Plans**:
+- Simplified schema for MVP with future expansion
+- Database-specific implementations if cross-compatibility fails
+- Manual UUID generation fallback
+- Performance optimization sprint
+
+**Monitoring**:
+- Database performance metrics with new schema
+- Index usage and effectiveness tracking
+- Cross-database compatibility testing results
+- SQLModel timestamp automation validation
+
+#### **Risk 3.2: Database Migration Failures**
 - **Probability**: Medium (3)
 - **Impact**: Very High (5)
 - **Risk Score**: 15 (High Priority)
@@ -193,7 +335,7 @@ This document provides a comprehensive risk assessment for all major features of
 - Performance impact monitoring
 - Data consistency validation
 
-#### **Risk 3.2: Database Performance Issues**
+#### **Risk 3.3: Database Performance Issues**
 - **Probability**: Medium (3)
 - **Impact**: High (4)
 - **Risk Score**: 12 (High Priority)
@@ -212,7 +354,7 @@ This document provides a comprehensive risk assessment for all major features of
 - Cache warming strategies
 - Load balancing implementation
 
-#### **Risk 3.3: Data Loss**
+#### **Risk 3.4: Data Loss**
 - **Probability**: Low (2)
 - **Impact**: Very High (5)
 - **Risk Score**: 10 (High Priority)

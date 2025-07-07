@@ -55,6 +55,35 @@ This document contains all development tickets for the Game Collection Managemen
 
 ---
 
+### ## [TICKET-002A] Complete Database Schema Implementation
+**Priority:** P0  
+**Effort:** 8 story points  
+**Description:** Implement complete 12-table database schema with UUID primary keys, comprehensive indexes, and all relationships as specified in PRD.
+
+**Acceptance Criteria:**
+- [ ] Complete SQL schema with all 12 tables (users, user_sessions, platforms, storefronts, games, game_aliases, user_games, user_game_platforms, tags, user_game_tags, wishlists, import_jobs)
+- [ ] UUID primary keys implemented across all tables with application-generated UUIDs
+- [ ] Comprehensive foreign key relationships with proper constraints
+- [ ] Performance indexes for all critical query patterns (25+ indexes)
+- [ ] Check constraints for data validation (status enums, rating ranges)
+- [ ] SQLModel configuration for automatic timestamp management (created_at, updated_at)
+- [ ] Cross-database compatibility (PostgreSQL production, SQLite development)
+- [ ] Database migration scripts with rollback procedures
+- [ ] Connection pooling configuration for production
+- [ ] Data integrity validation and constraint testing
+
+**Dependencies:** TICKET-002  
+**Technical Notes:**
+- Use VARCHAR(36) for UUID storage across both database types
+- Implement JSON text fields for metadata with SQLModel serialization
+- Configure automatic timestamp handling in SQLModel models
+- Design indexes for search performance and common query patterns
+- Ensure no database-specific features are used
+- Test schema on both PostgreSQL and SQLite
+- Document all table relationships and constraints
+
+---
+
 ### ## [TICKET-003] SvelteKit Frontend Setup
 **Priority:** P0  
 **Effort:** 5 story points  
@@ -120,6 +149,37 @@ This document contains all development tickets for the Game Collection Managemen
 - Configure Prettier and ESLint for frontend
 - Implement GitHub Actions for CI/CD
 - Create development data seeding utilities
+
+---
+
+### ## [TICKET-049A] Testing Framework Implementation
+**Priority:** P0  
+**Effort:** 13 story points  
+**Description:** Implement comprehensive testing framework with >80% backend coverage, >70% frontend coverage, and automated test execution in CI/CD pipeline.
+
+**Acceptance Criteria:**
+- [ ] Unit test framework setup (pytest for backend, vitest for frontend)
+- [ ] Integration test implementation with database testing utilities
+- [ ] End-to-end test framework (Playwright) with user workflow tests
+- [ ] Test coverage reporting with >80% backend, >70% frontend targets
+- [ ] Automated test execution in CI/CD pipeline blocking deployments on failure
+- [ ] Performance testing framework for critical operations
+- [ ] Mock services for external API testing (IGDB, Steam)
+- [ ] Visual regression testing for UI consistency
+- [ ] Accessibility testing automation (WCAG compliance)
+- [ ] Database migration tests for both PostgreSQL and SQLite
+- [ ] API contract testing with comprehensive endpoint coverage
+- [ ] Load testing implementation for production readiness
+
+**Dependencies:** TICKET-001, TICKET-003  
+**Technical Notes:**
+- Use pytest with fixtures for backend testing
+- Implement vitest with Svelte testing library for frontend
+- Configure Playwright for cross-browser E2E testing
+- Set up test data management and cleanup utilities
+- Create comprehensive testing documentation and best practices
+- Integrate code coverage reporting with quality gates
+- Establish testing standards for all future development
 
 ---
 
@@ -191,6 +251,35 @@ This document contains all development tickets for the Game Collection Managemen
 - Implement both access and refresh tokens
 - Store refresh tokens in database for revocation
 - Use RS256 algorithm for better security
+
+---
+
+### ## [TICKET-008A] Role-Based Access Control Implementation
+**Priority:** P0  
+**Effort:** 5 story points  
+**Description:** Implement comprehensive role-based access control system with admin and regular user permissions.
+
+**Acceptance Criteria:**
+- [ ] User role enumeration (admin, regular_user) in database schema
+- [ ] Role-based middleware for API endpoint protection
+- [ ] Admin-only access for platform/storefront CRUD operations
+- [ ] Permission validation decorators for all secured endpoints
+- [ ] Role-based UI component rendering in frontend
+- [ ] Admin role assignment and management interface
+- [ ] Permission checking utilities for complex operations
+- [ ] Audit logging for admin actions
+- [ ] Role migration and upgrade procedures
+- [ ] Default admin user creation during system setup
+
+**Dependencies:** TICKET-008, TICKET-002A  
+**Technical Notes:**
+- Add is_admin boolean field to users table with default false
+- Implement FastAPI dependency injection for role checking
+- Create permission decorators for different access levels
+- Use Svelte stores for role-based component rendering
+- Implement admin interface with proper security validation
+- Add role checking middleware to all protected routes
+- Document permission structure and role responsibilities
 
 ---
 
@@ -312,70 +401,121 @@ This document contains all development tickets for the Game Collection Managemen
 
 ### ## [TICKET-014] IGDB API Integration
 **Priority:** P0  
-**Effort:** 13 story points  
-**Description:** Integrate IGDB API for game metadata retrieval and search functionality.
+**Effort:** 18 story points  
+**Description:** Integrate IGDB API for comprehensive game metadata retrieval with 8-step workflow including candidate selection and metadata confirmation.
 
 **Acceptance Criteria:**
-- [ ] IGDB API client with authentication
-- [ ] Game search endpoint returning candidate list
+- [ ] IGDB API client with authentication and rate limiting
+- [ ] Game search endpoint returning candidate list with multiple matches
+- [ ] Candidate selection API with game details preview
 - [ ] Full metadata retrieval for selected games
-- [ ] Cover art download and local storage
-- [ ] Rate limiting and error handling
-- [ ] Fuzzy matching for game titles
-- [ ] Data mapping from IGDB to local models
+- [ ] Cover art download and local storage with optimization
+- [ ] 8-step game addition workflow implementation:
+  1. User searches for game by title
+  2. System queries IGDB API for matches
+  3. Present candidate list with cover art, release year, platform info
+  4. User selects correct game from candidates
+  5. System retrieves full metadata from IGDB
+  6. Present acceptance screen with complete details
+  7. User confirms or edits information
+  8. Game added to database and user collection
+- [ ] Enhanced error handling and fallback mechanisms
+- [ ] Fuzzy matching for game titles with similarity scoring
+- [ ] Data mapping from IGDB to local models with validation
+- [ ] How Long to Beat integration for completion estimates
+- [ ] Metadata refresh capabilities for existing games
+- [ ] Batch processing for multiple game imports
 
-**Dependencies:** TICKET-013  
+**Dependencies:** TICKET-013, TICKET-002A  
 **Technical Notes:**
-- Use async HTTP client for API requests
-- Implement exponential backoff for rate limiting
-- Store cover art locally with proper file management
+- Use async HTTP client with connection pooling
+- Implement exponential backoff with circuit breaker pattern
+- Store cover art with multiple sizes and WebP optimization
 - Create abstraction layer for future API changes
+- Add comprehensive logging for workflow steps
+- Implement caching for frequently accessed metadata
+- Design for horizontal scaling with rate limit distribution
 
 ---
 
 ### ## [TICKET-015] Game Search and Discovery UI
 **Priority:** P0  
-**Effort:** 13 story points  
-**Description:** Create game search interface with IGDB integration and metadata confirmation.
+**Effort:** 16 story points  
+**Description:** Create comprehensive game search interface with IGDB integration, candidate selection, and metadata confirmation workflow.
 
 **Acceptance Criteria:**
-- [ ] Game search interface with real-time results
-- [ ] IGDB search integration with candidate selection
-- [ ] Game metadata preview and confirmation screen
-- [ ] Cover art display and management
-- [ ] Game addition workflow with validation
-- [ ] Search result filtering and sorting
-- [ ] Error handling for failed searches
+- [ ] Game search interface with real-time results and debounced input
+- [ ] IGDB candidate selection interface with visual game cards showing:
+  - Cover art thumbnails with lazy loading
+  - Game title and release year
+  - Platform information with icons
+  - Brief description preview
+  - Similarity score indicators
+- [ ] Interactive candidate selection with hover states and clear selection indicators
+- [ ] Comprehensive metadata confirmation screen with:
+  - Complete game details display (title, description, genre, developer, publisher)
+  - Full-size cover art with zoom capability
+  - Release information and platform availability
+  - How Long to Beat completion estimates
+  - Editable metadata fields for user corrections
+- [ ] Multi-step workflow progress indicators and navigation
+- [ ] Game addition workflow with validation and confirmation
+- [ ] Advanced search result filtering and sorting options
+- [ ] Comprehensive error handling with user-friendly messages
+- [ ] Loading states and progress indicators for each workflow step
+- [ ] Responsive design for mobile candidate selection
+- [ ] Keyboard navigation support for accessibility
 
-**Dependencies:** TICKET-014  
+**Dependencies:** TICKET-014, TICKET-008A  
 **Technical Notes:**
-- Implement debounced search for better performance
-- Use image lazy loading for cover art
-- Create reusable search components
-- Add loading states and error boundaries
+- Implement debounced search with configurable delay
+- Use image lazy loading and progressive enhancement for cover art
+- Create reusable search and selection components
+- Add comprehensive loading states and error boundaries
+- Use Svelte transitions for smooth workflow progression
+- Implement proper form validation with real-time feedback
+- Add keyboard shortcuts for power users
+- Design mobile-first responsive candidate selection interface
 
 ---
 
 ### ## [TICKET-016] Platform Management UI
 **Priority:** P1  
-**Effort:** 5 story points  
-**Description:** Create admin interface for platform and storefront management.
+**Effort:** 8 story points  
+**Description:** Create comprehensive admin-only interface for platform and storefront management with enhanced security and user restrictions.
 
 **Acceptance Criteria:**
-- [ ] Platform management interface (admin only)
-- [ ] Storefront management interface (admin only)
-- [ ] Platform/storefront creation and editing forms
-- [ ] Icon upload and management
-- [ ] Active/inactive status management
-- [ ] Platform association with games
-- [ ] Proper admin role validation
+- [ ] Secure platform management interface (admin only) with:
+  - Platform creation, editing, and deletion forms
+  - Platform activation/deactivation controls
+  - Platform icon upload and management
+  - Platform ordering and organization
+- [ ] Secure storefront management interface (admin only) with:
+  - Storefront creation, editing, and deletion forms
+  - Storefront URL and icon management
+  - Storefront activation/deactivation controls
+- [ ] Comprehensive admin role validation throughout interface
+- [ ] User restriction enforcement preventing regular users from accessing admin features
+- [ ] Role-based UI component rendering with proper permission checks
+- [ ] Enhanced platform/storefront creation and editing forms with validation
+- [ ] File upload component for icons with image optimization
+- [ ] Active/inactive status management with confirmation dialogs
+- [ ] Platform association interface for games (user-accessible)
+- [ ] Audit logging for all admin actions
+- [ ] Admin dashboard showing platform/storefront statistics
+- [ ] Bulk operations for platform management
+- [ ] Import/export functionality for platform configurations
 
-**Dependencies:** TICKET-010, TICKET-012  
+**Dependencies:** TICKET-010, TICKET-012, TICKET-008A  
 **Technical Notes:**
-- Implement role-based UI rendering
-- Create file upload component for icons
-- Use proper form validation and feedback
-- Add confirmation dialogs for deletion
+- Implement strict role-based UI rendering with permission checking
+- Create secure file upload component with validation and virus scanning
+- Use proper form validation with real-time feedback
+- Add confirmation dialogs for all destructive operations
+- Implement audit logging for compliance and security
+- Design admin-specific layouts and navigation
+- Add comprehensive error handling and user feedback
+- Ensure regular users cannot access any admin functionality
 
 ---
 
@@ -1335,23 +1475,39 @@ This document contains all development tickets for the Game Collection Managemen
 
 ### **Critical Path Dependencies**
 ```
-Sprint 0: TICKET-001 → TICKET-002 → TICKET-003 → TICKET-004
-Sprint 1: TICKET-002 → TICKET-006 → TICKET-007 → TICKET-008 → TICKET-010
-Sprint 2: TICKET-008 → TICKET-011 → TICKET-012 → TICKET-013 → TICKET-014 → TICKET-015
+Sprint 0: TICKET-001 → TICKET-002 → TICKET-002A → TICKET-003 → TICKET-004 → TICKET-049A
+Sprint 1: TICKET-002A → TICKET-006 → TICKET-007 → TICKET-008 → TICKET-008A → TICKET-010
+Sprint 2: TICKET-008A → TICKET-011 → TICKET-012 → TICKET-013 → TICKET-014 → TICKET-015
 Sprint 3: TICKET-013 → TICKET-017 → TICKET-018 → TICKET-019/020/021 → TICKET-022
 Sprint 4: TICKET-018 → TICKET-023/025 → TICKET-024/026
 ```
 
+### **New Tickets Added for PRD Compliance**
+- **TICKET-049A**: Testing Framework Implementation (13 points, Sprint 0)
+- **TICKET-002A**: Complete Database Schema (8 points, Sprint 0)
+- **TICKET-008A**: Role-Based Access Control (5 points, Sprint 1)
+
+### **Updated Ticket Efforts**
+- **TICKET-014**: IGDB Integration (+5 points → 18 total)
+- **TICKET-015**: Game Search UI (+3 points → 16 total)
+- **TICKET-016**: Platform Management (+3 points → 8 total)
+
 ### **Parallel Development Opportunities**
 - Frontend and backend can be developed simultaneously after Sprint 1
+- Testing framework can be established alongside infrastructure development
 - Import systems can be developed independently
 - Advanced features can be built in parallel
 - Documentation can be written alongside development
 
-### **Total Effort Estimation**
-- **Core Features (P0)**: ~280 story points
+### **Updated Total Effort Estimation**
+- **Core Features (P0)**: ~309 story points (+29 from original)
 - **Enhanced Features (P1)**: ~180 story points  
 - **Optional Features (P2)**: ~120 story points
 - **Future Features (P3)**: ~150+ story points
 
-**Total Project Scope**: ~580+ story points for full implementation
+**Total Project Scope**: ~609+ story points for full implementation (+29 points increase)
+
+### **Timeline Impact**
+- **Original Estimate**: 18 weeks (9 sprints of 2 weeks each)
+- **Updated Estimate**: 21-22 weeks (10-11 sprints with extended Sprint 0-2)
+- **Additional Time**: +3-4 weeks for PRD compliance requirements

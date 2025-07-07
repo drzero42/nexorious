@@ -10,11 +10,12 @@ This document outlines the critical dependencies between major project tasks, id
 
 ### **Critical Path (Sequential Dependencies)**
 ```
-Foundation → Authentication → Database Models → Game Management → Collection Management → Frontend Core → Production Deployment
+Enhanced Foundation → Authentication + RBAC → Enhanced Database → Enhanced Game Management → Collection Management → Advanced Frontend → Production Deployment
 ```
 
-**Estimated Duration**: 14 weeks (critical path)  
-**Total Project Buffer**: 4 weeks for parallel development and risk mitigation
+**Estimated Duration**: 16-17 weeks (critical path)  
+**Total Project Buffer**: 4-5 weeks for parallel development and risk mitigation  
+**Updated**: Includes testing framework, comprehensive database schema, and role-based access control
 
 ---
 
@@ -98,37 +99,46 @@ graph TD
 
 ## Detailed Task Dependencies
 
-### **Sprint 0: Foundation (No Dependencies)**
+### **Sprint 0: Enhanced Foundation (Extended Duration)**
 - **Infrastructure Setup**: Independent parallel work
 - **Database Architecture**: Independent, but required for all data operations
+- **Complete Database Schema**: Depends on basic database architecture
+- **Testing Framework**: Independent, but required for all feature development
 - **Backend Infrastructure**: Independent, but required for all API work
 - **Frontend Infrastructure**: Independent, but required for all UI work
 - **DevOps Foundation**: Independent, can be developed alongside features
 
-### **Sprint 1: Authentication & Core Systems**
+### **Sprint 1: Authentication & Enhanced Security Systems**
 ```
 Dependencies:
-- Database Architecture (Sprint 0) → User System
+- Complete Database Schema (Sprint 0) → User System
 - Backend Infrastructure (Sprint 0) → User System
 - User System → Security & Authorization
+- Security & Authorization → Role-Based Access Control
+- Testing Framework (Sprint 0) → All authentication components
 ```
 
 **Parallel Development Opportunities**:
 - Frontend authentication components can be developed against API specifications
 - Security middleware can be developed alongside user system
+- Role-based access control can be developed after basic authentication is established
 
-### **Sprint 2: Game Management**
+### **Sprint 2: Enhanced Game Management**
 ```
 Dependencies:
-- Database Architecture (Sprint 0) → Game Data Model
-- Security & Authorization (Sprint 1) → Game Data Model
-- Game Data Model → External Data Integration
-- Game Data Model → Platform Management
+- Complete Database Schema (Sprint 0) → Game Data Model
+- Role-Based Access Control (Sprint 1) → Game Data Model
+- Game Data Model → Enhanced IGDB Integration (8-step workflow)
+- Game Data Model → Platform Management (admin-only)
+- Enhanced IGDB Integration → Advanced Game Search UI
+- Testing Framework (Sprint 0) → All game management components
 ```
 
 **Parallel Development Opportunities**:
-- IGDB integration can be developed independently once API client is established
+- Enhanced IGDB integration can be developed alongside game models
 - Platform management can be developed in parallel with game models
+- Frontend game search UI can be built against enhanced API specifications
+- Admin-only platform management requires role-based access control
 
 ### **Sprint 3: Collection Management**
 ```
@@ -296,20 +306,28 @@ Dependencies:
 ## Critical Path Optimization
 
 ### **Path Compression Opportunities**
-1. **Authentication + Database Models** (Sprint 1)
-   - Can be developed in parallel with different team members
-   - Reduces critical path by 1 week
-
-2. **Game Management + Platform Management** (Sprint 2)
-   - Platform management can start before game management is complete
+1. **Testing Framework + Infrastructure** (Sprint 0)
+   - Testing framework can be developed in parallel with infrastructure setup
+   - Database schema work can overlap with basic database setup
    - Reduces critical path by 0.5 weeks
 
-3. **Collection Features** (Sprint 3)
+2. **Authentication + Role-Based Access Control** (Sprint 1)
+   - RBAC can be developed after basic authentication is established
+   - Can be developed in parallel with different team members
+   - Reduces critical path by 0.5 weeks
+
+3. **Enhanced IGDB + Game UI** (Sprint 2)
+   - Frontend game search UI can be built against API specifications
+   - Platform management can be developed in parallel
+   - Reduces critical path by 1 week
+
+4. **Collection Features** (Sprint 3)
    - Progress tracking and rating can be developed simultaneously
    - Reduces critical path by 1 week
 
-### **Total Critical Path Reduction**: 2.5 weeks
-**Optimized Critical Path**: 11.5 weeks instead of 14 weeks
+### **Total Critical Path Reduction**: 3 weeks
+**Optimized Critical Path**: 13-14 weeks instead of 16-17 weeks
+**Note**: Additional complexity from PRD requirements partially offset by improved parallel development
 
 ---
 
@@ -335,10 +353,15 @@ Dependencies:
 - Implement circuit breakers for resilience
 - Cache frequently accessed data
 
-### **5. Testing Strategy**
-- Unit tests developed alongside features
-- Integration tests for critical paths
-- End-to-end tests for user workflows
+### **5. Enhanced Testing Strategy**
+- Comprehensive testing framework established in Sprint 0
+- Unit tests developed alongside features (>80% backend, >70% frontend coverage)
+- Integration tests for critical paths and database operations
+- End-to-end tests for user workflows with Playwright
+- API contract testing for frontend/backend alignment
+- Performance testing for critical operations
+- Accessibility testing automation for WCAG compliance
+- Visual regression testing for UI consistency
 
 ---
 

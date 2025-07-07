@@ -4,8 +4,9 @@
 ### Project Overview
 - **Project Name**: Game Collection Management Service (Nexorious)
 - **Project Type**: Self-hosted web application
-- **Duration**: 18 weeks (9 sprints of 2 weeks each)
+- **Duration**: 21-22 weeks (10-11 sprints, with extended foundation sprints)
 - **Team Size**: 2-4 developers
+- **Updated**: Aligned with comprehensive PRD requirements
 
 ---
 
@@ -27,6 +28,16 @@
   - 1.1.2.5 Database connection pooling
   - 1.1.2.6 Database backup/restore procedures
 
+- **1.1.2A Complete Database Schema Implementation**
+  - 1.1.2A.1 Complete 12-table schema design (users, user_sessions, platforms, storefronts, games, game_aliases, user_games, user_game_platforms, tags, user_game_tags, wishlists, import_jobs)
+  - 1.1.2A.2 UUID primary key implementation across all tables
+  - 1.1.2A.3 Comprehensive foreign key relationships and constraints
+  - 1.1.2A.4 Performance indexes for search and query optimization (25+ indexes)
+  - 1.1.2A.5 Check constraints for data validation (status enums, rating ranges)
+  - 1.1.2A.6 SQLModel automatic timestamp management configuration
+  - 1.1.2A.7 Cross-database compatibility testing (PostgreSQL/SQLite)
+  - 1.1.2A.8 Database migration scripts with rollback procedures
+
 - **1.1.3 Frontend Infrastructure**
   - 1.1.3.1 SvelteKit project setup
   - 1.1.3.2 TypeScript configuration
@@ -42,6 +53,20 @@
   - 1.1.4.4 Development database seeding
   - 1.1.4.5 CI/CD pipeline setup
   - 1.1.4.6 Testing environment configuration
+
+- **1.1.5 Testing Framework Implementation**
+  - 1.1.5.1 Unit test framework setup (pytest for backend, vitest for frontend)
+  - 1.1.5.2 Integration test framework with database testing utilities
+  - 1.1.5.3 End-to-end test framework (Playwright) with user workflow tests
+  - 1.1.5.4 Test coverage reporting with >80% backend, >70% frontend targets
+  - 1.1.5.5 Automated test execution in CI/CD pipeline blocking deployments
+  - 1.1.5.6 Performance testing framework for critical operations
+  - 1.1.5.7 Mock services for external API testing (IGDB, Steam)
+  - 1.1.5.8 Visual regression testing for UI consistency
+  - 1.1.5.9 Accessibility testing automation (WCAG compliance)
+  - 1.1.5.10 Database migration tests for both PostgreSQL and SQLite
+  - 1.1.5.11 API contract testing with comprehensive endpoint coverage
+  - 1.1.5.12 Load testing implementation and quality gates
 
 ---
 
@@ -79,6 +104,18 @@
   - 2.2.1.4 Input validation
   - 2.2.1.5 CORS configuration
   - 2.2.1.6 Security headers implementation
+
+- **2.2.1A Enhanced Role-Based Access Control**
+  - 2.2.1A.1 User role enumeration (admin, regular_user) in database
+  - 2.2.1A.2 Role-based middleware for API endpoint protection
+  - 2.2.1A.3 Admin-only access for platform/storefront CRUD operations
+  - 2.2.1A.4 Permission validation decorators for secured endpoints
+  - 2.2.1A.5 Role-based UI component rendering in frontend
+  - 2.2.1A.6 Admin role assignment and management interface
+  - 2.2.1A.7 Permission checking utilities for complex operations
+  - 2.2.1A.8 Audit logging for admin actions
+  - 2.2.1A.9 Default admin user creation during system setup
+  - 2.2.1A.10 Role migration and upgrade procedures
 
 - **2.2.2 Password Management**
   - 2.2.2.1 Password reset API
@@ -458,33 +495,38 @@
 
 ## DELIVERABLES SUMMARY
 
-### Phase 1: Foundation (Sprints 0-1)
-- Working development environment
-- Basic authentication system
-- Database schema implementation
-- API foundation with documentation
+### Phase 1: Enhanced Foundation (Sprints 0-1, Extended)
+- Working development environment with Docker
+- Comprehensive testing framework (>80% backend, >70% frontend coverage)
+- Complete 12-table database schema with UUID keys and indexes
+- Basic authentication system with role-based access control
+- API foundation with comprehensive documentation
+- Security hardening and input validation
 
 ### Phase 2: Core Features (Sprints 2-4)
-- Game management system
-- User collection management
-- Basic web interface
-- IGDB integration
+- Enhanced game management system with 8-step IGDB workflow
+- User collection management with progress tracking
+- Comprehensive web interface with candidate selection
+- Advanced IGDB integration with metadata confirmation
+- Platform/storefront admin management with role restrictions
 
 ### Phase 3: Advanced Features (Sprints 5-6)
-- Import/export functionality
-- Search and discovery features
-- Statistics and analytics
-- Mobile optimization
+- Import/export functionality with validation
+- Advanced search and discovery features
+- Statistics and analytics dashboard
+- Mobile optimization and PWA support
 
-### Phase 4: Production Ready (Sprints 7-8)
-- Kubernetes deployment
-- Monitoring and logging
-- Security hardening
-- Complete documentation
+### Phase 4: Production Ready (Sprints 7-9)
+- Kubernetes deployment with scaling
+- Comprehensive monitoring and logging
+- Security hardening and compliance
+- Complete technical and user documentation
 
-### Total Estimated Effort
-- **Total Tasks**: 200+ individual tasks
-- **Total Story Points**: 400-500 points
-- **Timeline**: 18 weeks (9 sprints)
+### Updated Total Estimated Effort
+- **Total Tasks**: 230+ individual tasks
+- **Total Story Points**: 609+ points (+29 from original estimate)
+- **Timeline**: 21-22 weeks (10-11 sprints with extended foundation)
 - **Team Size**: 2-4 developers
 - **Risk Buffer**: 20% additional time per sprint
+- **Key Additions**: Testing framework, enhanced database schema, role-based access control, 8-step game workflow
+- **Timeline Impact**: +3-4 weeks for PRD compliance requirements
