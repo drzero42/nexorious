@@ -53,18 +53,43 @@ To create the definitive self-hosted solution for personal game collection manag
   - Multi-platform and multi-storefront association
   - Physical vs digital ownership tracking
   - Duplicate detection and prevention
+  - IGDB integration for game lookup and metadata retrieval
 - **Frontend Requirements**:
   - Game creation and editing forms
   - Game library list and grid views
   - Platform and storefront indicators
   - Search and filter interface
   - Bulk selection and operations
+  - IGDB game search interface with candidate selection
+  - Game metadata acceptance/confirmation screen
+- **Game Addition Flow**:
+  1. User searches for a game by title
+  2. System queries IGDB API for matching games
+  3. If multiple games found, present user with list of candidates showing:
+     - Game title and release year
+     - Cover art thumbnail
+     - Platform information
+     - Brief description
+  4. User selects the correct game from the candidates
+  5. System retrieves full metadata from IGDB for chosen game
+  6. Present acceptance screen showing all retrieved information:
+     - Complete game details (title, description, genre, developer, etc.)
+     - Cover art
+     - Release information
+     - How Long to Beat estimates
+     - Platforms available
+  7. User confirms or edits information before final submission
+  8. Game is added to database and user's collection
 - **Acceptance Criteria**:
   - API endpoints handle all game management operations
   - Frontend forms validate input and provide feedback
   - Games display with all relevant metadata
   - Duplicate detection prevents redundant entries
   - Bulk operations work efficiently
+  - IGDB search returns relevant game candidates
+  - User can distinguish between similar games in candidate list
+  - Metadata acceptance screen shows complete, accurate information
+  - Users can modify auto-populated data before saving
 
 #### 1.2 Platform & Storefront Tracking
 **Priority**: P0 (Critical)
@@ -74,37 +99,50 @@ To create the definitive self-hosted solution for personal game collection manag
   - API endpoints for managing platform associations
   - Availability status tracking
   - Platform-specific metadata storage
+  - Admin-only access for platform/storefront management (create, update, delete)
 - **Frontend Requirements**:
   - Platform selection interface
   - Storefront linking components
   - Availability status indicators
   - Platform filtering and sorting
+  - Admin interface for platform/storefront management
 - **Acceptance Criteria**:
   - API supports multiple platforms per game
   - Frontend allows easy platform assignment
   - Storefront links are preserved and accessible
   - Ownership status is clearly indicated in UI
+  - Only admin users can add, update, or remove platforms and storefronts
+  - Regular users can only associate existing platforms/storefronts with their games
 
 #### 1.3 Progress Tracking
 **Priority**: P0 (Critical)
 - **User Story**: As a user, I want to track my progress through games so I can see what I've completed
 - **Backend Requirements**:
-  - Progress tracking data model with status categories
+  - Progress tracking data model with status categories including completion levels
   - API endpoints for updating play status and completion
   - Time tracking with manual entry support
   - Personal notes storage and retrieval
 - **Frontend Requirements**:
-  - Status selection dropdown/buttons
-  - Progress percentage input
+  - Status selection dropdown/buttons with completion level options
   - Time tracking input forms
   - Notes editor with rich text support
   - Progress visualization components
+- **Play Status Categories**:
+  - **Not Started**: Haven't begun playing
+  - **In Progress**: Currently playing
+  - **Completed**: Finished main story/campaign
+  - **Mastered**: Completed main story plus all side quests and content
+  - **Dominated**: 100% completion including all achievements/trophies
+  - **Shelved**: Temporarily paused with intent to return
+  - **Dropped**: Permanently abandoned
+  - **Replay**: Playing again after previous completion
 - **Acceptance Criteria**:
   - API handles all progress tracking operations
-  - Frontend provides intuitive status updates
+  - Frontend provides intuitive status updates with clear completion level definitions
   - Time tracking accepts manual input
   - Notes support rich text formatting
   - Progress changes are reflected immediately
+  - Completion levels provide meaningful progression tracking
 
 #### 1.4 Personal Rating System
 **Priority**: P1 (High)
@@ -193,14 +231,21 @@ To create the definitive self-hosted solution for personal game collection manag
 **Priority**: P2 (Medium)
 - **User Story**: As a user, I want to maintain a wishlist so I can track games I want to purchase
 - **Requirements**:
-  - Add games to wishlist from search results
-  - Priority levels for wishlist items
-  - Price tracking integration (future enhancement)
+  - Simple add/remove games from wishlist functionality
+  - Display wishlist with game information
+  - Generate price comparison links on-the-fly for IsThereAnyDeal.com and PSPrices.com
   - Move games from wishlist to owned collection
+- **Price Comparison Integration**:
+  - **IsThereAnyDeal.com**: Generate search URLs using game titles for PC game price tracking
+  - **PSPrices.com**: Generate search URLs for PlayStation game price tracking
+  - Links are dynamically generated in the frontend using game title/slug
+  - No stored price data or tracking - purely external link generation
 - **Acceptance Criteria**:
   - Wishlist is separate from owned collection
-  - Priority levels are sortable
-  - Games can be easily moved between lists
+  - Users can easily add/remove games from wishlist
+  - Price comparison links are automatically generated and functional
+  - Games can be easily moved from wishlist to owned collection
+  - External links open in new tabs/windows
 
 #### 3.3 Statistics Dashboard
 **Priority**: P2 (Medium)
@@ -208,12 +253,14 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Requirements**:
   - Collection size by platform and genre
   - Completion rates and progress statistics
+  - "Pile of Shame" count (owned games with 'not_started' status)
   - Most played games and genres
   - Monthly/yearly gaming activity
 - **Acceptance Criteria**:
   - Dashboard loads quickly with visual charts
   - Statistics are accurate and update in real-time
   - Charts are responsive and mobile-friendly
+  - "Pile of Shame" metric is prominently displayed with actionable insights
 
 ### Phase 4: User Experience & Interface
 
@@ -278,12 +325,20 @@ To create the definitive self-hosted solution for personal game collection manag
 - **User Story**: As a user, I want flexible database options so I can choose what works best for my setup
 - **Requirements**:
   - PostgreSQL support for production deployments
-  - SQLite support for single-user/development setups
-  - Automatic database migrations
+  - SQLite support for single-instance, small deployments
+  - SQLModel ORM for type-safe database operations
+  - Alembic for automatic database migrations
+  - Automatic timestamp management via SQLModel for created_at and updated_at fields
   - Backup and restore capabilities
+- **Implementation Details**:
+  - SQLModel will handle automatic population of created_at timestamps on record creation
+  - SQLModel will handle automatic updates of updated_at timestamps on record modification
+  - Database-agnostic schema design avoiding PostgreSQL-specific features
 - **Acceptance Criteria**:
   - Both database types work without configuration changes
-  - Migrations run automatically on startup
+  - SQLModel provides consistent API across database types
+  - Alembic migrations run automatically on startup
+  - Timestamp fields are automatically managed by the application layer
   - Backup tools preserve all user data
   - Restore process is reliable and documented
 
@@ -303,35 +358,7 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Phase 6: Advanced Features
 
-#### 6.1 Webhook Support
-**Priority**: P3 (Low)
-- **User Story**: As a developer, I want webhook support so I can build automated integrations that respond to collection changes
-- **Requirements**:
-  - Webhook registration and management endpoints
-  - Event-driven notifications for collection changes
-  - Webhook delivery with retry logic
-  - Webhook security with signature verification
-- **Acceptance Criteria**:
-  - Webhooks can be registered for specific events
-  - Events are delivered reliably with proper retry logic
-  - Webhook signatures can be verified for security
-  - Failed deliveries are logged and retried appropriately
-
-#### 6.2 Social Features
-**Priority**: P3 (Low)
-- **User Story**: As a user, I want to share my collection with friends so we can compare our games
-- **Requirements**:
-  - Public profile pages with collection highlights
-  - Collection sharing via links
-  - Friend system for comparing collections
-  - Privacy controls for what information is shared
-- **Acceptance Criteria**:
-  - Public profiles are accessible without authentication
-  - Sharing links work for non-users
-  - Privacy settings are respected
-  - Friend comparisons show meaningful insights
-
-#### 6.3 Enhanced Platform Integration
+#### 6.1 Enhanced Platform Integration
 **Priority**: P2 (Medium)
 - **User Story**: As a user, I want integration with more platforms so I can import all my games automatically
 - **Requirements**:
@@ -349,7 +376,9 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Backend Stack
 - **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL (production) / SQLite (development)
+- **Database**: PostgreSQL (production) / SQLite (single-instance, small deployments)
+- **ORM**: SQLModel for database models and queries
+- **Migrations**: Alembic for database schema migrations
 - **Authentication**: JWT tokens with refresh mechanism
 - **API Documentation**: OpenAPI/Swagger
 - **Background Tasks**: Celery with Redis
@@ -387,38 +416,10 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Maintenance Burden**: Supporting multiple platforms and integrations
   - *Mitigation*: Modular architecture, community contributions, automated testing
 
-## Launch Strategy
-
-### Phase 1: MVP Launch (Months 1-3)
-- Core collection management with API foundation
-- CSV import
-- Basic web interface
-- Docker deployment
-- Kubernetes support
-
-### Phase 2: Platform Integration (Months 4-6)
-- Steam API integration
-- IGDB metadata
-- Enhanced search and filtering
-- Mobile-responsive design
-
-### Phase 3: Advanced Features (Months 7-9)
-- Additional platform integrations
-- API development
-- Social features
-
-### Phase 4: Community & Ecosystem (Months 10-12)
-- Plugin system
-- Community contributions
-- Third-party integrations
-- Enterprise features
-
 ## Success Criteria
 
 ### Technical Success
-- 99% uptime for hosted instances
 - < 2 second page load times
-- Support for 10,000+ games per user
 - Zero data loss during migrations
 
 ### Deployment Success
@@ -446,6 +447,213 @@ To create the definitive self-hosted solution for personal game collection manag
 - Indexing strategy for performance
 - Migration strategy for schema changes
 - Backup and restore procedures
+
+#### SQL Schema (Database Agnostic)
+
+```sql
+-- User Management
+CREATE TABLE users (
+    id VARCHAR(36) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    is_active BOOLEAN DEFAULT true,
+    is_admin BOOLEAN DEFAULT false,
+    preferences TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_sessions (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL,
+    refresh_token_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_agent TEXT,
+    ip_address VARCHAR(45)
+);
+
+-- Platform and Storefront Management
+CREATE TABLE platforms (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    icon_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE storefronts (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    icon_url VARCHAR(500),
+    base_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Game Metadata
+CREATE TABLE games (
+    id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    slug VARCHAR(500) UNIQUE NOT NULL,
+    description TEXT,
+    genre VARCHAR(200),
+    developer VARCHAR(200),
+    publisher VARCHAR(200),
+    release_date DATE,
+    cover_art_url VARCHAR(500),
+    rating_average DECIMAL(3,2),
+    rating_count INTEGER DEFAULT 0,
+    metadata TEXT DEFAULT '{}',
+    estimated_playtime_hours INTEGER,
+    howlongtobeat_main INTEGER,
+    howlongtobeat_extra INTEGER,
+    howlongtobeat_completionist INTEGER,
+    igdb_id VARCHAR(50),
+    is_verified BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE game_aliases (
+    id VARCHAR(36) PRIMARY KEY,
+    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    alias_title VARCHAR(500) NOT NULL,
+    source VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User Game Collections
+CREATE TABLE user_games (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    ownership_status VARCHAR(50) DEFAULT 'owned' CHECK (ownership_status IN ('owned', 'borrowed', 'rented', 'subscription')),
+    is_physical BOOLEAN DEFAULT false,
+    physical_location VARCHAR(200),
+    personal_rating DECIMAL(2,1) CHECK (personal_rating >= 1 AND personal_rating <= 5),
+    is_loved BOOLEAN DEFAULT false,
+    play_status VARCHAR(50) DEFAULT 'not_started' CHECK (play_status IN ('not_started', 'in_progress', 'completed', 'mastered', 'dominated', 'shelved', 'dropped', 'replay')),
+    hours_played INTEGER DEFAULT 0,
+    personal_notes TEXT,
+    acquired_date DATE,
+    last_played TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, game_id)
+);
+
+CREATE TABLE user_game_platforms (
+    id VARCHAR(36) PRIMARY KEY,
+    user_game_id VARCHAR(36) NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
+    platform_id VARCHAR(36) NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+    storefront_id VARCHAR(36) REFERENCES storefronts(id) ON DELETE SET NULL,
+    store_game_id VARCHAR(200),
+    store_url VARCHAR(500),
+    is_available BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_game_id, platform_id)
+);
+
+-- Tagging System
+CREATE TABLE tags (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    color VARCHAR(7) DEFAULT '#6B7280',
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
+);
+
+CREATE TABLE user_game_tags (
+    id VARCHAR(36) PRIMARY KEY,
+    user_game_id VARCHAR(36) NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
+    tag_id VARCHAR(36) NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_game_id, tag_id)
+);
+
+-- Wishlist Management
+CREATE TABLE wishlists (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, game_id)
+);
+
+-- Import/Export Tracking
+CREATE TABLE import_jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    import_type VARCHAR(50) NOT NULL CHECK (import_type IN ('csv', 'steam', 'epic', 'gog', 'xbox', 'playstation')),
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    total_records INTEGER DEFAULT 0,
+    processed_records INTEGER DEFAULT 0,
+    failed_records INTEGER DEFAULT 0,
+    error_log TEXT DEFAULT '[]',
+    metadata TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Indexes for Performance
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
+CREATE INDEX idx_games_title ON games(title);
+CREATE INDEX idx_games_slug ON games(slug);
+CREATE INDEX idx_games_igdb_id ON games(igdb_id);
+CREATE INDEX idx_game_aliases_game_id ON game_aliases(game_id);
+CREATE INDEX idx_game_aliases_title ON game_aliases(alias_title);
+CREATE INDEX idx_user_games_user_id ON user_games(user_id);
+CREATE INDEX idx_user_games_game_id ON user_games(game_id);
+CREATE INDEX idx_user_games_play_status ON user_games(play_status);
+CREATE INDEX idx_user_games_personal_rating ON user_games(personal_rating);
+CREATE INDEX idx_user_games_is_loved ON user_games(is_loved);
+CREATE INDEX idx_user_game_platforms_user_game_id ON user_game_platforms(user_game_id);
+CREATE INDEX idx_user_game_platforms_platform_id ON user_game_platforms(platform_id);
+CREATE INDEX idx_tags_user_id ON tags(user_id);
+CREATE INDEX idx_user_game_tags_user_game_id ON user_game_tags(user_game_id);
+CREATE INDEX idx_user_game_tags_tag_id ON user_game_tags(tag_id);
+CREATE INDEX idx_wishlists_user_id ON wishlists(user_id);
+CREATE INDEX idx_import_jobs_user_id ON import_jobs(user_id);
+CREATE INDEX idx_import_jobs_status ON import_jobs(status);
+```
+
+#### Key Schema Features
+
+- **UUID Primary Keys**: All tables use VARCHAR(36) to store UUIDs for better distribution and security (generated by application)
+- **Comprehensive User Management**: User accounts, sessions, and preferences
+- **Flexible Game Metadata**: Support for multiple data sources with JSON text fields for extensibility
+- **Multi-Platform Support**: Games can exist on multiple platforms
+- **Progress Tracking**: Detailed play status with completion levels (Completed, Mastered, Dominated) and time logging
+- **Tagging System**: User-defined tags with color coding for organization
+- **Wishlist Management**: Simple wishlist with dynamic price comparison links
+- **Import/Export Jobs**: Tracking for batch operations and data migrations
+- **Performance Indexes**: Strategic indexing for common query patterns
+- **Data Integrity**: Foreign key constraints and check constraints for data validation
+- **Timestamp Management**: Created and updated timestamps handled by SQLModel in the application layer
+
+#### Database Compatibility Notes
+
+- **Data Types**: Uses standard SQL data types compatible with both SQLite and PostgreSQL
+- **UUIDs**: Stored as VARCHAR(36) and generated by the application layer
+- **JSON Fields**: Stored as TEXT with JSON serialization handled by SQLModel
+- **Timestamps**: SQLModel will automatically manage created_at and updated_at fields
+- **Full-Text Search**: Will be implemented at the application layer using SQLModel queries
+- **No Database-Specific Features**: Avoids triggers, stored procedures, or PostgreSQL-specific functions
 
 ### C. Deployment Configurations
 - Docker Compose examples
