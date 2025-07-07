@@ -356,6 +356,38 @@ To create the definitive self-hosted solution for personal game collection manag
   - Data persists across pod restarts
   - Configuration is externalized via ConfigMaps
 
+#### 5.4 Testing & Quality Assurance
+**Priority**: P0 (Critical)
+- **User Story**: As a developer, I want comprehensive testing to ensure the application works correctly and reliably
+- **Backend Testing Requirements**:
+  - Unit tests for all business logic with >80% code coverage
+  - Integration tests for all API endpoints
+  - Database tests verifying SQLModel operations on both PostgreSQL and SQLite
+  - Authentication and authorization tests
+  - External API integration tests with mocked responses
+  - Performance tests for critical operations
+- **Frontend Testing Requirements**:
+  - Unit tests for all components and stores
+  - Integration tests for user workflows
+  - End-to-end tests for critical user journeys
+  - Visual regression tests for UI consistency
+  - Accessibility tests (WCAG compliance)
+  - Cross-browser compatibility tests
+- **Test Automation Requirements**:
+  - All tests must run automatically on every code commit
+  - Pull requests cannot be merged without passing tests
+  - Test execution in CI/CD pipeline before deployment
+  - Automated test reports with coverage metrics
+  - Database migration tests for both PostgreSQL and SQLite
+- **Acceptance Criteria**:
+  - Backend test coverage exceeds 80%
+  - Frontend test coverage exceeds 70%
+  - All tests pass on both PostgreSQL and SQLite databases
+  - CI/CD pipeline blocks deployments if tests fail
+  - Test execution time under 10 minutes for unit tests
+  - Integration and E2E tests complete within 30 minutes
+  - All API endpoints have corresponding integration tests
+
 ### Phase 6: Advanced Features
 
 #### 6.1 Enhanced Platform Integration
@@ -383,6 +415,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **API Documentation**: OpenAPI/Swagger
 - **Background Tasks**: Celery with Redis
 - **File Storage**: Local filesystem with S3 compatibility
+- **Testing**: Pytest for unit and integration tests
 
 ### Frontend Stack
 - **Framework**: Svelte/SvelteKit
@@ -390,6 +423,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Styling**: Tailwind CSS
 - **Build Tool**: Vite
 - **PWA Support**: Workbox
+- **Testing**: Vitest for unit tests, Playwright for E2E tests
 
 ### Infrastructure
 - **Containerization**: Docker with multi-stage builds
@@ -397,6 +431,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Monitoring**: Prometheus metrics, structured logging
 - **Security**: Input validation, secure defaults
 - **Backup**: Automated database backups with retention policies
+- **CI/CD**: Automated testing pipeline on all code changes
 
 ## Risk Assessment
 
@@ -421,12 +456,15 @@ To create the definitive self-hosted solution for personal game collection manag
 ### Technical Success
 - < 2 second page load times
 - Zero data loss during migrations
+- All automated tests pass on every deployment
+- >80% backend code coverage, >70% frontend code coverage
 
 ### Deployment Success
 - Single-command deployment with Docker Compose
 - Clear documentation with step-by-step setup guides
 - Automatic database migrations work reliably
 - Troubleshooting guides for common issues
+- All tests pass in CI/CD pipeline before deployment
 
 ### User Experience Success
 - New users can add their first game within 2 minutes
