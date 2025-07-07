@@ -39,3 +39,10 @@ When source code is added, this file should be updated to include:
 - Build and test commands
 - Project structure and architecture details
 - Development workflow instructions
+
+## Standard operating procedure
+
+These rules must always be adhered to during development.
+- This project has a frontend and a backend. They live in dirs called frontend and backend.
+- Always cd into the frontend dir before running commands related to the frontend.
+- Always cd into the backend dir before running commands related to the backend.
