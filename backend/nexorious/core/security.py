@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from .config import settings
+from .database import get_session
 from typing import Optional
 import uuid
+import hashlib
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
@@ -57,8 +59,44 @@ def verify_token(token: str, token_type: str = "access") -> dict:
             detail="Could not validate credentials"
         )
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get the current user from the JWT token"""
+def hash_token(token: str) -> str:
+    """Hash a token for storage"""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def create_user_session(user_id: str, access_token: str, refresh_token: str, 
+                             request: Request, session = Depends(get_session)) -> str:
+    """Create a new user session"""
+    from ..models.user import UserSession
+    
+    session_id = str(uuid.uuid4())
+    session_record = UserSession(
+        id=session_id,
+        user_id=user_id,
+        token_hash=hash_token(access_token),
+        refresh_token_hash=hash_token(refresh_token),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days),
+        user_agent=request.headers.get("User-Agent"),
+        ip_address=request.client.host if request.client else None
+    )
+    
+    session.add(session_record)
+    session.commit()
+    return session_id
+
+
+async def invalidate_user_session(session_id: str, session = Depends(get_session)):
+    """Invalidate a user session"""
+    from ..models.user import UserSession
+    
+    session_record = session.get(UserSession, session_id)
+    if session_record:
+        session.delete(session_record)
+        session.commit()
+
+
+async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get the current user ID from the JWT token"""
     token = credentials.credentials
     payload = verify_token(token)
     user_id = payload.get("sub")
@@ -68,3 +106,32 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Could not validate credentials"
         )
     return user_id
+
+
+async def get_current_user(session = Depends(get_session), 
+                          user_id: str = Depends(get_current_user_id)):
+    """Get the current user from the database"""
+    from ..models.user import User
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is disabled"
+        )
+    return user
+
+
+async def get_current_admin_user(current_user = Depends(get_current_user)):
+    """Get current user and verify admin privileges"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrative privileges required"
+        )
+    return current_user

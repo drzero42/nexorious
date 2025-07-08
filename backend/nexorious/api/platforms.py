@@ -1,0 +1,299 @@
+"""
+Platform and storefront management endpoints (admin-only).
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlmodel import Session, select, func
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+
+from ..core.database import get_session
+from ..core.security import get_current_admin_user
+from ..models.user import User
+from ..models.platform import Platform, Storefront
+from ..api.schemas.platform import (
+    PlatformCreateRequest,
+    PlatformUpdateRequest,
+    PlatformResponse,
+    StorefrontCreateRequest,
+    StorefrontUpdateRequest,
+    StorefrontResponse,
+    PlatformListResponse,
+    StorefrontListResponse
+)
+from ..api.schemas.common import SuccessResponse
+
+router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
+
+
+# Platform endpoints
+@router.get("/", response_model=PlatformListResponse)
+async def list_platforms(
+    session: Annotated[Session, Depends(get_session)],
+    active_only: bool = Query(default=True, description="Show only active platforms")
+):
+    """List all platforms."""
+    
+    query = select(Platform)
+    if active_only:
+        query = query.where(Platform.is_active == True)
+    
+    query = query.order_by(Platform.display_name)
+    platforms = session.exec(query).all()
+    
+    return PlatformListResponse(
+        platforms=platforms,
+        total=len(platforms)
+    )
+
+
+@router.get("/{platform_id}", response_model=PlatformResponse)
+async def get_platform(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Get a specific platform by ID."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    return platform
+
+
+@router.post("/", response_model=PlatformResponse, status_code=status.HTTP_201_CREATED)
+async def create_platform(
+    platform_data: PlatformCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Create a new platform (admin only)."""
+    
+    # Check if platform name already exists
+    existing_platform = session.exec(
+        select(Platform).where(Platform.name == platform_data.name)
+    ).first()
+    
+    if existing_platform:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Platform name already exists"
+        )
+    
+    new_platform = Platform(
+        name=platform_data.name,
+        display_name=platform_data.display_name,
+        icon_url=str(platform_data.icon_url) if platform_data.icon_url else None
+    )
+    
+    session.add(new_platform)
+    session.commit()
+    session.refresh(new_platform)
+    
+    return new_platform
+
+
+@router.put("/{platform_id}", response_model=PlatformResponse)
+async def update_platform(
+    platform_id: str,
+    platform_data: PlatformUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Update an existing platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Update fields
+    update_data = platform_data.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        if field == "icon_url" and value:
+            setattr(platform, field, str(value))
+        else:
+            setattr(platform, field, value)
+    
+    platform.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(platform)
+    
+    return platform
+
+
+@router.delete("/{platform_id}", response_model=SuccessResponse)
+async def delete_platform(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Delete a platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Check if platform is in use
+    from ..models.user_game import UserGamePlatform
+    
+    usage_count = session.exec(
+        select(func.count()).where(UserGamePlatform.platform_id == platform_id)
+    ).one()
+    
+    if usage_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete platform. It is referenced by {usage_count} user game entries."
+        )
+    
+    session.delete(platform)
+    session.commit()
+    
+    return SuccessResponse(message="Platform deleted successfully")
+
+
+# Storefront endpoints
+@router.get("/storefronts/", response_model=StorefrontListResponse)
+async def list_storefronts(
+    session: Annotated[Session, Depends(get_session)],
+    active_only: bool = Query(default=True, description="Show only active storefronts")
+):
+    """List all storefronts."""
+    
+    query = select(Storefront)
+    if active_only:
+        query = query.where(Storefront.is_active == True)
+    
+    query = query.order_by(Storefront.display_name)
+    storefronts = session.exec(query).all()
+    
+    return StorefrontListResponse(
+        storefronts=storefronts,
+        total=len(storefronts)
+    )
+
+
+@router.get("/storefronts/{storefront_id}", response_model=StorefrontResponse)
+async def get_storefront(
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Get a specific storefront by ID."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    return storefront
+
+
+@router.post("/storefronts/", response_model=StorefrontResponse, status_code=status.HTTP_201_CREATED)
+async def create_storefront(
+    storefront_data: StorefrontCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Create a new storefront (admin only)."""
+    
+    # Check if storefront name already exists
+    existing_storefront = session.exec(
+        select(Storefront).where(Storefront.name == storefront_data.name)
+    ).first()
+    
+    if existing_storefront:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Storefront name already exists"
+        )
+    
+    new_storefront = Storefront(
+        name=storefront_data.name,
+        display_name=storefront_data.display_name,
+        icon_url=str(storefront_data.icon_url) if storefront_data.icon_url else None,
+        base_url=str(storefront_data.base_url) if storefront_data.base_url else None
+    )
+    
+    session.add(new_storefront)
+    session.commit()
+    session.refresh(new_storefront)
+    
+    return new_storefront
+
+
+@router.put("/storefronts/{storefront_id}", response_model=StorefrontResponse)
+async def update_storefront(
+    storefront_id: str,
+    storefront_data: StorefrontUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Update an existing storefront (admin only)."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    # Update fields
+    update_data = storefront_data.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        if field in ["icon_url", "base_url"] and value:
+            setattr(storefront, field, str(value))
+        else:
+            setattr(storefront, field, value)
+    
+    storefront.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(storefront)
+    
+    return storefront
+
+
+@router.delete("/storefronts/{storefront_id}", response_model=SuccessResponse)
+async def delete_storefront(
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Delete a storefront (admin only)."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    # Check if storefront is in use
+    from ..models.user_game import UserGamePlatform
+    
+    usage_count = session.exec(
+        select(func.count()).where(UserGamePlatform.storefront_id == storefront_id)
+    ).one()
+    
+    if usage_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete storefront. It is referenced by {usage_count} user game entries."
+        )
+    
+    session.delete(storefront)
+    session.commit()
+    
+    return SuccessResponse(message="Storefront deleted successfully")

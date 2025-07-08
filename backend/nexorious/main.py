@@ -5,6 +5,10 @@ from fastapi.responses import JSONResponse
 import logging
 from .core.config import settings
 from .core.database import create_db_and_tables
+from .api.auth import router as auth_router
+from .api.games import router as games_router
+from .api.platforms import router as platforms_router
+from .api.user_games import router as user_games_router
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +47,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(auth_router, prefix="/api")
+app.include_router(games_router, prefix="/api")
+app.include_router(platforms_router, prefix="/api")
+app.include_router(user_games_router, prefix="/api")
 
 
 @app.get("/")
