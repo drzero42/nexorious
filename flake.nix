@@ -35,6 +35,9 @@
 
           # Git for version control
           git
+
+          # SQLite for working with DBs
+          sqlite
         ];
 
         shellHook = ''
