@@ -4,6 +4,9 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 import logging
 
+# Import all models to ensure they are registered with SQLModel
+from ..models import *
+
 logger = logging.getLogger(__name__)
 
 # Determine if we're using SQLite or PostgreSQL
