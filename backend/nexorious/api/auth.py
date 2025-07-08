@@ -263,7 +263,7 @@ async def update_user_profile(
     if profile_data.last_name is not None:
         current_user.last_name = profile_data.last_name
     if profile_data.preferences is not None:
-        current_user.preferences = json.dumps(profile_data.preferences)
+        current_user.preferences_json = json.dumps(profile_data.preferences)
     
     current_user.updated_at = datetime.now(timezone.utc)
     session.commit()
