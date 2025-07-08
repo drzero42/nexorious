@@ -49,3 +49,4 @@ These rules must always be adhered to during development.
 - Before performing any work always read @docs/PRD.md and @docs/TASK_BREAKDOWN.md
 - When a task has been implemented mark the task(s) as done in the task breakdown
 - When you are writing code, please use context7 MCP to learn the APIs used and verify that your generated code is valid
+- When you are asked to work on a task you will create a branch that contains the task name
