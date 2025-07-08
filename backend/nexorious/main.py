@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,13 +14,25 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan events for FastAPI app"""
+    # Startup
+    logger.info("Starting up Nexorious Game Collection Management Service")
+    create_db_and_tables()
+    logger.info("Database initialized")
+    yield
+    # Shutdown
+    logger.info("Shutting down Nexorious Game Collection Management Service")
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="A self-hostable web application for managing personal video game collections",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -31,12 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    logger.info("Starting up Nexorious Game Collection Management Service")
-    create_db_and_tables()
-    logger.info("Database initialized")
 
 @app.get("/")
 async def root():
