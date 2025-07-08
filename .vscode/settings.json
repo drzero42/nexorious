@@ -1,3 +1,32 @@
 {
-    "python.envFile": "${workspaceFolder}/backend/.env"
+    "python.pythonPath": "./backend/.venv/bin/python3",
+    "python.defaultInterpreterPath": "./backend/.venv/bin/python3",
+    "python.analysis.extraPaths": [
+        "./backend"
+    ],
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": true,
+    "python.linting.mypyPath": "./backend/.venv/bin/mypy",
+    "python.formatting.provider": "black",
+    "python.formatting.blackPath": "./backend/.venv/bin/black",
+    "python.sortImports.path": "./backend/.venv/bin/isort",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": "./backend/.venv/bin/pytest",
+    "python.testing.pytestArgs": [
+        "backend"
+    ],
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.envFile": "${workspaceFolder}/backend/.env",
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/node_modules": true,
+        "**/.git": false
+    },
+    "python.analysis.typeCheckingMode": "basic"
 }
