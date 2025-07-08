@@ -9,7 +9,7 @@ import uuid
 
 
 class Platform(SQLModel, table=True):
-    """Platform model for gaming platforms (Steam, Epic, PlayStation, etc.)."""
+    """Platform model for gaming platforms (Windows, PlayStation, Xbox, Nintendo Switch, etc.)."""
     
     __tablename__ = "platforms"
     
