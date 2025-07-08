@@ -19,7 +19,7 @@ To create the definitive self-hosted solution for personal game collection manag
 1. **Unified Collection View**: Consolidate games from all platforms in one place
 2. **Progress Tracking**: Monitor gaming progress and completion status
 3. **Self-Hosted Privacy**: Complete control over personal gaming data
-4. **Platform Integration**: Automatic import from major gaming platforms
+4. **Storefront Integration**: Automatic import from major gaming storefronts
 5. **Smart Organization**: Intelligent filtering, tagging, and recommendation systems
 
 ## Success Metrics
@@ -390,16 +390,16 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Phase 6: Advanced Features
 
-#### 6.1 Enhanced Platform Integration
+#### 6.1 Enhanced Storefront Integration
 **Priority**: P2 (Medium)
-- **User Story**: As a user, I want integration with more platforms so I can import all my games automatically
+- **User Story**: As a user, I want integration with more storefronts so I can import all my games automatically
 - **Requirements**:
   - Epic Games Store integration
   - GOG integration
   - PlayStation Store integration
   - Xbox Marketplace integration
 - **Acceptance Criteria**:
-  - Each platform integration imports library correctly
+  - Each storefront integration imports library correctly
   - Authentication flows work smoothly
   - Sync can be triggered manually or automatically
   - Error handling provides clear user feedback
@@ -440,15 +440,15 @@ To create the definitive self-hosted solution for personal game collection manag
   - *Mitigation*: Implement caching, request queuing, and graceful degradation
 - **Data Migration**: Database schema changes could break existing installations
   - *Mitigation*: Comprehensive migration testing, rollback procedures
-- **Platform API Changes**: External APIs may change without notice
+- **Storefront API Changes**: External APIs may change without notice
   - *Mitigation*: Abstraction layers, monitoring, and graceful error handling
 
 ### Product Risks
 - **User Adoption**: Self-hosted software requires technical knowledge
   - *Mitigation*: Comprehensive documentation, Docker Compose simplification
 - **Competition**: Existing services like HowLongToBeat, Backloggd
-  - *Mitigation*: Focus on self-hosting, privacy, and comprehensive platform support
-- **Maintenance Burden**: Supporting multiple platforms and integrations
+  - *Mitigation*: Focus on self-hosting, privacy, and comprehensive storefront support
+- **Maintenance Burden**: Supporting multiple storefronts and integrations
   - *Mitigation*: Modular architecture, community contributions, automated testing
 
 ## Success Criteria
@@ -478,7 +478,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - Steam Web API requirements and limitations
 - IGDB API authentication and rate limits
 - Epic Games Store integration possibilities
-- PlayStation and Xbox API availability
+- PlayStation Store and Xbox Marketplace API availability
 
 ### B. Database Schema Design
 - Core entity relationships

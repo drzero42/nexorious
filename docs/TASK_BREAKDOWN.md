@@ -234,13 +234,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Priority: P2 (Medium)**
 **Estimated Duration: 4-6 weeks**
 
-### 6.1 Extended Platform Integration
+### 6.1 Extended Storefront Integration
 **Duration: 4-6 weeks**
 - [ ] Epic Games Store integration
 - [ ] GOG integration
 - [ ] PlayStation Store integration
 - [ ] Xbox Marketplace integration
-- [ ] Authentication flow for each platform
+- [ ] Authentication flow for each storefront
 - [ ] Unified sync management
 
 ## Technical Dependencies
