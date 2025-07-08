@@ -46,3 +46,5 @@ These rules must always be adhered to during development.
 - This project has a frontend and a backend. They live in dirs called frontend and backend.
 - Always cd into the frontend dir before running commands related to the frontend.
 - Always cd into the backend dir before running commands related to the backend.
+- Before performing any work always read @docs/
+- When a task has been implemented mark the task(s) as done in the task breakdown
