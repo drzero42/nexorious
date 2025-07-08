@@ -1,0 +1,1 @@
+# Nexorious Game Collection Management Service

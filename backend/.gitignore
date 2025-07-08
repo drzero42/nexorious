@@ -1,0 +1,13 @@
+# Backend specific files
+nexorious.db
+nexorious.db-journal
+
+# Node.js (for any frontend tooling that might be used with backend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
