@@ -1,0 +1,605 @@
+"""
+User game collection management endpoints.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlmodel import Session, select, and_, func, or_
+from datetime import datetime, timezone
+from typing import Annotated, Optional, List
+
+from ..core.database import get_session
+from ..core.security import get_current_user
+from ..models.user import User
+from ..models.game import Game
+from ..models.platform import Platform, Storefront
+from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
+from ..api.schemas.user_game import (
+    UserGameCreateRequest,
+    UserGameUpdateRequest,
+    ProgressUpdateRequest,
+    UserGamePlatformCreateRequest,
+    UserGameResponse,
+    UserGameListRequest,
+    UserGameListResponse,
+    UserGamePlatformResponse,
+    BulkStatusUpdateRequest,
+    CollectionStatsResponse
+)
+from ..api.schemas.common import SuccessResponse
+
+router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
+
+
+@router.get("/", response_model=UserGameListResponse)
+async def list_user_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
+    ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
+    is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
+    platform_id: Optional[str] = Query(default=None, description="Filter by platform"),
+    storefront_id: Optional[str] = Query(default=None, description="Filter by storefront"),
+    rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
+    rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
+    has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
+    q: Optional[str] = Query(default=None, description="Search in game titles and notes"),
+    sort_by: Optional[str] = Query(default="created_at", description="Sort field"),
+    sort_order: Optional[str] = Query(default="desc", pattern="^(asc|desc)$", description="Sort order")
+):
+    """List user's game collection with filtering and sorting."""
+    
+    # Build base query
+    query = select(UserGame).where(UserGame.user_id == current_user.id)
+    
+    # Apply filters
+    filters = []
+    
+    if play_status is not None:
+        filters.append(UserGame.play_status == play_status)
+    
+    if ownership_status is not None:
+        filters.append(UserGame.ownership_status == ownership_status)
+    
+    if is_loved is not None:
+        filters.append(UserGame.is_loved == is_loved)
+    
+    if rating_min is not None:
+        filters.append(UserGame.personal_rating >= rating_min)
+    
+    if rating_max is not None:
+        filters.append(UserGame.personal_rating <= rating_max)
+    
+    if has_notes is not None:
+        if has_notes:
+            filters.append(UserGame.personal_notes.is_not(None))
+            filters.append(UserGame.personal_notes != "")
+        else:
+            filters.append(or_(
+                UserGame.personal_notes.is_(None),
+                UserGame.personal_notes == ""
+            ))
+    
+    if platform_id:
+        # Join with UserGamePlatform to filter by platform
+        query = query.join(UserGamePlatform).where(UserGamePlatform.platform_id == platform_id)
+    
+    if storefront_id:
+        # Join with UserGamePlatform to filter by storefront
+        query = query.join(UserGamePlatform).where(UserGamePlatform.storefront_id == storefront_id)
+    
+    if q:
+        # Search in game title and personal notes
+        query = query.join(Game)
+        filters.append(or_(
+            Game.title.icontains(q),
+            UserGame.personal_notes.icontains(q) if UserGame.personal_notes.is_not(None) else False
+        ))
+    
+    if filters:
+        query = query.where(and_(*filters))
+    
+    # Apply sorting
+    sort_field = getattr(UserGame, sort_by, UserGame.created_at)
+    if sort_order == "desc":
+        query = query.order_by(sort_field.desc())
+    else:
+        query = query.order_by(sort_field.asc())
+    
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total = session.exec(count_query).one()
+    
+    # Apply pagination
+    offset = (page - 1) * per_page
+    user_games = session.exec(query.offset(offset).limit(per_page)).all()
+    
+    # Calculate pages
+    pages = (total + per_page - 1) // per_page
+    
+    return UserGameListResponse(
+        user_games=user_games,
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages
+    )
+
+
+@router.get("/{user_game_id}", response_model=UserGameResponse)
+async def get_user_game(
+    user_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get a specific user game by ID."""
+    
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    return user_game
+
+
+@router.post("/", response_model=UserGameResponse, status_code=status.HTTP_201_CREATED)
+async def add_game_to_collection(
+    user_game_data: UserGameCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Add a game to user's collection."""
+    
+    # Check if game exists
+    game = session.get(Game, user_game_data.game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found"
+        )
+    
+    # Check if user already has this game
+    existing_user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.user_id == current_user.id,
+                UserGame.game_id == user_game_data.game_id
+            )
+        )
+    ).first()
+    
+    if existing_user_game:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Game is already in your collection"
+        )
+    
+    # Create user game
+    new_user_game = UserGame(
+        user_id=current_user.id,
+        game_id=user_game_data.game_id,
+        ownership_status=user_game_data.ownership_status,
+        is_physical=user_game_data.is_physical,
+        physical_location=user_game_data.physical_location,
+        acquired_date=user_game_data.acquired_date
+    )
+    
+    session.add(new_user_game)
+    session.commit()
+    session.refresh(new_user_game)
+    
+    # Add platform associations if provided
+    if user_game_data.platforms:
+        for platform_id in user_game_data.platforms:
+            platform = session.get(Platform, platform_id)
+            if platform:
+                platform_assoc = UserGamePlatform(
+                    user_game_id=new_user_game.id,
+                    platform_id=platform_id
+                )
+                session.add(platform_assoc)
+        
+        session.commit()
+        session.refresh(new_user_game)
+    
+    return new_user_game
+
+
+@router.put("/{user_game_id}", response_model=UserGameResponse)
+async def update_user_game(
+    user_game_id: str,
+    user_game_data: UserGameUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Update user's game collection entry."""
+    
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    # Update fields
+    update_data = user_game_data.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        setattr(user_game, field, value)
+    
+    user_game.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(user_game)
+    
+    return user_game
+
+
+@router.put("/{user_game_id}/progress", response_model=UserGameResponse)
+async def update_game_progress(
+    user_game_id: str,
+    progress_data: ProgressUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Update game progress and play status."""
+    
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    # Update progress fields
+    user_game.play_status = progress_data.play_status
+    
+    if progress_data.hours_played is not None:
+        user_game.hours_played = progress_data.hours_played
+    
+    if progress_data.personal_notes is not None:
+        user_game.personal_notes = progress_data.personal_notes
+    
+    if progress_data.last_played is not None:
+        user_game.last_played = progress_data.last_played
+    else:
+        # Auto-update last played if status changed to in progress or completed
+        if progress_data.play_status in [PlayStatus.IN_PROGRESS, PlayStatus.COMPLETED, PlayStatus.MASTERED, PlayStatus.DOMINATED]:
+            user_game.last_played = datetime.now(timezone.utc)
+    
+    user_game.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(user_game)
+    
+    return user_game
+
+
+@router.delete("/{user_game_id}", response_model=SuccessResponse)
+async def remove_game_from_collection(
+    user_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Remove a game from user's collection."""
+    
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    session.delete(user_game)
+    session.commit()
+    
+    return SuccessResponse(message="Game removed from collection")
+
+
+@router.get("/{user_game_id}/platforms", response_model=List[UserGamePlatformResponse])
+async def get_user_game_platforms(
+    user_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get platform associations for a user game."""
+    
+    # Verify user owns this game
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    platforms = session.exec(
+        select(UserGamePlatform).where(UserGamePlatform.user_game_id == user_game_id)
+    ).all()
+    
+    return platforms
+
+
+@router.post("/{user_game_id}/platforms", response_model=UserGamePlatformResponse, status_code=status.HTTP_201_CREATED)
+async def add_platform_to_user_game(
+    user_game_id: str,
+    platform_data: UserGamePlatformCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Add a platform association to a user game."""
+    
+    # Verify user owns this game
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
+    # Check if platform exists
+    platform = session.get(Platform, platform_data.platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Check if storefront exists (if provided)
+    if platform_data.storefront_id:
+        storefront = session.get(Storefront, platform_data.storefront_id)
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Storefront not found"
+            )
+    
+    # Check if association already exists
+    existing_platform = session.exec(
+        select(UserGamePlatform).where(
+            and_(
+                UserGamePlatform.user_game_id == user_game_id,
+                UserGamePlatform.platform_id == platform_data.platform_id
+            )
+        )
+    ).first()
+    
+    if existing_platform:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Platform is already associated with this game"
+        )
+    
+    new_platform = UserGamePlatform(
+        user_game_id=user_game_id,
+        platform_id=platform_data.platform_id,
+        storefront_id=platform_data.storefront_id,
+        store_game_id=platform_data.store_game_id,
+        store_url=str(platform_data.store_url) if platform_data.store_url else None
+    )
+    
+    session.add(new_platform)
+    session.commit()
+    session.refresh(new_platform)
+    
+    return new_platform
+
+
+@router.delete("/{user_game_id}/platforms/{platform_association_id}", response_model=SuccessResponse)
+async def remove_platform_from_user_game(
+    user_game_id: str,
+    platform_association_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Remove a platform association from a user game."""
+    
+    # Verify user owns this game and platform association
+    platform_assoc = session.exec(
+        select(UserGamePlatform).join(UserGame).where(
+            and_(
+                UserGamePlatform.id == platform_association_id,
+                UserGamePlatform.user_game_id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not platform_assoc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform association not found"
+        )
+    
+    session.delete(platform_assoc)
+    session.commit()
+    
+    return SuccessResponse(message="Platform association removed")
+
+
+@router.put("/bulk-update", response_model=SuccessResponse)
+async def bulk_update_user_games(
+    bulk_data: BulkStatusUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Bulk update multiple user games."""
+    
+    if not bulk_data.user_game_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No user game IDs provided"
+        )
+    
+    # Get user games to update
+    user_games = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id.in_(bulk_data.user_game_ids),
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).all()
+    
+    if len(user_games) != len(bulk_data.user_game_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Some user games not found or don't belong to you"
+        )
+    
+    # Apply updates
+    update_count = 0
+    for user_game in user_games:
+        updated = False
+        
+        if bulk_data.play_status is not None:
+            user_game.play_status = bulk_data.play_status
+            updated = True
+        
+        if bulk_data.personal_rating is not None:
+            user_game.personal_rating = bulk_data.personal_rating
+            updated = True
+        
+        if bulk_data.is_loved is not None:
+            user_game.is_loved = bulk_data.is_loved
+            updated = True
+        
+        if updated:
+            user_game.updated_at = datetime.now(timezone.utc)
+            update_count += 1
+    
+    session.commit()
+    
+    return SuccessResponse(message=f"Updated {update_count} games")
+
+
+@router.get("/stats", response_model=CollectionStatsResponse)
+async def get_collection_stats(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get user's collection statistics."""
+    
+    # Total games
+    total_games = session.exec(
+        select(func.count()).where(UserGame.user_id == current_user.id)
+    ).one()
+    
+    # Games by status
+    status_counts = {}
+    for status in PlayStatus:
+        count = session.exec(
+            select(func.count()).where(
+                and_(
+                    UserGame.user_id == current_user.id,
+                    UserGame.play_status == status
+                )
+            )
+        ).one()
+        status_counts[status] = count
+    
+    # Platform counts
+    platform_counts = session.exec(
+        select(Platform.display_name, func.count()).
+        join(UserGamePlatform).
+        join(UserGame).
+        where(UserGame.user_id == current_user.id).
+        group_by(Platform.id, Platform.display_name)
+    ).all()
+    
+    # Rating distribution
+    rating_counts = session.exec(
+        select(UserGame.personal_rating, func.count()).
+        where(
+            and_(
+                UserGame.user_id == current_user.id,
+                UserGame.personal_rating.is_not(None)
+            )
+        ).
+        group_by(UserGame.personal_rating)
+    ).all()
+    
+    # Calculate metrics
+    pile_of_shame = status_counts.get(PlayStatus.NOT_STARTED, 0)
+    completed_games = (
+        status_counts.get(PlayStatus.COMPLETED, 0) +
+        status_counts.get(PlayStatus.MASTERED, 0) +
+        status_counts.get(PlayStatus.DOMINATED, 0)
+    )
+    completion_rate = (completed_games / total_games * 100) if total_games > 0 else 0
+    
+    # Average rating
+    avg_rating_result = session.exec(
+        select(func.avg(UserGame.personal_rating)).
+        where(
+            and_(
+                UserGame.user_id == current_user.id,
+                UserGame.personal_rating.is_not(None)
+            )
+        )
+    ).one()
+    
+    # Total hours played
+    total_hours = session.exec(
+        select(func.sum(UserGame.hours_played)).
+        where(UserGame.user_id == current_user.id)
+    ).one() or 0
+    
+    return CollectionStatsResponse(
+        total_games=total_games,
+        by_status=status_counts,
+        by_platform={name: count for name, count in platform_counts},
+        by_rating={str(rating): count for rating, count in rating_counts},
+        pile_of_shame=pile_of_shame,
+        completion_rate=round(completion_rate, 2),
+        average_rating=float(avg_rating_result) if avg_rating_result else None,
+        total_hours_played=total_hours
+    )

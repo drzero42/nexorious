@@ -5,8 +5,9 @@ User management models for authentication and user data.
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 from datetime import datetime
-from pydantic import EmailStr
+from pydantic import EmailStr, computed_field
 import uuid
+import json
 
 
 class User(SQLModel, table=True):
@@ -22,9 +23,20 @@ class User(SQLModel, table=True):
     last_name: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
-    preferences: str = Field(default="{}")  # JSON string for user preferences
+    preferences_json: str = Field(default="{}", alias="preferences")  # JSON string for user preferences
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    @computed_field
+    @property
+    def preferences(self) -> dict:
+        """Convert JSON string to dictionary for API responses."""
+        try:
+            if self.preferences_json is None or self.preferences_json == "":
+                return {}
+            return json.loads(self.preferences_json)
+        except (json.JSONDecodeError, TypeError):
+            return {}
     
     # Relationships
     sessions: List["UserSession"] = Relationship(back_populates="user")

@@ -1,0 +1,74 @@
+"""
+Platform and storefront-related schemas for API requests and responses.
+"""
+
+from pydantic import BaseModel, Field, HttpUrl
+from typing import Optional, List
+from .common import TimestampMixin
+
+
+class PlatformCreateRequest(BaseModel):
+    """Request schema for creating a platform."""
+    name: str = Field(..., max_length=100, description="Platform name (unique identifier)")
+    display_name: str = Field(..., max_length=100, description="Display name for platform")
+    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
+
+
+class PlatformUpdateRequest(BaseModel):
+    """Request schema for updating a platform."""
+    display_name: Optional[str] = Field(None, max_length=100, description="Display name for platform")
+    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
+    is_active: Optional[bool] = Field(None, description="Whether platform is active")
+
+
+class PlatformResponse(BaseModel, TimestampMixin):
+    """Response schema for platform data."""
+    id: str
+    name: str
+    display_name: str
+    icon_url: Optional[str]
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class StorefrontCreateRequest(BaseModel):
+    """Request schema for creating a storefront."""
+    name: str = Field(..., max_length=100, description="Storefront name (unique identifier)")
+    display_name: str = Field(..., max_length=100, description="Display name for storefront")
+    icon_url: Optional[HttpUrl] = Field(None, description="Storefront icon URL")
+    base_url: Optional[HttpUrl] = Field(None, description="Base URL for storefront")
+
+
+class StorefrontUpdateRequest(BaseModel):
+    """Request schema for updating a storefront."""
+    display_name: Optional[str] = Field(None, max_length=100, description="Display name for storefront")
+    icon_url: Optional[HttpUrl] = Field(None, description="Storefront icon URL")
+    base_url: Optional[HttpUrl] = Field(None, description="Base URL for storefront")
+    is_active: Optional[bool] = Field(None, description="Whether storefront is active")
+
+
+class StorefrontResponse(BaseModel, TimestampMixin):
+    """Response schema for storefront data."""
+    id: str
+    name: str
+    display_name: str
+    icon_url: Optional[str]
+    base_url: Optional[str]
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PlatformListResponse(BaseModel):
+    """Response schema for platform list."""
+    platforms: List[PlatformResponse]
+    total: int
+
+
+class StorefrontListResponse(BaseModel):
+    """Response schema for storefront list."""
+    storefronts: List[StorefrontResponse]
+    total: int
