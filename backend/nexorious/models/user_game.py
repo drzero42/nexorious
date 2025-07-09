@@ -4,7 +4,7 @@ User game collection models for ownership and progress tracking.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from enum import Enum
 import uuid
@@ -48,8 +48,8 @@ class UserGame(SQLModel, table=True):
     personal_notes: Optional[str] = Field(default=None)
     acquired_date: Optional[date] = Field(default=None)
     last_played: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user: "User" = Relationship(back_populates="user_games")
@@ -75,7 +75,7 @@ class UserGamePlatform(SQLModel, table=True):
     store_game_id: Optional[str] = Field(default=None, max_length=200)
     store_url: Optional[str] = Field(default=None, max_length=500)
     is_available: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user_game: UserGame = Relationship(back_populates="platforms")

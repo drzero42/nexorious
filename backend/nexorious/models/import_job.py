@@ -4,7 +4,7 @@ Import job model for tracking bulk data operations.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import uuid
 
@@ -41,7 +41,7 @@ class ImportJob(SQLModel, table=True):
     failed_records: int = Field(default=0)
     error_log: str = Field(default="[]")  # JSON string for error details
     job_metadata: str = Field(default="{}")  # JSON string for import-specific metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = Field(default=None)
     
     # Relationships

@@ -43,7 +43,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.1.4 External API Integration
 - [x] IGDB API integration for game metadata
-- [ ] Game search functionality with fuzzy matching
+- [x] Game search functionality with fuzzy matching
 - [ ] Metadata population and refresh capabilities
 - [ ] Cover art download and storage
 - [ ] How Long to Beat integration

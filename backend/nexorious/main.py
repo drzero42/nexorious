@@ -86,14 +86,18 @@ async def http_exception_handler(request, exc: HTTPException):
         }
     )
 
-@app.exception_handler(500)
-async def internal_server_error_handler(request, exc):
+@app.exception_handler(Exception)
+async def internal_server_error_handler(request, exc: Exception):
     """Handle internal server errors"""
+    # Don't handle HTTPExceptions here - they should be handled by the HTTPException handler
+    if isinstance(exc, HTTPException):
+        raise exc
+    
     logger.error(f"Internal server error: {exc}")
     return JSONResponse(
         status_code=500,
         content={
-            "error": "Internal server error",
+            "error": f"Internal server error: {str(exc)}",
             "status_code": 500
         }
     )

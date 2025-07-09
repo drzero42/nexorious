@@ -4,7 +4,7 @@ User management models for authentication and user data.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import EmailStr, computed_field
 import uuid
 import json
@@ -24,8 +24,8 @@ class User(SQLModel, table=True):
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
     preferences_json: str = Field(default="{}", alias="preferences")  # JSON string for user preferences
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     @computed_field
     @property
@@ -56,7 +56,7 @@ class UserSession(SQLModel, table=True):
     token_hash: str = Field(index=True, max_length=255)
     refresh_token_hash: str = Field(max_length=255)
     expires_at: datetime
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     user_agent: Optional[str] = Field(default=None)
     ip_address: Optional[str] = Field(default=None, max_length=45)
     

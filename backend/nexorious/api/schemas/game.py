@@ -2,7 +2,7 @@
 Game-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 from .common import TimestampMixin
@@ -55,7 +55,7 @@ class GameResponse(BaseModel, TimestampMixin):
     cover_art_url: Optional[str]
     rating_average: Optional[float]
     rating_count: int
-    metadata: Dict[str, Any]
+    game_metadata: str
     estimated_playtime_hours: Optional[int]
     howlongtobeat_main: Optional[int]
     howlongtobeat_extra: Optional[int]
@@ -63,8 +63,7 @@ class GameResponse(BaseModel, TimestampMixin):
     igdb_id: Optional[str]
     is_verified: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GameSearchRequest(BaseModel):
@@ -93,8 +92,7 @@ class GameAliasResponse(BaseModel):
     source: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IGDBSearchRequest(BaseModel):

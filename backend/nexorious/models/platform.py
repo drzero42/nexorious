@@ -4,7 +4,7 @@ Platform and storefront models for gaming platforms and digital stores.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -18,8 +18,8 @@ class Platform(SQLModel, table=True):
     display_name: str = Field(max_length=100)
     icon_url: Optional[str] = Field(default=None, max_length=500)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user_game_platforms: List["UserGamePlatform"] = Relationship(back_populates="platform")
@@ -36,8 +36,8 @@ class Storefront(SQLModel, table=True):
     icon_url: Optional[str] = Field(default=None, max_length=500)
     base_url: Optional[str] = Field(default=None, max_length=500)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user_game_platforms: List["UserGamePlatform"] = Relationship(back_populates="storefront")

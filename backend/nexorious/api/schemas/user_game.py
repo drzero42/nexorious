@@ -2,7 +2,7 @@
 User game collection-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from typing import Optional, List
 from datetime import date, datetime
 from enum import Enum
@@ -76,8 +76,7 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     store_url: Optional[str]
     is_available: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserGameResponse(BaseModel, TimestampMixin):
@@ -96,8 +95,7 @@ class UserGameResponse(BaseModel, TimestampMixin):
     last_played: Optional[datetime]
     platforms: List[UserGamePlatformResponse]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserGameListRequest(BaseModel):

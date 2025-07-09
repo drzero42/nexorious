@@ -2,7 +2,7 @@
 Platform and storefront-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from typing import Optional, List
 from .common import TimestampMixin
 
@@ -29,8 +29,7 @@ class PlatformResponse(BaseModel, TimestampMixin):
     icon_url: Optional[str]
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StorefrontCreateRequest(BaseModel):
@@ -58,8 +57,7 @@ class StorefrontResponse(BaseModel, TimestampMixin):
     base_url: Optional[str]
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlatformListResponse(BaseModel):

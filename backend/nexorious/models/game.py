@@ -4,7 +4,7 @@ Game metadata models with IGDB integration support.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 import uuid
 
@@ -37,8 +37,8 @@ class Game(SQLModel, table=True):
     igdb_id: Optional[str] = Field(default=None, index=True, max_length=50)
     is_verified: bool = Field(default=False)
     
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     aliases: List["GameAlias"] = Relationship(back_populates="game")
@@ -55,7 +55,7 @@ class GameAlias(SQLModel, table=True):
     game_id: str = Field(foreign_key="games.id", index=True)
     alias_title: str = Field(index=True, max_length=500)
     source: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     game: Game = Relationship(back_populates="aliases")
