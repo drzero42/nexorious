@@ -42,7 +42,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Bulk operations endpoints
 
 #### 1.1.4 External API Integration
-- [ ] IGDB API integration for game metadata
+- [x] IGDB API integration for game metadata
 - [ ] Game search functionality with fuzzy matching
 - [ ] Metadata population and refresh capabilities
 - [ ] Cover art download and storage
