@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import httpx
 from igdb.wrapper import IGDBWrapper
+from rapidfuzz import fuzz, process
 
 from nexorious.core.config import settings
 
@@ -112,21 +113,21 @@ class IGDBService:
             self._wrapper = IGDBWrapper(self.client_id, access_token)
         return self._wrapper
     
-    async def search_games(self, query: str, limit: int = 10) -> List[GameMetadata]:
-        """Search for games by title."""
+    async def search_games(self, query: str, limit: int = 10, fuzzy_threshold: float = 0.6) -> List[GameMetadata]:
+        """Search for games by title with fuzzy matching."""
         if not query.strip():
             return []
         
         try:
             wrapper = await self._get_wrapper()
             
-            # Construct IGDB query for game search
+            # First, try exact/close search with IGDB's built-in search
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
                        first_release_date, cover.image_id, rating, rating_count;
                 search "{query.strip()}";
-                limit {limit};
+                limit {limit * 2};
             '''
             
             # Execute search in thread pool to avoid blocking
@@ -146,12 +147,57 @@ class IGDBService:
                 if metadata:
                     games.append(metadata)
             
+            # Apply fuzzy matching and ranking
+            if games:
+                games = self._rank_games_by_fuzzy_match(games, query, fuzzy_threshold)
+                games = games[:limit]  # Limit results after ranking
+            
             logger.info(f"Found {len(games)} games for query: {query}")
             return games
             
         except Exception as e:
             logger.error(f"Error searching games: {e}")
             raise IGDBError(f"Failed to search games: {e}")
+    
+    def _rank_games_by_fuzzy_match(self, games: List[GameMetadata], query: str, threshold: float = 0.6) -> List[GameMetadata]:
+        """Rank games by fuzzy matching similarity to query."""
+        if not games or not query.strip():
+            return games
+        
+        query_lower = query.lower().strip()
+        
+        # Calculate similarity scores for each game
+        scored_games = []
+        for game in games:
+            # Calculate multiple similarity scores
+            title_lower = game.title.lower()
+            
+            # Different matching strategies
+            exact_score = 1.0 if query_lower == title_lower else 0.0
+            ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
+            partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
+            token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
+            token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
+            
+            # Calculate weighted final score
+            final_score = max(
+                exact_score * 1.0,  # Exact match gets highest priority
+                ratio_score * 0.9,  # Overall similarity
+                partial_score * 0.8,  # Partial match
+                token_sort_score * 0.7,  # Token order similarity
+                token_set_score * 0.6  # Token set similarity
+            )
+            
+            # Only include games above threshold
+            if final_score >= threshold:
+                scored_games.append((game, final_score))
+        
+        # Sort by score (descending) and return games
+        scored_games.sort(key=lambda x: x[1], reverse=True)
+        
+        logger.debug(f"Fuzzy matching results for '{query}': {[(g.title, s) for g, s in scored_games[:5]]}")
+        
+        return [game for game, score in scored_games]
     
     async def get_game_by_id(self, igdb_id: str) -> Optional[GameMetadata]:
         """Get game metadata by IGDB ID."""

@@ -4,7 +4,7 @@ Game management endpoints for CRUD operations and metadata handling.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, or_, and_, func
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import json
 import re
 from typing import Annotated, Optional, List
@@ -13,6 +13,8 @@ from ..core.database import get_session
 from ..core.security import get_current_user, get_current_admin_user
 from ..models.user import User
 from ..models.game import Game, GameAlias
+from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
+from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.game import (
     GameCreateRequest,
     GameUpdateRequest,
@@ -35,6 +37,25 @@ def create_slug(title: str) -> str:
     slug = re.sub(r'[^\w\s-]', '', title.lower())
     slug = re.sub(r'[-\s]+', '-', slug)
     return slug.strip('-')
+
+
+def parse_date_string(date_string: Optional[str]) -> Optional[date]:
+    """Parse a date string into a Python date object."""
+    if not date_string:
+        return None
+    
+    try:
+        # Handle YYYY-MM-DD format
+        if len(date_string) == 10 and date_string.count('-') == 2:
+            year, month, day = date_string.split('-')
+            return date(int(year), int(month), int(day))
+        # Handle YYYY format
+        elif len(date_string) == 4:
+            return date(int(date_string), 1, 1)
+        else:
+            return None
+    except (ValueError, TypeError):
+        return None
 
 
 def ensure_unique_slug(session: Session, base_slug: str, game_id: Optional[str] = None) -> str:
@@ -364,43 +385,149 @@ async def delete_game_alias(
 async def search_igdb(
     search_data: IGDBSearchRequest,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Search for games in IGDB database."""
+    """Search for games in IGDB database with fuzzy matching."""
     
-    # TODO: Implement IGDB API integration
-    # For now, return mock data
-    mock_candidates = [
-        IGDBGameCandidate(
-            igdb_id="12345",
-            title=f"{search_data.title} (Mock Result)",
-            release_date=None,
-            cover_art_url=None,
-            description="This is a mock IGDB search result. IGDB integration is not yet implemented.",
-            platforms=["PC", "PlayStation 5", "Xbox Series X/S"]
+    try:
+        # Search games using IGDB service with fuzzy matching
+        game_metadata_list = await igdb_service.search_games(
+            query=search_data.title,
+            limit=search_data.limit or 10,
+            fuzzy_threshold=0.6
         )
-    ]
-    
-    return IGDBSearchResponse(
-        candidates=mock_candidates,
-        total=1
-    )
+        
+        # Convert GameMetadata objects to IGDBGameCandidate objects
+        candidates = []
+        for metadata in game_metadata_list:
+            # Extract platform info from metadata if available
+            platforms = []
+            if metadata.description:
+                # Basic platform extraction - these are actual platforms, not storefronts
+                platform_keywords = ["PC", "PlayStation", "Xbox", "Nintendo", "Switch", "Steam Deck", "Mac", "Linux"]
+                for keyword in platform_keywords:
+                    if keyword.lower() in metadata.description.lower():
+                        platforms.append(keyword)
+            
+            if not platforms:
+                platforms = ["PC"]  # Default platform
+            
+            candidate = IGDBGameCandidate(
+                igdb_id=metadata.igdb_id,
+                title=metadata.title,
+                release_date=metadata.release_date,
+                cover_art_url=metadata.cover_art_url,
+                description=metadata.description,
+                platforms=platforms
+            )
+            candidates.append(candidate)
+        
+        return IGDBSearchResponse(
+            candidates=candidates,
+            total=len(candidates)
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPException as-is
+        raise
+    except TwitchAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"IGDB authentication failed: {str(e)}"
+        )
+    except IGDBError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"IGDB API error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @router.post("/igdb-import", response_model=GameResponse, status_code=status.HTTP_201_CREATED)
 async def import_from_igdb(
     import_data: GameMetadataAcceptRequest,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
     """Import a game from IGDB with accepted metadata."""
     
-    # TODO: Implement IGDB metadata retrieval and game creation
-    # For now, return error indicating feature is not yet implemented
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="IGDB integration is not yet implemented. Please create games manually."
-    )
+    try:
+        # Retrieve full game metadata from IGDB
+        game_metadata = await igdb_service.get_game_by_id(import_data.igdb_id)
+        
+        if not game_metadata:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Game not found in IGDB"
+            )
+        
+        # Check if game already exists in our database
+        existing_game = session.exec(
+            select(Game).where(Game.igdb_id == import_data.igdb_id)
+        ).first()
+        
+        if existing_game:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Game already exists in database"
+            )
+        
+        # Create game from IGDB metadata
+        game_data = {
+            "title": game_metadata.title,
+            "slug": game_metadata.slug,
+            "description": game_metadata.description,
+            "genre": game_metadata.genre,
+            "developer": game_metadata.developer,
+            "publisher": game_metadata.publisher,
+            "release_date": parse_date_string(game_metadata.release_date),
+            "cover_art_url": game_metadata.cover_art_url,
+            "rating_average": game_metadata.rating_average,
+            "rating_count": game_metadata.rating_count or 0,
+            "estimated_playtime_hours": game_metadata.estimated_playtime_hours,
+            "igdb_id": game_metadata.igdb_id,
+            "game_metadata": "{}",
+            "is_verified": True  # Games imported from IGDB are considered verified
+        }
+        
+        # Apply any custom overrides from the user
+        if import_data.custom_overrides:
+            for key, value in import_data.custom_overrides.items():
+                if key in game_data and value is not None:
+                    game_data[key] = value
+        
+        # Create the game
+        new_game = Game(**game_data)
+        session.add(new_game)
+        session.commit()
+        session.refresh(new_game)
+        
+        return GameResponse.model_validate(new_game)
+        
+    except HTTPException:
+        # Re-raise HTTPException as-is (e.g., 404 Game not found)
+        raise
+    except TwitchAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"IGDB authentication failed: {str(e)}"
+        )
+    except IGDBError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"IGDB API error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @router.put("/{game_id}/verify", response_model=GameResponse)

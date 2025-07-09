@@ -4,7 +4,7 @@ Tagging system models for game organization and categorization.
 
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -18,8 +18,8 @@ class Tag(SQLModel, table=True):
     name: str = Field(max_length=100)
     color: str = Field(default="#6B7280", max_length=7)  # Hex color code
     description: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user: "User" = Relationship(back_populates="tags")
@@ -39,7 +39,7 @@ class UserGameTag(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_game_id: str = Field(foreign_key="user_games.id", index=True)
     tag_id: str = Field(foreign_key="tags.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user_game: "UserGame" = Relationship(back_populates="tags")
