@@ -43,6 +43,12 @@ class Settings(BaseSettings):
         description="IGDB API Access Token (Twitch Bearer Token)"
     )
     
+    # Storage
+    storage_path: Optional[str] = Field(
+        default="storage",
+        description="Path for local file storage"
+    )
+    
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
 

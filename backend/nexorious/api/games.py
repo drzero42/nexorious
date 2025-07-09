@@ -7,6 +7,7 @@ from sqlmodel import Session, select, or_, and_, func
 from datetime import datetime, timezone, date
 import json
 import re
+import logging
 from typing import Annotated, Optional, List
 
 from ..core.database import get_session
@@ -25,11 +26,20 @@ from ..api.schemas.game import (
     IGDBSearchRequest,
     IGDBGameCandidate,
     IGDBSearchResponse,
-    GameMetadataAcceptRequest
+    GameMetadataAcceptRequest,
+    MetadataStatusResponse,
+    MetadataRefreshRequest,
+    MetadataRefreshResponse,
+    MetadataPopulateRequest,
+    MetadataPopulateResponse,
+    MetadataComparisonResponse,
+    BulkMetadataRequest,
+    BulkMetadataResponse
 )
 from ..api.schemas.common import SuccessResponse, PaginationParams
 
 router = APIRouter(prefix="/games", tags=["Games"])
+logger = logging.getLogger(__name__)
 
 
 def create_slug(title: str) -> str:
@@ -453,7 +463,8 @@ async def import_from_igdb(
     import_data: GameMetadataAcceptRequest,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
-    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency),
+    download_cover_art: bool = Query(default=False, description="Automatically download cover art during import")
 ):
     """Import a game from IGDB with accepted metadata."""
     
@@ -508,6 +519,21 @@ async def import_from_igdb(
         session.commit()
         session.refresh(new_game)
         
+        # Download cover art if requested and available
+        if download_cover_art and game_metadata.cover_art_url:
+            try:
+                local_url = await igdb_service.download_and_store_cover_art(
+                    game_metadata.igdb_id, 
+                    game_metadata.cover_art_url
+                )
+                if local_url:
+                    new_game.cover_art_url = local_url
+                    session.commit()
+                    session.refresh(new_game)
+            except Exception as e:
+                # Log the error but don't fail the import
+                logger.error(f"Failed to download cover art for game {new_game.id}: {e}")
+        
         return GameResponse.model_validate(new_game)
         
     except HTTPException:
@@ -551,3 +577,489 @@ async def verify_game(
     session.refresh(game)
     
     return game
+
+
+@router.get("/{game_id}/metadata/status", response_model=MetadataStatusResponse)
+async def get_metadata_status(
+    game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+):
+    """Get metadata completeness status for a game."""
+    
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found"
+        )
+    
+    # Create GameMetadata object from game data
+    from ..services.igdb import GameMetadata
+    
+    game_metadata = GameMetadata(
+        igdb_id=game.igdb_id or "",
+        title=game.title,
+        slug=game.slug,
+        description=game.description,
+        genre=game.genre,
+        developer=game.developer,
+        publisher=game.publisher,
+        release_date=game.release_date.isoformat() if game.release_date else None,
+        cover_art_url=game.cover_art_url,
+        rating_average=float(game.rating_average) if game.rating_average else None,
+        rating_count=game.rating_count,
+        estimated_playtime_hours=game.estimated_playtime_hours
+    )
+    
+    try:
+        status_data = await igdb_service.get_metadata_completeness(game_metadata)
+        return MetadataStatusResponse(**status_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to analyze metadata status: {str(e)}"
+        )
+
+
+@router.post("/{game_id}/metadata/refresh", response_model=MetadataRefreshResponse)
+async def refresh_game_metadata(
+    game_id: str,
+    refresh_request: MetadataRefreshRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+):
+    """Refresh game metadata from IGDB."""
+    
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found"
+        )
+    
+    if not game.igdb_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Game does not have IGDB ID"
+        )
+    
+    # Check permissions - only admin or unverified games can be refreshed
+    if not current_user.is_admin and game.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot refresh metadata for verified games. Only administrators can refresh verified games."
+        )
+    
+    try:
+        fresh_metadata = await igdb_service.refresh_game_metadata(game.igdb_id)
+        if not fresh_metadata:
+            return MetadataRefreshResponse(
+                success=False,
+                updated_fields=[],
+                errors=["Failed to retrieve fresh metadata from IGDB"],
+                game=GameResponse.model_validate(game)
+            )
+        
+        # Update game with fresh metadata
+        updated_fields = []
+        errors = []
+        
+        fields_to_refresh = refresh_request.fields or [
+            'title', 'description', 'genre', 'developer', 'publisher',
+            'release_date', 'cover_art_url', 'rating_average', 'rating_count'
+        ]
+        
+        for field in fields_to_refresh:
+            if hasattr(fresh_metadata, field):
+                fresh_value = getattr(fresh_metadata, field)
+                current_value = getattr(game, field, None)
+                
+                if fresh_value and (refresh_request.force or not current_value):
+                    if field == 'release_date':
+                        setattr(game, field, parse_date_string(fresh_value))
+                    elif field == 'rating_average':
+                        setattr(game, field, fresh_value)
+                    else:
+                        setattr(game, field, fresh_value)
+                    updated_fields.append(field)
+        
+        game.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(game)
+        
+        return MetadataRefreshResponse(
+            success=True,
+            updated_fields=updated_fields,
+            errors=errors,
+            game=GameResponse.model_validate(game)
+        )
+        
+    except Exception as e:
+        return MetadataRefreshResponse(
+            success=False,
+            updated_fields=[],
+            errors=[f"Failed to refresh metadata: {str(e)}"],
+            game=GameResponse.model_validate(game)
+        )
+
+
+@router.post("/{game_id}/metadata/populate", response_model=MetadataPopulateResponse)
+async def populate_game_metadata(
+    game_id: str,
+    populate_request: MetadataPopulateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+):
+    """Populate missing metadata fields for a game."""
+    
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found"
+        )
+    
+    if not game.igdb_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Game does not have IGDB ID"
+        )
+    
+    # Check permissions - only admin or unverified games can be populated
+    if not current_user.is_admin and game.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot populate metadata for verified games. Only administrators can modify verified games."
+        )
+    
+    try:
+        # Create current metadata object
+        from ..services.igdb import GameMetadata
+        
+        current_metadata = GameMetadata(
+            igdb_id=game.igdb_id,
+            title=game.title,
+            slug=game.slug,
+            description=game.description,
+            genre=game.genre,
+            developer=game.developer,
+            publisher=game.publisher,
+            release_date=game.release_date.isoformat() if game.release_date else None,
+            cover_art_url=game.cover_art_url,
+            rating_average=float(game.rating_average) if game.rating_average else None,
+            rating_count=game.rating_count,
+            estimated_playtime_hours=game.estimated_playtime_hours
+        )
+        
+        updated_metadata = await igdb_service.populate_missing_metadata(current_metadata, game.igdb_id)
+        if not updated_metadata:
+            return MetadataPopulateResponse(
+                success=False,
+                populated_fields=[],
+                errors=["Failed to populate metadata from IGDB"],
+                game=GameResponse.model_validate(game)
+            )
+        
+        # Update game with populated metadata
+        populated_fields = []
+        errors = []
+        
+        fields_to_populate = populate_request.fields or [
+            'title', 'description', 'genre', 'developer', 'publisher',
+            'release_date', 'cover_art_url', 'rating_average', 'rating_count'
+        ]
+        
+        for field in fields_to_populate:
+            if hasattr(updated_metadata, field):
+                updated_value = getattr(updated_metadata, field)
+                current_value = getattr(game, field, None)
+                
+                # Only populate if missing (or if not populate_missing_only)
+                if updated_value and (not populate_request.populate_missing_only or not current_value):
+                    if field == 'release_date':
+                        setattr(game, field, parse_date_string(updated_value))
+                    elif field == 'rating_average':
+                        setattr(game, field, updated_value)
+                    else:
+                        setattr(game, field, updated_value)
+                    populated_fields.append(field)
+        
+        game.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(game)
+        
+        return MetadataPopulateResponse(
+            success=True,
+            populated_fields=populated_fields,
+            errors=errors,
+            game=GameResponse.model_validate(game)
+        )
+        
+    except Exception as e:
+        return MetadataPopulateResponse(
+            success=False,
+            populated_fields=[],
+            errors=[f"Failed to populate metadata: {str(e)}"],
+            game=GameResponse.model_validate(game)
+        )
+
+
+@router.post("/metadata/bulk", response_model=BulkMetadataResponse)
+async def bulk_metadata_operation(
+    bulk_request: BulkMetadataRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+):
+    """Perform bulk metadata operations on multiple games."""
+    
+    # Only admin can perform bulk operations
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can perform bulk metadata operations"
+        )
+    
+    results = []
+    errors = []
+    successful_operations = 0
+    
+    for game_id in bulk_request.game_ids:
+        try:
+            game = session.get(Game, game_id)
+            if not game:
+                errors.append(f"Game {game_id} not found")
+                continue
+            
+            if not game.igdb_id:
+                errors.append(f"Game {game_id} does not have IGDB ID")
+                continue
+            
+            result = {"game_id": game_id, "success": False, "fields": []}
+            
+            if bulk_request.operation == "refresh":
+                fresh_metadata = await igdb_service.refresh_game_metadata(game.igdb_id)
+                if fresh_metadata:
+                    # Update all fields
+                    updated_fields = []
+                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url']:
+                        fresh_value = getattr(fresh_metadata, field)
+                        if fresh_value:
+                            setattr(game, field, fresh_value)
+                            updated_fields.append(field)
+                    
+                    if fresh_metadata.release_date:
+                        game.release_date = parse_date_string(fresh_metadata.release_date)
+                        updated_fields.append('release_date')
+                    
+                    if fresh_metadata.rating_average:
+                        game.rating_average = fresh_metadata.rating_average
+                        updated_fields.append('rating_average')
+                    
+                    game.rating_count = fresh_metadata.rating_count or 0
+                    updated_fields.append('rating_count')
+                    
+                    result["success"] = True
+                    result["fields"] = updated_fields
+                    successful_operations += 1
+                    
+            elif bulk_request.operation == "populate":
+                # Create current metadata object
+                from ..services.igdb import GameMetadata
+                
+                current_metadata = GameMetadata(
+                    igdb_id=game.igdb_id,
+                    title=game.title,
+                    slug=game.slug,
+                    description=game.description,
+                    genre=game.genre,
+                    developer=game.developer,
+                    publisher=game.publisher,
+                    release_date=game.release_date.isoformat() if game.release_date else None,
+                    cover_art_url=game.cover_art_url,
+                    rating_average=float(game.rating_average) if game.rating_average else None,
+                    rating_count=game.rating_count,
+                    estimated_playtime_hours=game.estimated_playtime_hours
+                )
+                
+                updated_metadata = await igdb_service.populate_missing_metadata(current_metadata, game.igdb_id)
+                if updated_metadata:
+                    populated_fields = []
+                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url']:
+                        current_value = getattr(game, field, None)
+                        updated_value = getattr(updated_metadata, field)
+                        if updated_value and not current_value:
+                            setattr(game, field, updated_value)
+                            populated_fields.append(field)
+                    
+                    if updated_metadata.release_date and not game.release_date:
+                        game.release_date = parse_date_string(updated_metadata.release_date)
+                        populated_fields.append('release_date')
+                    
+                    if updated_metadata.rating_average and not game.rating_average:
+                        game.rating_average = updated_metadata.rating_average
+                        populated_fields.append('rating_average')
+                    
+                    result["success"] = True
+                    result["fields"] = populated_fields
+                    successful_operations += 1
+            
+            game.updated_at = datetime.now(timezone.utc)
+            results.append(result)
+            
+        except Exception as e:
+            errors.append(f"Failed to process game {game_id}: {str(e)}")
+    
+    session.commit()
+    
+    return BulkMetadataResponse(
+        total_games=len(bulk_request.game_ids),
+        successful_operations=successful_operations,
+        failed_operations=len(bulk_request.game_ids) - successful_operations,
+        results=results,
+        errors=errors
+    )
+
+
+@router.post("/{game_id}/cover-art/download", response_model=SuccessResponse)
+async def download_game_cover_art(
+    game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
+):
+    """Download and store cover art locally for a game."""
+    
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found"
+        )
+    
+    if not game.igdb_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Game does not have IGDB ID"
+        )
+        
+    if not game.cover_art_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Game does not have cover art URL"
+        )
+    
+    # Check permissions - only admin or unverified games can have cover art downloaded
+    if not current_user.is_admin and game.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot download cover art for verified games. Only administrators can modify verified games."
+        )
+    
+    try:
+        local_url = await igdb_service.download_and_store_cover_art(game.igdb_id, game.cover_art_url)
+        
+        if local_url:
+            # Update game with local cover art URL
+            game.cover_art_url = local_url
+            game.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            
+            return SuccessResponse(
+                message=f"Cover art downloaded and stored successfully. Local URL: {local_url}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to download and store cover art"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error downloading cover art: {str(e)}"
+        )
+
+
+@router.post("/cover-art/bulk-download", response_model=BulkMetadataResponse)
+async def bulk_download_cover_art(
+    game_ids: List[str],
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency),
+    skip_existing: bool = Query(default=True, description="Skip games that already have local cover art")
+):
+    """Download and store cover art for multiple games."""
+    
+    # Only admin can perform bulk operations
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can perform bulk cover art downloads"
+        )
+    
+    results = []
+    errors = []
+    successful_operations = 0
+    
+    for game_id in game_ids:
+        try:
+            game = session.get(Game, game_id)
+            if not game:
+                errors.append(f"Game {game_id} not found")
+                continue
+            
+            if not game.igdb_id:
+                errors.append(f"Game {game_id} does not have IGDB ID")
+                continue
+            
+            if not game.cover_art_url:
+                errors.append(f"Game {game_id} does not have cover art URL")
+                continue
+            
+            # Skip if already has local cover art and skip_existing is True
+            if skip_existing and game.cover_art_url and game.cover_art_url.startswith("/static/"):
+                results.append({
+                    "game_id": game_id,
+                    "success": True,
+                    "fields": ["cover_art_url"],
+                    "message": "Already has local cover art"
+                })
+                successful_operations += 1
+                continue
+            
+            result = {"game_id": game_id, "success": False, "fields": []}
+            
+            # Download cover art
+            local_url = await igdb_service.download_and_store_cover_art(game.igdb_id, game.cover_art_url)
+            
+            if local_url:
+                # Update game with local cover art URL
+                game.cover_art_url = local_url
+                game.updated_at = datetime.now(timezone.utc)
+                
+                result["success"] = True
+                result["fields"] = ["cover_art_url"]
+                result["message"] = f"Cover art downloaded successfully"
+                successful_operations += 1
+            else:
+                result["message"] = "Failed to download cover art"
+                
+            results.append(result)
+            
+        except Exception as e:
+            errors.append(f"Failed to download cover art for game {game_id}: {str(e)}")
+    
+    session.commit()
+    
+    return BulkMetadataResponse(
+        total_games=len(game_ids),
+        successful_operations=successful_operations,
+        failed_operations=len(game_ids) - successful_operations,
+        results=results,
+        errors=errors
+    )
