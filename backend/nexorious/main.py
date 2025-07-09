@@ -2,7 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
 from .core.config import settings
 from .core.database import create_db_and_tables
 from .api.auth import router as auth_router
@@ -53,6 +55,11 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(games_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
+
+# Mount static files for cover art
+cover_art_path = os.path.join(settings.storage_path, "cover_art")
+os.makedirs(cover_art_path, exist_ok=True)
+app.mount("/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art")
 
 
 @app.get("/")

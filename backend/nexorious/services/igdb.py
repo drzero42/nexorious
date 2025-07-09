@@ -14,6 +14,7 @@ from igdb.wrapper import IGDBWrapper
 from rapidfuzz import fuzz, process
 
 from nexorious.core.config import settings
+from nexorious.services.storage import storage_service
 
 
 logger = logging.getLogger(__name__)
@@ -293,3 +294,115 @@ class IGDBService:
         except httpx.HTTPError as e:
             logger.error(f"Failed to download cover art from {cover_url}: {e}")
             return None
+    
+    async def download_and_store_cover_art(self, igdb_id: str, cover_url: str) -> Optional[str]:
+        """Download and store cover art locally. Returns local URL on success."""
+        if not cover_url or not igdb_id:
+            return None
+            
+        try:
+            local_url = await storage_service.download_and_store_cover_art(igdb_id, cover_url)
+            if local_url:
+                logger.info(f"Successfully stored cover art for IGDB ID {igdb_id}")
+                return local_url
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to store cover art for IGDB ID {igdb_id}: {e}")
+            return None
+    
+    async def refresh_game_metadata(self, igdb_id: str) -> Optional[GameMetadata]:
+        """Refresh game metadata from IGDB by ID."""
+        if not igdb_id:
+            return None
+        
+        try:
+            return await self.get_game_by_id(igdb_id)
+        except Exception as e:
+            logger.error(f"Failed to refresh metadata for IGDB ID {igdb_id}: {e}")
+            return None
+    
+    async def populate_missing_metadata(self, current_metadata: GameMetadata, igdb_id: str) -> Optional[GameMetadata]:
+        """Populate missing fields in existing metadata with IGDB data."""
+        if not igdb_id:
+            return None
+        
+        try:
+            # Get fresh metadata from IGDB
+            fresh_metadata = await self.get_game_by_id(igdb_id)
+            if not fresh_metadata:
+                return None
+            
+            # Create updated metadata by filling in missing fields
+            updated_metadata = GameMetadata(
+                igdb_id=current_metadata.igdb_id,
+                title=current_metadata.title or fresh_metadata.title,
+                slug=current_metadata.slug or fresh_metadata.slug,
+                description=current_metadata.description or fresh_metadata.description,
+                genre=current_metadata.genre or fresh_metadata.genre,
+                developer=current_metadata.developer or fresh_metadata.developer,
+                publisher=current_metadata.publisher or fresh_metadata.publisher,
+                release_date=current_metadata.release_date or fresh_metadata.release_date,
+                cover_art_url=current_metadata.cover_art_url or fresh_metadata.cover_art_url,
+                rating_average=current_metadata.rating_average or fresh_metadata.rating_average,
+                rating_count=current_metadata.rating_count or fresh_metadata.rating_count,
+                estimated_playtime_hours=current_metadata.estimated_playtime_hours or fresh_metadata.estimated_playtime_hours
+            )
+            
+            return updated_metadata
+            
+        except Exception as e:
+            logger.error(f"Failed to populate missing metadata for IGDB ID {igdb_id}: {e}")
+            return None
+    
+    def compare_metadata(self, current: GameMetadata, fresh: GameMetadata) -> dict:
+        """Compare current metadata with fresh IGDB data and return differences."""
+        differences = {}
+        
+        fields_to_compare = [
+            'title', 'slug', 'description', 'genre', 'developer', 'publisher',
+            'release_date', 'cover_art_url', 'rating_average', 'rating_count',
+            'estimated_playtime_hours'
+        ]
+        
+        for field in fields_to_compare:
+            current_value = getattr(current, field, None)
+            fresh_value = getattr(fresh, field, None)
+            
+            if current_value != fresh_value:
+                differences[field] = {
+                    'current': current_value,
+                    'fresh': fresh_value
+                }
+        
+        return differences
+    
+    async def get_metadata_completeness(self, metadata: GameMetadata) -> dict:
+        """Analyze metadata completeness and return missing fields."""
+        essential_fields = ['title', 'description', 'genre', 'developer', 'publisher', 'release_date']
+        optional_fields = ['cover_art_url', 'rating_average', 'rating_count', 'estimated_playtime_hours']
+        
+        missing_essential = []
+        missing_optional = []
+        
+        for field in essential_fields:
+            value = getattr(metadata, field, None)
+            if not value:
+                missing_essential.append(field)
+        
+        for field in optional_fields:
+            value = getattr(metadata, field, None)
+            if not value:
+                missing_optional.append(field)
+        
+        total_fields = len(essential_fields) + len(optional_fields)
+        filled_fields = total_fields - len(missing_essential) - len(missing_optional)
+        completeness_percentage = (filled_fields / total_fields) * 100
+        
+        return {
+            'completeness_percentage': round(completeness_percentage, 1),
+            'missing_essential': missing_essential,
+            'missing_optional': missing_optional,
+            'total_fields': total_fields,
+            'filled_fields': filled_fields
+        }

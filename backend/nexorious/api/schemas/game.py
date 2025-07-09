@@ -122,3 +122,63 @@ class GameMetadataAcceptRequest(BaseModel):
     igdb_id: str = Field(..., description="Selected IGDB game ID")
     accept_metadata: bool = Field(default=True, description="Whether to accept the metadata")
     custom_overrides: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Custom field overrides")
+
+
+class MetadataStatusResponse(BaseModel):
+    """Response schema for metadata completeness status."""
+    completeness_percentage: float
+    missing_essential: List[str]
+    missing_optional: List[str]
+    total_fields: int
+    filled_fields: int
+
+
+class MetadataRefreshRequest(BaseModel):
+    """Request schema for metadata refresh operations."""
+    fields: Optional[List[str]] = Field(default=None, description="Specific fields to refresh (if None, refresh all)")
+    force: bool = Field(default=False, description="Force refresh even if metadata is complete")
+
+
+class MetadataRefreshResponse(BaseModel):
+    """Response schema for metadata refresh operations."""
+    success: bool
+    updated_fields: List[str]
+    errors: List[str]
+    game: GameResponse
+
+
+class MetadataPopulateRequest(BaseModel):
+    """Request schema for metadata population operations."""
+    populate_missing_only: bool = Field(default=True, description="Only populate missing fields")
+    fields: Optional[List[str]] = Field(default=None, description="Specific fields to populate (if None, populate all missing)")
+
+
+class MetadataPopulateResponse(BaseModel):
+    """Response schema for metadata population operations."""
+    success: bool
+    populated_fields: List[str]
+    errors: List[str]
+    game: GameResponse
+
+
+class MetadataComparisonResponse(BaseModel):
+    """Response schema for metadata comparison."""
+    has_differences: bool
+    differences: Dict[str, Dict[str, Any]]
+    recommendations: List[str]
+
+
+class BulkMetadataRequest(BaseModel):
+    """Request schema for bulk metadata operations."""
+    game_ids: List[str] = Field(..., min_items=1, max_items=100, description="List of game IDs to process")
+    operation: str = Field(..., pattern="^(refresh|populate)$", description="Operation type")
+    options: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Operation-specific options")
+
+
+class BulkMetadataResponse(BaseModel):
+    """Response schema for bulk metadata operations."""
+    total_games: int
+    successful_operations: int
+    failed_operations: int
+    results: List[Dict[str, Any]]
+    errors: List[str]
