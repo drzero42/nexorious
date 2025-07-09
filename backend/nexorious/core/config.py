@@ -32,11 +32,15 @@ class Settings(BaseSettings):
     # External APIs
     igdb_client_id: Optional[str] = Field(
         default=None,
-        description="IGDB API Client ID"
+        description="IGDB API Client ID (Twitch Client ID)"
     )
     igdb_client_secret: Optional[str] = Field(
         default=None,
-        description="IGDB API Client Secret"
+        description="IGDB API Client Secret (Twitch Client Secret)"
+    )
+    igdb_access_token: Optional[str] = Field(
+        default=None,
+        description="IGDB API Access Token (Twitch Bearer Token)"
     )
     
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
