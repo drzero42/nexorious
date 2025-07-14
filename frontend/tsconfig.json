@@ -9,7 +9,24 @@
 		"skipLibCheck": true,
 		"sourceMap": true,
 		"strict": true,
-		"moduleResolution": "bundler"
+		"moduleResolution": "bundler",
+		"noImplicitAny": true,
+		"noImplicitReturns": true,
+		"noImplicitOverride": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitThis": true,
+		"noUncheckedIndexedAccess": true,
+		"declaration": true,
+		"declarationMap": true,
+		"incremental": true,
+		"removeComments": false,
+		"preserveConstEnums": true,
+		"allowUnreachableCode": false,
+		"allowUnusedLabels": false,
+		"isolatedModules": true,
+		"useDefineForClassFields": true
 	}
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files

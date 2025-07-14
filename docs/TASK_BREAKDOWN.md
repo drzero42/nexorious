@@ -52,7 +52,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Duration: 3-4 weeks**
 
 #### 1.2.1 SvelteKit Project Setup
-- [ ] Initialize SvelteKit project with TypeScript
+- [x] Initialize SvelteKit project with TypeScript
 - [ ] Configure Tailwind CSS for styling
 - [ ] Set up Svelte stores for state management
 - [ ] Implement PWA support with Workbox
