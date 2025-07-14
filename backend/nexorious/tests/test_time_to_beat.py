@@ -10,7 +10,7 @@ import json
 from nexorious.services.igdb import IGDBService, GameMetadata, map_igdb_time_to_beat_to_db_fields
 
 
-class TestTimeToBeartMapping:
+class TestTimeToBeatMapping:
     """Test the mapping of IGDB time-to-beat fields to database fields."""
     
     def test_map_igdb_time_to_beat_to_db_fields_all_fields(self):
