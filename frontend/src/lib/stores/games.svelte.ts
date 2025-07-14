@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { auth } from './auth.svelte.js';
 
 export interface Game {

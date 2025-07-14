@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { auth } from './auth.svelte.js';
 
 export interface Platform {
@@ -102,7 +101,7 @@ function createPlatformsStore() {
     return response;
   };
 
-  return {
+  const platformsStore = {
     get value() {
       return state;
     },
@@ -152,9 +151,10 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
+        const store = platformsStore;
         await Promise.all([
-          this.loadPlatforms(),
-          this.loadStorefronts()
+          store.loadPlatforms(),
+          store.loadStorefronts()
         ]);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load platforms and storefronts';
@@ -338,6 +338,8 @@ function createPlatformsStore() {
       state = { ...state, error: null };
     }
   };
+  
+  return platformsStore;
 }
 
 export const platforms = createPlatformsStore();

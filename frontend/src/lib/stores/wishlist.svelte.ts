@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { auth } from './auth.svelte.js';
 import type { Game } from './games.svelte.js';
 
@@ -60,7 +59,7 @@ function createWishlistStore() {
     return response;
   };
 
-  return {
+  const wishlistStore = {
     get value() {
       return state;
     },
@@ -144,10 +143,10 @@ function createWishlistStore() {
 
     // Toggle game in wishlist
     toggleWishlist: async (gameId: string) => {
-      if (this.isInWishlist(gameId)) {
-        await this.removeFromWishlist(gameId);
+      if (wishlistStore.isInWishlist(gameId)) {
+        await wishlistStore.removeFromWishlist(gameId);
       } else {
-        await this.addToWishlist(gameId);
+        await wishlistStore.addToWishlist(gameId);
       }
     },
 
@@ -159,7 +158,7 @@ function createWishlistStore() {
         await userGames.addGameToCollection({ game_id: gameId });
 
         // Then remove from wishlist
-        await this.removeFromWishlist(gameId);
+        await wishlistStore.removeFromWishlist(gameId);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to move game to collection';
         state = { ...state, error: errorMessage };
@@ -249,7 +248,7 @@ function createWishlistStore() {
       }
       
       // Steam link (if available)
-      if (game.metadata) {
+      if (game.game_metadata) {
         try {
           const metadata = JSON.parse(game.game_metadata);
           if (metadata.steam_id) {
@@ -309,7 +308,7 @@ function createWishlistStore() {
       try {
         // Remove all items one by one (if no bulk delete endpoint)
         const promises = state.wishlistItems.map(item => 
-          this.removeFromWishlist(item.game.id)
+          wishlistStore.removeFromWishlist(item.game.id)
         );
         
         await Promise.all(promises);
@@ -331,6 +330,8 @@ function createWishlistStore() {
       state = { ...state, error: null };
     }
   };
+  
+  return wishlistStore;
 }
 
 export const wishlist = createWishlistStore();

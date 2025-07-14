@@ -46,7 +46,7 @@ export interface SearchState {
   // Quick filters
   quickFilters: {
     games: GameSearchFilters;
-    userGames: UserGameFilters;
+    'user-games': UserGameFilters;
   };
 }
 
@@ -63,7 +63,7 @@ const initialState: SearchState = {
   searchHistory: [],
   quickFilters: {
     games: {},
-    userGames: {}
+    'user-games': {}
   }
 };
 
@@ -128,7 +128,7 @@ function createSearchStore() {
     saveSearchHistory();
   }
 
-  return {
+  const searchStore = {
     get value() {
       return state;
     },
@@ -191,7 +191,7 @@ function createSearchStore() {
         
         timeoutId = setTimeout(() => {
           if (query.trim()) {
-            this.performSearch(query);
+            searchStore.performSearch(query);
           } else {
             state = { ...state, searchResults: [] };
           }
@@ -251,7 +251,7 @@ function createSearchStore() {
       };
 
       // Perform the search
-      this.performSearch();
+      searchStore.performSearch();
     },
 
     // Delete saved search
@@ -305,13 +305,14 @@ function createSearchStore() {
       };
 
       // Perform search with new filters
-      this.performSearch();
+      searchStore.performSearch();
     },
 
     // Remove quick filter
     removeQuickFilter: (type: 'games' | 'user-games', filterKey: string) => {
       const currentFilters = state.quickFilters[type];
-      const { [filterKey]: removed, ...newFilters } = currentFilters;
+      const newFilters = { ...currentFilters };
+      delete (newFilters as any)[filterKey];
       
       state = {
         ...state,
@@ -324,44 +325,44 @@ function createSearchStore() {
       };
 
       // Perform search with updated filters
-      this.performSearch();
+      searchStore.performSearch();
     },
 
     // Predefined quick filters for user games
     filterByPlayStatus: (status: PlayStatus) => {
-      this.applyQuickFilter('user-games', 'play_status', status);
+      searchStore.applyQuickFilter('user-games', 'play_status', status);
     },
 
     filterByOwnershipStatus: (status: OwnershipStatus) => {
-      this.applyQuickFilter('user-games', 'ownership_status', status);
+      searchStore.applyQuickFilter('user-games', 'ownership_status', status);
     },
 
     filterByLovedGames: () => {
-      this.applyQuickFilter('user-games', 'is_loved', true);
+      searchStore.applyQuickFilter('user-games', 'is_loved', true);
     },
 
     filterByPlatform: (platformId: string) => {
-      this.applyQuickFilter('user-games', 'platform_id', platformId);
+      searchStore.applyQuickFilter('user-games', 'platform_id', platformId);
     },
 
     filterByRating: (minRating: number, maxRating?: number) => {
-      this.applyQuickFilter('user-games', 'rating_min', minRating);
+      searchStore.applyQuickFilter('user-games', 'rating_min', minRating);
       if (maxRating) {
-        this.applyQuickFilter('user-games', 'rating_max', maxRating);
+        searchStore.applyQuickFilter('user-games', 'rating_max', maxRating);
       }
     },
 
     // Predefined quick filters for games
     filterByGenre: (genre: string) => {
-      this.applyQuickFilter('games', 'genre', genre);
+      searchStore.applyQuickFilter('games', 'genre', genre);
     },
 
     filterByDeveloper: (developer: string) => {
-      this.applyQuickFilter('games', 'developer', developer);
+      searchStore.applyQuickFilter('games', 'developer', developer);
     },
 
     filterByVerified: (verified: boolean) => {
-      this.applyQuickFilter('games', 'is_verified', verified);
+      searchStore.applyQuickFilter('games', 'is_verified', verified);
     },
 
     // Clear all filters
@@ -371,7 +372,7 @@ function createSearchStore() {
         currentFilters: {},
         quickFilters: {
           games: {},
-          userGames: {}
+          'user-games': {}
         }
       };
     },
@@ -381,6 +382,8 @@ function createSearchStore() {
       state = { ...state, searchError: null };
     }
   };
+  
+  return searchStore;
 }
 
 export const search = createSearchStore();

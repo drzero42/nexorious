@@ -8,7 +8,7 @@ export interface Notification {
   id: string;
   type: NotificationType;
   title: string;
-  message?: string;
+  message?: string | undefined;
   duration?: number; // in milliseconds, 0 means permanent
   actions?: {
     label: string;
@@ -29,7 +29,7 @@ export interface UIState {
   notifications: Notification[];
   modals: Modal[];
   isLoading: boolean;
-  loadingMessage?: string;
+  loadingMessage?: string | undefined;
   sidebar: {
     isOpen: boolean;
     isPinned: boolean;
@@ -46,7 +46,7 @@ const initialState: UIState = {
   notifications: [],
   modals: [],
   isLoading: false,
-  loadingMessage: undefined,
+  loadingMessage: undefined as string | undefined,
   sidebar: {
     isOpen: false,
     isPinned: false
@@ -116,7 +116,7 @@ function createUIStore() {
     localStorage.setItem('ui-preferences', JSON.stringify(toSave));
   }
 
-  return {
+  const uiStore = {
     get value() {
       return state;
     },
@@ -175,7 +175,7 @@ function createUIStore() {
 
     // Success notification shortcut
     showSuccess: (title: string, message?: string) => {
-      return this.addNotification({
+      return uiStore.addNotification({
         type: 'success',
         title,
         message,
@@ -185,7 +185,7 @@ function createUIStore() {
 
     // Error notification shortcut
     showError: (title: string, message?: string) => {
-      return this.addNotification({
+      return uiStore.addNotification({
         type: 'error',
         title,
         message,
@@ -195,7 +195,7 @@ function createUIStore() {
 
     // Warning notification shortcut
     showWarning: (title: string, message?: string) => {
-      return this.addNotification({
+      return uiStore.addNotification({
         type: 'warning',
         title,
         message,
@@ -205,7 +205,7 @@ function createUIStore() {
 
     // Info notification shortcut
     showInfo: (title: string, message?: string) => {
-      return this.addNotification({
+      return uiStore.addNotification({
         type: 'info',
         title,
         message,
@@ -247,7 +247,7 @@ function createUIStore() {
       state = {
         ...state,
         isLoading,
-        loadingMessage: message
+        loadingMessage: message as string | undefined
       };
     },
 
@@ -345,6 +345,8 @@ function createUIStore() {
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
   };
+  
+  return uiStore;
 }
 
 export const ui = createUIStore();

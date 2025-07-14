@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { auth } from './auth.svelte.js';
 import type { Game } from './games.svelte.js';
 import type { Platform, Storefront } from './platforms.svelte.js';
