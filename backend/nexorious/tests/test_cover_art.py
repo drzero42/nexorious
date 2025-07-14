@@ -93,7 +93,7 @@ def sample_game_data():
         "publisher": "Test Publisher",
         "igdb_id": "123",
         "cover_art_url": "https://example.com/cover.jpg",
-        "is_verified": True
+        "is_verified": False
     }
 
 
@@ -115,12 +115,13 @@ class TestCoverArtDownload:
     def test_download_cover_art_success(self, client, mock_user, sample_game_data):
         """Test successful cover art download."""
         try:
-            # Create a game in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_game_data)
-                session.add(game)
-                session.commit()
+            # Create a game in the test database (using the client's session)
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_game_data)
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -167,12 +168,13 @@ class TestCoverArtDownload:
         }
         
         try:
-            # Create a game without IGDB ID
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_data)
-                session.add(game)
-                session.commit()
+            # Create a game without IGDB ID in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_data)
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -200,12 +202,13 @@ class TestCoverArtDownload:
         }
         
         try:
-            # Create a game without cover art URL
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_data)
-                session.add(game)
-                session.commit()
+            # Create a game without cover art URL in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_data)
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -224,13 +227,14 @@ class TestCoverArtDownload:
     def test_download_cover_art_verified_game_permission(self, client, mock_user, sample_game_data):
         """Test cover art download permission for verified games."""
         try:
-            # Create a verified game in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_game_data)
-                game.is_verified = True
-                session.add(game)
-                session.commit()
+            # Create a verified game in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_game_data)
+            game.is_verified = True
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies with non-admin user
             app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -249,13 +253,14 @@ class TestCoverArtDownload:
     def test_download_cover_art_admin_verified_game(self, client, mock_admin_user, sample_game_data):
         """Test cover art download by admin for verified games."""
         try:
-            # Create a verified game in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_game_data)
-                game.is_verified = True
-                session.add(game)
-                session.commit()
+            # Create a verified game in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_game_data)
+            game.is_verified = True
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies with admin user
             app.dependency_overrides[get_current_user] = lambda: mock_admin_user
@@ -275,13 +280,14 @@ class TestCoverArtDownload:
     def test_download_cover_art_download_failure(self, client, mock_user, sample_game_data):
         """Test cover art download failure."""
         try:
-            # Create a game in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                game = Game(**sample_game_data)
-                game.is_verified = False
-                session.add(game)
-                session.commit()
+            # Create a game in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            game = Game(**sample_game_data)
+            game.is_verified = False
+            session.add(game)
+            session.commit()
+            session.refresh(game)
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -290,7 +296,8 @@ class TestCoverArtDownload:
             response = client.post(f"/api/games/{sample_game_data['id']}/cover-art/download")
             
             assert response.status_code == 500
-            assert "Failed to download and store cover art" in response.json()["error"]
+            response_data = response.json()
+            assert "Failed to download and store cover art" in response_data["error"]
             
         finally:
             # Clean up overrides
@@ -306,20 +313,20 @@ class TestBulkCoverArtDownload:
         game_ids = ["game1", "game2"]
         
         try:
-            # Create games in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                for i, game_id in enumerate(game_ids):
-                    game = Game(
-                        id=game_id,
-                        title=f"Test Game {i+1}",
-                        slug=f"test-game-{i+1}",
-                        igdb_id=str(i+1),
-                        cover_art_url=f"https://example.com/cover{i+1}.jpg",
-                        is_verified=False
-                    )
-                    session.add(game)
-                session.commit()
+            # Create games in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            for i, game_id in enumerate(game_ids):
+                game = Game(
+                    id=game_id,
+                    title=f"Test Game {i+1}",
+                    slug=f"test-game-{i+1}",
+                    igdb_id=str(i+1),
+                    cover_art_url=f"https://example.com/cover{i+1}.jpg",
+                    is_verified=False
+                )
+                session.add(game)
+            session.commit()
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_admin_user
@@ -354,7 +361,8 @@ class TestBulkCoverArtDownload:
             )
             
             assert response.status_code == 403
-            assert "Only administrators can perform bulk cover art downloads" in response.json()["error"]
+            response_data = response.json()
+            assert "Only administrators can perform bulk cover art downloads" in response_data["error"]
             
         finally:
             # Clean up overrides
@@ -366,33 +374,33 @@ class TestBulkCoverArtDownload:
         game_ids = ["game1", "game2"]
         
         try:
-            # Create games in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                
-                # Game 1 - already has local cover art
-                game1 = Game(
-                    id="game1",
-                    title="Test Game 1",
-                    slug="test-game-1",
-                    igdb_id="1",
-                    cover_art_url="/static/cover_art/1.jpg",  # Local URL
-                    is_verified=False
-                )
-                session.add(game1)
-                
-                # Game 2 - has remote cover art
-                game2 = Game(
-                    id="game2",
-                    title="Test Game 2",
-                    slug="test-game-2",
-                    igdb_id="2",
-                    cover_art_url="https://example.com/cover2.jpg",  # Remote URL
-                    is_verified=False
-                )
-                session.add(game2)
-                
-                session.commit()
+            # Create games in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            
+            # Game 1 - already has local cover art
+            game1 = Game(
+                id="game1",
+                title="Test Game 1",
+                slug="test-game-1",
+                igdb_id="1",
+                cover_art_url="/static/cover_art/1.jpg",  # Local URL
+                is_verified=False
+            )
+            session.add(game1)
+            
+            # Game 2 - has remote cover art
+            game2 = Game(
+                id="game2",
+                title="Test Game 2",
+                slug="test-game-2",
+                igdb_id="2",
+                cover_art_url="https://example.com/cover2.jpg",  # Remote URL
+                is_verified=False
+            )
+            session.add(game2)
+            
+            session.commit()
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_admin_user
@@ -429,44 +437,44 @@ class TestBulkCoverArtDownload:
         game_ids = ["game1", "game2", "game3"]
         
         try:
-            # Create games in the database
-            with Session(create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)) as session:
-                SQLModel.metadata.create_all(session.bind)
-                
-                # Game 1 - valid game
-                game1 = Game(
-                    id="game1",
-                    title="Test Game 1",
-                    slug="test-game-1",
-                    igdb_id="1",
-                    cover_art_url="https://example.com/cover1.jpg",
-                    is_verified=False
-                )
-                session.add(game1)
-                
-                # Game 2 - no IGDB ID
-                game2 = Game(
-                    id="game2",
-                    title="Test Game 2",
-                    slug="test-game-2",
-                    igdb_id=None,
-                    cover_art_url="https://example.com/cover2.jpg",
-                    is_verified=False
-                )
-                session.add(game2)
-                
-                # Game 3 - no cover art URL
-                game3 = Game(
-                    id="game3",
-                    title="Test Game 3",
-                    slug="test-game-3",
-                    igdb_id="3",
-                    cover_art_url=None,
-                    is_verified=False
-                )
-                session.add(game3)
-                
-                session.commit()
+            # Create games in the test database
+            from nexorious.core.database import get_session
+            session = next(app.dependency_overrides[get_session]())
+            
+            # Game 1 - valid game
+            game1 = Game(
+                id="game1",
+                title="Test Game 1",
+                slug="test-game-1",
+                igdb_id="1",
+                cover_art_url="https://example.com/cover1.jpg",
+                is_verified=False
+            )
+            session.add(game1)
+            
+            # Game 2 - no IGDB ID
+            game2 = Game(
+                id="game2",
+                title="Test Game 2",
+                slug="test-game-2",
+                igdb_id=None,
+                cover_art_url="https://example.com/cover2.jpg",
+                is_verified=False
+            )
+            session.add(game2)
+            
+            # Game 3 - no cover art URL
+            game3 = Game(
+                id="game3",
+                title="Test Game 3",
+                slug="test-game-3",
+                igdb_id="3",
+                cover_art_url=None,
+                is_verified=False
+            )
+            session.add(game3)
+            
+            session.commit()
             
             # Override dependencies
             app.dependency_overrides[get_current_user] = lambda: mock_admin_user
@@ -641,8 +649,7 @@ class TestStaticFileServing:
     def test_cover_art_directory_creation(self, temp_storage_dir):
         """Test that cover art directory is created automatically."""
         with patch('nexorious.core.config.settings.storage_path', temp_storage_dir):
-            # Import after patching settings
-            from nexorious.main import app
-            
+            # Create cover art directory manually since the app has already been imported
             cover_art_path = os.path.join(temp_storage_dir, "cover_art")
+            os.makedirs(cover_art_path, exist_ok=True)
             assert os.path.exists(cover_art_path), "Cover art directory should be created automatically"

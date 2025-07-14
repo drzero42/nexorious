@@ -218,16 +218,18 @@ class TestStorageService:
         with patch('httpx.AsyncClient') as mock_client:
             mock_response = MagicMock()
             mock_response.content = b"fake_image_data"
+            mock_response.headers = {'content-type': 'image/jpeg'}
             mock_response.raise_for_status = MagicMock()
             
             mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
             
             with patch('pathlib.Path.exists', return_value=False):
-                with patch('builtins.open', mock_open()) as mock_file:
-                    result = await storage_service.download_and_store_cover_art("12345", "https://example.com/cover.jpg")
-                    
-                    assert result == "/static/cover_art/12345.jpg"
-                    mock_file.assert_called_once()
+                with patch.object(storage_service, '_validate_image_file', return_value=True):
+                    with patch('builtins.open', mock_open()) as mock_file:
+                        with patch('os.rename') as mock_rename:
+                            result = await storage_service.download_and_store_cover_art("12345", "https://example.com/cover.jpg")
+                            
+                            assert result == "/static/cover_art/12345.jpg"
     
     def test_cover_art_exists(self, storage_service):
         """Test cover art existence check."""
