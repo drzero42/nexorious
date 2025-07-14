@@ -46,7 +46,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game search functionality with fuzzy matching
 - [x] Metadata population and refresh capabilities
 - [x] Cover art download and storage
-- [ ] How Long to Beat integration
+- [x] How Long to Beat integration
 - [ ] Rate limiting and caching implementation
 
 ### 1.2 Frontend Foundation

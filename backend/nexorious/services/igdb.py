@@ -36,6 +36,10 @@ class GameMetadata:
     rating_average: Optional[float] = None
     rating_count: Optional[int] = None
     estimated_playtime_hours: Optional[int] = None
+    # How Long to Beat data from IGDB (hastily, normally, completely)
+    hastily: Optional[int] = None
+    normally: Optional[int] = None
+    completely: Optional[int] = None
 
 
 class TwitchAuthError(Exception):
@@ -46,6 +50,15 @@ class TwitchAuthError(Exception):
 class IGDBError(Exception):
     """Exception for IGDB API errors."""
     pass
+
+
+def map_igdb_time_to_beat_to_db_fields(igdb_time_data: Dict[str, Any]) -> Dict[str, Optional[int]]:
+    """Map IGDB time-to-beat fields to our database fields."""
+    return {
+        "howlongtobeat_main": igdb_time_data.get("hastily"),
+        "howlongtobeat_extra": igdb_time_data.get("normally"),
+        "howlongtobeat_completionist": igdb_time_data.get("completely")
+    }
 
 
 class IGDBService:
@@ -141,11 +154,17 @@ class IGDBService:
             # Parse JSON response
             games_data = json.loads(response.decode('utf-8'))
             
-            # Convert to GameMetadata objects
+            # Convert to GameMetadata objects and fetch time-to-beat data
             games = []
             for game_data in games_data:
                 metadata = self._parse_game_data(game_data)
                 if metadata:
+                    # Fetch time-to-beat data for each game
+                    time_to_beat_data = await self._get_time_to_beat_data(metadata.igdb_id)
+                    if time_to_beat_data:
+                        metadata.hastily = time_to_beat_data.get("hastily")
+                        metadata.normally = time_to_beat_data.get("normally")
+                        metadata.completely = time_to_beat_data.get("completely")
                     games.append(metadata)
             
             # Apply fuzzy matching and ranking
@@ -223,11 +242,48 @@ class IGDBService:
             if not games_data:
                 return None
             
-            return self._parse_game_data(games_data[0])
+            # Get basic game data
+            game_metadata = self._parse_game_data(games_data[0])
+            
+            # Fetch time-to-beat data if available
+            if game_metadata:
+                time_to_beat_data = await self._get_time_to_beat_data(igdb_id)
+                if time_to_beat_data:
+                    game_metadata.hastily = time_to_beat_data.get("hastily")
+                    game_metadata.normally = time_to_beat_data.get("normally")
+                    game_metadata.completely = time_to_beat_data.get("completely")
+            
+            return game_metadata
             
         except Exception as e:
             logger.error(f"Error fetching game by ID {igdb_id}: {e}")
             raise IGDBError(f"Failed to fetch game: {e}")
+    
+    async def _get_time_to_beat_data(self, igdb_id: str) -> Optional[Dict[str, Any]]:
+        """Get time-to-beat data for a game from IGDB."""
+        try:
+            wrapper = await self._get_wrapper()
+            
+            time_query = f'''
+                fields hastily, normally, completely;
+                where game = {igdb_id};
+            '''
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None, 
+                lambda: wrapper.api_request('game_time_to_beat', time_query)
+            )
+            
+            time_data = json.loads(response.decode('utf-8'))
+            
+            if time_data:
+                return time_data[0]
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching time-to-beat data for game {igdb_id}: {e}")
+            return None
     
     def _parse_game_data(self, game_data: Dict[str, Any]) -> Optional[GameMetadata]:
         """Parse IGDB game data into GameMetadata object."""
@@ -274,7 +330,11 @@ class IGDBService:
                 cover_art_url=cover_art_url,
                 rating_average=game_data.get('rating'),
                 rating_count=game_data.get('rating_count'),
-                estimated_playtime_hours=None  # IGDB doesn't provide this directly
+                estimated_playtime_hours=None,  # IGDB doesn't provide this directly
+                # Time-to-beat data will be populated separately
+                hastily=None,
+                normally=None,
+                completely=None
             )
             
         except Exception as e:
@@ -346,7 +406,10 @@ class IGDBService:
                 cover_art_url=current_metadata.cover_art_url or fresh_metadata.cover_art_url,
                 rating_average=current_metadata.rating_average or fresh_metadata.rating_average,
                 rating_count=current_metadata.rating_count or fresh_metadata.rating_count,
-                estimated_playtime_hours=current_metadata.estimated_playtime_hours or fresh_metadata.estimated_playtime_hours
+                estimated_playtime_hours=current_metadata.estimated_playtime_hours or fresh_metadata.estimated_playtime_hours,
+                hastily=current_metadata.hastily or fresh_metadata.hastily,
+                normally=current_metadata.normally or fresh_metadata.normally,
+                completely=current_metadata.completely or fresh_metadata.completely
             )
             
             return updated_metadata
@@ -362,7 +425,7 @@ class IGDBService:
         fields_to_compare = [
             'title', 'slug', 'description', 'genre', 'developer', 'publisher',
             'release_date', 'cover_art_url', 'rating_average', 'rating_count',
-            'estimated_playtime_hours'
+            'estimated_playtime_hours', 'hastily', 'normally', 'completely'
         ]
         
         for field in fields_to_compare:
@@ -380,7 +443,7 @@ class IGDBService:
     async def get_metadata_completeness(self, metadata: GameMetadata) -> dict:
         """Analyze metadata completeness and return missing fields."""
         essential_fields = ['title', 'description', 'genre', 'developer', 'publisher', 'release_date']
-        optional_fields = ['cover_art_url', 'rating_average', 'rating_count', 'estimated_playtime_hours']
+        optional_fields = ['cover_art_url', 'rating_average', 'rating_count', 'estimated_playtime_hours', 'hastily', 'normally', 'completely']
         
         missing_essential = []
         missing_optional = []
