@@ -2,6 +2,10 @@
   import '../app.css';
   import { auth } from '$lib/stores';
   import { onMount } from 'svelte';
+  import { initializePWA, initializeInstallPrompt } from '$lib/pwa';
+  import PWAInstallButton from '$lib/components/PWAInstallButton.svelte';
+  import PWAUpdateNotification from '$lib/components/PWAUpdateNotification.svelte';
+  import OfflineIndicator from '$lib/components/OfflineIndicator.svelte';
   
   onMount(() => {
     // Check if user is authenticated and refresh token if needed
@@ -10,6 +14,10 @@
       // Optionally refresh token on app start
       auth.refreshAuth();
     }
+    
+    // Initialize PWA functionality
+    initializePWA();
+    initializeInstallPrompt();
   });
 </script>
 
@@ -30,6 +38,7 @@
         </div>
         
         <nav class="flex items-center space-x-4">
+          <PWAInstallButton />
           {#if auth.value.user}
             <span class="text-sm text-gray-700 dark:text-gray-300">
               Welcome, {auth.value.user.username}
@@ -57,6 +66,10 @@
     <slot />
   </main>
 </div>
+
+<!-- PWA Components -->
+<OfflineIndicator />
+<PWAUpdateNotification />
 
 <style>
   :global(body) {
