@@ -54,7 +54,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 1.2.1 SvelteKit Project Setup
 - [x] Initialize SvelteKit project with TypeScript
 - [x] Configure Tailwind CSS for styling
-- [ ] Set up Svelte stores for state management
+- [x] Set up Svelte stores for state management
 - [ ] Implement PWA support with Workbox
 - [ ] Configure Vite build optimization
 - [ ] Set up routing and navigation
