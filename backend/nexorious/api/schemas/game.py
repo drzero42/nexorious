@@ -109,6 +109,9 @@ class IGDBGameCandidate(BaseModel):
     cover_art_url: Optional[str]
     description: Optional[str]
     platforms: List[str]
+    howlongtobeat_main: Optional[int] = Field(None, description="Main story hours")
+    howlongtobeat_extra: Optional[int] = Field(None, description="Main + extras hours")
+    howlongtobeat_completionist: Optional[int] = Field(None, description="Completionist hours")
 
 
 class IGDBSearchResponse(BaseModel):

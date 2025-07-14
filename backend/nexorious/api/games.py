@@ -429,7 +429,10 @@ async def search_igdb(
                 release_date=metadata.release_date,
                 cover_art_url=metadata.cover_art_url,
                 description=metadata.description,
-                platforms=platforms
+                platforms=platforms,
+                howlongtobeat_main=metadata.hastily,
+                howlongtobeat_extra=metadata.normally,
+                howlongtobeat_completionist=metadata.completely
             )
             candidates.append(candidate)
         
@@ -502,6 +505,9 @@ async def import_from_igdb(
             "rating_average": game_metadata.rating_average,
             "rating_count": game_metadata.rating_count or 0,
             "estimated_playtime_hours": game_metadata.estimated_playtime_hours,
+            "howlongtobeat_main": game_metadata.hastily,
+            "howlongtobeat_extra": game_metadata.normally,
+            "howlongtobeat_completionist": game_metadata.completely,
             "igdb_id": game_metadata.igdb_id,
             "game_metadata": "{}",
             "is_verified": True  # Games imported from IGDB are considered verified
@@ -610,7 +616,10 @@ async def get_metadata_status(
         cover_art_url=game.cover_art_url,
         rating_average=float(game.rating_average) if game.rating_average else None,
         rating_count=game.rating_count,
-        estimated_playtime_hours=game.estimated_playtime_hours
+        estimated_playtime_hours=game.estimated_playtime_hours,
+        hastily=game.howlongtobeat_main,
+        normally=game.howlongtobeat_extra,
+        completely=game.howlongtobeat_completionist
     )
     
     try:
@@ -669,22 +678,35 @@ async def refresh_game_metadata(
         
         fields_to_refresh = refresh_request.fields or [
             'title', 'description', 'genre', 'developer', 'publisher',
-            'release_date', 'cover_art_url', 'rating_average', 'rating_count'
+            'release_date', 'cover_art_url', 'rating_average', 'rating_count',
+            'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
         ]
         
         for field in fields_to_refresh:
-            if hasattr(fresh_metadata, field):
+            # Handle time-to-beat field mapping
+            if field == 'howlongtobeat_main':
+                fresh_value = getattr(fresh_metadata, 'hastily', None)
+                current_value = getattr(game, field, None)
+            elif field == 'howlongtobeat_extra':
+                fresh_value = getattr(fresh_metadata, 'normally', None)
+                current_value = getattr(game, field, None)
+            elif field == 'howlongtobeat_completionist':
+                fresh_value = getattr(fresh_metadata, 'completely', None)
+                current_value = getattr(game, field, None)
+            elif hasattr(fresh_metadata, field):
                 fresh_value = getattr(fresh_metadata, field)
                 current_value = getattr(game, field, None)
-                
-                if fresh_value and (refresh_request.force or not current_value):
-                    if field == 'release_date':
-                        setattr(game, field, parse_date_string(fresh_value))
-                    elif field == 'rating_average':
-                        setattr(game, field, fresh_value)
-                    else:
-                        setattr(game, field, fresh_value)
-                    updated_fields.append(field)
+            else:
+                continue
+            
+            if fresh_value and (refresh_request.force or not current_value):
+                if field == 'release_date':
+                    setattr(game, field, parse_date_string(fresh_value))
+                elif field == 'rating_average':
+                    setattr(game, field, fresh_value)
+                else:
+                    setattr(game, field, fresh_value)
+                updated_fields.append(field)
         
         game.updated_at = datetime.now(timezone.utc)
         session.commit()
@@ -752,7 +774,10 @@ async def populate_game_metadata(
             cover_art_url=game.cover_art_url,
             rating_average=float(game.rating_average) if game.rating_average else None,
             rating_count=game.rating_count,
-            estimated_playtime_hours=game.estimated_playtime_hours
+            estimated_playtime_hours=game.estimated_playtime_hours,
+            hastily=game.howlongtobeat_main,
+            normally=game.howlongtobeat_extra,
+            completely=game.howlongtobeat_completionist
         )
         
         updated_metadata = await igdb_service.populate_missing_metadata(current_metadata, game.igdb_id)
@@ -770,23 +795,36 @@ async def populate_game_metadata(
         
         fields_to_populate = populate_request.fields or [
             'title', 'description', 'genre', 'developer', 'publisher',
-            'release_date', 'cover_art_url', 'rating_average', 'rating_count'
+            'release_date', 'cover_art_url', 'rating_average', 'rating_count',
+            'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
         ]
         
         for field in fields_to_populate:
-            if hasattr(updated_metadata, field):
+            # Handle time-to-beat field mapping
+            if field == 'howlongtobeat_main':
+                updated_value = getattr(updated_metadata, 'hastily', None)
+                current_value = getattr(game, field, None)
+            elif field == 'howlongtobeat_extra':
+                updated_value = getattr(updated_metadata, 'normally', None)
+                current_value = getattr(game, field, None)
+            elif field == 'howlongtobeat_completionist':
+                updated_value = getattr(updated_metadata, 'completely', None)
+                current_value = getattr(game, field, None)
+            elif hasattr(updated_metadata, field):
                 updated_value = getattr(updated_metadata, field)
                 current_value = getattr(game, field, None)
-                
-                # Only populate if missing (or if not populate_missing_only)
-                if updated_value and (not populate_request.populate_missing_only or not current_value):
-                    if field == 'release_date':
-                        setattr(game, field, parse_date_string(updated_value))
-                    elif field == 'rating_average':
-                        setattr(game, field, updated_value)
-                    else:
-                        setattr(game, field, updated_value)
-                    populated_fields.append(field)
+            else:
+                continue
+            
+            # Only populate if missing (or if not populate_missing_only)
+            if updated_value and (not populate_request.populate_missing_only or not current_value):
+                if field == 'release_date':
+                    setattr(game, field, parse_date_string(updated_value))
+                elif field == 'rating_average':
+                    setattr(game, field, updated_value)
+                else:
+                    setattr(game, field, updated_value)
+                populated_fields.append(field)
         
         game.updated_at = datetime.now(timezone.utc)
         session.commit()
@@ -863,6 +901,17 @@ async def bulk_metadata_operation(
                     game.rating_count = fresh_metadata.rating_count or 0
                     updated_fields.append('rating_count')
                     
+                    # Update time-to-beat fields
+                    if fresh_metadata.hastily:
+                        game.howlongtobeat_main = fresh_metadata.hastily
+                        updated_fields.append('howlongtobeat_main')
+                    if fresh_metadata.normally:
+                        game.howlongtobeat_extra = fresh_metadata.normally
+                        updated_fields.append('howlongtobeat_extra')
+                    if fresh_metadata.completely:
+                        game.howlongtobeat_completionist = fresh_metadata.completely
+                        updated_fields.append('howlongtobeat_completionist')
+                    
                     result["success"] = True
                     result["fields"] = updated_fields
                     successful_operations += 1
@@ -883,7 +932,10 @@ async def bulk_metadata_operation(
                     cover_art_url=game.cover_art_url,
                     rating_average=float(game.rating_average) if game.rating_average else None,
                     rating_count=game.rating_count,
-                    estimated_playtime_hours=game.estimated_playtime_hours
+                    estimated_playtime_hours=game.estimated_playtime_hours,
+                    hastily=game.howlongtobeat_main,
+                    normally=game.howlongtobeat_extra,
+                    completely=game.howlongtobeat_completionist
                 )
                 
                 updated_metadata = await igdb_service.populate_missing_metadata(current_metadata, game.igdb_id)
@@ -903,6 +955,17 @@ async def bulk_metadata_operation(
                     if updated_metadata.rating_average and not game.rating_average:
                         game.rating_average = updated_metadata.rating_average
                         populated_fields.append('rating_average')
+                    
+                    # Populate time-to-beat fields if missing
+                    if updated_metadata.hastily and not game.howlongtobeat_main:
+                        game.howlongtobeat_main = updated_metadata.hastily
+                        populated_fields.append('howlongtobeat_main')
+                    if updated_metadata.normally and not game.howlongtobeat_extra:
+                        game.howlongtobeat_extra = updated_metadata.normally
+                        populated_fields.append('howlongtobeat_extra')
+                    if updated_metadata.completely and not game.howlongtobeat_completionist:
+                        game.howlongtobeat_completionist = updated_metadata.completely
+                        populated_fields.append('howlongtobeat_completionist')
                     
                     result["success"] = True
                     result["fields"] = populated_fields
