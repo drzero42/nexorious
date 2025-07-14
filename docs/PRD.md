@@ -437,7 +437,7 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Technical Risks
 - **API Rate Limits**: Steam, IGDB, and other services may impose strict rate limits
-  - *Mitigation*: Implement caching, request queuing, and graceful degradation
+  - *Mitigation*: Basic request throttling for MVP, with optional caching and advanced rate limiting in later phases
 - **Data Migration**: Database schema changes could break existing installations
   - *Mitigation*: Comprehensive migration testing, rollback procedures
 - **Storefront API Changes**: External APIs may change without notice
