@@ -23,7 +23,7 @@ class User(SQLModel, table=True):
     last_name: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
-    preferences_json: str = Field(default="{}", alias="preferences")  # JSON string for user preferences
+    preferences_json: str = Field(default="{}", sa_column_kwargs={"name": "preferences"})  # JSON string for user preferences
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
