@@ -201,7 +201,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/games/igdb/search', {
+        const response = await apiCall('/api/games/search/igdb', {
           method: 'POST',
           body: JSON.stringify({ title, limit }),
         });
@@ -227,11 +227,10 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/games/igdb/accept', {
+        const response = await apiCall('/api/games/igdb-import', {
           method: 'POST',
           body: JSON.stringify({
             igdb_id,
-            accept_metadata: true,
             custom_overrides
           }),
         });
