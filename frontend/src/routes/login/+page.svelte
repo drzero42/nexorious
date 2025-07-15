@@ -1,19 +1,12 @@
 <script lang="ts">
   import { auth } from '$lib/stores';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { RouteGuard } from '$lib/components';
 
   let email = '';
   let password = '';
   let isLoading = false;
   let error = '';
-
-  onMount(() => {
-    // Redirect if already authenticated
-    if (auth.value.user) {
-      goto('/games');
-    }
-  });
 
   async function handleLogin() {
     if (!email || !password) {
@@ -45,6 +38,7 @@
   <title>Login - Nexorious</title>
 </svelte:head>
 
+<RouteGuard requireAuth={false}>
 <div class="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
   <div class="text-center mb-8">
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
@@ -112,3 +106,4 @@
     </p>
   </div>
 </div>
+</RouteGuard>

@@ -2,15 +2,10 @@
   import { auth, userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { RouteGuard } from '$lib/components';
 
   onMount(() => {
-    // Redirect if not authenticated
-    if (!auth.value.user) {
-      goto('/login');
-      return;
-    }
-
-    // Load user games for statistics
+    // Load user games for statistics - authentication is handled by RouteGuard
     userGames.fetchUserGames();
   });
 
@@ -94,6 +89,7 @@
   <title>Dashboard - Nexorious</title>
 </svelte:head>
 
+<RouteGuard requireAuth={true}>
 <div class="space-y-6">
   <!-- Header -->
   <div>
@@ -380,3 +376,4 @@
     </div>
   {/if}
 </div>
+</RouteGuard>

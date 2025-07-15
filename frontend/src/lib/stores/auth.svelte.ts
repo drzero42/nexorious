@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { config } from '$lib/env';
 
 export interface User {
   id: string;
@@ -47,25 +48,39 @@ function createAuthStore() {
       return state;
     },
     
-    login: async (username: string, password: string) => {
+    login: async (email: string, password: string) => {
       state = { ...state, isLoading: true, error: null };
       
       try {
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch(`${config.apiUrl}/auth/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify({ username: email, password }),
         });
 
         if (!response.ok) {
-          throw new Error('Login failed');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Login failed');
         }
 
         const data = await response.json();
+        
+        // Fetch user profile after successful login
+        const userResponse = await fetch(`${config.apiUrl}/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${data.access_token}`
+          }
+        });
+
+        if (!userResponse.ok) {
+          throw new Error('Failed to fetch user profile');
+        }
+
+        const user = await userResponse.json();
         const newState = {
-          user: data.user,
+          user: user,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           isLoading: false,
@@ -78,9 +93,45 @@ function createAuthStore() {
           localStorage.setItem('auth', JSON.stringify(newState));
         }
         
-        return data;
+        return { ...data, user };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Login failed';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    register: async (userData: {
+      email: string;
+      username: string;
+      password: string;
+      first_name?: string;
+      last_name?: string;
+    }) => {
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(userData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Registration failed');
+        }
+
+        const userProfile = await response.json();
+        
+        // After successful registration, automatically log in the user
+        await this.login(userData.email, userData.password);
+        
+        return userProfile;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Registration failed';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
@@ -99,7 +150,7 @@ function createAuthStore() {
       }
 
       try {
-        const response = await fetch('/api/auth/refresh', {
+        const response = await fetch(`${config.apiUrl}/auth/refresh`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

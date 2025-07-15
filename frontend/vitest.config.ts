@@ -10,7 +10,7 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.{test,spec}.{js,ts}'],
 		environment: 'jsdom',
-		setupFiles: ['src/test-utils/setup.ts'],
+		setupFiles: ['src/test-utils/setup.ts', 'src/test-utils/auth-mocks.ts', 'src/test-utils/navigation-mocks.ts'],
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html'],
@@ -33,7 +33,10 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			$lib: new URL('./src/lib', import.meta.url).pathname,
-			'$app/environment': new URL('./src/test-utils/app-environment.js', import.meta.url).pathname
+			'$app/environment': new URL('./src/test-utils/app-environment.js', import.meta.url).pathname,
+			'$app/navigation': new URL('./src/test-utils/navigation-mocks.ts', import.meta.url).pathname,
+			'$app/stores': new URL('./src/test-utils/navigation-mocks.ts', import.meta.url).pathname,
+			'$env/dynamic/public': new URL('./src/test-utils/env-mock.js', import.meta.url).pathname
 		}
 	}
 });
