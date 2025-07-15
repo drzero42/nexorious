@@ -95,6 +95,12 @@
         {isLoading ? 'Signing in...' : 'Sign In'}
       </button>
     </div>
+
+    <div class="mt-4 text-center">
+      <a href="/forgot-password" class="text-sm text-blue-600 hover:text-blue-500">
+        Forgot your password?
+      </a>
+    </div>
   </form>
 
   <div class="mt-6 text-center">
