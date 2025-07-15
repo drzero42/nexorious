@@ -188,6 +188,86 @@ function createAuthStore() {
 
     clearError: () => {
       state = { ...state, error: null };
+    },
+
+    forgotPassword: async (email: string) => {
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/forgot-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to send password reset email');
+        }
+
+        const data = await response.json();
+        state = { ...state, isLoading: false, error: null };
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to send password reset email';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    resetPassword: async (token: string, newPassword: string) => {
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/reset-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token, new_password: newPassword }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to reset password');
+        }
+
+        const data = await response.json();
+        state = { ...state, isLoading: false, error: null };
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to reset password';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    validateResetToken: async (token: string) => {
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/reset-password/validate/${token}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Invalid or expired reset token');
+        }
+
+        const data = await response.json();
+        state = { ...state, isLoading: false, error: null };
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Invalid or expired reset token';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
     }
   };
 }
