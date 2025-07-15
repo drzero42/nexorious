@@ -52,4 +52,4 @@ These rules must always be adhered to during development.
 - When you are writing code, please use context7 MCP to learn the APIs used and verify that your generated code is valid
 - When you are asked to work on a task you will create a branch that contains the task name.
 - When you are told 'lets work on task XXX' you must first create a branch that contains the task name.
-- Always use `uv python` instead of just `python`
+- Always use `uv run python` instead of just `python`

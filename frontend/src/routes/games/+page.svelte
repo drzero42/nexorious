@@ -2,7 +2,8 @@
   import { auth, userGames, search } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard } from '$lib/components';
+  import { RouteGuard, Pagination } from '$lib/components';
+  import type { UserGameFilters } from '$lib/stores';
 
   let viewMode: 'grid' | 'list' = 'grid';
   let searchQuery = '';
@@ -11,41 +12,65 @@
   let sortBy = 'title';
   let sortOrder: 'asc' | 'desc' = 'asc';
 
+  // Local state for debounced search
+  let searchTimeout: ReturnType<typeof setTimeout>;
+
   onMount(() => {
     // Load user games - authentication is handled by RouteGuard
-    userGames.fetchUserGames();
+    loadGames();
   });
 
-  // Filter and sort games based on current filters
-  $: filteredGames = userGames.value.games
-    .filter(game => {
-      const matchesSearch = !searchQuery || 
-        game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        game.genre?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        game.developer?.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesStatus = !selectedStatus || game.play_status === selectedStatus;
-      
-      // Platform filtering would need to check user_game_platforms
-      // For now, we'll skip platform filtering until we have that data structure
-      
-      return matchesSearch && matchesStatus;
-    })
-    .sort((a, b) => {
-      let aValue = a[sortBy] || '';
-      let bValue = b[sortBy] || '';
-      
-      if (sortBy === 'personal_rating') {
-        aValue = a.personal_rating || 0;
-        bValue = b.personal_rating || 0;
-      }
-      
-      if (sortOrder === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
+  // Build filters based on current selections
+  $: filters = {
+    ...(selectedStatus && { play_status: selectedStatus }),
+    ...(selectedPlatform && { platform_id: selectedPlatform }),
+    ...(searchQuery && { q: searchQuery })
+  } as UserGameFilters;
+
+  // Load games with current filters and pagination
+  async function loadGames() {
+    try {
+      await userGames.loadUserGames(
+        filters,
+        userGames.value.pagination.page,
+        userGames.value.pagination.per_page
+      );
+    } catch (error) {
+      console.error('Failed to load games:', error);
+    }
+  }
+
+  // Handle search with debouncing
+  function handleSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      loadGames();
+    }, 300);
+  }
+
+  // Handle filter changes
+  function handleFilterChange() {
+    loadGamesWithReset();
+  }
+  
+  // Load games with page reset
+  async function loadGamesWithReset() {
+    try {
+      await userGames.loadUserGames(filters, 1, userGames.value.pagination.per_page);
+    } catch (error) {
+      console.error('Failed to load games:', error);
+    }
+  }
+
+  // Watch for filter changes
+  $: if (selectedStatus || selectedPlatform) {
+    handleFilterChange();
+  }
+
+  // Watch for search query changes
+  $: if (searchQuery !== undefined) {
+    handleSearch();
+  }
 
   function handleAddGame() {
     goto('/games/add');
@@ -53,6 +78,23 @@
 
   function handleGameClick(gameId: string) {
     goto(`/games/${gameId}`);
+  }
+
+  // Pagination handlers
+  async function handlePageChange(page: number) {
+    try {
+      await userGames.loadUserGames(filters, page, userGames.value.pagination.per_page);
+    } catch (error) {
+      console.error('Failed to load games:', error);
+    }
+  }
+
+  async function handleItemsPerPageChange(perPage: number) {
+    try {
+      await userGames.loadUserGames(filters, 1, perPage);
+    } catch (error) {
+      console.error('Failed to load games:', error);
+    }
   }
 
   function getStatusColor(status: string) {
@@ -95,7 +137,7 @@
     <div>
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">My Games</h1>
       <p class="text-gray-600 dark:text-gray-400">
-        {userGames.value.games.length} games in your collection
+        {userGames.value.pagination.total} games in your collection
       </p>
     </div>
     <div class="mt-4 sm:mt-0">
@@ -193,12 +235,12 @@
     <div class="text-center py-8">
       <div class="text-gray-500 dark:text-gray-400">Loading games...</div>
     </div>
-  {:else if filteredGames.length === 0}
+  {:else if userGames.value.userGames.length === 0}
     <div class="text-center py-8">
       <div class="text-gray-500 dark:text-gray-400">
-        {userGames.value.games.length === 0 ? 'No games in your collection yet.' : 'No games match your filters.'}
+        {userGames.value.pagination.total === 0 ? 'No games in your collection yet.' : 'No games match your filters.'}
       </div>
-      {#if userGames.value.games.length === 0}
+      {#if userGames.value.pagination.total === 0}
         <button
           on:click={handleAddGame}
           class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -211,18 +253,18 @@
     <!-- Grid View -->
     {#if viewMode === 'grid'}
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {#each filteredGames as game (game.id)}
+        {#each userGames.value.userGames as userGame (userGame.id)}
           <div
             class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
-            on:click={() => handleGameClick(game.id)}
-            on:keydown={(e) => e.key === 'Enter' && handleGameClick(game.id)}
+            on:click={() => handleGameClick(userGame.id)}
+            on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
             tabindex="0"
           >
             <div class="aspect-[3/4] bg-gray-200 dark:bg-gray-700 rounded-t-lg">
-              {#if game.cover_art_url}
+              {#if userGame.game.cover_art_url}
                 <img
-                  src={game.cover_art_url}
-                  alt={game.title}
+                  src={userGame.game.cover_art_url}
+                  alt={userGame.game.title}
                   class="w-full h-full object-cover rounded-t-lg"
                 />
               {:else}
@@ -233,20 +275,20 @@
             </div>
             <div class="p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate">
-                {game.title}
+                {userGame.game.title}
               </h3>
               <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                {game.genre || 'Unknown Genre'}
+                {userGame.game.genre || 'Unknown Genre'}
               </p>
               <div class="flex items-center justify-between">
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(game.play_status)}">
-                  {getStatusLabel(game.play_status)}
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
+                  {getStatusLabel(userGame.play_status)}
                 </span>
-                {#if game.personal_rating}
+                {#if userGame.personal_rating}
                   <div class="flex items-center">
                     <span class="text-yellow-400">★</span>
                     <span class="text-xs text-gray-600 dark:text-gray-400 ml-1">
-                      {game.personal_rating}
+                      {userGame.personal_rating}
                     </span>
                   </div>
                 {/if}
@@ -280,20 +322,20 @@
               </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {#each filteredGames as game (game.id)}
+              {#each userGames.value.userGames as userGame (userGame.id)}
                 <tr
                   class="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                  on:click={() => handleGameClick(game.id)}
-                  on:keydown={(e) => e.key === 'Enter' && handleGameClick(game.id)}
+                  on:click={() => handleGameClick(userGame.id)}
+                  on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
                   tabindex="0"
                 >
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
                       <div class="flex-shrink-0 h-10 w-10">
-                        {#if game.cover_art_url}
+                        {#if userGame.game.cover_art_url}
                           <img
-                            src={game.cover_art_url}
-                            alt={game.title}
+                            src={userGame.game.cover_art_url}
+                            alt={userGame.game.title}
                             class="h-10 w-10 rounded object-cover"
                           />
                         {:else}
@@ -302,34 +344,34 @@
                       </div>
                       <div class="ml-4">
                         <div class="text-sm font-medium text-gray-900 dark:text-white">
-                          {game.title}
+                          {userGame.game.title}
                         </div>
                         <div class="text-sm text-gray-500 dark:text-gray-400">
-                          {game.developer || 'Unknown Developer'}
+                          {userGame.game.developer || 'Unknown Developer'}
                         </div>
                       </div>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {game.genre || 'Unknown'}
+                    {userGame.game.genre || 'Unknown'}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(game.play_status)}">
-                      {getStatusLabel(game.play_status)}
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
+                      {getStatusLabel(userGame.play_status)}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {#if game.personal_rating}
+                    {#if userGame.personal_rating}
                       <div class="flex items-center">
                         <span class="text-yellow-400">★</span>
-                        <span class="ml-1">{game.personal_rating}</span>
+                        <span class="ml-1">{userGame.personal_rating}</span>
                       </div>
                     {:else}
                       <span class="text-gray-400">-</span>
                     {/if}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {game.hours_played || 0}h
+                    {userGame.hours_played || 0}h
                   </td>
                 </tr>
               {/each}
@@ -338,6 +380,16 @@
         </div>
       </div>
     {/if}
+    
+    <!-- Pagination -->
+    <Pagination 
+      currentPage={userGames.value.pagination.page}
+      totalPages={userGames.value.pagination.pages}
+      totalItems={userGames.value.pagination.total}
+      itemsPerPage={userGames.value.pagination.per_page}
+      onPageChange={handlePageChange}
+      onItemsPerPageChange={handleItemsPerPageChange}
+    />
   {/if}
 </div>
 </RouteGuard>
