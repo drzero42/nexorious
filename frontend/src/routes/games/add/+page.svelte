@@ -6,8 +6,8 @@
 
   let searchQuery = '';
   let isSearching = false;
-  let searchResults = [];
-  let selectedGame = null;
+  let searchResults: any[] = [];
+  let selectedGame: any = null;
   let step: 'search' | 'confirm' | 'details' = 'search';
 
   // Form data for new game
@@ -33,48 +33,65 @@
 
     isSearching = true;
     try {
-      // This would call the IGDB search API through our backend
-      // For now, we'll simulate it
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the IGDB search API through our backend
+      const response = await games.searchIGDB(searchQuery, 10);
       
-      // Mock search results
-      searchResults = [
-        {
-          id: 'igdb_1',
-          title: searchQuery,
-          description: 'A sample game description',
-          genre: 'Action',
-          developer: 'Sample Developer',
-          publisher: 'Sample Publisher',
-          release_date: '2024-01-01',
-          cover_art_url: '',
-          igdb_id: 'igdb_1'
-        }
-      ];
+      // Convert IGDB candidates to search results format
+      searchResults = response.candidates.map(candidate => ({
+        id: candidate.igdb_id,
+        title: candidate.title,
+        description: candidate.description,
+        genre: '', // Genre will be populated from full metadata
+        developer: '', // Developer will be populated from full metadata
+        publisher: '', // Publisher will be populated from full metadata
+        release_date: candidate.release_date,
+        cover_art_url: candidate.cover_art_url,
+        igdb_id: candidate.igdb_id,
+        platforms: candidate.platforms,
+        howlongtobeat_main: candidate.howlongtobeat_main,
+        howlongtobeat_extra: candidate.howlongtobeat_extra,
+        howlongtobeat_completionist: candidate.howlongtobeat_completionist
+      }));
       
       if (searchResults.length > 0) {
         step = 'confirm';
       }
     } catch (error) {
       console.error('Search failed:', error);
+      games.clearError(); // Clear any existing error
     } finally {
       isSearching = false;
     }
   }
 
-  function selectGame(game) {
+  async function selectGame(game) {
     selectedGame = game;
-    gameData = {
-      ...gameData,
-      title: game.title,
-      description: game.description,
-      genre: game.genre,
-      developer: game.developer,
-      publisher: game.publisher,
-      release_date: game.release_date,
-      cover_art_url: game.cover_art_url
-    };
-    step = 'details';
+    isSearching = true;
+    
+    try {
+      // Import the game directly from IGDB with full metadata
+      const importedGame = await games.createFromIGDB(game.igdb_id);
+      
+      // Redirect to the games page after successful import
+      goto('/games');
+    } catch (error) {
+      console.error('Failed to import game:', error);
+      
+      // If import fails, fall back to manual entry with pre-filled data
+      gameData = {
+        ...gameData,
+        title: game.title,
+        description: game.description || '',
+        genre: game.genre || '',
+        developer: game.developer || '',
+        publisher: game.publisher || '',
+        release_date: game.release_date || '',
+        cover_art_url: game.cover_art_url || ''
+      };
+      step = 'details';
+    } finally {
+      isSearching = false;
+    }
   }
 
   function goBack() {
@@ -89,7 +106,7 @@
   async function handleSubmit() {
     try {
       // Add game to user's collection
-      await games.addGame(gameData);
+      await games.createGame(gameData);
       goto('/games');
     } catch (error) {
       console.error('Failed to add game:', error);
@@ -153,9 +170,16 @@
         </div>
 
         <div class="text-sm text-gray-600 dark:text-gray-400">
-          <p>Search for games using the IGDB database to automatically populate metadata.</p>
+          <p>Search for games using the IGDB database. Selecting a game will automatically add it to your collection with full metadata.</p>
           <p class="mt-1">If you can't find your game, you can manually add it by clicking "Add Manually" below.</p>
         </div>
+
+        {#if games.value.error}
+          <div class="mt-4 p-4 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-md">
+            <p class="font-medium">Search Error</p>
+            <p class="text-sm">{games.value.error}</p>
+          </div>
+        {/if}
 
         <div class="pt-4">
           <button
@@ -182,46 +206,87 @@
       </div>
 
       <div class="space-y-4">
-        {#each searchResults as game}
-          <div
-            class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-            on:click={() => selectGame(game)}
-            on:keydown={(e) => e.key === 'Enter' && selectGame(game)}
-            tabindex="0"
-          >
-            <div class="flex">
-              <div class="flex-shrink-0 w-16 h-20 bg-gray-200 dark:bg-gray-600 rounded">
-                {#if game.cover_art_url}
-                  <img
-                    src={game.cover_art_url}
-                    alt={game.title}
-                    class="w-full h-full object-cover rounded"
-                  />
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                    No Cover
-                  </div>
-                {/if}
-              </div>
-              <div class="ml-4 flex-1">
-                <h3 class="font-semibold text-gray-900 dark:text-white">
-                  {game.title}
-                </h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  {game.developer} • {game.genre}
-                </p>
-                <p class="text-sm text-gray-500 dark:text-gray-500 mt-1">
-                  Released: {game.release_date ? new Date(game.release_date).getFullYear() : 'Unknown'}
-                </p>
-                {#if game.description}
-                  <p class="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
-                    {game.description}
-                  </p>
-                {/if}
-              </div>
+        {#if searchResults.length === 0}
+          <div class="text-center py-8">
+            <div class="text-gray-400 dark:text-gray-500 text-lg mb-2">
+              No games found
             </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              Try a different search term or add the game manually
+            </p>
           </div>
-        {/each}
+        {:else}
+          {#each searchResults as game}
+            <button
+              class="w-full text-left border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              on:click={() => selectGame(game)}
+              disabled={isSearching}
+            >
+              <div class="flex">
+                <div class="flex-shrink-0 w-20 h-28 bg-gray-200 dark:bg-gray-600 rounded">
+                  {#if game.cover_art_url}
+                    <img
+                      src={game.cover_art_url}
+                      alt={game.title}
+                      class="w-full h-full object-cover rounded"
+                      loading="lazy"
+                    />
+                  {:else}
+                    <div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                      No Cover
+                    </div>
+                  {/if}
+                </div>
+                <div class="ml-4 flex-1">
+                  <h3 class="font-semibold text-gray-900 dark:text-white">
+                    {game.title}
+                  </h3>
+                  
+                  {#if game.platforms && game.platforms.length > 0}
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      {#each game.platforms as platform}
+                        <span class="inline-block bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded">
+                          {platform}
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+                  
+                  <p class="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                    Released: {game.release_date ? new Date(game.release_date).getFullYear() : 'Unknown'}
+                  </p>
+                  
+                  {#if game.howlongtobeat_main || game.howlongtobeat_extra || game.howlongtobeat_completionist}
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      <span class="font-medium">Time to beat:</span>
+                      {#if game.howlongtobeat_main}
+                        Main: {game.howlongtobeat_main}h
+                      {/if}
+                      {#if game.howlongtobeat_extra}
+                        • Extra: {game.howlongtobeat_extra}h
+                      {/if}
+                      {#if game.howlongtobeat_completionist}
+                        • Complete: {game.howlongtobeat_completionist}h
+                      {/if}
+                    </div>
+                  {/if}
+                  
+                  {#if game.description}
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-2 overflow-hidden" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+                      {game.description}
+                    </p>
+                  {/if}
+                  
+                  {#if isSearching}
+                    <div class="mt-2 text-sm text-blue-600 dark:text-blue-400">
+                      Adding to collection...
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            </button>
+          {/each}
+        {/if}
       </div>
 
       <div class="mt-6 flex justify-between">
