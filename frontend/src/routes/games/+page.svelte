@@ -252,35 +252,61 @@
   {:else}
     <!-- Grid View -->
     {#if viewMode === 'grid'}
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {#each userGames.value.userGames as userGame (userGame.id)}
           <div
-            class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
+            class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 cursor-pointer group"
             on:click={() => handleGameClick(userGame.id)}
             on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
             tabindex="0"
+            role="button"
+            aria-label="View details for {userGame.game.title}"
           >
-            <div class="aspect-[3/4] bg-gray-200 dark:bg-gray-700 rounded-t-lg">
+            <div class="aspect-[3/4] bg-gray-200 dark:bg-gray-700 rounded-t-lg overflow-hidden relative">
               {#if userGame.game.cover_art_url}
                 <img
                   src={userGame.game.cover_art_url}
-                  alt={userGame.game.title}
-                  class="w-full h-full object-cover rounded-t-lg"
+                  alt="Cover art for {userGame.game.title}"
+                  class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  loading="lazy"
+                  on:error={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.nextElementSibling.style.display = 'flex';
+                  }}
                 />
+                <div class="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500 hidden">
+                  <svg class="w-12 h-12" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
+                  </svg>
+                </div>
               {:else}
-                <div class="w-full h-full flex items-center justify-center text-gray-400">
-                  No Cover
+                <div class="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
+                  <svg class="w-12 h-12 mb-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
+                  </svg>
+                  <span class="text-xs">No Cover</span>
+                </div>
+              {/if}
+              
+              <!-- Loved indicator -->
+              {#if userGame.is_loved}
+                <div class="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 shadow-md">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
+                  </svg>
                 </div>
               {/if}
             </div>
+            
             <div class="p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate">
+              <h3 class="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate" title="{userGame.game.title}">
                 {userGame.game.title}
               </h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate" title="{userGame.game.genre || 'Unknown Genre'}">
                 {userGame.game.genre || 'Unknown Genre'}
               </p>
-              <div class="flex items-center justify-between">
+              
+              <div class="flex items-center justify-between mb-2">
                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
                   {getStatusLabel(userGame.play_status)}
                 </span>
@@ -291,6 +317,14 @@
                       {userGame.personal_rating}
                     </span>
                   </div>
+                {/if}
+              </div>
+              
+              <!-- Additional info -->
+              <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                <span>{userGame.hours_played || 0}h played</span>
+                {#if userGame.game.release_date}
+                  <span>{new Date(userGame.game.release_date).getFullYear()}</span>
                 {/if}
               </div>
             </div>
