@@ -3,7 +3,7 @@ import { dev } from '$app/environment';
 
 // Default configuration
 const defaultConfig = {
-  API_URL: dev ? 'http://localhost:8000' : '',
+  API_URL: dev ? 'http://localhost:8000/api' : '/api',
   APP_NAME: 'Nexorious',
   APP_VERSION: '1.0.0',
   ENVIRONMENT: dev ? 'development' : 'production'
