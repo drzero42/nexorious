@@ -3,6 +3,7 @@
   import { auth, userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { RouteGuard } from '$lib/components';
 
   let game = null;
   let isLoading = true;
@@ -12,13 +13,7 @@
   $: gameId = $page.params.id;
 
   onMount(async () => {
-    // Redirect if not authenticated
-    if (!auth.value.user) {
-      goto('/login');
-      return;
-    }
-
-    // Load game details
+    // Load game details - authentication is handled by RouteGuard
     await loadGame();
   });
 
@@ -133,6 +128,7 @@
   <title>{game?.title || 'Game Details'} - Nexorious</title>
 </svelte:head>
 
+<RouteGuard requireAuth={true}>
 {#if isLoading}
   <div class="text-center py-8">
     <div class="text-gray-500 dark:text-gray-400">Loading game details...</div>
@@ -428,3 +424,4 @@
     </div>
   </div>
 {/if}
+</RouteGuard>

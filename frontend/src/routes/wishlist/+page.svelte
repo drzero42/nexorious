@@ -2,19 +2,14 @@
   import { auth, wishlist } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { RouteGuard } from '$lib/components';
 
   let searchQuery = '';
   let sortBy = 'title';
   let sortOrder: 'asc' | 'desc' = 'asc';
 
   onMount(() => {
-    // Redirect if not authenticated
-    if (!auth.value.user) {
-      goto('/login');
-      return;
-    }
-
-    // Load wishlist
+    // Load wishlist - authentication is handled by RouteGuard
     wishlist.fetchWishlist();
   });
 
@@ -78,6 +73,7 @@
   <title>Wishlist - Nexorious</title>
 </svelte:head>
 
+<RouteGuard requireAuth={true}>
 <div class="space-y-6">
   <!-- Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -259,3 +255,4 @@
     </div>
   {/if}
 </div>
+</RouteGuard>

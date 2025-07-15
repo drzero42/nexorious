@@ -60,10 +60,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Set up routing and navigation
 
 #### 1.2.2 Authentication & User Management
-- [ ] Login and registration forms
-- [ ] JWT token management
-- [ ] Protected route guards
-- [ ] User session handling
+- [x] Login and registration forms
+- [x] JWT token management
+- [x] Protected route guards
+- [x] User session handling
 - [ ] Password reset functionality
 
 #### 1.2.3 Game Library Interface

@@ -46,7 +46,9 @@ vi.mock('$app/stores', () => ({
       callback(false);
       return () => {};
     }
-  }
+  },
+  mockGoto: mockGoto,
+  resetNavigationMocks: () => resetNavigationMocks()
 }));
 
 // Reset functions for test cleanup

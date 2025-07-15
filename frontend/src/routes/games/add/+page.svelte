@@ -2,6 +2,7 @@
   import { auth, games } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { RouteGuard } from '$lib/components';
 
   let searchQuery = '';
   let isSearching = false;
@@ -26,13 +27,6 @@
     is_physical: false,
     is_loved: false
   };
-
-  onMount(() => {
-    // Redirect if not authenticated
-    if (!auth.value.user) {
-      goto('/login');
-    }
-  });
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
@@ -113,6 +107,7 @@
   <title>Add Game - Nexorious</title>
 </svelte:head>
 
+<RouteGuard requireAuth={true}>
 <div class="max-w-2xl mx-auto">
   <!-- Header -->
   <div class="mb-6">
@@ -478,3 +473,4 @@
     </div>
   {/if}
 </div>
+</RouteGuard>

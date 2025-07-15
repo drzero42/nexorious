@@ -40,9 +40,14 @@ vi.mock('$lib/stores/auth.svelte', () => ({
   auth: mockAuthStore
 }));
 
+// Also mock the main stores module
+vi.mock('$lib/stores', () => ({
+  auth: mockAuthStore
+}));
+
 // Helper functions for test setup
-export function setAuthenticatedState() {
-  mockAuthStore.value = { ...mockAuthenticatedState };
+export function setAuthenticatedState(overrides: Partial<AuthState> = {}) {
+  mockAuthStore.value = { ...mockAuthenticatedState, ...overrides };
 }
 
 export function setUnauthenticatedState() {
