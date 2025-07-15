@@ -187,7 +187,7 @@ function createUserGamesStore() {
     return response;
   };
 
-  return {
+  const store = {
     get value() {
       return state;
     },
@@ -503,8 +503,15 @@ function createUserGamesStore() {
     // Clear error
     clearError: () => {
       state = { ...state, error: null };
+    },
+
+    // Alias for loadUserGames for backward compatibility
+    fetchUserGames: async (filters: UserGameFilters = {}, page: number = 1, per_page: number = 20) => {
+      return await store.loadUserGames(filters, page, per_page);
     }
   };
+
+  return store;
 }
 
 export const userGames = createUserGamesStore();
