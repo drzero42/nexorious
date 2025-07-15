@@ -57,7 +57,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Set up Svelte stores for state management
 - [x] Implement PWA support with Workbox
 - [x] Configure Vite build optimization
-- [ ] Set up routing and navigation
+- [x] Set up routing and navigation
 
 #### 1.2.2 Authentication & User Management
 - [ ] Login and registration forms
