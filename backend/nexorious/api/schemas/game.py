@@ -173,7 +173,7 @@ class MetadataComparisonResponse(BaseModel):
 
 class BulkMetadataRequest(BaseModel):
     """Request schema for bulk metadata operations."""
-    game_ids: List[str] = Field(..., min_items=1, max_items=100, description="List of game IDs to process")
+    game_ids: List[str] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
     operation: str = Field(..., pattern="^(refresh|populate)$", description="Operation type")
     options: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Operation-specific options")
 
