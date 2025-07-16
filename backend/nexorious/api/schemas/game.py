@@ -62,6 +62,7 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_completionist: Optional[int]
     igdb_id: Optional[str]
     is_verified: bool
+    aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,6 +86,12 @@ class GameListResponse(BaseModel):
     pages: int
 
 
+class GameAliasCreateRequest(BaseModel):
+    """Request schema for creating game aliases."""
+    alias_title: str = Field(..., max_length=500, description="Alias title")
+    source: Optional[str] = Field(None, max_length=100, description="Source of the alias")
+
+
 class GameAliasResponse(BaseModel):
     """Response schema for game aliases."""
     id: str
@@ -97,7 +104,7 @@ class GameAliasResponse(BaseModel):
 
 class IGDBSearchRequest(BaseModel):
     """Request schema for IGDB game search."""
-    title: str = Field(..., min_length=1, description="Game title to search for")
+    query: str = Field(..., min_length=1, description="Game title to search for")
     limit: Optional[int] = Field(default=10, ge=1, le=50, description="Maximum number of results")
 
 
@@ -116,7 +123,7 @@ class IGDBGameCandidate(BaseModel):
 
 class IGDBSearchResponse(BaseModel):
     """Response schema for IGDB search results."""
-    candidates: List[IGDBGameCandidate]
+    games: List[IGDBGameCandidate]
     total: int
 
 
@@ -125,6 +132,24 @@ class GameMetadataAcceptRequest(BaseModel):
     igdb_id: str = Field(..., description="Selected IGDB game ID")
     accept_metadata: bool = Field(default=True, description="Whether to accept the metadata")
     custom_overrides: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Custom field overrides")
+    
+    # Allow direct field overrides for convenience
+    title: Optional[str] = Field(None, description="Override title")
+    description: Optional[str] = Field(None, description="Override description")
+    genre: Optional[str] = Field(None, description="Override genre")
+    developer: Optional[str] = Field(None, description="Override developer")
+    publisher: Optional[str] = Field(None, description="Override publisher")
+    
+    def model_post_init(self, __context):
+        """Merge direct field overrides into custom_overrides."""
+        if not self.custom_overrides:
+            self.custom_overrides = {}
+        
+        # Add direct field overrides to custom_overrides
+        for field_name in ['title', 'description', 'genre', 'developer', 'publisher']:
+            field_value = getattr(self, field_name, None)
+            if field_value is not None:
+                self.custom_overrides[field_name] = field_value
 
 
 class MetadataStatusResponse(BaseModel):
@@ -181,6 +206,7 @@ class BulkMetadataRequest(BaseModel):
 class BulkMetadataResponse(BaseModel):
     """Response schema for bulk metadata operations."""
     total_games: int
+    processed_games: int
     successful_operations: int
     failed_operations: int
     results: List[Dict[str, Any]]

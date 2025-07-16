@@ -57,6 +57,7 @@ class UserSession(SQLModel, table=True):
     refresh_token_hash: str = Field(max_length=255)
     expires_at: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     user_agent: Optional[str] = Field(default=None)
     ip_address: Optional[str] = Field(default=None, max_length=45)
     

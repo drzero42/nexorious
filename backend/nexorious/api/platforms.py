@@ -30,7 +30,9 @@ router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
 @router.get("/", response_model=PlatformListResponse)
 async def list_platforms(
     session: Annotated[Session, Depends(get_session)],
-    active_only: bool = Query(default=True, description="Show only active platforms")
+    active_only: bool = Query(default=True, description="Show only active platforms"),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
 ):
     """List all platforms."""
     
@@ -39,11 +41,24 @@ async def list_platforms(
         query = query.where(Platform.is_active == True)
     
     query = query.order_by(Platform.display_name)
-    platforms = session.exec(query).all()
+    
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total = session.exec(count_query).one()
+    
+    # Apply pagination
+    offset = (page - 1) * per_page
+    platforms = session.exec(query.offset(offset).limit(per_page)).all()
+    
+    # Calculate pages
+    pages = (total + per_page - 1) // per_page
     
     return PlatformListResponse(
         platforms=platforms,
-        total=len(platforms)
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages
     )
 
 
@@ -79,7 +94,7 @@ async def create_platform(
     
     if existing_platform:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Platform name already exists"
         )
     
@@ -166,7 +181,9 @@ async def delete_platform(
 @router.get("/storefronts/", response_model=StorefrontListResponse)
 async def list_storefronts(
     session: Annotated[Session, Depends(get_session)],
-    active_only: bool = Query(default=True, description="Show only active storefronts")
+    active_only: bool = Query(default=True, description="Show only active storefronts"),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
 ):
     """List all storefronts."""
     
@@ -175,11 +192,24 @@ async def list_storefronts(
         query = query.where(Storefront.is_active == True)
     
     query = query.order_by(Storefront.display_name)
-    storefronts = session.exec(query).all()
+    
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total = session.exec(count_query).one()
+    
+    # Apply pagination
+    offset = (page - 1) * per_page
+    storefronts = session.exec(query.offset(offset).limit(per_page)).all()
+    
+    # Calculate pages
+    pages = (total + per_page - 1) // per_page
     
     return StorefrontListResponse(
         storefronts=storefronts,
-        total=len(storefronts)
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages
     )
 
 
@@ -215,7 +245,7 @@ async def create_storefront(
     
     if existing_storefront:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Storefront name already exists"
         )
     

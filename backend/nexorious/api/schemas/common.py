@@ -11,6 +11,10 @@ class SuccessResponse(BaseModel):
     """Standard success response."""
     success: bool = True
     message: str
+    
+    # Optional fields for bulk operations
+    updated_count: Optional[int] = None
+    failed_count: Optional[int] = None
 
 
 class ErrorResponse(BaseModel):

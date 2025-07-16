@@ -37,6 +37,11 @@ class UserGameCreateRequest(BaseModel):
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status")
     is_physical: bool = Field(default=False, description="Whether it's a physical copy")
     physical_location: Optional[str] = Field(None, max_length=200, description="Physical location if applicable")
+    personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
+    is_loved: bool = Field(default=False, description="Whether game is marked as loved")
+    play_status: PlayStatus = Field(default=PlayStatus.NOT_STARTED, description="Current play status")
+    hours_played: int = Field(default=0, ge=0, description="Hours played")
+    personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
     acquired_date: Optional[date] = Field(None, description="Date when game was acquired")
     platforms: Optional[List[str]] = Field(default_factory=list, description="Platform IDs where game is owned")
 
@@ -48,6 +53,9 @@ class UserGameUpdateRequest(BaseModel):
     physical_location: Optional[str] = Field(None, max_length=200, description="Physical location")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: Optional[bool] = Field(None, description="Whether game is marked as loved")
+    play_status: Optional[PlayStatus] = Field(None, description="Current play status")
+    hours_played: Optional[int] = Field(None, ge=0, description="Hours played")
+    personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
     acquired_date: Optional[date] = Field(None, description="Date when game was acquired")
 
 
@@ -65,6 +73,7 @@ class UserGamePlatformCreateRequest(BaseModel):
     storefront_id: Optional[str] = Field(None, description="Storefront ID")
     store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
     store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
+    is_available: bool = Field(default=True, description="Whether the game is available on this platform")
 
 
 class UserGamePlatformResponse(BaseModel, TimestampMixin):
@@ -130,6 +139,10 @@ class BulkStatusUpdateRequest(BaseModel):
 class CollectionStatsResponse(BaseModel):
     """Response schema for collection statistics."""
     total_games: int
+    completion_stats: dict[PlayStatus, int]
+    ownership_stats: dict[OwnershipStatus, int]
+    platform_stats: dict[str, int]
+    genre_stats: dict[str, int]
     by_status: dict[PlayStatus, int]
     by_platform: dict[str, int]
     by_rating: dict[str, int]

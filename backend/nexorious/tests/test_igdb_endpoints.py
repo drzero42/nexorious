@@ -94,15 +94,15 @@ class TestIGDBSearchEndpoint:
             
             response = client.post(
                 "/api/games/search/igdb",
-                json={"title": "Test Game", "limit": 10}
+                json={"query": "Test Game", "limit": 10}
             )
             
             assert response.status_code == 200
             data = response.json()
             assert data["total"] == 1
-            assert len(data["candidates"]) == 1
+            assert len(data["games"]) == 1
             
-            candidate = data["candidates"][0]
+            candidate = data["games"][0]
             assert candidate["igdb_id"] == "123"
             assert candidate["title"] == "Test Game"
             assert candidate["description"] == "A test game for PC and PlayStation"
@@ -123,7 +123,7 @@ class TestIGDBSearchEndpoint:
             
             response = client.post(
                 "/api/games/search/igdb",
-                json={"title": "Test Game"}
+                json={"query": "Test Game"}
             )
             
             assert response.status_code == 503
@@ -143,7 +143,7 @@ class TestIGDBSearchEndpoint:
             
             response = client.post(
                 "/api/games/search/igdb",
-                json={"title": "Test Game"}
+                json={"query": "Test Game"}
             )
             
             assert response.status_code == 502
@@ -163,13 +163,13 @@ class TestIGDBSearchEndpoint:
             
             response = client.post(
                 "/api/games/search/igdb",
-                json={"title": "Nonexistent Game"}
+                json={"query": "Nonexistent Game"}
             )
             
             assert response.status_code == 200
             data = response.json()
             assert data["total"] == 0
-            assert len(data["candidates"]) == 0
+            assert len(data["games"]) == 0
             
         finally:
             # Clean up overrides
@@ -195,13 +195,13 @@ class TestIGDBSearchEndpoint:
             
             response = client.post(
                 "/api/games/search/igdb",
-                json={"title": "Test Game"}
+                json={"query": "Test Game"}
             )
             
             assert response.status_code == 200
             data = response.json()
             
-            candidate = data["candidates"][0]
+            candidate = data["games"][0]
             platforms = candidate["platforms"]
             
             # Should extract multiple platforms from description

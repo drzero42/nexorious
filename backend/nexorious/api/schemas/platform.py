@@ -9,8 +9,8 @@ from .common import TimestampMixin
 
 class PlatformCreateRequest(BaseModel):
     """Request schema for creating a platform."""
-    name: str = Field(..., max_length=100, description="Platform name (unique identifier)")
-    display_name: str = Field(..., max_length=100, description="Display name for platform")
+    name: str = Field(..., min_length=1, max_length=100, description="Platform name (unique identifier)")
+    display_name: str = Field(..., min_length=1, max_length=100, description="Display name for platform")
     icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
 
 
@@ -34,8 +34,8 @@ class PlatformResponse(BaseModel, TimestampMixin):
 
 class StorefrontCreateRequest(BaseModel):
     """Request schema for creating a storefront."""
-    name: str = Field(..., max_length=100, description="Storefront name (unique identifier)")
-    display_name: str = Field(..., max_length=100, description="Display name for storefront")
+    name: str = Field(..., min_length=1, max_length=100, description="Storefront name (unique identifier)")
+    display_name: str = Field(..., min_length=1, max_length=100, description="Display name for storefront")
     icon_url: Optional[HttpUrl] = Field(None, description="Storefront icon URL")
     base_url: Optional[HttpUrl] = Field(None, description="Base URL for storefront")
 
@@ -64,9 +64,15 @@ class PlatformListResponse(BaseModel):
     """Response schema for platform list."""
     platforms: List[PlatformResponse]
     total: int
+    page: int = Field(default=1, description="Current page number")
+    per_page: int = Field(default=20, description="Items per page")
+    pages: int = Field(default=1, description="Total pages")
 
 
 class StorefrontListResponse(BaseModel):
     """Response schema for storefront list."""
     storefronts: List[StorefrontResponse]
     total: int
+    page: int = Field(default=1, description="Current page number")
+    per_page: int = Field(default=20, description="Items per page")
+    pages: int = Field(default=1, description="Total pages")

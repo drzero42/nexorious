@@ -22,6 +22,7 @@ from ..api.schemas.game import (
     GameResponse,
     GameSearchRequest,
     GameListResponse,
+    GameAliasCreateRequest,
     GameAliasResponse,
     IGDBSearchRequest,
     IGDBGameCandidate,
@@ -175,7 +176,16 @@ async def get_game(
             detail="Game not found"
         )
     
-    return game
+    # Get aliases for this game
+    aliases = session.exec(
+        select(GameAlias).where(GameAlias.game_id == game_id)
+    ).all()
+    
+    # Convert to response format
+    game_response = GameResponse.model_validate(game)
+    game_response.aliases = aliases
+    
+    return game_response
 
 
 @router.post("/", response_model=GameResponse, status_code=status.HTTP_201_CREATED)
@@ -185,6 +195,14 @@ async def create_game(
     current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Create a new game."""
+    
+    # Check for duplicate title
+    existing_game = session.exec(select(Game).where(Game.title == game_data.title)).first()
+    if existing_game:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Game with title '{game_data.title}' already exists"
+        )
     
     # Create slug from title
     base_slug = create_slug(game_data.title)
@@ -326,10 +344,9 @@ async def get_game_aliases(
 @router.post("/{game_id}/aliases", response_model=GameAliasResponse, status_code=status.HTTP_201_CREATED)
 async def create_game_alias(
     game_id: str,
-    alias_title: str,
+    alias_data: GameAliasCreateRequest,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    source: Optional[str] = None
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Create an alias for a game."""
     
@@ -345,7 +362,7 @@ async def create_game_alias(
         select(GameAlias).where(
             and_(
                 GameAlias.game_id == game_id,
-                GameAlias.alias_title == alias_title
+                GameAlias.alias_title == alias_data.alias_title
             )
         )
     ).first()
@@ -358,8 +375,8 @@ async def create_game_alias(
     
     new_alias = GameAlias(
         game_id=game_id,
-        alias_title=alias_title,
-        source=source
+        alias_title=alias_data.alias_title,
+        source=alias_data.source
     )
     
     session.add(new_alias)
@@ -403,7 +420,7 @@ async def search_igdb(
     try:
         # Search games using IGDB service with fuzzy matching
         game_metadata_list = await igdb_service.search_games(
-            query=search_data.title,
+            query=search_data.query,
             limit=search_data.limit or 10,
             fuzzy_threshold=0.6
         )
@@ -437,7 +454,7 @@ async def search_igdb(
             candidates.append(candidate)
         
         return IGDBSearchResponse(
-            candidates=candidates,
+            games=candidates,
             total=len(candidates)
         )
         
@@ -981,6 +998,7 @@ async def bulk_metadata_operation(
     
     return BulkMetadataResponse(
         total_games=len(bulk_request.game_ids),
+        processed_games=len(results),
         successful_operations=successful_operations,
         failed_operations=len(bulk_request.game_ids) - successful_operations,
         results=results,
