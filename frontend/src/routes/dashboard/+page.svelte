@@ -10,18 +10,18 @@
   });
 
   // Calculate statistics
-  $: games = userGames.value.games;
-  $: totalGames = games.length;
-  $: completedGames = games.filter(g => g.play_status === 'completed').length;
-  $: masteredGames = games.filter(g => g.play_status === 'mastered').length;
-  $: dominatedGames = games.filter(g => g.play_status === 'dominated').length;
-  $: inProgressGames = games.filter(g => g.play_status === 'in_progress').length;
-  $: notStartedGames = games.filter(g => g.play_status === 'not_started').length;
-  $: droppedGames = games.filter(g => g.play_status === 'dropped').length;
-  $: shelvedGames = games.filter(g => g.play_status === 'shelved').length;
-  $: totalHours = games.reduce((sum, game) => sum + (game.hours_played || 0), 0);
-  $: averageRating = games.filter(g => g.personal_rating).reduce((sum, game) => sum + game.personal_rating, 0) / games.filter(g => g.personal_rating).length || 0;
-  $: lovedGames = games.filter(g => g.is_loved).length;
+  $: userGamesList = userGames.value.userGames;
+  $: totalGames = userGamesList.length;
+  $: completedGames = userGamesList.filter(g => g.play_status === 'completed').length;
+  $: masteredGames = userGamesList.filter(g => g.play_status === 'mastered').length;
+  $: dominatedGames = userGamesList.filter(g => g.play_status === 'dominated').length;
+  $: inProgressGames = userGamesList.filter(g => g.play_status === 'in_progress').length;
+  $: notStartedGames = userGamesList.filter(g => g.play_status === 'not_started').length;
+  $: droppedGames = userGamesList.filter(g => g.play_status === 'dropped').length;
+  $: shelvedGames = userGamesList.filter(g => g.play_status === 'shelved').length;
+  $: totalHours = userGamesList.reduce((sum, userGame) => sum + (userGame.hours_played || 0), 0);
+  $: averageRating = userGamesList.filter(g => g.personal_rating).reduce((sum, userGame) => sum + userGame.personal_rating, 0) / userGamesList.filter(g => g.personal_rating).length || 0;
+  $: lovedGames = userGamesList.filter(g => g.is_loved).length;
   
   // Pile of Shame (owned games not started)
   $: pileOfShame = notStartedGames;
@@ -30,8 +30,8 @@
   $: completionRate = totalGames > 0 ? ((completedGames + masteredGames + dominatedGames) / totalGames) * 100 : 0;
 
   // Genre breakdown
-  $: genreStats = games.reduce((stats, game) => {
-    const genre = game.genre || 'Unknown';
+  $: genreStats = userGamesList.reduce((stats, userGame) => {
+    const genre = userGame.game.genre || 'Unknown';
     stats[genre] = (stats[genre] || 0) + 1;
     return stats;
   }, {});
@@ -51,7 +51,7 @@
   };
 
   // Recent activity (games played recently)
-  $: recentGames = games
+  $: recentGames = userGamesList
     .filter(g => g.last_played)
     .sort((a, b) => new Date(b.last_played).getTime() - new Date(a.last_played).getTime())
     .slice(0, 5);
@@ -340,14 +340,14 @@
         </h3>
         {#if recentGames.length > 0}
           <div class="space-y-3">
-            {#each recentGames as game}
+            {#each recentGames as userGame}
               <div class="flex items-center justify-between">
                 <div class="flex items-center space-x-3">
                   <div class="flex-shrink-0 w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded">
-                    {#if game.cover_art_url}
+                    {#if userGame.game.cover_art_url}
                       <img
-                        src={game.cover_art_url}
-                        alt={game.title}
+                        src={userGame.game.cover_art_url}
+                        alt={userGame.game.title}
                         class="w-full h-full object-cover rounded"
                       />
                     {:else}
@@ -355,14 +355,14 @@
                     {/if}
                   </div>
                   <div>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{game.title}</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{userGame.game.title}</p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {new Date(game.last_played).toLocaleDateString()}
+                      {new Date(userGame.last_played).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(game.play_status)}">
-                  {getStatusLabel(game.play_status)}
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
+                  {getStatusLabel(userGame.play_status)}
                 </span>
               </div>
             {/each}
