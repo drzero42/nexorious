@@ -270,13 +270,9 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Requirements**:
   - Responsive design that works on desktop, tablet, and mobile
   - Touch-friendly interface elements
-  - Offline capability for basic browsing
-  - Progressive Web App (PWA) support
 - **Acceptance Criteria**:
   - Interface adapts to different screen sizes
   - Touch interactions work smoothly on mobile
-  - Basic functionality works without internet connection
-  - PWA can be installed on mobile devices
 
 #### 4.2 Theme Customization
 **Priority**: P3 (Low)
@@ -422,7 +418,6 @@ To create the definitive self-hosted solution for personal game collection manag
 - **State Management**: Svelte stores
 - **Styling**: Tailwind CSS
 - **Build Tool**: Vite
-- **PWA Support**: Workbox
 - **Testing**: Vitest for unit tests, Playwright for E2E tests
 
 ### Infrastructure

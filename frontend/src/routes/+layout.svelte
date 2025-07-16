@@ -2,8 +2,7 @@
   import '../app.css';
   import { auth, ui } from '$lib/stores';
   import { onMount } from 'svelte';
-  import { initializePWA, initializeInstallPrompt } from '$lib/pwa';
-  import { PWAInstallButton, PWAUpdateNotification, OfflineIndicator, ThemeToggle } from '$lib/components';
+  import { ThemeToggle } from '$lib/components';
   
   let mobileMenuOpen = false;
   
@@ -15,9 +14,6 @@
       auth.refreshAuth();
     }
     
-    // Initialize PWA functionality
-    initializePWA();
-    initializeInstallPrompt();
     
     // Initialize system theme listener
     ui.initSystemThemeListener();
@@ -79,7 +75,6 @@
         <!-- Right Side Actions -->
         <div class="flex items-center space-x-2">
           <ThemeToggle />
-          <PWAInstallButton />
           
           {#if auth.value.user}
             <div class="hidden md:flex items-center space-x-3">
@@ -203,9 +198,6 @@
   </main>
 </div>
 
-<!-- PWA Components -->
-<OfflineIndicator />
-<PWAUpdateNotification />
 
 <style>
   :global(body) {

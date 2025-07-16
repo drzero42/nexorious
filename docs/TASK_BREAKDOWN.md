@@ -55,7 +55,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Initialize SvelteKit project with TypeScript
 - [x] Configure Tailwind CSS for styling
 - [x] Set up Svelte stores for state management
-- [x] Implement PWA support with Workbox
 - [x] Configure Vite build optimization
 - [x] Set up routing and navigation
 
@@ -189,8 +188,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Duration: 2-3 weeks**
 - [ ] Mobile-first responsive layout
 - [ ] Touch-friendly interface elements
-- [ ] Offline capability implementation
-- [ ] PWA installation support
 - [ ] Performance optimization
 
 ### 4.2 Customization Features
