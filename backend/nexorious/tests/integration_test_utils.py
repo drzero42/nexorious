@@ -59,8 +59,6 @@ def test_user_fixture(session: Session) -> User:
         email="test@example.com",
         username="testuser",
         password_hash="$2b$12$test_hash",
-        first_name="Test",
-        last_name="User",
         is_active=True,
         is_admin=False
     )
@@ -77,8 +75,6 @@ def admin_user_fixture(session: Session) -> User:
         email="admin@example.com",
         username="admin",
         password_hash="$2b$12$admin_hash",
-        first_name="Admin",
-        last_name="User",
         is_active=True,
         is_admin=True
     )
@@ -347,17 +343,13 @@ def client_with_mock_igdb_fixture(session: Session, mock_igdb_service):
 def create_test_user_data(
     email: str = "newuser@example.com",
     username: str = "newuser",
-    password: str = "testpassword123",
-    first_name: str = "New",
-    last_name: str = "User"
+    password: str = "testpassword123"
 ) -> Dict[str, Any]:
     """Create test user registration data."""
     return {
         "email": email,
         "username": username,
-        "password": password,
-        "first_name": first_name,
-        "last_name": last_name
+        "password": password
     }
 
 

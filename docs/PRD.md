@@ -490,8 +490,6 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
     is_active BOOLEAN DEFAULT true,
     is_admin BOOLEAN DEFAULT false,
     preferences TEXT DEFAULT '{}',

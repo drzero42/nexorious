@@ -12,8 +12,6 @@ class UserRegisterRequest(BaseModel):
     email: EmailStr = Field(..., description="User email address")
     username: str = Field(..., min_length=3, max_length=100, description="Username")
     password: str = Field(..., min_length=8, max_length=128, description="Password")
-    first_name: Optional[str] = Field(None, max_length=100, description="First name")
-    last_name: Optional[str] = Field(None, max_length=100, description="Last name")
 
 
 class UserLoginRequest(BaseModel):
@@ -40,8 +38,6 @@ class UserProfileResponse(BaseModel):
     id: str
     email: EmailStr
     username: str
-    first_name: Optional[str]
-    last_name: Optional[str]
     is_active: bool
     is_admin: bool
     preferences: dict
@@ -53,8 +49,6 @@ class UserProfileResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     """Request schema for updating user profile."""
-    first_name: Optional[str] = Field(None, max_length=100)
-    last_name: Optional[str] = Field(None, max_length=100)
     preferences: Optional[dict] = Field(None, description="User preferences as JSON")
 
 

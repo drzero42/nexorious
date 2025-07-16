@@ -19,8 +19,6 @@ class User(SQLModel, table=True):
     email: EmailStr = Field(unique=True, index=True)
     username: str = Field(unique=True, index=True, min_length=3, max_length=100)
     password_hash: str = Field(min_length=1, max_length=255)
-    first_name: Optional[str] = Field(default=None, max_length=100)
-    last_name: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
     preferences_json: str = Field(default="{}", sa_column_kwargs={"name": "preferences"})  # JSON string for user preferences
