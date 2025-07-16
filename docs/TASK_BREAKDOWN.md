@@ -100,7 +100,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Duration: 2 weeks**
 
 #### 1.3.1 Backend Testing
-- [ ] Unit tests for all business logic (>80% coverage)
+- [x] Unit tests for all business logic (>80% coverage)
 - [ ] Integration tests for all API endpoints
 - [ ] Database tests for both PostgreSQL and SQLite
 - [ ] Authentication and authorization tests
