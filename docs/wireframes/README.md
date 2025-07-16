@@ -65,7 +65,7 @@ wireframes/
 
 #### 01-authentication/
 **login.svg** - User authentication interface
-- Simple login form with email/password fields
+- Simple login form with username/password fields
 - "Remember me" checkbox and forgot password link
 - Real-time validation feedback
 - Loading and error states

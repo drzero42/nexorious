@@ -23,10 +23,10 @@
   <text x="450" y="220" fill="#343a40" font-size="20" font-weight="bold">Sign In</text>
   <text x="450" y="240" fill="#6c757d" font-size="14">Welcome back! Please sign in to your account</text>
   
-  <!-- Email field -->
-  <text x="450" y="280" fill="#343a40" font-size="14" font-weight="500">Email</text>
+  <!-- Username field -->
+  <text x="450" y="280" fill="#343a40" font-size="14" font-weight="500">Username</text>
   <rect x="450" y="290" width="300" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
-  <text x="460" y="315" fill="#6c757d" font-size="14">Enter your email address</text>
+  <text x="460" y="315" fill="#6c757d" font-size="14">Enter your username</text>
   
   <!-- Password field -->
   <text x="450" y="360" fill="#343a40" font-size="14" font-weight="500">Password</text>
@@ -65,9 +65,9 @@
   
   <!-- Annotations -->
   <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
-    <!-- Email field annotation -->
+    <!-- Username field annotation -->
     <line x1="760" y1="310" x2="820" y2="310" stroke-dasharray="2,2"/>
-    <text x="830" y="310" fill="#ff6b6b">Email validation</text>
+    <text x="830" y="310" fill="#ff6b6b">Username validation</text>
     <text x="830" y="325" fill="#ff6b6b">Real-time feedback</text>
     
     <!-- Password field annotation -->
@@ -84,7 +84,7 @@
   <!-- Error state example -->
   <g id="error-state" opacity="0">
     <rect x="450" y="250" width="300" height="32" rx="4" fill="#f8d7da" stroke="#f5c6cb" stroke-width="1"/>
-    <text x="460" y="271" fill="#721c24" font-size="14">Invalid email or password</text>
+    <text x="460" y="271" fill="#721c24" font-size="14">Invalid username or password</text>
   </g>
   
   <!-- Mobile breakpoint indicator -->
