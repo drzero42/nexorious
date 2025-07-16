@@ -38,10 +38,65 @@ Once the server is running, you can access:
 
 ## Testing
 
-Run the test suite:
+### Running Tests
+
+Run the basic test suite:
 ```bash
 uv run pytest
 ```
+
+Run tests with verbose output:
+```bash
+uv run pytest -v
+```
+
+Run tests for a specific file:
+```bash
+uv run pytest nexorious/tests/test_business_logic.py
+```
+
+### Coverage Analysis
+
+Run tests with coverage analysis:
+```bash
+# Basic coverage with terminal output
+uv run pytest --cov=nexorious
+
+# Coverage with missing lines highlighted
+uv run pytest --cov=nexorious --cov-report=term-missing
+
+# Generate HTML coverage report
+uv run pytest --cov=nexorious --cov-report=html
+
+# Both terminal and HTML reports
+uv run pytest --cov=nexorious --cov-report=term-missing --cov-report=html
+```
+
+### Focused Coverage
+
+Run coverage for specific modules:
+```bash
+# Business logic coverage
+uv run pytest nexorious/tests/test_business_logic.py --cov=nexorious.api.games --cov=nexorious.services.igdb --cov=nexorious.services.storage --cov-report=term-missing
+
+# API endpoints coverage
+uv run pytest nexorious/tests/test_auth_register.py --cov=nexorious.api.auth --cov-report=term-missing
+```
+
+### Coverage Reports
+
+- **Terminal Report**: Shows coverage percentages and missing line numbers directly in the terminal
+- **HTML Report**: Generates detailed HTML coverage reports in the `htmlcov/` directory
+  - Open `htmlcov/index.html` in your browser for interactive coverage analysis
+  - Shows line-by-line coverage with highlighting for covered/uncovered code
+
+### Coverage Targets
+
+The project aims for:
+- **Business Logic**: >80% coverage for core business functions
+- **API Endpoints**: >80% coverage for all REST endpoints
+- **Models**: >90% coverage for data models and validation
+- **Services**: >80% coverage for external service integrations
 
 ## Database
 
