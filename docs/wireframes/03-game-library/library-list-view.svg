@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="900" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="900" fill="url(#grid)"/>
+  
+  <!-- Main Container -->
+  <rect x="50" y="50" width="1100" height="800" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Header -->
+  <rect x="50" y="50" width="1100" height="80" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  <text x="80" y="80" fill="#343a40" font-size="24" font-weight="bold">Game Library</text>
+  <text x="80" y="100" fill="#6c757d" font-size="14">Manage and organize your game collection</text>
+  
+  <!-- Search and Filter Controls -->
+  <g transform="translate(80, 150)">
+    <!-- Search Bar -->
+    <rect x="0" y="0" width="400" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="15" y="25" fill="#6c757d" font-size="14">🔍 Search games...</text>
+    
+    <!-- Filter Dropdowns -->
+    <rect x="420" y="0" width="120" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="435" y="25" fill="#6c757d" font-size="14">Platform ▼</text>
+    
+    <rect x="560" y="0" width="120" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="575" y="25" fill="#6c757d" font-size="14">Status ▼</text>
+    
+    <rect x="700" y="0" width="120" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="715" y="25" fill="#6c757d" font-size="14">Genre ▼</text>
+    
+    <!-- Sort Options -->
+    <rect x="840" y="0" width="120" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="855" y="25" fill="#6c757d" font-size="14">Sort by ▼</text>
+    
+    <!-- View Toggle -->
+    <rect x="980" y="0" width="80" height="40" rx="4" fill="#007bff" stroke="#007bff" stroke-width="1"/>
+    <text x="1005" y="25" fill="white" font-size="12">📋 List</text>
+    
+    <rect x="1070" y="0" width="80" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="1095" y="25" fill="#6c757d" font-size="12">⊞ Grid</text>
+  </g>
+  
+  <!-- Results Summary -->
+  <text x="80" y="230" fill="#6c757d" font-size="14">Showing 1-20 of 1,247 games</text>
+  
+  <!-- Bulk Actions -->
+  <rect x="80" y="240" width="120" height="32" rx="4" fill="#17a2b8" stroke="#17a2b8" stroke-width="1"/>
+  <text x="140" y="260" text-anchor="middle" fill="white" font-size="12">Bulk Actions</text>
+  
+  <!-- Table Header -->
+  <rect x="80" y="290" width="1040" height="40" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  
+  <!-- Checkbox -->
+  <rect x="100" y="305" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+  
+  <!-- Table Headers -->
+  <text x="140" y="315" fill="#6c757d" font-size="12" font-weight="bold">GAME</text>
+  <text x="450" y="315" fill="#6c757d" font-size="12" font-weight="bold">PLATFORMS</text>
+  <text x="580" y="315" fill="#6c757d" font-size="12" font-weight="bold">STATUS</text>
+  <text x="700" y="315" fill="#6c757d" font-size="12" font-weight="bold">RATING</text>
+  <text x="800" y="315" fill="#6c757d" font-size="12" font-weight="bold">HOURS</text>
+  <text x="900" y="315" fill="#6c757d" font-size="12" font-weight="bold">LAST PLAYED</text>
+  <text x="1020" y="315" fill="#6c757d" font-size="12" font-weight="bold">ACTIONS</text>
+  
+  <!-- Table Rows -->
+  <g transform="translate(80, 330)">
+    <!-- Row 1 -->
+    <rect x="0" y="0" width="1040" height="60" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <rect x="20" y="22" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    
+    <!-- Game Info -->
+    <rect x="60" y="10" width="40" height="40" rx="4" fill="#e9ecef"/>
+    <text x="80" y="33" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    <text x="120" y="25" fill="#343a40" font-size="14" font-weight="500">Baldur's Gate 3</text>
+    <text x="120" y="40" fill="#6c757d" font-size="12">RPG • 2023</text>
+    <text x="120" y="55" fill="#6c757d" font-size="12">⭐⭐⭐⭐⭐ Loved</text>
+    
+    <!-- Platforms -->
+    <text x="370" y="25" fill="#6c757d" font-size="12">🖥️ PC</text>
+    <text x="370" y="40" fill="#6c757d" font-size="12">Steam</text>
+    
+    <!-- Status -->
+    <rect x="500" y="15" width="80" height="24" rx="12" fill="#28a745"/>
+    <text x="540" y="30" text-anchor="middle" fill="white" font-size="12">Completed</text>
+    
+    <!-- Rating -->
+    <text x="620" y="30" fill="#ffc107" font-size="16">⭐⭐⭐⭐⭐</text>
+    
+    <!-- Hours -->
+    <text x="720" y="30" fill="#343a40" font-size="14">87h</text>
+    
+    <!-- Last Played -->
+    <text x="820" y="30" fill="#6c757d" font-size="12">2 hours ago</text>
+    
+    <!-- Actions -->
+    <text x="940" y="30" fill="#007bff" font-size="12">Edit</text>
+    <text x="970" y="30" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Row 2 -->
+    <rect x="0" y="60" width="1040" height="60" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <rect x="20" y="82" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    
+    <!-- Game Info -->
+    <rect x="60" y="70" width="40" height="40" rx="4" fill="#e9ecef"/>
+    <text x="80" y="93" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    <text x="120" y="85" fill="#343a40" font-size="14" font-weight="500">Cyberpunk 2077</text>
+    <text x="120" y="100" fill="#6c757d" font-size="12">Action RPG • 2020</text>
+    <text x="120" y="115" fill="#28a745" font-size="12">🏷️ Sci-fi, Open-world</text>
+    
+    <!-- Platforms -->
+    <text x="370" y="85" fill="#6c757d" font-size="12">🎮 PS5</text>
+    <text x="370" y="100" fill="#6c757d" font-size="12">PlayStation Store</text>
+    
+    <!-- Status -->
+    <rect x="500" y="75" width="80" height="24" rx="12" fill="#007bff"/>
+    <text x="540" y="90" text-anchor="middle" fill="white" font-size="12">In Progress</text>
+    
+    <!-- Rating -->
+    <text x="620" y="90" fill="#ffc107" font-size="16">⭐⭐⭐⭐☆</text>
+    
+    <!-- Hours -->
+    <text x="720" y="90" fill="#343a40" font-size="14">45h</text>
+    
+    <!-- Last Played -->
+    <text x="820" y="90" fill="#6c757d" font-size="12">1 day ago</text>
+    
+    <!-- Actions -->
+    <text x="940" y="90" fill="#007bff" font-size="12">Edit</text>
+    <text x="970" y="90" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Row 3 -->
+    <rect x="0" y="120" width="1040" height="60" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <rect x="20" y="142" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    
+    <!-- Game Info -->
+    <rect x="60" y="130" width="40" height="40" rx="4" fill="#e9ecef"/>
+    <text x="80" y="153" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    <text x="120" y="145" fill="#343a40" font-size="14" font-weight="500">The Witcher 3</text>
+    <text x="120" y="160" fill="#6c757d" font-size="12">RPG • 2015</text>
+    <text x="120" y="175" fill="#6c757d" font-size="12">🏷️ Fantasy, Open-world</text>
+    
+    <!-- Platforms -->
+    <text x="370" y="145" fill="#6c757d" font-size="12">🎮 PS4</text>
+    <text x="370" y="160" fill="#6c757d" font-size="12">PlayStation Store</text>
+    
+    <!-- Status -->
+    <rect x="500" y="135" width="80" height="24" rx="12" fill="#ffc107"/>
+    <text x="540" y="150" text-anchor="middle" fill="white" font-size="12">Shelved</text>
+    
+    <!-- Rating -->
+    <text x="620" y="150" fill="#ffc107" font-size="16">⭐⭐⭐⭐⭐</text>
+    
+    <!-- Hours -->
+    <text x="720" y="150" fill="#343a40" font-size="14">156h</text>
+    
+    <!-- Last Played -->
+    <text x="820" y="150" fill="#6c757d" font-size="12">3 months ago</text>
+    
+    <!-- Actions -->
+    <text x="940" y="150" fill="#007bff" font-size="12">Edit</text>
+    <text x="970" y="150" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Row 4 -->
+    <rect x="0" y="180" width="1040" height="60" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <rect x="20" y="202" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    
+    <!-- Game Info -->
+    <rect x="60" y="190" width="40" height="40" rx="4" fill="#e9ecef"/>
+    <text x="80" y="213" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    <text x="120" y="205" fill="#343a40" font-size="14" font-weight="500">Hollow Knight</text>
+    <text x="120" y="220" fill="#6c757d" font-size="12">Metroidvania • 2017</text>
+    <text x="120" y="235" fill="#6c757d" font-size="12">🏷️ Indie, Platformer</text>
+    
+    <!-- Platforms -->
+    <text x="370" y="205" fill="#6c757d" font-size="12">🖥️ PC</text>
+    <text x="370" y="220" fill="#6c757d" font-size="12">Steam</text>
+    
+    <!-- Status -->
+    <rect x="500" y="195" width="80" height="24" rx="12" fill="#6c757d"/>
+    <text x="540" y="210" text-anchor="middle" fill="white" font-size="12">Not Started</text>
+    
+    <!-- Rating -->
+    <text x="620" y="210" fill="#e9ecef" font-size="16">☆☆☆☆☆</text>
+    
+    <!-- Hours -->
+    <text x="720" y="210" fill="#6c757d" font-size="14">0h</text>
+    
+    <!-- Last Played -->
+    <text x="820" y="210" fill="#6c757d" font-size="12">Never</text>
+    
+    <!-- Actions -->
+    <text x="940" y="210" fill="#007bff" font-size="12">Edit</text>
+    <text x="970" y="210" fill="#dc3545" font-size="12">Delete</text>
+  </g>
+  
+  <!-- Pagination -->
+  <g transform="translate(80, 750)">
+    <!-- Items per page -->
+    <text x="0" y="25" fill="#6c757d" font-size="14">Show </text>
+    <rect x="50" y="10" width="60" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="80" y="30" text-anchor="middle" fill="#343a40" font-size="14">20 ▼</text>
+    <text x="120" y="25" fill="#6c757d" font-size="14"> per page</text>
+    
+    <!-- Page Navigation -->
+    <rect x="800" y="10" width="40" height="30" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+    <text x="820" y="30" text-anchor="middle" fill="#6c757d" font-size="14">‹</text>
+    
+    <rect x="850" y="10" width="40" height="30" rx="4" fill="#007bff" stroke="#007bff" stroke-width="1"/>
+    <text x="870" y="30" text-anchor="middle" fill="white" font-size="14">1</text>
+    
+    <rect x="900" y="10" width="40" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="920" y="30" text-anchor="middle" fill="#6c757d" font-size="14">2</text>
+    
+    <rect x="950" y="10" width="40" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="970" y="30" text-anchor="middle" fill="#6c757d" font-size="14">3</text>
+    
+    <text x="1000" y="30" fill="#6c757d" font-size="14">...</text>
+    
+    <rect x="1020" y="10" width="40" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="1040" y="30" text-anchor="middle" fill="#6c757d" font-size="14">63</text>
+    
+    <rect x="1070" y="10" width="40" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="1090" y="30" text-anchor="middle" fill="#6c757d" font-size="14">›</text>
+  </g>
+  
+  <!-- Filter Overlay Example -->
+  <g id="filter-overlay" opacity="0">
+    <rect x="420" y="200" width="200" height="150" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="440" y="220" fill="#343a40" font-size="14" font-weight="500">Filter by Platform</text>
+    
+    <rect x="440" y="235" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="465" y="247" fill="#343a40" font-size="12">PC</text>
+    
+    <rect x="440" y="260" width="16" height="16" rx="2" fill="#007bff" stroke="#007bff" stroke-width="1"/>
+    <text x="447" y="271" fill="white" font-size="10">✓</text>
+    <text x="465" y="272" fill="#343a40" font-size="12">PlayStation 5</text>
+    
+    <rect x="440" y="285" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="465" y="297" fill="#343a40" font-size="12">Xbox Series X</text>
+    
+    <rect x="440" y="310" width="16" height="16" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="465" y="322" fill="#343a40" font-size="12">Nintendo Switch</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Search annotation -->
+    <line x1="280" y1="150" x2="280" y2="120" stroke-dasharray="2,2"/>
+    <text x="200" y="115" fill="#ff6b6b">Real-time search</text>
+    <text x="200" y="130" fill="#ff6b6b">Debounced input</text>
+    
+    <!-- Bulk actions annotation -->
+    <line x1="140" y1="240" x2="140" y2="200" stroke-dasharray="2,2"/>
+    <text x="50" y="195" fill="#ff6b6b">Multi-select</text>
+    <text x="50" y="210" fill="#ff6b6b">Batch operations</text>
+    
+    <!-- Status indicators annotation -->
+    <line x1="540" y1="345" x2="600" y2="345" stroke-dasharray="2,2"/>
+    <text x="610" y="345" fill="#ff6b6b">Status badges</text>
+    <text x="610" y="360" fill="#ff6b6b">Color-coded</text>
+    
+    <!-- Pagination annotation -->
+    <line x1="870" y1="760" x2="870" y2="800" stroke-dasharray="2,2"/>
+    <text x="780" y="815" fill="#ff6b6b">Pagination controls</text>
+    <text x="780" y="830" fill="#ff6b6b">Keyboard navigation</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Game Library - List View Wireframe</text>
+</svg>

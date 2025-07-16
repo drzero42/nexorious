@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="800" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  
+  <!-- Main Container -->
+  <rect x="50" y="50" width="1100" height="700" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Header -->
+  <rect x="50" y="50" width="1100" height="60" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  <text x="80" y="80" fill="#343a40" font-size="20" font-weight="bold">Progress Tracking</text>
+  <text x="80" y="95" fill="#6c757d" font-size="14">Update your gaming progress and manage completion status</text>
+  
+  <!-- Game Info Header -->
+  <g transform="translate(80, 130)">
+    <!-- Game Cover -->
+    <rect x="0" y="0" width="80" height="100" rx="4" fill="#e9ecef"/>
+    <text x="40" y="55" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    
+    <!-- Game Title -->
+    <text x="100" y="25" fill="#343a40" font-size="18" font-weight="bold">Baldur's Gate 3</text>
+    <text x="100" y="45" fill="#6c757d" font-size="14">Larian Studios • 2023</text>
+    <text x="100" y="65" fill="#6c757d" font-size="12">RPG, Strategy • PC (Steam)</text>
+    
+    <!-- Current Status Badge -->
+    <rect x="100" y="75" width="80" height="24" rx="12" fill="#007bff"/>
+    <text x="140" y="90" text-anchor="middle" fill="white" font-size="12">In Progress</text>
+    
+    <!-- Quick Stats -->
+    <text x="400" y="25" fill="#6c757d" font-size="12">Hours Played: </text>
+    <text x="480" y="25" fill="#343a40" font-size="12" font-weight="bold">45</text>
+    
+    <text x="400" y="45" fill="#6c757d" font-size="12">Last Played: </text>
+    <text x="480" y="45" fill="#343a40" font-size="12" font-weight="bold">2 hours ago</text>
+    
+    <text x="400" y="65" fill="#6c757d" font-size="12">Added: </text>
+    <text x="480" y="65" fill="#343a40" font-size="12" font-weight="bold">3 months ago</text>
+  </g>
+  
+  <!-- Progress Update Form -->
+  <g transform="translate(80, 260)">
+    <!-- Status Update Section -->
+    <rect x="0" y="0" width="500" height="180" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="20" y="25" fill="#343a40" font-size="16" font-weight="bold">Update Status</text>
+    
+    <!-- Status Options -->
+    <g transform="translate(20, 50)">
+      <!-- Not Started -->
+      <rect x="0" y="0" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="15" cy="20" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="35" y="17" fill="#6c757d" font-size="12">Not Started</text>
+      <text x="35" y="30" fill="#6c757d" font-size="10">Haven't begun</text>
+      
+      <!-- In Progress -->
+      <rect x="160" y="0" width="140" height="40" rx="4" fill="#e3f2fd" stroke="#007bff" stroke-width="2"/>
+      <circle cx="175" cy="20" r="6" fill="#007bff"/>
+      <text x="195" y="17" fill="#007bff" font-size="12" font-weight="500">In Progress</text>
+      <text x="195" y="30" fill="#007bff" font-size="10">Currently playing</text>
+      
+      <!-- Completed -->
+      <rect x="320" y="0" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="335" cy="20" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="355" y="17" fill="#6c757d" font-size="12">Completed</text>
+      <text x="355" y="30" fill="#6c757d" font-size="10">Finished main story</text>
+      
+      <!-- Mastered -->
+      <rect x="0" y="60" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="15" cy="80" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="35" y="77" fill="#6c757d" font-size="12">Mastered</text>
+      <text x="35" y="90" fill="#6c757d" font-size="10">Main + extras</text>
+      
+      <!-- Dominated -->
+      <rect x="160" y="60" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="175" cy="80" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="195" y="77" fill="#6c757d" font-size="12">Dominated</text>
+      <text x="195" y="90" fill="#6c757d" font-size="10">100% complete</text>
+      
+      <!-- Shelved -->
+      <rect x="320" y="60" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="335" cy="80" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="355" y="77" fill="#6c757d" font-size="12">Shelved</text>
+      <text x="355" y="90" fill="#6c757d" font-size="10">Paused temporarily</text>
+      
+      <!-- Dropped -->
+      <rect x="0" y="120" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="15" cy="140" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="35" y="137" fill="#6c757d" font-size="12">Dropped</text>
+      <text x="35" y="150" fill="#6c757d" font-size="10">Won't continue</text>
+      
+      <!-- Replay -->
+      <rect x="160" y="120" width="140" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <circle cx="175" cy="140" r="6" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="195" y="137" fill="#6c757d" font-size="12">Replay</text>
+      <text x="195" y="150" fill="#6c757d" font-size="10">Playing again</text>
+    </g>
+    
+    <!-- Time Tracking Section -->
+    <rect x="520" y="0" width="300" height="180" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="540" y="25" fill="#343a40" font-size="16" font-weight="bold">Time Tracking</text>
+    
+    <!-- Hours Played -->
+    <text x="540" y="55" fill="#6c757d" font-size="12" font-weight="500">HOURS PLAYED</text>
+    <rect x="540" y="65" width="120" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="550" y="87" fill="#343a40" font-size="14">45</text>
+    
+    <!-- Session Length -->
+    <text x="680" y="55" fill="#6c757d" font-size="12" font-weight="500">SESSION LENGTH</text>
+    <rect x="680" y="65" width="120" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="690" y="87" fill="#343a40" font-size="14">2.5 hours</text>
+    
+    <!-- Last Played -->
+    <text x="540" y="125" fill="#6c757d" font-size="12" font-weight="500">LAST PLAYED</text>
+    <rect x="540" y="135" width="260" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="550" y="157" fill="#343a40" font-size="14">2023-10-15 14:30</text>
+    
+    <!-- Progress Bar -->
+    <rect x="840" y="0" width="280" height="180" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="860" y="25" fill="#343a40" font-size="16" font-weight="bold">Progress Overview</text>
+    
+    <!-- Story Progress -->
+    <text x="860" y="55" fill="#6c757d" font-size="12" font-weight="500">STORY PROGRESS</text>
+    <rect x="860" y="65" width="240" height="8" rx="4" fill="#e9ecef"/>
+    <rect x="860" y="65" width="144" height="8" rx="4" fill="#007bff"/>
+    <text x="860" y="85" fill="#6c757d" font-size="12">60% complete</text>
+    
+    <!-- Completion Estimate -->
+    <text x="860" y="110" fill="#6c757d" font-size="12" font-weight="500">ESTIMATED COMPLETION</text>
+    <text x="860" y="130" fill="#343a40" font-size="14">30 hours remaining</text>
+    <text x="860" y="145" fill="#6c757d" font-size="12">Based on HowLongToBeat</text>
+    
+    <!-- Achievement Progress -->
+    <text x="860" y="170" fill="#6c757d" font-size="12" font-weight="500">ACHIEVEMENTS: 15/50</text>
+  </g>
+  
+  <!-- Notes Section -->
+  <g transform="translate(80, 460)">
+    <text x="0" y="0" fill="#343a40" font-size="16" font-weight="bold">Personal Notes</text>
+    
+    <rect x="0" y="20" width="800" height="120" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="15" y="40" fill="#343a40" font-size="14">Really enjoying the character interactions and story choices.</text>
+    <text x="15" y="60" fill="#343a40" font-size="14">Combat is challenging but fair. The voice acting is incredible.</text>
+    <text x="15" y="80" fill="#343a40" font-size="14">Currently in Act 2, exploring the Shadow-Cursed Lands.</text>
+    <text x="15" y="100" fill="#343a40" font-size="14">Planning to do a second playthrough with different choices.</text>
+    
+    <!-- Rich Text Toolbar -->
+    <rect x="0" y="150" width="800" height="30" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+    <text x="15" y="170" fill="#6c757d" font-size="12">B I U • • • 📎 📷 🎮</text>
+    
+    <!-- Auto-save indicator -->
+    <text x="720" y="170" fill="#28a745" font-size="12">✓ Auto-saved</text>
+  </g>
+  
+  <!-- Activity Log -->
+  <g transform="translate(900, 460)">
+    <text x="0" y="0" fill="#343a40" font-size="16" font-weight="bold">Recent Activity</text>
+    
+    <rect x="0" y="20" width="240" height="160" rx="4" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Activity Items -->
+    <g transform="translate(15, 40)">
+      <circle cx="8" cy="8" r="4" fill="#007bff"/>
+      <text x="20" y="12" fill="#343a40" font-size="12">Played for 2.5 hours</text>
+      <text x="20" y="24" fill="#6c757d" font-size="10">2 hours ago</text>
+      
+      <circle cx="8" cy="48" r="4" fill="#28a745"/>
+      <text x="20" y="52" fill="#343a40" font-size="12">Updated hours to 45</text>
+      <text x="20" y="64" fill="#6c757d" font-size="10">2 hours ago</text>
+      
+      <circle cx="8" cy="88" r="4" fill="#17a2b8"/>
+      <text x="20" y="92" fill="#343a40" font-size="12">Added notes</text>
+      <text x="20" y="104" fill="#6c757d" font-size="10">1 day ago</text>
+      
+      <circle cx="8" cy="128" r="4" fill="#ffc107"/>
+      <text x="20" y="132" fill="#343a40" font-size="12">Status: In Progress</text>
+      <text x="20" y="144" fill="#6c757d" font-size="10">1 day ago</text>
+    </g>
+  </g>
+  
+  <!-- Action Buttons -->
+  <g transform="translate(80, 680)">
+    <!-- Save Changes -->
+    <rect x="0" y="0" width="120" height="40" rx="4" fill="#28a745"/>
+    <text x="60" y="25" text-anchor="middle" fill="white" font-size="14" font-weight="500">Save Changes</text>
+    
+    <!-- Quick Complete -->
+    <rect x="140" y="0" width="140" height="40" rx="4" fill="#007bff"/>
+    <text x="210" y="25" text-anchor="middle" fill="white" font-size="14" font-weight="500">Mark Complete</text>
+    
+    <!-- Add to Backlog -->
+    <rect x="300" y="0" width="120" height="40" rx="4" fill="#ffc107"/>
+    <text x="360" y="25" text-anchor="middle" fill="white" font-size="14" font-weight="500">Shelve Game</text>
+    
+    <!-- Export Progress -->
+    <rect x="440" y="0" width="120" height="40" rx="4" fill="#6c757d"/>
+    <text x="500" y="25" text-anchor="middle" fill="white" font-size="14">Export Data</text>
+    
+    <!-- Cancel -->
+    <rect x="580" y="0" width="80" height="40" rx="4" fill="#dc3545"/>
+    <text x="620" y="25" text-anchor="middle" fill="white" font-size="14">Cancel</text>
+  </g>
+  
+  <!-- Keyboard Shortcuts Panel -->
+  <g transform="translate(900, 640)">
+    <rect x="0" y="0" width="240" height="80" rx="4" fill="#343a40"/>
+    <text x="15" y="20" fill="white" font-size="12" font-weight="bold">Keyboard Shortcuts</text>
+    <text x="15" y="35" fill="#adb5bd" font-size="11">S - Save changes</text>
+    <text x="15" y="50" fill="#adb5bd" font-size="11">C - Mark complete</text>
+    <text x="15" y="65" fill="#adb5bd" font-size="11">N - Add notes</text>
+    <text x="120" y="35" fill="#adb5bd" font-size="11">+/- - Adjust hours</text>
+    <text x="120" y="50" fill="#adb5bd" font-size="11">Space - Quick status</text>
+    <text x="120" y="65" fill="#adb5bd" font-size="11">Esc - Cancel</text>
+  </g>
+  
+  <!-- Status Change Animation -->
+  <g id="status-animation" opacity="0">
+    <rect x="400" y="300" width="200" height="100" rx="8" fill="#28a745"/>
+    <text x="500" y="340" text-anchor="middle" fill="white" font-size="16" font-weight="bold">Status Updated!</text>
+    <text x="500" y="360" text-anchor="middle" fill="white" font-size="14">In Progress → Completed</text>
+    <animateTransform attributeName="transform" type="scale" dur="0.5s" values="0.8;1.1;1" begin="0s"/>
+    <animate attributeName="opacity" dur="2s" values="0;1;1;0" begin="0s"/>
+  </g>
+  
+  <!-- Validation Messages -->
+  <g id="validation-messages" opacity="0">
+    <rect x="80" y="640" width="400" height="30" rx="4" fill="#f8d7da" stroke="#f5c6cb" stroke-width="1"/>
+    <text x="90" y="659" fill="#721c24" font-size="12">Please enter a valid number of hours</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Status options annotation -->
+    <line x1="300" y1="310" x2="360" y2="310" stroke-dasharray="2,2"/>
+    <text x="370" y="310" fill="#ff6b6b">8 completion levels</text>
+    <text x="370" y="325" fill="#ff6b6b">Visual indicators</text>
+    
+    <!-- Time tracking annotation -->
+    <line x1="700" y1="327" x2="760" y2="327" stroke-dasharray="2,2"/>
+    <text x="770" y="327" fill="#ff6b6b">Manual or automatic</text>
+    <text x="770" y="342" fill="#ff6b6b">Session tracking</text>
+    
+    <!-- Notes annotation -->
+    <line x1="400" y1="520" x2="460" y2="520" stroke-dasharray="2,2"/>
+    <text x="470" y="520" fill="#ff6b6b">Rich text editor</text>
+    <text x="470" y="535" fill="#ff6b6b">Auto-save</text>
+    
+    <!-- Activity log annotation -->
+    <line x1="900" y1="540" x2="850" y2="540" stroke-dasharray="2,2"/>
+    <text x="750" y="540" fill="#ff6b6b">Change history</text>
+    <text x="750" y="555" fill="#ff6b6b">Timeline</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Progress Tracking Interface Wireframe</text>
+</svg>

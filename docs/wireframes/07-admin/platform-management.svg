@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="900" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="900" fill="url(#grid)"/>
+  
+  <!-- Main Container -->
+  <rect x="50" y="50" width="1100" height="800" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Header -->
+  <rect x="50" y="50" width="1100" height="80" fill="#dc3545" stroke="#dc3545" stroke-width="0 0 1 0"/>
+  <text x="80" y="80" fill="white" font-size="20" font-weight="bold">🛠️ Admin: Platform & Storefront Management</text>
+  <text x="80" y="105" fill="#f8d7da" font-size="14">Manage available platforms and storefronts for the application</text>
+  
+  <!-- Admin Warning -->
+  <rect x="900" y="65" width="200" height="30" rx="4" fill="#ffc107" stroke="#ffc107" stroke-width="1"/>
+  <text x="1000" y="84" text-anchor="middle" fill="#212529" font-size="12" font-weight="bold">⚠️ Admin Only Access</text>
+  
+  <!-- Tab Navigation -->
+  <g transform="translate(80, 150)">
+    <!-- Platforms Tab -->
+    <rect x="0" y="0" width="100" height="40" rx="4" fill="#007bff" stroke="#007bff" stroke-width="1"/>
+    <text x="50" y="25" text-anchor="middle" fill="white" font-size="14" font-weight="500">Platforms</text>
+    
+    <!-- Storefronts Tab -->
+    <rect x="110" y="0" width="100" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="160" y="25" text-anchor="middle" fill="#6c757d" font-size="14">Storefronts</text>
+    
+    <!-- Settings Tab -->
+    <rect x="220" y="0" width="100" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="270" y="25" text-anchor="middle" fill="#6c757d" font-size="14">Settings</text>
+  </g>
+  
+  <!-- Platforms Management Panel -->
+  <g transform="translate(80, 210)">
+    <!-- Add New Platform -->
+    <rect x="0" y="0" width="500" height="200" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="20" y="25" fill="#343a40" font-size="16" font-weight="bold">Add New Platform</text>
+    
+    <!-- Platform Name -->
+    <text x="20" y="55" fill="#6c757d" font-size="12" font-weight="500">PLATFORM NAME</text>
+    <rect x="20" y="65" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="30" y="87" fill="#343a40" font-size="14">Nintendo Switch</text>
+    
+    <!-- Display Name -->
+    <text x="240" y="55" fill="#6c757d" font-size="12" font-weight="500">DISPLAY NAME</text>
+    <rect x="240" y="65" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="250" y="87" fill="#343a40" font-size="14">Nintendo Switch</text>
+    
+    <!-- Icon URL -->
+    <text x="20" y="125" fill="#6c757d" font-size="12" font-weight="500">ICON URL (Optional)</text>
+    <rect x="20" y="135" width="360" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="30" y="157" fill="#6c757d" font-size="14">https://example.com/nintendo-switch-icon.png</text>
+    
+    <!-- Active Status -->
+    <rect x="400" y="135" width="20" height="20" rx="2" fill="#28a745"/>
+    <text x="407" y="149" fill="white" font-size="12">✓</text>
+    <text x="430" y="149" fill="#6c757d" font-size="12">Active</text>
+    
+    <!-- Add Button -->
+    <rect x="400" y="155" width="80" height="30" rx="4" fill="#28a745"/>
+    <text x="440" y="175" text-anchor="middle" fill="white" font-size="12">Add Platform</text>
+    
+    <!-- Existing Platforms List -->
+    <rect x="520" y="0" width="500" height="200" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="540" y="25" fill="#343a40" font-size="16" font-weight="bold">Existing Platforms</text>
+    
+    <!-- Platform List Header -->
+    <rect x="540" y="40" width="460" height="30" fill="#e9ecef" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="60" fill="#6c757d" font-size="12" font-weight="bold">NAME</text>
+    <text x="700" y="60" fill="#6c757d" font-size="12" font-weight="bold">DISPLAY NAME</text>
+    <text x="850" y="60" fill="#6c757d" font-size="12" font-weight="bold">STATUS</text>
+    <text x="920" y="60" fill="#6c757d" font-size="12" font-weight="bold">ACTIONS</text>
+    
+    <!-- Platform Entry 1 -->
+    <rect x="540" y="70" width="460" height="30" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="90" fill="#343a40" font-size="12">pc</text>
+    <text x="700" y="90" fill="#343a40" font-size="12">PC</text>
+    <rect x="850" y="80" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="875" y="92" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="930" y="90" fill="#007bff" font-size="12">Edit</text>
+    <text x="960" y="90" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Platform Entry 2 -->
+    <rect x="540" y="100" width="460" height="30" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="120" fill="#343a40" font-size="12">playstation5</text>
+    <text x="700" y="120" fill="#343a40" font-size="12">PlayStation 5</text>
+    <rect x="850" y="110" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="875" y="122" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="930" y="120" fill="#007bff" font-size="12">Edit</text>
+    <text x="960" y="120" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Platform Entry 3 -->
+    <rect x="540" y="130" width="460" height="30" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="150" fill="#343a40" font-size="12">xbox_series_x</text>
+    <text x="700" y="150" fill="#343a40" font-size="12">Xbox Series X/S</text>
+    <rect x="850" y="140" width="50" height="18" rx="9" fill="#6c757d"/>
+    <text x="875" y="152" text-anchor="middle" fill="white" font-size="10">Inactive</text>
+    <text x="930" y="150" fill="#007bff" font-size="12">Edit</text>
+    <text x="960" y="150" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Platform Entry 4 -->
+    <rect x="540" y="160" width="460" height="30" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="180" fill="#343a40" font-size="12">nintendo_switch</text>
+    <text x="700" y="180" fill="#343a40" font-size="12">Nintendo Switch</text>
+    <rect x="850" y="170" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="875" y="182" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="930" y="180" fill="#007bff" font-size="12">Edit</text>
+    <text x="960" y="180" fill="#dc3545" font-size="12">Delete</text>
+  </g>
+  
+  <!-- Storefronts Management Panel -->
+  <g transform="translate(80, 430)">
+    <!-- Add New Storefront -->
+    <rect x="0" y="0" width="500" height="280" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="20" y="25" fill="#343a40" font-size="16" font-weight="bold">Add New Storefront</text>
+    
+    <!-- Storefront Name -->
+    <text x="20" y="55" fill="#6c757d" font-size="12" font-weight="500">STOREFRONT NAME</text>
+    <rect x="20" y="65" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="30" y="87" fill="#343a40" font-size="14">epic_games</text>
+    
+    <!-- Display Name -->
+    <text x="240" y="55" fill="#6c757d" font-size="12" font-weight="500">DISPLAY NAME</text>
+    <rect x="240" y="65" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="250" y="87" fill="#343a40" font-size="14">Epic Games Store</text>
+    
+    <!-- Base URL -->
+    <text x="20" y="125" fill="#6c757d" font-size="12" font-weight="500">BASE URL</text>
+    <rect x="20" y="135" width="420" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="30" y="157" fill="#343a40" font-size="14">https://store.epicgames.com</text>
+    
+    <!-- Icon URL -->
+    <text x="20" y="195" fill="#6c757d" font-size="12" font-weight="500">ICON URL (Optional)</text>
+    <rect x="20" y="205" width="420" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="30" y="227" fill="#6c757d" font-size="14">https://example.com/epic-games-icon.png</text>
+    
+    <!-- Active Status -->
+    <rect x="20" y="250" width="20" height="20" rx="2" fill="#28a745"/>
+    <text x="27" y="264" fill="white" font-size="12">✓</text>
+    <text x="50" y="264" fill="#6c757d" font-size="12">Active</text>
+    
+    <!-- Add Button -->
+    <rect x="350" y="245" width="90" height="30" rx="4" fill="#28a745"/>
+    <text x="395" y="265" text-anchor="middle" fill="white" font-size="12">Add Storefront</text>
+    
+    <!-- Existing Storefronts List -->
+    <rect x="520" y="0" width="500" height="280" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="540" y="25" fill="#343a40" font-size="16" font-weight="bold">Existing Storefronts</text>
+    
+    <!-- Storefront List Header -->
+    <rect x="540" y="40" width="460" height="30" fill="#e9ecef" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="60" fill="#6c757d" font-size="12" font-weight="bold">NAME</text>
+    <text x="650" y="60" fill="#6c757d" font-size="12" font-weight="bold">DISPLAY NAME</text>
+    <text x="800" y="60" fill="#6c757d" font-size="12" font-weight="bold">STATUS</text>
+    <text x="870" y="60" fill="#6c757d" font-size="12" font-weight="bold">ACTIONS</text>
+    
+    <!-- Storefront Entry 1 -->
+    <rect x="540" y="70" width="460" height="30" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="90" fill="#343a40" font-size="12">steam</text>
+    <text x="650" y="90" fill="#343a40" font-size="12">Steam</text>
+    <rect x="800" y="80" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="825" y="92" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="880" y="90" fill="#007bff" font-size="12">Edit</text>
+    <text x="910" y="90" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Storefront Entry 2 -->
+    <rect x="540" y="100" width="460" height="30" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="120" fill="#343a40" font-size="12">playstation_store</text>
+    <text x="650" y="120" fill="#343a40" font-size="12">PlayStation Store</text>
+    <rect x="800" y="110" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="825" y="122" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="880" y="120" fill="#007bff" font-size="12">Edit</text>
+    <text x="910" y="120" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Storefront Entry 3 -->
+    <rect x="540" y="130" width="460" height="30" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="150" fill="#343a40" font-size="12">xbox_store</text>
+    <text x="650" y="150" fill="#343a40" font-size="12">Xbox Store</text>
+    <rect x="800" y="140" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="825" y="152" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="880" y="150" fill="#007bff" font-size="12">Edit</text>
+    <text x="910" y="150" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Storefront Entry 4 -->
+    <rect x="540" y="160" width="460" height="30" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="180" fill="#343a40" font-size="12">gog</text>
+    <text x="650" y="180" fill="#343a40" font-size="12">GOG</text>
+    <rect x="800" y="170" width="50" height="18" rx="9" fill="#6c757d"/>
+    <text x="825" y="182" text-anchor="middle" fill="white" font-size="10">Inactive</text>
+    <text x="880" y="180" fill="#007bff" font-size="12">Edit</text>
+    <text x="910" y="180" fill="#dc3545" font-size="12">Delete</text>
+    
+    <!-- Storefront Entry 5 -->
+    <rect x="540" y="190" width="460" height="30" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="550" y="210" fill="#343a40" font-size="12">epic_games</text>
+    <text x="650" y="210" fill="#343a40" font-size="12">Epic Games Store</text>
+    <rect x="800" y="200" width="50" height="18" rx="9" fill="#28a745"/>
+    <text x="825" y="212" text-anchor="middle" fill="white" font-size="10">Active</text>
+    <text x="880" y="210" fill="#007bff" font-size="12">Edit</text>
+    <text x="910" y="210" fill="#dc3545" font-size="12">Delete</text>
+  </g>
+  
+  <!-- Bulk Operations -->
+  <g transform="translate(80, 730)">
+    <rect x="0" y="0" width="1040" height="50" rx="4" fill="#fff3cd" stroke="#ffc107" stroke-width="1"/>
+    <text x="20" y="25" fill="#856404" font-size="14" font-weight="bold">Bulk Operations</text>
+    
+    <!-- Bulk Enable -->
+    <rect x="150" y="10" width="100" height="30" rx="4" fill="#28a745"/>
+    <text x="200" y="30" text-anchor="middle" fill="white" font-size="12">Enable All</text>
+    
+    <!-- Bulk Disable -->
+    <rect x="270" y="10" width="100" height="30" rx="4" fill="#dc3545"/>
+    <text x="320" y="30" text-anchor="middle" fill="white" font-size="12">Disable All</text>
+    
+    <!-- Import Config -->
+    <rect x="390" y="10" width="120" height="30" rx="4" fill="#007bff"/>
+    <text x="450" y="30" text-anchor="middle" fill="white" font-size="12">Import Config</text>
+    
+    <!-- Export Config -->
+    <rect x="530" y="10" width="120" height="30" rx="4" fill="#6c757d"/>
+    <text x="590" y="30" text-anchor="middle" fill="white" font-size="12">Export Config</text>
+    
+    <!-- Reset to Defaults -->
+    <rect x="670" y="10" width="140" height="30" rx="4" fill="#fd7e14"/>
+    <text x="740" y="30" text-anchor="middle" fill="white" font-size="12">Reset to Defaults</text>
+    
+    <!-- Usage Statistics -->
+    <text x="840" y="25" fill="#856404" font-size="12">Active Platforms: 3/4</text>
+    <text x="840" y="40" fill="#856404" font-size="12">Active Storefronts: 4/5</text>
+  </g>
+  
+  <!-- Delete Confirmation Modal -->
+  <g id="delete-modal" opacity="0">
+    <rect x="0" y="0" width="1200" height="900" fill="rgba(0,0,0,0.5)"/>
+    <rect x="400" y="350" width="400" height="200" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <text x="600" y="380" text-anchor="middle" fill="#343a40" font-size="18" font-weight="bold">Confirm Deletion</text>
+    <text x="600" y="410" text-anchor="middle" fill="#6c757d" font-size="14">Are you sure you want to delete this platform?</text>
+    <text x="600" y="430" text-anchor="middle" fill="#dc3545" font-size="12" font-weight="bold">This action cannot be undone!</text>
+    
+    <!-- Warning Info -->
+    <rect x="420" y="450" width="360" height="60" rx="4" fill="#f8d7da" stroke="#f5c6cb" stroke-width="1"/>
+    <text x="430" y="470" fill="#721c24" font-size="12">⚠️ Deleting this platform will:</text>
+    <text x="430" y="485" fill="#721c24" font-size="12">• Remove it from all user games</text>
+    <text x="430" y="500" fill="#721c24" font-size="12">• Make it unavailable for new games</text>
+    
+    <!-- Modal Buttons -->
+    <rect x="480" y="520" width="80" height="30" rx="4" fill="#dc3545"/>
+    <text x="520" y="539" text-anchor="middle" fill="white" font-size="12">Delete</text>
+    
+    <rect x="580" y="520" width="80" height="30" rx="4" fill="#6c757d"/>
+    <text x="620" y="539" text-anchor="middle" fill="white" font-size="12">Cancel</text>
+  </g>
+  
+  <!-- Edit Modal -->
+  <g id="edit-modal" opacity="0">
+    <rect x="0" y="0" width="1200" height="900" fill="rgba(0,0,0,0.5)"/>
+    <rect x="350" y="250" width="500" height="400" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <text x="600" y="280" text-anchor="middle" fill="#343a40" font-size="18" font-weight="bold">Edit Platform</text>
+    
+    <!-- Edit Form -->
+    <g transform="translate(380, 300)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">PLATFORM NAME</text>
+      <rect x="0" y="10" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="32" fill="#343a40" font-size="14">xbox_series_x</text>
+      
+      <text x="220" y="0" fill="#6c757d" font-size="12" font-weight="500">DISPLAY NAME</text>
+      <rect x="220" y="10" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="230" y="32" fill="#343a40" font-size="14">Xbox Series X/S</text>
+      
+      <text x="0" y="70" fill="#6c757d" font-size="12" font-weight="500">ICON URL</text>
+      <rect x="0" y="80" width="420" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="102" fill="#343a40" font-size="14">https://example.com/xbox-icon.png</text>
+      
+      <rect x="0" y="140" width="20" height="20" rx="2" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="30" y="155" fill="#6c757d" font-size="12">Active</text>
+      
+      <!-- Games Using This Platform -->
+      <text x="0" y="190" fill="#6c757d" font-size="12" font-weight="500">USAGE STATISTICS</text>
+      <rect x="0" y="200" width="420" height="60" rx="4" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+      <text x="10" y="220" fill="#343a40" font-size="12">Games using this platform: 47</text>
+      <text x="10" y="235" fill="#343a40" font-size="12">Users with games on this platform: 15</text>
+      <text x="10" y="250" fill="#6c757d" font-size="12">Last used: 2 hours ago</text>
+    </g>
+    
+    <!-- Modal Buttons -->
+    <rect x="500" y="600" width="80" height="30" rx="4" fill="#28a745"/>
+    <text x="540" y="619" text-anchor="middle" fill="white" font-size="12">Save</text>
+    
+    <rect x="600" y="600" width="80" height="30" rx="4" fill="#6c757d"/>
+    <text x="640" y="619" text-anchor="middle" fill="white" font-size="12">Cancel</text>
+  </g>
+  
+  <!-- Success Message -->
+  <g id="success-message" opacity="0">
+    <rect x="80" y="800" width="400" height="30" rx="4" fill="#d4edda" stroke="#c3e6cb" stroke-width="1"/>
+    <text x="90" y="820" fill="#155724" font-size="12">✓ Platform updated successfully!</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Admin access annotation -->
+    <line x1="1000" y1="95" x2="1000" y2="130" stroke-dasharray="2,2"/>
+    <text x="920" y="125" fill="#ff6b6b">Admin authentication</text>
+    <text x="920" y="140" fill="#ff6b6b">required</text>
+    
+    <!-- CRUD operations annotation -->
+    <line x1="945" y1="270" x2="1000" y2="270" stroke-dasharray="2,2"/>
+    <text x="1010" y="270" fill="#ff6b6b">Full CRUD</text>
+    <text x="1010" y="285" fill="#ff6b6b">operations</text>
+    
+    <!-- Impact tracking annotation -->
+    <line x1="600" y1="520" x2="660" y2="520" stroke-dasharray="2,2"/>
+    <text x="670" y="520" fill="#ff6b6b">Impact analysis</text>
+    <text x="670" y="535" fill="#ff6b6b">before deletion</text>
+    
+    <!-- Bulk operations annotation -->
+    <line x1="450" y1="740" x2="450" y2="700" stroke-dasharray="2,2"/>
+    <text x="370" y="695" fill="#ff6b6b">Bulk management</text>
+    <text x="370" y="710" fill="#ff6b6b">Config import/export</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Admin: Platform & Storefront Management Wireframe</text>
+</svg>
