@@ -70,8 +70,10 @@ const initialState: SearchState = {
 function createSearchStore() {
   let state = $state<SearchState>(initialState);
 
-  // Load saved searches and history from localStorage on initialization
-  if (browser) {
+  // Initialize data from localStorage
+  function initializeData() {
+    if (!browser) return;
+    
     const storedSearches = localStorage.getItem('saved-searches');
     if (storedSearches) {
       try {
@@ -92,6 +94,9 @@ function createSearchStore() {
       }
     }
   }
+
+  // Call initialization
+  initializeData();
 
   // Function to save searches to localStorage
   function saveSavedSearches() {

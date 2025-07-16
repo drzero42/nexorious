@@ -61,8 +61,10 @@ const initialState: UIState = {
 function createUIStore() {
   let state = $state<UIState>(initialState);
 
-  // Load preferences from localStorage on initialization
-  if (browser) {
+  // Initialize preferences from localStorage
+  function initializePreferences() {
+    if (!browser) return;
+    
     const storedPreferences = localStorage.getItem('ui-preferences');
     if (storedPreferences) {
       try {
@@ -79,14 +81,17 @@ function createUIStore() {
             ...parsedPreferences.preferences
           }
         };
+        
+        // Apply theme to document
+        applyTheme(state.theme);
       } catch (error) {
         console.error('Failed to parse stored UI preferences:', error);
       }
     }
-
-    // Apply theme to document
-    applyTheme(state.theme);
   }
+
+  // Call initialization
+  initializePreferences();
 
   // Function to apply theme to document
   function applyTheme(theme: Theme) {

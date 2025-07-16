@@ -14,7 +14,6 @@ export default defineConfig({
 			output: {
 				manualChunks: {
 					vendor: ['svelte'],
-					ui: ['@tailwindcss/typography'],
 					pwa: ['workbox-window']
 				},
 				chunkFileNames: 'assets/[name]-[hash].js',
