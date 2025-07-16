@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="800" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  
+  <!-- Main Container -->
+  <rect x="100" y="80" width="1000" height="640" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Header -->
+  <rect x="100" y="80" width="1000" height="60" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  <text x="130" y="105" fill="#343a40" font-size="20" font-weight="bold">Add Game to Library</text>
+  <text x="130" y="125" fill="#6c757d" font-size="14">Search for games using IGDB database</text>
+  
+  <!-- Close Button -->
+  <rect x="1040" y="95" width="40" height="30" rx="4" fill="#dc3545"/>
+  <text x="1060" y="113" text-anchor="middle" fill="white" font-size="16">×</text>
+  
+  <!-- Search Section -->
+  <g transform="translate(130, 170)">
+    <text x="0" y="0" fill="#343a40" font-size="16" font-weight="500">Search for a game</text>
+    
+    <!-- Search Input -->
+    <rect x="0" y="15" width="600" height="50" rx="4" fill="white" stroke="#ced4da" stroke-width="2"/>
+    <text x="20" y="45" fill="#343a40" font-size="16">Baldur's Gate</text>
+    
+    <!-- Search Button -->
+    <rect x="620" y="15" width="120" height="50" rx="4" fill="#007bff"/>
+    <text x="680" y="45" text-anchor="middle" fill="white" font-size="16" font-weight="500">🔍 Search</text>
+    
+    <!-- Search Tips -->
+    <text x="0" y="85" fill="#6c757d" font-size="12">💡 Try searching by exact title, developer, or release year for best results</text>
+    
+    <!-- Loading State -->
+    <g id="loading-state" opacity="0">
+      <rect x="0" y="100" width="940" height="60" rx="4" fill="#f8f9fa"/>
+      <circle cx="470" cy="130" r="16" fill="none" stroke="#007bff" stroke-width="3" stroke-dasharray="10,5">
+        <animateTransform attributeName="transform" type="rotate" dur="1s" repeatCount="indefinite" values="0 470 130;360 470 130"/>
+      </circle>
+      <text x="470" y="155" text-anchor="middle" fill="#6c757d" font-size="14">Searching IGDB database...</text>
+    </g>
+  </g>
+  
+  <!-- Search Results -->
+  <g transform="translate(130, 270)">
+    <text x="0" y="0" fill="#343a40" font-size="16" font-weight="500">Search Results (5 found)</text>
+    
+    <!-- Result 1 -->
+    <rect x="0" y="20" width="940" height="90" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Cover Art Placeholder -->
+    <rect x="15" y="35" width="60" height="60" rx="4" fill="#e9ecef"/>
+    <text x="45" y="68" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    
+    <!-- Game Info -->
+    <text x="90" y="50" fill="#343a40" font-size="16" font-weight="500">Baldur's Gate 3</text>
+    <text x="90" y="67" fill="#6c757d" font-size="14">Larian Studios • 2023</text>
+    <text x="90" y="82" fill="#6c757d" font-size="12">RPG • PC, PlayStation 5, Xbox Series X/S</text>
+    
+    <!-- Rating -->
+    <text x="500" y="50" fill="#ffc107" font-size="14">★★★★★</text>
+    <text x="500" y="67" fill="#6c757d" font-size="12">96/100 (Metacritic)</text>
+    
+    <!-- Select Button -->
+    <rect x="800" y="40" width="120" height="40" rx="4" fill="#28a745"/>
+    <text x="860" y="65" text-anchor="middle" fill="white" font-size="14" font-weight="500">Select</text>
+    
+    <!-- Result 2 -->
+    <rect x="0" y="130" width="940" height="90" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Cover Art Placeholder -->
+    <rect x="15" y="145" width="60" height="60" rx="4" fill="#e9ecef"/>
+    <text x="45" y="178" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    
+    <!-- Game Info -->
+    <text x="90" y="160" fill="#343a40" font-size="16" font-weight="500">Baldur's Gate II: Enhanced Edition</text>
+    <text x="90" y="177" fill="#6c757d" font-size="14">Beamdog • 2013</text>
+    <text x="90" y="192" fill="#6c757d" font-size="12">RPG • PC, iOS, Android</text>
+    
+    <!-- Rating -->
+    <text x="500" y="160" fill="#ffc107" font-size="14">★★★★☆</text>
+    <text x="500" y="177" fill="#6c757d" font-size="12">85/100 (Metacritic)</text>
+    
+    <!-- Select Button -->
+    <rect x="800" y="150" width="120" height="40" rx="4" fill="#28a745"/>
+    <text x="860" y="175" text-anchor="middle" fill="white" font-size="14" font-weight="500">Select</text>
+    
+    <!-- Result 3 -->
+    <rect x="0" y="240" width="940" height="90" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Cover Art Placeholder -->
+    <rect x="15" y="255" width="60" height="60" rx="4" fill="#e9ecef"/>
+    <text x="45" y="288" text-anchor="middle" fill="#6c757d" font-size="10">IMG</text>
+    
+    <!-- Game Info -->
+    <text x="90" y="270" fill="#343a40" font-size="16" font-weight="500">Baldur's Gate: Enhanced Edition</text>
+    <text x="90" y="287" fill="#6c757d" font-size="14">Beamdog • 2012</text>
+    <text x="90" y="302" fill="#6c757d" font-size="12">RPG • PC, iOS, Android</text>
+    
+    <!-- Rating -->
+    <text x="500" y="270" fill="#ffc107" font-size="14">★★★★☆</text>
+    <text x="500" y="287" fill="#6c757d" font-size="12">78/100 (Metacritic)</text>
+    
+    <!-- Select Button -->
+    <rect x="800" y="260" width="120" height="40" rx="4" fill="#28a745"/>
+    <text x="860" y="285" text-anchor="middle" fill="white" font-size="14" font-weight="500">Select</text>
+    
+    <!-- Show More Results -->
+    <rect x="0" y="350" width="940" height="40" rx="4" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    <text x="470" y="375" text-anchor="middle" fill="#007bff" font-size="14">Show 2 more results...</text>
+  </g>
+  
+  <!-- Manual Entry Option -->
+  <g transform="translate(130, 680)">
+    <text x="0" y="0" fill="#6c757d" font-size="14">Can't find your game? </text>
+    <text x="150" y="0" fill="#007bff" font-size="14" text-decoration="underline">Add manually</text>
+    <text x="240" y="0" fill="#6c757d" font-size="14"> or </text>
+    <text x="270" y="0" fill="#007bff" font-size="14" text-decoration="underline">suggest addition to IGDB</text>
+  </g>
+  
+  <!-- No Results State -->
+  <g id="no-results" opacity="0">
+    <rect x="130" y="270" width="940" height="200" rx="4" fill="#f8f9fa"/>
+    <text x="600" y="350" text-anchor="middle" fill="#6c757d" font-size="18">No games found</text>
+    <text x="600" y="375" text-anchor="middle" fill="#6c757d" font-size="14">Try adjusting your search terms or check spelling</text>
+    <rect x="520" y="390" width="160" height="40" rx="4" fill="#007bff"/>
+    <text x="600" y="415" text-anchor="middle" fill="white" font-size="14">Add Manually</text>
+  </g>
+  
+  <!-- Error State -->
+  <g id="error-state" opacity="0">
+    <rect x="130" y="270" width="940" height="200" rx="4" fill="#f8d7da"/>
+    <text x="600" y="350" text-anchor="middle" fill="#721c24" font-size="18">Search failed</text>
+    <text x="600" y="375" text-anchor="middle" fill="#721c24" font-size="14">Unable to connect to IGDB. Please try again later.</text>
+    <rect x="520" y="390" width="160" height="40" rx="4" fill="#dc3545"/>
+    <text x="600" y="415" text-anchor="middle" fill="white" font-size="14">Try Again</text>
+  </g>
+  
+  <!-- Search History Sidebar -->
+  <g transform="translate(1120, 170)">
+    <rect x="0" y="0" width="250" height="400" rx="4" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+    
+    <text x="15" y="25" fill="#6c757d" font-size="14" font-weight="500">Recent Searches</text>
+    
+    <!-- Recent search items -->
+    <g transform="translate(15, 40)">
+      <text x="0" y="0" fill="#007bff" font-size="12" text-decoration="underline">Cyberpunk 2077</text>
+      <text x="0" y="20" fill="#007bff" font-size="12" text-decoration="underline">Hollow Knight</text>
+      <text x="0" y="40" fill="#007bff" font-size="12" text-decoration="underline">Elden Ring</text>
+      <text x="0" y="60" fill="#007bff" font-size="12" text-decoration="underline">The Witcher 3</text>
+    </g>
+    
+    <text x="15" y="145" fill="#6c757d" font-size="14" font-weight="500">Popular Games</text>
+    
+    <!-- Popular games -->
+    <g transform="translate(15, 160)">
+      <text x="0" y="0" fill="#007bff" font-size="12" text-decoration="underline">Baldur's Gate 3</text>
+      <text x="0" y="20" fill="#007bff" font-size="12" text-decoration="underline">Spider-Man 2</text>
+      <text x="0" y="40" fill="#007bff" font-size="12" text-decoration="underline">Starfield</text>
+      <text x="0" y="60" fill="#007bff" font-size="12" text-decoration="underline">Alan Wake 2</text>
+    </g>
+    
+    <text x="15" y="285" fill="#6c757d" font-size="14" font-weight="500">Search Tips</text>
+    
+    <!-- Tips -->
+    <g transform="translate(15, 300)">
+      <text x="0" y="0" fill="#6c757d" font-size="11">• Use exact game titles</text>
+      <text x="0" y="15" fill="#6c757d" font-size="11">• Include release year</text>
+      <text x="0" y="30" fill="#6c757d" font-size="11">• Try developer name</text>
+      <text x="0" y="45" fill="#6c757d" font-size="11">• Check for sequels</text>
+    </g>
+  </g>
+  
+  <!-- Keyboard Shortcuts -->
+  <g transform="translate(50, 750)">
+    <text x="0" y="0" fill="#6c757d" font-size="11">⌘+F: Focus search • ↑↓: Navigate results • Enter: Select • Esc: Close</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Search annotation -->
+    <line x1="430" y1="195" x2="430" y2="150" stroke-dasharray="2,2"/>
+    <text x="350" y="145" fill="#ff6b6b">Auto-complete</text>
+    <text x="350" y="160" fill="#ff6b6b">Debounced search</text>
+    
+    <!-- Results annotation -->
+    <line x1="1070" y1="315" x2="1120" y2="315" stroke-dasharray="2,2"/>
+    <text x="1130" y="315" fill="#ff6b6b">Sorted by relevance</text>
+    <text x="1130" y="330" fill="#ff6b6b">Fuzzy matching</text>
+    
+    <!-- Manual entry annotation -->
+    <line x1="200" y1="680" x2="200" y2="640" stroke-dasharray="2,2"/>
+    <text x="120" y="635" fill="#ff6b6b">Fallback option</text>
+    <text x="120" y="650" fill="#ff6b6b">Community driven</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="50" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">IGDB Game Search Wireframe</text>
+</svg>

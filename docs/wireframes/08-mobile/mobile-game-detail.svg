@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="375" height="812" viewBox="0 0 375 812" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#f8f9fa"/>
+  
+  <!-- Status Bar -->
+  <rect x="0" y="0" width="375" height="44" fill="#343a40"/>
+  <text x="20" y="25" fill="white" font-size="14" font-weight="bold">9:41</text>
+  <text x="320" y="25" fill="white" font-size="14">🔋 📶 📶</text>
+  
+  <!-- Header -->
+  <rect x="0" y="44" width="375" height="60" fill="#007bff" stroke="#0056b3" stroke-width="0 0 1 0"/>
+  <text x="20" y="75" fill="white" font-size="16">←</text>
+  <text x="187" y="75" text-anchor="middle" fill="white" font-size="16" font-weight="bold">Game Details</text>
+  <text x="325" y="75" fill="white" font-size="16">⋯</text>
+  
+  <!-- Scrollable Content -->
+  <g transform="translate(0, 104)">
+    <!-- Cover Art Section -->
+    <rect x="0" y="0" width="375" height="200" fill="linear-gradient(to bottom, #007bff, #0056b3)"/>
+    <rect x="137" y="40" width="100" height="140" rx="8" fill="#e9ecef"/>
+    <text x="187" y="115" text-anchor="middle" fill="#6c757d" font-size="14">Cover Art</text>
+    
+    <!-- Game Title Overlay -->
+    <rect x="0" y="150" width="375" height="50" fill="rgba(0,0,0,0.5)"/>
+    <text x="187" y="170" text-anchor="middle" fill="white" font-size="18" font-weight="bold">Baldur's Gate 3</text>
+    <text x="187" y="185" text-anchor="middle" fill="#b3d7ff" font-size="14">Larian Studios • 2023</text>
+    
+    <!-- Quick Actions -->
+    <rect x="20" y="220" width="100" height="40" rx="4" fill="#28a745"/>
+    <text x="70" y="245" text-anchor="middle" fill="white" font-size="14" font-weight="500">▶ Play</text>
+    
+    <rect x="137" y="220" width="100" height="40" rx="4" fill="#007bff"/>
+    <text x="187" y="245" text-anchor="middle" fill="white" font-size="14" font-weight="500">✏️ Edit</text>
+    
+    <rect x="255" y="220" width="100" height="40" rx="4" fill="#ffc107"/>
+    <text x="305" y="245" text-anchor="middle" fill="white" font-size="14" font-weight="500">⭐ Rate</text>
+    
+    <!-- Stats Cards -->
+    <g transform="translate(20, 280)">
+      <!-- Hours Card -->
+      <rect x="0" y="0" width="100" height="70" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      <text x="50" y="20" text-anchor="middle" fill="#6c757d" font-size="12">HOURS</text>
+      <text x="50" y="40" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">87</text>
+      <text x="50" y="55" text-anchor="middle" fill="#28a745" font-size="11">+2.5 today</text>
+      
+      <!-- Status Card -->
+      <rect x="112" y="0" width="126" height="70" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      <text x="175" y="20" text-anchor="middle" fill="#6c757d" font-size="12">STATUS</text>
+      <rect x="137" y="25" width="76" height="20" rx="10" fill="#28a745"/>
+      <text x="175" y="38" text-anchor="middle" fill="white" font-size="11">Completed</text>
+      <text x="175" y="55" text-anchor="middle" fill="#6c757d" font-size="11">Oct 15, 2023</text>
+      
+      <!-- Rating Card -->
+      <rect x="250" y="0" width="85" height="70" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      <text x="292" y="20" text-anchor="middle" fill="#6c757d" font-size="12">RATING</text>
+      <text x="292" y="40" text-anchor="middle" fill="#ffc107" font-size="16">⭐⭐⭐⭐⭐</text>
+      <text x="292" y="55" text-anchor="middle" fill="#dc3545" font-size="12">❤️ Loved</text>
+    </g>
+    
+    <!-- Platforms Section -->
+    <g transform="translate(20, 370)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">PLATFORMS</text>
+      <rect x="0" y="10" width="50" height="30" rx="4" fill="#007bff"/>
+      <text x="25" y="30" text-anchor="middle" fill="white" font-size="12">PC</text>
+      <text x="60" y="30" fill="#6c757d" font-size="12">Steam • $59.99</text>
+    </g>
+    
+    <!-- Tags Section -->
+    <g transform="translate(20, 420)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">TAGS</text>
+      <rect x="0" y="10" width="40" height="20" rx="10" fill="#007bff"/>
+      <text x="20" y="23" text-anchor="middle" fill="white" font-size="9">RPG</text>
+      
+      <rect x="50" y="10" width="50" height="20" rx="10" fill="#28a745"/>
+      <text x="75" y="23" text-anchor="middle" fill="white" font-size="9">Fantasy</text>
+      
+      <rect x="110" y="10" width="60" height="20" rx="10" fill="#ffc107"/>
+      <text x="140" y="23" text-anchor="middle" fill="white" font-size="9">Story-rich</text>
+      
+      <rect x="180" y="10" width="60" height="20" rx="10" fill="#6f42c1"/>
+      <text x="210" y="23" text-anchor="middle" fill="white" font-size="9">Turn-based</text>
+      
+      <rect x="250" y="10" width="30" height="20" rx="10" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+      <text x="265" y="23" text-anchor="middle" fill="#6c757d" font-size="9">+</text>
+    </g>
+    
+    <!-- Description Section -->
+    <g transform="translate(20, 480)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">DESCRIPTION</text>
+      <rect x="0" y="10" width="335" height="80" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      <text x="15" y="30" fill="#343a40" font-size="12">Baldur's Gate 3 is a story-rich, party-based RPG set in the</text>
+      <text x="15" y="45" fill="#343a40" font-size="12">universe of Dungeons & Dragons. Your choices shape</text>
+      <text x="15" y="60" fill="#343a40" font-size="12">a tale of fellowship and betrayal, survival and sacrifice.</text>
+      <text x="15" y="80" fill="#007bff" font-size="12">Read more...</text>
+    </g>
+    
+    <!-- Progress Section -->
+    <g transform="translate(20, 580)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">PROGRESS</text>
+      <rect x="0" y="10" width="335" height="120" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      
+      <!-- Progress Update -->
+      <text x="15" y="30" fill="#343a40" font-size="12" font-weight="500">Update Status</text>
+      <rect x="15" y="35" width="305" height="30" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+      <text x="25" y="55" fill="#343a40" font-size="12">Completed ▼</text>
+      
+      <!-- Hours Input -->
+      <text x="15" y="85" fill="#343a40" font-size="12" font-weight="500">Hours Played</text>
+      <rect x="15" y="90" width="100" height="30" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+      <text x="25" y="110" fill="#343a40" font-size="12">87</text>
+      
+      <!-- Save Button -->
+      <rect x="235" y="90" width="85" height="30" rx="4" fill="#28a745"/>
+      <text x="277" y="110" text-anchor="middle" fill="white" font-size="12">Save</text>
+    </g>
+    
+    <!-- Notes Section -->
+    <g transform="translate(20, 720)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">NOTES</text>
+      <rect x="0" y="10" width="335" height="80" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      <text x="15" y="30" fill="#343a40" font-size="12">Amazing game! The story choices actually matter and</text>
+      <text x="15" y="45" fill="#343a40" font-size="12">the character development is incredible. Spent way</text>
+      <text x="15" y="60" fill="#343a40" font-size="12">too much time in character creation.</text>
+      <text x="290" y="80" fill="#007bff" font-size="12">Edit</text>
+    </g>
+    
+    <!-- Recent Activity -->
+    <g transform="translate(20, 820)">
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">RECENT ACTIVITY</text>
+      <rect x="0" y="10" width="335" height="120" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+      
+      <!-- Activity Item 1 -->
+      <circle cx="25" cy="30" r="4" fill="#28a745"/>
+      <text x="40" y="34" fill="#343a40" font-size="11">Marked as completed</text>
+      <text x="270" y="34" fill="#6c757d" font-size="11">2 hours ago</text>
+      
+      <!-- Activity Item 2 -->
+      <circle cx="25" cy="50" r="4" fill="#ffc107"/>
+      <text x="40" y="54" fill="#343a40" font-size="11">Rated 5 stars</text>
+      <text x="270" y="54" fill="#6c757d" font-size="11">2 hours ago</text>
+      
+      <!-- Activity Item 3 -->
+      <circle cx="25" cy="70" r="4" fill="#007bff"/>
+      <text x="40" y="74" fill="#343a40" font-size="11">Updated hours to 87</text>
+      <text x="270" y="74" fill="#6c757d" font-size="11">2 hours ago</text>
+      
+      <!-- Activity Item 4 -->
+      <circle cx="25" cy="90" r="4" fill="#17a2b8"/>
+      <text x="40" y="94" fill="#343a40" font-size="11">Added to loved games</text>
+      <text x="270" y="94" fill="#6c757d" font-size="11">1 day ago</text>
+      
+      <!-- Activity Item 5 -->
+      <circle cx="25" cy="110" r="4" fill="#6c757d"/>
+      <text x="40" y="114" fill="#343a40" font-size="11">Added to library</text>
+      <text x="270" y="114" fill="#6c757d" font-size="11">3 months ago</text>
+    </g>
+  </g>
+  
+  <!-- Bottom Action Bar -->
+  <rect x="0" y="748" width="375" height="64" fill="white" stroke="#dee2e6" stroke-width="1 0 0 0"/>
+  
+  <!-- Action Buttons -->
+  <g transform="translate(20, 758)">
+    <rect x="0" y="0" width="100" height="44" rx="4" fill="#28a745"/>
+    <text x="50" y="18" text-anchor="middle" fill="white" font-size="12">▶</text>
+    <text x="50" y="32" text-anchor="middle" fill="white" font-size="10">Play Now</text>
+    
+    <rect x="110" y="0" width="80" height="44" rx="4" fill="#007bff"/>
+    <text x="150" y="18" text-anchor="middle" fill="white" font-size="12">✏️</text>
+    <text x="150" y="32" text-anchor="middle" fill="white" font-size="10">Edit</text>
+    
+    <rect x="200" y="0" width="70" height="44" rx="4" fill="#ffc107"/>
+    <text x="235" y="18" text-anchor="middle" fill="white" font-size="12">⭐</text>
+    <text x="235" y="32" text-anchor="middle" fill="white" font-size="10">Rate</text>
+    
+    <rect x="280" y="0" width="75" height="44" rx="4" fill="#dc3545"/>
+    <text x="317" y="18" text-anchor="middle" fill="white" font-size="12">🗑️</text>
+    <text x="317" y="32" text-anchor="middle" fill="white" font-size="10">Remove</text>
+  </g>
+  
+  <!-- Status Dropdown (Hidden) -->
+  <g id="status-dropdown" opacity="0">
+    <rect x="0" y="400" width="375" height="412" fill="rgba(0,0,0,0.5)"/>
+    <rect x="0" y="600" width="375" height="212" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Dropdown Header -->
+    <rect x="0" y="600" width="375" height="50" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="20" y="630" fill="#343a40" font-size="16" font-weight="bold">Select Status</text>
+    <text x="335" y="630" fill="#007bff" font-size="16">Done</text>
+    
+    <!-- Status Options -->
+    <g transform="translate(20, 670)">
+      <rect x="0" y="0" width="335" height="30" rx="4" fill="transparent"/>
+      <text x="15" y="20" fill="#6c757d" font-size="14">Not Started</text>
+      
+      <rect x="0" y="35" width="335" height="30" rx="4" fill="transparent"/>
+      <text x="15" y="55" fill="#6c757d" font-size="14">In Progress</text>
+      
+      <rect x="0" y="70" width="335" height="30" rx="4" fill="#e3f2fd"/>
+      <text x="15" y="90" fill="#007bff" font-size="14" font-weight="500">Completed</text>
+      <text x="300" y="90" fill="#007bff" font-size="16">✓</text>
+      
+      <rect x="0" y="105" width="335" height="30" rx="4" fill="transparent"/>
+      <text x="15" y="125" fill="#6c757d" font-size="14">Mastered</text>
+      
+      <rect x="0" y="140" width="335" height="30" rx="4" fill="transparent"/>
+      <text x="15" y="160" fill="#6c757d" font-size="14">Shelved</text>
+    </g>
+  </g>
+  
+  <!-- Share Sheet (Hidden) -->
+  <g id="share-sheet" opacity="0">
+    <rect x="0" y="400" width="375" height="412" fill="rgba(0,0,0,0.5)"/>
+    <rect x="0" y="600" width="375" height="212" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Share Header -->
+    <rect x="0" y="600" width="375" height="50" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+    <text x="20" y="630" fill="#343a40" font-size="16" font-weight="bold">Share Game</text>
+    <text x="335" y="630" fill="#007bff" font-size="16">Done</text>
+    
+    <!-- Share Options -->
+    <g transform="translate(20, 670)">
+      <rect x="0" y="0" width="335" height="40" rx="4" fill="transparent"/>
+      <text x="15" y="15" fill="#007bff" font-size="16">📱</text>
+      <text x="50" y="15" fill="#343a40" font-size="14">Message</text>
+      <text x="50" y="30" fill="#6c757d" font-size="12">Share via Messages</text>
+      
+      <rect x="0" y="45" width="335" height="40" rx="4" fill="transparent"/>
+      <text x="15" y="60" fill="#1da1f2" font-size="16">🐦</text>
+      <text x="50" y="60" fill="#343a40" font-size="14">Twitter</text>
+      <text x="50" y="75" fill="#6c757d" font-size="12">Share on Twitter</text>
+      
+      <rect x="0" y="90" width="335" height="40" rx="4" fill="transparent"/>
+      <text x="15" y="105" fill="#6c757d" font-size="16">📋</text>
+      <text x="50" y="105" fill="#343a40" font-size="14">Copy Link</text>
+      <text x="50" y="120" fill="#6c757d" font-size="12">Copy game link</text>
+    </g>
+  </g>
+  
+  <!-- Rating Modal (Hidden) -->
+  <g id="rating-modal" opacity="0">
+    <rect x="0" y="0" width="375" height="812" fill="rgba(0,0,0,0.5)"/>
+    <rect x="50" y="300" width="275" height="200" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+    
+    <text x="187" y="330" text-anchor="middle" fill="#343a40" font-size="16" font-weight="bold">Rate This Game</text>
+    
+    <!-- Star Rating -->
+    <g transform="translate(100, 350)">
+      <text x="0" y="0" fill="#ffc107" font-size="24">⭐</text>
+      <text x="30" y="0" fill="#ffc107" font-size="24">⭐</text>
+      <text x="60" y="0" fill="#ffc107" font-size="24">⭐</text>
+      <text x="90" y="0" fill="#ffc107" font-size="24">⭐</text>
+      <text x="120" y="0" fill="#ffc107" font-size="24">⭐</text>
+    </g>
+    
+    <!-- Loved Toggle -->
+    <g transform="translate(100, 390)">
+      <rect x="0" y="0" width="50" height="25" rx="12" fill="#dc3545"/>
+      <circle cx="37" cy="12" r="10" fill="white"/>
+      <text x="60" y="15" fill="#dc3545" font-size="14">❤️ Loved</text>
+    </g>
+    
+    <!-- Modal Buttons -->
+    <rect x="150" y="440" width="60" height="30" rx="4" fill="#28a745"/>
+    <text x="180" y="459" text-anchor="middle" fill="white" font-size="12">Save</text>
+    
+    <rect x="220" y="440" width="60" height="30" rx="4" fill="#6c757d"/>
+    <text x="250" y="459" text-anchor="middle" fill="white" font-size="12">Cancel</text>
+  </g>
+  
+  <!-- Floating Action Button -->
+  <circle cx="330" cy="680" r="24" fill="#007bff"/>
+  <text x="330" y="688" text-anchor="middle" fill="white" font-size="16" font-weight="bold">✏️</text>
+  
+  <!-- Loading Skeleton -->
+  <g id="loading-skeleton" opacity="0">
+    <rect x="137" y="144" width="100" height="140" rx="8" fill="#e9ecef"/>
+    <rect x="20" y="300" width="335" height="20" rx="4" fill="#e9ecef"/>
+    <rect x="20" y="330" width="280" height="20" rx="4" fill="#e9ecef"/>
+    <rect x="20" y="360" width="200" height="20" rx="4" fill="#e9ecef"/>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="10">
+    <!-- Touch targets annotation -->
+    <line x1="70" y1="264" x2="30" y2="264" stroke-dasharray="2,2"/>
+    <text x="25" y="259" fill="#ff6b6b">44px</text>
+    <text x="25" y="269" fill="#ff6b6b">touch</text>
+    
+    <!-- Swipe navigation annotation -->
+    <line x1="187" y1="124" x2="187" y2="84" stroke-dasharray="2,2"/>
+    <text x="140" y="79" fill="#ff6b6b">Swipe navigation</text>
+    
+    <!-- Collapsible sections annotation -->
+    <line x1="355" y1="604" x2="400" y2="604" stroke-dasharray="2,2"/>
+    <text x="405" y="599" fill="#ff6b6b">Collapsible</text>
+    <text x="405" y="609" fill="#ff6b6b">sections</text>
+    
+    <!-- Quick actions annotation -->
+    <line x1="187" y1="812" x2="187" y2="830" stroke-dasharray="2,2"/>
+    <text x="140" y="835" fill="#ff6b6b">Persistent actions</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="187" y="20" text-anchor="middle" fill="#343a40" font-size="14" font-weight="bold">Mobile Game Detail View</text>
+</svg>

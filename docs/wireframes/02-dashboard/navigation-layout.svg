@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="800" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  
+  <!-- Sidebar Navigation -->
+  <rect x="0" y="0" width="280" height="800" fill="#343a40" stroke="#495057" stroke-width="0 1 0 0"/>
+  
+  <!-- Logo/Brand Section -->
+  <rect x="0" y="0" width="280" height="80" fill="#212529"/>
+  <text x="140" y="35" text-anchor="middle" fill="white" font-size="24" font-weight="bold">Nexorious</text>
+  <text x="140" y="55" text-anchor="middle" fill="#adb5bd" font-size="14">Game Collection Manager</text>
+  
+  <!-- Navigation Menu -->
+  <g transform="translate(20, 100)">
+    <!-- Primary Navigation -->
+    <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">MAIN</text>
+    
+    <!-- Dashboard -->
+    <rect x="0" y="20" width="240" height="44" rx="6" fill="#007bff"/>
+    <text x="20" y="35" fill="white" font-size="16">📊</text>
+    <text x="50" y="35" fill="white" font-size="14" font-weight="500">Dashboard</text>
+    <text x="50" y="50" fill="#b3d7ff" font-size="12">Overview & Statistics</text>
+    
+    <!-- Library -->
+    <rect x="0" y="70" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="85" fill="#adb5bd" font-size="16">🎮</text>
+    <text x="50" y="85" fill="#adb5bd" font-size="14" font-weight="500">Library</text>
+    <text x="50" y="100" fill="#6c757d" font-size="12">Your game collection</text>
+    
+    <!-- Add Game -->
+    <rect x="0" y="120" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="135" fill="#adb5bd" font-size="16">➕</text>
+    <text x="50" y="135" fill="#adb5bd" font-size="14" font-weight="500">Add Game</text>
+    <text x="50" y="150" fill="#6c757d" font-size="12">Add to collection</text>
+    
+    <!-- Wishlist -->
+    <rect x="0" y="170" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="185" fill="#adb5bd" font-size="16">❤️</text>
+    <text x="50" y="185" fill="#adb5bd" font-size="14" font-weight="500">Wishlist</text>
+    <text x="50" y="200" fill="#6c757d" font-size="12">Games to buy</text>
+    
+    <!-- Secondary Navigation -->
+    <text x="0" y="250" fill="#6c757d" font-size="12" font-weight="500">TOOLS</text>
+    
+    <!-- Statistics -->
+    <rect x="0" y="270" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="285" fill="#adb5bd" font-size="16">📈</text>
+    <text x="50" y="285" fill="#adb5bd" font-size="14" font-weight="500">Statistics</text>
+    <text x="50" y="300" fill="#6c757d" font-size="12">Detailed analytics</text>
+    
+    <!-- Import/Export -->
+    <rect x="0" y="320" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="335" fill="#adb5bd" font-size="16">📁</text>
+    <text x="50" y="335" fill="#adb5bd" font-size="14" font-weight="500">Import/Export</text>
+    <text x="50" y="350" fill="#6c757d" font-size="12">Data management</text>
+    
+    <!-- Tags -->
+    <rect x="0" y="370" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="385" fill="#adb5bd" font-size="16">🏷️</text>
+    <text x="50" y="385" fill="#adb5bd" font-size="14" font-weight="500">Tags</text>
+    <text x="50" y="400" fill="#6c757d" font-size="12">Organize & filter</text>
+  </g>
+  
+  <!-- Bottom Navigation -->
+  <g transform="translate(20, 600)">
+    <!-- Admin Section (if admin user) -->
+    <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">ADMIN</text>
+    
+    <!-- Platform Management -->
+    <rect x="0" y="20" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="35" fill="#adb5bd" font-size="16">⚙️</text>
+    <text x="50" y="35" fill="#adb5bd" font-size="14" font-weight="500">Platforms</text>
+    <text x="50" y="50" fill="#6c757d" font-size="12">Manage platforms</text>
+    
+    <!-- Settings -->
+    <rect x="0" y="90" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="105" fill="#adb5bd" font-size="16">⚙️</text>
+    <text x="50" y="105" fill="#adb5bd" font-size="14" font-weight="500">Settings</text>
+    <text x="50" y="120" fill="#6c757d" font-size="12">Preferences</text>
+    
+    <!-- User Profile -->
+    <rect x="0" y="140" width="240" height="44" rx="6" fill="transparent"/>
+    <circle cx="30" cy="162" r="12" fill="#007bff"/>
+    <text x="26" y="167" fill="white" font-size="12" font-weight="bold">JD</text>
+    <text x="50" y="157" fill="#adb5bd" font-size="14" font-weight="500">John Doe</text>
+    <text x="50" y="172" fill="#6c757d" font-size="12">john.doe@example.com</text>
+  </g>
+  
+  <!-- Main Content Area -->
+  <rect x="280" y="0" width="920" height="800" fill="white"/>
+  
+  <!-- Top Navigation Bar -->
+  <rect x="280" y="0" width="920" height="70" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  
+  <!-- Breadcrumb -->
+  <g transform="translate(300, 25)">
+    <text x="0" y="0" fill="#6c757d" font-size="14">Dashboard</text>
+    <text x="70" y="0" fill="#6c757d" font-size="14">›</text>
+    <text x="85" y="0" fill="#343a40" font-size="14" font-weight="500">Overview</text>
+  </g>
+  
+  <!-- Search Bar -->
+  <rect x="500" y="20" width="350" height="36" rx="18" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+  <text x="520" y="40" fill="#6c757d" font-size="14">🔍 Search games, tags, or platforms...</text>
+  
+  <!-- Notifications -->
+  <circle cx="900" cy="38" r="16" fill="#ffc107"/>
+  <text x="895" y="43" fill="white" font-size="12">3</text>
+  
+  <!-- User Menu -->
+  <circle cx="950" cy="38" r="16" fill="#007bff"/>
+  <text x="945" y="43" fill="white" font-size="12" font-weight="bold">JD</text>
+  
+  <!-- Theme Toggle -->
+  <rect x="1000" y="25" width="50" height="26" rx="13" fill="#ced4da"/>
+  <circle cx="1025" cy="38" r="10" fill="white"/>
+  <text x="1080" y="43" fill="#6c757d" font-size="12">🌙</text>
+  
+  <!-- Sidebar Collapse Button -->
+  <rect x="1120" y="25" width="26" height="26" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+  <text x="1133" y="40" fill="#6c757d" font-size="12">≡</text>
+  
+  <!-- Content Area -->
+  <rect x="300" y="90" width="880" height="690" fill="#f8f9fa"/>
+  <text x="640" y="440" text-anchor="middle" fill="#6c757d" font-size="16">Main Content Area</text>
+  <text x="640" y="460" text-anchor="middle" fill="#6c757d" font-size="14">Dynamic content based on selected navigation</text>
+  
+  <!-- Collapsed Sidebar State -->
+  <g id="collapsed-sidebar" opacity="0">
+    <rect x="0" y="0" width="70" height="800" fill="#343a40"/>
+    <text x="35" y="50" text-anchor="middle" fill="white" font-size="16" font-weight="bold">N</text>
+    
+    <!-- Collapsed Menu Items -->
+    <g transform="translate(0, 100)">
+      <rect x="15" y="20" width="40" height="40" rx="6" fill="#007bff"/>
+      <text x="35" y="45" text-anchor="middle" fill="white" font-size="16">📊</text>
+      
+      <rect x="15" y="70" width="40" height="40" rx="6" fill="transparent"/>
+      <text x="35" y="95" text-anchor="middle" fill="#adb5bd" font-size="16">🎮</text>
+      
+      <rect x="15" y="120" width="40" height="40" rx="6" fill="transparent"/>
+      <text x="35" y="145" text-anchor="middle" fill="#adb5bd" font-size="16">➕</text>
+    </g>
+  </g>
+  
+  <!-- Mobile Navigation (Overlay) -->
+  <g id="mobile-nav" opacity="0">
+    <!-- Overlay -->
+    <rect x="0" y="0" width="1200" height="800" fill="rgba(0,0,0,0.5)"/>
+    
+    <!-- Mobile Sidebar -->
+    <rect x="0" y="0" width="280" height="800" fill="#343a40"/>
+    <!-- Same content as desktop sidebar -->
+    
+    <!-- Close Button -->
+    <rect x="240" y="20" width="30" height="30" rx="4" fill="#495057"/>
+    <text x="255" y="38" text-anchor="middle" fill="white" font-size="16">×</text>
+  </g>
+  
+  <!-- Tooltips -->
+  <g id="tooltip" opacity="0">
+    <rect x="320" y="180" width="120" height="32" rx="4" fill="#343a40"/>
+    <text x="380" y="200" text-anchor="middle" fill="white" font-size="12">Your game library</text>
+    <polygon points="320,196 310,196 315,186" fill="#343a40"/>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Navigation states annotation -->
+    <line x1="280" y1="122" x2="350" y2="122" stroke-dasharray="2,2"/>
+    <text x="360" y="122" fill="#ff6b6b">Active state styling</text>
+    <text x="360" y="137" fill="#ff6b6b">Hover effects</text>
+    
+    <!-- Search annotation -->
+    <line x1="675" y1="56" x2="675" y2="90" stroke-dasharray="2,2"/>
+    <text x="580" y="105" fill="#ff6b6b">Global search</text>
+    <text x="580" y="120" fill="#ff6b6b">Auto-complete</text>
+    
+    <!-- Responsive annotation -->
+    <line x1="70" y1="600" x2="70" y2="550" stroke-dasharray="2,2"/>
+    <text x="80" y="550" fill="#ff6b6b">Collapsible sidebar</text>
+    <text x="80" y="565" fill="#ff6b6b">Mobile overlay</text>
+  </g>
+  
+  <!-- Keyboard Shortcuts -->
+  <g transform="translate(50, 50)">
+    <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="bold">Keyboard Shortcuts:</text>
+    <text x="0" y="15" fill="#6c757d" font-size="11">Ctrl+K - Search</text>
+    <text x="0" y="30" fill="#6c757d" font-size="11">Ctrl+B - Toggle sidebar</text>
+    <text x="0" y="45" fill="#6c757d" font-size="11">Ctrl+N - Add game</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Navigation Layout Wireframe</text>
+</svg>

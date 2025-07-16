@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="1000" viewBox="0 0 1200 1000" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="1000" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="1000" fill="url(#grid)"/>
+  
+  <!-- Main Container -->
+  <rect x="50" y="50" width="1100" height="900" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Header -->
+  <rect x="50" y="50" width="1100" height="70" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  <text x="80" y="80" fill="#343a40" font-size="20" font-weight="bold">Confirm Game Details</text>
+  <text x="80" y="100" fill="#6c757d" font-size="14">Review and edit the information before adding to your library</text>
+  
+  <!-- Progress Indicator -->
+  <g transform="translate(800, 70)">
+    <circle cx="0" cy="0" r="8" fill="#28a745"/>
+    <text x="-3" y="4" fill="white" font-size="10">1</text>
+    <text x="15" y="4" fill="#6c757d" font-size="12">Search</text>
+    
+    <line x1="30" y1="0" x2="60" y2="0" stroke="#28a745" stroke-width="2"/>
+    
+    <circle cx="70" cy="0" r="8" fill="#28a745"/>
+    <text x="67" y="4" fill="white" font-size="10">2</text>
+    <text x="85" y="4" fill="#6c757d" font-size="12">Select</text>
+    
+    <line x1="130" y1="0" x2="160" y2="0" stroke="#007bff" stroke-width="2"/>
+    
+    <circle cx="170" cy="0" r="8" fill="#007bff"/>
+    <text x="167" y="4" fill="white" font-size="10">3</text>
+    <text x="185" y="4" fill="#007bff" font-size="12">Confirm</text>
+  </g>
+  
+  <!-- Back Button -->
+  <rect x="950" y="65" width="80" height="30" rx="4" fill="#6c757d"/>
+  <text x="990" y="84" text-anchor="middle" fill="white" font-size="12">← Back</text>
+  
+  <!-- Close Button -->
+  <rect x="1050" y="65" width="80" height="30" rx="4" fill="#dc3545"/>
+  <text x="1090" y="84" text-anchor="middle" fill="white" font-size="12">× Cancel</text>
+  
+  <!-- Main Content -->
+  <g transform="translate(80, 150)">
+    <!-- Left Column - Cover Art and Basic Info -->
+    <g transform="translate(0, 0)">
+      <!-- Cover Art -->
+      <rect x="0" y="0" width="200" height="280" rx="8" fill="#e9ecef"/>
+      <text x="100" y="145" text-anchor="middle" fill="#6c757d" font-size="16">Cover Art</text>
+      
+      <!-- Cover Art Actions -->
+      <rect x="20" y="300" width="80" height="30" rx="4" fill="#007bff"/>
+      <text x="60" y="320" text-anchor="middle" fill="white" font-size="12">Change</text>
+      
+      <rect x="110" y="300" width="80" height="30" rx="4" fill="#6c757d"/>
+      <text x="150" y="320" text-anchor="middle" fill="white" font-size="12">Upload</text>
+      
+      <!-- Game Title -->
+      <text x="0" y="365" fill="#6c757d" font-size="12" font-weight="500">GAME TITLE</text>
+      <rect x="0" y="375" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="398" fill="#343a40" font-size="14">Baldur's Gate 3</text>
+      
+      <!-- Release Year -->
+      <text x="0" y="435" fill="#6c757d" font-size="12" font-weight="500">RELEASE YEAR</text>
+      <rect x="0" y="445" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="468" fill="#343a40" font-size="14">2023</text>
+      
+      <!-- Developer -->
+      <text x="0" y="505" fill="#6c757d" font-size="12" font-weight="500">DEVELOPER</text>
+      <rect x="0" y="515" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="538" fill="#343a40" font-size="14">Larian Studios</text>
+      
+      <!-- Publisher -->
+      <text x="0" y="575" fill="#6c757d" font-size="12" font-weight="500">PUBLISHER</text>
+      <rect x="0" y="585" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="608" fill="#343a40" font-size="14">Larian Studios</text>
+    </g>
+    
+    <!-- Right Column - Detailed Information -->
+    <g transform="translate(240, 0)">
+      <!-- Description -->
+      <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">DESCRIPTION</text>
+      <rect x="0" y="10" width="700" height="120" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="30" fill="#343a40" font-size="14">Baldur's Gate 3 is a story-rich, party-based RPG set in the</text>
+      <text x="10" y="50" fill="#343a40" font-size="14">universe of Dungeons & Dragons, where your choices shape</text>
+      <text x="10" y="70" fill="#343a40" font-size="14">a tale of fellowship and betrayal, survival and sacrifice, and</text>
+      <text x="10" y="90" fill="#343a40" font-size="14">the lure of absolute power.</text>
+      
+      <!-- Genres -->
+      <text x="0" y="160" fill="#6c757d" font-size="12" font-weight="500">GENRES</text>
+      <rect x="0" y="170" width="340" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="193" fill="#343a40" font-size="14">RPG, Strategy, Turn-Based</text>
+      
+      <!-- Age Rating -->
+      <text x="360" y="160" fill="#6c757d" font-size="12" font-weight="500">AGE RATING</text>
+      <rect x="360" y="170" width="340" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="370" y="193" fill="#343a40" font-size="14">M - Mature 17+</text>
+      
+      <!-- Metacritic Score -->
+      <text x="0" y="235" fill="#6c757d" font-size="12" font-weight="500">METACRITIC SCORE</text>
+      <rect x="0" y="245" width="160" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="10" y="268" fill="#343a40" font-size="14">96/100</text>
+      
+      <!-- IGDB Rating -->
+      <text x="180" y="235" fill="#6c757d" font-size="12" font-weight="500">IGDB RATING</text>
+      <rect x="180" y="245" width="160" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="190" y="268" fill="#343a40" font-size="14">92/100</text>
+      
+      <!-- Estimated Playtime -->
+      <text x="360" y="235" fill="#6c757d" font-size="12" font-weight="500">ESTIMATED PLAYTIME</text>
+      <rect x="360" y="245" width="160" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="370" y="268" fill="#343a40" font-size="14">60-100 hours</text>
+      
+      <!-- How Long to Beat -->
+      <text x="540" y="235" fill="#6c757d" font-size="12" font-weight="500">HOW LONG TO BEAT</text>
+      <rect x="540" y="245" width="160" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <text x="550" y="268" fill="#343a40" font-size="14">75 hours</text>
+      
+      <!-- Available Platforms -->
+      <text x="0" y="310" fill="#6c757d" font-size="12" font-weight="500">AVAILABLE PLATFORMS</text>
+      <g transform="translate(0, 325)">
+        <rect x="0" y="0" width="60" height="30" rx="4" fill="#007bff"/>
+        <text x="30" y="20" text-anchor="middle" fill="white" font-size="12">PC</text>
+        
+        <rect x="70" y="0" width="80" height="30" rx="4" fill="#28a745"/>
+        <text x="110" y="20" text-anchor="middle" fill="white" font-size="12">PlayStation 5</text>
+        
+        <rect x="160" y="0" width="100" height="30" rx="4" fill="#ffc107"/>
+        <text x="210" y="20" text-anchor="middle" fill="white" font-size="12">Xbox Series X/S</text>
+        
+        <rect x="270" y="0" width="80" height="30" rx="4" fill="#e9ecef"/>
+        <text x="310" y="20" text-anchor="middle" fill="#6c757d" font-size="12">Nintendo Switch</text>
+      </g>
+    </g>
+  </g>
+  
+  <!-- Ownership Configuration -->
+  <g transform="translate(80, 570)">
+    <text x="0" y="0" fill="#343a40" font-size="16" font-weight="bold">Ownership Configuration</text>
+    
+    <!-- Platform Selection -->
+    <text x="0" y="30" fill="#6c757d" font-size="12" font-weight="500">PLATFORM YOU OWN</text>
+    <rect x="0" y="40" width="300" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="10" y="63" fill="#343a40" font-size="14">PC ▼</text>
+    
+    <!-- Platform dropdown -->
+    <g id="platform-dropdown" opacity="0">
+      <rect x="0" y="75" width="300" height="120" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+      <rect x="0" y="75" width="300" height="30" fill="#007bff"/>
+      <text x="10" y="95" fill="white" font-size="14">PC</text>
+      <text x="10" y="115" fill="#343a40" font-size="14">PlayStation 5</text>
+      <text x="10" y="135" fill="#343a40" font-size="14">Xbox Series X/S</text>
+      <text x="10" y="155" fill="#343a40" font-size="14">Nintendo Switch</text>
+    </g>
+    
+    <!-- Storefront -->
+    <text x="320" y="30" fill="#6c757d" font-size="12" font-weight="500">STOREFRONT</text>
+    <rect x="320" y="40" width="300" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="330" y="63" fill="#343a40" font-size="14">Steam ▼</text>
+    
+    <!-- Ownership Type -->
+    <text x="640" y="30" fill="#6c757d" font-size="12" font-weight="500">OWNERSHIP TYPE</text>
+    <rect x="640" y="40" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="650" y="63" fill="#343a40" font-size="14">Digital ▼</text>
+    
+    <!-- Purchase Price -->
+    <text x="0" y="100" fill="#6c757d" font-size="12" font-weight="500">PURCHASE PRICE (Optional)</text>
+    <rect x="0" y="110" width="150" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="10" y="133" fill="#343a40" font-size="14">$59.99</text>
+    
+    <!-- Purchase Date -->
+    <text x="170" y="100" fill="#6c757d" font-size="12" font-weight="500">PURCHASE DATE (Optional)</text>
+    <rect x="170" y="110" width="150" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="180" y="133" fill="#343a40" font-size="14">2023-08-03</text>
+    
+    <!-- Physical Location -->
+    <text x="340" y="100" fill="#6c757d" font-size="12" font-weight="500">PHYSICAL LOCATION (Optional)</text>
+    <rect x="340" y="110" width="200" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="350" y="133" fill="#6c757d" font-size="14">Not applicable</text>
+    
+    <!-- Initial Status -->
+    <text x="560" y="100" fill="#6c757d" font-size="12" font-weight="500">INITIAL STATUS</text>
+    <rect x="560" y="110" width="150" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="570" y="133" fill="#343a40" font-size="14">Not Started ▼</text>
+    
+    <!-- Tags -->
+    <text x="0" y="170" fill="#6c757d" font-size="12" font-weight="500">TAGS (Optional)</text>
+    <rect x="0" y="180" width="500" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="10" y="203" fill="#6c757d" font-size="14">Add tags...</text>
+    
+    <!-- Tag suggestions -->
+    <g transform="translate(0, 225)">
+      <rect x="0" y="0" width="40" height="20" rx="10" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+      <text x="20" y="13" text-anchor="middle" fill="#6c757d" font-size="10">RPG</text>
+      
+      <rect x="50" y="0" width="50" height="20" rx="10" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+      <text x="75" y="13" text-anchor="middle" fill="#6c757d" font-size="10">Fantasy</text>
+      
+      <rect x="110" y="0" width="60" height="20" rx="10" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+      <text x="140" y="13" text-anchor="middle" fill="#6c757d" font-size="10">Story-rich</text>
+      
+      <rect x="180" y="0" width="60" height="20" rx="10" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+      <text x="210" y="13" text-anchor="middle" fill="#6c757d" font-size="10">Turn-based</text>
+    </g>
+  </g>
+  
+  <!-- Action Buttons -->
+  <g transform="translate(80, 850)">
+    <!-- Add to Library Button -->
+    <rect x="0" y="0" width="160" height="45" rx="4" fill="#28a745"/>
+    <text x="80" y="28" text-anchor="middle" fill="white" font-size="16" font-weight="500">Add to Library</text>
+    
+    <!-- Add to Wishlist Button -->
+    <rect x="180" y="0" width="160" height="45" rx="4" fill="#ffc107"/>
+    <text x="260" y="28" text-anchor="middle" fill="white" font-size="16" font-weight="500">Add to Wishlist</text>
+    
+    <!-- Save as Draft Button -->
+    <rect x="360" y="0" width="120" height="45" rx="4" fill="#17a2b8"/>
+    <text x="420" y="28" text-anchor="middle" fill="white" font-size="14">Save Draft</text>
+    
+    <!-- Cancel Button -->
+    <rect x="500" y="0" width="100" height="45" rx="4" fill="#6c757d"/>
+    <text x="550" y="28" text-anchor="middle" fill="white" font-size="14">Cancel</text>
+  </g>
+  
+  <!-- Validation Messages -->
+  <g id="validation-messages" opacity="0">
+    <rect x="80" y="800" width="600" height="30" rx="4" fill="#f8d7da" stroke="#f5c6cb" stroke-width="1"/>
+    <text x="90" y="820" fill="#721c24" font-size="12">Please select a platform before adding to library</text>
+  </g>
+  
+  <!-- Success Message -->
+  <g id="success-message" opacity="0">
+    <rect x="80" y="800" width="600" height="30" rx="4" fill="#d4edda" stroke="#c3e6cb" stroke-width="1"/>
+    <text x="90" y="820" fill="#155724" font-size="12">Game added to library successfully!</text>
+  </g>
+  
+  <!-- Loading Overlay -->
+  <g id="loading-overlay" opacity="0">
+    <rect x="50" y="50" width="1100" height="900" fill="rgba(255,255,255,0.8)"/>
+    <circle cx="600" cy="500" r="24" fill="none" stroke="#007bff" stroke-width="4" stroke-dasharray="15,10">
+      <animateTransform attributeName="transform" type="rotate" dur="1s" repeatCount="indefinite" values="0 600 500;360 600 500"/>
+    </circle>
+    <text x="600" y="540" text-anchor="middle" fill="#6c757d" font-size="16">Adding game to library...</text>
+  </g>
+  
+  <!-- Metadata Source Info -->
+  <g transform="translate(900, 850)">
+    <text x="0" y="0" fill="#6c757d" font-size="11">Metadata from IGDB</text>
+    <text x="0" y="15" fill="#6c757d" font-size="11">Last updated: Today</text>
+    <text x="0" y="30" fill="#007bff" font-size="11" text-decoration="underline">Refresh metadata</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Editable fields annotation -->
+    <line x1="200" y1="545" x2="260" y2="545" stroke-dasharray="2,2"/>
+    <text x="270" y="545" fill="#ff6b6b">All fields editable</text>
+    <text x="270" y="560" fill="#ff6b6b">Auto-populated</text>
+    
+    <!-- Ownership config annotation -->
+    <line x1="80" y1="650" x2="30" y2="650" stroke-dasharray="2,2"/>
+    <text x="20" y="635" fill="#ff6b6b">User-specific</text>
+    <text x="20" y="650" fill="#ff6b6b">configuration</text>
+    
+    <!-- Validation annotation -->
+    <line x1="240" y1="850" x2="240" y2="800" stroke-dasharray="2,2"/>
+    <text x="160" y="795" fill="#ff6b6b">Form validation</text>
+    <text x="160" y="810" fill="#ff6b6b">Required fields</text>
+  </g>
+  
+  <!-- Keyboard Shortcuts -->
+  <g transform="translate(50, 970)">
+    <text x="0" y="0" fill="#6c757d" font-size="11">Ctrl+Enter: Add to Library • Ctrl+W: Add to Wishlist • Ctrl+S: Save Draft • Esc: Cancel</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Game Metadata Confirmation Wireframe</text>
+</svg>
