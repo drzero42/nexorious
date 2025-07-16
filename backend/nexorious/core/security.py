@@ -95,8 +95,15 @@ async def invalidate_user_session(session_id: str, session = Depends(get_session
         session.commit()
 
 
-async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get the current user ID from the JWT token"""
+
+
+async def get_current_user(session = Depends(get_session), 
+                          credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get the current user from the database"""
+    from ..models.user import User, UserSession
+    from sqlmodel import select
+    
+    # Verify token
     token = credentials.credentials
     payload = verify_token(token)
     user_id = payload.get("sub")
@@ -105,13 +112,21 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
         )
-    return user_id
-
-
-async def get_current_user(session = Depends(get_session), 
-                          user_id: str = Depends(get_current_user_id)):
-    """Get the current user from the database"""
-    from ..models.user import User
+    
+    # Check if session still exists
+    token_hash = hash_token(token)
+    session_record = session.exec(
+        select(UserSession).where(
+            (UserSession.user_id == user_id) & 
+            (UserSession.token_hash == token_hash)
+        )
+    ).first()
+    
+    if not session_record:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session not found or expired"
+        )
     
     user = session.get(User, user_id)
     if not user:

@@ -127,6 +127,127 @@ async def list_user_games(
     )
 
 
+@router.get("/stats", response_model=CollectionStatsResponse)
+async def get_collection_stats(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get user's collection statistics."""
+    
+    # Total games
+    total_games = session.exec(
+        select(func.count()).where(UserGame.user_id == current_user.id)
+    ).one()
+    
+    # Games by status
+    status_counts = {}
+    for status in PlayStatus:
+        count = session.exec(
+            select(func.count()).where(
+                and_(
+                    UserGame.user_id == current_user.id,
+                    UserGame.play_status == status
+                )
+            )
+        ).one()
+        status_counts[status] = count
+    
+    # Platform counts (only if there are games)
+    if total_games > 0:
+        platform_counts = session.exec(
+            select(Platform.display_name, func.count()).
+            join(UserGamePlatform).
+            join(UserGame).
+            where(UserGame.user_id == current_user.id).
+            group_by(Platform.id, Platform.display_name)
+        ).all()
+    else:
+        platform_counts = []
+    
+    # Rating distribution (only if there are games)
+    if total_games > 0:
+        rating_counts = session.exec(
+            select(UserGame.personal_rating, func.count()).
+            where(
+                and_(
+                    UserGame.user_id == current_user.id,
+                    UserGame.personal_rating.is_not(None)
+                )
+            ).
+            group_by(UserGame.personal_rating)
+        ).all()
+    else:
+        rating_counts = []
+    
+    # Calculate metrics
+    pile_of_shame = status_counts.get(PlayStatus.NOT_STARTED, 0)
+    completed_games = (
+        status_counts.get(PlayStatus.COMPLETED, 0) +
+        status_counts.get(PlayStatus.MASTERED, 0) +
+        status_counts.get(PlayStatus.DOMINATED, 0)
+    )
+    completion_rate = (completed_games / total_games * 100) if total_games > 0 else 0
+    
+    # Average rating (only if there are games)
+    if total_games > 0:
+        avg_rating_result = session.exec(
+            select(func.avg(UserGame.personal_rating)).
+            where(
+                and_(
+                    UserGame.user_id == current_user.id,
+                    UserGame.personal_rating.is_not(None)
+                )
+            )
+        ).one()
+    else:
+        avg_rating_result = None
+    
+    # Total hours played
+    total_hours = session.exec(
+        select(func.sum(UserGame.hours_played)).
+        where(UserGame.user_id == current_user.id)
+    ).one() or 0
+    
+    # Ownership stats
+    ownership_stats = {}
+    for ownership_status in OwnershipStatus:
+        count = session.exec(
+            select(func.count()).where(
+                and_(
+                    UserGame.user_id == current_user.id,
+                    UserGame.ownership_status == ownership_status
+                )
+            )
+        ).one()
+        ownership_stats[ownership_status] = count
+    
+    # Genre stats (from game data)
+    genre_stats = {}
+    if total_games > 0:
+        genre_data = session.exec(
+            select(Game.genre, func.count()).
+            join(UserGame).
+            where(UserGame.user_id == current_user.id).
+            group_by(Game.genre)
+        ).all()
+        genre_stats = {genre: count for genre, count in genre_data}
+    
+    return CollectionStatsResponse(
+        total_games=total_games,
+        completion_stats=status_counts,
+        ownership_stats=ownership_stats,
+        platform_stats={name: count for name, count in platform_counts},
+        genre_stats=genre_stats,
+        by_status=status_counts,
+        by_platform={name: count for name, count in platform_counts},
+        by_rating={str(rating): count for rating, count in rating_counts},
+        pile_of_shame=pile_of_shame,
+        completion_rate=round(completion_rate, 2),
+        average_rating=float(avg_rating_result) if avg_rating_result else None,
+        total_hours_played=total_hours
+    )
+
+
 @router.get("/{user_game_id}", response_model=UserGameResponse)
 async def get_user_game(
     user_game_id: str,
@@ -181,8 +302,8 @@ async def add_game_to_collection(
     
     if existing_user_game:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game is already in your collection"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Game already exists in your collection"
         )
     
     # Create user game
@@ -192,6 +313,11 @@ async def add_game_to_collection(
         ownership_status=user_game_data.ownership_status,
         is_physical=user_game_data.is_physical,
         physical_location=user_game_data.physical_location,
+        personal_rating=user_game_data.personal_rating,
+        is_loved=user_game_data.is_loved,
+        play_status=user_game_data.play_status,
+        hours_played=user_game_data.hours_played,
+        personal_notes=user_game_data.personal_notes,
         acquired_date=user_game_data.acquired_date
     )
     
@@ -326,7 +452,7 @@ async def remove_game_from_collection(
     session.delete(user_game)
     session.commit()
     
-    return SuccessResponse(message="Game removed from collection")
+    return SuccessResponse(message="User game deleted successfully")
 
 
 @router.get("/{user_game_id}/platforms", response_model=List[UserGamePlatformResponse])
@@ -414,8 +540,8 @@ async def add_platform_to_user_game(
     
     if existing_platform:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Platform is already associated with this game"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Platform association already exists"
         )
     
     new_platform = UserGamePlatform(
@@ -423,7 +549,8 @@ async def add_platform_to_user_game(
         platform_id=platform_data.platform_id,
         storefront_id=platform_data.storefront_id,
         store_game_id=platform_data.store_game_id,
-        store_url=str(platform_data.store_url) if platform_data.store_url else None
+        store_url=str(platform_data.store_url) if platform_data.store_url else None,
+        is_available=platform_data.is_available
     )
     
     session.add(new_platform)
@@ -462,7 +589,7 @@ async def remove_platform_from_user_game(
     session.delete(platform_assoc)
     session.commit()
     
-    return SuccessResponse(message="Platform association removed")
+    return SuccessResponse(message="Platform association deleted successfully")
 
 
 @router.put("/bulk-update", response_model=SuccessResponse)
@@ -489,14 +616,11 @@ async def bulk_update_user_games(
         )
     ).all()
     
-    if len(user_games) != len(bulk_data.user_game_ids):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Some user games not found or don't belong to you"
-        )
+    found_ids = {user_game.id for user_game in user_games}
+    update_count = 0
+    failed_count = 0
     
     # Apply updates
-    update_count = 0
     for user_game in user_games:
         updated = False
         
@@ -516,90 +640,13 @@ async def bulk_update_user_games(
             user_game.updated_at = datetime.now(timezone.utc)
             update_count += 1
     
+    # Calculate failed count
+    failed_count = len(bulk_data.user_game_ids) - len(found_ids)
+    
     session.commit()
     
-    return SuccessResponse(message=f"Updated {update_count} games")
-
-
-@router.get("/stats", response_model=CollectionStatsResponse)
-async def get_collection_stats(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Get user's collection statistics."""
-    
-    # Total games
-    total_games = session.exec(
-        select(func.count()).where(UserGame.user_id == current_user.id)
-    ).one()
-    
-    # Games by status
-    status_counts = {}
-    for status in PlayStatus:
-        count = session.exec(
-            select(func.count()).where(
-                and_(
-                    UserGame.user_id == current_user.id,
-                    UserGame.play_status == status
-                )
-            )
-        ).one()
-        status_counts[status] = count
-    
-    # Platform counts
-    platform_counts = session.exec(
-        select(Platform.display_name, func.count()).
-        join(UserGamePlatform).
-        join(UserGame).
-        where(UserGame.user_id == current_user.id).
-        group_by(Platform.id, Platform.display_name)
-    ).all()
-    
-    # Rating distribution
-    rating_counts = session.exec(
-        select(UserGame.personal_rating, func.count()).
-        where(
-            and_(
-                UserGame.user_id == current_user.id,
-                UserGame.personal_rating.is_not(None)
-            )
-        ).
-        group_by(UserGame.personal_rating)
-    ).all()
-    
-    # Calculate metrics
-    pile_of_shame = status_counts.get(PlayStatus.NOT_STARTED, 0)
-    completed_games = (
-        status_counts.get(PlayStatus.COMPLETED, 0) +
-        status_counts.get(PlayStatus.MASTERED, 0) +
-        status_counts.get(PlayStatus.DOMINATED, 0)
-    )
-    completion_rate = (completed_games / total_games * 100) if total_games > 0 else 0
-    
-    # Average rating
-    avg_rating_result = session.exec(
-        select(func.avg(UserGame.personal_rating)).
-        where(
-            and_(
-                UserGame.user_id == current_user.id,
-                UserGame.personal_rating.is_not(None)
-            )
-        )
-    ).one()
-    
-    # Total hours played
-    total_hours = session.exec(
-        select(func.sum(UserGame.hours_played)).
-        where(UserGame.user_id == current_user.id)
-    ).one() or 0
-    
-    return CollectionStatsResponse(
-        total_games=total_games,
-        by_status=status_counts,
-        by_platform={name: count for name, count in platform_counts},
-        by_rating={str(rating): count for rating, count in rating_counts},
-        pile_of_shame=pile_of_shame,
-        completion_rate=round(completion_rate, 2),
-        average_rating=float(avg_rating_result) if avg_rating_result else None,
-        total_hours_played=total_hours
+    return SuccessResponse(
+        message="Bulk update completed successfully",
+        updated_count=update_count,
+        failed_count=failed_count
     )
