@@ -47,9 +47,7 @@ class TestSuccessfulRegistration:
         register_data = {
             "email": "test@example.com",
             "username": "testuser",
-            "password": "testpassword123",
-            "first_name": "Test",
-            "last_name": "User"
+            "password": "testpassword123"
         }
         
         response = client.post("/api/auth/register", json=register_data)
@@ -60,8 +58,6 @@ class TestSuccessfulRegistration:
         # Verify response structure
         assert result["email"] == "test@example.com"
         assert result["username"] == "testuser"
-        assert result["first_name"] == "Test"
-        assert result["last_name"] == "User"
         assert result["is_active"] is True
         assert result["is_admin"] is False
         assert "password_hash" not in result
@@ -75,8 +71,6 @@ class TestSuccessfulRegistration:
         user = session.exec(select(User).where(User.email == "test@example.com")).first()
         assert user is not None
         assert user.username == "testuser"
-        assert user.first_name == "Test"
-        assert user.last_name == "User"
         assert user.is_active is True
         assert user.is_admin is False
     
@@ -96,16 +90,12 @@ class TestSuccessfulRegistration:
         # Verify response structure
         assert result["email"] == "minimal@example.com"
         assert result["username"] == "minimaluser"
-        assert result["first_name"] is None
-        assert result["last_name"] is None
         assert result["is_active"] is True
         assert result["is_admin"] is False
         
         # Verify user was created in database
         user = session.exec(select(User).where(User.email == "minimal@example.com")).first()
         assert user is not None
-        assert user.first_name is None
-        assert user.last_name is None
     
     def test_password_is_hashed(self, client: TestClient, session: Session):
         """Test that password is properly hashed and not stored in plaintext."""
@@ -199,29 +189,6 @@ class TestValidationErrors:
         response = client.post("/api/auth/register", json=register_data)
         assert response.status_code == 422
     
-    def test_first_name_too_long(self, client: TestClient):
-        """Test registration with first_name too long."""
-        register_data = {
-            "email": "test@example.com",
-            "username": "testuser",
-            "password": "password123",
-            "first_name": "a" * 101  # More than 100 characters
-        }
-        
-        response = client.post("/api/auth/register", json=register_data)
-        assert response.status_code == 422
-    
-    def test_last_name_too_long(self, client: TestClient):
-        """Test registration with last_name too long."""
-        register_data = {
-            "email": "test@example.com",
-            "username": "testuser",
-            "password": "password123",
-            "last_name": "a" * 101  # More than 100 characters
-        }
-        
-        response = client.post("/api/auth/register", json=register_data)
-        assert response.status_code == 422
     
     def test_missing_required_fields(self, client: TestClient):
         """Test registration with missing required fields."""
@@ -378,9 +345,7 @@ class TestErrorHandling:
         register_data = {
             "email": 123,  # Should be string
             "username": True,  # Should be string
-            "password": ["password"],  # Should be string
-            "first_name": {"name": "Test"},  # Should be string
-            "last_name": None  # This should be okay
+            "password": ["password"]  # Should be string
         }
         
         response = client.post("/api/auth/register", json=register_data)

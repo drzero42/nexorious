@@ -69,9 +69,7 @@ async def register_user(
     new_user = User(
         email=user_data.email,
         username=user_data.username,
-        password_hash=hashed_password,
-        first_name=user_data.first_name,
-        last_name=user_data.last_name
+        password_hash=hashed_password
     )
     
     session.add(new_user)
@@ -258,10 +256,6 @@ async def update_user_profile(
     """Update current user's profile information."""
     
     # Update user fields
-    if profile_data.first_name is not None:
-        current_user.first_name = profile_data.first_name
-    if profile_data.last_name is not None:
-        current_user.last_name = profile_data.last_name
     if profile_data.preferences is not None:
         current_user.preferences_json = json.dumps(profile_data.preferences)
     

@@ -34,8 +34,6 @@ class TestAuthRegisterEndpoint:
         data = response.json()
         assert data["email"] == user_data["email"]
         assert data["username"] == user_data["username"]
-        assert data["first_name"] == user_data["first_name"]
-        assert data["last_name"] == user_data["last_name"]
         assert data["is_active"] is True
         assert data["is_admin"] is False
         assert "password_hash" not in data
@@ -278,8 +276,6 @@ class TestAuthMeEndpoint:
         data = response.json()
         assert data["email"] == user_data["email"]
         assert data["username"] == user_data["username"]
-        assert data["first_name"] == user_data["first_name"]
-        assert data["last_name"] == user_data["last_name"]
         assert "password_hash" not in data
     
     def test_get_me_without_token(self, client: TestClient):
@@ -301,15 +297,14 @@ class TestAuthMeEndpoint:
         headers = register_and_login_user(client, user_data)
         
         update_data = {
-            "first_name": "Updated",
-            "last_name": "Name"
+            "preferences": {"theme": "dark", "language": "en"}
         }
         response = client.put("/api/auth/me", json=update_data, headers=headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["first_name"] == "Updated"
-        assert data["last_name"] == "Name"
+        assert data["preferences"]["theme"] == "dark"
+        assert data["preferences"]["language"] == "en"
         assert data["email"] == user_data["email"]  # Should not change
     
     def test_update_me_partial(self, client: TestClient):
@@ -317,17 +312,16 @@ class TestAuthMeEndpoint:
         user_data = create_test_user_data()
         headers = register_and_login_user(client, user_data)
         
-        update_data = {"first_name": "Updated"}
+        update_data = {"preferences": {"theme": "light"}}
         response = client.put("/api/auth/me", json=update_data, headers=headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["first_name"] == "Updated"
-        assert data["last_name"] == user_data["last_name"]  # Should remain unchanged
+        assert data["preferences"]["theme"] == "light"
     
     def test_update_me_without_token(self, client: TestClient):
         """Test PUT /me without authentication token."""
-        update_data = {"first_name": "Updated"}
+        update_data = {"preferences": {"theme": "Updated"}}
         response = client.put("/api/auth/me", json=update_data)
         
         assert_api_error(response, 403, "Not authenticated")
@@ -335,7 +329,7 @@ class TestAuthMeEndpoint:
     def test_update_me_invalid_token(self, client: TestClient):
         """Test PUT /me with invalid token."""
         headers = {"Authorization": "Bearer invalid-token"}
-        update_data = {"first_name": "Updated"}
+        update_data = {"preferences": {"theme": "Updated"}}
         response = client.put("/api/auth/me", json=update_data, headers=headers)
         
         assert_api_error(response, 401, "Could not validate credentials")
