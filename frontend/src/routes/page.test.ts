@@ -98,7 +98,6 @@ describe('Home Page', () => {
 
       expect(screen.queryByText('My Games')).not.toBeInTheDocument();
       expect(screen.queryByText('Add Game')).not.toBeInTheDocument();
-      expect(screen.queryByText('Wishlist')).not.toBeInTheDocument();
       expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
     });
   });
@@ -119,7 +118,6 @@ describe('Home Page', () => {
 
       expect(screen.getByText('My Games')).toBeInTheDocument();
       expect(screen.getByText('Add Game')).toBeInTheDocument();
-      expect(screen.getByText('Wishlist')).toBeInTheDocument();
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
 
@@ -128,12 +126,10 @@ describe('Home Page', () => {
 
       const myGamesLink = screen.getByText('My Games').closest('a');
       const addGameLink = screen.getByText('Add Game').closest('a');
-      const wishlistLink = screen.getByText('Wishlist').closest('a');
       const dashboardLink = screen.getByText('Dashboard').closest('a');
 
       expect(myGamesLink?.getAttribute('href')).toBe('/games');
       expect(addGameLink?.getAttribute('href')).toBe('/games/add');
-      expect(wishlistLink?.getAttribute('href')).toBe('/wishlist');
       expect(dashboardLink?.getAttribute('href')).toBe('/dashboard');
     });
 
@@ -142,11 +138,10 @@ describe('Home Page', () => {
 
       const myGamesLink = screen.getByText('My Games').closest('a');
       const addGameLink = screen.getByText('Add Game').closest('a');
-      const wishlistLink = screen.getByText('Wishlist').closest('a');
       const dashboardLink = screen.getByText('Dashboard').closest('a');
 
       // Check common styling
-      [myGamesLink, addGameLink, wishlistLink, dashboardLink].forEach(link => {
+      [myGamesLink, addGameLink, dashboardLink].forEach(link => {
         expect(link?.classList.contains('px-6')).toBe(true);
         expect(link?.classList.contains('py-2')).toBe(true);
         expect(link?.classList.contains('rounded-lg')).toBe(true);
@@ -158,7 +153,6 @@ describe('Home Page', () => {
       // Check specific colors
       expect(myGamesLink?.classList.contains('bg-blue-500')).toBe(true);
       expect(addGameLink?.classList.contains('bg-green-500')).toBe(true);
-      expect(wishlistLink?.classList.contains('bg-purple-500')).toBe(true);
       expect(dashboardLink?.classList.contains('bg-gray-500')).toBe(true);
     });
 
@@ -240,7 +234,6 @@ describe('Home Page', () => {
       const buttons = [
         screen.getByText('My Games'),
         screen.getByText('Add Game'),
-        screen.getByText('Wishlist'),
         screen.getByText('Dashboard')
       ];
 

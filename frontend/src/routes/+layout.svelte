@@ -1,6 +1,6 @@
 <script lang="ts">
   import '../app.css';
-  import { auth, ui } from '$lib/stores';
+  import { auth } from '$lib/stores';
   import { onMount } from 'svelte';
   
   let mobileMenuOpen = false;
@@ -53,12 +53,6 @@
               class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
             >
               My Games
-            </a>
-            <a
-              href="/wishlist"
-              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
-            >
-              Wishlist
             </a>
             <a
               href="/dashboard"
@@ -132,16 +126,6 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
           My Games
-        </a>
-        <a
-          href="/wishlist"
-          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
-          on:click={closeMobileMenu}
-        >
-          <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-          Wishlist
         </a>
         <a
           href="/dashboard"

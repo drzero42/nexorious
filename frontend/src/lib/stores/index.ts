@@ -61,9 +61,3 @@ export type {
   SearchState 
 } from './search.svelte.js';
 
-// Wishlist store
-export { wishlist } from './wishlist.svelte.js';
-export type { 
-  WishlistItem, 
-  WishlistState 
-} from './wishlist.svelte.js';
