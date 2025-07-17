@@ -19,6 +19,7 @@
     publisher: '',
     release_date: '',
     cover_art_url: '',
+    game_metadata: '',
     personal_rating: null,
     play_status: 'not_started',
     hours_played: 0,
@@ -86,7 +87,8 @@
         developer: game.developer || '',
         publisher: game.publisher || '',
         release_date: game.release_date || '',
-        cover_art_url: game.cover_art_url || ''
+        cover_art_url: game.cover_art_url || '',
+        game_metadata: JSON.stringify(game.metadata || {})
       };
       step = 'details';
     } finally {
