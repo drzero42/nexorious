@@ -5,8 +5,6 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
   isAdmin: boolean;
 }
 
@@ -105,8 +103,6 @@ function createAuthStore() {
       email: string;
       username: string;
       password: string;
-      first_name?: string;
-      last_name?: string;
     }) => {
       state = { ...state, isLoading: true, error: null };
       
@@ -127,7 +123,7 @@ function createAuthStore() {
         const userProfile = await response.json();
         
         // After successful registration, automatically log in the user
-        await this.login(userData.email, userData.password);
+        await this.login(userData.username, userData.password);
         
         return userProfile;
       } catch (error) {
