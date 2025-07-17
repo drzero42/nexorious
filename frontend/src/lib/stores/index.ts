@@ -46,7 +46,6 @@ export type {
 // UI store
 export { ui } from './ui.svelte.js';
 export type { 
-  Theme, 
   NotificationType, 
   Notification, 
   Modal, 
