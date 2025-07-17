@@ -1,6 +1,5 @@
 <script lang="ts">
   import { auth } from '$lib/stores';
-  import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
 
   let email = '';

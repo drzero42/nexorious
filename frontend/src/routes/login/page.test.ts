@@ -5,15 +5,12 @@ import {
   renderComponent,
   createUserEvent,
   fillFormField,
-  submitForm,
   testAccessibility
 } from '../../test-utils/test-helpers';
 import {
   mockAuthStore,
   setAuthenticatedState,
   setUnauthenticatedState,
-  setLoadingState,
-  setErrorState,
   resetAuthMocks
 } from '../../test-utils/auth-mocks';
 import { mockGoto, resetNavigationMocks } from '../../test-utils/navigation-mocks';
@@ -379,7 +376,7 @@ describe('Login Page', () => {
     });
 
     it('should support keyboard navigation', async () => {
-      const { container } = renderComponent(LoginPage);
+      renderComponent(LoginPage);
       
       const emailInput = screen.getByLabelText('Email');
       const passwordInput = screen.getByLabelText('Password');
