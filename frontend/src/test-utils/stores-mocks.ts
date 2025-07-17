@@ -122,11 +122,9 @@ export const mockSearchStore = {
 // Mock UI store
 export const mockUIStore = {
   value: {
-    theme: 'light' as const,
     sidebarOpen: false,
     mobileMenuOpen: false
   },
-  setTheme: vi.fn(),
   toggleSidebar: vi.fn(),
   toggleMobileMenu: vi.fn()
 };
@@ -190,7 +188,6 @@ export function resetStoresMocks() {
   mockSearchStore.clearResults.mockClear();
   mockSearchStore.clearError.mockClear();
 
-  mockUIStore.setTheme.mockClear();
   mockUIStore.toggleSidebar.mockClear();
   mockUIStore.toggleMobileMenu.mockClear();
 }

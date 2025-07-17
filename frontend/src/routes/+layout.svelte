@@ -2,7 +2,6 @@
   import '../app.css';
   import { auth, ui } from '$lib/stores';
   import { onMount } from 'svelte';
-  import { ThemeToggle } from '$lib/components';
   
   let mobileMenuOpen = false;
   
@@ -15,8 +14,6 @@
     }
     
     
-    // Initialize system theme listener
-    ui.initSystemThemeListener();
   });
   
   function closeMobileMenu() {
@@ -30,8 +27,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
-  <header class="bg-white dark:bg-slate-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-300">
+<div class="min-h-screen bg-gray-50 transition-colors duration-300">
+  <header class="bg-white shadow-sm border-b border-gray-200 transition-colors duration-300">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <!-- Logo/Brand -->
@@ -53,19 +50,19 @@
           {#if auth.value.user}
             <a
               href="/games"
-              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
             >
               My Games
             </a>
             <a
               href="/wishlist"
-              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
             >
               Wishlist
             </a>
             <a
               href="/dashboard"
-              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
             >
               Dashboard
             </a>
@@ -74,7 +71,6 @@
 
         <!-- Right Side Actions -->
         <div class="flex items-center space-x-2">
-          <ThemeToggle />
           
           {#if auth.value.user}
             <div class="hidden md:flex items-center space-x-3">
@@ -84,13 +80,13 @@
                     {auth.value.user.username?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <span class="text-sm font-medium text-gray-700">
                   {auth.value.user.username}
                 </span>
               </div>
               <button
                 on:click={() => auth.logout()}
-                class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-gray-100"
               >
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -101,7 +97,7 @@
             
             <!-- Mobile menu button -->
             <button
-              class="md:hidden p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+              class="md:hidden p-2 rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-all duration-200"
               on:click={() => mobileMenuOpen = !mobileMenuOpen}
               aria-label="Toggle mobile menu"
             >
@@ -125,11 +121,11 @@
 
   <!-- Mobile menu -->
   {#if mobileMenuOpen && auth.value.user}
-    <div class="md:hidden bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-gray-700 animate-fade-in">
+    <div class="md:hidden bg-white border-b border-gray-200 animate-fade-in">
       <div class="px-2 pt-2 pb-3 space-y-1">
         <a
           href="/games"
-          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
           on:click={closeMobileMenu}
         >
           <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,7 +135,7 @@
         </a>
         <a
           href="/wishlist"
-          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
           on:click={closeMobileMenu}
         >
           <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,7 +145,7 @@
         </a>
         <a
           href="/dashboard"
-          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+          class="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-all duration-200"
           on:click={closeMobileMenu}
         >
           <svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,7 +154,7 @@
           Dashboard
         </a>
       </div>
-      <div class="pt-4 pb-3 border-t border-gray-200 dark:border-gray-700">
+      <div class="pt-4 pb-3 border-t border-gray-200">
         <div class="flex items-center px-5">
           <div class="flex-shrink-0">
             <div class="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
@@ -168,10 +164,10 @@
             </div>
           </div>
           <div class="ml-3">
-            <div class="text-base font-medium text-gray-800 dark:text-white">
+            <div class="text-base font-medium text-gray-800">
               {auth.value.user.username}
             </div>
-            <div class="text-sm text-gray-500 dark:text-gray-400">
+            <div class="text-sm text-gray-500">
               {auth.value.user.email}
             </div>
           </div>
@@ -179,7 +175,7 @@
         <div class="mt-3 px-2 space-y-1">
           <button
             on:click={() => { auth.logout(); closeMobileMenu(); }}
-            class="flex items-center w-full px-3 py-2 rounded-lg text-base font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200"
+            class="flex items-center w-full px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition-all duration-200"
           >
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

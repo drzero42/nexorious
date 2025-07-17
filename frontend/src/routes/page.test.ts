@@ -310,13 +310,5 @@ describe('Home Page', () => {
       expect(subtitle).toBeInTheDocument();
     });
 
-    it('should support dark mode styling', () => {
-      setUnauthenticatedState();
-      const { container } = renderComponent(HomePage);
-
-      // Check for dark mode classes
-      const darkModeElements = container.querySelectorAll('[class*="dark:"]');
-      expect(darkModeElements.length).toBeGreaterThan(0);
-    });
   });
 });
