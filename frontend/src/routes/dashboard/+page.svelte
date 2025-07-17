@@ -1,5 +1,5 @@
 <script lang="ts">
- import { auth, userGames } from '$lib/stores';
+ import { userGames } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard } from '$lib/components';
@@ -20,7 +20,7 @@
  $: droppedGames = userGamesList.filter(g => g.play_status === 'dropped').length;
  $: shelvedGames = userGamesList.filter(g => g.play_status === 'shelved').length;
  $: totalHours = userGamesList.reduce((sum, userGame) => sum + (userGame.hours_played || 0), 0);
- $: averageRating = userGamesList.filter(g => g.personal_rating).reduce((sum, userGame) => sum + userGame.personal_rating, 0) / userGamesList.filter(g => g.personal_rating).length || 0;
+ $: averageRating = userGamesList.filter(g => g.personal_rating).reduce((sum, userGame) => sum + (userGame.personal_rating || 0), 0) / userGamesList.filter(g => g.personal_rating).length || 0;
  $: lovedGames = userGamesList.filter(g => g.is_loved).length;
  
  // Pile of Shame (owned games not started)
@@ -30,7 +30,7 @@
  $: completionRate = totalGames > 0 ? ((completedGames + masteredGames + dominatedGames) / totalGames) * 100 : 0;
 
  // Genre breakdown
- $: genreStats = userGamesList.reduce((stats, userGame) => {
+ $: genreStats = userGamesList.reduce((stats: Record<string, number>, userGame) => {
   const genre = userGame.game.genre || 'Unknown';
   stats[genre] = (stats[genre] || 0) + 1;
   return stats;
@@ -38,26 +38,24 @@
 
  // Top genres
  $: topGenres = Object.entries(genreStats)
-  .sort(([,a], [,b]) => b - a)
+  .sort(([,a], [,b]) => (b as number) - (a as number))
   .slice(0, 5);
 
  // Platform breakdown (would need platform data)
  // For now, we'll mock this
- $: platformStats = {
-  'PC': Math.floor(totalGames * 0.4),
-  'PlayStation': Math.floor(totalGames * 0.3),
-  'Xbox': Math.floor(totalGames * 0.2),
-  'Nintendo': Math.floor(totalGames * 0.1),
- };
+ $: {
+  // Placeholder for future platform stats implementation
+  totalGames; // Access totalGames to avoid unused variable warning
+ }
 
  // Recent activity (games played recently)
  $: recentGames = userGamesList
   .filter(g => g.last_played)
-  .sort((a, b) => new Date(b.last_played).getTime() - new Date(a.last_played).getTime())
+  .sort((a, b) => new Date(b.last_played!).getTime() - new Date(a.last_played!).getTime())
   .slice(0, 5);
 
  function getStatusColor(status: string) {
-  const colors = {
+  const colors: Record<string, string> = {
    'not_started': 'bg-gray-100 text-gray-800',
    'in_progress': 'bg-blue-100 text-blue-800',
    'completed': 'bg-green-100 text-green-800',
@@ -71,7 +69,7 @@
  }
 
  function getStatusLabel(status: string) {
-  const labels = {
+  const labels: Record<string, string> = {
    'not_started': 'Not Started',
    'in_progress': 'In Progress',
    'completed': 'Completed',
@@ -357,7 +355,7 @@
          <div>
           <p class="text-sm font-medium text-gray-900">{userGame.game.title}</p>
           <p class="text-xs text-gray-500">
-           {new Date(userGame.last_played).toLocaleDateString()}
+           {new Date(userGame.last_played!).toLocaleDateString()}
           </p>
          </div>
         </div>

@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { auth, games } from '$lib/stores';
-  import { onMount } from 'svelte';
+  import { games } from '$lib/stores';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
 
   let searchQuery = '';
   let isSearching = false;
-  let searchResults: any[] = [];
-  let selectedGame: any = null;
+  let searchResults: IGDBGameCandidate[] = [];
+  let selectedGame: IGDBGameCandidate | null = null;
   let step: 'search' | 'confirm' | 'details' = 'search';
 
   // Form data for new game
@@ -38,21 +38,7 @@
       const response = await games.searchIGDB(searchQuery, 10);
       
       // Convert IGDB candidates to search results format
-      searchResults = response.candidates.map(candidate => ({
-        id: candidate.igdb_id,
-        title: candidate.title,
-        description: candidate.description,
-        genre: '', // Genre will be populated from full metadata
-        developer: '', // Developer will be populated from full metadata
-        publisher: '', // Publisher will be populated from full metadata
-        release_date: candidate.release_date,
-        cover_art_url: candidate.cover_art_url,
-        igdb_id: candidate.igdb_id,
-        platforms: candidate.platforms,
-        howlongtobeat_main: candidate.howlongtobeat_main,
-        howlongtobeat_extra: candidate.howlongtobeat_extra,
-        howlongtobeat_completionist: candidate.howlongtobeat_completionist
-      }));
+      searchResults = response.candidates;
       
       if (searchResults.length > 0) {
         step = 'confirm';
@@ -65,13 +51,13 @@
     }
   }
 
-  async function selectGame(game) {
+  async function selectGame(game: IGDBGameCandidate) {
     selectedGame = game;
     isSearching = true;
     
     try {
       // Import the game directly from IGDB with full metadata
-      const importedGame = await games.createFromIGDB(game.igdb_id);
+      await games.createFromIGDB(game.igdb_id);
       
       // Redirect to the games page after successful import
       goto('/games');
@@ -83,12 +69,12 @@
         ...gameData,
         title: game.title,
         description: game.description || '',
-        genre: game.genre || '',
-        developer: game.developer || '',
-        publisher: game.publisher || '',
+        genre: '', // Genre will be populated from full metadata
+        developer: '', // Developer will be populated from full metadata
+        publisher: '', // Publisher will be populated from full metadata
         release_date: game.release_date || '',
         cover_art_url: game.cover_art_url || '',
-        game_metadata: JSON.stringify(game.metadata || {})
+        game_metadata: JSON.stringify({})
       };
       step = 'details';
     } finally {

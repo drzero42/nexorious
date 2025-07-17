@@ -1,16 +1,31 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { auth, userGames } from '$lib/stores';
+  import { userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
-  let game = null;
+  let game: UserGame | null = null;
   let isLoading = true;
   let isEditing = false;
-  let editData = {};
+  let editData: {
+    personal_rating?: number | undefined;
+    play_status: PlayStatus;
+    hours_played: number;
+    personal_notes?: string | undefined;
+    is_loved: boolean;
+    ownership_status: OwnershipStatus;
+    is_physical: boolean;
+  } = {
+    play_status: 'not_started' as PlayStatus,
+    hours_played: 0,
+    is_loved: false,
+    ownership_status: 'owned' as OwnershipStatus,
+    is_physical: false
+  };
 
-  $: gameId = $page.params.id;
+  $: gameId = $page.params.id!;
 
   onMount(async () => {
     // Load game details - authentication is handled by RouteGuard
@@ -22,13 +37,13 @@
       isLoading = true;
       // In a real app, this would fetch the specific game
       // For now, find it in the loaded games
-      const games = userGames.value.games;
-      game = games.find(g => g.id === gameId);
+      const games = userGames.value.userGames;
+      game = games.find(g => g.id === gameId) || null;
       
       if (!game) {
         // Try to fetch from API
         await userGames.fetchUserGames();
-        game = userGames.value.games.find(g => g.id === gameId);
+        game = userGames.value.userGames.find(g => g.id === gameId) || null;
       }
       
       if (game) {
@@ -42,15 +57,17 @@
   }
 
   function resetEditData() {
-    editData = {
-      personal_rating: game.personal_rating,
-      play_status: game.play_status,
-      hours_played: game.hours_played,
-      personal_notes: game.personal_notes,
-      is_loved: game.is_loved,
-      ownership_status: game.ownership_status,
-      is_physical: game.is_physical
-    };
+    if (game) {
+      editData = {
+        personal_rating: game.personal_rating || undefined,
+        play_status: game.play_status,
+        hours_played: game.hours_played,
+        personal_notes: game.personal_notes || undefined,
+        is_loved: game.is_loved,
+        ownership_status: game.ownership_status,
+        is_physical: game.is_physical
+      };
+    }
   }
 
   function startEditing() {
@@ -65,11 +82,32 @@
 
   async function saveChanges() {
     try {
-      // Update game in backend
-      await userGames.updateUserGame(gameId, editData);
+      // Split editData into user game update and progress update
+      const userGameUpdate: UserGameUpdateRequest = {
+        ownership_status: editData.ownership_status,
+        is_physical: editData.is_physical,
+        is_loved: editData.is_loved
+      };
       
-      // Update local game object
-      game = { ...game, ...editData };
+      if (editData.personal_rating !== undefined) {
+        userGameUpdate.personal_rating = editData.personal_rating;
+      }
+      
+      const progressUpdate: ProgressUpdateRequest = {
+        play_status: editData.play_status,
+        hours_played: editData.hours_played
+      };
+      
+      if (editData.personal_notes !== undefined) {
+        progressUpdate.personal_notes = editData.personal_notes;
+      }
+      
+      // Update game in backend
+      await userGames.updateUserGame(gameId, userGameUpdate);
+      await userGames.updateProgress(gameId, progressUpdate);
+      
+      // Reload the game to get updated data
+      await loadGame();
       isEditing = false;
     } catch (error) {
       console.error('Failed to save changes:', error);
@@ -79,7 +117,7 @@
   async function deleteGame() {
     if (confirm('Are you sure you want to remove this game from your collection?')) {
       try {
-        await userGames.deleteUserGame(gameId);
+        await userGames.removeFromCollection(gameId);
         goto('/games');
       } catch (error) {
         console.error('Failed to delete game:', error);
@@ -88,7 +126,7 @@
   }
 
   function getStatusColor(status: string) {
-    const colors = {
+    const colors: Record<string, string> = {
       'not_started': 'bg-gray-100 text-gray-800',
       'in_progress': 'bg-blue-100 text-blue-800',
       'completed': 'bg-green-100 text-green-800',
@@ -102,7 +140,7 @@
   }
 
   function getStatusLabel(status: string) {
-    const labels = {
+    const labels: Record<string, string> = {
       'not_started': 'Not Started',
       'in_progress': 'In Progress',
       'completed': 'Completed',
@@ -125,7 +163,7 @@
 </script>
 
 <svelte:head>
-  <title>{game?.title || 'Game Details'} - Nexorious</title>
+  <title>{game?.game.title || 'Game Details'} - Nexorious</title>
 </svelte:head>
 
 <RouteGuard requireAuth={true}>
@@ -176,10 +214,10 @@
         <!-- Cover Art -->
         <div class="md:flex-shrink-0">
           <div class="h-48 w-full md:h-full md:w-48 bg-gray-200">
-            {#if game.cover_art_url}
+            {#if game.game.cover_art_url}
               <img
-                src={game.cover_art_url}
-                alt={game.title}
+                src={game.game.cover_art_url}
+                alt={game.game.title}
                 class="h-full w-full object-cover"
               />
             {:else}
@@ -195,32 +233,32 @@
           <div class="flex items-start justify-between">
             <div>
               <h1 class="text-2xl font-bold text-gray-900 mb-2">
-                {game.title}
+                {game.game.title}
                 {#if game.is_loved}
                   <span class="text-red-500 ml-2">❤️</span>
                 {/if}
               </h1>
               <div class="text-sm text-gray-600 space-y-1">
-                {#if game.developer}
-                  <p><strong>Developer:</strong> {game.developer}</p>
+                {#if game.game.developer}
+                  <p><strong>Developer:</strong> {game.game.developer}</p>
                 {/if}
-                {#if game.publisher}
-                  <p><strong>Publisher:</strong> {game.publisher}</p>
+                {#if game.game.publisher}
+                  <p><strong>Publisher:</strong> {game.game.publisher}</p>
                 {/if}
-                {#if game.genre}
-                  <p><strong>Genre:</strong> {game.genre}</p>
+                {#if game.game.genre}
+                  <p><strong>Genre:</strong> {game.game.genre}</p>
                 {/if}
-                {#if game.release_date}
-                  <p><strong>Release Date:</strong> {new Date(game.release_date).toLocaleDateString()}</p>
+                {#if game.game.release_date}
+                  <p><strong>Release Date:</strong> {new Date(game.game.release_date).toLocaleDateString()}</p>
                 {/if}
               </div>
             </div>
           </div>
 
-          {#if game.description}
+          {#if game.game.description}
             <div class="mt-4">
               <h3 class="text-lg font-semibold text-gray-900 mb-2">Description</h3>
-              <p class="text-gray-600">{game.description}</p>
+              <p class="text-gray-600">{game.game.description}</p>
             </div>
           {/if}
 

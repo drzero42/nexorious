@@ -1,5 +1,5 @@
 <script lang="ts">
- import { auth, userGames, search } from '$lib/stores';
+ import { userGames } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination } from '$lib/components';
@@ -10,7 +10,6 @@
  let selectedPlatform = '';
  let selectedStatus = '';
  let sortBy = 'title';
- let sortOrder: 'asc' | 'desc' = 'asc';
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
@@ -98,7 +97,7 @@
  }
 
  function getStatusColor(status: string) {
-  const colors = {
+  const colors: Record<string, string> = {
    'not_started': 'bg-gray-100 text-gray-800',
    'in_progress': 'bg-blue-100 text-blue-800',
    'completed': 'bg-green-100 text-green-800',
@@ -112,7 +111,7 @@
  }
 
  function getStatusLabel(status: string) {
-  const labels = {
+  const labels: Record<string, string> = {
    'not_started': 'Not Started',
    'in_progress': 'In Progress',
    'completed': 'Completed',
@@ -297,8 +296,12 @@
          class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
          loading="lazy"
          on:error={(e) => {
-          e.currentTarget.style.display = 'none';
-          e.currentTarget.nextElementSibling.style.display = 'flex';
+          const target = e.currentTarget as HTMLImageElement;
+          const nextElement = target.nextElementSibling as HTMLElement;
+          target.style.display = 'none';
+          if (nextElement) {
+            nextElement.style.display = 'flex';
+          }
          }}
         />
         <div class="w-full h-full flex items-center justify-center text-gray-400 hidden">
