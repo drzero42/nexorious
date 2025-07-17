@@ -297,20 +297,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Interface adapts to different screen sizes
   - Touch interactions work smoothly on mobile
 
-#### 4.2 Theme Customization
-**Priority**: P3 (Low)
-- **User Story**: As a user, I want to customize the interface appearance so it matches my preferences
-- **Requirements**:
-  - Light and dark theme options
-  - Color scheme customization
-  - Layout density options (compact, comfortable, spacious)
-  - Accessibility features (high contrast, large text)
-- **Acceptance Criteria**:
-  - Theme changes are applied immediately
-  - Preferences are saved per user
-  - Accessibility options meet WCAG guidelines
-
-#### 4.3 Keyboard Shortcuts
+#### 4.2 Keyboard Shortcuts
 **Priority**: P2 (Medium)
 - **User Story**: As a power user, I want keyboard shortcuts so I can navigate quickly
 - **Requirements**:
