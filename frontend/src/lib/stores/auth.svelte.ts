@@ -41,7 +41,7 @@ function createAuthStore() {
     }
   }
 
-  return {
+  const authStore = {
     get value() {
       return state;
     },
@@ -123,7 +123,7 @@ function createAuthStore() {
         const userProfile = await response.json();
         
         // After successful registration, automatically log in the user
-        await this.login(userData.username, userData.password);
+        await authStore.login(userData.username, userData.password);
         
         return userProfile;
       } catch (error) {
@@ -266,6 +266,8 @@ function createAuthStore() {
       }
     }
   };
+
+  return authStore;
 }
 
 export const auth = createAuthStore();
