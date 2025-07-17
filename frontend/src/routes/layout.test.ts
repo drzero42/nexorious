@@ -95,7 +95,6 @@ describe('Layout Component', () => {
       renderComponent(Layout);
 
       expect(screen.queryByText('My Games')).not.toBeInTheDocument();
-      expect(screen.queryByText('Wishlist')).not.toBeInTheDocument();
       expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
     });
 
@@ -123,7 +122,6 @@ describe('Layout Component', () => {
       renderComponent(Layout);
 
       expect(screen.getByText('My Games')).toBeInTheDocument();
-      expect(screen.getByText('Wishlist')).toBeInTheDocument();
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
 
@@ -143,11 +141,9 @@ describe('Layout Component', () => {
       renderComponent(Layout);
 
       const gamesLink = screen.getByText('My Games').closest('a');
-      const wishlistLink = screen.getByText('Wishlist').closest('a');
       const dashboardLink = screen.getByText('Dashboard').closest('a');
 
       expect(gamesLink?.getAttribute('href')).toBe('/games');
-      expect(wishlistLink?.getAttribute('href')).toBe('/wishlist');
       expect(dashboardLink?.getAttribute('href')).toBe('/dashboard');
     });
 

@@ -71,19 +71,6 @@ export const mockGamesStore = {
   clearError: vi.fn()
 };
 
-// Mock wishlist store
-export const mockWishlistStore = {
-  value: {
-    games: [mockGame],
-    isLoading: false,
-    error: null
-  },
-  fetchWishlist: vi.fn(),
-  addToWishlist: vi.fn(),
-  removeFromWishlist: vi.fn(),
-  clearError: vi.fn()
-};
-
 // Mock platforms store
 export const mockPlatformsStore = {
   value: {
@@ -133,7 +120,6 @@ export const mockUIStore = {
 vi.mock('$lib/stores', () => ({
   userGames: mockUserGamesStore,
   games: mockGamesStore,
-  wishlist: mockWishlistStore,
   platforms: mockPlatformsStore,
   search: mockSearchStore,
   ui: mockUIStore
@@ -163,17 +149,6 @@ export function resetStoresMocks() {
     searchResults: [],
     isLoading: false,
     isSearching: false,
-    error: null
-  };
-
-  // Reset wishlist store
-  mockWishlistStore.fetchWishlist.mockClear();
-  mockWishlistStore.addToWishlist.mockClear();
-  mockWishlistStore.removeFromWishlist.mockClear();
-  mockWishlistStore.clearError.mockClear();
-  mockWishlistStore.value = {
-    games: [mockGame],
-    isLoading: false,
     error: null
   };
 
