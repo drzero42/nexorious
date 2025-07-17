@@ -51,18 +51,6 @@ describe('Register Page', () => {
       expect(hasRegisterTitle).toBe(true);
     });
 
-    it('should have optional name fields', () => {
-      renderComponent(RegisterPage);
-
-      expect(screen.getByLabelText('First Name')).toBeInTheDocument();
-      expect(screen.getByLabelText('Last Name')).toBeInTheDocument();
-      
-      // Name fields should not be required
-      const firstNameInput = screen.getByLabelText('First Name');
-      const lastNameInput = screen.getByLabelText('Last Name');
-      expect(firstNameInput).not.toHaveAttribute('required');
-      expect(lastNameInput).not.toHaveAttribute('required');
-    });
 
     it('should have a link to login page', () => {
       renderComponent(RegisterPage);
@@ -187,46 +175,13 @@ describe('Register Page', () => {
         expect(mockAuthStore.register).toHaveBeenCalledWith({
           email: 'test@example.com',
           username: 'testuser',
-          password: 'password123',
-          first_name: '',
-          last_name: ''
+          password: 'password123'
         });
       });
     });
   });
 
   describe('Form Submission', () => {
-    it('should call register function with correct data including name fields', async () => {
-      mockAuthStore.register.mockResolvedValue(undefined);
-      renderComponent(RegisterPage);
-
-      const firstNameInput = screen.getByLabelText('First Name') as HTMLInputElement;
-      const lastNameInput = screen.getByLabelText('Last Name') as HTMLInputElement;
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
-
-      await fillFormField(firstNameInput, 'John', userEvent);
-      await fillFormField(lastNameInput, 'Doe', userEvent);
-      await fillFormField(emailInput, 'john.doe@example.com', userEvent);
-      await fillFormField(usernameInput, 'johndoe', userEvent);
-      await fillFormField(passwordInput, 'password123', userEvent);
-      await fillFormField(confirmPasswordInput, 'password123', userEvent);
-
-      const submitButton = screen.getByRole('button', { name: 'Create Account' });
-      await userEvent.click(submitButton);
-
-      await waitFor(() => {
-        expect(mockAuthStore.register).toHaveBeenCalledWith({
-          email: 'john.doe@example.com',
-          username: 'johndoe',
-          password: 'password123',
-          first_name: 'John',
-          last_name: 'Doe'
-        });
-      });
-    });
 
     it('should redirect to games page on successful registration', async () => {
       mockAuthStore.register.mockResolvedValue(undefined);
@@ -358,18 +313,6 @@ describe('Register Page', () => {
   });
 
   describe('Form Layout', () => {
-    it('should have name fields in a grid layout', () => {
-      const { container } = renderComponent(RegisterPage);
-
-      const nameGrid = container.querySelector('.grid.grid-cols-2');
-      expect(nameGrid).toBeInTheDocument();
-      
-      const firstNameField = nameGrid?.querySelector('input[placeholder="First name"]');
-      const lastNameField = nameGrid?.querySelector('input[placeholder="Last name"]');
-      
-      expect(firstNameField).toBeInTheDocument();
-      expect(lastNameField).toBeInTheDocument();
-    });
 
     it('should have proper spacing between form sections', () => {
       const { container } = renderComponent(RegisterPage);
@@ -397,8 +340,6 @@ describe('Register Page', () => {
     it('should have proper placeholder text', () => {
       renderComponent(RegisterPage);
 
-      expect(screen.getByLabelText('First Name')).toHaveAttribute('placeholder', 'First name');
-      expect(screen.getByLabelText('Last Name')).toHaveAttribute('placeholder', 'Last name');
       expect(screen.getByLabelText('Email *')).toHaveAttribute('placeholder', 'Enter your email');
       expect(screen.getByLabelText('Username *')).toHaveAttribute('placeholder', 'Choose a username');
       expect(screen.getByLabelText('Password *')).toHaveAttribute('placeholder', 'Create a password');
@@ -434,8 +375,6 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       const inputs = [
-        { label: 'First Name', id: 'firstName' },
-        { label: 'Last Name', id: 'lastName' },
         { label: 'Email *', id: 'email' },
         { label: 'Username *', id: 'username' },
         { label: 'Password *', id: 'password' },
@@ -452,8 +391,6 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       const focusableElements = [
-        screen.getByLabelText('First Name'),
-        screen.getByLabelText('Last Name'),
         screen.getByLabelText('Email *'),
         screen.getByLabelText('Username *'),
         screen.getByLabelText('Password *'),

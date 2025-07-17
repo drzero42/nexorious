@@ -5,8 +5,6 @@ export const mockUser: User = {
   id: 'test-user-id',
   username: 'testuser',
   email: 'test@example.com',
-  firstName: 'Test',
-  lastName: 'User',
   isAdmin: false
 };
 
