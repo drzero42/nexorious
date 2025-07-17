@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mockGoto, resetNavigationMocks } from '../../test-utils/navigation-mocks';
 import { mockAuthStore, resetAuthMocks, setAuthenticatedState, setUnauthenticatedState } from '../../test-utils/auth-mocks';
 
@@ -27,8 +27,8 @@ describe('RouteGuard', () => {
     });
     
     expect(mockAuthStore.value.user).toBeDefined();
-    expect(mockAuthStore.value.user.id).toBe('1');
-    expect(mockAuthStore.value.user.username).toBe('testuser');
+    expect(mockAuthStore.value.user!.id).toBe('1');
+    expect(mockAuthStore.value.user!.username).toBe('testuser');
   });
 
   it('should allow setting unauthenticated state', () => {
@@ -79,7 +79,7 @@ describe('RouteGuard', () => {
       user: { id: '1', username: 'admin', email: 'admin@example.com', isAdmin: true }
     });
     
-    expect(mockAuthStore.value.user.isAdmin).toBe(true);
+    expect(mockAuthStore.value.user!.isAdmin).toBe(true);
   });
 
   it('should support token refresh testing', () => {
