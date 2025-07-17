@@ -1,0 +1,10 @@
+---
+name: update-flake-lock
+on:
+  workflow_dispatch: # allows manual triggering
+  schedule:
+    - cron: "0 0/12 * * *" # run twice per day
+
+jobs:
+  lockfile:
+    uses: loophp/flake-lock-update-workflow/.github/workflows/auto-upgrade-flakes.yaml@main
