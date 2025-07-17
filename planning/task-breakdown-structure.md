@@ -132,7 +132,6 @@
 - **3.1.1 Game Entity Management**
   - 3.1.1.1 Game model definition
   - 3.1.1.2 Game CRUD API endpoints
-  - 3.1.1.3 Game slug generation
   - 3.1.1.4 Game metadata storage
   - 3.1.1.5 Game validation rules
   - 3.1.1.6 Game versioning system

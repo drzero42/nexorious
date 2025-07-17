@@ -25,7 +25,6 @@ def upgrade() -> None:
     op.create_table('games',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
-    sa.Column('slug', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('genre', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('developer', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
@@ -46,7 +45,6 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_games_igdb_id'), 'games', ['igdb_id'], unique=False)
-    op.create_index(op.f('ix_games_slug'), 'games', ['slug'], unique=True)
     op.create_index(op.f('ix_games_title'), 'games', ['title'], unique=False)
     op.create_table('platforms',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -242,7 +240,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_platforms_name'), table_name='platforms')
     op.drop_table('platforms')
     op.drop_index(op.f('ix_games_title'), table_name='games')
-    op.drop_index(op.f('ix_games_slug'), table_name='games')
     op.drop_index(op.f('ix_games_igdb_id'), table_name='games')
     op.drop_table('games')
     # ### end Alembic commands ###

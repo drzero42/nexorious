@@ -72,7 +72,6 @@ class TestGameMetadata:
         metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             hastily=10,
             normally=20,
             completely=35
@@ -86,8 +85,7 @@ class TestGameMetadata:
         """Test creating GameMetadata without time-to-beat fields."""
         metadata = GameMetadata(
             igdb_id="12345",
-            title="Test Game",
-            slug="test-game"
+            title="Test Game"
         )
         
         assert metadata.hastily is None
@@ -163,7 +161,6 @@ class TestIGDBService:
         game_data = {
             "id": 12345,
             "name": "Test Game",
-            "slug": "test-game",
             "summary": "A test game"
         }
         mock_wrapper.api_request.return_value = json.dumps([game_data]).encode('utf-8')
@@ -194,7 +191,6 @@ class TestIGDBService:
         games_data = [{
             "id": 12345,
             "name": "Test Game",
-            "slug": "test-game",
             "summary": "A test game"
         }]
         mock_wrapper.api_request.return_value = json.dumps(games_data).encode('utf-8')
@@ -222,7 +218,6 @@ class TestIGDBService:
         current_metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             hastily=None,
             normally=None,
             completely=None
@@ -231,7 +226,6 @@ class TestIGDBService:
         fresh_metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             hastily=12,
             normally=20,
             completely=35
@@ -250,7 +244,6 @@ class TestIGDBService:
         current_metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             hastily=10,
             normally=18,
             completely=30
@@ -259,7 +252,6 @@ class TestIGDBService:
         fresh_metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             hastily=12,
             normally=20,
             completely=35
@@ -284,7 +276,6 @@ class TestIGDBService:
         metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Studio",

@@ -3,7 +3,6 @@ import { auth } from './auth.svelte.js';
 export interface Game {
   id: string;
   title: string;
-  slug: string;
   description?: string;
   genre?: string;
   developer?: string;
@@ -254,7 +253,7 @@ function createGamesStore() {
     },
 
     // Create a new game manually
-    createGame: async (gameData: Omit<Game, 'id' | 'slug' | 'created_at' | 'updated_at' | 'rating_count' | 'is_verified'>) => {
+    createGame: async (gameData: Omit<Game, 'id' | 'created_at' | 'updated_at' | 'rating_count' | 'is_verified'>) => {
       state = { ...state, isLoading: true, error: null };
 
       try {

@@ -338,7 +338,6 @@ This document contains all development tickets for the Game Collection Managemen
 
 **Acceptance Criteria:**
 - [ ] Game model with all metadata fields (title, description, genre, etc.)
-- [ ] Slug generation from title
 - [ ] IGDB ID field for external integration
 - [ ] Rating and playtime estimate fields
 - [ ] Release date and platform support
@@ -348,7 +347,6 @@ This document contains all development tickets for the Game Collection Managemen
 **Dependencies:** TICKET-002  
 **Technical Notes:**
 - Use SQLModel with proper relationships
-- Implement slug generation utility
 - Add validation for required fields
 - Design for future metadata expansion
 

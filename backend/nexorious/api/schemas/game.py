@@ -46,7 +46,6 @@ class GameResponse(BaseModel, TimestampMixin):
     """Response schema for game data."""
     id: str
     title: str
-    slug: str
     description: Optional[str]
     genre: Optional[str]
     developer: Optional[str]

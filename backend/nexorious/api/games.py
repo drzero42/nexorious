@@ -43,13 +43,6 @@ router = APIRouter(prefix="/games", tags=["Games"])
 logger = logging.getLogger(__name__)
 
 
-def create_slug(title: str) -> str:
-    """Create a URL-friendly slug from game title."""
-    slug = re.sub(r'[^\w\s-]', '', title.lower())
-    slug = re.sub(r'[-\s]+', '-', slug)
-    return slug.strip('-')
-
-
 def parse_date_string(date_string: Optional[str]) -> Optional[date]:
     """Parse a date string into a Python date object."""
     if not date_string:
@@ -67,24 +60,6 @@ def parse_date_string(date_string: Optional[str]) -> Optional[date]:
             return None
     except (ValueError, TypeError):
         return None
-
-
-def ensure_unique_slug(session: Session, base_slug: str, game_id: Optional[str] = None) -> str:
-    """Ensure slug is unique by appending counter if needed."""
-    slug = base_slug
-    counter = 1
-    
-    while True:
-        query = select(Game).where(Game.slug == slug)
-        if game_id:
-            query = query.where(Game.id != game_id)
-        
-        existing_game = session.exec(query).first()
-        if not existing_game:
-            return slug
-        
-        slug = f"{base_slug}-{counter}"
-        counter += 1
 
 
 @router.get("/", response_model=GameListResponse)
@@ -204,14 +179,9 @@ async def create_game(
             detail=f"Game with title '{game_data.title}' already exists"
         )
     
-    # Create slug from title
-    base_slug = create_slug(game_data.title)
-    unique_slug = ensure_unique_slug(session, base_slug)
-    
     # Create game
     new_game = Game(
         title=game_data.title,
-        slug=unique_slug,
         description=game_data.description,
         genre=game_data.genre,
         developer=game_data.developer,
@@ -267,12 +237,6 @@ async def update_game(
             setattr(game, field, str(value))
         else:
             setattr(game, field, value)
-    
-    # Update slug if title changed
-    if "title" in update_data:
-        base_slug = create_slug(game_data.title)
-        unique_slug = ensure_unique_slug(session, base_slug, game_id)
-        game.slug = unique_slug
     
     game.updated_at = datetime.now(timezone.utc)
     session.commit()
@@ -512,7 +476,6 @@ async def import_from_igdb(
         # Create game from IGDB metadata
         game_data = {
             "title": game_metadata.title,
-            "slug": game_metadata.slug,
             "description": game_metadata.description,
             "genre": game_metadata.genre,
             "developer": game_metadata.developer,
@@ -624,7 +587,6 @@ async def get_metadata_status(
     game_metadata = GameMetadata(
         igdb_id=game.igdb_id or "",
         title=game.title,
-        slug=game.slug,
         description=game.description,
         genre=game.genre,
         developer=game.developer,
@@ -782,7 +744,6 @@ async def populate_game_metadata(
         current_metadata = GameMetadata(
             igdb_id=game.igdb_id,
             title=game.title,
-            slug=game.slug,
             description=game.description,
             genre=game.genre,
             developer=game.developer,
@@ -940,7 +901,6 @@ async def bulk_metadata_operation(
                 current_metadata = GameMetadata(
                     igdb_id=game.igdb_id,
                     title=game.title,
-                    slug=game.slug,
                     description=game.description,
                     genre=game.genre,
                     developer=game.developer,

@@ -15,9 +15,9 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3", slug="witcher-3"),
-            GameMetadata(igdb_id="2", title="Witcher 2", slug="witcher-2"),
-            GameMetadata(igdb_id="3", title="Some Other Game", slug="other-game")
+            GameMetadata(igdb_id="1", title="The Witcher 3",
+            GameMetadata(igdb_id="2", title="Witcher 2"),
+            GameMetadata(igdb_id="3", title="Some Other Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "The Witcher 3", threshold=0.5)
@@ -31,9 +31,9 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3: Wild Hunt", slug="witcher-3"),
-            GameMetadata(igdb_id="2", title="Witcher 2: Assassins of Kings", slug="witcher-2"),
-            GameMetadata(igdb_id="3", title="Some Other Game", slug="other-game")
+            GameMetadata(igdb_id="1", title="The Witcher 3: Wild Hunt"),
+            GameMetadata(igdb_id="2", title="Witcher 2: Assassins of Kings"),
+            GameMetadata(igdb_id="3", title="Some Other Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Witcher 3", threshold=0.5)
@@ -47,8 +47,8 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3", slug="witcher-3"),
-            GameMetadata(igdb_id="2", title="Completely Different Game", slug="different-game")
+            GameMetadata(igdb_id="1", title="The Witcher 3"),
+            GameMetadata(igdb_id="2", title="Completely Different Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Witcher", threshold=0.8)
@@ -64,7 +64,7 @@ class TestIGDBService:
         result = service._rank_games_by_fuzzy_match([], "test", threshold=0.5)
         assert result == []
         
-        games = [GameMetadata(igdb_id="1", title="Test Game", slug="test-game")]
+        games = [GameMetadata(igdb_id="1", title="Test Game")]
         result = service._rank_games_by_fuzzy_match(games, "", threshold=0.5)
         assert result == games
     
@@ -73,7 +73,7 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3", slug="witcher-3"),
+            GameMetadata(igdb_id="1", title="The Witcher 3"),
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "THE WITCHER 3", threshold=0.5)
@@ -86,8 +86,8 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="Grand Theft Auto V", slug="gta-v"),
-            GameMetadata(igdb_id="2", title="Another Game", slug="another-game")
+            GameMetadata(igdb_id="1", title="Grand Theft Auto V"),
+            GameMetadata(igdb_id="2", title="Another Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Auto Grand Theft V", threshold=0.5)
@@ -103,12 +103,12 @@ class TestIGDBService:
         
         # Mock the IGDB wrapper and API response
         mock_wrapper = Mock()
-        mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game", "slug": "test-game"}]'
+        mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game"}]'
         
         with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
             with patch.object(service, '_rank_games_by_fuzzy_match') as mock_rank:
                 mock_rank.return_value = [
-                    GameMetadata(igdb_id="1", title="Test Game", slug="test-game")
+                    GameMetadata(igdb_id="1", title="Test Game")
                 ]
                 
                 result = await service.search_games("test", limit=10)
@@ -135,11 +135,11 @@ class TestIGDBService:
         service = IGDBService()
         
         mock_wrapper = Mock()
-        mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game", "slug": "test-game"}]'
+        mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game"}]'
         
         with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
             with patch.object(service, '_parse_game_data') as mock_parse:
-                mock_parse.return_value = GameMetadata(igdb_id="1", title="Test Game", slug="test-game")
+                mock_parse.return_value = GameMetadata(igdb_id="1", title="Test Game")
                 
                 result = await service.get_game_by_id("1")
                 
@@ -167,13 +167,11 @@ class TestGameMetadata:
         """Test GameMetadata creation with required fields."""
         metadata = GameMetadata(
             igdb_id="123",
-            title="Test Game",
-            slug="test-game"
+            title="Test Game"
         )
         
         assert metadata.igdb_id == "123"
         assert metadata.title == "Test Game"
-        assert metadata.slug == "test-game"
         assert metadata.description is None
         assert metadata.genre is None
     
@@ -182,7 +180,6 @@ class TestGameMetadata:
         metadata = GameMetadata(
             igdb_id="123",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Studio",
