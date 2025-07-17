@@ -99,16 +99,16 @@
 
   function getStatusColor(status: string) {
     const colors = {
-      'not_started': 'status-not-started',
-      'in_progress': 'status-in-progress',
-      'completed': 'status-completed',
-      'mastered': 'status-mastered',
-      'dominated': 'status-dominated',
-      'shelved': 'status-shelved',
-      'dropped': 'status-dropped',
-      'replay': 'status-replay'
+      'not_started': 'bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200',
+      'in_progress': 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200',
+      'completed': 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
+      'mastered': 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200',
+      'dominated': 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
+      'shelved': 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
+      'dropped': 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
+      'replay': 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200'
     };
-    return colors[status] || 'status-not-started';
+    return colors[status] || 'bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200';
   }
 
   function getStatusLabel(status: string) {
@@ -143,7 +143,7 @@
     <div class="mt-4 sm:mt-0">
       <button
         on:click={handleAddGame}
-        class="btn btn-primary btn-lg"
+        class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-6 py-3 text-base bg-blue-600 text-white hover:bg-blue-700"
       >
         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -154,12 +154,12 @@
   </div>
 
   <!-- Filters and Search -->
-  <div class="card">
-    <div class="card-body">
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+    <div class="p-6">
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <!-- Search -->
         <div>
-          <label for="search" class="form-label">
+          <label for="search" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Search
           </label>
           <input
@@ -167,19 +167,19 @@
             type="text"
             bind:value={searchQuery}
             placeholder="Search games..."
-            class="form-input"
+            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
           />
         </div>
 
         <!-- Status Filter -->
         <div>
-          <label for="status" class="form-label">
+          <label for="status" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Status
           </label>
           <select
             id="status"
             bind:value={selectedStatus}
-            class="form-input"
+            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
           >
             <option value="">All Statuses</option>
             <option value="not_started">Not Started</option>
@@ -195,13 +195,13 @@
 
         <!-- Sort By -->
         <div>
-          <label for="sortBy" class="form-label">
+          <label for="sortBy" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Sort By
           </label>
           <select
             id="sortBy"
             bind:value={sortBy}
-            class="form-input"
+            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
           >
             <option value="title">Title</option>
             <option value="personal_rating">Rating</option>
@@ -213,7 +213,7 @@
 
         <!-- View Mode -->
         <div>
-          <label for="view-mode" class="form-label">
+          <label for="view-mode" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             View
           </label>
           <div id="view-mode" class="flex rounded-lg shadow-sm" role="radiogroup" aria-labelledby="view-mode">
@@ -248,7 +248,7 @@
   <!-- Games Display -->
   {#if userGames.value.isLoading}
     <div class="text-center py-12">
-      <div class="loading-spinner w-8 h-8 mx-auto mb-4"></div>
+      <div class="w-8 h-8 mx-auto mb-4 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>
       <div class="text-gray-500 dark:text-gray-400">Loading games...</div>
     </div>
   {:else if userGames.value.userGames.length === 0}
@@ -267,7 +267,7 @@
       {#if userGames.value.pagination.total === 0}
         <button
           on:click={handleAddGame}
-          class="btn btn-primary btn-lg"
+          class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-6 py-3 text-base bg-blue-600 text-white hover:bg-blue-700"
         >
           <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -282,7 +282,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
         {#each userGames.value.userGames as userGame (userGame.id)}
           <div
-            class="card card-interactive group animate-fade-in"
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105 group animate-fade-in"
             on:click={() => handleGameClick(userGame.id)}
             on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
             tabindex="0"
@@ -334,7 +334,7 @@
               </p>
               
               <div class="flex items-center justify-between mb-3">
-                <span class="status-badge {getStatusColor(userGame.play_status)}">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
                   {getStatusLabel(userGame.play_status)}
                 </span>
                 {#if userGame.personal_rating}
@@ -360,7 +360,7 @@
       </div>
     {:else}
       <!-- List View -->
-      <div class="card overflow-hidden">
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead class="bg-gray-50 dark:bg-gray-700">
@@ -428,7 +428,7 @@
                     {userGame.game.genre || 'Unknown'}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="status-badge {getStatusColor(userGame.play_status)}">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
                       {getStatusLabel(userGame.play_status)}
                     </span>
                   </td>

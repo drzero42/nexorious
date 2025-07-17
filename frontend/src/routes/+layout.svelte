@@ -30,19 +30,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50 dark:bg-slate-900 transition-theme">
-  <header class="bg-white dark:bg-slate-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-theme">
+<div class="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+  <header class="bg-white dark:bg-slate-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-300">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <!-- Logo/Brand -->
         <div class="flex items-center">
           <a href="/" class="flex items-center space-x-2 group">
-            <div class="w-8 h-8 bg-gradient-gaming rounded-lg flex items-center justify-center">
+            <div class="w-8 h-8 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
               <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h1 class="text-xl font-bold text-gradient group-hover:scale-105 transition-transform">
+            <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent group-hover:scale-105 transition-transform">
               Nexorious
             </h1>
           </a>
@@ -79,7 +79,7 @@
           {#if auth.value.user}
             <div class="hidden md:flex items-center space-x-3">
               <div class="flex items-center space-x-2">
-                <div class="w-7 h-7 bg-gradient-gaming rounded-full flex items-center justify-center">
+                <div class="w-7 h-7 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center">
                   <span class="text-sm font-medium text-white">
                     {auth.value.user.username?.charAt(0).toUpperCase()}
                   </span>
@@ -90,7 +90,7 @@
               </div>
               <button
                 on:click={() => auth.logout()}
-                class="btn btn-ghost btn-sm text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -114,7 +114,7 @@
               </svg>
             </button>
           {:else}
-            <a href="/login" class="btn btn-primary btn-sm">
+            <a href="/login" class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-3 py-1.5 text-sm bg-blue-600 text-white hover:bg-blue-700">
               Login
             </a>
           {/if}
@@ -161,7 +161,7 @@
       <div class="pt-4 pb-3 border-t border-gray-200 dark:border-gray-700">
         <div class="flex items-center px-5">
           <div class="flex-shrink-0">
-            <div class="h-8 w-8 rounded-full bg-gradient-gaming flex items-center justify-center">
+            <div class="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
               <span class="text-sm font-medium text-white">
                 {auth.value.user.username?.charAt(0).toUpperCase()}
               </span>
@@ -199,11 +199,3 @@
 </div>
 
 
-<style>
-  :global(body) {
-    margin: 0;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-</style>
