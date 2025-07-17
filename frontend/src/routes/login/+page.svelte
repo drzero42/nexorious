@@ -40,11 +40,11 @@
 
 <RouteGuard requireAuth={false}>
 <div class="max-w-md mx-auto">
-  <div class="card animate-fade-in">
-    <div class="card-body">
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 animate-fade-in">
+    <div class="p-6">
       <!-- Header -->
       <div class="text-center mb-8">
-        <div class="w-16 h-16 bg-gradient-gaming rounded-full flex items-center justify-center mx-auto mb-4">
+        <div class="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
           <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
           </svg>
@@ -70,7 +70,7 @@
 
       <form on:submit|preventDefault={handleLogin} class="space-y-6">
         <div>
-          <label for="email" class="form-label">
+          <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Email Address
           </label>
           <input
@@ -79,13 +79,13 @@
             bind:value={email}
             on:keydown={handleKeydown}
             required
-            class="form-input"
+            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
             placeholder="Enter your email"
           />
         </div>
 
         <div>
-          <label for="password" class="form-label">
+          <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Password
           </label>
           <input
@@ -94,7 +94,7 @@
             bind:value={password}
             on:keydown={handleKeydown}
             required
-            class="form-input"
+            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
             placeholder="Enter your password"
           />
         </div>
@@ -103,7 +103,7 @@
           <button
             type="submit"
             disabled={isLoading}
-            class="btn btn-primary btn-lg w-full"
+            class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-6 py-3 text-base bg-blue-600 text-white hover:bg-blue-700 w-full"
           >
             {#if isLoading}
               <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
@@ -128,7 +128,7 @@
       </form>
     </div>
     
-    <div class="card-footer text-center">
+    <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 text-center">
       <p class="text-sm text-gray-600 dark:text-gray-400">
         Don't have an account?
         <a href="/register" class="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">

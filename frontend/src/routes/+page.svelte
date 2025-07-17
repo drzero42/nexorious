@@ -6,7 +6,7 @@
   <!-- Hero Section -->
   <div class="text-center space-y-6">
     <div class="space-y-4">
-      <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-gradient">
+      <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
         Welcome to Nexorious
       </h1>
       <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
@@ -17,7 +17,7 @@
     {#if auth.value.user}
       <div class="space-y-6">
         <div class="flex items-center justify-center space-x-2">
-          <div class="w-10 h-10 bg-gradient-gaming rounded-full flex items-center justify-center">
+          <div class="w-10 h-10 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center">
             <span class="text-lg font-bold text-white">
               {auth.value.user.username?.charAt(0).toUpperCase()}
             </span>
@@ -36,7 +36,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
           <a
             href="/games"
-            class="card card-hover group p-6 text-center space-y-3"
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105 group p-6 text-center space-y-3"
           >
             <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center mx-auto group-hover:bg-primary-600 transition-colors">
               <svg class="w-6 h-6 text-primary-600 dark:text-primary-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,7 +51,7 @@
           
           <a
             href="/games/add"
-            class="card card-hover group p-6 text-center space-y-3"
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105 group p-6 text-center space-y-3"
           >
             <div class="w-12 h-12 bg-success-100 dark:bg-success-900 rounded-lg flex items-center justify-center mx-auto group-hover:bg-success-600 transition-colors">
               <svg class="w-6 h-6 text-success-600 dark:text-success-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,7 +66,7 @@
           
           <a
             href="/wishlist"
-            class="card card-hover group p-6 text-center space-y-3"
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105 group p-6 text-center space-y-3"
           >
             <div class="w-12 h-12 bg-gaming-100 dark:bg-gaming-900 rounded-lg flex items-center justify-center mx-auto group-hover:bg-gaming-600 transition-colors">
               <svg class="w-6 h-6 text-gaming-600 dark:text-gaming-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +81,7 @@
           
           <a
             href="/dashboard"
-            class="card card-hover group p-6 text-center space-y-3"
+            class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105 group p-6 text-center space-y-3"
           >
             <div class="w-12 h-12 bg-secondary-100 dark:bg-secondary-800 rounded-lg flex items-center justify-center mx-auto group-hover:bg-secondary-600 transition-colors">
               <svg class="w-6 h-6 text-secondary-600 dark:text-secondary-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,13 +102,13 @@
           Please log in to start managing your game collection
         </p>
         <div class="flex flex-col sm:flex-row justify-center gap-4">
-          <a href="/login" class="btn btn-primary btn-lg">
+          <a href="/login" class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-6 py-3 text-base bg-blue-600 text-white hover:bg-blue-700">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
             </svg>
             Login
           </a>
-          <a href="/register" class="btn btn-outline btn-lg">
+          <a href="/register" class="inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 outline-none focus:ring-2 focus:ring-blue-500/50 px-6 py-3 text-base border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white dark:border-blue-400 dark:text-blue-400 dark:hover:bg-blue-400 dark:hover:text-white">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
             </svg>
