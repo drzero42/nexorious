@@ -80,12 +80,12 @@
 </svelte:head>
 
 <RouteGuard requireAuth={false}>
-<div class="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+<div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
   <div class="text-center mb-8">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+    <h1 class="text-2xl font-bold text-gray-900">
       Reset Password
     </h1>
-    <p class="text-gray-600 dark:text-gray-400 mt-2">
+    <p class="text-gray-600 mt-2">
       Enter your new password below
     </p>
   </div>
@@ -93,7 +93,7 @@
   {#if validatingToken}
     <div class="text-center py-8">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-      <p class="mt-4 text-gray-600 dark:text-gray-400">Validating reset token...</p>
+      <p class="mt-4 text-gray-600">Validating reset token...</p>
     </div>
   {:else if success}
     <div class="mb-6 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
@@ -141,7 +141,7 @@
 
     <form on:submit|preventDefault={handleResetPassword} class="space-y-6">
       <div>
-        <label for="newPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label for="newPassword" class="block text-sm font-medium text-gray-700">
           New Password
         </label>
         <input
@@ -151,16 +151,16 @@
           on:keydown={handleKeydown}
           required
           minlength="8"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           placeholder="Enter your new password"
         />
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-1 text-xs text-gray-500">
           Password must be at least 8 characters long
         </p>
       </div>
 
       <div>
-        <label for="confirmPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label for="confirmPassword" class="block text-sm font-medium text-gray-700">
           Confirm New Password
         </label>
         <input
@@ -170,7 +170,7 @@
           on:keydown={handleKeydown}
           required
           minlength="8"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           placeholder="Confirm your new password"
         />
       </div>
@@ -188,7 +188,7 @@
   {/if}
 
   <div class="mt-6 text-center">
-    <p class="text-sm text-gray-600 dark:text-gray-400">
+    <p class="text-sm text-gray-600">
       Remember your password?
       <a href="/login" class="font-medium text-blue-600 hover:text-blue-500">
         Back to Sign In

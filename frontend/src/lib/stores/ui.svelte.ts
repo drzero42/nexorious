@@ -1,7 +1,5 @@
 import { browser } from '$app/environment';
 
-export type Theme = 'light' | 'dark' | 'system';
-
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
 export interface Notification {
@@ -25,7 +23,6 @@ export interface Modal {
 }
 
 export interface UIState {
-  theme: Theme;
   notifications: Notification[];
   modals: Modal[];
   isLoading: boolean;
@@ -42,7 +39,6 @@ export interface UIState {
 }
 
 const initialState: UIState = {
-  theme: 'system',
   notifications: [],
   modals: [],
   isLoading: false,
@@ -71,7 +67,6 @@ function createUIStore() {
         const parsedPreferences = JSON.parse(storedPreferences);
         state = {
           ...state,
-          theme: parsedPreferences.theme || state.theme,
           sidebar: {
             ...state.sidebar,
             isPinned: parsedPreferences.sidebarPinned || state.sidebar.isPinned
@@ -81,9 +76,6 @@ function createUIStore() {
             ...parsedPreferences.preferences
           }
         };
-        
-        // Apply theme to document
-        applyTheme(state.theme);
       } catch (error) {
         console.error('Failed to parse stored UI preferences:', error);
       }
@@ -93,27 +85,11 @@ function createUIStore() {
   // Call initialization
   initializePreferences();
 
-  // Function to apply theme to document
-  function applyTheme(theme: Theme) {
-    if (!browser) return;
-
-    const root = document.documentElement;
-    
-    if (theme === 'system') {
-      // Use system preference
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      root.classList.toggle('dark', systemTheme === 'dark');
-    } else {
-      root.classList.toggle('dark', theme === 'dark');
-    }
-  }
-
   // Function to save preferences to localStorage
   function savePreferences() {
     if (!browser) return;
 
     const toSave = {
-      theme: state.theme,
       sidebarPinned: state.sidebar.isPinned,
       preferences: state.preferences
     };
@@ -124,20 +100,6 @@ function createUIStore() {
   const uiStore = {
     get value() {
       return state;
-    },
-
-    // Theme management
-    setTheme: (theme: Theme) => {
-      state = { ...state, theme };
-      applyTheme(theme);
-      savePreferences();
-    },
-
-    toggleTheme: () => {
-      const newTheme = state.theme === 'light' ? 'dark' : 'light';
-      state = { ...state, theme: newTheme };
-      applyTheme(newTheme);
-      savePreferences();
     },
 
     // Notification management
@@ -330,24 +292,6 @@ function createUIStore() {
         }
       };
       savePreferences();
-    },
-
-    // Listen for system theme changes
-    initSystemThemeListener: () => {
-      if (!browser) return;
-
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      
-      const handleChange = () => {
-        if (state.theme === 'system') {
-          applyTheme('system');
-        }
-      };
-
-      mediaQuery.addEventListener('change', handleChange);
-      
-      // Return cleanup function
-      return () => mediaQuery.removeEventListener('change', handleChange);
     }
   };
   

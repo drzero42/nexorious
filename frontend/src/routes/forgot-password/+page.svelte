@@ -49,12 +49,12 @@
 </svelte:head>
 
 <RouteGuard requireAuth={false}>
-<div class="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+<div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
   <div class="text-center mb-8">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+    <h1 class="text-2xl font-bold text-gray-900">
       Forgot Password
     </h1>
-    <p class="text-gray-600 dark:text-gray-400 mt-2">
+    <p class="text-gray-600 mt-2">
       Enter your email address and we'll send you a link to reset your password
     </p>
   </div>
@@ -84,7 +84,7 @@
   {#if !success}
     <form on:submit|preventDefault={handleForgotPassword} class="space-y-6">
       <div>
-        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label for="email" class="block text-sm font-medium text-gray-700">
           Email Address
         </label>
         <input
@@ -93,7 +93,7 @@
           bind:value={email}
           on:keydown={handleKeydown}
           required
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           placeholder="Enter your email address"
         />
       </div>
@@ -111,7 +111,7 @@
   {/if}
 
   <div class="mt-6 text-center">
-    <p class="text-sm text-gray-600 dark:text-gray-400">
+    <p class="text-sm text-gray-600">
       Remember your password?
       <a href="/login" class="font-medium text-blue-600 hover:text-blue-500">
         Back to Sign In

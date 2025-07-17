@@ -67,19 +67,19 @@
   <div class="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 mt-6">
     <!-- Items info and per-page selector -->
     <div class="flex items-center space-x-4">
-      <div class="text-sm text-gray-700 dark:text-gray-300">
+      <div class="text-sm text-gray-700">
         Showing {startItem} to {endItem} of {totalItems} games
       </div>
       
       <div class="flex items-center space-x-2">
-        <label for="items-per-page" class="text-sm text-gray-700 dark:text-gray-300">
+        <label for="items-per-page" class="text-sm text-gray-700">
           Per page:
         </label>
         <select
           id="items-per-page"
           value={itemsPerPage}
           on:change={handleItemsPerPageChange}
-          class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          class="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="10">10</option>
           <option value="20">20</option>
@@ -95,7 +95,7 @@
       <button
         on:click={handlePrevious}
         disabled={currentPage <= 1}
-        class="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-l-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         Previous
       </button>
@@ -103,13 +103,13 @@
       <!-- Page numbers -->
       {#each visiblePages as page}
         {#if page === '...'}
-          <span class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">...</span>
+          <span class="px-3 py-2 text-sm text-gray-500">...</span>
         {:else}
           <button
             on:click={() => handlePageClick(page)}
-            class="px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 transition-colors {page === currentPage
+            class="px-3 py-2 text-sm font-medium border border-gray-300 transition-colors {page === currentPage
               ? 'bg-blue-600 text-white border-blue-600'
-              : 'text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+              : 'text-gray-500 bg-white hover:bg-gray-50'}"
           >
             {page}
           </button>
@@ -120,7 +120,7 @@
       <button
         on:click={handleNext}
         disabled={currentPage >= totalPages}
-        class="px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-r-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-r-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         Next
       </button>

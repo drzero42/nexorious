@@ -131,14 +131,14 @@
 <RouteGuard requireAuth={true}>
 {#if isLoading}
   <div class="text-center py-8">
-    <div class="text-gray-500 dark:text-gray-400">Loading game details...</div>
+    <div class="text-gray-500">Loading game details...</div>
   </div>
 {:else if !game}
   <div class="text-center py-8">
-    <div class="text-gray-500 dark:text-gray-400">Game not found</div>
+    <div class="text-gray-500">Game not found</div>
     <button
       on:click={() => goto('/games')}
-      class="mt-4 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+      class="mt-4 text-blue-600 hover:text-blue-700"
     >
       Back to Games
     </button>
@@ -149,7 +149,7 @@
     <div class="flex items-center justify-between mb-6">
       <button
         on:click={() => goto('/games')}
-        class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        class="text-blue-600 hover:text-blue-700"
       >
         ← Back to Games
       </button>
@@ -171,11 +171,11 @@
       </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+    <div class="bg-white rounded-lg shadow overflow-hidden">
       <div class="md:flex">
         <!-- Cover Art -->
         <div class="md:flex-shrink-0">
-          <div class="h-48 w-full md:h-full md:w-48 bg-gray-200 dark:bg-gray-700">
+          <div class="h-48 w-full md:h-full md:w-48 bg-gray-200">
             {#if game.cover_art_url}
               <img
                 src={game.cover_art_url}
@@ -194,13 +194,13 @@
         <div class="p-6 flex-1">
           <div class="flex items-start justify-between">
             <div>
-              <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              <h1 class="text-2xl font-bold text-gray-900 mb-2">
                 {game.title}
                 {#if game.is_loved}
                   <span class="text-red-500 ml-2">❤️</span>
                 {/if}
               </h1>
-              <div class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+              <div class="text-sm text-gray-600 space-y-1">
                 {#if game.developer}
                   <p><strong>Developer:</strong> {game.developer}</p>
                 {/if}
@@ -219,27 +219,27 @@
 
           {#if game.description}
             <div class="mt-4">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Description</h3>
-              <p class="text-gray-600 dark:text-gray-400">{game.description}</p>
+              <h3 class="text-lg font-semibold text-gray-900 mb-2">Description</h3>
+              <p class="text-gray-600">{game.description}</p>
             </div>
           {/if}
 
           <!-- Personal Information -->
-          <div class="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Your Information</h3>
+          <div class="mt-6 border-t border-gray-200 pt-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Your Information</h3>
             
             {#if isEditing}
               <!-- Edit Form -->
               <form on:submit|preventDefault={saveChanges} class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label for="play_status" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label for="play_status" class="block text-sm font-medium text-gray-700 mb-1">
                       Play Status
                     </label>
                     <select
                       id="play_status"
                       bind:value={editData.play_status}
-                      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="not_started">Not Started</option>
                       <option value="in_progress">In Progress</option>
@@ -253,13 +253,13 @@
                   </div>
 
                   <div>
-                    <label for="ownership_status" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label for="ownership_status" class="block text-sm font-medium text-gray-700 mb-1">
                       Ownership Status
                     </label>
                     <select
                       id="ownership_status"
                       bind:value={editData.ownership_status}
-                      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="owned">Owned</option>
                       <option value="borrowed">Borrowed</option>
@@ -269,13 +269,13 @@
                   </div>
 
                   <div>
-                    <label for="personal_rating" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label for="personal_rating" class="block text-sm font-medium text-gray-700 mb-1">
                       Personal Rating
                     </label>
                     <select
                       id="personal_rating"
                       bind:value={editData.personal_rating}
-                      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value={null}>No Rating</option>
                       <option value={1}>1 Star</option>
@@ -287,7 +287,7 @@
                   </div>
 
                   <div>
-                    <label for="hours_played" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label for="hours_played" class="block text-sm font-medium text-gray-700 mb-1">
                       Hours Played
                     </label>
                     <input
@@ -295,7 +295,7 @@
                       type="number"
                       min="0"
                       bind:value={editData.hours_played}
-                      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -305,23 +305,23 @@
                     <input
                       type="checkbox"
                       bind:checked={editData.is_physical}
-                      class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Physical copy</span>
+                    <span class="ml-2 text-sm text-gray-700">Physical copy</span>
                   </label>
 
                   <label class="flex items-center">
                     <input
                       type="checkbox"
                       bind:checked={editData.is_loved}
-                      class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Loved game</span>
+                    <span class="ml-2 text-sm text-gray-700">Loved game</span>
                   </label>
                 </div>
 
                 <div>
-                  <label for="personal_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label for="personal_notes" class="block text-sm font-medium text-gray-700 mb-1">
                     Personal Notes
                   </label>
                   <textarea
@@ -329,7 +329,7 @@
                     bind:value={editData.personal_notes}
                     rows="3"
                     placeholder="Add your personal notes about this game..."
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   ></textarea>
                 </div>
 
@@ -337,7 +337,7 @@
                   <button
                     type="button"
                     on:click={cancelEditing}
-                    class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                    class="px-4 py-2 text-gray-700 hover:text-gray-900"
                   >
                     Cancel
                   </button>
@@ -354,15 +354,15 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Status:</span>
+                    <span class="text-sm font-medium text-gray-700">Status:</span>
                     <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(game.play_status)}">
                       {getStatusLabel(game.play_status)}
                     </span>
                   </div>
 
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Ownership:</span>
-                    <span class="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                    <span class="text-sm font-medium text-gray-700">Ownership:</span>
+                    <span class="text-sm text-gray-600 capitalize">
                       {game.ownership_status}
                       {#if game.is_physical}
                         (Physical)
@@ -371,8 +371,8 @@
                   </div>
 
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Rating:</span>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">
+                    <span class="text-sm font-medium text-gray-700">Rating:</span>
+                    <span class="text-sm text-gray-600">
                       {#if game.personal_rating}
                         <span class="text-yellow-400">{renderStars(game.personal_rating)}</span>
                         ({game.personal_rating}/5)
@@ -383,8 +383,8 @@
                   </div>
 
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Hours Played:</span>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">
+                    <span class="text-sm font-medium text-gray-700">Hours Played:</span>
+                    <span class="text-sm text-gray-600">
                       {game.hours_played || 0}h
                     </span>
                   </div>
@@ -393,8 +393,8 @@
                 <div class="space-y-3">
                   {#if game.last_played}
                     <div class="flex items-center justify-between">
-                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Last Played:</span>
-                      <span class="text-sm text-gray-600 dark:text-gray-400">
+                      <span class="text-sm font-medium text-gray-700">Last Played:</span>
+                      <span class="text-sm text-gray-600">
                         {new Date(game.last_played).toLocaleDateString()}
                       </span>
                     </div>
@@ -402,8 +402,8 @@
 
                   {#if game.acquired_date}
                     <div class="flex items-center justify-between">
-                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Acquired:</span>
-                      <span class="text-sm text-gray-600 dark:text-gray-400">
+                      <span class="text-sm font-medium text-gray-700">Acquired:</span>
+                      <span class="text-sm text-gray-600">
                         {new Date(game.acquired_date).toLocaleDateString()}
                       </span>
                     </div>
@@ -413,8 +413,8 @@
 
               {#if game.personal_notes}
                 <div class="mt-4">
-                  <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Personal Notes</h4>
-                  <p class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{game.personal_notes}</p>
+                  <h4 class="text-sm font-medium text-gray-700 mb-2">Personal Notes</h4>
+                  <p class="text-sm text-gray-600 whitespace-pre-wrap">{game.personal_notes}</p>
                 </div>
               {/if}
             {/if}
