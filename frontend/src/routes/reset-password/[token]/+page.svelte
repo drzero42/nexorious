@@ -5,7 +5,7 @@
   import { RouteGuard } from '$lib/components';
   import { onMount } from 'svelte';
 
-  let token = '';
+  let token: string | undefined;
   let newPassword = '';
   let confirmPassword = '';
   let isLoading = false;
@@ -47,6 +47,11 @@
 
     if (newPassword !== confirmPassword) {
       error = 'Passwords do not match';
+      return;
+    }
+
+    if (!token) {
+      error = 'Invalid reset token';
       return;
     }
 
