@@ -56,7 +56,6 @@
  function generatePriceComparisonLinks(game) {
   // Generate dynamic links for price comparison
   const gameTitle = encodeURIComponent(game.title);
-  const gameSlug = game.slug || gameTitle;
   
   return {
    isThereAnyDeal: `https://isthereanydeal.com/search/?q=${gameTitle}`,

@@ -32,7 +32,6 @@ class TestIGDBMetadataService:
         return GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Studio",
@@ -64,7 +63,6 @@ class TestIGDBMetadataService:
         current_metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description=None,  # Missing
             genre=None,  # Missing
             developer="Test Studio",
@@ -97,7 +95,6 @@ class TestIGDBMetadataService:
         current = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description="Old description",
             genre="Action",
             developer="Test Studio",
@@ -112,7 +109,6 @@ class TestIGDBMetadataService:
         fresh = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description="New description",
             genre="Action",
             developer="Test Studio",
@@ -147,7 +143,6 @@ class TestIGDBMetadataService:
         metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description=None,  # Missing essential
             genre="Action",
             developer=None,  # Missing essential

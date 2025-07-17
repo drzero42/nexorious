@@ -172,7 +172,6 @@ def test_game_fixture(session: Session) -> Game:
     """Create a test game in the database."""
     game = Game(
         title="Test Game",
-        slug="test-game",
         description="A test game for integration testing",
         genre="Action",
         developer="Test Developer",
@@ -193,7 +192,6 @@ def verified_game_fixture(session: Session) -> Game:
     """Create a verified test game in the database."""
     game = Game(
         title="Verified Game",
-        slug="verified-game",
         description="A verified test game for integration testing",
         genre="Action",
         developer="Test Developer",
@@ -238,7 +236,6 @@ def mock_igdb_service_fixture():
         GameMetadata(
             igdb_id="12345",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Developer",
@@ -255,7 +252,6 @@ def mock_igdb_service_fixture():
     mock_service.get_game_by_id.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
-        slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",
@@ -271,7 +267,6 @@ def mock_igdb_service_fixture():
     mock_service.refresh_game_metadata.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
-        slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",
@@ -287,7 +282,6 @@ def mock_igdb_service_fixture():
     mock_service.populate_missing_metadata.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
-        slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",

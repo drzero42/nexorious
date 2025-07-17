@@ -52,7 +52,6 @@ class TestGamesListEndpoint:
         for i in range(5):
             game = Game(
                 title=f"Game {i}",
-                slug=f"game-{i}",
                 description=f"Description {i}",
                 is_verified=True
             )

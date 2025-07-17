@@ -60,7 +60,6 @@ class TestUserGamesListEndpoint:
         for i in range(5):
             game = Game(
                 title=f"Game {i}",
-                slug=f"game-{i}",
                 description=f"Description {i}",
                 is_verified=True
             )
@@ -475,7 +474,6 @@ class TestUserGamesBulkUpdateEndpoint:
         # Create another user game
         game2 = Game(
             title="Game 2",
-            slug="game-2",
             description="Second game",
             is_verified=True
         )
@@ -556,7 +554,6 @@ class TestUserGamesStatsEndpoint:
         for i, status in enumerate(statuses, 1):
             game = Game(
                 title=f"Game {i}",
-                slug=f"game-{i}",
                 description=f"Description {i}",
                 genre="Action",
                 is_verified=True

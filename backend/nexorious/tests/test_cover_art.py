@@ -86,7 +86,6 @@ def sample_game_data():
     return {
         "id": "test-game-id",
         "title": "Test Game",
-        "slug": "test-game",
         "description": "A test game",
         "genre": "Action",
         "developer": "Test Studio",
@@ -161,7 +160,6 @@ class TestCoverArtDownload:
         sample_data = {
             "id": "test-game-id",
             "title": "Test Game",
-            "slug": "test-game",
             "igdb_id": None,
             "cover_art_url": "https://example.com/cover.jpg",
             "is_verified": False
@@ -195,7 +193,6 @@ class TestCoverArtDownload:
         sample_data = {
             "id": "test-game-id",
             "title": "Test Game",
-            "slug": "test-game",
             "igdb_id": "123",
             "cover_art_url": None,
             "is_verified": False
@@ -320,7 +317,6 @@ class TestBulkCoverArtDownload:
                 game = Game(
                     id=game_id,
                     title=f"Test Game {i+1}",
-                    slug=f"test-game-{i+1}",
                     igdb_id=str(i+1),
                     cover_art_url=f"https://example.com/cover{i+1}.jpg",
                     is_verified=False
@@ -382,7 +378,6 @@ class TestBulkCoverArtDownload:
             game1 = Game(
                 id="game1",
                 title="Test Game 1",
-                slug="test-game-1",
                 igdb_id="1",
                 cover_art_url="/static/cover_art/1.jpg",  # Local URL
                 is_verified=False
@@ -393,7 +388,6 @@ class TestBulkCoverArtDownload:
             game2 = Game(
                 id="game2",
                 title="Test Game 2",
-                slug="test-game-2",
                 igdb_id="2",
                 cover_art_url="https://example.com/cover2.jpg",  # Remote URL
                 is_verified=False
@@ -445,7 +439,6 @@ class TestBulkCoverArtDownload:
             game1 = Game(
                 id="game1",
                 title="Test Game 1",
-                slug="test-game-1",
                 igdb_id="1",
                 cover_art_url="https://example.com/cover1.jpg",
                 is_verified=False
@@ -456,7 +449,6 @@ class TestBulkCoverArtDownload:
             game2 = Game(
                 id="game2",
                 title="Test Game 2",
-                slug="test-game-2",
                 igdb_id=None,
                 cover_art_url="https://example.com/cover2.jpg",
                 is_verified=False
@@ -467,7 +459,6 @@ class TestBulkCoverArtDownload:
             game3 = Game(
                 id="game3",
                 title="Test Game 3",
-                slug="test-game-3",
                 igdb_id="3",
                 cover_art_url=None,
                 is_verified=False
@@ -510,7 +501,6 @@ class TestAutomaticCoverArtDownload:
         game_metadata = GameMetadata(
             igdb_id="123",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             cover_art_url="https://example.com/cover.jpg"
@@ -553,7 +543,6 @@ class TestAutomaticCoverArtDownload:
         game_metadata = GameMetadata(
             igdb_id="123",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             cover_art_url="https://example.com/cover.jpg"
@@ -596,7 +585,6 @@ class TestAutomaticCoverArtDownload:
         game_metadata = GameMetadata(
             igdb_id="123",
             title="Test Game",
-            slug="test-game",
             description="A test game",
             genre="Action",
             cover_art_url="https://example.com/cover.jpg"

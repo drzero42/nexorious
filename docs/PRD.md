@@ -261,7 +261,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Price Comparison Integration**:
   - **IsThereAnyDeal.com**: Generate search URLs using game titles for PC game price tracking
   - **PSPrices.com**: Generate search URLs for PlayStation game price tracking
-  - Links are dynamically generated in the frontend using game title/slug
+  - Links are dynamically generated in the frontend using game title
   - No stored price data or tracking - purely external link generation
 - **Acceptance Criteria**:
   - Wishlist is separate from owned collection
@@ -545,7 +545,6 @@ CREATE TABLE storefronts (
 CREATE TABLE games (
     id VARCHAR(36) PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
-    slug VARCHAR(500) UNIQUE NOT NULL,
     description TEXT,
     genre VARCHAR(200),
     developer VARCHAR(200),
@@ -655,7 +654,6 @@ CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
 CREATE INDEX idx_games_title ON games(title);
-CREATE INDEX idx_games_slug ON games(slug);
 CREATE INDEX idx_games_igdb_id ON games(igdb_id);
 CREATE INDEX idx_game_aliases_game_id ON game_aliases(game_id);
 CREATE INDEX idx_game_aliases_title ON game_aliases(alias_title);
