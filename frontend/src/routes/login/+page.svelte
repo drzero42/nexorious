@@ -3,13 +3,13 @@
  import { goto } from '$app/navigation';
  import { RouteGuard } from '$lib/components';
 
- let email = '';
+ let username = '';
  let password = '';
  let isLoading = false;
  let error = '';
 
  async function handleLogin() {
-  if (!email || !password) {
+  if (!username || !password) {
    error = 'Please fill in all fields';
    return;
   }
@@ -18,7 +18,7 @@
   error = '';
 
   try {
-   await auth.login(email, password);
+   await auth.login(username, password);
    goto('/games');
   } catch (err) {
    error = err instanceof Error ? err.message : 'Login failed';
@@ -62,16 +62,16 @@
 
    <form on:submit|preventDefault={handleLogin}>
     <div>
-     <label for="email">
-      Email Address
+     <label for="username">
+      Username
      </label>
      <input
-      id="email"
-      type="email"
-      bind:value={email}
+      id="username"
+      type="text"
+      bind:value={username}
       on:keydown={handleKeydown}
       required
-      placeholder="Enter your email"
+      placeholder="Enter your username"
      />
     </div>
 

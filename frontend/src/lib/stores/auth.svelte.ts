@@ -46,7 +46,7 @@ function createAuthStore() {
       return state;
     },
     
-    login: async (email: string, password: string) => {
+    login: async (username: string, password: string) => {
       state = { ...state, isLoading: true, error: null };
       
       try {
@@ -55,7 +55,7 @@ function createAuthStore() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ username: email, password }),
+          body: JSON.stringify({ username: username, password }),
         });
 
         if (!response.ok) {
