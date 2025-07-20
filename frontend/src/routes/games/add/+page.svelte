@@ -113,17 +113,16 @@
 </svelte:head>
 
 <RouteGuard requireAuth={true}>
-<div class="max-w-2xl mx-auto">
+<div>
   <!-- Header -->
-  <div class="mb-6">
-    <div class="flex items-center justify-between">
+  <div>
+    <div>
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Add Game</h1>
-        <p class="text-gray-600">Add a new game to your collection</p>
+        <h1>Add Game</h1>
+        <p>Add a new game to your collection</p>
       </div>
       <button
         on:click={() => goto('/games')}
-        class="text-gray-500 hover:text-gray-700"
       >
         Cancel
       </button>
@@ -132,47 +131,44 @@
 
   <!-- Step 1: Search -->
   {#if step === 'search'}
-    <div class="bg-white rounded-lg shadow p-6">
-      <div class="space-y-4">
+    <div>
+      <div>
         <div>
-          <label for="search" class="block text-sm font-medium text-gray-700 mb-2">
+          <label for="search">
             Search for a game
           </label>
-          <div class="flex space-x-2">
+          <div>
             <input
               id="search"
               type="text"
               bind:value={searchQuery}
               on:keydown={handleKeydown}
               placeholder="Enter game title..."
-              class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
             <button
               on:click={handleSearch}
               disabled={isSearching || !searchQuery.trim()}
-              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSearching ? 'Searching...' : 'Search'}
             </button>
           </div>
         </div>
 
-        <div class="text-sm text-gray-600">
+        <div>
           <p>Search for games using the IGDB database. Selecting a game will automatically add it to your collection with full metadata.</p>
-          <p class="mt-1">If you can't find your game, you can manually add it by clicking "Add Manually" below.</p>
+          <p>If you can't find your game, you can manually add it by clicking "Add Manually" below.</p>
         </div>
 
         {#if games.value.error}
-          <div class="mt-4 p-4 bg-red-100 text-red-700 rounded-md">
-            <p class="font-medium">Search Error</p>
-            <p class="text-sm">{games.value.error}</p>
+          <div>
+            <p>Search Error</p>
+            <p>{games.value.error}</p>
           </div>
         {/if}
 
-        <div class="pt-4">
+        <div>
           <button
             on:click={() => step = 'details'}
-            class="text-blue-600 hover:text-blue-700 text-sm"
           >
             Add Manually Instead
           </button>
@@ -183,70 +179,68 @@
 
   <!-- Step 2: Confirm Game Selection -->
   {#if step === 'confirm'}
-    <div class="bg-white rounded-lg shadow p-6">
-      <div class="mb-4">
-        <h2 class="text-lg font-semibold text-gray-900 mb-2">
+    <div>
+      <div>
+        <h2>
           Select a game
         </h2>
-        <p class="text-gray-600">
+        <p>
           Choose the correct game from the search results
         </p>
       </div>
 
-      <div class="space-y-4">
+      <div>
         {#if searchResults.length === 0}
-          <div class="text-center py-8">
-            <div class="text-gray-400 text-lg mb-2">
+          <div>
+            <div>
               No games found
             </div>
-            <p class="text-sm text-gray-600">
+            <p>
               Try a different search term or add the game manually
             </p>
           </div>
         {:else}
           {#each searchResults as game}
             <button
-              class="w-full text-left border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               on:click={() => selectGame(game)}
               disabled={isSearching}
             >
-              <div class="flex">
-                <div class="flex-shrink-0 w-20 h-28 bg-gray-200 rounded">
+              <div>
+                <div>
                   {#if game.cover_art_url}
                     <img
                       src={game.cover_art_url}
                       alt={game.title}
-                      class="w-full h-full object-cover rounded"
                       loading="lazy"
                     />
                   {:else}
-                    <div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                    <div>
                       No Cover
                     </div>
                   {/if}
                 </div>
-                <div class="ml-4 flex-1">
-                  <h3 class="font-semibold text-gray-900">
+                <div>
+                  <h3>
                     {game.title}
                   </h3>
                   
                   {#if game.platforms && game.platforms.length > 0}
-                    <div class="flex flex-wrap gap-1 mt-1">
+                    <div>
                       {#each game.platforms as platform}
-                        <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                        <span>
                           {platform}
                         </span>
                       {/each}
                     </div>
                   {/if}
                   
-                  <p class="text-sm text-gray-500 mt-1">
+                  <p>
                     Released: {game.release_date ? new Date(game.release_date).getFullYear() : 'Unknown'}
                   </p>
                   
                   {#if game.howlongtobeat_main || game.howlongtobeat_extra || game.howlongtobeat_completionist}
-                    <div class="text-sm text-gray-600 mt-1">
-                      <span class="font-medium">Time to beat:</span>
+                    <div>
+                      <span>Time to beat:</span>
                       {#if game.howlongtobeat_main}
                         Main: {game.howlongtobeat_main}h
                       {/if}
@@ -260,13 +254,13 @@
                   {/if}
                   
                   {#if game.description}
-                    <p class="text-sm text-gray-600 mt-2 overflow-hidden" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+                    <p style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
                       {game.description}
                     </p>
                   {/if}
                   
                   {#if isSearching}
-                    <div class="mt-2 text-sm text-blue-600">
+                    <div>
                       Adding to collection...
                     </div>
                   {/if}
@@ -277,16 +271,14 @@
         {/if}
       </div>
 
-      <div class="mt-6 flex justify-between">
+      <div>
         <button
           on:click={goBack}
-          class="px-4 py-2 text-gray-700 hover:text-gray-900"
         >
           Back to Search
         </button>
         <button
           on:click={() => step = 'details'}
-          class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md"
         >
           Add Manually Instead
         </button>
@@ -296,21 +288,21 @@
 
   <!-- Step 3: Game Details -->
   {#if step === 'details'}
-    <div class="bg-white rounded-lg shadow p-6">
-      <div class="mb-4">
-        <h2 class="text-lg font-semibold text-gray-900 mb-2">
+    <div>
+      <div>
+        <h2>
           Game Details
         </h2>
-        <p class="text-gray-600">
+        <p>
           {selectedGame ? 'Review and customize the game information' : 'Enter the game information manually'}
         </p>
       </div>
 
-      <form on:submit|preventDefault={handleSubmit} class="space-y-6">
+      <form on:submit|preventDefault={handleSubmit}>
         <!-- Basic Information -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
           <div>
-            <label for="title" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="title">
               Title *
             </label>
             <input
@@ -318,99 +310,91 @@
               type="text"
               bind:value={gameData.title}
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label for="genre" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="genre">
               Genre
             </label>
             <input
               id="genre"
               type="text"
               bind:value={gameData.genre}
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label for="developer" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="developer">
               Developer
             </label>
             <input
               id="developer"
               type="text"
               bind:value={gameData.developer}
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label for="publisher" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="publisher">
               Publisher
             </label>
             <input
               id="publisher"
               type="text"
               bind:value={gameData.publisher}
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label for="release_date" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="release_date">
               Release Date
             </label>
             <input
               id="release_date"
               type="date"
               bind:value={gameData.release_date}
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label for="cover_art_url" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="cover_art_url">
               Cover Art URL
             </label>
             <input
               id="cover_art_url"
               type="url"
               bind:value={gameData.cover_art_url}
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
         </div>
 
         <!-- Description -->
         <div>
-          <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="description">
             Description
           </label>
           <textarea
             id="description"
             bind:value={gameData.description}
             rows="3"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
           ></textarea>
         </div>
 
         <!-- Personal Information -->
-        <div class="border-t border-gray-200 pt-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">
+        <div>
+          <h3>
             Personal Information
           </h3>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
             <div>
-              <label for="play_status" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="play_status">
                 Play Status
               </label>
               <select
                 id="play_status"
                 bind:value={gameData.play_status}
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="not_started">Not Started</option>
                 <option value="in_progress">In Progress</option>
@@ -424,13 +408,12 @@
             </div>
 
             <div>
-              <label for="ownership_status" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="ownership_status">
                 Ownership Status
               </label>
               <select
                 id="ownership_status"
                 bind:value={gameData.ownership_status}
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="owned">Owned</option>
                 <option value="borrowed">Borrowed</option>
@@ -440,13 +423,12 @@
             </div>
 
             <div>
-              <label for="personal_rating" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="personal_rating">
                 Personal Rating
               </label>
               <select
                 id="personal_rating"
                 bind:value={gameData.personal_rating}
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value={null}>No Rating</option>
                 <option value={1}>1 Star</option>
@@ -458,7 +440,7 @@
             </div>
 
             <div>
-              <label for="hours_played" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="hours_played">
                 Hours Played
               </label>
               <input
@@ -466,35 +448,32 @@
                 type="number"
                 min="0"
                 bind:value={gameData.hours_played}
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
 
-          <div class="mt-4 flex items-center space-x-4">
-            <label class="flex items-center">
+          <div>
+            <label>
               <input
                 type="checkbox"
                 bind:checked={gameData.is_physical}
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              <span class="ml-2 text-sm text-gray-700">Physical copy</span>
+              <span>Physical copy</span>
             </label>
 
-            <label class="flex items-center">
+            <label>
               <input
                 type="checkbox"
                 bind:checked={gameData.is_loved}
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              <span class="ml-2 text-sm text-gray-700">Loved game</span>
+              <span>Loved game</span>
             </label>
           </div>
         </div>
 
         <!-- Personal Notes -->
         <div>
-          <label for="personal_notes" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="personal_notes">
             Personal Notes
           </label>
           <textarea
@@ -502,22 +481,19 @@
             bind:value={gameData.personal_notes}
             rows="3"
             placeholder="Add your personal notes about this game..."
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
           ></textarea>
         </div>
 
         <!-- Actions -->
-        <div class="flex justify-between pt-6">
+        <div>
           <button
             type="button"
             on:click={goBack}
-            class="px-4 py-2 text-gray-700 hover:text-gray-900"
           >
             {selectedGame ? 'Back to Selection' : 'Back to Search'}
           </button>
           <button
             type="submit"
-            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
           >
             Add Game
           </button>

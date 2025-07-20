@@ -68,24 +68,23 @@
 </script>
 
 {#if isLoading}
-  <div class="flex items-center justify-center min-h-screen">
-    <div class="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+  <div>
+    <div></div>
   </div>
 {:else if isAuthorized}
   <slot />
 {:else}
   <!-- This should not normally be reached due to redirects, but just in case -->
-  <div class="flex items-center justify-center min-h-screen">
-    <div class="text-center">
-      <h1 class="text-2xl font-bold text-gray-900 mb-4">
+  <div>
+    <div>
+      <h1>
         Access Denied
       </h1>
-      <p class="text-gray-600 mb-4">
+      <p>
         You don't have permission to access this page.
       </p>
       <button
         on:click={() => goto('/')}
-        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
       >
         Go Home
       </button>

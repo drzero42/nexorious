@@ -88,50 +88,46 @@
 </svelte:head>
 
 <RouteGuard requireAuth={true}>
-<div class="space-y-6">
+<div>
  <!-- Header -->
  <div>
-  <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-  <p class="text-gray-600">
+  <h1>Dashboard</h1>
+  <p>
    Your gaming statistics and insights
   </p>
  </div>
 
  {#if userGames.value.isLoading}
-  <div class="text-center py-8">
-   <div class="text-gray-500">Loading statistics...</div>
+  <div>
+   <div>Loading statistics...</div>
   </div>
  {:else if totalGames === 0}
-  <div class="text-center py-8">
-   <div class="text-gray-500">
+  <div>
+   <div>
     No games in your collection yet. Add some games to see your statistics!
    </div>
    <button
     on:click={() => goto('/games/add')}
-    class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
    >
     Add Your First Game
    </button>
   </div>
  {:else}
   <!-- Overview Statistics -->
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div>
    <!-- Total Games -->
-   <div class="bg-white rounded-lg shadow p-6">
-    <div class="flex items-center">
-     <div class="flex-shrink-0">
-      <div class="flex items-center justify-center h-8 w-8 bg-blue-100 rounded-md">
-       <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-       </svg>
+   <div>
+    <div>
+     <div>
+      <div>
       </div>
      </div>
-     <div class="ml-5 w-0 flex-1">
+     <div>
       <dl>
-       <dt class="text-sm font-medium text-gray-500 truncate">
+       <dt>
         Total Games
        </dt>
-       <dd class="text-lg font-medium text-gray-900">
+       <dd>
         {totalGames}
        </dd>
       </dl>
@@ -140,21 +136,18 @@
    </div>
 
    <!-- Total Hours -->
-   <div class="bg-white rounded-lg shadow p-6">
-    <div class="flex items-center">
-     <div class="flex-shrink-0">
-      <div class="flex items-center justify-center h-8 w-8 bg-green-100 rounded-md">
-       <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-       </svg>
+   <div>
+    <div>
+     <div>
+      <div>
       </div>
      </div>
-     <div class="ml-5 w-0 flex-1">
+     <div>
       <dl>
-       <dt class="text-sm font-medium text-gray-500 truncate">
+       <dt>
         Total Hours
        </dt>
-       <dd class="text-lg font-medium text-gray-900">
+       <dd>
         {totalHours.toLocaleString()}h
        </dd>
       </dl>
@@ -163,21 +156,18 @@
    </div>
 
    <!-- Completion Rate -->
-   <div class="bg-white rounded-lg shadow p-6">
-    <div class="flex items-center">
-     <div class="flex-shrink-0">
-      <div class="flex items-center justify-center h-8 w-8 bg-purple-100 rounded-md">
-       <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-       </svg>
+   <div>
+    <div>
+     <div>
+      <div>
       </div>
      </div>
-     <div class="ml-5 w-0 flex-1">
+     <div>
       <dl>
-       <dt class="text-sm font-medium text-gray-500 truncate">
+       <dt>
         Completion Rate
        </dt>
-       <dd class="text-lg font-medium text-gray-900">
+       <dd>
         {completionRate.toFixed(1)}%
        </dd>
       </dl>
@@ -186,21 +176,18 @@
    </div>
 
    <!-- Pile of Shame -->
-   <div class="bg-white rounded-lg shadow p-6">
-    <div class="flex items-center">
-     <div class="flex-shrink-0">
-      <div class="flex items-center justify-center h-8 w-8 bg-orange-100 rounded-md">
-       <svg class="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z"></path>
-       </svg>
+   <div>
+    <div>
+     <div>
+      <div>
       </div>
      </div>
-     <div class="ml-5 w-0 flex-1">
+     <div>
       <dl>
-       <dt class="text-sm font-medium text-gray-500 truncate">
+       <dt>
         Pile of Shame
        </dt>
-       <dd class="text-lg font-medium text-gray-900">
+       <dd>
         {pileOfShame}
        </dd>
       </dl>
@@ -210,19 +197,19 @@
   </div>
 
   <!-- Detailed Statistics -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div>
    <!-- Play Status Breakdown -->
-   <div class="bg-white rounded-lg shadow p-6">
-    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+   <div>
+    <h3>
      Play Status Breakdown
     </h3>
-    <div class="space-y-3">
-     <div class="flex items-center justify-between">
-      <span class="text-sm font-medium text-gray-700">Not Started</span>
-      <div class="flex items-center space-x-2">
-       <span class="text-sm text-gray-600">{notStartedGames}</span>
-       <div class="w-20 bg-gray-200 rounded-full h-2">
-        <div class="bg-gray-400 h-2 rounded-full" style="width: {totalGames > 0 ? (notStartedGames / totalGames) * 100 : 0}%"></div>
+    <div>
+     <div>
+      <span>Not Started</span>
+      <div>
+       <span>{notStartedGames}</span>
+       <div>
+        <div style="width: {totalGames > 0 ? (notStartedGames / totalGames) * 100 : 0}%"></div>
        </div>
       </div>
      </div>
