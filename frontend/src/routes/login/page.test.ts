@@ -34,7 +34,7 @@ describe('Login Page', () => {
 
       expect(screen.getByText('Sign In')).toBeInTheDocument();
       expect(screen.getByText('Access your game collection')).toBeInTheDocument();
-      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+      expect(screen.getByLabelText('Username')).toBeInTheDocument();
       expect(screen.getByLabelText('Password')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
     });
@@ -63,11 +63,11 @@ describe('Login Page', () => {
       const form = container.querySelector('form');
       expect(form).toBeInTheDocument();
       
-      const emailInput = screen.getByLabelText('Email');
+      const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
       
-      expect(emailInput).toHaveAttribute('type', 'email');
-      expect(emailInput).toHaveAttribute('required');
+      expect(usernameInput).toHaveAttribute('type', 'text');
+      expect(usernameInput).toHaveAttribute('required');
       expect(passwordInput).toHaveAttribute('type', 'password');
       expect(passwordInput).toHaveAttribute('required');
     });
@@ -85,7 +85,7 @@ describe('Login Page', () => {
       });
     });
 
-    it('should show error for missing email', async () => {
+    it('should show error for missing username', async () => {
       renderComponent(LoginPage);
 
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
@@ -102,8 +102,8 @@ describe('Login Page', () => {
     it('should show error for missing password', async () => {
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      await fillFormField(usernameInput, 'testuser', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
       await userEvent.click(submitButton);
@@ -124,9 +124,9 @@ describe('Login Page', () => {
         expect(screen.getByText('Please fill in all fields')).toBeInTheDocument();
       });
 
-      // Start typing in email field
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      // Start typing in username field
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      await fillFormField(usernameInput, 'testuser', userEvent);
 
       // Error should be cleared when form is submitted again with valid data
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
@@ -143,17 +143,17 @@ describe('Login Page', () => {
       mockAuthStore.login.mockResolvedValue(undefined);
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
       await userEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(mockAuthStore.login).toHaveBeenCalledWith('test@example.com', 'password123');
+        expect(mockAuthStore.login).toHaveBeenCalledWith('testuser', 'password123');
       });
     });
 
@@ -161,10 +161,10 @@ describe('Login Page', () => {
       mockAuthStore.login.mockResolvedValue(undefined);
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
@@ -180,10 +180,10 @@ describe('Login Page', () => {
       mockAuthStore.login.mockImplementation(() => new Promise(() => {}));
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
@@ -199,10 +199,10 @@ describe('Login Page', () => {
       mockAuthStore.login.mockRejectedValue(new Error('Invalid credentials'));
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'wrongpassword', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
@@ -217,10 +217,10 @@ describe('Login Page', () => {
       mockAuthStore.login.mockRejectedValue('Something went wrong');
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
@@ -233,20 +233,20 @@ describe('Login Page', () => {
   });
 
   describe('Keyboard Navigation', () => {
-    it('should submit form when Enter is pressed in email field', async () => {
+    it('should submit form when Enter is pressed in username field', async () => {
       mockAuthStore.login.mockResolvedValue(undefined);
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
-      await userEvent.keyDown(emailInput, 'Enter');
+      await userEvent.keyDown(usernameInput, 'Enter');
 
       await waitFor(() => {
-        expect(mockAuthStore.login).toHaveBeenCalledWith('test@example.com', 'password123');
+        expect(mockAuthStore.login).toHaveBeenCalledWith('testuser', 'password123');
       });
     });
 
@@ -254,16 +254,16 @@ describe('Login Page', () => {
       mockAuthStore.login.mockResolvedValue(undefined);
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
       const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 
-      await fillFormField(emailInput, 'test@example.com', userEvent);
+      await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
 
       await userEvent.keyDown(passwordInput, 'Enter');
 
       await waitFor(() => {
-        expect(mockAuthStore.login).toHaveBeenCalledWith('test@example.com', 'password123');
+        expect(mockAuthStore.login).toHaveBeenCalledWith('testuser', 'password123');
       });
     });
   });
@@ -324,10 +324,10 @@ describe('Login Page', () => {
     it('should have proper input styling', () => {
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email');
+      const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
 
-      [emailInput, passwordInput].forEach(input => {
+      [usernameInput, passwordInput].forEach(input => {
         expect(input.classList.contains('w-full')).toBe(true);
         expect(input.classList.contains('px-3')).toBe(true);
         expect(input.classList.contains('py-2')).toBe(true);
@@ -358,36 +358,36 @@ describe('Login Page', () => {
     it('should have proper label associations', () => {
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email');
+      const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
 
-      expect(emailInput).toHaveAttribute('id', 'email');
+      expect(usernameInput).toHaveAttribute('id', 'username');
       expect(passwordInput).toHaveAttribute('id', 'password');
     });
 
     it('should have proper placeholder text', () => {
       renderComponent(LoginPage);
 
-      const emailInput = screen.getByLabelText('Email');
+      const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
 
-      expect(emailInput).toHaveAttribute('placeholder', 'Enter your email');
+      expect(usernameInput).toHaveAttribute('placeholder', 'Enter your username');
       expect(passwordInput).toHaveAttribute('placeholder', 'Enter your password');
     });
 
     it('should support keyboard navigation', async () => {
       renderComponent(LoginPage);
       
-      const emailInput = screen.getByLabelText('Email');
+      const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
       const registerLink = screen.getByText('Sign up');
 
       // Test tab navigation
-      emailInput.focus();
-      expect(document.activeElement).toBe(emailInput);
+      usernameInput.focus();
+      expect(document.activeElement).toBe(usernameInput);
 
-      await userEvent.keyDown(emailInput, 'Tab');
+      await userEvent.keyDown(usernameInput, 'Tab');
       expect(document.activeElement).toBe(passwordInput);
 
       await userEvent.keyDown(passwordInput, 'Tab');
