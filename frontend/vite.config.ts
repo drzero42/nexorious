@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 
 export default defineConfig({
 	build: {
@@ -23,6 +24,7 @@ export default defineConfig({
 		cssMinify: true
 	},
 	plugins: [
-		sveltekit()
+		sveltekit(),
+		svelteTesting()
 	]
 });

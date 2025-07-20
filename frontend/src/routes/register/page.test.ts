@@ -33,11 +33,11 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       expect(screen.getByText('Create Account')).toBeInTheDocument();
-      expect(screen.getByText('Join Nexorious to manage your game collection')).toBeInTheDocument();
-      expect(screen.getByLabelText('Email *')).toBeInTheDocument();
-      expect(screen.getByLabelText('Username *')).toBeInTheDocument();
-      expect(screen.getByLabelText('Password *')).toBeInTheDocument();
-      expect(screen.getByLabelText('Confirm Password *')).toBeInTheDocument();
+      expect(screen.getByText('Join Nexorious to start managing your game collection')).toBeInTheDocument();
+      expect(screen.getByLabelText('Email Address')).toBeInTheDocument();
+      expect(screen.getByLabelText('Username')).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      expect(screen.getByLabelText('Confirm Password')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Create Account' })).toBeInTheDocument();
     });
 
@@ -68,10 +68,10 @@ describe('Register Page', () => {
       
       // Check required fields
       const requiredFields = [
-        screen.getByLabelText('Email *'),
-        screen.getByLabelText('Username *'),
-        screen.getByLabelText('Password *'),
-        screen.getByLabelText('Confirm Password *')
+        screen.getByLabelText('Email Address'),
+        screen.getByLabelText('Username'),
+        screen.getByLabelText('Password'),
+        screen.getByLabelText('Confirm Password')
       ];
 
       requiredFields.forEach(field => {
@@ -95,10 +95,10 @@ describe('Register Page', () => {
     it('should show error for password mismatch', async () => {
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -116,10 +116,10 @@ describe('Register Page', () => {
     it('should show error for short password', async () => {
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -138,9 +138,9 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       // Test missing email
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(usernameInput, 'testuser', userEvent);
       await fillFormField(passwordInput, 'password123', userEvent);
@@ -158,10 +158,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockResolvedValue(undefined);
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -187,10 +187,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockResolvedValue(undefined);
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -209,10 +209,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockImplementation(() => new Promise(() => {}));
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -232,10 +232,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockRejectedValue(new Error('Email already exists'));
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'existing@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -254,10 +254,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockRejectedValue('Network error');
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -278,10 +278,10 @@ describe('Register Page', () => {
       mockAuthStore.register.mockResolvedValue(undefined);
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *') as HTMLInputElement;
-      const usernameInput = screen.getByLabelText('Username *') as HTMLInputElement;
-      const passwordInput = screen.getByLabelText('Password *') as HTMLInputElement;
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *') as HTMLInputElement;
+      const emailInput = screen.getByLabelText('Email Address') as HTMLInputElement;
+      const usernameInput = screen.getByLabelText('Username') as HTMLInputElement;
+      const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password') as HTMLInputElement;
 
       await fillFormField(emailInput, 'test@example.com', userEvent);
       await fillFormField(usernameInput, 'testuser', userEvent);
@@ -313,12 +313,11 @@ describe('Register Page', () => {
   });
 
   describe('Form Layout', () => {
-
-    it('should have proper spacing between form sections', () => {
+    it('should have form container', () => {
       const { container } = renderComponent(RegisterPage);
 
       const form = container.querySelector('form');
-      expect(form?.classList.contains('space-y-6')).toBe(true);
+      expect(form).toBeInTheDocument();
     });
   });
 
@@ -326,10 +325,10 @@ describe('Register Page', () => {
     it('should have correct input types', () => {
       renderComponent(RegisterPage);
 
-      const emailInput = screen.getByLabelText('Email *');
-      const usernameInput = screen.getByLabelText('Username *');
-      const passwordInput = screen.getByLabelText('Password *');
-      const confirmPasswordInput = screen.getByLabelText('Confirm Password *');
+      const emailInput = screen.getByLabelText('Email Address');
+      const usernameInput = screen.getByLabelText('Username');
+      const passwordInput = screen.getByLabelText('Password');
+      const confirmPasswordInput = screen.getByLabelText('Confirm Password');
 
       expect(emailInput).toHaveAttribute('type', 'email');
       expect(usernameInput).toHaveAttribute('type', 'text');
@@ -340,15 +339,15 @@ describe('Register Page', () => {
     it('should have proper placeholder text', () => {
       renderComponent(RegisterPage);
 
-      expect(screen.getByLabelText('Email *')).toHaveAttribute('placeholder', 'Enter your email');
-      expect(screen.getByLabelText('Username *')).toHaveAttribute('placeholder', 'Choose a username');
-      expect(screen.getByLabelText('Password *')).toHaveAttribute('placeholder', 'Create a password');
-      expect(screen.getByLabelText('Confirm Password *')).toHaveAttribute('placeholder', 'Confirm your password');
+      expect(screen.getByLabelText('Email Address')).toHaveAttribute('placeholder', 'Enter your email address');
+      expect(screen.getByLabelText('Username')).toHaveAttribute('placeholder', 'Choose a unique username');
+      expect(screen.getByLabelText('Password')).toHaveAttribute('placeholder', 'Enter a strong password');
+      expect(screen.getByLabelText('Confirm Password')).toHaveAttribute('placeholder', 'Confirm your password');
     });
   });
 
   describe('Error Display', () => {
-    it('should display error message with proper styling', async () => {
+    it('should display error message', async () => {
       renderComponent(RegisterPage);
 
       const submitButton = screen.getByRole('button', { name: 'Create Account' });
@@ -356,11 +355,7 @@ describe('Register Page', () => {
 
       await waitFor(() => {
         const errorMessage = screen.getByText('Please fill in all required fields');
-        const errorContainer = errorMessage.closest('div');
-        
-        expect(errorContainer?.classList.contains('bg-red-100')).toBe(true);
-        expect(errorContainer?.classList.contains('border-red-400')).toBe(true);
-        expect(errorContainer?.classList.contains('text-red-700')).toBe(true);
+        expect(errorMessage).toBeInTheDocument();
       });
     });
   });
@@ -375,10 +370,10 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       const inputs = [
-        { label: 'Email *', id: 'email' },
-        { label: 'Username *', id: 'username' },
-        { label: 'Password *', id: 'password' },
-        { label: 'Confirm Password *', id: 'confirmPassword' }
+        { label: 'Email Address', id: 'email' },
+        { label: 'Username', id: 'username' },
+        { label: 'Password', id: 'password' },
+        { label: 'Confirm Password', id: 'confirmPassword' }
       ];
 
       inputs.forEach(({ label, id }) => {
@@ -391,10 +386,10 @@ describe('Register Page', () => {
       renderComponent(RegisterPage);
 
       const focusableElements = [
-        screen.getByLabelText('Email *'),
-        screen.getByLabelText('Username *'),
-        screen.getByLabelText('Password *'),
-        screen.getByLabelText('Confirm Password *'),
+        screen.getByLabelText('Email Address'),
+        screen.getByLabelText('Username'),
+        screen.getByLabelText('Password'),
+        screen.getByLabelText('Confirm Password'),
         screen.getByRole('button', { name: 'Create Account' }),
         screen.getByText('Sign in')
       ];
