@@ -47,6 +47,7 @@ vi.mock('$app/stores', () => ({
       return () => {};
     }
   },
+  goto: mockGoto,
   mockGoto: mockGoto,
   resetNavigationMocks: () => resetNavigationMocks()
 }));
