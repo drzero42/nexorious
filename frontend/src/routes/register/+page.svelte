@@ -109,56 +109,53 @@
 </svelte:head>
 
 <RouteGuard requireAuth={false}>
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
- <div class="max-w-md w-full space-y-8">
-  <div class="bg-white shadow-xl rounded-lg overflow-hidden">
+<div>
+ <div>
+  <div>
    <!-- Header -->
-   <div class="bg-gray-800 px-6 py-5">
-    <div class="text-center">
-     <h1 class="text-xl font-bold text-white">Nexorious</h1>
-     <p class="text-gray-400 text-sm mt-1">Game Collection Manager</p>
+   <div>
+    <div>
+     <h1>Nexorious</h1>
+     <p>Game Collection Manager</p>
     </div>
    </div>
    
-   <div class="px-6 py-8">
+   <div>
     <!-- Form Header -->
-    <div class="mb-6">
-     <h2 class="text-xl font-bold text-gray-900 ">
+    <div>
+     <h2>
       Create Account
      </h2>
-     <p class="text-gray-600 text-sm mt-1">
+     <p>
       Join Nexorious to start managing your game collection
      </p>
     </div>
 
     {#if error}
-     <div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">
+     <div>
       {error}
      </div>
     {/if}
 
-    <form on:submit|preventDefault={handleRegister} class="space-y-5">
+    <form on:submit|preventDefault={handleRegister}>
      <!-- Email field -->
      <div>
-      <label for="email" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="email">
        Email Address
       </label>
-      <div class="relative">
+      <div>
        <input
         id="email"
         type="email"
         bind:value={email}
         on:keydown={handleKeydown}
         required
-        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 "
         placeholder="Enter your email address"
        />
        {#if emailValid}
-        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
-         <div class="w-4 h-4 rounded-full border-2 border-green-500 flex items-center justify-center">
-          <svg class="w-2.5 h-2.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-           <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-          </svg>
+        <div>
+         <div>
+✓
          </div>
         </div>
        {/if}
@@ -167,39 +164,34 @@
 
      <!-- Username field -->
      <div>
-      <label for="username" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="username">
        Username
       </label>
-      <div class="relative">
+      <div>
        <input
         id="username"
         type="text"
         bind:value={username}
         on:keydown={handleKeydown}
         required
-        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 "
         placeholder="Choose a unique username"
        />
        {#if usernameChecking}
-        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
-         <div class="w-4 h-4 rounded-full border-2 border-yellow-500 flex items-center justify-center">
-          <span class="text-yellow-500 text-xs">?</span>
+        <div>
+         <div>
+          <span>?</span>
          </div>
         </div>
        {:else if username.length >= 3 && usernameAvailable}
-        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
-         <div class="w-4 h-4 rounded-full border-2 border-green-500 flex items-center justify-center">
-          <svg class="w-2.5 h-2.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-           <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-          </svg>
+        <div>
+         <div>
+✓
          </div>
         </div>
        {:else if username.length >= 3 && !usernameAvailable}
-        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
-         <div class="w-4 h-4 rounded-full border-2 border-red-500 flex items-center justify-center">
-          <svg class="w-2.5 h-2.5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-           <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-          </svg>
+        <div>
+         <div>
+✗
          </div>
         </div>
        {/if}
@@ -208,7 +200,7 @@
 
      <!-- Password field -->
      <div>
-      <label for="password" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="password">
        Password
       </label>
       <input
@@ -217,21 +209,16 @@
        bind:value={password}
        on:keydown={handleKeydown}
        required
-       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 "
        placeholder="Enter a strong password"
       />
       <!-- Password strength meter -->
-      <div class="mt-2">
-       <div class="w-full bg-gray-200 rounded-full h-1">
+      <div>
+       <div>
         <div 
-         class="h-1 rounded-full transition-all duration-300"
-         class:bg-red-500={passwordStrength < 3}
-         class:bg-yellow-500={passwordStrength >= 3 && passwordStrength < 5}
-         class:bg-green-500={passwordStrength >= 5}
          style="width: {(passwordStrength / 5) * 100}%"
         ></div>
        </div>
-       <p class="text-xs mt-1 text-red-500">
+       <p>
         {#if passwordStrength < 3}
          Weak - Add numbers and symbols
         {:else if passwordStrength < 5}
@@ -245,7 +232,7 @@
 
      <!-- Confirm Password field -->
      <div>
-      <label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="confirmPassword">
        Confirm Password
       </label>
       <input
@@ -254,23 +241,17 @@
        bind:value={confirmPassword}
        on:keydown={handleKeydown}
        required
-       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 "
        placeholder="Confirm your password"
       />
      </div>
 
      <!-- Submit button -->
-     <div class="pt-2">
+     <div>
       <button
        type="submit"
        disabled={isLoading}
-       class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
        {#if isLoading}
-        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
         Creating account...
        {:else}
         Create Account
@@ -281,10 +262,10 @@
    </div>
    
    <!-- Footer -->
-   <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 text-center">
-    <p class="text-sm text-gray-600 ">
+   <div>
+    <p>
      Already have an account? 
-     <a href="/login" class="text-blue-600 hover:text-blue-500  underline">
+     <a href="/login">
       Sign in
      </a>
     </p>
