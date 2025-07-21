@@ -16,7 +16,7 @@
   
   <!-- Header -->
   <rect x="50" y="50" width="1100" height="60" fill="#f8f9fa" stroke="#dee2e6" stroke-width="0 0 1 0"/>
-  <text x="80" y="80" fill="#343a40" font-size="20" font-weight="bold">Rating & Tagging</text>
+  <text x="80" y="80" fill="#343a40" font-size="20" font-weight="bold">Rating &amp; Tagging</text>
   <text x="80" y="95" fill="#6c757d" font-size="14">Rate your games and organize them with custom tags</text>
   
   <!-- Game Info Header -->
@@ -308,5 +308,5 @@
   </g>
   
   <!-- Title -->
-  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Rating & Tagging System Wireframe</text>
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Rating &amp; Tagging System Wireframe</text>
 </svg>

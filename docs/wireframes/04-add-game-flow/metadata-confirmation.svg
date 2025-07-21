@@ -88,7 +88,7 @@
       <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">DESCRIPTION</text>
       <rect x="0" y="10" width="700" height="120" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
       <text x="10" y="30" fill="#343a40" font-size="14">Baldur's Gate 3 is a story-rich, party-based RPG set in the</text>
-      <text x="10" y="50" fill="#343a40" font-size="14">universe of Dungeons & Dragons, where your choices shape</text>
+      <text x="10" y="50" fill="#343a40" font-size="14">universe of Dungeons &amp; Dragons, where your choices shape</text>
       <text x="10" y="70" fill="#343a40" font-size="14">a tale of fellowship and betrayal, survival and sacrifice, and</text>
       <text x="10" y="90" fill="#343a40" font-size="14">the lure of absolute power.</text>
       
