@@ -32,7 +32,7 @@ describe('Register Page', () => {
     it('should render the registration form', () => {
       renderComponent(RegisterPage);
 
-      expect(screen.getByText('Create Account')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Create Account' })).toBeInTheDocument();
       expect(screen.getByText('Join Nexorious to start managing your game collection')).toBeInTheDocument();
       expect(screen.getByLabelText('Email Address')).toBeInTheDocument();
       expect(screen.getByLabelText('Username')).toBeInTheDocument();
