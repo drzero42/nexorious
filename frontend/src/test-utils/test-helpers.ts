@@ -22,6 +22,14 @@ export function createUserEvent() {
   return {
     click: async (element: Element) => {
       element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      
+      // If clicking a submit button, also trigger form submission
+      if (element instanceof HTMLButtonElement && element.type === 'submit') {
+        const form = element.closest('form');
+        if (form) {
+          form.dispatchEvent(new Event('submit', { bubbles: true }));
+        }
+      }
     },
     type: async (element: Element, text: string) => {
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -31,6 +39,22 @@ export function createUserEvent() {
     },
     keyDown: async (element: Element, key: string) => {
       element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      
+      // Handle Tab navigation
+      if (key === 'Tab') {
+        const focusableElements = Array.from(
+          document.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        ) as HTMLElement[];
+        
+        const currentIndex = focusableElements.indexOf(element as HTMLElement);
+        const nextElement = focusableElements[currentIndex + 1];
+        
+        if (nextElement) {
+          nextElement.focus();
+        }
+      }
     },
     submit: async (form: Element) => {
       form.dispatchEvent(new Event('submit', { bubbles: true }));

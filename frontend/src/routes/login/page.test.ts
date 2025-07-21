@@ -362,6 +362,7 @@ describe('Login Page', () => {
       const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
+      const forgotPasswordLink = screen.getByText('Forgot your password?');
       const registerLink = screen.getByText('Sign up');
 
       // Test tab navigation
@@ -375,6 +376,9 @@ describe('Login Page', () => {
       expect(document.activeElement).toBe(submitButton);
 
       await userEvent.keyDown(submitButton, 'Tab');
+      expect(document.activeElement).toBe(forgotPasswordLink);
+
+      await userEvent.keyDown(forgotPasswordLink, 'Tab');
       expect(document.activeElement).toBe(registerLink);
     });
   });
