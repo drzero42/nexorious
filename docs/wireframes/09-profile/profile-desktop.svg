@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="800" fill="#f8f9fa"/>
+  
+  <!-- Grid lines for reference -->
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e9ecef" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  
+  <!-- Sidebar Navigation -->
+  <rect x="0" y="0" width="280" height="800" fill="#343a40"/>
+  <line x1="280" y1="0" x2="280" y2="800" stroke="#495057" stroke-width="1"/>
+  
+  <!-- Logo/Brand Section -->
+  <rect x="0" y="0" width="280" height="80" fill="#212529"/>
+  <text x="140" y="35" text-anchor="middle" fill="white" font-size="24" font-weight="bold">Nexorious</text>
+  <text x="140" y="55" text-anchor="middle" fill="#adb5bd" font-size="14">Game Collection Manager</text>
+  
+  <!-- Navigation Menu with Profile Active -->
+  <g transform="translate(20, 100)">
+    <!-- Primary Navigation -->
+    <text x="0" y="0" fill="#6c757d" font-size="12" font-weight="500">MAIN</text>
+    
+    <!-- Dashboard -->
+    <rect x="0" y="20" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="35" fill="#adb5bd" font-size="16">📊</text>
+    <text x="50" y="35" fill="#adb5bd" font-size="14" font-weight="500">Dashboard</text>
+    <text x="50" y="50" fill="#6c757d" font-size="12">Overview &amp; Statistics</text>
+    
+    <!-- Library -->
+    <rect x="0" y="70" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="85" fill="#adb5bd" font-size="16">🎮</text>
+    <text x="50" y="85" fill="#adb5bd" font-size="14" font-weight="500">Library</text>
+    <text x="50" y="100" fill="#6c757d" font-size="12">Your game collection</text>
+  </g>
+  
+  <!-- Bottom Navigation with Profile Active -->
+  <g transform="translate(20, 600)">
+    <!-- Settings -->
+    <rect x="0" y="90" width="240" height="44" rx="6" fill="transparent"/>
+    <text x="20" y="105" fill="#adb5bd" font-size="16">⚙️</text>
+    <text x="50" y="105" fill="#adb5bd" font-size="14" font-weight="500">Settings</text>
+    <text x="50" y="120" fill="#6c757d" font-size="12">Preferences</text>
+    
+    <!-- User Profile - Active State -->
+    <rect x="0" y="140" width="240" height="44" rx="6" fill="#007bff"/>
+    <circle cx="30" cy="162" r="12" fill="#ffffff"/>
+    <text x="26" y="167" fill="#007bff" font-size="12" font-weight="bold">JD</text>
+    <text x="50" y="157" fill="white" font-size="14" font-weight="500">John Doe</text>
+    <text x="50" y="172" fill="#b3d7ff" font-size="12">Profile Settings</text>
+  </g>
+  
+  <!-- Main Content Area -->
+  <rect x="280" y="0" width="920" height="800" fill="white"/>
+  
+  <!-- Top Navigation Bar -->
+  <rect x="280" y="0" width="920" height="70" fill="white"/>
+  <line x1="280" y1="70" x2="1200" y2="70" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Breadcrumb -->
+  <g transform="translate(300, 25)">
+    <text x="0" y="0" fill="#6c757d" font-size="14">Settings</text>
+    <text x="55" y="0" fill="#6c757d" font-size="14">›</text>
+    <text x="70" y="0" fill="#343a40" font-size="14" font-weight="500">Profile</text>
+  </g>
+  
+  <!-- Page Header -->
+  <g transform="translate(320, 110)">
+    <text x="0" y="0" fill="#343a40" font-size="28" font-weight="bold">Profile Settings</text>
+    <text x="0" y="25" fill="#6c757d" font-size="16">Manage your account information and security settings</text>
+  </g>
+  
+  <!-- Profile Form Container -->
+  <rect x="320" y="160" width="560" height="580" rx="8" fill="white" stroke="#dee2e6" stroke-width="1"/>
+  
+  <!-- Account Information Section -->
+  <g transform="translate(340, 180)">
+    <!-- Section Header -->
+    <text x="0" y="0" fill="#343a40" font-size="20" font-weight="bold">Account Information</text>
+    <line x1="0" y1="15" x2="520" y2="15" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Current Username Display -->
+    <text x="0" y="50" fill="#343a40" font-size="14" font-weight="500">Current Username</text>
+    <rect x="0" y="60" width="520" height="40" rx="4" fill="#f8f9fa" stroke="#ced4da" stroke-width="1"/>
+    <text x="12" y="85" fill="#495057" font-size="14" font-weight="500">johndoe123</text>
+    
+    <!-- Username Change Form -->
+    <text x="0" y="130" fill="#343a40" font-size="14" font-weight="500">New Username</text>
+    <rect x="0" y="140" width="400" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="12" y="165" fill="#6c757d" font-size="14">Enter new username</text>
+    
+    <!-- Username validation indicator -->
+    <rect x="410" y="145" width="30" height="30" rx="15" fill="#28a745"/>
+    <text x="425" y="165" text-anchor="middle" fill="white" font-size="16">✓</text>
+    
+    <!-- Update Username Button -->
+    <rect x="0" y="200" width="150" height="36" rx="4" fill="#007bff" stroke="#007bff" stroke-width="1"/>
+    <text x="75" y="223" text-anchor="middle" fill="white" font-size="14" font-weight="500">Update Username</text>
+  </g>
+  
+  <!-- Password Security Section -->
+  <g transform="translate(340, 420)">
+    <!-- Section Header -->
+    <text x="0" y="0" fill="#343a40" font-size="20" font-weight="bold">Password &amp; Security</text>
+    <line x1="0" y1="15" x2="520" y2="15" stroke="#dee2e6" stroke-width="1"/>
+    
+    <!-- Current Password -->
+    <text x="0" y="50" fill="#343a40" font-size="14" font-weight="500">Current Password</text>
+    <rect x="0" y="60" width="520" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="12" y="85" fill="#6c757d" font-size="14">Enter current password</text>
+    <circle cx="485" cy="80" r="8" fill="none" stroke="#6c757d" stroke-width="1"/>
+    <text x="480" y="85" fill="#6c757d" font-size="12">👁</text>
+    
+    <!-- New Password -->
+    <text x="0" y="130" fill="#343a40" font-size="14" font-weight="500">New Password</text>
+    <rect x="0" y="140" width="520" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="12" y="165" fill="#6c757d" font-size="14">Enter new password</text>
+    <circle cx="485" cy="160" r="8" fill="none" stroke="#6c757d" stroke-width="1"/>
+    <text x="480" y="165" fill="#6c757d" font-size="12">👁</text>
+    
+    <!-- Password strength indicator -->
+    <rect x="0" y="190" width="520" height="4" rx="2" fill="#e9ecef"/>
+    <rect x="0" y="190" width="312" height="4" rx="2" fill="#ffc107"/>
+    <text x="0" y="210" fill="#856404" font-size="12">Password strength: Medium</text>
+    
+    <!-- Confirm New Password -->
+    <text x="0" y="240" fill="#343a40" font-size="14" font-weight="500">Confirm New Password</text>
+    <rect x="0" y="250" width="520" height="40" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
+    <text x="12" y="275" fill="#6c757d" font-size="14">Confirm new password</text>
+    <circle cx="485" cy="270" r="8" fill="none" stroke="#6c757d" stroke-width="1"/>
+    <text x="480" y="275" fill="#6c757d" font-size="12">👁</text>
+    
+    <!-- Change Password Button -->
+    <rect x="0" y="310" width="150" height="36" rx="4" fill="#dc3545" stroke="#dc3545" stroke-width="1"/>
+    <text x="75" y="333" text-anchor="middle" fill="white" font-size="14" font-weight="500">Change Password</text>
+    
+    <!-- Cancel Button -->
+    <rect x="160" y="310" width="100" height="36" rx="4" fill="transparent" stroke="#6c757d" stroke-width="1"/>
+    <text x="210" y="333" text-anchor="middle" fill="#6c757d" font-size="14" font-weight="500">Cancel</text>
+  </g>
+  
+  <!-- Success Message (hidden by default) -->
+  <g id="success-message" opacity="0">
+    <rect x="320" y="120" width="560" height="48" rx="4" fill="#d4edda" stroke="#c3e6cb" stroke-width="1"/>
+    <circle cx="340" cy="144" r="10" fill="#28a745"/>
+    <text x="335" y="149" text-anchor="middle" fill="white" font-size="14">✓</text>
+    <text x="365" y="149" fill="#155724" font-size="14" font-weight="500">Profile updated successfully!</text>
+  </g>
+  
+  <!-- Error Message Example (hidden by default) -->
+  <g id="error-message" opacity="0">
+    <rect x="320" y="120" width="560" height="48" rx="4" fill="#f8d7da" stroke="#f5c6cb" stroke-width="1"/>
+    <circle cx="340" cy="144" r="10" fill="#dc3545"/>
+    <text x="335" y="149" text-anchor="middle" fill="white" font-size="14">!</text>
+    <text x="365" y="149" fill="#721c24" font-size="14" font-weight="500">Current password is incorrect</text>
+  </g>
+  
+  <!-- Loading State Overlay (hidden by default) -->
+  <g id="loading-overlay" opacity="0">
+    <rect x="340" y="420" width="150" height="36" rx="4" fill="#6c757d"/>
+    <circle cx="395" cy="438" r="8" fill="none" stroke="white" stroke-width="2" stroke-dasharray="4,4">
+      <animateTransform attributeName="transform" type="rotate" dur="1s" repeatCount="indefinite" values="0 395 438;360 395 438"/>
+    </circle>
+    <text x="415" y="443" fill="white" font-size="12">Updating...</text>
+  </g>
+  
+  <!-- Annotations -->
+  <g fill="#ff6b6b" stroke="#ff6b6b" stroke-width="1" font-size="12">
+    <!-- Username validation annotation -->
+    <line x1="900" y1="325" x2="950" y2="325" stroke-dasharray="2,2"/>
+    <text x="960" y="325" fill="#ff6b6b">Real-time validation</text>
+    <text x="960" y="340" fill="#ff6b6b">Username availability</text>
+    
+    <!-- Password strength annotation -->
+    <line x1="900" y1="610" x2="950" y2="610" stroke-dasharray="2,2"/>
+    <text x="960" y="610" fill="#ff6b6b">Password strength meter</text>
+    <text x="960" y="625" fill="#ff6b6b">Requirements indicator</text>
+    
+    <!-- Form states annotation -->
+    <line x1="900" y1="700" x2="950" y2="700" stroke-dasharray="2,2"/>
+    <text x="960" y="700" fill="#ff6b6b">Loading &amp; disabled states</text>
+    <text x="960" y="715" fill="#ff6b6b">Success/error feedback</text>
+  </g>
+  
+  <!-- Form Requirements Info Box -->
+  <rect x="920" y="160" width="240" height="200" rx="4" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+  <text x="930" y="185" fill="#343a40" font-size="14" font-weight="bold">Username Requirements</text>
+  <text x="930" y="205" fill="#6c757d" font-size="12">• 3-20 characters long</text>
+  <text x="930" y="220" fill="#6c757d" font-size="12">• Letters, numbers, underscore</text>
+  <text x="930" y="235" fill="#6c757d" font-size="12">• No spaces or special chars</text>
+  <text x="930" y="250" fill="#6c757d" font-size="12">• Must be unique</text>
+  
+  <text x="930" y="285" fill="#343a40" font-size="14" font-weight="bold">Password Requirements</text>
+  <text x="930" y="305" fill="#6c757d" font-size="12">• Minimum 8 characters</text>
+  <text x="930" y="320" fill="#6c757d" font-size="12">• At least one uppercase</text>
+  <text x="930" y="335" fill="#6c757d" font-size="12">• At least one number</text>
+  <text x="930" y="350" fill="#6c757d" font-size="12">• Special character recommended</text>
+  
+  <!-- Desktop indicator -->
+  <text x="50" y="50" fill="#6c757d" font-size="12">Desktop: 1200px</text>
+  <text x="50" y="70" fill="#6c757d" font-size="12">Responsive mobile design available</text>
+  
+  <!-- Title -->
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Profile Settings - Desktop Wireframe</text>
+</svg>
