@@ -1,6 +1,7 @@
 import { auth } from './auth.svelte.js';
 import type { Game } from './games.svelte.js';
 import type { Platform, Storefront } from './platforms.svelte.js';
+import { config } from '$lib/env';
 
 export enum OwnershipStatus {
   OWNED = 'owned',
@@ -209,7 +210,7 @@ function createUserGamesStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`/api/user-games?${params}`);
+        const response = await apiCall(`${config.apiUrl}/user-games?${params}`);
         const data: UserGameListResponse = await response.json();
 
         state = {
@@ -236,7 +237,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/user-games/${id}`);
+        const response = await apiCall(`${config.apiUrl}/user-games/${id}`);
         const userGame: UserGame = await response.json();
 
         state = {
@@ -258,7 +259,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/user-games', {
+        const response = await apiCall(`${config.apiUrl}/user-games`, {
           method: 'POST',
           body: JSON.stringify(gameData),
         });
@@ -285,7 +286,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/user-games/${id}`, {
+        const response = await apiCall(`${config.apiUrl}/user-games/${id}`, {
           method: 'PUT',
           body: JSON.stringify(gameData),
         });
@@ -314,7 +315,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/user-games/${id}/progress`, {
+        const response = await apiCall(`${config.apiUrl}/user-games/${id}/progress`, {
           method: 'PUT',
           body: JSON.stringify(progressData),
         });
@@ -343,7 +344,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`/api/user-games/${id}`, {
+        await apiCall(`${config.apiUrl}/user-games/${id}`, {
           method: 'DELETE',
         });
 
@@ -365,7 +366,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/user-games/${userGameId}/platforms`, {
+        const response = await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms`, {
           method: 'POST',
           body: JSON.stringify(platformData),
         });
@@ -394,7 +395,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`/api/user-games/${userGameId}/platforms/${platformId}`, {
+        await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms/${platformId}`, {
           method: 'DELETE',
         });
 
@@ -423,7 +424,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/user-games/bulk-update', {
+        const response = await apiCall(`${config.apiUrl}/user-games/bulk-update`, {
           method: 'POST',
           body: JSON.stringify(data),
         });
@@ -453,7 +454,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/user-games/stats');
+        const response = await apiCall(`${config.apiUrl}/user-games/stats`);
         const stats: CollectionStats = await response.json();
 
         state = {
