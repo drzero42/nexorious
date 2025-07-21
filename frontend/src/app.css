@@ -78,6 +78,14 @@ body {
   animation: spin 1s linear infinite;
 }
 
+/* Text truncation utilities */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Mobile touch targets */
 @media (max-width: 768px) {
   button, a {
