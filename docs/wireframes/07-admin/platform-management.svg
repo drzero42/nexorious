@@ -16,7 +16,7 @@
   
   <!-- Header -->
   <rect x="50" y="50" width="1100" height="80" fill="#dc3545" stroke="#dc3545" stroke-width="0 0 1 0"/>
-  <text x="80" y="80" fill="white" font-size="20" font-weight="bold">🛠️ Admin: Platform & Storefront Management</text>
+  <text x="80" y="80" fill="white" font-size="20" font-weight="bold">🛠️ Admin: Platform &amp; Storefront Management</text>
   <text x="80" y="105" fill="#f8d7da" font-size="14">Manage available platforms and storefronts for the application</text>
   
   <!-- Admin Warning -->
@@ -331,5 +331,5 @@
   </g>
   
   <!-- Title -->
-  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Admin: Platform & Storefront Management Wireframe</text>
+  <text x="600" y="30" text-anchor="middle" fill="#343a40" font-size="24" font-weight="bold">Admin: Platform &amp; Storefront Management Wireframe</text>
 </svg>

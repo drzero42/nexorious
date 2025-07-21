@@ -62,7 +62,7 @@
     
     <!-- Description -->
     <text x="160" y="110" fill="#6c757d" font-size="12">A story-rich, party-based RPG set in the universe of</text>
-    <text x="160" y="125" fill="#6c757d" font-size="12">Dungeons & Dragons. Your choices shape a tale of</text>
+    <text x="160" y="125" fill="#6c757d" font-size="12">Dungeons &amp; Dragons. Your choices shape a tale of</text>
     <text x="160" y="140" fill="#6c757d" font-size="12">fellowship, betrayal, and the lure of absolute power.</text>
     
     <!-- Metadata -->

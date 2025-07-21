@@ -12,7 +12,7 @@
   <rect width="1200" height="800" fill="url(#grid)"/>
   
   <!-- Sidebar Navigation -->
-  <rect x="0" y="0" width="280" height="800" fill="#343a40" stroke="#495057" stroke-width="0 1 0 0"/>
+  <rect x="0" y="0" width="280" height="800" fill="#343a40" stroke="#495057" stroke-width="1"/>
   
   <!-- Logo/Brand Section -->
   <rect x="0" y="0" width="280" height="80" fill="#212529"/>
@@ -28,7 +28,7 @@
     <rect x="0" y="20" width="240" height="44" rx="6" fill="#007bff"/>
     <text x="20" y="35" fill="white" font-size="16">📊</text>
     <text x="50" y="35" fill="white" font-size="14" font-weight="500">Dashboard</text>
-    <text x="50" y="50" fill="#b3d7ff" font-size="12">Overview & Statistics</text>
+    <text x="50" y="50" fill="#b3d7ff" font-size="12">Overview &amp; Statistics</text>
     
     <!-- Library -->
     <rect x="0" y="70" width="240" height="44" rx="6" fill="transparent"/>
@@ -67,7 +67,7 @@
     <rect x="0" y="370" width="240" height="44" rx="6" fill="transparent"/>
     <text x="20" y="385" fill="#adb5bd" font-size="16">🏷️</text>
     <text x="50" y="385" fill="#adb5bd" font-size="14" font-weight="500">Tags</text>
-    <text x="50" y="400" fill="#6c757d" font-size="12">Organize & filter</text>
+    <text x="50" y="400" fill="#6c757d" font-size="12">Organize &amp; filter</text>
   </g>
   
   <!-- Bottom Navigation -->
@@ -99,7 +99,7 @@
   <rect x="280" y="0" width="920" height="800" fill="white"/>
   
   <!-- Top Navigation Bar -->
-  <rect x="280" y="0" width="920" height="70" fill="white" stroke="#dee2e6" stroke-width="0 0 1 0"/>
+  <rect x="280" y="0" width="920" height="70" fill="white" stroke="#dee2e6" stroke-width="1"/>
   
   <!-- Breadcrumb -->
   <g transform="translate(300, 25)">
