@@ -27,123 +27,236 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div>
-  <header>
-    <div>
-      <div>
+<div class="min-h-screen bg-gray-50">
+  {#if auth.value.user}
+    <!-- Desktop Layout with Sidebar -->
+    <div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
+      <!-- Sidebar -->
+      <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-700 px-6 pb-4">
         <!-- Logo/Brand -->
-        <div>
-          <a href="/">
-            <h1>
-              Nexorious
-            </h1>
+        <div class="flex h-16 shrink-0 items-center border-b border-gray-600">
+          <a href="/" class="flex items-center space-x-2">
+            <h1 class="text-xl font-bold text-white">Nexorious</h1>
           </a>
         </div>
         
-        <!-- Desktop Navigation -->
-        <nav>
-          {#if auth.value.user}
-            <a href="/games">
-              My Games
-            </a>
-            <a href="/dashboard">
-              Dashboard
-            </a>
-          {/if}
-        </nav>
-
-        <!-- Right Side Actions -->
-        <div>
-          
-          {#if auth.value.user}
-            <div>
-              <div>
-                <div>
-                  <span>
+        <!-- Navigation -->
+        <nav class="flex flex-1 flex-col">
+          <ul role="list" class="flex flex-1 flex-col gap-y-7">
+            <li>
+              <ul role="list" class="-mx-2 space-y-1">
+                <li>
+                  <a
+                    href="/dashboard"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">📊</span>
+                    Dashboard
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/games"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">🎮</span>
+                    My Games
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/games/add"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">➕</span>
+                    Add Game
+                  </a>
+                </li>
+              </ul>
+            </li>
+            <li class="mt-auto">
+              <div class="flex items-center gap-x-4 px-2 py-3 text-sm font-semibold leading-6 text-gray-300">
+                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
+                  <span class="text-xs font-medium text-white">
                     {auth.value.user.username?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <span>
-                  {auth.value.user.username}
-                </span>
+                <span class="sr-only">Your profile</span>
+                <span aria-hidden="true">{auth.value.user.username}</span>
               </div>
-              <button on:click={() => auth.logout()}>
+              <button
+                on:click={() => auth.logout()}
+                class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+              >
+                <span class="text-lg">↪️</span>
                 Logout
+              </button>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+
+    <!-- Mobile Header -->
+    <div class="lg:hidden">
+      <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6">
+        <button
+          on:click={() => mobileMenuOpen = !mobileMenuOpen}
+          class="-m-2.5 p-2.5 text-gray-700 lg:hidden"
+          aria-label="Toggle mobile menu"
+        >
+          <span class="sr-only">Open sidebar</span>
+          {#if mobileMenuOpen}
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          {:else}
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          {/if}
+        </button>
+        
+        <!-- Mobile Logo -->
+        <div class="flex flex-1">
+          <a href="/" class="flex items-center">
+            <h1 class="text-lg font-bold text-gray-900">Nexorious</h1>
+          </a>
+        </div>
+
+        <!-- Mobile user menu -->
+        <div class="flex items-center gap-x-4 lg:gap-x-6">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
+            <span class="text-xs font-medium text-white">
+              {auth.value.user.username?.charAt(0).toUpperCase()}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile menu overlay -->
+    {#if mobileMenuOpen}
+      <div class="relative z-50 lg:hidden" role="dialog" aria-modal="true">
+        <div class="fixed inset-0 bg-gray-900/80"></div>
+        <div class="fixed inset-0 flex">
+          <div class="relative mr-16 flex w-full max-w-xs flex-1">
+            <div class="absolute left-full top-0 flex w-16 justify-center pt-5">
+              <button
+                on:click={closeMobileMenu}
+                class="-m-2.5 p-2.5"
+                aria-label="Close sidebar"
+              >
+                <span class="sr-only">Close sidebar</span>
+                <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
             
-            <!-- Mobile menu button -->
-            <button
-              on:click={() => mobileMenuOpen = !mobileMenuOpen}
-              aria-label="Toggle mobile menu"
-            >
-              {#if mobileMenuOpen}
-                ✕
-              {:else}
-                ☰
-              {/if}
-            </button>
-          {:else}
-            <a href="/login">
+            <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-700 px-6 pb-4">
+              <!-- Mobile Logo -->
+              <div class="flex h-16 shrink-0 items-center border-b border-gray-600">
+                <a href="/" class="flex items-center space-x-2">
+                  <h1 class="text-xl font-bold text-white">Nexorious</h1>
+                </a>
+              </div>
+              
+              <!-- Mobile Navigation -->
+              <nav class="flex flex-1 flex-col">
+                <ul role="list" class="flex flex-1 flex-col gap-y-7">
+                  <li>
+                    <ul role="list" class="-mx-2 space-y-1">
+                      <li>
+                        <a
+                          href="/dashboard"
+                          on:click={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">📊</span>
+                          Dashboard
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href="/games"
+                          on:click={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">🎮</span>
+                          My Games
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href="/games/add"
+                          on:click={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">➕</span>
+                          Add Game
+                        </a>
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="mt-auto">
+                    <div class="flex items-center gap-x-4 px-2 py-3 text-sm font-semibold leading-6 text-gray-300">
+                      <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
+                        <span class="text-xs font-medium text-white">
+                          {auth.value.user.username?.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <span aria-hidden="true">{auth.value.user.username}</span>
+                    </div>
+                    <button
+                      on:click={() => { auth.logout(); closeMobileMenu(); }}
+                      class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">↪️</span>
+                      Sign out
+                    </button>
+                  </li>
+                </ul>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Main content -->
+    <div class="lg:pl-72">
+      <main class="py-10">
+        <div class="px-4 sm:px-6 lg:px-8">
+          <slot />
+        </div>
+      </main>
+    </div>
+  {:else}
+    <!-- Non-authenticated layout -->
+    <header class="bg-white border-b border-gray-200">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center py-6 md:justify-start md:space-x-10">
+          <div class="flex justify-start lg:w-0 lg:flex-1">
+            <a href="/" class="flex items-center">
+              <h1 class="text-xl font-bold text-gray-900">Nexorious</h1>
+            </a>
+          </div>
+          <div class="md:flex items-center justify-end md:flex-1 lg:w-0">
+            <a href="/login" class="btn-primary">
               Login
             </a>
-          {/if}
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <!-- Mobile menu -->
-  {#if mobileMenuOpen && auth.value.user}
-    <div>
-      <div>
-        <a
-          href="/games"
-          on:click={closeMobileMenu}
-        >
-          My Games
-        </a>
-        <a
-          href="/dashboard"
-          on:click={closeMobileMenu}
-        >
-          Dashboard
-        </a>
-      </div>
-      <div>
-        <div>
-          <div>
-            <div>
-              <span>
-                {auth.value.user.username?.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          </div>
-          <div>
-            <div>
-              {auth.value.user.username}
-            </div>
-            <div>
-              {auth.value.user.email}
-            </div>
           </div>
         </div>
-        <div>
-          <button
-            on:click={() => { auth.logout(); closeMobileMenu(); }}
-          >
-            Sign out
-          </button>
-        </div>
       </div>
-    </div>
+    </header>
+    
+    <main class="flex-1">
+      <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <slot />
+      </div>
+    </main>
   {/if}
-
-  <main>
-    <div>
-      <slot />
-    </div>
-  </main>
 </div>
 
 
