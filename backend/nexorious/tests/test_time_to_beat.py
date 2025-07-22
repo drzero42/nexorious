@@ -110,15 +110,17 @@ class TestIGDBService:
     async def test_get_time_to_beat_data_success(self, igdb_service):
         """Test successful retrieval of time-to-beat data."""
         mock_wrapper = Mock()
+        # IGDB returns time in seconds, so use realistic second values
         mock_wrapper.api_request.return_value = json.dumps([{
-            "hastily": 8,
-            "normally": 15,
-            "completely": 25
+            "hastily": 28800,  # 8 hours in seconds
+            "normally": 54000,  # 15 hours in seconds
+            "completely": 90000  # 25 hours in seconds
         }]).encode('utf-8')
         
         with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
         
+        # Result should be converted to hours
         assert result == {
             "hastily": 8,
             "normally": 15,
@@ -153,6 +155,47 @@ class TestIGDBService:
         assert result is None
     
     @pytest.mark.asyncio
+    async def test_get_time_to_beat_data_seconds_to_hours_conversion(self, igdb_service):
+        """Test that time-to-beat data is correctly converted from seconds to hours."""
+        mock_wrapper = Mock()
+        # Test various second values and their hour conversions
+        mock_wrapper.api_request.return_value = json.dumps([{
+            "hastily": 36000,   # 10 hours in seconds
+            "normally": 72000,  # 20 hours in seconds
+            "completely": 180000  # 50 hours in seconds
+        }]).encode('utf-8')
+        
+        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+            result = await igdb_service._get_time_to_beat_data("12345")
+        
+        # Should be converted to hours and rounded
+        assert result == {
+            "hastily": 10,
+            "normally": 20,
+            "completely": 50
+        }
+    
+    @pytest.mark.asyncio
+    async def test_get_time_to_beat_data_partial_conversion(self, igdb_service):
+        """Test conversion with only some fields present and rounding."""
+        mock_wrapper = Mock()
+        # Test partial data and rounding (7.5 hours = 27000 seconds)
+        mock_wrapper.api_request.return_value = json.dumps([{
+            "hastily": 27000,   # 7.5 hours in seconds, should round to 8
+            "normally": None,    # Missing data
+            "completely": 39600  # 11 hours in seconds
+        }]).encode('utf-8')
+        
+        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+            result = await igdb_service._get_time_to_beat_data("12345")
+        
+        assert result == {
+            "hastily": 8,      # Rounded from 7.5
+            "normally": None,   # Preserved None
+            "completely": 11
+        }
+    
+    @pytest.mark.asyncio
     async def test_get_game_by_id_includes_time_to_beat(self, igdb_service):
         """Test that get_game_by_id includes time-to-beat data."""
         mock_wrapper = Mock()
@@ -165,7 +208,7 @@ class TestIGDBService:
         }
         mock_wrapper.api_request.return_value = json.dumps([game_data]).encode('utf-8')
         
-        # Mock time-to-beat data
+        # Mock time-to-beat data (these are the converted hour values returned by the service)
         time_data = {
             "hastily": 10,
             "normally": 18,
@@ -195,7 +238,7 @@ class TestIGDBService:
         }]
         mock_wrapper.api_request.return_value = json.dumps(games_data).encode('utf-8')
         
-        # Mock time-to-beat data
+        # Mock time-to-beat data (these are the converted hour values returned by the service)
         time_data = {
             "hastily": 8,
             "normally": 15,

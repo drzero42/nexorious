@@ -93,7 +93,7 @@ describe('Game Addition Page', () => {
           cover_art_url: 'https://example.com/cover2.jpg',
           description: 'Another test game',
           platforms: ['PC'],
-          howlongtobeat_main: 20
+          howlongtobeat_main: 16  // Realistic completion time in hours
         }
       ];
 
