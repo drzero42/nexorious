@@ -1,5 +1,6 @@
 <script lang="ts">
   import { games } from '$lib/stores';
+  import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
@@ -40,9 +41,8 @@
       // Convert IGDB candidates to search results format
       searchResults = response.games;
       
-      if (searchResults.length > 0) {
-        step = 'confirm';
-      }
+      // Always go to confirm step to show results (or "no games found" message)
+      step = 'confirm';
     } catch (error) {
       console.error('Search failed:', error);
       games.clearError(); // Clear any existing error
@@ -57,12 +57,26 @@
     
     try {
       // Import the game directly from IGDB with full metadata
-      await games.createFromIGDB(game.igdb_id);
+      const createdGame = await games.createFromIGDB(game.igdb_id);
       
-      // Redirect to the games page after successful import
-      goto('/games');
+      try {
+        // Add the game to the user's collection with default values
+        await userGames.addGameToCollection({
+          game_id: createdGame.id,
+          ownership_status: OwnershipStatus.OWNED,
+          is_physical: false
+        });
+        
+        // Redirect to the games page after successful import and collection addition
+        goto('/games');
+      } catch (collectionError) {
+        console.error('Failed to add game to collection:', collectionError);
+        // Game was created but couldn't be added to collection - show error but still redirect
+        // The user can manually add it to their collection later
+        goto('/games');
+      }
     } catch (error) {
-      console.error('Failed to import game:', error);
+      console.error('Failed to import game from IGDB:', error);
       
       // If import fails, fall back to manual entry with pre-filled data
       gameData = {
@@ -93,11 +107,58 @@
 
   async function handleSubmit() {
     try {
-      // Add game to user's collection
-      await games.createGame(gameData);
-      goto('/games');
+      // Create the game first
+      const createdGame = await games.createGame(gameData);
+      
+      try {
+        // Then add it to the user's collection with personal information
+        const userGame = await userGames.addGameToCollection({
+          game_id: createdGame.id,
+          ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
+          is_physical: gameData.is_physical || false
+        });
+        
+        // Update progress with personal information if any were provided
+        if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
+          try {
+            await userGames.updateProgress(userGame.id, {
+              play_status: gameData.play_status as PlayStatus || PlayStatus.NOT_STARTED,
+              hours_played: gameData.hours_played || 0,
+              personal_notes: gameData.personal_notes || ''
+            });
+          } catch (progressError) {
+            console.error('Failed to update progress, but game was added to collection:', progressError);
+          }
+        }
+        
+        // Update user game details (rating and loved status) if any were provided
+        if (gameData.personal_rating || gameData.is_loved) {
+          try {
+            const updateData: any = {
+              is_loved: gameData.is_loved || false
+            };
+            
+            // Only include personal_rating if it has a value to avoid TypeScript strict mode issues
+            if (gameData.personal_rating) {
+              updateData.personal_rating = gameData.personal_rating;
+            }
+            
+            await userGames.updateUserGame(userGame.id, updateData);
+          } catch (updateError) {
+            console.error('Failed to update game details, but game was added to collection:', updateError);
+          }
+        }
+        
+        goto('/games');
+      } catch (collectionError) {
+        console.error('Failed to add game to collection:', collectionError);
+        // Game was created but couldn't be added to collection - show error but still redirect
+        // The user can manually add it to their collection later
+        goto('/games');
+      }
     } catch (error) {
-      console.error('Failed to add game:', error);
+      console.error('Failed to create game:', error);
+      // Show error to user - they can try again or modify the data
     }
   }
 

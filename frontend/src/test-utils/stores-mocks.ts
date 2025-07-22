@@ -51,7 +51,9 @@ export const mockUserGamesStore = {
   },
   fetchUserGames: vi.fn(),
   addUserGame: vi.fn(),
+  addGameToCollection: vi.fn(),
   updateUserGame: vi.fn(),
+  updateProgress: vi.fn(),
   deleteUserGame: vi.fn(),
   clearError: vi.fn()
 };
@@ -84,6 +86,7 @@ export const mockGamesStore = {
   fetchGames: vi.fn(),
   fetchGame: vi.fn(),
   searchIGDB: vi.fn(),
+  createFromIGDB: vi.fn(),
   importFromIGDB: vi.fn(),
   addGame: vi.fn(),
   updateGame: vi.fn(),
@@ -139,7 +142,7 @@ export const mockUIStore = {
 };
 
 // Mock auth store (importing from auth mocks)
-import { mockAuthStore } from './auth-mocks.js';
+import { mockAuthStore } from './auth-mocks';
 
 // Mock all stores
 vi.mock('$lib/stores', () => ({

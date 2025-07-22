@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
-import type { Game, GameSearchFilters } from './games.svelte.js';
-import type { UserGame, UserGameFilters, PlayStatus, OwnershipStatus } from './user-games.svelte.js';
+import type { Game, GameSearchFilters } from './games.svelte';
+import type { UserGame, UserGameFilters, PlayStatus, OwnershipStatus } from './user-games.svelte';
 
 export interface SearchQuery {
   q: string;
@@ -171,11 +171,11 @@ function createSearchStore() {
 
         // Import the appropriate store dynamically to avoid circular dependencies
         if (state.searchType === 'games') {
-          const { games } = await import('./games.svelte.js');
+          const { games } = await import('./games.svelte');
           await games.loadGames(searchFilters as GameSearchFilters);
           state = { ...state, searchResults: games.value.games, isSearching: false };
         } else {
-          const { userGames } = await import('./user-games.svelte.js');
+          const { userGames } = await import('./user-games.svelte');
           await userGames.loadUserGames(searchFilters as UserGameFilters);
           state = { ...state, searchResults: userGames.value.userGames, isSearching: false };
         }

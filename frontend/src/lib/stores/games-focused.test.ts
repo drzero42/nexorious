@@ -7,7 +7,7 @@ import {
   mockConfig,
   mockIGDBSearchResponse,
   mockIGDBCandidates 
-} from '../../test-utils/api-mocks.js';
+} from '../../test-utils/api-mocks';
 
 // Mock the config module
 vi.mock('$lib/env', () => ({
@@ -15,7 +15,7 @@ vi.mock('$lib/env', () => ({
 }));
 
 // Mock the auth module
-vi.mock('./auth.svelte.js', () => ({
+vi.mock('./auth.svelte', () => ({
   auth: {
     value: {
       accessToken: 'test-token',
@@ -35,7 +35,7 @@ describe('Games Store - PR Focused Tests', () => {
 
   describe('API URL Configuration (PR Fix)', () => {
     it('should use config.apiUrl instead of hardcoded /api/ for games list', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.loadGames();
       
@@ -48,7 +48,7 @@ describe('Games Store - PR Focused Tests', () => {
     });
 
     it('should use config.apiUrl instead of hardcoded /api/ for IGDB search', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game');
       
@@ -61,7 +61,7 @@ describe('Games Store - PR Focused Tests', () => {
     });
 
     it('should use config.apiUrl instead of hardcoded /api/ for IGDB import', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.createFromIGDB('igdb-123');
       
@@ -74,7 +74,7 @@ describe('Games Store - PR Focused Tests', () => {
     });
 
     it('should use config.apiUrl for other game operations', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.updateGame('game-123', { title: 'Updated' });
       
@@ -86,7 +86,7 @@ describe('Games Store - PR Focused Tests', () => {
 
   describe('IGDB API Request Structure (PR Fix)', () => {
     it('should send query parameter (not title) in IGDB search request', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game title', 10);
       
@@ -106,7 +106,7 @@ describe('Games Store - PR Focused Tests', () => {
     });
 
     it('should not send title parameter in IGDB search request', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game title', 10);
       
@@ -120,7 +120,7 @@ describe('Games Store - PR Focused Tests', () => {
     it('should handle IGDB response with games property (not candidates)', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(mockIGDBSearchResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       const result = await games.searchIGDB('test game');
       
@@ -131,7 +131,7 @@ describe('Games Store - PR Focused Tests', () => {
     it('should update store state with IGDB candidates from games property', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(mockIGDBSearchResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game');
       
@@ -145,7 +145,7 @@ describe('Games Store - PR Focused Tests', () => {
       const responseWithGamesOnly = { games: mockIGDBCandidates, total: 1 };
       mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(responseWithGamesOnly));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       // This should work without errors
       await games.searchIGDB('test game');
@@ -161,7 +161,7 @@ describe('Games Store - PR Focused Tests', () => {
       vi.doMock('$lib/env', () => ({ config: prodConfig }));
       
       vi.resetModules();
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.loadGames();
       
@@ -175,7 +175,7 @@ describe('Games Store - PR Focused Tests', () => {
       vi.doMock('$lib/env', () => ({ config: devConfig }));
       
       vi.resetModules();
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test');
       

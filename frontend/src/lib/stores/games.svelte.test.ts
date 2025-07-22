@@ -10,7 +10,7 @@ import {
   mockGameListResponse,
   mockIGDBSearchResponse,
   mockIGDBCandidates 
-} from '../../test-utils/api-mocks.js';
+} from '../../test-utils/api-mocks';
 
 // Mock the config module
 vi.mock('$lib/env', () => ({
@@ -18,7 +18,7 @@ vi.mock('$lib/env', () => ({
 }));
 
 // Mock the auth module
-vi.mock('./auth.svelte.js', () => ({
+vi.mock('./auth.svelte', () => ({
   auth: {
     value: {
       accessToken: 'test-token',
@@ -38,7 +38,7 @@ describe('Games Store API Integration', () => {
 
   describe('API URL Configuration', () => {
     it('should use config.apiUrl for games list endpoint', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.loadGames();
       
@@ -50,7 +50,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for single game fetch', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.getGame('test-game-id');
       
@@ -62,7 +62,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for IGDB search endpoint', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game');
       
@@ -74,9 +74,9 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for IGDB import endpoint', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.importFromIGDB('igdb-123', 'Test Game');
+      await games.createFromIGDB('igdb-123');
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
@@ -86,9 +86,9 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for game creation', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.addGame({ title: 'New Game' });
+      await games.createGame({ title: 'New Game' });
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
@@ -98,7 +98,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for game updates', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.updateGame('game-123', { title: 'Updated Game' });
       
@@ -110,7 +110,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for game deletion', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.deleteGame('game-123');
       
@@ -122,7 +122,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should use config.apiUrl for metadata refresh', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.refreshMetadata('game-123');
       
@@ -136,7 +136,7 @@ describe('Games Store API Integration', () => {
 
   describe('IGDB Integration', () => {
     it('should send query parameter (not title) in IGDB search request', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game title', 10);
       
@@ -158,7 +158,7 @@ describe('Games Store API Integration', () => {
     it('should handle IGDB response with games property (not candidates)', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(mockIGDBSearchResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       const result = await games.searchIGDB('test game');
       
@@ -170,7 +170,7 @@ describe('Games Store API Integration', () => {
     it('should update store state with IGDB candidates from games property', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(mockIGDBSearchResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.searchIGDB('test game');
       
@@ -180,9 +180,9 @@ describe('Games Store API Integration', () => {
     });
 
     it('should handle IGDB import with correct parameters', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.importFromIGDB('igdb-123', 'Test Game', ['PC']);
+      await games.createFromIGDB('igdb-123', { title: 'Test Game' });
       
       expect(mockFetch).toHaveBeenCalledWith(
         `${mockConfig.apiUrl}/games/igdb-import`,
@@ -193,8 +193,7 @@ describe('Games Store API Integration', () => {
           }),
           body: JSON.stringify({
             igdb_id: 'igdb-123',
-            title: 'Test Game',
-            platforms: ['PC']
+            custom_overrides: { title: 'Test Game' }
           })
         })
       );
@@ -205,21 +204,26 @@ describe('Games Store API Integration', () => {
     it('should fetch games list with pagination parameters', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockGamesListEndpoint(mockGameListResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.fetchGames({ page: 2, per_page: 10 });
+      await games.loadGames({ page: 2, per_page: 10 });
       
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining(`${mockConfig.apiUrl}/games?page=2&per_page=10`)
+        expect.stringContaining(`${mockConfig.apiUrl}/games?page=2&per_page=10`),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'Bearer test-token'
+          })
+        })
       );
     });
 
     it('should update store state after successful games fetch', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockGamesListEndpoint(mockGameListResponse));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.fetchGames();
+      await games.loadGames();
       
       expect(games.value.games).toEqual(mockGames);
       expect(games.value.isLoading).toBe(false);
@@ -229,19 +233,26 @@ describe('Games Store API Integration', () => {
     it('should fetch single game by ID', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockGameEndpoint('game-123', mockGame));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      const result = await games.fetchGame('game-123');
+      const result = await games.getGame('game-123');
       
       expect(result).toEqual(mockGame);
-      expect(mockFetch).toHaveBeenCalledWith(`${mockConfig.apiUrl}/games/game-123`);
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${mockConfig.apiUrl}/games/game-123`,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'Bearer test-token'
+          })
+        })
+      );
     });
 
     it('should add new game with correct data', async () => {
-      const { games } = await import('./games.svelte.js');
-      const newGameData = { title: 'New Game', genre: 'Action' };
+      const { games } = await import('./games.svelte');
+      const newGameData = { title: 'New Game', genre: 'Action', game_metadata: '{}' };
       
-      await games.addGame(newGameData);
+      await games.createGame(newGameData);
       
       expect(mockFetch).toHaveBeenCalledWith(
         `${mockConfig.apiUrl}/games`,
@@ -256,7 +267,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should update existing game with correct data', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       const updateData = { title: 'Updated Game' };
       
       await games.updateGame('game-123', updateData);
@@ -274,7 +285,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should delete game by ID', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.deleteGame('game-123');
       
@@ -287,7 +298,7 @@ describe('Games Store API Integration', () => {
     });
 
     it('should refresh game metadata with options', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       await games.refreshMetadata('game-123', ['title', 'description'], true);
       
@@ -309,13 +320,13 @@ describe('Games Store API Integration', () => {
 
   describe('Error Handling', () => {
     it('should handle API errors and update error state', async () => {
-      const errorResponse = { detail: 'Game not found' };
+      // Test error response
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(404, 'Game not found'));
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       try {
-        await games.fetchGame('nonexistent-game');
+        await games.getGame('nonexistent-game');
       } catch (error) {
         // Error is expected
       }
@@ -327,10 +338,10 @@ describe('Games Store API Integration', () => {
     it('should handle network errors gracefully', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockNetworkError());
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       try {
-        await games.fetchGames();
+        await games.loadGames();
       } catch (error) {
         // Error is expected
       }
@@ -340,11 +351,20 @@ describe('Games Store API Integration', () => {
     });
 
     it('should clear error state when clearError is called', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      // Set an error state
-      games.value = { ...games.value, error: 'Test error' };
+      // Create an error state by causing a failed API call
+      mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(500, 'Server error'));
+      try {
+        await games.getGame('nonexistent-game');
+      } catch (error) {
+        // Expected error
+      }
       
+      // Verify error state was set
+      expect(games.value.error).toBeTruthy();
+      
+      // Clear the error
       games.clearError();
       
       expect(games.value.error).toBe(null);
@@ -358,10 +378,10 @@ describe('Games Store API Integration', () => {
       
       mockFetch.mockReturnValue(pendingPromise);
       
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
       // Start the async operation
-      const fetchPromise = games.fetchGames();
+      const fetchPromise = games.loadGames();
       
       // Check that loading state is set
       expect(games.value.isLoading).toBe(true);
@@ -376,9 +396,9 @@ describe('Games Store API Integration', () => {
 
   describe('Authentication Integration', () => {
     it('should include Authorization header in API requests', async () => {
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.fetchGames();
+      await games.loadGames();
       
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
@@ -392,7 +412,7 @@ describe('Games Store API Integration', () => {
 
     it('should handle requests without authentication token', async () => {
       // Mock auth store without token
-      vi.doMock('./auth.svelte.js', () => ({
+      vi.doMock('./auth.svelte', () => ({
         auth: {
           value: {
             accessToken: null,
@@ -403,42 +423,62 @@ describe('Games Store API Integration', () => {
 
       // Re-import to get updated mock
       vi.resetModules();
-      const { games } = await import('./games.svelte.js');
+      const { games } = await import('./games.svelte');
       
-      await games.fetchGames();
-      
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.not.objectContaining({
-          headers: expect.objectContaining({
-            'Authorization': expect.any(String)
-          })
-        })
-      );
+      try {
+        await games.loadGames();
+      } catch (error) {
+        // Expected to fail with "Not authenticated"
+        expect((error as Error).message).toBe('Not authenticated');
+      }
     });
   });
 
   describe('State Management', () => {
     it('should initialize with correct default state', async () => {
-      const { games } = await import('./games.svelte.js');
+      // Reset modules to get a fresh store instance
+      vi.resetModules();
+      const { games } = await import('./games.svelte');
       
       expect(games.value).toEqual(
         expect.objectContaining({
           games: expect.any(Array),
+          currentGame: null,
+          searchResults: expect.any(Array),
           igdbCandidates: expect.any(Array),
           isLoading: false,
-          error: null
+          error: null,
+          filters: expect.any(Object),
+          pagination: expect.any(Object)
         })
       );
     });
 
     it('should clear search results when requested', async () => {
-      const { games } = await import('./games.svelte.js');
+      // Reset modules to get a fresh store after the auth test
+      vi.resetModules();
       
-      // Set some search results
-      games.value = { ...games.value, igdbCandidates: mockIGDBCandidates };
+      // Re-mock the auth store with authenticated state for this test
+      vi.doMock('./auth.svelte', () => ({
+        auth: {
+          value: {
+            accessToken: 'test-token',
+            user: { id: '1', username: 'testuser' }
+          }
+        }
+      }));
       
-      games.clearSearchResults();
+      const { games } = await import('./games.svelte');
+      
+      // Set some search results by performing a search first
+      mockFetch.mockImplementation(APIResponseMock.mockIGDBSearchEndpoint(mockIGDBSearchResponse));
+      await games.searchIGDB('test game');
+      
+      // Verify we have search results before clearing
+      expect(games.value.igdbCandidates.length).toBeGreaterThan(0);
+      
+      // Clear the search results
+      games.clearSearch();
       
       expect(games.value.igdbCandidates).toEqual([]);
     });

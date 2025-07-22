@@ -202,7 +202,7 @@ describe('Layout Component', () => {
 
       // Should show user's first letter - use getAllByText since there are multiple instances
       const userInitials = screen.getAllByText('T');
-      expect(userInitials).toHaveLength(2); // One in desktop nav, one in mobile nav
+      expect(userInitials).toHaveLength(3); // One in desktop nav, one in mobile header, one in mobile menu
       const usernames = screen.getAllByText('testuser');
       expect(usernames).toHaveLength(2); // One in desktop nav, one in mobile nav
     });
@@ -237,7 +237,11 @@ describe('Layout Component', () => {
     it('should show hamburger icon when menu is closed', () => {
       const { container } = renderComponent(Layout);
 
-      expect(screen.getByText('☰')).toBeInTheDocument();
+      // Should show hamburger menu button when closed
+      const menuButton = screen.getByLabelText('Toggle mobile menu');
+      expect(menuButton).toBeInTheDocument();
+      // Check for hamburger lines SVG path
+      expect(menuButton.querySelector('path[d*="M3.75 6.75h16.5"]')).toBeInTheDocument();
     });
 
     it('should show close icon when menu is open', async () => {
@@ -246,7 +250,8 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       await userEvent.click(mobileMenuButton);
 
-      expect(screen.getByText('✕')).toBeInTheDocument();
+      // Check for close X SVG path
+      expect(mobileMenuButton.querySelector('path[d*="M6 18L18 6M6 6l12 12"]')).toBeInTheDocument();
     });
   });
 
@@ -280,7 +285,8 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       
       await userEvent.click(mobileMenuButton);
-      expect(screen.getByText('✕')).toBeInTheDocument();
+      // Check for close X SVG path
+      expect(mobileMenuButton.querySelector('path[d*="M6 18L18 6M6 6l12 12"]')).toBeInTheDocument();
     });
   });
 

@@ -3,9 +3,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { 
   mockConfig,
   mockIGDBCandidates
-} from '../../../test-utils/api-mocks.js';
-import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks.js';
-import { resetNavigationMocks } from '../../../test-utils/navigation-mocks.js';
+} from '../../../test-utils/api-mocks';
+import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
+import { resetNavigationMocks } from '../../../test-utils/navigation-mocks';
+import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameAddPage from './+page.svelte';
 
 // Mock the config module
@@ -14,7 +15,7 @@ vi.mock('$lib/env', () => ({
 }));
 
 // Mock the auth module
-vi.mock('$lib/stores/auth.svelte.js', () => ({
+vi.mock('$lib/stores/auth.svelte', () => ({
   auth: {
     value: {
       accessToken: 'test-token',
@@ -28,6 +29,8 @@ describe('Game Addition Page - PR Focused Tests', () => {
     vi.clearAllMocks();
     resetStoresMocks();
     resetNavigationMocks();
+    resetAuthMocks();
+    setAuthenticatedState();
     
     // Set up successful IGDB search mock
     mockGamesStore.searchIGDB.mockResolvedValue({
@@ -41,8 +44,8 @@ describe('Game Addition Page - PR Focused Tests', () => {
       render(GameAddPage);
       
       // Trigger search
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
-      const searchButton = screen.getByRole('button', { name: /search/i });
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      const searchButton = screen.getByRole('button', { name: 'Search' });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(searchButton);
@@ -75,8 +78,8 @@ describe('Game Addition Page - PR Focused Tests', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
-      const searchButton = screen.getByRole('button', { name: /search/i });
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      const searchButton = screen.getByRole('button', { name: 'Search' });
       
       await fireEvent.input(searchInput, { target: { value: 'test' } });
       await fireEvent.click(searchButton);
@@ -94,8 +97,8 @@ describe('Game Addition Page - PR Focused Tests', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
-      const searchButton = screen.getByRole('button', { name: /search/i });
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      const searchButton = screen.getByRole('button', { name: 'Search' });
       
       await fireEvent.input(searchInput, { target: { value: 'nonexistent' } });
       await fireEvent.click(searchButton);
@@ -110,15 +113,15 @@ describe('Game Addition Page - PR Focused Tests', () => {
     it('should render search form without errors', () => {
       render(GameAddPage);
       
-      expect(screen.getByPlaceholderText(/search for a game/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /search/i })).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/enter game title/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
     });
 
     it('should handle search submission', async () => {
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
-      const searchButton = screen.getByRole('button', { name: /search/i });
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      const searchButton = screen.getByRole('button', { name: 'Search' });
       
       await fireEvent.input(searchInput, { target: { value: 'test search' } });
       await fireEvent.click(searchButton);
@@ -133,15 +136,15 @@ describe('Game Addition Page - PR Focused Tests', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
-      const searchButton = screen.getByRole('button', { name: /search/i });
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      const searchButton = screen.getByRole('button', { name: 'Search' });
       
       await fireEvent.input(searchInput, { target: { value: 'test' } });
       await fireEvent.click(searchButton);
       
       await waitFor(() => {
-        // Should handle error without crashing
-        expect(screen.getByText(/search/i)).toBeInTheDocument();
+        // Should handle error without crashing and remain on search page
+        expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
       });
     });
   });

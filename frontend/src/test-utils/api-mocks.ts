@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { Game, GameListResponse, IGDBSearchResponse, IGDBGameCandidate } from '$lib/stores/games.svelte.js';
+import type { Game, GameListResponse, IGDBSearchResponse, IGDBGameCandidate } from '$lib/stores/games.svelte';
 
 // Mock game data
 export const mockGame: Game = {
@@ -42,15 +42,15 @@ export const mockGames: Game[] = [
 
 // Mock IGDB game candidates
 export const mockIGDBCandidate: IGDBGameCandidate = {
-  igdb_id: 'igdb-999',
-  title: 'IGDB Game',
-  release_date: '2024-02-01',
+  igdb_id: 'igdb-123',
+  title: 'Test IGDB Game',
+  release_date: '2024-01-01',
   cover_art_url: 'https://example.com/igdb-cover.jpg',
-  description: 'A game from IGDB',
+  description: 'A test game from IGDB',
   platforms: ['PC', 'PlayStation 5'],
-  howlongtobeat_main: 14,  // Realistic main story completion time
-  howlongtobeat_extra: 22,  // Realistic main + extras completion time
-  howlongtobeat_completionist: 35  // Realistic completionist time
+  howlongtobeat_main: 12,  // Main story completion time
+  howlongtobeat_extra: 20,  // Main + extras completion time
+  howlongtobeat_completionist: 35  // Completionist time
 };
 
 export const mockIGDBCandidates: IGDBGameCandidate[] = [

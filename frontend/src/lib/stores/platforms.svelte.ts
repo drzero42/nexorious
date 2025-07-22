@@ -1,4 +1,4 @@
-import { auth } from './auth.svelte.js';
+import { auth } from './auth.svelte';
 
 export interface Platform {
   id: string;

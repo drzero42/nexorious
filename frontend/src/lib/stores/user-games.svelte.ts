@@ -1,6 +1,6 @@
-import { auth } from './auth.svelte.js';
-import type { Game } from './games.svelte.js';
-import type { Platform, Storefront } from './platforms.svelte.js';
+import { auth } from './auth.svelte';
+import type { Game } from './games.svelte';
+import type { Platform, Storefront } from './platforms.svelte';
 import { config } from '$lib/env';
 
 export enum OwnershipStatus {
@@ -37,7 +37,7 @@ export interface UserGame {
   ownership_status: OwnershipStatus;
   is_physical: boolean;
   physical_location?: string;
-  personal_rating?: number;
+  personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
   hours_played: number;
@@ -62,7 +62,7 @@ export interface UserGameUpdateRequest {
   ownership_status?: OwnershipStatus;
   is_physical?: boolean;
   physical_location?: string;
-  personal_rating?: number;
+  personal_rating?: number | null;
   is_loved?: boolean;
   acquired_date?: string;
 }
@@ -103,7 +103,7 @@ export interface UserGameListResponse {
 export interface BulkStatusUpdateRequest {
   user_game_ids: string[];
   play_status?: PlayStatus;
-  personal_rating?: number;
+  personal_rating?: number | null;
   is_loved?: boolean;
 }
 
