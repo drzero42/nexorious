@@ -1,4 +1,5 @@
 import { auth } from './auth.svelte.js';
+import { config } from '$lib/env';
 
 export interface Game {
   id: string;
@@ -52,7 +53,7 @@ export interface IGDBGameCandidate {
 }
 
 export interface IGDBSearchResponse {
-  candidates: IGDBGameCandidate[];
+  games: IGDBGameCandidate[];
   total: number;
 }
 
@@ -150,7 +151,7 @@ function createGamesStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`/api/games?${params}`);
+        const response = await apiCall(`${config.apiUrl}/games?${params}`);
         const data: GameListResponse = await response.json();
 
         state = {
@@ -178,7 +179,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/games/${id}`);
+        const response = await apiCall(`${config.apiUrl}/games/${id}`);
         const game: Game = await response.json();
 
         state = {
@@ -200,16 +201,16 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/games/search/igdb', {
+        const response = await apiCall(`${config.apiUrl}/games/search/igdb`, {
           method: 'POST',
-          body: JSON.stringify({ title, limit }),
+          body: JSON.stringify({ query: title, limit }),
         });
         
         const data: IGDBSearchResponse = await response.json();
 
         state = {
           ...state,
-          igdbCandidates: data.candidates,
+          igdbCandidates: data.games,
           isLoading: false
         };
 
@@ -226,7 +227,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/games/igdb-import', {
+        const response = await apiCall(`${config.apiUrl}/games/igdb-import`, {
           method: 'POST',
           body: JSON.stringify({
             igdb_id,
@@ -257,7 +258,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/games', {
+        const response = await apiCall(`${config.apiUrl}/games`, {
           method: 'POST',
           body: JSON.stringify(gameData),
         });
@@ -284,7 +285,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/games/${id}`, {
+        const response = await apiCall(`${config.apiUrl}/games/${id}`, {
           method: 'PUT',
           body: JSON.stringify(gameData),
         });
@@ -314,7 +315,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`/api/games/${id}`, {
+        await apiCall(`${config.apiUrl}/games/${id}`, {
           method: 'DELETE',
         });
 
@@ -337,7 +338,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/games/${id}/metadata/refresh`, {
+        const response = await apiCall(`${config.apiUrl}/games/${id}/metadata/refresh`, {
           method: 'POST',
           body: JSON.stringify({ fields, force }),
         });

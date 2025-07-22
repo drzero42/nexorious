@@ -56,17 +56,39 @@ export const mockUserGamesStore = {
   clearError: vi.fn()
 };
 
+// Mock IGDB candidates for games store
+export const mockIGDBCandidates = [
+  {
+    igdb_id: 'igdb-123',
+    title: 'Test IGDB Game',
+    release_date: '2024-01-01',
+    cover_art_url: 'https://example.com/igdb-cover.jpg',
+    description: 'A test game from IGDB',
+    platforms: ['PC', 'PlayStation 5'],
+    howlongtobeat_main: 15,
+    howlongtobeat_extra: 25,
+    howlongtobeat_completionist: 40
+  }
+];
+
 // Mock games store
 export const mockGamesStore = {
   value: {
     games: [],
     searchResults: [],
+    igdbCandidates: mockIGDBCandidates,
     isLoading: false,
     isSearching: false,
     error: null
   },
-  searchGames: vi.fn(),
+  fetchGames: vi.fn(),
+  fetchGame: vi.fn(),
+  searchIGDB: vi.fn(),
+  importFromIGDB: vi.fn(),
   addGame: vi.fn(),
+  updateGame: vi.fn(),
+  deleteGame: vi.fn(),
+  refreshMetadata: vi.fn(),
   clearSearchResults: vi.fn(),
   clearError: vi.fn()
 };
@@ -116,8 +138,12 @@ export const mockUIStore = {
   toggleMobileMenu: vi.fn()
 };
 
+// Mock auth store (importing from auth mocks)
+import { mockAuthStore } from './auth-mocks.js';
+
 // Mock all stores
 vi.mock('$lib/stores', () => ({
+  auth: mockAuthStore,
   userGames: mockUserGamesStore,
   games: mockGamesStore,
   platforms: mockPlatformsStore,
@@ -140,13 +166,20 @@ export function resetStoresMocks() {
   };
 
   // Reset games store
-  mockGamesStore.searchGames.mockClear();
+  mockGamesStore.fetchGames.mockClear();
+  mockGamesStore.fetchGame.mockClear();
+  mockGamesStore.searchIGDB.mockClear();
+  mockGamesStore.importFromIGDB.mockClear();
   mockGamesStore.addGame.mockClear();
+  mockGamesStore.updateGame.mockClear();
+  mockGamesStore.deleteGame.mockClear();
+  mockGamesStore.refreshMetadata.mockClear();
   mockGamesStore.clearSearchResults.mockClear();
   mockGamesStore.clearError.mockClear();
   mockGamesStore.value = {
     games: [],
     searchResults: [],
+    igdbCandidates: mockIGDBCandidates,
     isLoading: false,
     isSearching: false,
     error: null

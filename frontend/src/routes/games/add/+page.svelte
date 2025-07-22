@@ -38,7 +38,7 @@
       const response = await games.searchIGDB(searchQuery, 10);
       
       // Convert IGDB candidates to search results format
-      searchResults = response.candidates;
+      searchResults = response.games;
       
       if (searchResults.length > 0) {
         step = 'confirm';
