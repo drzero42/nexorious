@@ -16,8 +16,6 @@ from ..core.security import (
     create_access_token, 
     create_refresh_token,
     verify_token,
-    create_user_session,
-    invalidate_user_session,
     get_current_user,
     hash_token
 )
@@ -31,6 +29,8 @@ from ..api.schemas.auth import (
     UserProfileResponse,
     UserUpdateRequest,
     ChangePasswordRequest,
+    ChangeUsernameRequest,
+    UsernameAvailabilityResponse,
     LogoutResponse
 )
 from ..api.schemas.common import SuccessResponse
@@ -199,7 +199,7 @@ async def refresh_access_token(
             expires_in=int(access_token_expires.total_seconds())
         )
         
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token"
@@ -304,3 +304,63 @@ async def change_password(
     session.commit()
     
     return SuccessResponse(message="Password changed successfully. Please log in again.")
+
+
+@router.get("/username/check/{username}", response_model=UsernameAvailabilityResponse)
+async def check_username_availability(
+    username: str,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Check if a username is available."""
+    
+    # Validate username format (same as registration validation)
+    if len(username) < 3 or len(username) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username must be between 3 and 100 characters"
+        )
+    
+    # Check if username exists
+    existing_user = session.exec(
+        select(User).where(User.username == username)
+    ).first()
+    
+    return UsernameAvailabilityResponse(
+        available=existing_user is None,
+        username=username
+    )
+
+
+@router.put("/username", response_model=UserProfileResponse)
+async def change_username(
+    username_data: ChangeUsernameRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Change user's username."""
+    
+    # Check if the new username is the same as current
+    if username_data.new_username == current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New username must be different from current username"
+        )
+    
+    # Check if username is already taken
+    existing_user = session.exec(
+        select(User).where(User.username == username_data.new_username)
+    ).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
+    # Update username
+    current_user.username = username_data.new_username
+    current_user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(current_user)
+    
+    return current_user

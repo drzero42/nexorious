@@ -75,15 +75,20 @@
               </ul>
             </li>
             <li class="mt-auto">
-              <div class="flex items-center gap-x-4 px-2 py-3 text-sm font-semibold leading-6 text-gray-300">
+              <a
+                href="/profile"
+                class="group -mx-2 flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+              >
                 <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
                   <span class="text-xs font-medium text-white">
                     {auth.value.user.username?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <span class="sr-only">Your profile</span>
-                <span aria-hidden="true">{auth.value.user.username}</span>
-              </div>
+                <span class="flex flex-col">
+                  <span class="text-sm">{auth.value.user.username}</span>
+                  <span class="text-xs text-gray-400">Profile Settings</span>
+                </span>
+              </a>
               <button
                 on:click={() => auth.logout()}
                 class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
@@ -200,14 +205,21 @@
                     </ul>
                   </li>
                   <li class="mt-auto">
-                    <div class="flex items-center gap-x-4 px-2 py-3 text-sm font-semibold leading-6 text-gray-300">
+                    <a
+                      href="/profile"
+                      on:click={closeMobileMenu}
+                      class="group -mx-2 flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
                       <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
                         <span class="text-xs font-medium text-white">
                           {auth.value.user.username?.charAt(0).toUpperCase()}
                         </span>
                       </div>
-                      <span aria-hidden="true">{auth.value.user.username}</span>
-                    </div>
+                      <span class="flex flex-col">
+                        <span class="text-sm">{auth.value.user.username}</span>
+                        <span class="text-xs text-gray-400">Profile Settings</span>
+                      </span>
+                    </a>
                     <button
                       on:click={() => { auth.logout(); closeMobileMenu(); }}
                       class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
