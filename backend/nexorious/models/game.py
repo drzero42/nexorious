@@ -27,7 +27,7 @@ class Game(SQLModel, table=True):
     game_metadata: str = Field(default="{}")  # JSON string for extensible metadata
     estimated_playtime_hours: Optional[int] = Field(default=None)
     
-    # How Long to Beat integration
+    # How Long to Beat integration (stored in hours, converted from IGDB's seconds)
     howlongtobeat_main: Optional[int] = Field(default=None)
     howlongtobeat_extra: Optional[int] = Field(default=None)
     howlongtobeat_completionist: Optional[int] = Field(default=None)

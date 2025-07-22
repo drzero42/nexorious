@@ -35,7 +35,7 @@ class GameMetadata:
     rating_average: Optional[float] = None
     rating_count: Optional[int] = None
     estimated_playtime_hours: Optional[int] = None
-    # How Long to Beat data from IGDB (hastily, normally, completely)
+    # How Long to Beat data from IGDB (hastily, normally, completely) - stored in hours
     hastily: Optional[int] = None
     normally: Optional[int] = None
     completely: Optional[int] = None
@@ -52,7 +52,11 @@ class IGDBError(Exception):
 
 
 def map_igdb_time_to_beat_to_db_fields(igdb_time_data: Dict[str, Any]) -> Dict[str, Optional[int]]:
-    """Map IGDB time-to-beat fields to our database fields."""
+    """Map IGDB time-to-beat fields to our database fields.
+    
+    Note: This function expects igdb_time_data to already be converted to hours.
+    The conversion from IGDB's seconds to hours should happen in _get_time_to_beat_data().
+    """
     return {
         "howlongtobeat_main": igdb_time_data.get("hastily"),
         "howlongtobeat_extra": igdb_time_data.get("normally"),
@@ -259,7 +263,11 @@ class IGDBService:
             raise IGDBError(f"Failed to fetch game: {e}")
     
     async def _get_time_to_beat_data(self, igdb_id: str) -> Optional[Dict[str, Any]]:
-        """Get time-to-beat data for a game from IGDB."""
+        """Get time-to-beat data for a game from IGDB.
+        
+        IGDB returns time-to-beat data in seconds, but we store and display it in hours.
+        This method converts the seconds to hours before returning.
+        """
         try:
             wrapper = await self._get_wrapper()
             
@@ -277,7 +285,17 @@ class IGDBService:
             time_data = json.loads(response.decode('utf-8'))
             
             if time_data:
-                return time_data[0]
+                raw_data = time_data[0]
+                # Convert from seconds to hours (IGDB returns seconds, we store hours)
+                converted_data = {}
+                for field in ['hastily', 'normally', 'completely']:
+                    if field in raw_data and raw_data[field] is not None:
+                        # Convert seconds to hours, round to nearest integer
+                        converted_data[field] = round(raw_data[field] / 3600)
+                    else:
+                        converted_data[field] = None
+                        
+                return converted_data
             return None
             
         except Exception as e:

@@ -15,7 +15,7 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3",
+            GameMetadata(igdb_id="1", title="The Witcher 3"),
             GameMetadata(igdb_id="2", title="Witcher 2"),
             GameMetadata(igdb_id="3", title="Some Other Game")
         ]

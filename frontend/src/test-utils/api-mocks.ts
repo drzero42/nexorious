@@ -15,9 +15,9 @@ export const mockGame: Game = {
   rating_count: 100,
   game_metadata: '{}',
   estimated_playtime_hours: 25,
-  howlongtobeat_main: 20,
-  howlongtobeat_extra: 35,
-  howlongtobeat_completionist: 50,
+  howlongtobeat_main: 18,  // Realistic main story completion time
+  howlongtobeat_extra: 28,  // Realistic main + extras completion time
+  howlongtobeat_completionist: 45,  // Realistic completionist time
   igdb_id: 'igdb-123',
   is_verified: true,
   created_at: '2024-01-01T00:00:00Z',
@@ -48,9 +48,9 @@ export const mockIGDBCandidate: IGDBGameCandidate = {
   cover_art_url: 'https://example.com/igdb-cover.jpg',
   description: 'A game from IGDB',
   platforms: ['PC', 'PlayStation 5'],
-  howlongtobeat_main: 15,
-  howlongtobeat_extra: 25,
-  howlongtobeat_completionist: 40
+  howlongtobeat_main: 14,  // Realistic main story completion time
+  howlongtobeat_extra: 22,  // Realistic main + extras completion time
+  howlongtobeat_completionist: 35  // Realistic completionist time
 };
 
 export const mockIGDBCandidates: IGDBGameCandidate[] = [

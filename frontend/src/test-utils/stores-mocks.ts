@@ -65,9 +65,9 @@ export const mockIGDBCandidates = [
     cover_art_url: 'https://example.com/igdb-cover.jpg',
     description: 'A test game from IGDB',
     platforms: ['PC', 'PlayStation 5'],
-    howlongtobeat_main: 15,
-    howlongtobeat_extra: 25,
-    howlongtobeat_completionist: 40
+    howlongtobeat_main: 12,  // Main story completion time in hours
+    howlongtobeat_extra: 20,  // Main + extras completion time in hours
+    howlongtobeat_completionist: 35  // Completionist time in hours
   }
 ];
 
