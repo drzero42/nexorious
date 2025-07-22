@@ -58,6 +58,17 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128, description="New password")
 
 
+class ChangeUsernameRequest(BaseModel):
+    """Request schema for changing username."""
+    new_username: str = Field(..., min_length=3, max_length=100, description="New username")
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    """Response schema for username availability check."""
+    available: bool = Field(..., description="Whether the username is available")
+    username: str = Field(..., description="Username that was checked")
+
+
 class LogoutResponse(BaseModel):
     """Response schema for logout."""
     message: str = "Successfully logged out"

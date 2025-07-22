@@ -264,6 +264,117 @@ function createAuthStore() {
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
+    },
+
+    checkUsernameAvailability: async (username: string) => {
+      if (!username.trim() || username.length < 3) {
+        return { available: false, username };
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/username/check/${encodeURIComponent(username)}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${state.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to check username availability');
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Username availability check failed:', error);
+        return { available: false, username };
+      }
+    },
+
+    changeUsername: async (newUsername: string) => {
+      if (!state.accessToken) {
+        throw new Error('Not authenticated');
+      }
+
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/username`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.accessToken}`
+          },
+          body: JSON.stringify({ new_username: newUsername }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to change username');
+        }
+
+        const updatedUser = await response.json();
+        const newState = {
+          ...state,
+          user: updatedUser,
+          isLoading: false,
+          error: null
+        };
+
+        state = newState;
+        
+        if (browser) {
+          localStorage.setItem('auth', JSON.stringify(newState));
+        }
+        
+        return updatedUser;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to change username';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    changePassword: async (currentPassword: string, newPassword: string) => {
+      if (!state.accessToken) {
+        throw new Error('Not authenticated');
+      }
+
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/change-password`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.accessToken}`
+          },
+          body: JSON.stringify({ 
+            current_password: currentPassword, 
+            new_password: newPassword 
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to change password');
+        }
+
+        const data = await response.json();
+        
+        // Password change invalidates all sessions, so logout user
+        state = initialState;
+        if (browser) {
+          localStorage.removeItem('auth');
+        }
+        
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to change password';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
     }
   };
 
