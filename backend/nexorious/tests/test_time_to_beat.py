@@ -127,8 +127,8 @@ class TestIGDBService:
         
         mock_wrapper.api_request.assert_called_once()
         call_args = mock_wrapper.api_request.call_args
-        assert call_args[0][0] == 'game_time_to_beat'
-        assert 'where game = 12345' in call_args[0][1]
+        assert call_args[0][0] == 'game_time_to_beats'
+        assert 'where game_id = 12345' in call_args[0][1]
     
     @pytest.mark.asyncio
     async def test_get_time_to_beat_data_no_data(self, igdb_service):

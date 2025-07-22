@@ -265,13 +265,13 @@ class IGDBService:
             
             time_query = f'''
                 fields hastily, normally, completely;
-                where game = {igdb_id};
+                where game_id = {igdb_id};
             '''
             
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None, 
-                lambda: wrapper.api_request('game_time_to_beat', time_query)
+                lambda: wrapper.api_request('game_time_to_beats', time_query)
             )
             
             time_data = json.loads(response.decode('utf-8'))
