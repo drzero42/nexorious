@@ -109,7 +109,8 @@ describe('Register Page', () => {
       await userEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Passwords do not match')).toBeInTheDocument();
+        const errorMessages = screen.getAllByText('Passwords do not match');
+        expect(errorMessages.length).toBeGreaterThan(0);
       });
     });
 

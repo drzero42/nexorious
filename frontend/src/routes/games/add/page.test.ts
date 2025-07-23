@@ -8,9 +8,10 @@ import {
   mockIGDBSearchResponse,
   mockIGDBCandidates,
   mockGame
-} from '../../../test-utils/api-mocks.js';
-import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks.js';
-import { mockGoto, resetNavigationMocks } from '../../../test-utils/navigation-mocks.js';
+} from '../../../test-utils/api-mocks';
+import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
+import { mockGoto, resetNavigationMocks } from '../../../test-utils/navigation-mocks';
+import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameAddPage from './+page.svelte';
 
 // Mock the config module
@@ -19,7 +20,7 @@ vi.mock('$lib/env', () => ({
 }));
 
 // Mock the auth module
-vi.mock('$lib/stores/auth.svelte.js', () => ({
+vi.mock('$lib/stores/auth.svelte', () => ({
   auth: {
     value: {
       accessToken: 'test-token',
@@ -36,14 +37,16 @@ describe('Game Addition Page', () => {
     resetFetchMock();
     resetStoresMocks();
     resetNavigationMocks();
+    resetAuthMocks();
     mockFetch = setupFetchMock();
+    setAuthenticatedState();
   });
 
   describe('IGDB Search Flow', () => {
     it('should render search form initially', () => {
       render(GameAddPage);
       
-      expect(screen.getByPlaceholderText(/search for a game/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/enter game title/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /search/i })).toBeInTheDocument();
     });
 
@@ -55,7 +58,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -72,7 +75,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -104,7 +107,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -124,7 +127,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'nonexistent game' } });
@@ -140,7 +143,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -164,7 +167,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Perform search
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -187,7 +190,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Perform search and select game
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -209,7 +212,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Navigate to confirmation step
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -230,7 +233,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Navigate to confirmation step
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -259,14 +262,14 @@ describe('Game Addition Page', () => {
         games: mockIGDBCandidates,
         total: mockIGDBCandidates.length
       });
-      mockGamesStore.importFromIGDB.mockResolvedValue(mockGame);
+      mockGamesStore.createFromIGDB.mockResolvedValue(mockGame);
     });
 
-    it('should call importFromIGDB when confirming game addition', async () => {
+    it('should call createFromIGDB when confirming game addition', async () => {
       render(GameAddPage);
       
       // Navigate to confirmation step
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -279,7 +282,7 @@ describe('Game Addition Page', () => {
         fireEvent.click(confirmButton);
       });
       
-      expect(mockGamesStore.importFromIGDB).toHaveBeenCalledWith(
+      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith(
         'igdb-123',
         'Test IGDB Game',
         expect.any(Array)
@@ -290,7 +293,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Navigate to confirmation and add game
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -311,7 +314,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Complete the flow
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -329,12 +332,12 @@ describe('Game Addition Page', () => {
     });
 
     it('should handle game addition errors appropriately', async () => {
-      mockGamesStore.importFromIGDB.mockRejectedValue(new Error('Failed to add game'));
+      mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Failed to add game'));
 
       render(GameAddPage);
       
       // Navigate to confirmation and attempt to add game
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -368,7 +371,7 @@ describe('Game Addition Page', () => {
       render(GameAddPage);
       
       // Navigate to confirmation step
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
@@ -384,7 +387,7 @@ describe('Game Addition Page', () => {
         fireEvent.click(addButton);
       });
       
-      expect(mockGamesStore.importFromIGDB).not.toHaveBeenCalled();
+      expect(mockGamesStore.createFromIGDB).not.toHaveBeenCalled();
     });
   });
 
@@ -399,7 +402,7 @@ describe('Game Addition Page', () => {
 
       render(GameAddPage);
       
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
       
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
@@ -419,12 +422,12 @@ describe('Game Addition Page', () => {
         resolvePromise = resolve;
       });
       
-      mockGamesStore.importFromIGDB.mockReturnValue(pendingPromise);
+      mockGamesStore.createFromIGDB.mockReturnValue(pendingPromise);
 
       render(GameAddPage);
       
       // Navigate to confirmation
-      const searchInput = screen.getByPlaceholderText(/search for a game/i);
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
       await fireEvent.input(searchInput, { target: { value: 'test game' } });
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       

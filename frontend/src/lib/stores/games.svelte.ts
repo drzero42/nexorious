@@ -1,4 +1,4 @@
-import { auth } from './auth.svelte.js';
+import { auth } from './auth.svelte';
 import { config } from '$lib/env';
 
 export interface Game {

@@ -1,9 +1,9 @@
 // Auth store
-export { auth } from './auth.svelte.js';
-export type { AuthState, User } from './auth.svelte.js';
+export { auth } from './auth.svelte';
+export type { AuthState, User } from './auth.svelte';
 
 // Games store
-export { games } from './games.svelte.js';
+export { games } from './games.svelte';
 export type { 
   Game, 
   GameSearchFilters, 
@@ -11,10 +11,10 @@ export type {
   IGDBGameCandidate, 
   IGDBSearchResponse, 
   GamesState 
-} from './games.svelte.js';
+} from './games.svelte';
 
 // Platforms store
-export { platforms } from './platforms.svelte.js';
+export { platforms } from './platforms.svelte';
 export type { 
   Platform, 
   Storefront, 
@@ -23,10 +23,10 @@ export type {
   StorefrontCreateRequest, 
   StorefrontUpdateRequest, 
   PlatformsState 
-} from './platforms.svelte.js';
+} from './platforms.svelte';
 
 // User Games store
-export { userGames } from './user-games.svelte.js';
+export { userGames } from './user-games.svelte';
 export type { 
   UserGame, 
   UserGamePlatform, 
@@ -41,23 +41,23 @@ export type {
   UserGamesState, 
   OwnershipStatus, 
   PlayStatus 
-} from './user-games.svelte.js';
+} from './user-games.svelte';
 
 // UI store
-export { ui } from './ui.svelte.js';
+export { ui } from './ui.svelte';
 export type { 
   NotificationType, 
   Notification, 
   Modal, 
   UIState 
-} from './ui.svelte.js';
+} from './ui.svelte';
 
 // Search store
-export { search } from './search.svelte.js';
+export { search } from './search.svelte';
 export type { 
   SearchQuery, 
   SavedSearch, 
   SearchHistory, 
   SearchState 
-} from './search.svelte.js';
+} from './search.svelte';
 

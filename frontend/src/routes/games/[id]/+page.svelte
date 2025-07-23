@@ -89,7 +89,7 @@
         is_loved: editData.is_loved
       };
       
-      if (editData.personal_rating !== undefined) {
+      if (editData.personal_rating !== undefined && editData.personal_rating !== null) {
         userGameUpdate.personal_rating = editData.personal_rating;
       }
       
