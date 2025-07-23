@@ -204,6 +204,27 @@ export class APIResponseMock {
         return Promise.resolve(this.createResponse(mockGame));
       }
       
+      // User games endpoints
+      if (url.includes('/user-games') && method === 'POST') {
+        return Promise.resolve(this.createResponse({
+          id: 'user-game-1',
+          game_id: 'game-1',
+          ...mockGame
+        }, 201));
+      }
+      
+      if (url.includes('/user-games') && method === 'GET') {
+        return Promise.resolve(this.createResponse({ games: [mockGame] }));
+      }
+      
+      if (/\/user-games\/[^\/]+$/.test(url) && method === 'PUT') {
+        return Promise.resolve(this.createResponse(mockGame));
+      }
+      
+      if (/\/user-games\/[^\/]+$/.test(url) && method === 'DELETE') {
+        return Promise.resolve(this.createResponse(null, 204));
+      }
+      
       throw new Error(`Unexpected API call: ${method} ${url}`);
     });
   }
