@@ -69,7 +69,7 @@ describe('Games Store - PR Focused Tests', () => {
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
       
       const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/igdb-import`);
+      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/igdb-import?download_cover_art=true`);
       expect(callUrl.startsWith(mockConfig.apiUrl)).toBe(true);
     });
 

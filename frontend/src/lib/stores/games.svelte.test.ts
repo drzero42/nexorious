@@ -82,7 +82,7 @@ describe('Games Store API Integration', () => {
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
       
       const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/igdb-import`);
+      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/igdb-import?download_cover_art=true`);
     });
 
     it('should use config.apiUrl for game creation', async () => {
@@ -185,7 +185,7 @@ describe('Games Store API Integration', () => {
       await games.createFromIGDB('igdb-123', { title: 'Test Game' });
       
       expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games/igdb-import`,
+        `${mockConfig.apiUrl}/games/igdb-import?download_cover_art=true`,
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
