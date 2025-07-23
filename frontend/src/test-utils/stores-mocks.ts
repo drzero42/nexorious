@@ -87,6 +87,7 @@ export const mockGamesStore = {
   fetchGame: vi.fn(),
   searchIGDB: vi.fn(),
   createFromIGDB: vi.fn(),
+  createGame: vi.fn(),
   importFromIGDB: vi.fn(),
   addGame: vi.fn(),
   updateGame: vi.fn(),
@@ -154,6 +155,27 @@ vi.mock('$lib/stores', () => ({
   ui: mockUIStore
 }));
 
+// Mock user-games store specifically
+vi.mock('$lib/stores/user-games.svelte', () => ({
+  userGames: mockUserGamesStore,
+  OwnershipStatus: {
+    OWNED: 'owned',
+    BORROWED: 'borrowed',
+    RENTED: 'rented',
+    SUBSCRIPTION: 'subscription'
+  },
+  PlayStatus: {
+    NOT_STARTED: 'not_started',
+    IN_PROGRESS: 'in_progress',
+    COMPLETED: 'completed',
+    MASTERED: 'mastered',
+    DOMINATED: 'dominated',
+    SHELVED: 'shelved',
+    DROPPED: 'dropped',
+    REPLAY: 'replay'
+  }
+}));
+
 // Reset functions for test cleanup
 export function resetStoresMocks() {
   // Reset user games store
@@ -172,6 +194,8 @@ export function resetStoresMocks() {
   mockGamesStore.fetchGames.mockClear();
   mockGamesStore.fetchGame.mockClear();
   mockGamesStore.searchIGDB.mockClear();
+  mockGamesStore.createFromIGDB.mockClear();
+  mockGamesStore.createGame.mockClear();
   mockGamesStore.importFromIGDB.mockClear();
   mockGamesStore.addGame.mockClear();
   mockGamesStore.updateGame.mockClear();

@@ -45,7 +45,7 @@
       step = 'confirm';
     } catch (error) {
       console.error('Search failed:', error);
-      games.clearError(); // Clear any existing error
+      // Let the error state persist so it gets displayed to the user
     } finally {
       isSearching = false;
     }
