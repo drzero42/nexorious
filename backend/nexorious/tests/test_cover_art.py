@@ -496,6 +496,49 @@ class TestBulkCoverArtDownload:
 class TestAutomaticCoverArtDownload:
     """Test cases for automatic cover art download during import."""
     
+    def test_igdb_import_default_behavior_downloads_cover_art(self, client, mock_user):
+        """Test IGDB import with default behavior (should download cover art automatically)."""
+        game_metadata = GameMetadata(
+            igdb_id="123",
+            title="Test Game",
+            description="A test game",
+            genre="Action",
+            cover_art_url="https://example.com/cover.jpg"
+        )
+        
+        # Mock IGDB service
+        mock_igdb = AsyncMock()
+        mock_igdb.get_game_by_id.return_value = game_metadata
+        mock_igdb.download_and_store_cover_art.return_value = "/static/cover_art/123.jpg"
+        
+        try:
+            # Override dependencies
+            app.dependency_overrides[get_current_user] = lambda: mock_user
+            app.dependency_overrides[get_igdb_service_dependency] = lambda: mock_igdb
+            
+            # No explicit download_cover_art parameter - should default to True
+            response = client.post(
+                "/api/games/igdb-import",
+                json={
+                    "igdb_id": "123",
+                    "accept_metadata": True,
+                    "custom_overrides": {}
+                }
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["title"] == "Test Game"
+            assert data["cover_art_url"] == "/static/cover_art/123.jpg"
+            
+            # Verify download was called due to new default behavior
+            mock_igdb.download_and_store_cover_art.assert_called_once_with("123", "https://example.com/cover.jpg")
+            
+        finally:
+            # Clean up overrides
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_igdb_service_dependency, None)
+    
     def test_igdb_import_with_cover_art_download(self, client, mock_user):
         """Test IGDB import with automatic cover art download."""
         game_metadata = GameMetadata(

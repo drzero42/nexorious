@@ -305,15 +305,6 @@ def mock_igdb_service_fixture():
     # Mock download_and_store_cover_art method
     mock_service.download_and_store_cover_art.return_value = "/local/path/cover.jpg"
     
-    # Mock bulk_download_cover_art method
-    mock_service.bulk_download_cover_art.return_value = {
-        "processed_games": 1,
-        "successful_downloads": 1,
-        "failed_downloads": 0,
-        "results": [{"game_id": "test-id", "success": True, "local_path": "/local/path/cover.jpg"}],
-        "errors": []
-    }
-    
     return mock_service
 
 

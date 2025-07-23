@@ -227,7 +227,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/igdb-import`, {
+        const response = await apiCall(`${config.apiUrl}/games/igdb-import?download_cover_art=true`, {
           method: 'POST',
           body: JSON.stringify({
             igdb_id,
