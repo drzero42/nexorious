@@ -1,6 +1,7 @@
 # Backend specific files
 nexorious.db
 nexorious.db-journal
+storage
 
 # Node.js (for any frontend tooling that might be used with backend)
 node_modules/

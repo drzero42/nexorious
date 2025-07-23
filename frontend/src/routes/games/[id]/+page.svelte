@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import { resolveImageUrl } from '$lib/utils/image-url';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
   let game: UserGame | null = null;
@@ -199,7 +200,7 @@
           <div>
             {#if game.game.cover_art_url}
               <img
-                src={game.game.cover_art_url}
+                src={resolveImageUrl(game.game.cover_art_url)}
                 alt={game.game.title}
               />
             {:else}

@@ -64,6 +64,8 @@ def create_mock_igdb_service(search_results=None, get_game_result=None, error=No
     else:
         mock_igdb.search_games.return_value = search_results or []
         mock_igdb.get_game_by_id.return_value = get_game_result
+        # Add mock for cover art download method (needed for new default behavior)
+        mock_igdb.download_and_store_cover_art.return_value = "/static/cover_art/123.jpg"
     
     return mock_igdb
 

@@ -448,7 +448,7 @@ async def import_from_igdb(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency),
-    download_cover_art: bool = Query(default=False, description="Automatically download cover art during import")
+    download_cover_art: bool = Query(default=True, description="Automatically download cover art during import")
 ):
     """Import a game from IGDB with accepted metadata."""
     
@@ -1099,6 +1099,7 @@ async def bulk_download_cover_art(
     
     return BulkMetadataResponse(
         total_games=len(game_ids),
+        processed_games=len(results),
         successful_operations=successful_operations,
         failed_operations=len(game_ids) - successful_operations,
         results=results,

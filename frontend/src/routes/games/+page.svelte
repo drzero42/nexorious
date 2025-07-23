@@ -3,6 +3,7 @@
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination } from '$lib/components';
+ import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
 
  let viewMode: 'grid' | 'list' = 'grid';
@@ -285,7 +286,7 @@
       <div class="aspect-[3/4] overflow-hidden bg-gray-100">
        {#if userGame.game.cover_art_url}
         <img
-         src={userGame.game.cover_art_url}
+         src={resolveImageUrl(userGame.game.cover_art_url)}
          alt="Cover art for {userGame.game.title}"
          loading="lazy"
          class="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
@@ -407,7 +408,7 @@
            <div class="relative h-12 w-9 flex-shrink-0">
             {#if userGame.game.cover_art_url}
              <img
-              src={userGame.game.cover_art_url}
+              src={resolveImageUrl(userGame.game.cover_art_url)}
               alt={userGame.game.title}
               class="h-12 w-9 rounded object-cover"
              />
