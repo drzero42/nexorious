@@ -524,9 +524,23 @@ describe('Game Addition Page', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        fireEvent.click(screen.getByRole('button', { name: /test igdb game/i }));
+        expect(screen.getByText('Test IGDB Game')).toBeInTheDocument();
       });
+
+      // Select game to go to metadata confirmation
+      const selectButton = screen.getByRole('button', { name: /test igdb game/i });
+      await fireEvent.click(selectButton);
       
+      // Wait for metadata confirmation screen
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
+      });
+
+      // Click confirm button to trigger the loading state
+      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      await fireEvent.click(confirmButton);
+      
+      // Now should see loading state
       expect(screen.getAllByText(/adding to collection/i)).toHaveLength(1);
       
       resolvePromise!(mockGame);
@@ -586,21 +600,22 @@ describe('Game Addition Page', () => {
       const secondGameButton = screen.getByRole('button', { name: /another test game/i });
       await fireEvent.click(secondGameButton);
       
-      // Verify that only exactly one "Adding to collection..." message appears
+      // Should go to metadata confirmation screen, not show loading yet
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
+        expect(screen.getByText('Another Test Game')).toBeInTheDocument(); // Should show the selected game
+      });
+
+      // Click confirm button to trigger the loading state
+      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      await fireEvent.click(confirmButton);
+      
+      // Now should see loading state
       const loadingMessages = screen.getAllByText(/adding to collection/i);
       expect(loadingMessages).toHaveLength(1);
       
       // Verify that the createFromIGDB was called with the correct IGDB ID for the second game
-      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-456');
-      
-      // Verify that other games don't have loading states by checking their buttons are still enabled
-      const firstGameButton = screen.getByRole('button', { name: /test igdb game/i });
-      const thirdGameButton = screen.getByRole('button', { name: /third test game/i });
-      
-      // All buttons should be disabled during loading, but only the clicked one shows loading text
-      expect(firstGameButton).toBeDisabled();
-      expect(secondGameButton).toBeDisabled();
-      expect(thirdGameButton).toBeDisabled();
+      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-456', {});
       
       resolvePromise!(mockGame);
     });
