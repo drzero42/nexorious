@@ -10,7 +10,7 @@
   let addingGameId: string | null = null;
   let searchResults: IGDBGameCandidate[] = [];
   let selectedGame: IGDBGameCandidate | null = null;
-  let step: 'search' | 'confirm' | 'details' = 'search';
+  let step: 'search' | 'confirm' | 'metadata-confirm' | 'details' = 'search';
 
   // Form data for new game
   let gameData = {
@@ -52,45 +52,90 @@
     }
   }
 
-  async function selectGame(game: IGDBGameCandidate) {
+  function selectGame(game: IGDBGameCandidate) {
     selectedGame = game;
-    addingGameId = game.igdb_id;
+    // Pre-populate gameData with the selected game's information
+    gameData = {
+      ...gameData,
+      title: game.title,
+      description: game.description || '',
+      release_date: game.release_date || '',
+      cover_art_url: game.cover_art_url || ''
+    };
+    step = 'metadata-confirm';
+  }
+
+  async function confirmGameAddition() {
+    if (!selectedGame) return;
+    
+    addingGameId = selectedGame.igdb_id;
     
     try {
-      // Import the game directly from IGDB with full metadata
-      const createdGame = await games.createFromIGDB(game.igdb_id);
+      // Import the game from IGDB with any custom overrides from the form
+      const customOverrides: Record<string, any> = {};
+      
+      // Only include overrides if they differ from the original IGDB data
+      if (gameData.title !== selectedGame.title) {
+        customOverrides.title = gameData.title;
+      }
+      if (gameData.description !== (selectedGame.description || '')) {
+        customOverrides.description = gameData.description;
+      }
+      if (gameData.cover_art_url !== (selectedGame.cover_art_url || '')) {
+        customOverrides.cover_art_url = gameData.cover_art_url;
+      }
+      
+      const createdGame = await games.createFromIGDB(selectedGame.igdb_id, customOverrides);
       
       try {
-        // Add the game to the user's collection with default values
-        await userGames.addGameToCollection({
+        // Add the game to the user's collection with form values
+        const userGame = await userGames.addGameToCollection({
           game_id: createdGame.id,
-          ownership_status: OwnershipStatus.OWNED,
-          is_physical: false
+          ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
+          is_physical: gameData.is_physical || false
         });
+        
+        // Update progress with personal information if any were provided
+        if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
+          try {
+            await userGames.updateProgress(userGame.id, {
+              play_status: gameData.play_status as PlayStatus || PlayStatus.NOT_STARTED,
+              hours_played: gameData.hours_played || 0,
+              personal_notes: gameData.personal_notes || ''
+            });
+          } catch (progressError) {
+            console.error('Failed to update progress, but game was added to collection:', progressError);
+          }
+        }
+        
+        // Update user game details (rating and loved status) if any were provided
+        if (gameData.personal_rating || gameData.is_loved) {
+          try {
+            const updateData: any = {
+              is_loved: gameData.is_loved || false
+            };
+            
+            if (gameData.personal_rating) {
+              updateData.personal_rating = gameData.personal_rating;
+            }
+            
+            await userGames.updateUserGame(userGame.id, updateData);
+          } catch (updateError) {
+            console.error('Failed to update game details, but game was added to collection:', updateError);
+          }
+        }
         
         // Redirect to the games page after successful import and collection addition
         goto('/games');
       } catch (collectionError) {
         console.error('Failed to add game to collection:', collectionError);
         // Game was created but couldn't be added to collection - show error but still redirect
-        // The user can manually add it to their collection later
         goto('/games');
       }
     } catch (error) {
       console.error('Failed to import game from IGDB:', error);
       
-      // If import fails, fall back to manual entry with pre-filled data
-      gameData = {
-        ...gameData,
-        title: game.title,
-        description: game.description || '',
-        genre: '', // Genre will be populated from full metadata
-        developer: '', // Developer will be populated from full metadata
-        publisher: '', // Publisher will be populated from full metadata
-        release_date: game.release_date || '',
-        cover_art_url: game.cover_art_url || '',
-        game_metadata: JSON.stringify({})
-      };
+      // If import fails, fall back to manual entry with current form data
       step = 'details';
     } finally {
       addingGameId = null;
@@ -99,6 +144,8 @@
 
   function goBack() {
     if (step === 'details') {
+      step = selectedGame ? 'metadata-confirm' : 'confirm';
+    } else if (step === 'metadata-confirm') {
       step = 'confirm';
     } else if (step === 'confirm') {
       step = 'search';
@@ -418,6 +465,260 @@
           </svg>
           Add Manually Instead
         </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Step 2.5: Metadata Confirmation -->
+  {#if step === 'metadata-confirm'}
+    <div class="space-y-6">
+      <div class="text-center">
+        <h2 class="text-xl font-semibold text-gray-900">
+          Confirm Game Details
+        </h2>
+        <p class="mt-2 text-sm text-gray-600">
+          Review the game information before adding to your collection
+        </p>
+      </div>
+
+      <div class="card p-6">
+        <div class="flex space-x-6">
+          <!-- Cover Art -->
+          <div class="flex-shrink-0">
+            {#if gameData.cover_art_url}
+              <img
+                src={gameData.cover_art_url}
+                alt={gameData.title}
+                loading="lazy"
+                class="h-48 w-32 object-cover rounded border border-gray-200 shadow-sm"
+              />
+            {:else}
+              <div class="h-48 w-32 bg-gray-100 border border-gray-200 rounded flex items-center justify-center">
+                <div class="text-center text-sm text-gray-400">
+                  <svg class="mx-auto h-8 w-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  No Cover Art
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Game Information -->
+          <div class="flex-1 min-w-0 space-y-4">
+            <div>
+              <h3 class="text-2xl font-bold text-gray-900 mb-2">
+                {gameData.title}
+              </h3>
+              
+              {#if selectedGame?.platforms && selectedGame.platforms.length > 0}
+                <div class="mb-3 flex flex-wrap gap-1">
+                  {#each selectedGame.platforms as platform}
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      {platform}
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+              
+              <p class="text-sm text-gray-600 mb-3">
+                Released: {gameData.release_date ? new Date(gameData.release_date).getFullYear() : 'Unknown'}
+              </p>
+              
+              {#if selectedGame?.howlongtobeat_main || selectedGame?.howlongtobeat_extra || selectedGame?.howlongtobeat_completionist}
+                <div class="text-sm text-gray-600 mb-4">
+                  <span class="font-medium">Time to beat:</span>
+                  {#if selectedGame.howlongtobeat_main}
+                    Main: {selectedGame.howlongtobeat_main}h
+                  {/if}
+                  {#if selectedGame.howlongtobeat_extra}
+                    • Extra: {selectedGame.howlongtobeat_extra}h
+                  {/if}
+                  {#if selectedGame.howlongtobeat_completionist}
+                    • Complete: {selectedGame.howlongtobeat_completionist}h
+                  {/if}
+                </div>
+              {/if}
+            </div>
+            
+            <!-- Editable Description -->
+            <div>
+              <label for="metadata-description" class="form-label">
+                Description
+              </label>
+              <textarea
+                id="metadata-description"
+                bind:value={gameData.description}
+                rows="4"
+                placeholder="Game description..."
+                class="form-input"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Personal Information Section -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+          <h4 class="text-lg font-medium text-gray-900 mb-4">Personal Information</h4>
+          
+          <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+              <label for="metadata-play-status" class="form-label">
+                Play Status
+              </label>
+              <select
+                id="metadata-play-status"
+                bind:value={gameData.play_status}
+                class="form-input"
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="mastered">Mastered</option>
+                <option value="dominated">Dominated</option>
+                <option value="shelved">Shelved</option>
+                <option value="dropped">Dropped</option>
+                <option value="replay">Replay</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="metadata-ownership-status" class="form-label">
+                Ownership Status
+              </label>
+              <select
+                id="metadata-ownership-status"
+                bind:value={gameData.ownership_status}
+                class="form-input"
+              >
+                <option value="owned">Owned</option>
+                <option value="borrowed">Borrowed</option>
+                <option value="rented">Rented</option>
+                <option value="subscription">Subscription</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="metadata-personal-rating" class="form-label">
+                Personal Rating
+              </label>
+              <select
+                id="metadata-personal-rating"
+                bind:value={gameData.personal_rating}
+                class="form-input"
+              >
+                <option value={null}>No Rating</option>
+                <option value={1}>★ 1 Star</option>
+                <option value={2}>★★ 2 Stars</option>
+                <option value={3}>★★★ 3 Stars</option>
+                <option value={4}>★★★★ 4 Stars</option>
+                <option value={5}>★★★★★ 5 Stars</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="metadata-hours-played" class="form-label">
+                Hours Played
+              </label>
+              <input
+                id="metadata-hours-played"
+                type="number"
+                min="0"
+                step="0.1"
+                bind:value={gameData.hours_played}
+                placeholder="0"
+                class="form-input"
+              />
+            </div>
+          </div>
+
+          <div class="mt-6 space-y-4">
+            <div class="flex items-center">
+              <input
+                id="metadata-is-physical"
+                type="checkbox"
+                bind:checked={gameData.is_physical}
+                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
+              <label for="metadata-is-physical" class="ml-2 block text-sm text-gray-900">
+                Physical copy
+              </label>
+            </div>
+
+            <div class="flex items-center">
+              <input
+                id="metadata-is-loved"
+                type="checkbox"
+                bind:checked={gameData.is_loved}
+                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
+              <label for="metadata-is-loved" class="ml-2 block text-sm text-gray-900">
+                <span class="flex items-center gap-1">
+                  <span>Loved game</span>
+                  <span class="text-red-500">♥</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Personal Notes -->
+          <div class="mt-6">
+            <label for="metadata-personal-notes" class="form-label">
+              Personal Notes
+            </label>
+            <textarea
+              id="metadata-personal-notes"
+              bind:value={gameData.personal_notes}
+              rows="3"
+              placeholder="Add your personal notes about this game..."
+              class="form-input"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-between pt-6">
+        <button
+          on:click={goBack}
+          class="btn-secondary inline-flex items-center gap-x-2"
+        >
+          <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
+          </svg>
+          Back to Selection
+        </button>
+        
+        <div class="flex gap-3">
+          <button
+            on:click={() => step = 'details'}
+            class="btn-secondary inline-flex items-center gap-x-2"
+          >
+            <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="m11.54 22.351.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+            </svg>
+            Edit Details
+          </button>
+          
+          <button
+            on:click={confirmGameAddition}
+            disabled={addingGameId !== null}
+            class="btn-primary inline-flex items-center gap-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {#if addingGameId}
+              <svg class="animate-spin -ml-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Adding to Collection...
+            {:else}
+              <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.236 4.53L8.107 10.5a.75.75 0 00-1.214 1.029l2.5 3.5a.75.75 0 001.214 0l4-5.5z" clip-rule="evenodd" />
+              </svg>
+              Confirm and Add to Collection
+            {/if}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
