@@ -3,6 +3,7 @@
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard } from '$lib/components';
+ import { resolveImageUrl } from '$lib/utils/image-url';
 
  onMount(() => {
   // Load user games for statistics - authentication is handled by RouteGuard
@@ -331,7 +332,7 @@
          <div class="flex-shrink-0 w-8 h-8 bg-gray-200 rounded">
           {#if userGame.game.cover_art_url}
            <img
-            src={userGame.game.cover_art_url}
+            src={resolveImageUrl(userGame.game.cover_art_url)}
             alt={userGame.game.title}
             class="w-full h-full object-cover rounded"
            />

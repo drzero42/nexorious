@@ -3,6 +3,7 @@
   import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import { resolveImageUrl } from '$lib/utils/image-url';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
 
   let searchQuery = '';
@@ -374,7 +375,7 @@
                 <div class="flex-shrink-0">
                   {#if game.cover_art_url}
                     <img
-                      src={game.cover_art_url}
+                      src={resolveImageUrl(game.cover_art_url)}
                       alt={game.title}
                       loading="lazy"
                       class="h-24 w-16 object-cover rounded border border-gray-200"
@@ -487,7 +488,7 @@
           <div class="flex-shrink-0">
             {#if gameData.cover_art_url}
               <img
-                src={gameData.cover_art_url}
+                src={resolveImageUrl(gameData.cover_art_url)}
                 alt={gameData.title}
                 loading="lazy"
                 class="h-48 w-32 object-cover rounded border border-gray-200 shadow-sm"

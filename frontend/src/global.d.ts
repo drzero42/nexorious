@@ -5,6 +5,7 @@
 // Global environment variables
 interface ImportMetaEnv {
   readonly PUBLIC_API_URL: string;
+  readonly PUBLIC_STATIC_URL: string;
   readonly PUBLIC_APP_NAME: string;
   readonly PUBLIC_APP_VERSION: string;
   readonly PUBLIC_ENVIRONMENT: 'development' | 'production' | 'staging';

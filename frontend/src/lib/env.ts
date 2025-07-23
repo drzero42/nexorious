@@ -4,6 +4,7 @@ import { dev } from '$app/environment';
 // Default configuration
 const defaultConfig = {
   API_URL: dev ? 'http://localhost:8000/api' : '/api',
+  STATIC_URL: dev ? 'http://localhost:8000' : '',
   APP_NAME: 'Nexorious',
   APP_VERSION: '1.0.0',
   ENVIRONMENT: dev ? 'development' : 'production'
@@ -12,6 +13,7 @@ const defaultConfig = {
 // Environment configuration with type safety
 export const config = {
   apiUrl: env.PUBLIC_API_URL || defaultConfig.API_URL,
+  staticUrl: env.PUBLIC_STATIC_URL || defaultConfig.STATIC_URL,
   appName: env.PUBLIC_APP_NAME || defaultConfig.APP_NAME,
   appVersion: env.PUBLIC_APP_VERSION || defaultConfig.APP_VERSION,
   environment: (env.PUBLIC_ENVIRONMENT || defaultConfig.ENVIRONMENT) as 'development' | 'production' | 'staging',
