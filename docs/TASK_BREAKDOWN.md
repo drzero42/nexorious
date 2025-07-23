@@ -45,7 +45,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB API integration for game metadata
 - [x] Game search functionality with fuzzy matching
 - [x] Metadata population and refresh capabilities
-- [x] Cover art download and storage
+- [ ] Cover art download and storage
 - [x] How Long to Beat integration
 
 ### 1.2 Frontend Foundation
@@ -75,8 +75,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface
-- [ ] Game candidate selection screen
-- [ ] Metadata confirmation and editing
+- [x] Game candidate selection screen
+- [x] Metadata confirmation and editing
 - [ ] Platform and storefront assignment
 - [ ] Ownership status configuration
 - [ ] Success/error feedback handling
