@@ -7,6 +7,7 @@
 
   let searchQuery = '';
   let isSearching = false;
+  let addingGameId: string | null = null;
   let searchResults: IGDBGameCandidate[] = [];
   let selectedGame: IGDBGameCandidate | null = null;
   let step: 'search' | 'confirm' | 'details' = 'search';
@@ -53,7 +54,7 @@
 
   async function selectGame(game: IGDBGameCandidate) {
     selectedGame = game;
-    isSearching = true;
+    addingGameId = game.igdb_id;
     
     try {
       // Import the game directly from IGDB with full metadata
@@ -92,7 +93,7 @@
       };
       step = 'details';
     } finally {
-      isSearching = false;
+      addingGameId = null;
     }
   }
 
@@ -319,7 +320,7 @@
           {#each searchResults as game}
             <button
               on:click={() => selectGame(game)}
-              disabled={isSearching}
+              disabled={addingGameId !== null}
               class="card w-full p-4 text-left hover:shadow-md hover:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div class="flex space-x-4">
@@ -382,7 +383,7 @@
                     </p>
                   {/if}
                   
-                  {#if isSearching}
+                  {#if addingGameId === game.igdb_id}
                     <div class="mt-3 flex items-center text-sm text-primary-600">
                       <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

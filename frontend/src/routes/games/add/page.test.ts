@@ -405,7 +405,80 @@ describe('Game Addition Page', () => {
         fireEvent.click(screen.getByRole('button', { name: /test igdb game/i }));
       });
       
-      expect(screen.getAllByText(/adding to collection/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/adding to collection/i)).toHaveLength(1);
+      
+      resolvePromise!(mockGame);
+    });
+
+    it('should only show loading state on clicked game card when multiple games exist', async () => {
+      const multipleGames = [
+        ...mockIGDBCandidates,
+        {
+          igdb_id: 'igdb-456',
+          title: 'Another Test Game',
+          release_date: '2024-03-01',
+          cover_art_url: 'https://example.com/cover2.jpg',
+          description: 'Another test game',
+          platforms: ['PC'],
+          howlongtobeat_main: 16
+        },
+        {
+          igdb_id: 'igdb-789',
+          title: 'Third Test Game',
+          release_date: '2023-05-15',
+          cover_art_url: 'https://example.com/cover3.jpg',
+          description: 'A third test game',
+          platforms: ['PlayStation 5'],
+          howlongtobeat_main: 24
+        }
+      ];
+
+      // Mock the search to return multiple games
+      mockGamesStore.searchIGDB.mockResolvedValue({
+        games: multipleGames,
+        total: multipleGames.length
+      });
+
+      let resolvePromise: (value: any) => void;
+      const pendingPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+      
+      mockGamesStore.createFromIGDB.mockReturnValue(pendingPromise);
+
+      render(GameAddPage);
+      
+      // Navigate to search results
+      const searchInput = screen.getByPlaceholderText(/enter game title/i);
+      await fireEvent.input(searchInput, { target: { value: 'test game' } });
+      await fireEvent.click(screen.getByRole('button', { name: /search/i }));
+      
+      // Wait for all games to be rendered
+      await waitFor(() => {
+        expect(screen.getByText('Test IGDB Game')).toBeInTheDocument();
+        expect(screen.getByText('Another Test Game')).toBeInTheDocument();
+        expect(screen.getByText('Third Test Game')).toBeInTheDocument();
+      });
+
+      // Click on the second game (Another Test Game)
+      const secondGameButton = screen.getByRole('button', { name: /another test game/i });
+      await fireEvent.click(secondGameButton);
+      
+      // Verify that only exactly one "Adding to collection..." message appears
+      const loadingMessages = screen.getAllByText(/adding to collection/i);
+      expect(loadingMessages).toHaveLength(1);
+      
+      // Verify that the createFromIGDB was called with the correct IGDB ID for the second game
+      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-456');
+      
+      // Verify that other games don't have loading states by checking their buttons are still enabled
+      const firstGameButton = screen.getByRole('button', { name: /test igdb game/i });
+      const thirdGameButton = screen.getByRole('button', { name: /third test game/i });
+      
+      // All buttons should be disabled during loading, but only the clicked one shows loading text
+      expect(firstGameButton).toBeDisabled();
+      expect(secondGameButton).toBeDisabled();
+      expect(thirdGameButton).toBeDisabled();
       
       resolvePromise!(mockGame);
     });
