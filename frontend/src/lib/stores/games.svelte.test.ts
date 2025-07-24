@@ -88,7 +88,10 @@ describe('Games Store API Integration', () => {
     it('should use config.apiUrl for game creation', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.createGame({ title: 'New Game' });
+      await games.createGame({ 
+        title: 'New Game',
+        game_metadata: '{}'
+      });
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
@@ -206,7 +209,7 @@ describe('Games Store API Integration', () => {
       
       const { games } = await import('./games.svelte');
       
-      await games.loadGames({ page: 2, per_page: 10 });
+      await games.loadGames({}, 2, 10);
       
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining(`${mockConfig.apiUrl}/games?page=2&per_page=10`),

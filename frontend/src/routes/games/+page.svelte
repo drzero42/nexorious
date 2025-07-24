@@ -1,5 +1,5 @@
 <script lang="ts">
- import { userGames } from '$lib/stores';
+ import { userGames, platforms } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination } from '$lib/components';
@@ -9,22 +9,38 @@
  let viewMode: 'grid' | 'list' = 'grid';
  let searchQuery = '';
  let selectedPlatform = '';
+ let selectedStorefront = '';
  let selectedStatus = '';
+ let selectedOwnershipStatus = '';
+ let lovedOnly = false;
+ let hasNotesOnly = false;
+ let ratingMin = '';
+ let ratingMax = '';
  let sortBy = 'title';
+ let sortOrder: 'asc' | 'desc' = 'asc';
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
 
  onMount(() => {
-  // Load user games - authentication is handled by RouteGuard
+  // Load user games and platforms - authentication is handled by RouteGuard
   loadGames();
+  platforms.loadAll();
  });
 
  // Build filters based on current selections
  $: filters = {
+  ...(searchQuery && { q: searchQuery }),
   ...(selectedStatus && { play_status: selectedStatus }),
+  ...(selectedOwnershipStatus && { ownership_status: selectedOwnershipStatus }),
   ...(selectedPlatform && { platform_id: selectedPlatform }),
-  ...(searchQuery && { q: searchQuery })
+  ...(selectedStorefront && { storefront_id: selectedStorefront }),
+  ...(lovedOnly && { is_loved: true }),
+  ...(hasNotesOnly && { has_notes: true }),
+  ...(ratingMin && { rating_min: parseInt(ratingMin) }),
+  ...(ratingMax && { rating_max: parseInt(ratingMax) }),
+  sort_by: sortBy,
+  sort_order: sortOrder
  } as UserGameFilters;
 
  // Load games with current filters and pagination
@@ -51,7 +67,7 @@
  // Handle filter changes
  function handleFilterChange() {
   loadGamesWithReset();
- }
+ } 
  
  // Load games with page reset
  async function loadGamesWithReset() {
@@ -63,7 +79,7 @@
  }
 
  // Watch for filter changes
- $: if (selectedStatus || selectedPlatform) {
+ $: if (selectedStatus || selectedPlatform || selectedStorefront || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax || sortBy || sortOrder) {
   handleFilterChange();
  }
 
@@ -97,7 +113,6 @@
   }
  }
 
-
  function getStatusLabel(status: string) {
   const labels: Record<string, string> = {
    'not_started': 'Not Started',
@@ -111,6 +126,23 @@
   };
   return labels[status] || status;
  }
+
+ function clearAllFilters() {
+  searchQuery = '';
+  selectedPlatform = '';
+  selectedStorefront = '';
+  selectedStatus = '';
+  selectedOwnershipStatus = '';
+  lovedOnly = false;
+  hasNotesOnly = false;
+  ratingMin = '';
+  ratingMax = '';
+  sortBy = 'title';
+  sortOrder = 'asc';
+ }
+
+ // Check if any filters are active
+ $: hasActiveFilters = searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax;
 </script>
 
 <svelte:head>
@@ -140,98 +172,239 @@
   </div>
  </div>
 
- <!-- Filters and Search -->
+ <!-- Advanced Filters and Search -->
  <div class="border-b border-gray-200 pb-5">
-  <div class="sm:flex sm:items-center sm:justify-between">
-   <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 sm:gap-6">
-    <!-- Search -->
-    <div class="sm:col-span-2">
-     <label for="search" class="form-label">
-      Search
-     </label>
-     <div class="relative">
-      <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-       <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
-       </svg>
-      </div>
-      <input
-       id="search"
-       type="text"
-       bind:value={searchQuery}
-       placeholder="Search games..."
-       class="form-input pl-10"
-      />
+  <!-- Filter Header with Clear Button -->
+  <div class="flex items-center justify-between mb-4">
+   <h3 class="text-lg font-medium text-gray-900">Filters</h3>
+   <div class="flex items-center space-x-4">
+    {#if hasActiveFilters}
+     <button
+      on:click={clearAllFilters}
+      class="text-sm text-primary-600 hover:text-primary-700 focus:outline-none focus:underline"
+     >
+      Clear all filters
+     </button>
+    {/if}
+    <!-- View Mode Toggle -->
+    <div class="inline-flex rounded-md shadow-sm" role="group">
+     <button
+      on:click={() => viewMode = 'grid'}
+      class="{viewMode === 'grid' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative inline-flex items-center rounded-l-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+     >
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+       <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 001.125 1.125m0 0V4.875c0-.621.504-1.125 1.125-1.125M3.375 19.5V4.875c0-.621.504-1.125 1.125-1.125m0 0h17.25m-17.25 0a1.125 1.125 0 011.125-1.125h15.75m0 0a1.125 1.125 0 011.125-1.125M18.375 2.25h-7.5A1.125 1.125 0 009.75 3.375v1.875m7.5-1.875A1.125 1.125 0 0018.375 3.375v1.875m-7.5 0V18.375m7.5-13.125V18.375m-7.5 0h7.5" />
+      </svg>
+      <span class="sr-only">Grid view</span>
+     </button>
+     <button
+      on:click={() => viewMode = 'list'}
+      class="{viewMode === 'list' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative -ml-px inline-flex items-center rounded-r-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+     >
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+       <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 17.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+      </svg>
+      <span class="sr-only">List view</span>
+     </button>
+    </div>
+   </div>
+  </div>
+
+  <!-- Search and Sort Row -->
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-6 lg:gap-6 mb-4">
+   <!-- Search -->
+   <div class="lg:col-span-3">
+    <label for="search" class="form-label">
+     Search Games
+    </label>
+    <div class="relative">
+     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+      <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+       <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+      </svg>
      </div>
-    </div>
-
-    <!-- Status Filter -->
-    <div>
-     <label for="status" class="form-label">
-      Status
-     </label>
-     <select
-      id="status"
-      bind:value={selectedStatus}
-      class="form-input"
-     >
-      <option value="">All Statuses</option>
-      <option value="not_started">Not Started</option>
-      <option value="in_progress">In Progress</option>
-      <option value="completed">Completed</option>
-      <option value="mastered">Mastered</option>
-      <option value="dominated">Dominated</option>
-      <option value="shelved">Shelved</option>
-      <option value="dropped">Dropped</option>
-      <option value="replay">Replay</option>
-     </select>
-    </div>
-
-    <!-- Sort By -->
-    <div>
-     <label for="sortBy" class="form-label">
-      Sort By
-     </label>
-     <select
-      id="sortBy"
-      bind:value={sortBy}
-      class="form-input"
-     >
-      <option value="title">Title</option>
-      <option value="personal_rating">Rating</option>
-      <option value="play_status">Status</option>
-      <option value="genre">Genre</option>
-      <option value="release_date">Release Date</option>
-     </select>
+     <input
+      id="search"
+      type="text"
+      bind:value={searchQuery}
+      placeholder="Search by title, genre, developer..."
+      class="form-input pl-10"
+     />
     </div>
    </div>
 
-   <!-- View Mode -->
-   <div class="mt-4 sm:ml-6 sm:mt-0">
-    <span class="form-label">View</span>
-    <div class="mt-1">
-     <div class="inline-flex rounded-md shadow-sm" role="group">
-      <button
-       on:click={() => viewMode = 'grid'}
-       class="{viewMode === 'grid' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative inline-flex items-center rounded-l-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      >
-       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 001.125 1.125m0 0V4.875c0-.621.504-1.125 1.125-1.125M3.375 19.5V4.875c0-.621.504-1.125 1.125-1.125m0 0h17.25m-17.25 0a1.125 1.125 0 011.125-1.125h15.75m0 0a1.125 1.125 0 011.125-1.125M18.375 2.25h-7.5A1.125 1.125 0 009.75 3.375v1.875m7.5-1.875A1.125 1.125 0 0118.375 3.375v1.875m-7.5 0V18.375m7.5-13.125V18.375m-7.5 0h7.5" />
-       </svg>
-       <span class="sr-only">Grid view</span>
-      </button>
-      <button
-       on:click={() => viewMode = 'list'}
-       class="{viewMode === 'list' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative -ml-px inline-flex items-center rounded-r-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-      >
-       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 17.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-       </svg>
-       <span class="sr-only">List view</span>
-      </button>
-     </div>
-    </div>
+   <!-- Sort By -->
+   <div class="lg:col-span-2">
+    <label for="sortBy" class="form-label">
+     Sort By
+    </label>
+    <select
+     id="sortBy"
+     bind:value={sortBy}
+     class="form-input"
+    >
+     <option value="title">Title</option>
+     <option value="personal_rating">Rating</option>
+     <option value="play_status">Status</option>
+     <option value="genre">Genre</option>
+     <option value="release_date">Release Date</option>
+     <option value="hours_played">Hours Played</option>
+     <option value="acquired_date">Date Acquired</option>
+     <option value="last_played">Last Played</option>
+    </select>
    </div>
+
+   <!-- Sort Order -->
+   <div>
+    <label for="sortOrder" class="form-label">
+     Order
+    </label>
+    <select
+     id="sortOrder"
+     bind:value={sortOrder}
+     class="form-input"
+    >
+     <option value="asc">Ascending</option>
+     <option value="desc">Descending</option>
+    </select>
+   </div>
+  </div>
+
+  <!-- Filter Controls -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+   <!-- Play Status Filter -->
+   <div>
+    <label for="status" class="form-label">
+     Play Status
+    </label>
+    <select
+     id="status"
+     bind:value={selectedStatus}
+     class="form-input"
+    >
+     <option value="">All Statuses</option>
+     <option value="not_started">Not Started</option>
+     <option value="in_progress">In Progress</option>
+     <option value="completed">Completed</option>
+     <option value="mastered">Mastered</option>
+     <option value="dominated">Dominated</option>
+     <option value="shelved">Shelved</option>
+     <option value="dropped">Dropped</option>
+     <option value="replay">Replay</option>
+    </select>
+   </div>
+
+   <!-- Ownership Status Filter -->
+   <div>
+    <label for="ownershipStatus" class="form-label">
+     Ownership
+    </label>
+    <select
+     id="ownershipStatus"
+     bind:value={selectedOwnershipStatus}
+     class="form-input"
+    >
+     <option value="">All Types</option>
+     <option value="owned">Owned</option>
+     <option value="borrowed">Borrowed</option>
+     <option value="rented">Rented</option>
+     <option value="subscription">Subscription</option>
+    </select>
+   </div>
+
+   <!-- Platform Filter -->
+   <div>
+    <label for="platform" class="form-label">
+     Platform
+    </label>
+    <select
+     id="platform"
+     bind:value={selectedPlatform}
+     class="form-input"
+    >
+     <option value="">All Platforms</option>
+     {#each platforms.value.platforms as platform (platform.id)}
+      <option value={platform.id}>{platform.display_name}</option>
+     {/each}
+    </select>
+   </div>
+
+   <!-- Storefront Filter -->
+   <div>
+    <label for="storefront" class="form-label">
+     Storefront
+    </label>
+    <select
+     id="storefront"
+     bind:value={selectedStorefront}
+     class="form-input"
+    >
+     <option value="">All Storefronts</option>
+     {#each platforms.value.storefronts as storefront (storefront.id)}
+      <option value={storefront.id}>{storefront.display_name}</option>
+     {/each}
+    </select>
+   </div>
+
+   <!-- Rating Range -->
+   <div>
+    <label for="ratingMin" class="form-label">
+     Min Rating
+    </label>
+    <select
+     id="ratingMin"
+     bind:value={ratingMin}
+     class="form-input"
+    >
+     <option value="">Any</option>
+     <option value="1">1 Star+</option>
+     <option value="2">2 Stars+</option>
+     <option value="3">3 Stars+</option>
+     <option value="4">4 Stars+</option>
+     <option value="5">5 Stars</option>
+    </select>
+   </div>
+
+   <div>
+    <label for="ratingMax" class="form-label">
+     Max Rating
+    </label>
+    <select
+     id="ratingMax"
+     bind:value={ratingMax}
+     class="form-input"
+    >
+     <option value="">Any</option>
+     <option value="1">1 Star</option>
+     <option value="2">2 Stars</option>
+     <option value="3">3 Stars</option>
+     <option value="4">4 Stars</option>
+     <option value="5">5 Stars</option>
+    </select>
+   </div>
+  </div>
+
+  <!-- Toggle Filters -->
+  <div class="flex flex-wrap gap-4 mt-4">
+   <label class="inline-flex items-center">
+    <input
+     type="checkbox"
+     bind:checked={lovedOnly}
+     class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+    />
+    <span class="ml-2 text-sm text-gray-700">
+     <span class="text-red-500">♥</span> Only loved games
+    </span>
+   </label>
+
+   <label class="inline-flex items-center">
+    <input
+     type="checkbox"
+     bind:checked={hasNotesOnly}
+     class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+    />
+    <span class="ml-2 text-sm text-gray-700">Games with notes</span>
+   </label>
   </div>
  </div>
 

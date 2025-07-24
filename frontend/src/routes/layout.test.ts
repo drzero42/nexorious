@@ -235,7 +235,7 @@ describe('Layout Component', () => {
     });
 
     it('should show hamburger icon when menu is closed', () => {
-      const { container } = renderComponent(Layout);
+      renderComponent(Layout);
 
       // Should show hamburger menu button when closed
       const menuButton = screen.getByLabelText('Toggle mobile menu');

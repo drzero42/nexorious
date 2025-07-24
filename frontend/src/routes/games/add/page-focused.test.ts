@@ -146,7 +146,7 @@ describe('Game Addition Page - PR Focused Tests', () => {
         ...mockGamesStore.value,
         error: 'Failed to search IGDB',
         isLoading: false
-      };
+      } as any;
       
       // Mock searchIGDB to fail
       mockGamesStore.searchIGDB.mockRejectedValue(new Error('Search failed'));
