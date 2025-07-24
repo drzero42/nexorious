@@ -1,10 +1,12 @@
 <script lang="ts">
   import { games } from '$lib/stores';
-  import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
+  import { userGames, OwnershipStatus, PlayStatus, type UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
+  import { platforms } from '$lib/stores/platforms.svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
+  import { onMount } from 'svelte';
 
   let searchQuery = '';
   let isSearching = false;
@@ -31,6 +33,52 @@
     is_physical: false,
     is_loved: false
   };
+
+  // Platform association data
+  let selectedPlatforms = new Set<string>();
+  let platformStorefronts = new Map<string, string>(); // platform_id -> storefront_id
+  let platformStoreUrls = new Map<string, string>(); // platform_id -> store_url
+
+  // Load platforms and storefronts on component mount
+  onMount(async () => {
+    try {
+      await platforms.loadAll();
+    } catch (error) {
+      console.error('Failed to load platforms and storefronts:', error);
+    }
+  });
+
+  // Platform selection helpers
+  function togglePlatform(platformId: string) {
+    if (selectedPlatforms.has(platformId)) {
+      selectedPlatforms.delete(platformId);
+      platformStorefronts.delete(platformId);
+      platformStoreUrls.delete(platformId);
+    } else {
+      selectedPlatforms.add(platformId);
+    }
+    selectedPlatforms = new Set(selectedPlatforms); // Trigger reactivity
+    platformStorefronts = new Map(platformStorefronts);
+    platformStoreUrls = new Map(platformStoreUrls);
+  }
+
+  function setStorefrontForPlatform(platformId: string, storefrontId: string) {
+    if (storefrontId) {
+      platformStorefronts.set(platformId, storefrontId);
+    } else {
+      platformStorefronts.delete(platformId);
+    }
+    platformStorefronts = new Map(platformStorefronts); // Trigger reactivity
+  }
+
+  function setStoreUrlForPlatform(platformId: string, storeUrl: string) {
+    if (storeUrl.trim()) {
+      platformStoreUrls.set(platformId, storeUrl.trim());
+    } else {
+      platformStoreUrls.delete(platformId);
+    }
+    platformStoreUrls = new Map(platformStoreUrls); // Trigger reactivity
+  }
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
@@ -95,6 +143,23 @@
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
           is_physical: gameData.is_physical || false
         });
+
+        // Add platform associations if any were selected
+        if (selectedPlatforms.size > 0) {
+          try {
+            for (const platformId of selectedPlatforms) {
+              const platformData: UserGamePlatformCreateRequest = {
+                platform_id: platformId,
+                storefront_id: platformStorefronts.get(platformId) || undefined,
+                store_url: platformStoreUrls.get(platformId) || undefined
+              };
+              
+              await userGames.addPlatformToUserGame(userGame.id, platformData);
+            }
+          } catch (platformError) {
+            console.error('Failed to add platform associations, but game was added to collection:', platformError);
+          }
+        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
@@ -166,6 +231,23 @@
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
           is_physical: gameData.is_physical || false
         });
+
+        // Add platform associations if any were selected
+        if (selectedPlatforms.size > 0) {
+          try {
+            for (const platformId of selectedPlatforms) {
+              const platformData: UserGamePlatformCreateRequest = {
+                platform_id: platformId,
+                storefront_id: platformStorefronts.get(platformId) || undefined,
+                store_url: platformStoreUrls.get(platformId) || undefined
+              };
+              
+              await userGames.addPlatformToUserGame(userGame.id, platformData);
+            }
+          } catch (platformError) {
+            console.error('Failed to add platform associations, but game was added to collection:', platformError);
+          }
+        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
@@ -676,6 +758,103 @@
             ></textarea>
           </div>
         </div>
+
+        <!-- Platform and Storefront Assignment -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+          <h4 class="text-lg font-medium text-gray-900 mb-4">Platforms & Storefronts</h4>
+          <p class="text-sm text-gray-600 mb-4">Select the platforms where you own this game.</p>
+          
+          {#if platforms.value.isLoading}
+            <div class="text-center py-4">
+              <svg class="animate-spin h-5 w-5 text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p class="mt-2 text-sm text-gray-500">Loading platforms...</p>
+            </div>
+          {:else if platforms.value.error}
+            <div class="rounded-md bg-red-50 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-medium text-red-800">Platform Loading Error</h3>
+                  <p class="mt-2 text-sm text-red-700">{platforms.value.error}</p>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="space-y-4">
+              {#each platforms.getActivePlatforms() as platform (platform.id)}
+                <div class="bg-gray-50 rounded-lg p-4">
+                  <!-- Platform Selection Checkbox -->
+                  <div class="flex items-center mb-3">
+                    <input
+                      id="platform-{platform.id}"
+                      type="checkbox"
+                      checked={selectedPlatforms.has(platform.id)}
+                      on:change={() => togglePlatform(platform.id)}
+                      class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label for="platform-{platform.id}" class="ml-2 flex items-center gap-2">
+                      {#if platform.icon_url}
+                        <img src={platform.icon_url} alt={platform.display_name} class="w-5 h-5 object-contain" />
+                      {/if}
+                      <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                    </label>
+                  </div>
+
+                  <!-- Storefront and URL fields (shown only when platform is selected) -->
+                  {#if selectedPlatforms.has(platform.id)}
+                    <div class="ml-6 space-y-3">
+                      <!-- Storefront Selection -->
+                      <div>
+                        <label for="storefront-{platform.id}" class="block text-sm font-medium text-gray-700 mb-1">
+                          Storefront (optional)
+                        </label>
+                        <select
+                          id="storefront-{platform.id}"
+                          value={platformStorefronts.get(platform.id) || ''}
+                          on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                          class="form-input text-sm"
+                        >
+                          <option value="">No specific storefront</option>
+                          {#each platforms.getActiveStorefronts() as storefront (storefront.id)}
+                            <option value={storefront.id}>{storefront.display_name}</option>
+                          {/each}
+                        </select>
+                      </div>
+
+                      <!-- Store URL -->
+                      <div>
+                        <label for="store-url-{platform.id}" class="block text-sm font-medium text-gray-700 mb-1">
+                          Store URL (optional)
+                        </label>
+                        <input
+                          id="store-url-{platform.id}"
+                          type="url"
+                          value={platformStoreUrls.get(platform.id) || ''}
+                          on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                          placeholder="https://store.example.com/game"
+                          class="form-input text-sm"
+                        />
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+              
+              {#if platforms.getActivePlatforms().length === 0}
+                <div class="text-center py-6">
+                  <p class="text-sm text-gray-500">No platforms available. Contact an administrator to add platforms.</p>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
 
       <!-- Actions -->
@@ -941,6 +1120,103 @@
               </label>
             </div>
           </div>
+        </div>
+
+        <!-- Platforms & Storefronts -->
+        <div class="card p-6">
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Platforms & Storefronts</h3>
+          <p class="text-sm text-gray-600 mb-4">Select the platforms where you own this game.</p>
+          
+          {#if platforms.value.isLoading}
+            <div class="text-center py-4">
+              <svg class="animate-spin h-5 w-5 text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p class="mt-2 text-sm text-gray-500">Loading platforms...</p>
+            </div>
+          {:else if platforms.value.error}
+            <div class="rounded-md bg-red-50 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-medium text-red-800">Platform Loading Error</h3>
+                  <p class="mt-2 text-sm text-red-700">{platforms.value.error}</p>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="space-y-4">
+              {#each platforms.getActivePlatforms() as platform (platform.id)}
+                <div class="bg-gray-50 rounded-lg p-4">
+                  <!-- Platform Selection Checkbox -->
+                  <div class="flex items-center mb-3">
+                    <input
+                      id="platform-details-{platform.id}"
+                      type="checkbox"
+                      checked={selectedPlatforms.has(platform.id)}
+                      on:change={() => togglePlatform(platform.id)}
+                      class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label for="platform-details-{platform.id}" class="ml-2 flex items-center gap-2">
+                      {#if platform.icon_url}
+                        <img src={platform.icon_url} alt={platform.display_name} class="w-5 h-5 object-contain" />
+                      {/if}
+                      <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                    </label>
+                  </div>
+
+                  <!-- Storefront and URL fields (shown only when platform is selected) -->
+                  {#if selectedPlatforms.has(platform.id)}
+                    <div class="ml-6 space-y-3">
+                      <!-- Storefront Selection -->
+                      <div>
+                        <label for="storefront-details-{platform.id}" class="block text-sm font-medium text-gray-700 mb-1">
+                          Storefront (optional)
+                        </label>
+                        <select
+                          id="storefront-details-{platform.id}"
+                          value={platformStorefronts.get(platform.id) || ''}
+                          on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                          class="form-input text-sm"
+                        >
+                          <option value="">No specific storefront</option>
+                          {#each platforms.getActiveStorefronts() as storefront (storefront.id)}
+                            <option value={storefront.id}>{storefront.display_name}</option>
+                          {/each}
+                        </select>
+                      </div>
+
+                      <!-- Store URL -->
+                      <div>
+                        <label for="store-url-details-{platform.id}" class="block text-sm font-medium text-gray-700 mb-1">
+                          Store URL (optional)
+                        </label>
+                        <input
+                          id="store-url-details-{platform.id}"
+                          type="url"
+                          value={platformStoreUrls.get(platform.id) || ''}
+                          on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                          placeholder="https://store.example.com/game"
+                          class="form-input text-sm"
+                        />
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+              
+              {#if platforms.getActivePlatforms().length === 0}
+                <div class="text-center py-6">
+                  <p class="text-sm text-gray-500">No platforms available. Contact an administrator to add platforms.</p>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         <!-- Personal Notes -->
