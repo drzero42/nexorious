@@ -1,4 +1,5 @@
 import { auth } from './auth.svelte';
+import { config } from '$lib/env';
 
 export interface Platform {
   id: string;
@@ -111,7 +112,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/platforms');
+        const response = await apiCall(`${config.apiUrl}/platforms/`);
         const data = await response.json();
 
         state = {
@@ -131,7 +132,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/storefronts');
+        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/`);
         const data = await response.json();
 
         state = {
@@ -168,7 +169,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/platforms', {
+        const response = await apiCall(`${config.apiUrl}/platforms/`, {
           method: 'POST',
           body: JSON.stringify(platformData),
         });
@@ -194,7 +195,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/platforms/${id}`, {
+        const response = await apiCall(`${config.apiUrl}/platforms/${id}`, {
           method: 'PUT',
           body: JSON.stringify(platformData),
         });
@@ -222,7 +223,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`/api/platforms/${id}`, {
+        await apiCall(`${config.apiUrl}/platforms/${id}`, {
           method: 'DELETE',
         });
 
@@ -243,7 +244,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall('/api/storefronts', {
+        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/`, {
           method: 'POST',
           body: JSON.stringify(storefrontData),
         });
@@ -269,7 +270,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`/api/storefronts/${id}`, {
+        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
           method: 'PUT',
           body: JSON.stringify(storefrontData),
         });
@@ -297,7 +298,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`/api/storefronts/${id}`, {
+        await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
           method: 'DELETE',
         });
 
