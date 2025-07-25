@@ -78,7 +78,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game candidate selection screen
 - [x] Metadata confirmation and editing
 - [x] Platform and storefront assignment
-- [ ] Ownership status configuration
+- [x] Ownership status configuration
 - [ ] Success/error feedback handling
 
 #### 1.2.5 Progress Tracking Interface
