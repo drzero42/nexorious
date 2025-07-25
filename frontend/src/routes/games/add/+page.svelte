@@ -149,10 +149,19 @@
           try {
             for (const platformId of selectedPlatforms) {
               const platformData: UserGamePlatformCreateRequest = {
-                platform_id: platformId,
-                storefront_id: platformStorefronts.get(platformId) || undefined,
-                store_url: platformStoreUrls.get(platformId) || undefined
+                platform_id: platformId
               };
+              
+              // Only add optional properties if they have values
+              const storefrontId = platformStorefronts.get(platformId);
+              const storeUrl = platformStoreUrls.get(platformId);
+              
+              if (storefrontId) {
+                platformData.storefront_id = storefrontId;
+              }
+              if (storeUrl) {
+                platformData.store_url = storeUrl;
+              }
               
               await userGames.addPlatformToUserGame(userGame.id, platformData);
             }
@@ -237,10 +246,19 @@
           try {
             for (const platformId of selectedPlatforms) {
               const platformData: UserGamePlatformCreateRequest = {
-                platform_id: platformId,
-                storefront_id: platformStorefronts.get(platformId) || undefined,
-                store_url: platformStoreUrls.get(platformId) || undefined
+                platform_id: platformId
               };
+              
+              // Only add optional properties if they have values
+              const storefrontId = platformStorefronts.get(platformId);
+              const storeUrl = platformStoreUrls.get(platformId);
+              
+              if (storefrontId) {
+                platformData.storefront_id = storefrontId;
+              }
+              if (storeUrl) {
+                platformData.store_url = storeUrl;
+              }
               
               await userGames.addPlatformToUserGame(userGame.id, platformData);
             }

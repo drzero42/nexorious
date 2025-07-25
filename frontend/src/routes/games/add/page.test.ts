@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { 
-  APIResponseMock, 
   setupFetchMock, 
   resetFetchMock,
   mockConfig,
-  mockIGDBSearchResponse,
   mockIGDBCandidates,
   mockGame
 } from '../../../test-utils/api-mocks';
@@ -30,7 +28,6 @@ vi.mock('$lib/stores/auth.svelte', () => ({
 }));
 
 describe('Game Addition Page', () => {
-  let mockFetch: any;
   
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,7 +35,7 @@ describe('Game Addition Page', () => {
     resetStoresMocks();
     resetNavigationMocks();
     resetAuthMocks();
-    mockFetch = setupFetchMock();
+    setupFetchMock();
     setAuthenticatedState();
   });
 
@@ -148,9 +145,9 @@ describe('Game Addition Page', () => {
       });
       mockGamesStore.createFromIGDB.mockResolvedValue({...mockGame, id: 'game-1'});
       mockUserGamesStore.addGameToCollection.mockResolvedValue({
+        ...mockGame,
         id: 'user-game-1',
-        game_id: 'game-1',
-        ...mockGame
+        game_id: 'game-1'
       });
     });
 
@@ -323,9 +320,9 @@ describe('Game Addition Page', () => {
       });
       mockGamesStore.createFromIGDB.mockResolvedValue({...mockGame, id: 'game-1'});
       mockUserGamesStore.addGameToCollection.mockResolvedValue({
+        ...mockGame,
         id: 'user-game-1',
-        game_id: 'game-1',
-        ...mockGame
+        game_id: 'game-1'
       });
     });
 
@@ -638,7 +635,7 @@ describe('Game Addition Page', () => {
         ...mockGamesStore.value,
         error: 'Failed to search IGDB',
         isLoading: false
-      };
+      } as any;
       
       // Mock searchIGDB to fail
       mockGamesStore.searchIGDB.mockRejectedValue(new Error('Search failed'));

@@ -18,7 +18,6 @@
   let showNewPassword = false;
   let showConfirmPassword = false;
   let passwordError = '';
-  let passwordSuccess = false;
 
   // Form loading states
   let isSubmittingUsername = false;
@@ -96,10 +95,10 @@
     isSubmittingUsername = true;
     try {
       await auth.changeUsername(newUsername);
-      ui.showNotification('Username updated successfully!', 'success');
+      ui.showSuccess('Username updated successfully!');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update username';
-      ui.showNotification(errorMessage, 'error');
+      ui.showError(errorMessage);
     } finally {
       isSubmittingUsername = false;
     }
@@ -107,7 +106,6 @@
 
   async function handlePasswordSubmit() {
     passwordError = '';
-    passwordSuccess = false;
 
     // Validation
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -135,7 +133,7 @@
       await auth.changePassword(currentPassword, newPassword);
       
       // Show success message and redirect to login
-      ui.showNotification('Password changed successfully! Please log in again.', 'success');
+      ui.showSuccess('Password changed successfully! Please log in again.');
       setTimeout(() => {
         goto('/login');
       }, 2000);
@@ -152,7 +150,6 @@
     newPassword = '';
     confirmPassword = '';
     passwordError = '';
-    passwordSuccess = false;
   }
 </script>
 

@@ -151,7 +151,7 @@ export class APIResponseMock {
 
   // IGDB import endpoint mock
   static mockIGDBImportEndpoint(response = mockGame, status = 201) {
-    return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+    return vi.fn().mockImplementation((url: string) => {
       if (url.includes('/games/igdb-import')) {
         return Promise.resolve(this.createResponse(response, status));
       }
@@ -207,9 +207,9 @@ export class APIResponseMock {
       // User games endpoints
       if (url.includes('/user-games') && method === 'POST') {
         return Promise.resolve(this.createResponse({
+          ...mockGame,
           id: 'user-game-1',
-          game_id: 'game-1',
-          ...mockGame
+          game_id: 'game-1'
         }, 201));
       }
       

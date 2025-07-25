@@ -15,11 +15,9 @@ export function initializePWA(): void {
 
 export function initializeInstallPrompt(): void {
   // Initialize PWA install prompt handling
-  let deferredPrompt: any;
-
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    deferredPrompt = e;
-    console.log('PWA install prompt ready');
+    // Store the event for later use (could be accessed via a store or global)
+    console.log('PWA install prompt ready', e);
   });
 }

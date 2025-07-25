@@ -82,6 +82,7 @@ export interface UserGamePlatformCreateRequest {
 }
 
 export interface UserGameFilters {
+  q?: string; // Search query
   play_status?: PlayStatus;
   ownership_status?: OwnershipStatus;
   is_loved?: boolean;
@@ -90,6 +91,8 @@ export interface UserGameFilters {
   rating_min?: number;
   rating_max?: number;
   has_notes?: boolean;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
 }
 
 export interface UserGameListResponse {
