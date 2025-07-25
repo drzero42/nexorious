@@ -3,7 +3,7 @@
   import { userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -491,12 +491,12 @@
                 <label for="hours_played" class="form-label">
                   Hours Played
                 </label>
-                <input
+                <TimeTrackingInput
                   id="hours_played"
-                  type="number"
-                  min="0"
                   bind:value={editData.hours_played}
-                  class="form-input"
+                  onchange={(e) => {
+                    editData.hours_played = e.detail.value;
+                  }}
                 />
               </div>
             </div>
