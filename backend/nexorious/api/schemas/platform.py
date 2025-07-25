@@ -28,6 +28,8 @@ class PlatformResponse(BaseModel, TimestampMixin):
     display_name: str
     icon_url: Optional[str]
     is_active: bool
+    source: str = Field(description="Source of the platform: 'official' or 'custom'")
+    version_added: Optional[str] = Field(None, description="Version when this official platform was added")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +58,8 @@ class StorefrontResponse(BaseModel, TimestampMixin):
     icon_url: Optional[str]
     base_url: Optional[str]
     is_active: bool
+    source: str = Field(description="Source of the storefront: 'official' or 'custom'")
+    version_added: Optional[str] = Field(None, description="Version when this official storefront was added")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,3 +80,33 @@ class StorefrontListResponse(BaseModel):
     page: int = Field(default=1, description="Current page number")
     per_page: int = Field(default=20, description="Items per page")
     pages: int = Field(default=1, description="Total pages")
+
+
+class PlatformUsageStats(BaseModel):
+    """Usage statistics for a platform."""
+    platform_id: str
+    platform_name: str
+    platform_display_name: str
+    usage_count: int = Field(description="Number of users using this platform")
+
+
+class StorefrontUsageStats(BaseModel):
+    """Usage statistics for a storefront."""
+    storefront_id: str
+    storefront_name: str
+    storefront_display_name: str
+    usage_count: int = Field(description="Number of users using this storefront")
+
+
+class PlatformStatsResponse(BaseModel):
+    """Response schema for platform usage statistics."""
+    platforms: List[PlatformUsageStats]
+    total_platforms: int
+    total_usage: int = Field(description="Total platform associations across all users")
+
+
+class StorefrontStatsResponse(BaseModel):
+    """Response schema for storefront usage statistics."""
+    storefronts: List[StorefrontUsageStats]
+    total_storefronts: int
+    total_usage: int = Field(description="Total storefront associations across all users")

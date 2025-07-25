@@ -7,6 +7,8 @@ export interface Platform {
   display_name: string;
   icon_url?: string;
   is_active: boolean;
+  source: string;
+  version_added?: string;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +20,8 @@ export interface Storefront {
   icon_url?: string;
   base_url?: string;
   is_active: boolean;
+  source: string;
+  version_added?: string;
   created_at: string;
   updated_at: string;
 }
@@ -332,6 +336,26 @@ function createPlatformsStore() {
     // Get storefront by ID
     getStorefrontById: (id: string) => {
       return state.storefronts.find(storefront => storefront.id === id);
+    },
+
+    // Get official platforms only
+    getOfficialPlatforms: () => {
+      return state.platforms.filter(platform => platform.source === 'official');
+    },
+
+    // Get custom platforms only
+    getCustomPlatforms: () => {
+      return state.platforms.filter(platform => platform.source === 'custom');
+    },
+
+    // Get official storefronts only
+    getOfficialStorefronts: () => {
+      return state.storefronts.filter(storefront => storefront.source === 'official');
+    },
+
+    // Get custom storefronts only
+    getCustomStorefronts: () => {
+      return state.storefronts.filter(storefront => storefront.source === 'custom');
     },
 
     // Clear error

@@ -1,0 +1,1 @@
+# Seed data package for initial platform and storefront data
