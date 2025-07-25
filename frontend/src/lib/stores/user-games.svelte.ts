@@ -185,7 +185,24 @@ function createUserGamesStore() {
           });
         }
       }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // Try to get more detailed error info from response body
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      try {
+        const errorBody = await response.json();
+        if (errorBody.detail) {
+          errorMessage = errorBody.detail;
+        }
+      } catch (e) {
+        // If we can't parse the error body, use the default message
+      }
+      
+      console.error(`API call failed: ${options.method || 'GET'} ${url}`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorMessage
+      });
+      
+      throw new Error(errorMessage);
     }
 
     return response;

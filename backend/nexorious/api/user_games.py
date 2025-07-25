@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, and_, func, or_
 from datetime import datetime, timezone
 from typing import Annotated, Optional, List
+import logging
 
 from ..core.database import get_session
 from ..core.security import get_current_user
@@ -28,6 +29,7 @@ from ..api.schemas.user_game import (
 from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=UserGameListResponse)
@@ -282,9 +284,12 @@ async def add_game_to_collection(
 ):
     """Add a game to user's collection."""
     
+    logger.info(f"Adding game to collection for user {current_user.id}: {user_game_data.model_dump()}")
+    
     # Check if game exists
     game = session.get(Game, user_game_data.game_id)
     if not game:
+        logger.warning(f"Game not found: {user_game_data.game_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Game not found"
@@ -301,6 +306,7 @@ async def add_game_to_collection(
     ).first()
     
     if existing_user_game:
+        logger.warning(f"Game {user_game_data.game_id} already exists for user {current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Game already exists in your collection"
@@ -321,12 +327,19 @@ async def add_game_to_collection(
         acquired_date=user_game_data.acquired_date
     )
     
+    logger.info(f"Created UserGame object with ID: {new_user_game.id}")
     session.add(new_user_game)
+    logger.info("Added UserGame to session")
+    
     session.commit()
+    logger.info("Committed UserGame to database")
+    
     session.refresh(new_user_game)
+    logger.info(f"Refreshed UserGame - final ID: {new_user_game.id}")
     
     # Add platform associations if provided
     if user_game_data.platforms:
+        logger.info(f"Adding {len(user_game_data.platforms)} platforms to user game")
         for platform_id in user_game_data.platforms:
             platform = session.get(Platform, platform_id)
             if platform:
@@ -335,10 +348,15 @@ async def add_game_to_collection(
                     platform_id=platform_id
                 )
                 session.add(platform_assoc)
+                logger.info(f"Added platform {platform_id} to user game {new_user_game.id}")
+            else:
+                logger.warning(f"Platform not found: {platform_id}")
         
         session.commit()
+        logger.info("Committed platform associations")
         session.refresh(new_user_game)
     
+    logger.info(f"Successfully created user game {new_user_game.id} for user {current_user.id}")
     return new_user_game
 
 
