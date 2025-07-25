@@ -29,17 +29,6 @@ Based on the `.gitignore` file, this project is set up to support multiple Pytho
 - IDE support (PyCharm, VSCode, Cursor)
 - Jupyter notebooks and documentation tools
 
-## Current State
-
-This is a fresh repository with no source code yet implemented. The project structure suggests it will be a Python-based application or library, but the specific architecture and build commands are not yet defined.
-
-## Next Steps for Development
-
-When source code is added, this file should be updated to include:
-- Build and test commands
-- Project structure and architecture details
-- Development workflow instructions
-
 ## Standard operating procedure
 
 These rules must always be adhered to during development.
