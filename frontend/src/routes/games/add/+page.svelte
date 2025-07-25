@@ -2,6 +2,7 @@
   import { games } from '$lib/stores';
   import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
+  import { notifications } from '$lib/stores/notifications.svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
@@ -46,6 +47,7 @@
       await platforms.loadAll();
     } catch (error) {
       console.error('Failed to load platforms and storefronts:', error);
+      notifications.showError('Failed to load platforms and storefronts. Some features may not work properly.');
     }
   });
 
@@ -96,7 +98,7 @@
       step = 'confirm';
     } catch (error) {
       console.error('Search failed:', error);
-      // Let the error state persist so it gets displayed to the user
+      notifications.showApiError(error, 'Failed to search for games. Please try again.');
     } finally {
       isSearching = false;
     }
@@ -136,6 +138,7 @@
       }
       
       const createdGame = await games.createFromIGDB(selectedGame.igdb_id, customOverrides);
+      notifications.showSuccess('Game metadata imported successfully from IGDB');
       
       try {
         // Add the game to the user's collection with form values
@@ -158,6 +161,8 @@
         // Currently the API only supports basic platform IDs during creation
         // Enhanced platform details with storefront and URL will be added in a future update
         
+        let partialErrors = [];
+        
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
           try {
@@ -168,6 +173,7 @@
             });
           } catch (progressError) {
             console.error('Failed to update progress, but game was added to collection:', progressError);
+            partialErrors.push('Failed to save progress information');
           }
         }
         
@@ -185,19 +191,32 @@
             await userGames.updateUserGame(userGame.id, updateData);
           } catch (updateError) {
             console.error('Failed to update game details, but game was added to collection:', updateError);
+            partialErrors.push('Failed to save rating and favorite status');
           }
         }
         
-        // Redirect to the games page after successful import and collection addition
-        goto('/games');
+        // Show success message with any partial error warnings
+        if (partialErrors.length > 0) {
+          notifications.showWarning(`"${createdGame.title}" added to collection, but some details couldn't be saved: ${partialErrors.join(', ')}`);
+        } else {
+          notifications.showSuccess(`"${createdGame.title}" successfully added to your collection!`);
+        }
+        
+        // Brief delay to show success message before redirect
+        setTimeout(() => {
+          goto('/games');
+        }, 1000);
       } catch (collectionError) {
         console.error('Failed to add game to collection:', collectionError);
-        // Game was created but couldn't be added to collection - show error but still redirect
-        goto('/games');
+        notifications.showError(`Game was imported but couldn't be added to your collection. You can try adding it manually from your games list.`);
+        // Brief delay before redirect
+        setTimeout(() => {
+          goto('/games');
+        }, 2000);
       }
     } catch (error) {
       console.error('Failed to import game from IGDB:', error);
-      
+      notifications.showError('Failed to import game from IGDB. You can add it manually with custom details.');
       // If import fails, fall back to manual entry with current form data
       step = 'details';
     } finally {
@@ -220,6 +239,7 @@
     try {
       // Create the game first
       const createdGame = await games.createGame(gameData);
+      notifications.showSuccess('Game created successfully');
       
       try {
         // Then add it to the user's collection with personal information
@@ -242,6 +262,8 @@
         // Currently the API only supports basic platform IDs during creation
         // Enhanced platform details with storefront and URL will be added in a future update
         
+        let partialErrors = [];
+        
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
           try {
@@ -252,6 +274,7 @@
             });
           } catch (progressError) {
             console.error('Failed to update progress, but game was added to collection:', progressError);
+            partialErrors.push('Failed to save progress information');
           }
         }
         
@@ -270,19 +293,32 @@
             await userGames.updateUserGame(userGame.id, updateData);
           } catch (updateError) {
             console.error('Failed to update game details, but game was added to collection:', updateError);
+            partialErrors.push('Failed to save rating and favorite status');
           }
         }
         
-        goto('/games');
+        // Show success message with any partial error warnings
+        if (partialErrors.length > 0) {
+          notifications.showWarning(`"${createdGame.title}" added to collection, but some details couldn't be saved: ${partialErrors.join(', ')}`);
+        } else {
+          notifications.showSuccess(`"${createdGame.title}" successfully added to your collection!`);
+        }
+        
+        // Brief delay to show success message before redirect
+        setTimeout(() => {
+          goto('/games');
+        }, 1000);
       } catch (collectionError) {
         console.error('Failed to add game to collection:', collectionError);
-        // Game was created but couldn't be added to collection - show error but still redirect
-        // The user can manually add it to their collection later
-        goto('/games');
+        notifications.showError(`Game was created but couldn't be added to your collection. You can try adding it manually from your games list.`);
+        // Brief delay before redirect
+        setTimeout(() => {
+          goto('/games');
+        }, 2000);
       }
     } catch (error) {
       console.error('Failed to create game:', error);
-      // Show error to user - they can try again or modify the data
+      notifications.showApiError(error, 'Failed to create game. Please check your information and try again.');
     }
   }
 
