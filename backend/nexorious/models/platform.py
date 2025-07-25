@@ -18,6 +18,8 @@ class Platform(SQLModel, table=True):
     display_name: str = Field(max_length=100)
     icon_url: Optional[str] = Field(default=None, max_length=500)
     is_active: bool = Field(default=True)
+    source: str = Field(default="custom", max_length=20, description="Source of the platform: 'official' or 'custom'")
+    version_added: Optional[str] = Field(default=None, max_length=10, description="Version when this official platform was added")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
@@ -36,6 +38,8 @@ class Storefront(SQLModel, table=True):
     icon_url: Optional[str] = Field(default=None, max_length=500)
     base_url: Optional[str] = Field(default=None, max_length=500)
     is_active: bool = Field(default=True)
+    source: str = Field(default="custom", max_length=20, description="Source of the storefront: 'official' or 'custom'")
+    version_added: Optional[str] = Field(default=None, max_length=10, description="Version when this official storefront was added")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     

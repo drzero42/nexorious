@@ -19,7 +19,11 @@ from ..api.schemas.platform import (
     StorefrontUpdateRequest,
     StorefrontResponse,
     PlatformListResponse,
-    StorefrontListResponse
+    StorefrontListResponse,
+    PlatformStatsResponse,
+    StorefrontStatsResponse,
+    PlatformUsageStats,
+    StorefrontUsageStats
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -31,6 +35,7 @@ router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
 async def list_platforms(
     session: Annotated[Session, Depends(get_session)],
     active_only: bool = Query(default=True, description="Show only active platforms"),
+    source: Optional[str] = Query(default=None, description="Filter by source: 'official' or 'custom'"),
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
 ):
@@ -39,8 +44,11 @@ async def list_platforms(
     query = select(Platform)
     if active_only:
         query = query.where(Platform.is_active == True)
+    if source:
+        query = query.where(Platform.source == source)
     
-    query = query.order_by(Platform.display_name)
+    # Order by source (official first) then by display name
+    query = query.order_by(Platform.source.desc(), Platform.display_name)
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -182,6 +190,7 @@ async def delete_platform(
 async def list_storefronts(
     session: Annotated[Session, Depends(get_session)],
     active_only: bool = Query(default=True, description="Show only active storefronts"),
+    source: Optional[str] = Query(default=None, description="Filter by source: 'official' or 'custom'"),
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
 ):
@@ -190,8 +199,11 @@ async def list_storefronts(
     query = select(Storefront)
     if active_only:
         query = query.where(Storefront.is_active == True)
+    if source:
+        query = query.where(Storefront.source == source)
     
-    query = query.order_by(Storefront.display_name)
+    # Order by source (official first) then by display name
+    query = query.order_by(Storefront.source.desc(), Storefront.display_name)
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -327,3 +339,94 @@ async def delete_storefront(
     session.commit()
     
     return SuccessResponse(message="Storefront deleted successfully")
+
+
+# Statistics endpoints
+@router.get("/stats", response_model=PlatformStatsResponse)
+async def get_platform_usage_stats(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Get platform usage statistics (admin only)."""
+    
+    from ..models.user_game import UserGamePlatform
+    
+    # Query platform usage statistics
+    query = (
+        select(
+            Platform.id.label("platform_id"),
+            Platform.name.label("platform_name"),
+            Platform.display_name.label("platform_display_name"),
+            func.count(UserGamePlatform.id).label("usage_count")
+        )
+        .select_from(Platform)
+        .outerjoin(UserGamePlatform, Platform.id == UserGamePlatform.platform_id)
+        .group_by(Platform.id, Platform.name, Platform.display_name)
+        .order_by(func.count(UserGamePlatform.id).desc(), Platform.display_name)
+    )
+    
+    results = session.exec(query).all()
+    
+    platform_stats = [
+        PlatformUsageStats(
+            platform_id=row.platform_id,
+            platform_name=row.platform_name,
+            platform_display_name=row.platform_display_name,
+            usage_count=row.usage_count
+        )
+        for row in results
+    ]
+    
+    total_platforms = len(platform_stats)
+    total_usage = sum(stat.usage_count for stat in platform_stats)
+    
+    return PlatformStatsResponse(
+        platforms=platform_stats,
+        total_platforms=total_platforms,
+        total_usage=total_usage
+    )
+
+
+@router.get("/storefronts/stats", response_model=StorefrontStatsResponse)
+async def get_storefront_usage_stats(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Get storefront usage statistics (admin only)."""
+    
+    from ..models.user_game import UserGamePlatform
+    
+    # Query storefront usage statistics
+    query = (
+        select(
+            Storefront.id.label("storefront_id"),
+            Storefront.name.label("storefront_name"),
+            Storefront.display_name.label("storefront_display_name"),
+            func.count(UserGamePlatform.id).label("usage_count")
+        )
+        .select_from(Storefront)
+        .outerjoin(UserGamePlatform, Storefront.id == UserGamePlatform.storefront_id)
+        .group_by(Storefront.id, Storefront.name, Storefront.display_name)
+        .order_by(func.count(UserGamePlatform.id).desc(), Storefront.display_name)
+    )
+    
+    results = session.exec(query).all()
+    
+    storefront_stats = [
+        StorefrontUsageStats(
+            storefront_id=row.storefront_id,
+            storefront_name=row.storefront_name,
+            storefront_display_name=row.storefront_display_name,
+            usage_count=row.usage_count
+        )
+        for row in results
+    ]
+    
+    total_storefronts = len(storefront_stats)
+    total_usage = sum(stat.usage_count for stat in storefront_stats)
+    
+    return StorefrontStatsResponse(
+        storefronts=storefront_stats,
+        total_storefronts=total_storefronts,
+        total_usage=total_usage
+    )
