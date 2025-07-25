@@ -3,7 +3,7 @@
   import { userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -444,20 +444,13 @@
                 <label for="play_status" class="form-label">
                   Play Status
                 </label>
-                <select
+                <PlayStatusDropdown
                   id="play_status"
                   bind:value={editData.play_status}
-                  class="form-input"
-                >
-                  <option value="not_started">Not Started</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="mastered">Mastered</option>
-                  <option value="dominated">Dominated</option>
-                  <option value="shelved">Shelved</option>
-                  <option value="dropped">Dropped</option>
-                  <option value="replay">Replay</option>
-                </select>
+                  onchange={(e) => {
+                    editData.play_status = e.detail.value;
+                  }}
+                />
               </div>
 
               <div>
