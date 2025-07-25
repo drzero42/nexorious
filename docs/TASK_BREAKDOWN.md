@@ -70,7 +70,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game grid view with cover art
 - [x] Advanced search and filtering interface
 - [x] Sorting options implementation
-- [ ] Bulk selection and operations
+- [x] Bulk selection and operations
 - [ ] Game detail view with all metadata
 
 #### 1.2.4 Game Addition Flow
