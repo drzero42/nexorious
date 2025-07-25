@@ -38,9 +38,6 @@
 
           # SQLite for working with DBs
           sqlite
-
-          # Semgrep for security scanning
-          semgrep
         ];
 
         shellHook = ''
