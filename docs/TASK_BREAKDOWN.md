@@ -82,7 +82,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Success/error feedback handling
 
 #### 1.2.5 Progress Tracking Interface
-- [ ] Play status dropdown with completion levels
+- [x] Play status dropdown with completion levels
 - [ ] Time tracking input forms
 - [ ] Personal notes editor with rich text
 - [ ] Progress visualization components
