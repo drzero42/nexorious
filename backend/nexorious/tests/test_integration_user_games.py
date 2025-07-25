@@ -128,6 +128,80 @@ class TestUserGamesListEndpoint:
         response2 = client.get("/api/user-games/", headers=user2_headers)
         assert_api_success(response2, 200)
         assert len(response2.json()["user_games"]) == 0
+    
+    def test_list_user_games_sorting(self, client: TestClient, session: Session):
+        """Test user games list with different sorting options."""
+        # Create a test user
+        user_data = {"email": "testuser@example.com", "username": "testuser", "password": "password123"}
+        auth_headers = register_and_login_user(client, user_data)
+        
+        # Create multiple games with different metadata
+        games_data = [
+            {"title": "Zelda", "genre": "Adventure", "release_date": "2023-05-12", "developer": "Nintendo"},
+            {"title": "Elden Ring", "genre": "RPG", "release_date": "2022-02-25", "developer": "FromSoftware"},
+            {"title": "Apex Legends", "genre": "Shooter", "release_date": "2019-02-04", "developer": "Respawn"}
+        ]
+        
+        user_games_data = []
+        for i, game_data in enumerate(games_data):
+            # Create game
+            game_response = client.post("/api/games/", json=game_data, headers=auth_headers)
+            game_id = game_response.json()["id"]
+            
+            # Create user game with different ratings and hours
+            user_game_data = {
+                "game_id": game_id,
+                "ownership_status": "owned",
+                "play_status": "completed" if i % 2 == 0 else "in_progress",
+                "personal_rating": [5.0, 3.0, 4.0][i],
+                "hours_played": [100, 50, 75][i]
+            }
+            user_games_data.append(user_game_data)
+            
+            response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
+            assert_api_success(response, 201)
+        
+        # Test sorting by title (ascending)
+        response = client.get("/api/user-games/?sort_by=title&sort_order=asc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        titles = [game["game"]["title"] for game in games]
+        assert titles == ["Apex Legends", "Elden Ring", "Zelda"]
+        
+        # Test sorting by title (descending)
+        response = client.get("/api/user-games/?sort_by=title&sort_order=desc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        titles = [game["game"]["title"] for game in games]
+        assert titles == ["Zelda", "Elden Ring", "Apex Legends"]
+        
+        # Test sorting by genre
+        response = client.get("/api/user-games/?sort_by=genre&sort_order=asc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        genres = [game["game"]["genre"] for game in games]
+        assert genres == ["Adventure", "RPG", "Shooter"]
+        
+        # Test sorting by release_date
+        response = client.get("/api/user-games/?sort_by=release_date&sort_order=asc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        release_dates = [game["game"]["release_date"] for game in games]
+        assert release_dates == ["2019-02-04", "2022-02-25", "2023-05-12"]
+        
+        # Test sorting by personal rating
+        response = client.get("/api/user-games/?sort_by=personal_rating&sort_order=desc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        ratings = [game["personal_rating"] for game in games]
+        assert ratings == [5.0, 4.0, 3.0]
+        
+        # Test sorting by hours played
+        response = client.get("/api/user-games/?sort_by=hours_played&sort_order=desc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        hours = [game["hours_played"] for game in games]
+        assert hours == [100, 75, 50]
 
 
 class TestUserGamesDetailEndpoint:

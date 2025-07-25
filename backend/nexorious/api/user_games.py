@@ -103,7 +103,26 @@ async def list_user_games(
         query = query.where(and_(*filters))
     
     # Apply sorting
-    sort_field = getattr(UserGame, sort_by, UserGame.created_at)
+    # Check if we need to join with Game table for sorting
+    game_sort_fields = {'title', 'genre', 'developer', 'publisher', 'release_date'}
+    need_game_join = sort_by in game_sort_fields
+    
+    # Track if Game table is already joined (for search query)
+    already_joined_game = q is not None
+    
+    # Only add Game join if needed and not already joined
+    if need_game_join and not already_joined_game:
+        query = query.join(Game)
+    
+    # Determine the sort field
+    if sort_by in game_sort_fields:
+        # Sort by Game model fields
+        sort_field = getattr(Game, sort_by, Game.title)
+    else:
+        # Sort by UserGame model fields (default behavior)
+        sort_field = getattr(UserGame, sort_by, UserGame.created_at)
+    
+    # Apply sort order
     if sort_order == "desc":
         query = query.order_by(sort_field.desc())
     else:
