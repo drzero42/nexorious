@@ -5,6 +5,7 @@
  import { RouteGuard, Pagination } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
+ import { PlayStatus, type BulkStatusUpdateRequest } from '$lib/stores/user-games.svelte';
 
  let viewMode: 'grid' | 'list' = 'grid';
  let searchQuery = '';
@@ -18,6 +19,18 @@
  let ratingMax = '';
  let sortBy = 'title';
  let sortOrder: 'asc' | 'desc' = 'asc';
+
+ // Bulk selection state
+ let selectedGameIds: Set<string> = new Set();
+ let isSelectingAll = false;
+ let showBulkActions = false;
+ let showBulkModal = false;
+
+ // Bulk operations modal state
+ let bulkStatus = '';
+ let bulkRating = '';
+ let bulkIsLoved = false;
+ let isBulkUpdating = false;
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
@@ -143,6 +156,93 @@
 
  // Check if any filters are active
  $: hasActiveFilters = searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax;
+
+ // Bulk Selection Functions
+ function toggleGameSelection(gameId: string) {
+  selectedGameIds = new Set(selectedGameIds);
+  if (selectedGameIds.has(gameId)) {
+   selectedGameIds.delete(gameId);
+  } else {
+   selectedGameIds.add(gameId);
+  }
+  updateBulkActionsVisibility();
+ }
+
+ function selectAllGames() {
+  if (isSelectingAll) {
+   selectedGameIds = new Set();
+   isSelectingAll = false;
+  } else {
+   selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+   isSelectingAll = true;
+  }
+  updateBulkActionsVisibility();
+ }
+
+ function clearSelection() {
+  selectedGameIds = new Set();
+  isSelectingAll = false;
+  updateBulkActionsVisibility();
+ }
+
+ function updateBulkActionsVisibility() {
+  showBulkActions = selectedGameIds.size > 0;
+ }
+
+ // Reset selection when games change (e.g., after filtering)
+ $: if (userGames.value.userGames) {
+  // Remove any selected IDs that are no longer in current results
+  const currentGameIds = new Set(userGames.value.userGames.map(game => game.id));
+  selectedGameIds = new Set([...selectedGameIds].filter(id => currentGameIds.has(id)));
+  
+  // Update "select all" state
+  isSelectingAll = selectedGameIds.size > 0 && selectedGameIds.size === userGames.value.userGames.length;
+  
+  updateBulkActionsVisibility();
+ }
+
+ // Bulk Operations Functions
+ function resetBulkModal() {
+  bulkStatus = '';
+  bulkRating = '';
+  bulkIsLoved = false;
+ }
+
+ function closeBulkModal() {
+  showBulkModal = false;
+  resetBulkModal();
+ }
+
+ async function applyBulkOperations() {
+  if (selectedGameIds.size === 0) return;
+
+  isBulkUpdating = true;
+  
+  try {
+   const updateData: BulkStatusUpdateRequest = {
+    user_game_ids: Array.from(selectedGameIds)
+   };
+
+   // Add fields only if they have values
+   if (bulkStatus) updateData.play_status = bulkStatus as PlayStatus;
+   if (bulkRating) updateData.personal_rating = parseFloat(bulkRating);
+   if (bulkIsLoved) updateData.is_loved = true;
+
+   await userGames.bulkUpdateStatus(updateData);
+   
+   // Clear selection and close modal
+   clearSelection();
+   closeBulkModal();
+   
+   // Reload games to reflect changes
+   await loadGames();
+  } catch (error) {
+   console.error('Failed to apply bulk operations:', error);
+   // You might want to show an error message to the user here
+  } finally {
+   isBulkUpdating = false;
+  }
+ }
 </script>
 
 <svelte:head>
@@ -186,6 +286,29 @@
       Clear all filters
      </button>
     {/if}
+    
+    <!-- Bulk Selection Controls -->
+    {#if userGames.value.userGames.length > 0}
+     <div class="flex items-center space-x-2">
+      <button
+       on:click={selectAllGames}
+       class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
+      >
+       {isSelectingAll ? 'Clear All' : 'Select All'}
+      </button>
+      {#if selectedGameIds.size > 0}
+       <span class="text-sm text-gray-500">|</span>
+       <span class="text-sm text-gray-600">{selectedGameIds.size} selected</span>
+       <button
+        on:click={() => showBulkModal = true}
+        class="btn-secondary text-sm px-3 py-1"
+       >
+        Bulk Actions
+       </button>
+      {/if}
+     </div>
+    {/if}
+    
     <!-- View Mode Toggle -->
     <div class="inline-flex rounded-md shadow-sm" role="group">
      <button
@@ -449,13 +572,29 @@
    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
     {#each userGames.value.userGames as userGame (userGame.id)}
      <div
-      on:click={() => handleGameClick(userGame.id)}
+      on:click={(e) => {
+       // Don't navigate if clicking on checkbox
+       if ((e.target as HTMLElement).type !== 'checkbox') {
+        handleGameClick(userGame.id);
+       }
+      }}
       on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
       tabindex="0"
       role="button"
       aria-label="View details for {userGame.game.title}"
-      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''}"
      >
+      <!-- Selection Checkbox -->
+      <div class="absolute top-2 left-2 z-10">
+       <input
+        type="checkbox"
+        checked={selectedGameIds.has(userGame.id)}
+        on:change={() => toggleGameSelection(userGame.id)}
+        on:click={(e) => e.stopPropagation()}
+        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+        aria-label="Select {userGame.game.title}"
+       />
+      </div>
       <div class="aspect-[3/4] overflow-hidden bg-gray-100">
        {#if userGame.game.cover_art_url}
         <img
@@ -492,7 +631,7 @@
        {/if}
        
        <!-- Status Badge -->
-       <div class="absolute top-2 left-2">
+       <div class="absolute bottom-2 left-2">
         <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium status-{userGame.play_status.replace('_', '-')}">
          {getStatusLabel(userGame.play_status)}
         </span>
@@ -551,7 +690,16 @@
      <table class="min-w-full divide-y divide-gray-300">
       <thead class="bg-gray-50">
        <tr>
-        <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+        <th scope="col" class="py-3.5 pl-4 pr-2 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+         <input
+          type="checkbox"
+          checked={isSelectingAll}
+          on:change={selectAllGames}
+          class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+          aria-label="Select all games"
+         />
+        </th>
+        <th scope="col" class="py-3.5 pl-2 pr-3 text-left text-sm font-semibold text-gray-900">
          Game
         </th>
         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -571,12 +719,27 @@
       <tbody class="divide-y divide-gray-200 bg-white">
        {#each userGames.value.userGames as userGame (userGame.id)}
         <tr
-         on:click={() => handleGameClick(userGame.id)}
+         on:click={(e) => {
+          // Don't navigate if clicking on checkbox
+          if ((e.target as HTMLElement).type !== 'checkbox') {
+           handleGameClick(userGame.id);
+          }
+         }}
          on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
          tabindex="0"
-         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50"
+         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''}"
         >
-         <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+         <td class="whitespace-nowrap py-4 pl-4 pr-2 text-sm sm:pl-6">
+          <input
+           type="checkbox"
+           checked={selectedGameIds.has(userGame.id)}
+           on:change={() => toggleGameSelection(userGame.id)}
+           on:click={(e) => e.stopPropagation()}
+           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+           aria-label="Select {userGame.game.title}"
+          />
+         </td>
+         <td class="whitespace-nowrap py-4 pl-2 pr-3 text-sm">
           <div class="flex items-center space-x-4">
            <div class="relative h-12 w-9 flex-shrink-0">
             {#if userGame.game.cover_art_url}
@@ -650,4 +813,127 @@
   </div>
  {/if}
 </div>
+
+<!-- Bulk Operations Modal -->
+{#if showBulkModal}
+ <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+  <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+   <!-- Background overlay -->
+   <div 
+    class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+    on:click={closeBulkModal}
+    on:keydown={(e) => e.key === 'Escape' && closeBulkModal()}
+    role="button"
+    tabindex="-1"
+    aria-label="Close modal"
+   ></div>
+
+   <!-- Modal panel -->
+   <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+     <div class="sm:flex sm:items-start">
+      <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-primary-100 sm:mx-0 sm:h-10 sm:w-10">
+       <svg class="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+       </svg>
+      </div>
+      <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+        Bulk Operations
+       </h3>
+       <div class="mt-2">
+        <p class="text-sm text-gray-500">
+         Update {selectedGameIds.size} selected game{selectedGameIds.size !== 1 ? 's' : ''}
+        </p>
+       </div>
+
+       <!-- Bulk Operations Form -->
+       <div class="mt-4 space-y-4">
+        <!-- Status Update -->
+        <div>
+         <label for="bulkStatus" class="block text-sm font-medium text-gray-700">
+          Play Status
+         </label>
+         <select
+          id="bulkStatus"
+          bind:value={bulkStatus}
+          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+         >
+          <option value="">No change</option>
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="mastered">Mastered</option>
+          <option value="dominated">Dominated</option>
+          <option value="shelved">Shelved</option>
+          <option value="dropped">Dropped</option>
+          <option value="replay">Replay</option>
+         </select>
+        </div>
+
+        <!-- Rating Update -->
+        <div>
+         <label for="bulkRating" class="block text-sm font-medium text-gray-700">
+          Rating
+         </label>
+         <select
+          id="bulkRating"
+          bind:value={bulkRating}
+          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+         >
+          <option value="">No change</option>
+          <option value="1">1 Star</option>
+          <option value="2">2 Stars</option>
+          <option value="3">3 Stars</option>
+          <option value="4">4 Stars</option>
+          <option value="5">5 Stars</option>
+         </select>
+        </div>
+
+        <!-- Loved Toggle -->
+        <div>
+         <label class="flex items-center">
+          <input
+           type="checkbox"
+           bind:checked={bulkIsLoved}
+           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+          />
+          <span class="ml-2 text-sm text-gray-700">Mark as loved</span>
+         </label>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+     <button
+      type="button"
+      disabled={isBulkUpdating}
+      on:click={applyBulkOperations}
+      class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      {#if isBulkUpdating}
+       <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+       </svg>
+       Updating...
+      {:else}
+       Apply Changes
+      {/if}
+     </button>
+     <button
+      type="button"
+      disabled={isBulkUpdating}
+      on:click={closeBulkModal}
+      class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Cancel
+     </button>
+    </div>
+   </div>
+  </div>
+ </div>
+{/if}
+
 </RouteGuard>
