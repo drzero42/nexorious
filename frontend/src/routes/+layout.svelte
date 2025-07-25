@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { auth } from '$lib/stores';
+  import { ToastContainer } from '$lib/components';
   import { onMount } from 'svelte';
   
   let mobileMenuOpen = false;
@@ -271,4 +272,5 @@
   {/if}
 </div>
 
-
+<!-- Toast notifications -->
+<ToastContainer />
