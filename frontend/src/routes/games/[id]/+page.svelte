@@ -278,7 +278,7 @@
                   <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 text-lg">♥</span>
                 {/if}
               </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {#if game.game.developer}
                   <div>
                     <dt class="text-sm font-medium text-gray-500">Developer</dt>
@@ -303,8 +303,120 @@
                     <dd class="mt-1 text-sm text-gray-900">{new Date(game.game.release_date).toLocaleDateString()}</dd>
                   </div>
                 {/if}
+                {#if game.game.estimated_playtime_hours}
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Estimated Playtime</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{game.game.estimated_playtime_hours} hours</dd>
+                  </div>
+                {/if}
+                {#if game.game.igdb_id}
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">IGDB ID</dt>
+                    <dd class="mt-1 text-sm text-gray-900">
+                      <a 
+                        href="https://www.igdb.com/games/{game.game.igdb_id}" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        class="text-blue-600 hover:text-blue-800 inline-flex items-center"
+                      >
+                        {game.game.igdb_id}
+                        <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                        </svg>
+                      </a>
+                    </dd>
+                  </div>
+                {/if}
               </div>
             </div>
+
+            <!-- Platform Information -->
+            {#if game.platforms && game.platforms.length > 0}
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">Available On</h3>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  {#each game.platforms as userGamePlatform}
+                    <div class="inline-flex items-center space-x-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-md">
+                      <span class="text-sm font-medium text-blue-900">{userGamePlatform.platform.display_name}</span>
+                      {#if userGamePlatform.storefront}
+                        <span class="text-xs text-blue-600">({userGamePlatform.storefront.display_name})</span>
+                      {/if}
+                      {#if userGamePlatform.store_url}
+                        <a 
+                          href={userGamePlatform.store_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          class="text-blue-600 hover:text-blue-800"
+                          title="View in store"
+                          aria-label="View {userGamePlatform.platform.display_name} store page"
+                        >
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                          </svg>
+                        </a>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- IGDB Rating and Verification -->
+            {#if game.game.rating_average || game.game.is_verified}
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">Game Rating</h3>
+                <div class="mt-2 flex items-center space-x-4">
+                  {#if game.game.rating_average}
+                    <div class="flex items-center space-x-2">
+                      <div class="flex items-center">
+                        <span class="text-yellow-400 text-lg">★</span>
+                        <span class="ml-1 text-sm font-medium text-gray-900">
+                          {Number(game.game.rating_average).toFixed(1)}/10
+                        </span>
+                      </div>
+                      {#if game.game.rating_count > 0}
+                        <span class="text-xs text-gray-500">({game.game.rating_count.toLocaleString()} reviews)</span>
+                      {/if}
+                    </div>
+                  {/if}
+                  {#if game.game.is_verified}
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                      </svg>
+                      Verified
+                    </span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            <!-- How Long to Beat -->
+            {#if game.game.howlongtobeat_main || game.game.howlongtobeat_extra || game.game.howlongtobeat_completionist}
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">How Long to Beat</h3>
+                <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {#if game.game.howlongtobeat_main}
+                    <div class="bg-blue-50 p-3 rounded-lg text-center">
+                      <div class="text-sm font-medium text-blue-900">Main Story</div>
+                      <div class="text-lg font-bold text-blue-800">{game.game.howlongtobeat_main}h</div>
+                    </div>
+                  {/if}
+                  {#if game.game.howlongtobeat_extra}
+                    <div class="bg-green-50 p-3 rounded-lg text-center">
+                      <div class="text-sm font-medium text-green-900">Main + Extra</div>
+                      <div class="text-lg font-bold text-green-800">{game.game.howlongtobeat_extra}h</div>
+                    </div>
+                  {/if}
+                  {#if game.game.howlongtobeat_completionist}
+                    <div class="bg-purple-50 p-3 rounded-lg text-center">
+                      <div class="text-sm font-medium text-purple-900">Completionist</div>
+                      <div class="text-lg font-bold text-purple-800">{game.game.howlongtobeat_completionist}h</div>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
 
             {#if game.game.description}
               <div>

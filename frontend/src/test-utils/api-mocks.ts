@@ -225,6 +225,62 @@ export class APIResponseMock {
         return Promise.resolve(this.createResponse(null, 204));
       }
       
+      // Platforms endpoints
+      if (url.includes('/platforms/') && method === 'GET') {
+        const mockPlatforms = [
+          { 
+            id: 'pc', 
+            name: 'PC', 
+            display_name: 'PC',
+            icon_url: null,
+            is_active: true,
+            source: 'system',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z'
+          },
+          { 
+            id: 'ps5', 
+            name: 'PlayStation 5', 
+            display_name: 'PlayStation 5',
+            icon_url: null,
+            is_active: true,
+            source: 'system',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z'
+          }
+        ];
+        return Promise.resolve(this.createResponse({ platforms: mockPlatforms }));
+      }
+      
+      // Storefronts endpoints
+      if (url.includes('/platforms/storefronts/') && method === 'GET') {
+        const mockStorefronts = [
+          { 
+            id: 'steam', 
+            name: 'Steam', 
+            display_name: 'Steam',
+            icon_url: 'https://example.com/steam-icon.png',
+            base_url: 'https://store.steampowered.com',
+            is_active: true,
+            source: 'system',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z'
+          },
+          { 
+            id: 'epic', 
+            name: 'Epic Games Store', 
+            display_name: 'Epic Games Store',
+            icon_url: 'https://example.com/epic-icon.png',
+            base_url: 'https://www.epicgames.com/store',
+            is_active: true,
+            source: 'system',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z'
+          }
+        ];
+        return Promise.resolve(this.createResponse({ storefronts: mockStorefronts }));
+      }
+      
       throw new Error(`Unexpected API call: ${method} ${url}`);
     });
   }
