@@ -17,6 +17,7 @@ from ..core.security import (
     create_refresh_token,
     verify_token,
     get_current_user,
+    get_current_admin_user,
     hash_token
 )
 from ..core.config import settings
@@ -32,7 +33,11 @@ from ..api.schemas.auth import (
     ChangeUsernameRequest,
     UsernameAvailabilityResponse,
     LogoutResponse,
-    SetupStatusResponse
+    SetupStatusResponse,
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
+    AdminPasswordResetRequest,
+    AdminUserResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -362,3 +367,205 @@ async def change_username(
     session.refresh(current_user)
     
     return current_user
+
+
+# Admin-only endpoints
+
+@router.post("/admin/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+async def admin_create_user(
+    user_data: AdminUserCreateRequest,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to create a new user."""
+    
+    # Check if user already exists
+    existing_user = session.exec(
+        select(User).where(User.username == user_data.username)
+    ).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    new_user = User(
+        username=user_data.username,
+        password_hash=hashed_password,
+        is_admin=user_data.is_admin
+    )
+    
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+    
+    return new_user
+
+
+@router.get("/admin/users", response_model=list[AdminUserResponse])
+async def admin_list_users(
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to list all users."""
+    
+    users = session.exec(select(User)).all()
+    return users
+
+
+@router.get("/admin/users/{user_id}", response_model=AdminUserResponse)
+async def admin_get_user(
+    user_id: str,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to get a specific user by ID."""
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return user
+
+
+@router.put("/admin/users/{user_id}", response_model=AdminUserResponse)
+async def admin_update_user(
+    user_id: str,
+    user_data: AdminUserUpdateRequest,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to update a user."""
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent admin from deactivating themselves
+    if user.id == current_admin.id and user_data.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate your own account"
+        )
+    
+    # Prevent admin from removing their own admin privileges
+    if user.id == current_admin.id and user_data.is_admin is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove your own admin privileges"
+        )
+    
+    # Check if new username is already taken (if username is being updated)
+    if user_data.username and user_data.username != user.username:
+        existing_user = session.exec(
+            select(User).where(User.username == user_data.username)
+        ).first()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+    
+    # Update user fields
+    if user_data.username is not None:
+        user.username = user_data.username
+    if user_data.is_active is not None:
+        user.is_active = user_data.is_active
+    if user_data.is_admin is not None:
+        user.is_admin = user_data.is_admin
+    
+    user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(user)
+    
+    # If user was deactivated, invalidate all their sessions
+    if user_data.is_active is False:
+        existing_sessions = session.exec(
+            select(UserSession).where(UserSession.user_id == user.id)
+        ).all()
+        
+        for user_session in existing_sessions:
+            session.delete(user_session)
+        
+        session.commit()
+    
+    return user
+
+
+@router.put("/admin/users/{user_id}/password", response_model=SuccessResponse)
+async def admin_reset_user_password(
+    user_id: str,
+    password_data: AdminPasswordResetRequest,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to reset a user's password."""
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Update password
+    user.password_hash = get_password_hash(password_data.new_password)
+    user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    
+    # Invalidate all existing sessions for security
+    existing_sessions = session.exec(
+        select(UserSession).where(UserSession.user_id == user.id)
+    ).all()
+    
+    for user_session in existing_sessions:
+        session.delete(user_session)
+    
+    session.commit()
+    
+    return SuccessResponse(message="Password reset successfully. User will need to log in again.")
+
+
+@router.delete("/admin/users/{user_id}", response_model=SuccessResponse)
+async def admin_delete_user(
+    user_id: str,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to delete a user account."""
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent admin from deleting themselves
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    # Manually delete related records first (since SQLModel doesn't handle cascade)
+    # Delete user sessions
+    user_sessions = session.exec(select(UserSession).where(UserSession.user_id == user_id)).all()
+    for user_session in user_sessions:
+        session.delete(user_session)
+    
+    # Delete user
+    session.delete(user)
+    session.commit()
+    
+    return SuccessResponse(message="User deleted successfully")
