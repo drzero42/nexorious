@@ -255,7 +255,7 @@ class TestAuthMeEndpoint:
         
         assert_api_success(response, 200)
         data = response.json()
-                        assert "password_hash" not in data
+        assert "password_hash" not in data
     
     def test_get_me_without_token(self, client: TestClient):
         """Test GET /me without authentication token."""
@@ -475,3 +475,49 @@ class TestAuthEndpointSecurity:
         # Try to use access token after logout
         me_response = client.get("/api/auth/me", headers=headers)
         assert_api_error(me_response, 401)
+
+
+class TestAuthSetupStatus:
+    """Test /api/auth/setup/status endpoint."""
+    
+    def test_setup_status_needs_setup_when_no_users(self, client: TestClient, session: Session):
+        """Test setup status returns needs_setup=true when no users exist."""
+        # Ensure no users exist in database
+        users = session.exec(select(User)).all()
+        for user in users:
+            session.delete(user)
+        session.commit()
+        
+        response = client.get("/api/auth/setup/status")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["needs_setup"] is True
+    
+    def test_setup_status_no_setup_when_users_exist(self, client: TestClient):
+        """Test setup status returns needs_setup=false when users exist."""
+        # Create a user
+        user_data = create_test_user_data()
+        client.post("/api/auth/register", json=user_data)
+        
+        response = client.get("/api/auth/setup/status")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["needs_setup"] is False
+    
+    def test_setup_status_response_schema(self, client: TestClient):
+        """Test setup status response has correct schema."""
+        # Create a user to ensure consistent state
+        user_data = create_test_user_data()
+        client.post("/api/auth/register", json=user_data)
+        
+        response = client.get("/api/auth/setup/status")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        
+        # Verify response schema
+        assert "needs_setup" in data
+        assert isinstance(data["needs_setup"], bool)
+        assert len(data) == 1  # Should only contain needs_setup field
