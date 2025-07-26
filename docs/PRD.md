@@ -44,27 +44,36 @@ To create the definitive self-hosted solution for personal game collection manag
   - Authentication works with JWT tokens
   - Frontend can consume all necessary endpoints
 
-#### 1.1 User Authentication & Registration
+#### 1.1 Initial Setup & User Authentication
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to register and login with a username so I can access my personalized game collection
+- **User Story**: As an administrator, I want to create the initial admin user on first startup and manage all subsequent user accounts
+
+##### 1.1.1 First-Run Admin Setup
+- **Requirements**:
+  - On first startup when no users exist, display admin user creation screen
+  - Require username and password for initial admin account
+  - Automatically grant admin privileges to first user
+  - Skip this screen if any users already exist in database
+- **Acceptance Criteria**:
+  - Application detects empty user table and shows setup screen
+  - Admin user is created with is_admin=true flag
+  - Setup screen is never shown again after first user creation
+
+##### 1.1.2 User Authentication
 - **Authentication Model**:
   - **Username**: Primary user identifier for login and display purposes
-  - **Email**: Contact information and account recovery (not used for login)
   - **Password**: Secure authentication credential
-  - **Database ID**: Internal primary key for database relationships
+  - **Database ID**: Internal UUID primary key for database relationships
 - **Requirements**:
-  - Username-based login system
-  - User registration with unique username validation
-  - Email collection for contact purposes only
-  - Password hashing and secure storage
+  - Username-based login system only
+  - No user self-registration capability
+  - Password hashing with secure algorithm (bcrypt/scrypt)
   - JWT token-based session management
   - Session refresh token mechanism
 - **Acceptance Criteria**:
-  - Users can register with unique username and email
-  - Login requires username and password (not email)
+  - Users can login with username and password
+  - No registration option available to non-authenticated users
   - Username uniqueness is enforced across the system
-  - Email is collected but not used for authentication
-  - Password recovery uses email but login remains username-based
   - Database maintains id as primary key for relationships
 
 #### 1.2 Game Library Management
@@ -187,6 +196,52 @@ To create the definitive self-hosted solution for personal game collection manag
   - Loved games have special visual treatment
   - Tags are searchable and filterable
   - Ratings display prominently in all views
+
+#### 1.6 Admin User Management
+**Priority**: P0 (Critical)
+- **User Story**: As an administrator, I want to manage all users and system settings through a dedicated admin interface
+
+##### 1.6.1 Admin Dashboard
+- **Requirements**:
+  - Dedicated admin section accessible only to users with is_admin=true
+  - Navigation clearly indicates admin-only areas
+  - Dashboard shows system statistics and user overview
+- **Acceptance Criteria**:
+  - Non-admin users cannot access admin routes
+  - Admin UI is clearly distinguished from regular user interface
+  - System health and statistics are displayed
+
+##### 1.6.2 User Management
+- **Backend Requirements**:
+  - CRUD endpoints for user accounts (admin-only)
+  - Username and password creation for new users
+  - User activation/deactivation capabilities
+  - Password reset functionality for any user
+  - User role management (admin/regular user)
+  - User activity monitoring
+- **Frontend Requirements**:
+  - User list with search and filtering
+  - User creation form (username and password only)
+  - User edit capabilities (username, active status, admin role)
+  - Password reset interface
+  - User deletion with data handling options
+- **Acceptance Criteria**:
+  - Only admins can create new user accounts
+  - Usernames must be unique across the system
+  - Passwords are securely hashed before storage
+  - Admin can reset any user's password
+  - User deletion properly handles related data
+
+##### 1.6.3 System Configuration
+- **Requirements**:
+  - Platform and storefront management (already defined in 1.3)
+  - System-wide settings management
+  - Import/export job monitoring
+  - Database maintenance tools
+- **Acceptance Criteria**:
+  - All system configuration requires admin privileges
+  - Changes are logged for audit purposes
+  - Configuration changes take effect immediately
 
 ### Phase 2: Data Integration & Import
 
@@ -472,11 +527,13 @@ To create the definitive self-hosted solution for personal game collection manag
 - All tests pass in CI/CD pipeline before deployment
 
 ### User Experience Success
-- New users can register and login with username successfully on first attempt
-- New users can add their first game within 2 minutes
+- Initial admin setup completes successfully on first run
+- Admin-created users can login with username successfully on first attempt
+- Users can add their first game within 2 minutes
 - CSV import works on first try for standard formats
 - Core features are discoverable without documentation
 - Interface works seamlessly on desktop and mobile
+- Admin interface provides clear user management capabilities
 
 ## Appendices
 
@@ -498,7 +555,6 @@ To create the definitive self-hosted solution for personal game collection manag
 -- User Management
 CREATE TABLE users (
     id VARCHAR(36) PRIMARY KEY,                    -- Internal UUID primary key for database relationships
-    email VARCHAR(255) UNIQUE NOT NULL,           -- Contact information for account recovery (not used for login)
     username VARCHAR(100) UNIQUE NOT NULL,        -- Primary user identifier for login and display
     password_hash VARCHAR(255) NOT NULL,          -- Secure password hash for authentication
     is_active BOOLEAN DEFAULT true,
@@ -649,7 +705,6 @@ CREATE TABLE import_jobs (
 );
 
 -- Indexes for Performance
-CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
@@ -678,7 +733,7 @@ CREATE INDEX idx_import_jobs_status ON import_jobs(status);
 - **Comprehensive User Management**: User accounts, sessions, and preferences with clear identifier roles:
   - **id**: Primary key for database relationships and internal references
   - **username**: Primary user identifier for login authentication and display
-  - **email**: Contact information for account recovery (not used for login)
+  - **is_admin**: Boolean flag for administrative privileges
 - **Flexible Game Metadata**: Support for multiple data sources with JSON text fields for extensibility
 - **Multi-Platform Support**: Games can exist on multiple platforms
 - **Progress Tracking**: Detailed play status with completion levels (Completed, Mastered, Dominated) and time logging
@@ -709,3 +764,32 @@ CREATE INDEX idx_import_jobs_status ON import_jobs(status);
 - Code of conduct
 - Issue reporting templates
 - Feature request process
+
+### E. Operational Procedures
+- Admin user recovery procedures
+- Database-level password reset instructions
+- User account management best practices
+- Security incident response procedures
+
+#### Database Password Reset Procedure
+
+When an administrator needs to reset a user's password directly in the database:
+
+1. **Generate a new password hash** using the same algorithm as the application (bcrypt/scrypt)
+2. **Connect to the database** using appropriate credentials
+3. **Execute the update query**:
+   ```sql
+   UPDATE users 
+   SET password_hash = 'new_hash_value', 
+       updated_at = CURRENT_TIMESTAMP 
+   WHERE username = 'target_username';
+   ```
+4. **Verify the update** was successful
+5. **Communicate the temporary password** to the user through a secure channel
+6. **Require password change** on next login (if implemented)
+
+**Security Notes**:
+- Never store plaintext passwords
+- Use the application's password hashing function when possible
+- Document all manual password resets for audit purposes
+- Consider implementing an in-app admin password reset feature to avoid direct database access
