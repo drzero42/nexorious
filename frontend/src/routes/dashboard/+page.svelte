@@ -2,7 +2,7 @@
  import { userGames } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
- import { RouteGuard } from '$lib/components';
+ import { RouteGuard, ProgressStatistics } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
 
  onMount(() => {
@@ -114,6 +114,9 @@
    </button>
   </div>
  {:else}
+  <!-- Progress Statistics -->
+  <ProgressStatistics userGames={userGamesList} class="mb-8" />
+  
   <!-- Overview Statistics -->
   <div>
    <!-- Total Games -->
