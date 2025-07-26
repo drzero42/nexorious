@@ -1,8 +1,8 @@
-"""Initial database schema with all models
+"""Initial database schema
 
-Revision ID: a969927ae43f
+Revision ID: d94a790338d9
 Revises: 
-Create Date: 2025-07-08 10:08:40.643323
+Create Date: 2025-07-26 21:27:05.696876
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a969927ae43f'
+revision: str = 'd94a790338d9'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -52,6 +52,8 @@ def upgrade() -> None:
     sa.Column('display_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
     sa.Column('icon_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
+    sa.Column('version_added', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
@@ -64,6 +66,8 @@ def upgrade() -> None:
     sa.Column('icon_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('base_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
+    sa.Column('version_added', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
@@ -71,11 +75,8 @@ def upgrade() -> None:
     op.create_index(op.f('ix_storefronts_name'), 'storefronts', ['name'], unique=True)
     op.create_table('users',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('username', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
     sa.Column('password_hash', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
-    sa.Column('first_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
-    sa.Column('last_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('is_admin', sa.Boolean(), nullable=False),
     sa.Column('preferences', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -83,7 +84,6 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
     op.create_table('game_aliases',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -156,6 +156,7 @@ def upgrade() -> None:
     sa.Column('refresh_token_hash', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('expires_at', sa.DateTime(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.Column('user_agent', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('ip_address', sqlmodel.sql.sqltypes.AutoString(length=45), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
@@ -183,6 +184,7 @@ def upgrade() -> None:
     sa.Column('store_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('is_available', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['platform_id'], ['platforms.id'], ),
     sa.ForeignKeyConstraint(['storefront_id'], ['storefronts.id'], ),
     sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
@@ -233,7 +235,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_game_aliases_alias_title'), table_name='game_aliases')
     op.drop_table('game_aliases')
     op.drop_index(op.f('ix_users_username'), table_name='users')
-    op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
     op.drop_index(op.f('ix_storefronts_name'), table_name='storefronts')
     op.drop_table('storefronts')
