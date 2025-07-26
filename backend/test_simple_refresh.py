@@ -40,7 +40,7 @@ if register_response.status_code != 201:
 
 # Login user
 login_response = client.post('/api/auth/login', json={
-    'username': user_data['email'],
+    'username': user_data['username'],
     'password': user_data['password']
 })
 print('Login response:', login_response.status_code)

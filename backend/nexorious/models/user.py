@@ -5,7 +5,7 @@ User management models for authentication and user data.
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 from datetime import datetime, timezone
-from pydantic import EmailStr, computed_field
+from pydantic import computed_field
 import uuid
 import json
 
@@ -16,7 +16,6 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    email: EmailStr = Field(unique=True, index=True)
     username: str = Field(unique=True, index=True, min_length=3, max_length=100)
     password_hash: str = Field(min_length=1, max_length=255)
     is_active: bool = Field(default=True)

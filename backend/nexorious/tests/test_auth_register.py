@@ -45,7 +45,6 @@ class TestSuccessfulRegistration:
     def test_register_with_all_fields(self, client: TestClient, session: Session):
         """Test successful registration with all fields provided."""
         register_data = {
-            "email": "test@example.com",
             "username": "testuser",
             "password": "testpassword123"
         }
@@ -56,7 +55,6 @@ class TestSuccessfulRegistration:
         result = response.json()
         
         # Verify response structure
-        assert result["email"] == "test@example.com"
         assert result["username"] == "testuser"
         assert result["is_active"] is True
         assert result["is_admin"] is False
@@ -68,7 +66,7 @@ class TestSuccessfulRegistration:
         assert "preferences" in result
         
         # Verify user was created in database
-        user = session.exec(select(User).where(User.email == "test@example.com")).first()
+        user = session.exec(select(User).where(User.username == "testuser")).first()
         assert user is not None
         assert user.username == "testuser"
         assert user.is_active is True
@@ -77,7 +75,6 @@ class TestSuccessfulRegistration:
     def test_register_with_minimal_fields(self, client: TestClient, session: Session):
         """Test successful registration with only required fields."""
         register_data = {
-            "email": "minimal@example.com",
             "username": "minimaluser",
             "password": "password123"
         }
@@ -88,19 +85,17 @@ class TestSuccessfulRegistration:
         result = response.json()
         
         # Verify response structure
-        assert result["email"] == "minimal@example.com"
         assert result["username"] == "minimaluser"
         assert result["is_active"] is True
         assert result["is_admin"] is False
         
         # Verify user was created in database
-        user = session.exec(select(User).where(User.email == "minimal@example.com")).first()
+        user = session.exec(select(User).where(User.username == "minimaluser")).first()
         assert user is not None
     
     def test_password_is_hashed(self, client: TestClient, session: Session):
         """Test that password is properly hashed and not stored in plaintext."""
         register_data = {
-            "email": "hash@example.com",
             "username": "hashuser",
             "password": "plainpassword123"
         }
@@ -109,7 +104,7 @@ class TestSuccessfulRegistration:
         assert response.status_code == 201
         
         # Verify password is hashed in database
-        user = session.exec(select(User).where(User.email == "hash@example.com")).first()
+        user = session.exec(select(User).where(User.username == "hashuser")).first()
         assert user is not None
         assert user.password_hash != "plainpassword123"
         assert len(user.password_hash) > 50  # Hashed password should be longer
@@ -119,26 +114,9 @@ class TestSuccessfulRegistration:
 class TestValidationErrors:
     """Test validation error scenarios."""
     
-    def test_invalid_email_format(self, client: TestClient):
-        """Test registration with invalid email format."""
-        register_data = {
-            "email": "not-an-email",
-            "username": "testuser",
-            "password": "password123"
-        }
-        
-        response = client.post("/api/auth/register", json=register_data)
-        assert response.status_code == 422
-        
-        result = response.json()
-        assert "detail" in result
-        # Should have validation error for email
-        assert any("email" in str(error).lower() for error in result["detail"])
-    
     def test_username_too_short(self, client: TestClient):
         """Test registration with username too short."""
         register_data = {
-            "email": "test@example.com",
             "username": "ab",  # Less than 3 characters
             "password": "password123"
         }
@@ -154,7 +132,6 @@ class TestValidationErrors:
     def test_username_too_long(self, client: TestClient):
         """Test registration with username too long."""
         register_data = {
-            "email": "test@example.com",
             "username": "a" * 101,  # More than 100 characters
             "password": "password123"
         }
@@ -165,7 +142,6 @@ class TestValidationErrors:
     def test_password_too_short(self, client: TestClient):
         """Test registration with password too short."""
         register_data = {
-            "email": "test@example.com",
             "username": "testuser",
             "password": "short"  # Less than 8 characters
         }
@@ -181,7 +157,6 @@ class TestValidationErrors:
     def test_password_too_long(self, client: TestClient):
         """Test registration with password too long."""
         register_data = {
-            "email": "test@example.com",
             "username": "testuser",
             "password": "a" * 129  # More than 128 characters
         }
@@ -192,23 +167,14 @@ class TestValidationErrors:
     
     def test_missing_required_fields(self, client: TestClient):
         """Test registration with missing required fields."""
-        # Missing email
-        response = client.post("/api/auth/register", json={
-            "username": "testuser",
-            "password": "password123"
-        })
-        assert response.status_code == 422
-        
         # Missing username
         response = client.post("/api/auth/register", json={
-            "email": "test@example.com",
             "password": "password123"
         })
         assert response.status_code == 422
         
         # Missing password
         response = client.post("/api/auth/register", json={
-            "email": "test@example.com",
             "username": "testuser"
         })
         assert response.status_code == 422
@@ -216,7 +182,6 @@ class TestValidationErrors:
     def test_empty_required_fields(self, client: TestClient):
         """Test registration with empty required fields."""
         register_data = {
-            "email": "",
             "username": "",
             "password": ""
         }
@@ -226,39 +191,12 @@ class TestValidationErrors:
 
 
 class TestDuplicatePrevention:
-    """Test duplicate email and username prevention."""
-    
-    def test_duplicate_email_registration(self, client: TestClient):
-        """Test registration with duplicate email should fail."""
-        # Register first user
-        register_data = {
-            "email": "duplicate@example.com",
-            "username": "firstuser",
-            "password": "password123"
-        }
-        
-        response = client.post("/api/auth/register", json=register_data)
-        assert response.status_code == 201
-        
-        # Try to register second user with same email
-        register_data_duplicate = {
-            "email": "duplicate@example.com",
-            "username": "seconduser",
-            "password": "password123"
-        }
-        
-        response = client.post("/api/auth/register", json=register_data_duplicate)
-        assert response.status_code == 400
-        
-        result = response.json()
-        assert "error" in result
-        assert "email already registered" in result["error"].lower()
+    """Test duplicate username prevention."""
     
     def test_duplicate_username_registration(self, client: TestClient):
         """Test registration with duplicate username should fail."""
         # Register first user
         register_data = {
-            "email": "first@example.com",
             "username": "duplicateuser",
             "password": "password123"
         }
@@ -268,7 +206,6 @@ class TestDuplicatePrevention:
         
         # Try to register second user with same username
         register_data_duplicate = {
-            "email": "second@example.com",
             "username": "duplicateuser",
             "password": "password123"
         }
@@ -280,35 +217,10 @@ class TestDuplicatePrevention:
         assert "error" in result
         assert "username already taken" in result["error"].lower()
     
-    def test_case_sensitivity_email(self, client: TestClient):
-        """Test email case sensitivity (currently case sensitive - should be improved)."""
-        # Register first user with lowercase email
-        register_data = {
-            "email": "case@example.com",
-            "username": "caseuser1",
-            "password": "password123"
-        }
-        
-        response = client.post("/api/auth/register", json=register_data)
-        assert response.status_code == 201
-        
-        # Try to register with uppercase email
-        register_data_upper = {
-            "email": "CASE@EXAMPLE.COM",
-            "username": "caseuser2",
-            "password": "password123"
-        }
-        
-        response = client.post("/api/auth/register", json=register_data_upper)
-        # NOTE: Current implementation is case sensitive for emails, but this should be changed
-        # to be case insensitive in the future to follow RFC standards
-        assert response.status_code == 201
-    
     def test_case_sensitivity_username(self, client: TestClient):
         """Test username case sensitivity (should be case sensitive)."""
         # Register first user with lowercase username
         register_data = {
-            "email": "user1@example.com",
             "username": "caseuser",
             "password": "password123"
         }
@@ -318,7 +230,6 @@ class TestDuplicatePrevention:
         
         # Try to register with uppercase username
         register_data_upper = {
-            "email": "user2@example.com",
             "username": "CASEUSER",
             "password": "password123"
         }
@@ -335,7 +246,7 @@ class TestErrorHandling:
         """Test registration with malformed JSON."""
         response = client.post(
             "/api/auth/register",
-            content='{"email": "test@example.com", "username": "testuser", "password": "password123"',  # Missing closing brace
+            content='{"username": "testuser", "password": "password123"',  # Missing closing brace
             headers={"Content-Type": "application/json"}
         )
         assert response.status_code == 422
@@ -343,7 +254,6 @@ class TestErrorHandling:
     def test_invalid_field_types(self, client: TestClient):
         """Test registration with invalid field types."""
         register_data = {
-            "email": 123,  # Should be string
             "username": True,  # Should be string
             "password": ["password"]  # Should be string
         }
@@ -354,7 +264,6 @@ class TestErrorHandling:
     def test_null_values_for_required_fields(self, client: TestClient):
         """Test registration with null values for required fields."""
         register_data = {
-            "email": None,
             "username": None,
             "password": None
         }
@@ -369,7 +278,6 @@ class TestDatabaseIntegration:
     def test_user_defaults_are_set(self, client: TestClient, session: Session):
         """Test that user defaults are properly set in database."""
         register_data = {
-            "email": "defaults@example.com",
             "username": "defaultuser",
             "password": "password123"
         }
@@ -378,7 +286,7 @@ class TestDatabaseIntegration:
         assert response.status_code == 201
         
         # Verify defaults in database
-        user = session.exec(select(User).where(User.email == "defaults@example.com")).first()
+        user = session.exec(select(User).where(User.username == "defaultuser")).first()
         assert user is not None
         assert user.is_active is True
         assert user.is_admin is False
@@ -389,7 +297,6 @@ class TestDatabaseIntegration:
     def test_user_id_is_generated(self, client: TestClient, session: Session):
         """Test that user ID is properly generated."""
         register_data = {
-            "email": "uuid@example.com",
             "username": "uuiduser",
             "password": "password123"
         }
@@ -403,14 +310,13 @@ class TestDatabaseIntegration:
         assert len(result["id"]) == 36  # UUID length
         
         # Verify in database
-        user = session.exec(select(User).where(User.email == "uuid@example.com")).first()
+        user = session.exec(select(User).where(User.username == "uuiduser")).first()
         assert user is not None
         assert user.id == result["id"]
     
     def test_timestamps_are_set(self, client: TestClient, session: Session):
         """Test that timestamps are properly set."""
         register_data = {
-            "email": "timestamp@example.com",
             "username": "timestampuser",
             "password": "password123"
         }
@@ -418,7 +324,7 @@ class TestDatabaseIntegration:
         response = client.post("/api/auth/register", json=register_data)
         assert response.status_code == 201
         
-        user = session.exec(select(User).where(User.email == "timestamp@example.com")).first()
+        user = session.exec(select(User).where(User.username == "timestampuser")).first()
         assert user is not None
         assert user.created_at is not None
         assert user.updated_at is not None

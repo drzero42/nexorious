@@ -22,7 +22,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Set up structured logging
 
 #### 1.1.2 Database Schema Implementation
-- [ ] Create User management models (users without email, user_sessions)
+- [x] Create User management models (users without email, user_sessions)
 - [x] Implement Platform and Storefront models
 - [x] Design Game metadata models with IGDB integration fields
 - [x] Create User Game Collection models (user_games, user_game_platforms)

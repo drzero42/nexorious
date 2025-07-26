@@ -23,7 +23,7 @@ print('Register response:', register_response.status_code)
 
 # Login user
 login_response = client.post('/api/auth/login', json={
-    'username': user_data['email'],
+    'username': user_data['username'],
     'password': user_data['password']
 })
 print('Login response:', login_response.status_code)
