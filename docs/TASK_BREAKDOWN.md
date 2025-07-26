@@ -34,7 +34,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
 - [x] User authentication endpoints (login, refresh, logout)
-- [ ] Admin user management endpoints (create, update, deactivate users)
+- [x] Admin user management endpoints (create, update, deactivate users)
 - [x] Game CRUD operations with comprehensive metadata
 - [x] Platform and storefront management (admin-only)
 - [x] User game collection management
