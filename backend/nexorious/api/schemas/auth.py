@@ -2,21 +2,20 @@
 Authentication-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
 
 class UserRegisterRequest(BaseModel):
     """Request schema for user registration."""
-    email: EmailStr = Field(..., description="User email address")
     username: str = Field(..., min_length=3, max_length=100, description="Username")
     password: str = Field(..., min_length=8, max_length=128, description="Password")
 
 
 class UserLoginRequest(BaseModel):
     """Request schema for user login."""
-    username: str = Field(..., description="Username or email")
+    username: str = Field(..., description="Username")
     password: str = Field(..., description="Password")
 
 
@@ -36,7 +35,6 @@ class RefreshTokenRequest(BaseModel):
 class UserProfileResponse(BaseModel):
     """Response schema for user profile."""
     id: str
-    email: EmailStr
     username: str
     is_active: bool
     is_admin: bool
@@ -72,3 +70,40 @@ class UsernameAvailabilityResponse(BaseModel):
 class LogoutResponse(BaseModel):
     """Response schema for logout."""
     message: str = "Successfully logged out"
+
+
+# Admin-specific schemas
+class SetupStatusResponse(BaseModel):
+    """Response schema for setup status check."""
+    needs_setup: bool = Field(..., description="Whether initial admin setup is needed")
+
+
+class AdminUserCreateRequest(BaseModel):
+    """Request schema for admin to create a new user."""
+    username: str = Field(..., min_length=3, max_length=100, description="Username")
+    password: str = Field(..., min_length=8, max_length=128, description="Password")
+    is_admin: bool = Field(default=False, description="Whether user should have admin privileges")
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """Request schema for admin to update a user."""
+    username: Optional[str] = Field(None, min_length=3, max_length=100, description="New username")
+    is_active: Optional[bool] = Field(None, description="Whether user is active")
+    is_admin: Optional[bool] = Field(None, description="Whether user has admin privileges")
+
+
+class AdminPasswordResetRequest(BaseModel):
+    """Request schema for admin to reset a user's password."""
+    new_password: str = Field(..., min_length=8, max_length=128, description="New password")
+
+
+class AdminUserResponse(BaseModel):
+    """Response schema for admin user management."""
+    id: str
+    username: str
+    is_active: bool
+    is_admin: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

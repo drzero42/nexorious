@@ -32,44 +32,25 @@ class TestAuthRegisterEndpoint:
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["email"] == user_data["email"]
         assert data["username"] == user_data["username"]
         assert data["is_active"] is True
         assert data["is_admin"] is False
         assert "password_hash" not in data
         
-    def test_register_duplicate_email(self, client: TestClient):
-        """Test registration with duplicate email."""
-        user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
-        
-        # Try to register with same email
-        duplicate_data = create_test_user_data(username="different")
-        response = client.post("/api/auth/register", json=duplicate_data)
-        
-        assert_api_error(response, 400, "Email already registered")
-    
     def test_register_duplicate_username(self, client: TestClient):
         """Test registration with duplicate username."""
         user_data = create_test_user_data()
         client.post("/api/auth/register", json=user_data)
         
         # Try to register with same username
-        duplicate_data = create_test_user_data(email="different@example.com")
+        duplicate_data = create_test_user_data(username="newuser")
         response = client.post("/api/auth/register", json=duplicate_data)
         
         assert_api_error(response, 400, "Username already taken")
     
-    def test_register_invalid_email(self, client: TestClient):
-        """Test registration with invalid email format."""
-        user_data = create_test_user_data(email="invalid-email")
-        response = client.post("/api/auth/register", json=user_data)
-        
-        assert_api_error(response, 422)
-    
     def test_register_missing_fields(self, client: TestClient):
         """Test registration with missing required fields."""
-        incomplete_data = {"email": "test@example.com"}
+        incomplete_data = {"username": "testuser"}
         response = client.post("/api/auth/register", json=incomplete_data)
         
         assert_api_error(response, 422)
@@ -84,7 +65,7 @@ class TestAuthLoginEndpoint:
         client.post("/api/auth/register", json=user_data)
         
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         response = client.post("/api/auth/login", json=login_data)
@@ -112,13 +93,13 @@ class TestAuthLoginEndpoint:
         client.post("/api/auth/register", json=user_data)
         
         # Deactivate user
-        user = session.exec(select(User).where(User.email == user_data["email"])).first()
+        user = session.exec(select(User).where(User.username == user_data["username"])).first()
         user.is_active = False
         session.add(user)
         session.commit()
         
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         response = client.post("/api/auth/login", json=login_data)
@@ -145,7 +126,7 @@ class TestAuthRefreshEndpoint:
         assert_api_success(register_response, 201)
         
         login_response = client.post("/api/auth/login", json={
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         })
         assert_api_success(login_response, 200)
@@ -175,7 +156,7 @@ class TestAuthRefreshEndpoint:
         headers = register_and_login_user(client, user_data)
         
         # Get user and create expired session
-        user = session.exec(select(User).where(User.email == user_data["email"])).first()
+        user = session.exec(select(User).where(User.username == user_data["username"])).first()
         expired_session = UserSession(
             user_id=user.id,
             token_hash="expired-token-hash",
@@ -207,7 +188,7 @@ class TestAuthLogoutEndpoint:
         
         # Get refresh token from login
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         login_response = client.post("/api/auth/login", json=login_data)
@@ -243,7 +224,7 @@ class TestAuthLogoutEndpoint:
         
         # Get refresh token from login
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         login_response = client.post("/api/auth/login", json=login_data)
@@ -274,9 +255,7 @@ class TestAuthMeEndpoint:
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["email"] == user_data["email"]
-        assert data["username"] == user_data["username"]
-        assert "password_hash" not in data
+                        assert "password_hash" not in data
     
     def test_get_me_without_token(self, client: TestClient):
         """Test GET /me without authentication token."""
@@ -305,7 +284,7 @@ class TestAuthMeEndpoint:
         data = response.json()
         assert data["preferences"]["theme"] == "dark"
         assert data["preferences"]["language"] == "en"
-        assert data["email"] == user_data["email"]  # Should not change
+        assert data["username"] == user_data["username"]  # Should not change
     
     def test_update_me_partial(self, client: TestClient):
         """Test partial update of profile."""
@@ -355,7 +334,7 @@ class TestAuthChangePasswordEndpoint:
         
         # Verify new password works
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": "newpassword123"
         }
         login_response = client.post("/api/auth/login", json=login_data)
@@ -451,7 +430,7 @@ class TestAuthEndpointSecurity:
         client.post("/api/auth/register", json=user_data)
         
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         response = client.post("/api/auth/login", json=login_data)
@@ -480,7 +459,7 @@ class TestAuthEndpointSecurity:
         
         # Get both tokens from login
         login_data = {
-            "username": user_data["email"],
+            "username": user_data["username"],
             "password": user_data["password"]
         }
         login_response = client.post("/api/auth/login", json=login_data)

@@ -47,7 +47,6 @@ def get_mock_user():
     return User(
         id="test-user-id",
         username="testuser",
-        email="test@example.com",
         password_hash="hashed_password",
         is_active=True,
         is_admin=False

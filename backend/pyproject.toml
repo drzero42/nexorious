@@ -7,7 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.21.0",
     "alembic>=1.16.2",
-    "email-validator>=2.0.0",
     "fastapi>=0.116.0",
     "httpx>=0.28.0",
     "igdb-api-v4>=0.3.0",

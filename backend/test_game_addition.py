@@ -11,7 +11,6 @@ BASE_URL = "http://localhost:8000/api"
 # Test user credentials
 TEST_USER = {
     "username": "testuser_debug",
-    "email": "testdebug@example.com", 
     "password": "TestPassword123!"
 }
 

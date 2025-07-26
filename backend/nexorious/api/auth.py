@@ -31,11 +31,20 @@ from ..api.schemas.auth import (
     ChangePasswordRequest,
     ChangeUsernameRequest,
     UsernameAvailabilityResponse,
-    LogoutResponse
+    LogoutResponse,
+    SetupStatusResponse
 )
 from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get("/setup/status", response_model=SetupStatusResponse)
+async def get_setup_status(session: Annotated[Session, Depends(get_session)]):
+    """Check if initial admin setup is needed."""
+    # Check if any users exist in the database
+    user_count = session.exec(select(User)).first()
+    return SetupStatusResponse(needs_setup=user_count is None)
 
 
 @router.post("/register", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
@@ -47,27 +56,18 @@ async def register_user(
     
     # Check if user already exists
     existing_user = session.exec(
-        select(User).where(
-            (User.email == user_data.email) | (User.username == user_data.username)
-        )
+        select(User).where(User.username == user_data.username)
     ).first()
     
     if existing_user:
-        if existing_user.email == user_data.email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
-            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
     
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
-        email=user_data.email,
         username=user_data.username,
         password_hash=hashed_password
     )
@@ -87,11 +87,9 @@ async def login_user(
 ):
     """Authenticate user and return JWT tokens."""
     
-    # Find user by username or email
+    # Find user by username
     user = session.exec(
-        select(User).where(
-            (User.username == user_data.username) | (User.email == user_data.username)
-        )
+        select(User).where(User.username == user_data.username)
     ).first()
     
     if not user or not verify_password(user_data.password, user.password_hash):

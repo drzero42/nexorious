@@ -105,8 +105,8 @@ class TestUserGamesListEndpoint:
     def test_list_user_games_isolation(self, client: TestClient, session: Session):
         """Test that users only see their own games."""
         # Create two users
-        user1_data = {"email": "user1@example.com", "username": "user1", "password": "password123"}
-        user2_data = {"email": "user2@example.com", "username": "user2", "password": "password123"}
+        user1_data = {"username": "user1", "password": "password123"}
+        user2_data = {"username": "user2", "password": "password123"}
         
         user1_headers = register_and_login_user(client, user1_data)
         user2_headers = register_and_login_user(client, user2_data)
@@ -132,7 +132,7 @@ class TestUserGamesListEndpoint:
     def test_list_user_games_sorting(self, client: TestClient, session: Session):
         """Test user games list with different sorting options."""
         # Create a test user
-        user_data = {"email": "testuser@example.com", "username": "testuser", "password": "password123"}
+        user_data = {"username": "testuser", "password": "password123"}
         auth_headers = register_and_login_user(client, user_data)
         
         # Create multiple games with different metadata
@@ -237,7 +237,7 @@ class TestUserGamesDetailEndpoint:
     def test_get_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame, session: Session):
         """Test user game retrieval by different user."""
         # Create another user
-        other_user_data = {"email": "other@example.com", "username": "other", "password": "password123"}
+        other_user_data = {"username": "other", "password": "password123"}
         other_headers = register_and_login_user(client, other_user_data)
         
         response = client.get(f"/api/user-games/{test_user_game.id}", headers=other_headers)
@@ -362,7 +362,7 @@ class TestUserGamesUpdateEndpoint:
     def test_update_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame):
         """Test user game update by different user."""
         # Create another user
-        other_user_data = {"email": "other@example.com", "username": "other", "password": "password123"}
+        other_user_data = {"username": "other", "password": "password123"}
         other_headers = register_and_login_user(client, other_user_data)
         
         update_data = {"play_status": "completed"}
@@ -440,7 +440,7 @@ class TestUserGamesDeleteEndpoint:
     def test_delete_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame):
         """Test user game deletion by different user."""
         # Create another user
-        other_user_data = {"email": "other@example.com", "username": "other", "password": "password123"}
+        other_user_data = {"username": "other", "password": "password123"}
         other_headers = register_and_login_user(client, other_user_data)
         
         response = client.delete(f"/api/user-games/{test_user_game.id}", headers=other_headers)
@@ -680,7 +680,7 @@ class TestUserGamesEndpointsSecurity:
     def test_user_isolation_in_endpoints(self, client: TestClient, test_user_game: UserGame, session: Session):
         """Test that users can only access their own data."""
         # Create another user
-        other_user_data = {"email": "other@example.com", "username": "other", "password": "password123"}
+        other_user_data = {"username": "other", "password": "password123"}
         other_headers = register_and_login_user(client, other_user_data)
         
         # Test list endpoint

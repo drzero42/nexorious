@@ -56,7 +56,6 @@ def client_fixture(session: Session):
 def test_user_fixture(session: Session) -> User:
     """Create a test user in the database."""
     user = User(
-        email="test@example.com",
         username="testuser",
         password_hash="$2b$12$test_hash",
         is_active=True,
@@ -72,7 +71,6 @@ def test_user_fixture(session: Session) -> User:
 def admin_user_fixture(session: Session) -> User:
     """Create an admin user in the database."""
     user = User(
-        email="admin@example.com",
         username="admin",
         password_hash="$2b$12$admin_hash",
         is_active=True,
@@ -326,13 +324,11 @@ def client_with_mock_igdb_fixture(session: Session, mock_igdb_service):
 
 
 def create_test_user_data(
-    email: str = "newuser@example.com",
     username: str = "newuser",
     password: str = "testpassword123"
 ) -> Dict[str, Any]:
     """Create test user registration data."""
     return {
-        "email": email,
         "username": username,
         "password": password
     }
@@ -450,7 +446,7 @@ def register_and_login_user(client: TestClient, user_data: Dict[str, Any]) -> Di
     
     # Login user
     login_data = {
-        "username": user_data["email"],
+        "username": user_data["username"],
         "password": user_data["password"]
     }
     login_response = client.post("/api/auth/login", json=login_data)

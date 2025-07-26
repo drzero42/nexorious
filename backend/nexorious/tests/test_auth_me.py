@@ -44,7 +44,6 @@ def test_auth_me_complete_flow(client: TestClient):
     
     # Step 1: Register a new user
     register_data = {
-        "email": "test@example.com",
         "username": "testuser",
         "password": "testpassword123"
     }
@@ -53,7 +52,6 @@ def test_auth_me_complete_flow(client: TestClient):
     assert register_response.status_code == 201
     
     register_result = register_response.json()
-    assert register_result["email"] == "test@example.com"
     assert register_result["username"] == "testuser"
     assert "password_hash" not in register_result  # Password should not be in response
     
@@ -80,7 +78,6 @@ def test_auth_me_complete_flow(client: TestClient):
     assert me_response.status_code == 200
     
     me_result = me_response.json()
-    assert me_result["email"] == "test@example.com"
     assert me_result["username"] == "testuser"
     assert me_result["is_active"] is True
     assert me_result["is_admin"] is False
