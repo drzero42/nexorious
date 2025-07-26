@@ -3,7 +3,7 @@
   import { userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -435,6 +435,12 @@
         <h3 class="text-lg font-medium text-gray-900">Your Information</h3>
       </div>
       <div class="p-6">
+        <!-- Progress Visualization -->
+        {#if !isEditing}
+          <div class="mb-6">
+            <GameProgressCard userGame={game} />
+          </div>
+        {/if}
             
         {#if isEditing}
           <!-- Edit Form -->
