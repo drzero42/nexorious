@@ -3,7 +3,7 @@
   import { userGames } from '$lib/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -528,13 +528,14 @@
                 <label for="personal_notes" class="form-label">
                   Personal Notes
                 </label>
-                <textarea
-                  id="personal_notes"
+                <RichTextEditor
                   bind:value={editData.personal_notes}
-                  rows="3"
                   placeholder="Add your personal notes about this game..."
-                  class="form-input"
-                ></textarea>
+                  editable={true}
+                  onchange={(e) => {
+                    editData.personal_notes = e.detail.value;
+                  }}
+                />
               </div>
             </div>
 
@@ -629,7 +630,12 @@
             {#if game.personal_notes}
               <div class="bg-gray-50 p-4 rounded-lg">
                 <h4 class="text-sm font-medium text-gray-500 mb-2">Personal Notes</h4>
-                <p class="text-sm text-gray-900 leading-relaxed">{game.personal_notes}</p>
+                <div class="prose prose-sm max-w-none text-gray-900">
+                  <RichTextEditor
+                    value={game.personal_notes}
+                    editable={false}
+                  />
+                </div>
               </div>
             {/if}
           </div>

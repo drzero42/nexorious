@@ -4,3 +4,4 @@ export { default as PlayStatusDropdown } from './PlayStatusDropdown.svelte';
 export { default as TimeTrackingInput } from './TimeTrackingInput.svelte';
 export { default as Toast } from './Toast.svelte';
 export { default as ToastContainer } from './ToastContainer.svelte';
+export { default as RichTextEditor } from './RichTextEditor.svelte';
