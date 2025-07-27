@@ -240,7 +240,6 @@ To create the definitive self-hosted solution for personal game collection manag
   - Database maintenance tools
 - **Acceptance Criteria**:
   - All system configuration requires admin privileges
-  - Changes are logged for audit purposes
   - Configuration changes take effect immediately
 
 ### Phase 2: Data Integration & Import
