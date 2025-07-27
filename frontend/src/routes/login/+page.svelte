@@ -120,22 +120,9 @@
      </button>
     </div>
 
-    <div class="text-sm text-center">
-     <a href="/forgot-password" class="font-medium text-primary-600 hover:text-primary-500">
-      Forgot your password?
-     </a>
-    </div>
    </form>
   </div>
   
-  <div class="mt-8 text-center">
-   <p class="text-sm text-gray-600">
-    Don't have an account?
-    <a href="/register" class="font-medium text-primary-600 hover:text-primary-500">
-     Sign up
-    </a>
-   </p>
-  </div>
  </div>
 </div>
 </RouteGuard>
