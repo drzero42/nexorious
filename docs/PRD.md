@@ -54,10 +54,15 @@ To create the definitive self-hosted solution for personal game collection manag
   - Require username and password for initial admin account
   - Automatically grant admin privileges to first user
   - Skip this screen if any users already exist in database
+  - Automatically seed platform and storefront data on first startup
+  - Ensure seed data is only loaded once per fresh installation
 - **Acceptance Criteria**:
   - Application detects empty user table and shows setup screen
   - Admin user is created with is_admin=true flag
   - Setup screen is never shown again after first user creation
+  - Platform and storefront seed data is automatically loaded on first startup
+  - Seed data includes all major gaming platforms and storefronts
+  - Subsequent startups do not duplicate or overwrite existing platform/storefront data
 
 ##### 1.1.2 User Authentication
 - **Authentication Model**:
@@ -132,12 +137,17 @@ To create the definitive self-hosted solution for personal game collection manag
   - Availability status tracking
   - Platform-specific metadata storage
   - Admin-only access for platform/storefront management (create, update, delete)
+  - Seed data management for initial platform and storefront population
+  - Database migrations to populate seed data on fresh installations
 - **Frontend Requirements**:
   - Platform selection interface
   - Storefront linking components
   - Availability status indicators
   - Platform filtering and sorting
   - Admin interface for platform/storefront management
+- **Seed Data Content**:
+  - **Platforms**: PC (Windows), PlayStation 5, PlayStation 4, PlayStation 3, Xbox Series X/S, Xbox One, Xbox 360, Nintendo Switch, Nintendo Wii, iOS, Android
+  - **Storefronts**: Steam, Epic Games Store, GOG, PlayStation Store, Microsoft Store, Nintendo eShop, Itch.io, Origin/EA App, Apple App Store, Google Play Store, Humble Bundle
 - **Acceptance Criteria**:
   - API supports multiple platforms per game
   - Frontend allows easy platform assignment
@@ -145,6 +155,8 @@ To create the definitive self-hosted solution for personal game collection manag
   - Ownership status is clearly indicated in UI
   - Only admin users can add, update, or remove platforms and storefronts
   - Regular users can only associate existing platforms/storefronts with their games
+  - All seed data platforms and storefronts are available immediately after first startup
+  - Seed data is populated automatically without admin intervention
 
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)

@@ -28,6 +28,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Add Wishlist models
 - [x] Create Import/Export job tracking models
 - [x] Implement all database indexes for performance
+- [x] Create seed data migration/fixtures for platforms and storefronts
+- [ ] Implement seed data validation and integrity checks
+- [ ] Add seed data status tracking in database
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
@@ -40,6 +43,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Rating and tagging system endpoints
 - [x] Search and filtering endpoints
 - [x] Bulk operations endpoints
+- [ ] Seed data initialization endpoint for first-run setup
+- [ ] Seed data status/health check endpoint
+- [ ] Platform and storefront seeding service integration
 
 #### 1.1.4 External API Integration
 - [x] IGDB API integration for game metadata
