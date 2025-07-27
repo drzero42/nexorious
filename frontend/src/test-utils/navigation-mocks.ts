@@ -50,6 +50,19 @@ vi.mock('$app/stores', () => ({
   mockGoto: mockGoto
 }));
 
+// Reset functions for test cleanup
+export function resetNavigationMocks() {
+  mockGoto.mockClear();
+  mockInvalidateAll.mockClear();
+  mockPage.params = {};
+  mockPage.url = new URL('http://localhost:3000');
+  mockPage.route = { id: '/' };
+  mockPage.status = 200;
+  mockPage.error = null;
+  mockPage.data = {};
+  mockPage.form = null;
+}
+
 // Mock $app/navigation
 vi.mock('$app/navigation', () => ({
   goto: mockGoto,
@@ -61,7 +74,8 @@ vi.mock('$app/navigation', () => ({
   preloadData: vi.fn(),
   onNavigate: vi.fn(),
   page: mockPage,  // Add page export just in case
-  mockGoto: mockGoto  // Export mockGoto for test access
+  mockGoto: mockGoto,  // Export mockGoto for test access
+  resetNavigationMocks: resetNavigationMocks  // Export reset function
 }));
 
 // Export everything needed for alias imports
@@ -80,16 +94,3 @@ export const updated = {
     return () => {};
   }
 };
-
-// Reset functions for test cleanup
-export function resetNavigationMocks() {
-  mockGoto.mockClear();
-  mockInvalidateAll.mockClear();
-  mockPage.params = {};
-  mockPage.url = new URL('http://localhost:3000');
-  mockPage.route = { id: '/' };
-  mockPage.status = 200;
-  mockPage.error = null;
-  mockPage.data = {};
-  mockPage.form = null;
-}

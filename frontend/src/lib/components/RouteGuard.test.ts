@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mockGoto } from '../../test-utils/navigation-mocks';
+import { mockGoto, resetNavigationMocks } from '../../test-utils/navigation-mocks';
 import { mockAuthStore, resetAuthMocks, setAuthenticatedState, setUnauthenticatedState } from '../../test-utils/auth-mocks';
 
 describe('RouteGuard', () => {
   beforeEach(() => {
     resetAuthMocks();
-    mockGoto.mockClear(); // Clear navigation mock state
+    resetNavigationMocks();
     setUnauthenticatedState();
   });
 
@@ -60,6 +60,7 @@ describe('RouteGuard', () => {
     mockAuthStore.login('test@example.com', 'password');
     
     resetAuthMocks();
+    resetNavigationMocks();
     
     expect(mockGoto).not.toHaveBeenCalled();
     expect(mockAuthStore.login).not.toHaveBeenCalled();
