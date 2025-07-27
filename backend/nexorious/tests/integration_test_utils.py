@@ -421,6 +421,10 @@ def assert_api_error(response, status_code: int, error_message: str = None):
             # For 422, check if error_message is in any of the detail messages
             detail_str = str(data["detail"])
             assert error_message in detail_str
+    elif "detail" in data:
+        # FastAPI HTTPException errors use 'detail' field
+        if error_message:
+            assert error_message in data["detail"]
     else:
         # Custom errors use 'error' field
         assert "error" in data

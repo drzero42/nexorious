@@ -482,7 +482,7 @@ class TestGameMetadataEndpoints:
         }
         response = client_with_mock_igdb.post("/api/games/metadata/bulk", json=bulk_data, headers=auth_headers)
         
-        assert_api_error(response, 403, "Administrative privileges required")
+        assert_api_error(response, 403, "Only administrators can perform bulk metadata operations")
 
 
 class TestCoverArtEndpoints:
@@ -519,8 +519,8 @@ class TestCoverArtEndpoints:
         assert_api_success(response, 200)
         data = response.json()
         assert "processed_games" in data
-        assert "successful_downloads" in data
-        assert "failed_downloads" in data
+        assert "successful_operations" in data
+        assert "failed_operations" in data
     
     def test_bulk_cover_art_download_not_admin(self, client_with_mock_igdb: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test bulk cover art download by non-admin user."""
@@ -530,7 +530,7 @@ class TestCoverArtEndpoints:
         }
         response = client_with_mock_igdb.post("/api/games/cover-art/bulk-download", json=bulk_data, headers=auth_headers)
         
-        assert_api_error(response, 403, "Administrative privileges required")
+        assert_api_error(response, 403, "Only administrators can perform bulk cover art downloads")
 
 
 class TestGamesEndpointsSecurity:

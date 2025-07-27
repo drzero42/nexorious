@@ -210,3 +210,9 @@ class BulkMetadataResponse(BaseModel):
     failed_operations: int
     results: List[Dict[str, Any]]
     errors: List[str]
+
+
+class BulkCoverArtDownloadRequest(BaseModel):
+    """Request schema for bulk cover art download operations."""
+    game_ids: List[str] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
+    skip_existing: bool = Field(default=True, description="Skip games that already have local cover art")

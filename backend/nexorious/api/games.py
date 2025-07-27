@@ -35,7 +35,8 @@ from ..api.schemas.game import (
     MetadataPopulateResponse,
     MetadataComparisonResponse,
     BulkMetadataRequest,
-    BulkMetadataResponse
+    BulkMetadataResponse,
+    BulkCoverArtDownloadRequest
 )
 from ..api.schemas.common import SuccessResponse, PaginationParams
 
@@ -569,7 +570,6 @@ async def verify_game(
 async def get_metadata_status(
     game_id: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
     """Get metadata completeness status for a game."""
@@ -1028,11 +1028,10 @@ async def download_game_cover_art(
 
 @router.post("/cover-art/bulk-download", response_model=BulkMetadataResponse)
 async def bulk_download_cover_art(
-    game_ids: List[str],
+    request: BulkCoverArtDownloadRequest,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
-    igdb_service: IGDBService = Depends(get_igdb_service_dependency),
-    skip_existing: bool = Query(default=True, description="Skip games that already have local cover art")
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
     """Download and store cover art for multiple games."""
     
@@ -1047,7 +1046,7 @@ async def bulk_download_cover_art(
     errors = []
     successful_operations = 0
     
-    for game_id in game_ids:
+    for game_id in request.game_ids:
         try:
             game = session.get(Game, game_id)
             if not game:
@@ -1063,7 +1062,7 @@ async def bulk_download_cover_art(
                 continue
             
             # Skip if already has local cover art and skip_existing is True
-            if skip_existing and game.cover_art_url and game.cover_art_url.startswith("/static/"):
+            if request.skip_existing and game.cover_art_url and game.cover_art_url.startswith("/static/"):
                 results.append({
                     "game_id": game_id,
                     "success": True,
@@ -1098,10 +1097,10 @@ async def bulk_download_cover_art(
     session.commit()
     
     return BulkMetadataResponse(
-        total_games=len(game_ids),
+        total_games=len(request.game_ids),
         processed_games=len(results),
         successful_operations=successful_operations,
-        failed_operations=len(game_ids) - successful_operations,
+        failed_operations=len(request.game_ids) - successful_operations,
         results=results,
         errors=errors
     )
