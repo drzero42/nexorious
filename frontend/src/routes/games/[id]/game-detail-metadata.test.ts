@@ -217,8 +217,8 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
       ];
 
       expect(userGamePlatforms).toHaveLength(2);
-      expect(userGamePlatforms[0].platform.display_name).toBe('PC');
-      expect(userGamePlatforms[1].platform.display_name).toBe('PlayStation 5');
+      expect(userGamePlatforms[0]?.platform.display_name).toBe('PC');
+      expect(userGamePlatforms[1]?.platform.display_name).toBe('PlayStation 5');
       
       userGamePlatforms.forEach(platform => {
         expect(platform.id).toBeDefined();

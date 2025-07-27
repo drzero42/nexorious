@@ -55,7 +55,6 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         id: 'pc',
         name: 'PC',
         display_name: 'PC',
-        icon_url: undefined,
         source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
@@ -83,7 +82,6 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         id: 'ps5',
         name: 'PlayStation 5',
         display_name: 'PlayStation 5',
-        icon_url: undefined,
         source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
@@ -222,7 +220,6 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       const gameWithoutRating = createMockUserGame({
         game: {
           ...createMockUserGame().game,
-          rating_average: undefined,
           rating_count: 0,
           is_verified: false
         }
@@ -257,10 +254,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     it('should not display How Long to Beat section when no times available', () => {
       const gameWithoutTimes = createMockUserGame({
         game: {
-          ...createMockUserGame().game,
-          howlongtobeat_main: undefined,
-          howlongtobeat_extra: undefined,
-          howlongtobeat_completionist: undefined
+          ...createMockUserGame().game
         }
       });
       mockUserGamesStore.value.userGames = [gameWithoutTimes];
@@ -294,10 +288,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     it('should handle missing optional fields gracefully', () => {
       const gameWithMissingFields = createMockUserGame({
         game: {
-          ...createMockUserGame().game,
-          developer: undefined,
-          estimated_playtime_hours: undefined,
-          igdb_id: undefined
+          ...createMockUserGame().game
         }
       });
       mockUserGamesStore.value.userGames = [gameWithMissingFields];
@@ -338,20 +329,8 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         game: {
           id: 'game-minimal',
           title: 'Minimal Game',
-          description: undefined,
-          genre: undefined,
-          developer: undefined,
-          publisher: undefined,
-          release_date: undefined,
-          cover_art_url: undefined,
-          rating_average: undefined,
           rating_count: 0,
           game_metadata: '{}',
-          estimated_playtime_hours: undefined,
-          howlongtobeat_main: undefined,
-          howlongtobeat_extra: undefined,
-          howlongtobeat_completionist: undefined,
-          igdb_id: undefined,
           is_verified: false,
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'

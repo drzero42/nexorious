@@ -453,7 +453,7 @@
                 <PlayStatusDropdown
                   id="play_status"
                   bind:value={editData.play_status}
-                  onchange={(e) => {
+                  on:change={(e: CustomEvent<{ value: PlayStatus }>) => {
                     editData.play_status = e.detail.value;
                   }}
                 />
@@ -500,7 +500,7 @@
                 <TimeTrackingInput
                   id="hours_played"
                   bind:value={editData.hours_played}
-                  onchange={(e) => {
+                  on:change={(e: CustomEvent<{ value: number }>) => {
                     editData.hours_played = e.detail.value;
                   }}
                 />
@@ -538,7 +538,7 @@
                   bind:value={editData.personal_notes}
                   placeholder="Add your personal notes about this game..."
                   editable={true}
-                  onchange={(e) => {
+                  onchange={(e: CustomEvent<{ value: string }>) => {
                     editData.personal_notes = e.detail.value;
                   }}
                 />

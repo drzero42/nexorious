@@ -54,6 +54,7 @@ export const mockUserGamesStore = {
   addGameToCollection: vi.fn(),
   updateUserGame: vi.fn(),
   updateProgress: vi.fn(),
+  bulkUpdateStatus: vi.fn(),
   deleteUserGame: vi.fn(),
   clearError: vi.fn()
 };
@@ -182,6 +183,8 @@ export function resetStoresMocks() {
   mockUserGamesStore.fetchUserGames.mockClear();
   mockUserGamesStore.addUserGame.mockClear();
   mockUserGamesStore.updateUserGame.mockClear();
+  mockUserGamesStore.updateProgress.mockClear();
+  mockUserGamesStore.bulkUpdateStatus.mockClear();
   mockUserGamesStore.deleteUserGame.mockClear();
   mockUserGamesStore.clearError.mockClear();
   mockUserGamesStore.value = {

@@ -41,48 +41,16 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
 
     // Setup mock data for user games with correct structure
     mockUserGamesStore.value = {
-      games: mockGames.map((game, index) => ({
-        id: `user-game-${index + 1}`,
-        game: {
-          id: game.id,
-          title: game.title,
-          description: game.description,
-          genre: game.genre,
-          developer: game.developer,
-          publisher: game.publisher,
-          release_date: game.release_date,
-          cover_art_url: game.cover_art_url
-        },
-        ownership_status: game.ownership_status,
-        is_physical: game.is_physical,
-        personal_rating: game.personal_rating,
-        is_loved: game.is_loved,
-        play_status: game.play_status,
-        hours_played: game.hours_played,
-        personal_notes: game.personal_notes,
-        acquired_date: game.acquired_date,
-        last_played: game.last_played,
-        platforms: [],
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      })),
-      currentUserGame: null,
-      stats: null,
+      games: mockGames,
       isLoading: false,
-      error: null,
-      filters: {},
-      pagination: {
-        page: 1,
-        per_page: 20,
-        total: mockGames.length,
-        pages: 1
-      }
+      error: null
     };
 
     // Add required methods to mocks
     mockUserGamesStore.fetchUserGames = vi.fn().mockResolvedValue(undefined);
     mockUserGamesStore.updateProgress = vi.fn().mockResolvedValue([]);
-    mockPlatformsStore.loadAll = vi.fn().mockResolvedValue(undefined);
+    mockUserGamesStore.bulkUpdateStatus = vi.fn().mockResolvedValue([]);
+    mockPlatformsStore.fetchPlatforms = vi.fn().mockResolvedValue(undefined);
   });
 
   describe('Basic Rendering', () => {

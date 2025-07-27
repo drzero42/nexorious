@@ -4,10 +4,13 @@
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
   
-  export let value: string = '';
+  export let value: string | undefined = '';
   export let placeholder: string = 'Write something...';
   export let editable: boolean = true;
   export let onchange: ((event: CustomEvent<{ value: string }>) => void) | undefined = undefined;
+  
+  // Handle undefined value by defaulting to empty string
+  $: safeValue = value ?? '';
   
   let element: HTMLElement;
   let editor: Editor;
@@ -25,7 +28,7 @@
           placeholder
         })
       ],
-      content: value,
+      content: safeValue,
       editable,
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
@@ -50,8 +53,8 @@
     editor.setEditable(editable);
   }
   
-  $: if (editor && value !== editor.getHTML()) {
-    editor.commands.setContent(value);
+  $: if (editor && safeValue !== editor.getHTML()) {
+    editor.commands.setContent(safeValue);
   }
   
   function toggleBold() {
@@ -102,6 +105,7 @@
           class:active={isBold}
           on:click={toggleBold}
           title="Bold (Ctrl+B)"
+          aria-label="Bold (Ctrl+B)"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z"></path>
@@ -114,6 +118,7 @@
           class:active={isItalic}
           on:click={toggleItalic}
           title="Italic (Ctrl+I)"
+          aria-label="Italic (Ctrl+I)"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 4h4m0 16h-4m4-16l-4 16"></path>
@@ -125,6 +130,7 @@
           class:active={isStrike}
           on:click={toggleStrike}
           title="Strikethrough"
+          aria-label="Strikethrough"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 12h8m-8 0H4m8 0V7.5A2.5 2.5 0 019.5 5H8m4 7v4.5a2.5 2.5 0 002.5 2.5H16"></path>
@@ -141,6 +147,7 @@
           class:active={!isHeading1 && !isHeading2 && !isHeading3}
           on:click={setParagraph}
           title="Paragraph"
+          aria-label="Paragraph"
         >
           P
         </button>
@@ -150,6 +157,7 @@
           class:active={isHeading1}
           on:click={() => setHeading(1)}
           title="Heading 1"
+          aria-label="Heading 1"
         >
           H1
         </button>
@@ -159,6 +167,7 @@
           class:active={isHeading2}
           on:click={() => setHeading(2)}
           title="Heading 2"
+          aria-label="Heading 2"
         >
           H2
         </button>
@@ -168,6 +177,7 @@
           class:active={isHeading3}
           on:click={() => setHeading(3)}
           title="Heading 3"
+          aria-label="Heading 3"
         >
           H3
         </button>
@@ -182,6 +192,7 @@
           class:active={isBulletList}
           on:click={toggleBulletList}
           title="Bullet list"
+          aria-label="Bullet list"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h13M8 12h13m-13 6h13M3 6h.01M3 12h.01M3 18h.01"></path>
@@ -193,6 +204,7 @@
           class:active={isOrderedList}
           on:click={toggleOrderedList}
           title="Numbered list"
+          aria-label="Numbered list"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
