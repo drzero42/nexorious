@@ -15,7 +15,6 @@ import {
   setUnauthenticatedState,
   resetAuthMocks
 } from '../test-utils/auth-mocks';
-import { resetNavigationMocks } from '../test-utils/navigation-mocks';
 
 // Mock PWA components
 vi.mock('$lib/components/PWAInstallButton.svelte', () => ({
@@ -354,7 +353,8 @@ describe('Layout Component', () => {
       // Click on admin dashboard link - get the visible one in mobile menu
       const adminDashboardLinks = screen.getAllByText('Admin Dashboard');
       const adminDashboardLink = adminDashboardLinks[1]; // Mobile menu link
-      await userEvent.click(adminDashboardLink);
+      expect(adminDashboardLink).toBeDefined();
+      await userEvent.click(adminDashboardLink!);
 
       // Mobile menu should be closed
       expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
@@ -366,9 +366,9 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       await userEvent.click(mobileMenuButton);
 
-      const adminDashboardLink = screen.getAllByText('Admin Dashboard')[1].closest('a'); // Mobile menu link
-      const manageUsersLink = screen.getAllByText('Manage Users')[1].closest('a'); // Mobile menu link
-      const managePlatformsLink = screen.getAllByText('Manage Platforms')[1].closest('a'); // Mobile menu link
+      const adminDashboardLink = screen.getAllByText('Admin Dashboard')[1]?.closest('a'); // Mobile menu link
+      const manageUsersLink = screen.getAllByText('Manage Users')[1]?.closest('a'); // Mobile menu link
+      const managePlatformsLink = screen.getAllByText('Manage Platforms')[1]?.closest('a'); // Mobile menu link
 
       expect(adminDashboardLink?.getAttribute('href')).toBe('/admin/dashboard');
       expect(manageUsersLink?.getAttribute('href')).toBe('/admin/users');

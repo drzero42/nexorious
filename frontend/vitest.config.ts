@@ -30,7 +30,17 @@ export default defineConfig({
 				statements: 70
 			}
 		},
-		globals: true
+		globals: true,
+		silent: false,
+		reporter: ['default'],
+		onConsoleLog: (log: string) => {
+			// Suppress specific JSDOM navigation warnings
+			if (log.includes('Not implemented: navigation') || 
+			    log.includes('Error: Not implemented: navigation')) {
+				return false;
+			}
+			return true;
+		}
 	},
 	resolve: {
 		alias: {

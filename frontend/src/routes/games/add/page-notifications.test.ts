@@ -57,8 +57,18 @@ describe('Game Addition Page - Notifications Integration', () => {
     // Reset platforms mock to succeed by default
     mockPlatformsStore.loadAll.mockResolvedValue(undefined);
     
-    // Get reference to mocked notifications
-    mockNotifications = (await import('$lib/stores/notifications.svelte')).notifications;
+    // Get fresh reference to mocked notifications after clearing
+    const notificationsModule = await import('$lib/stores/notifications.svelte');
+    mockNotifications = notificationsModule.notifications;
+    
+    // Re-setup the mock functions after clearing
+    mockNotifications.showSuccess = vi.fn();
+    mockNotifications.showError = vi.fn();
+    mockNotifications.showWarning = vi.fn();
+    mockNotifications.showInfo = vi.fn();
+    mockNotifications.showApiError = vi.fn();
+    mockNotifications.remove = vi.fn();
+    mockNotifications.clear = vi.fn();
   });
 
   afterEach(() => {
@@ -87,20 +97,23 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
 
     it('should show error notification when platforms fail to load', async () => {
-      vi.useRealTimers(); // Use real timers for this test
-      
+      // Setup the rejection before rendering
       mockPlatformsStore.loadAll.mockRejectedValue(new Error('Platform load failed'));
       
       render(GameAddPage);
       
-      // Wait a bit for the onMount to execute
+      // Wait for the method call first
+      await waitFor(() => {
+        expect(mockPlatformsStore.loadAll).toHaveBeenCalled();
+      }, { timeout: 2000 });
+      
+      // Add a small delay to allow error handling to complete
       await new Promise(resolve => setTimeout(resolve, 100));
       
+      // Then check for the error notification
       expect(mockNotifications.showError).toHaveBeenCalledWith(
         'Failed to load platforms and storefronts. Some features may not work properly.'
       );
-      
-      vi.useFakeTimers(); // Restore fake timers
     });
   });
 
@@ -225,8 +238,6 @@ describe('Game Addition Page - Notifications Integration', () => {
 
   describe('Game Import Error Flow', () => {
     it('should handle IGDB import failure and fallback to manual entry', async () => {
-      vi.useRealTimers(); // Use real timers for this test
-      
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates
       });
@@ -253,8 +264,6 @@ describe('Game Addition Page - Notifications Integration', () => {
         // Should fallback to details step (manual entry)
         expect(screen.getByText(/Review & Customize/i)).toBeInTheDocument();
       });
-      
-      vi.useFakeTimers(); // Restore fake timers
     });
 
     it('should handle collection addition failure', async () => {

@@ -7,8 +7,6 @@ import {
 } from '../../../test-utils/api-mocks';
 import { resetStoresMocks } from '../../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
-import '../../../test-utils/navigation-mocks'; // Import to apply global mocks
-import { mockGoto, mockPage } from '../../../test-utils/navigation-mocks';
 import GameDetailPage from './+page.svelte';
 import type { UserGame, PlayStatus, OwnershipStatus } from '$lib/stores/user-games.svelte';
 
@@ -184,7 +182,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     };
     
     // Mock fetchUserGames to resolve immediately
-    mockUserGamesStore.fetchUserGames.mockResolvedValue();
+    mockUserGamesStore.fetchUserGames.mockResolvedValue(undefined);
   });
 
   describe('Platform Information Display', () => {

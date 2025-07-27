@@ -237,11 +237,21 @@ export function resetStoresMocks() {
   mockUserGamesStore.fetchUserGames.mockClear();
   mockUserGamesStore.loadUserGames.mockClear();
   mockUserGamesStore.addUserGame.mockClear();
+  mockUserGamesStore.addGameToCollection.mockClear();
   mockUserGamesStore.updateUserGame.mockClear();
   mockUserGamesStore.updateProgress.mockClear();
   mockUserGamesStore.bulkUpdateStatus.mockClear();
   mockUserGamesStore.deleteUserGame.mockClear();
   mockUserGamesStore.clearError.mockClear();
+  
+  // Reset to resolved promises by default
+  mockUserGamesStore.addGameToCollection.mockResolvedValue({
+    id: 'user-game-1',
+    game_id: 'game-1'
+  });
+  mockUserGamesStore.updateProgress.mockResolvedValue({});
+  mockUserGamesStore.updateUserGame.mockResolvedValue({});
+  
   mockUserGamesStore.value = {
     userGames: mockUserGames,
     currentUserGame: null,
@@ -270,6 +280,14 @@ export function resetStoresMocks() {
   mockGamesStore.refreshMetadata.mockClear();
   mockGamesStore.clearSearchResults.mockClear();
   mockGamesStore.clearError.mockClear();
+  
+  // Reset to resolved promises by default
+  mockGamesStore.searchIGDB.mockResolvedValue({
+    games: mockIGDBCandidates
+  });
+  mockGamesStore.createFromIGDB.mockResolvedValue(mockGameMetadata);
+  mockGamesStore.createGame.mockResolvedValue(mockGameMetadata);
+  
   mockGamesStore.value = {
     games: [],
     searchResults: [],
@@ -279,7 +297,7 @@ export function resetStoresMocks() {
     error: null
   };
 
-  // Reset other stores
+  // Reset platforms store
   mockPlatformsStore.loadPlatforms.mockClear();
   mockPlatformsStore.loadStorefronts.mockClear();
   mockPlatformsStore.loadAll.mockClear();
@@ -288,7 +306,13 @@ export function resetStoresMocks() {
   mockPlatformsStore.clearError.mockClear();
   mockPlatformsStore.getActivePlatforms.mockClear();
   mockPlatformsStore.getActiveStorefronts.mockClear();
+  
+  // Reset to resolved promises by default
+  mockPlatformsStore.loadAll.mockResolvedValue(undefined);
+  mockPlatformsStore.loadPlatforms.mockResolvedValue(undefined);
+  mockPlatformsStore.loadStorefronts.mockResolvedValue(undefined);
 
+  // Reset other stores
   mockSearchStore.setQuery.mockClear();
   mockSearchStore.setFilters.mockClear();
   mockSearchStore.search.mockClear();
