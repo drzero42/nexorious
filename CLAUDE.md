@@ -42,3 +42,4 @@ These rules must always be adhered to during development.
 - When you are asked to work on a task you will create a branch that contains the task name.
 - When you are told 'lets work on task XXX' you must first create a branch that contains the task name.
 - Always use `uv run python` instead of just `python`
+- For Svelte Typescript tests, the filename is not allowed to start with +
