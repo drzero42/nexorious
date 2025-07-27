@@ -102,13 +102,16 @@ describe('Game Addition Page - Notifications Integration', () => {
       
       render(GameAddPage);
       
+      // Advance timers to allow onMount to execute
+      await vi.runAllTimersAsync();
+      
       // Wait for the method call first
       await waitFor(() => {
         expect(mockPlatformsStore.loadAll).toHaveBeenCalled();
       }, { timeout: 2000 });
       
-      // Add a small delay to allow error handling to complete
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Advance timers again to allow error handling to complete
+      await vi.runAllTimersAsync();
       
       // Then check for the error notification
       expect(mockNotifications.showError).toHaveBeenCalledWith(
