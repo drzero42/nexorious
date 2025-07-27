@@ -138,7 +138,6 @@ def upgrade() -> None:
     sa.Column('hours_played', sa.Integer(), nullable=False),
     sa.Column('personal_notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('acquired_date', sa.Date(), nullable=True),
-    sa.Column('last_played', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['game_id'], ['games.id'], ),

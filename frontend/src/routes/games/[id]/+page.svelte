@@ -611,16 +611,8 @@
               </div>
             </div>
 
-            {#if game.last_played || game.acquired_date}
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {#if game.last_played}
-                  <div class="bg-gray-50 p-4 rounded-lg">
-                    <dt class="text-sm font-medium text-gray-500">Last Played</dt>
-                    <dd class="mt-1 text-sm text-gray-900">
-                      {new Date(game.last_played).toLocaleDateString()}
-                    </dd>
-                  </div>
-                {/if}
+            {#if game.acquired_date}
+              <div class="grid grid-cols-1 gap-6">
 
                 {#if game.acquired_date}
                   <div class="bg-gray-50 p-4 rounded-lg">

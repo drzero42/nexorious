@@ -38,8 +38,6 @@
     <text x="400" y="25" fill="#6c757d" font-size="12">Hours Played: </text>
     <text x="480" y="25" fill="#343a40" font-size="12" font-weight="bold">45</text>
     
-    <text x="400" y="45" fill="#6c757d" font-size="12">Last Played: </text>
-    <text x="480" y="45" fill="#343a40" font-size="12" font-weight="bold">2 hours ago</text>
     
     <text x="400" y="65" fill="#6c757d" font-size="12">Added: </text>
     <text x="480" y="65" fill="#343a40" font-size="12" font-weight="bold">3 months ago</text>
@@ -116,10 +114,6 @@
     <rect x="680" y="65" width="120" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
     <text x="690" y="87" fill="#343a40" font-size="14">2.5 hours</text>
     
-    <!-- Last Played -->
-    <text x="540" y="125" fill="#6c757d" font-size="12" font-weight="500">LAST PLAYED</text>
-    <rect x="540" y="135" width="260" height="35" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
-    <text x="550" y="157" fill="#343a40" font-size="14">2023-10-15 14:30</text>
     
     <!-- Progress Bar -->
     <rect x="840" y="0" width="280" height="180" rx="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>

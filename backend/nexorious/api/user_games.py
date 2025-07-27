@@ -449,13 +449,6 @@ async def update_game_progress(
     if progress_data.personal_notes is not None:
         user_game.personal_notes = progress_data.personal_notes
     
-    if progress_data.last_played is not None:
-        user_game.last_played = progress_data.last_played
-    else:
-        # Auto-update last played if status changed to in progress or completed
-        if progress_data.play_status in [PlayStatus.IN_PROGRESS, PlayStatus.COMPLETED, PlayStatus.MASTERED, PlayStatus.DOMINATED]:
-            user_game.last_played = datetime.now(timezone.utc)
-    
     user_game.updated_at = datetime.now(timezone.utc)
     session.commit()
     session.refresh(user_game)

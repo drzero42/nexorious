@@ -93,10 +93,6 @@
         <text x="200" y="50" fill="#343a40" font-size="24" font-weight="bold">100%</text>
         <text x="200" y="65" fill="#28a745" font-size="12">All achievements</text>
         
-        <!-- Last Played -->
-        <text x="380" y="25" fill="#6c757d" font-size="12" font-weight="500">LAST PLAYED</text>
-        <text x="380" y="50" fill="#343a40" font-size="24" font-weight="bold">2h</text>
-        <text x="380" y="65" fill="#6c757d" font-size="12">ago</text>
         
         <!-- Acquired -->
         <text x="480" y="25" fill="#6c757d" font-size="12" font-weight="500">ACQUIRED</text>
@@ -197,10 +193,6 @@
     <rect x="20" y="110" width="90" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
     <text x="30" y="130" fill="#343a40" font-size="12">87</text>
     
-    <!-- Last Played -->
-    <text x="130" y="105" fill="#343a40" font-size="12">Last Played</text>
-    <rect x="130" y="110" width="90" height="30" rx="4" fill="white" stroke="#ced4da" stroke-width="1"/>
-    <text x="140" y="130" fill="#343a40" font-size="12">Today</text>
     
     <!-- Save Button -->
     <rect x="20" y="155" width="200" height="30" rx="4" fill="#28a745"/>

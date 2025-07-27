@@ -89,7 +89,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Time tracking input forms
 - [x] Personal notes editor with rich text
 - [x] Progress visualization components
-- [ ] Last played date tracking
 
 #### 1.2.6 Rating & Tagging System
 - [ ] Star rating component (1-5 stars)

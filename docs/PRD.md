@@ -642,7 +642,6 @@ CREATE TABLE user_games (
     hours_played INTEGER DEFAULT 0,
     personal_notes TEXT,
     acquired_date DATE,
-    last_played TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, game_id)

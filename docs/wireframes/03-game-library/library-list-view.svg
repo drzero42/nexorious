@@ -66,7 +66,6 @@
   <text x="580" y="315" fill="#6c757d" font-size="12" font-weight="bold">STATUS</text>
   <text x="700" y="315" fill="#6c757d" font-size="12" font-weight="bold">RATING</text>
   <text x="800" y="315" fill="#6c757d" font-size="12" font-weight="bold">HOURS</text>
-  <text x="900" y="315" fill="#6c757d" font-size="12" font-weight="bold">LAST PLAYED</text>
   <text x="1020" y="315" fill="#6c757d" font-size="12" font-weight="bold">ACTIONS</text>
   
   <!-- Table Rows -->
@@ -96,8 +95,6 @@
     <!-- Hours -->
     <text x="720" y="30" fill="#343a40" font-size="14">87h</text>
     
-    <!-- Last Played -->
-    <text x="820" y="30" fill="#6c757d" font-size="12">2 hours ago</text>
     
     <!-- Actions -->
     <text x="940" y="30" fill="#007bff" font-size="12">Edit</text>
@@ -128,8 +125,6 @@
     <!-- Hours -->
     <text x="720" y="90" fill="#343a40" font-size="14">45h</text>
     
-    <!-- Last Played -->
-    <text x="820" y="90" fill="#6c757d" font-size="12">1 day ago</text>
     
     <!-- Actions -->
     <text x="940" y="90" fill="#007bff" font-size="12">Edit</text>
@@ -160,8 +155,6 @@
     <!-- Hours -->
     <text x="720" y="150" fill="#343a40" font-size="14">156h</text>
     
-    <!-- Last Played -->
-    <text x="820" y="150" fill="#6c757d" font-size="12">3 months ago</text>
     
     <!-- Actions -->
     <text x="940" y="150" fill="#007bff" font-size="12">Edit</text>
@@ -192,8 +185,6 @@
     <!-- Hours -->
     <text x="720" y="210" fill="#6c757d" font-size="14">0h</text>
     
-    <!-- Last Played -->
-    <text x="820" y="210" fill="#6c757d" font-size="12">Never</text>
     
     <!-- Actions -->
     <text x="940" y="210" fill="#007bff" font-size="12">Edit</text>
