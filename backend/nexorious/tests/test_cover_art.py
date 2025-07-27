@@ -328,7 +328,7 @@ class TestBulkCoverArtDownload:
             
             response = client.post(
                 "/api/games/cover-art/bulk-download",
-                json=game_ids
+                json={"game_ids": game_ids, "skip_existing": False}
             )
             
             assert response.status_code == 200
@@ -351,7 +351,7 @@ class TestBulkCoverArtDownload:
             
             response = client.post(
                 "/api/games/cover-art/bulk-download",
-                json=["game1", "game2"]
+                json={"game_ids": ["game1", "game2"], "skip_existing": False}
             )
             
             assert response.status_code == 403
@@ -399,8 +399,8 @@ class TestBulkCoverArtDownload:
             app.dependency_overrides[get_igdb_service_dependency] = lambda: create_mock_igdb_service(download_result="/static/cover_art/2.jpg")
             
             response = client.post(
-                "/api/games/cover-art/bulk-download?skip_existing=true",
-                json=game_ids
+                "/api/games/cover-art/bulk-download",
+                json={"game_ids": game_ids, "skip_existing": True}
             )
             
             assert response.status_code == 200
@@ -471,7 +471,7 @@ class TestBulkCoverArtDownload:
             
             response = client.post(
                 "/api/games/cover-art/bulk-download",
-                json=game_ids
+                json={"game_ids": game_ids, "skip_existing": False}
             )
             
             assert response.status_code == 200
