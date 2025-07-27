@@ -81,7 +81,10 @@ function createAuthStore() {
 
         const user = await userResponse.json();
         const newState = {
-          user: user,
+          user: {
+            ...user,
+            isAdmin: user.is_admin // Map backend snake_case to frontend camelCase
+          },
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           isLoading: false,
@@ -210,7 +213,10 @@ function createAuthStore() {
         const updatedUser = await response.json();
         const newState = {
           ...state,
-          user: updatedUser,
+          user: {
+            ...updatedUser,
+            isAdmin: updatedUser.is_admin // Map backend snake_case to frontend camelCase
+          },
           isLoading: false,
           error: null
         };
