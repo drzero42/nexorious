@@ -8,21 +8,9 @@ import {
   mockGame
 } from '../../../test-utils/api-mocks';
 import { mockGamesStore, mockUserGamesStore, mockPlatformsStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
-import { mockGoto, resetNavigationMocks } from '../../../test-utils/navigation-mocks';
+import { mockGoto } from '../../../test-utils/navigation-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameAddPage from './+page.svelte';
-
-// Mock the notifications store
-const mockNotifications = {
-  showSuccess: vi.fn(),
-  showError: vi.fn(),
-  showWarning: vi.fn(),
-  showInfo: vi.fn(),
-  showApiError: vi.fn(),
-  remove: vi.fn(),
-  clear: vi.fn(),
-  items: []
-};
 
 // Mock modules
 vi.mock('$lib/env', () => ({ config: mockConfig }));
@@ -35,21 +23,42 @@ vi.mock('$lib/stores/auth.svelte', () => ({
   }
 }));
 
-vi.mock('$lib/stores/notifications.svelte', () => ({
-  notifications: mockNotifications
+vi.mock('$lib/stores/platforms.svelte', () => ({
+  platforms: mockPlatformsStore
 }));
+
+vi.mock('$lib/stores/notifications.svelte', () => ({
+  notifications: {
+    showSuccess: vi.fn(),
+    showError: vi.fn(),
+    showWarning: vi.fn(),
+    showInfo: vi.fn(),
+    showApiError: vi.fn(),
+    remove: vi.fn(),
+    clear: vi.fn(),
+    items: []
+  }
+}));
+
+// Get reference to the mocked notifications
+let mockNotifications: any;
 
 describe('Game Addition Page - Notifications Integration', () => {
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     resetFetchMock();
     resetStoresMocks();
-    resetNavigationMocks();
     resetAuthMocks();
     setupFetchMock();
     setAuthenticatedState();
     vi.useFakeTimers();
+    
+    // Reset platforms mock to succeed by default
+    mockPlatformsStore.loadAll.mockResolvedValue(undefined);
+    
+    // Get reference to mocked notifications
+    mockNotifications = (await import('$lib/stores/notifications.svelte')).notifications;
   });
 
   afterEach(() => {
@@ -78,15 +87,20 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
 
     it('should show error notification when platforms fail to load', async () => {
-      mockPlatformsStore.fetchPlatforms.mockRejectedValue(new Error('Platform load failed'));
+      vi.useRealTimers(); // Use real timers for this test
+      
+      mockPlatformsStore.loadAll.mockRejectedValue(new Error('Platform load failed'));
       
       render(GameAddPage);
       
-      await waitFor(() => {
-        expect(mockNotifications.showError).toHaveBeenCalledWith(
-          'Failed to load platforms and storefronts. Some features may not work properly.'
-        );
-      });
+      // Wait a bit for the onMount to execute
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      expect(mockNotifications.showError).toHaveBeenCalledWith(
+        'Failed to load platforms and storefronts. Some features may not work properly.'
+      );
+      
+      vi.useFakeTimers(); // Restore fake timers
     });
   });
 
@@ -211,6 +225,8 @@ describe('Game Addition Page - Notifications Integration', () => {
 
   describe('Game Import Error Flow', () => {
     it('should handle IGDB import failure and fallback to manual entry', async () => {
+      vi.useRealTimers(); // Use real timers for this test
+      
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates
       });
@@ -234,9 +250,11 @@ describe('Game Addition Page - Notifications Integration', () => {
         expect(mockNotifications.showError).toHaveBeenCalledWith(
           'Failed to import game from IGDB. You can add it manually with custom details.'
         );
-        // Should fallback to manual entry step
-        expect(screen.getByText(/manual entry/i)).toBeInTheDocument();
+        // Should fallback to details step (manual entry)
+        expect(screen.getByText(/Review & Customize/i)).toBeInTheDocument();
       });
+      
+      vi.useFakeTimers(); // Restore fake timers
     });
 
     it('should handle collection addition failure', async () => {

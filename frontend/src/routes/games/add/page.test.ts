@@ -8,7 +8,7 @@ import {
   mockGame
 } from '../../../test-utils/api-mocks';
 import { mockGamesStore, mockUserGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
-import { mockGoto, resetNavigationMocks } from '../../../test-utils/navigation-mocks';
+import { mockGoto } from '../../../test-utils/navigation-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameAddPage from './+page.svelte';
 
@@ -33,7 +33,6 @@ describe('Game Addition Page', () => {
     vi.clearAllMocks();
     resetFetchMock();
     resetStoresMocks();
-    resetNavigationMocks();
     resetAuthMocks();
     setupFetchMock();
     setAuthenticatedState();
@@ -624,7 +623,6 @@ describe('Game Addition Page', () => {
       // Ensure clean state for error tests
       vi.clearAllMocks();
       resetStoresMocks();
-      resetNavigationMocks();
       resetAuthMocks();
       setAuthenticatedState();
     });

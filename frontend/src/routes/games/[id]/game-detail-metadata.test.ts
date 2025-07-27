@@ -20,14 +20,14 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
     });
 
     it('should format review counts with proper localization', () => {
-      // Test review count formatting
+      // Test review count formatting with explicit US locale
       const count1 = 1234;
       const count2 = 15432;
       const count3 = 500;
       
-      expect(count1.toLocaleString()).toBe('1,234');
-      expect(count2.toLocaleString()).toBe('15,432');
-      expect(count3.toLocaleString()).toBe('500');
+      expect(count1.toLocaleString('en-US')).toBe('1,234');
+      expect(count2.toLocaleString('en-US')).toBe('15,432');
+      expect(count3.toLocaleString('en-US')).toBe('500');
     });
 
     it('should handle platform information structure correctly', () => {

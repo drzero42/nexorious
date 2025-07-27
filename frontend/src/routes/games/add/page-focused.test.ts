@@ -7,7 +7,6 @@ import {
   resetFetchMock
 } from '../../../test-utils/api-mocks';
 import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
-import { resetNavigationMocks } from '../../../test-utils/navigation-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameAddPage from './+page.svelte';
 
@@ -31,7 +30,6 @@ describe('Game Addition Page - PR Focused Tests', () => {
     vi.clearAllMocks();
     resetFetchMock();
     resetStoresMocks();
-    resetNavigationMocks();
     resetAuthMocks();
     setupFetchMock();
     setAuthenticatedState();
@@ -139,7 +137,6 @@ describe('Game Addition Page - PR Focused Tests', () => {
       // Reset all mocks to ensure clean state for error tests
       vi.clearAllMocks();
       resetStoresMocks();
-      resetNavigationMocks();
       resetAuthMocks();
       setAuthenticatedState();
     });

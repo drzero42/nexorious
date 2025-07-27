@@ -12,14 +12,13 @@ import {
   setUnauthenticatedState,
   resetAuthMocks
 } from '../../test-utils/auth-mocks';
-import { mockGoto, resetNavigationMocks } from '../../test-utils/navigation-mocks';
+import { mockGoto } from '../../test-utils/navigation-mocks';
 
 describe('Setup Page', () => {
   const userEvent = createUserEvent();
 
   beforeEach(() => {
     resetAuthMocks();
-    resetNavigationMocks();
     setUnauthenticatedState();
   });
 

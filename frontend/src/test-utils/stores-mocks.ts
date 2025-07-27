@@ -160,7 +160,15 @@ export const mockPlatformsStore = {
   loadAll: vi.fn(),
   fetchPlatforms: vi.fn(),
   fetchStorefronts: vi.fn(),
-  clearError: vi.fn()
+  clearError: vi.fn(),
+  getActivePlatforms: vi.fn(() => [
+    { id: 'pc', name: 'PC', display_name: 'PC' },
+    { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5' }
+  ]),
+  getActiveStorefronts: vi.fn(() => [
+    { id: 'steam', name: 'Steam', display_name: 'Steam' },
+    { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store' }
+  ])
 };
 
 // Mock search store
@@ -278,6 +286,8 @@ export function resetStoresMocks() {
   mockPlatformsStore.fetchPlatforms.mockClear();
   mockPlatformsStore.fetchStorefronts.mockClear();
   mockPlatformsStore.clearError.mockClear();
+  mockPlatformsStore.getActivePlatforms.mockClear();
+  mockPlatformsStore.getActiveStorefronts.mockClear();
 
   mockSearchStore.setQuery.mockClear();
   mockSearchStore.setFilters.mockClear();

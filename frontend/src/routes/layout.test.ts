@@ -41,7 +41,6 @@ describe('Layout Component', () => {
 
   beforeEach(() => {
     resetAuthMocks();
-    resetNavigationMocks();
     setDesktopViewport();
   });
 
@@ -181,6 +180,7 @@ describe('Layout Component', () => {
     it('should show admin navigation section for admin users', () => {
       renderComponent(Layout);
 
+      // Only desktop navigation is visible by default (mobile menu is closed)
       expect(screen.getByText('Administration')).toBeInTheDocument();
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
       expect(screen.getByText('Manage Users')).toBeInTheDocument();
@@ -190,9 +190,9 @@ describe('Layout Component', () => {
     it('should have correct admin navigation links', () => {
       renderComponent(Layout);
 
-      const adminDashboardLink = screen.getByText('Admin Dashboard').closest('a');
-      const manageUsersLink = screen.getByText('Manage Users').closest('a');
-      const managePlatformsLink = screen.getByText('Manage Platforms').closest('a');
+      const adminDashboardLink = screen.getByText('Admin Dashboard').closest('a'); // Desktop link only
+      const manageUsersLink = screen.getByText('Manage Users').closest('a'); // Desktop link only
+      const managePlatformsLink = screen.getByText('Manage Platforms').closest('a'); // Desktop link only
 
       expect(adminDashboardLink?.getAttribute('href')).toBe('/admin/dashboard');
       expect(manageUsersLink?.getAttribute('href')).toBe('/admin/users');
@@ -332,10 +332,17 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       await userEvent.click(mobileMenuButton);
 
-      expect(screen.getByText('Administration')).toBeInTheDocument();
-      expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Manage Users')).toBeInTheDocument();
-      expect(screen.getByText('Manage Platforms')).toBeInTheDocument();
+      // Wait for mobile menu to appear and find Administration text within the mobile menu
+      const mobileMenu = container.querySelector('[role="dialog"]');
+      expect(mobileMenu).toBeInTheDocument();
+      
+      // Look for Administration text within the mobile menu context
+      const administrationTexts = screen.getAllByText('Administration');
+      expect(administrationTexts).toHaveLength(2); // One in desktop (hidden), one in mobile (visible)
+      
+      expect(screen.getAllByText('Admin Dashboard')).toHaveLength(2); // Desktop and mobile
+      expect(screen.getAllByText('Manage Users')).toHaveLength(2); // Desktop and mobile
+      expect(screen.getAllByText('Manage Platforms')).toHaveLength(2); // Desktop and mobile
     });
 
     it('should close mobile menu when admin navigation link is clicked', async () => {
@@ -344,8 +351,9 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       await userEvent.click(mobileMenuButton);
 
-      // Click on admin dashboard link
-      const adminDashboardLink = screen.getByText('Admin Dashboard');
+      // Click on admin dashboard link - get the visible one in mobile menu
+      const adminDashboardLinks = screen.getAllByText('Admin Dashboard');
+      const adminDashboardLink = adminDashboardLinks[1]; // Mobile menu link
       await userEvent.click(adminDashboardLink);
 
       // Mobile menu should be closed
@@ -358,9 +366,9 @@ describe('Layout Component', () => {
       const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
       await userEvent.click(mobileMenuButton);
 
-      const adminDashboardLink = screen.getByText('Admin Dashboard').closest('a');
-      const manageUsersLink = screen.getByText('Manage Users').closest('a');
-      const managePlatformsLink = screen.getByText('Manage Platforms').closest('a');
+      const adminDashboardLink = screen.getAllByText('Admin Dashboard')[1].closest('a'); // Mobile menu link
+      const manageUsersLink = screen.getAllByText('Manage Users')[1].closest('a'); // Mobile menu link
+      const managePlatformsLink = screen.getAllByText('Manage Platforms')[1].closest('a'); // Mobile menu link
 
       expect(adminDashboardLink?.getAttribute('href')).toBe('/admin/dashboard');
       expect(manageUsersLink?.getAttribute('href')).toBe('/admin/users');

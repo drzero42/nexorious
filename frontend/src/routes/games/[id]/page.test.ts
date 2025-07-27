@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import { 
   setupFetchMock, 
   resetFetchMock,
@@ -7,6 +7,8 @@ import {
 } from '../../../test-utils/api-mocks';
 import { resetStoresMocks } from '../../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
+import '../../../test-utils/navigation-mocks'; // Import to apply global mocks
+import { mockGoto, mockPage } from '../../../test-utils/navigation-mocks';
 import GameDetailPage from './+page.svelte';
 import type { UserGame, PlayStatus, OwnershipStatus } from '$lib/stores/user-games.svelte';
 
@@ -14,6 +16,7 @@ import type { UserGame, PlayStatus, OwnershipStatus } from '$lib/stores/user-gam
 vi.mock('$lib/env', () => ({
   config: mockConfig
 }));
+
 
 // Create comprehensive UserGame mock with all metadata
 const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
@@ -114,6 +117,10 @@ const mockUserGamesStore = {
     isLoading: false,
     error: undefined
   },
+  subscribe: vi.fn((callback) => {
+    callback(mockUserGamesStore.value);
+    return () => {};
+  }),
   fetchUserGames: vi.fn(),
   updateUserGame: vi.fn(),
   updateProgress: vi.fn(),
@@ -122,6 +129,11 @@ const mockUserGamesStore = {
 
 // Mock the stores
 vi.mock('$lib/stores/user-games.svelte', () => ({
+  userGames: mockUserGamesStore
+}));
+
+// Also mock the main stores export
+vi.mock('$lib/stores', () => ({
   userGames: mockUserGamesStore
 }));
 
@@ -137,7 +149,21 @@ vi.mock('$app/stores', () => ({
 
 // Mock navigation
 vi.mock('$app/navigation', () => ({
-  goto: vi.fn()
+  goto: vi.fn(),
+  page: {
+    subscribe: vi.fn((callback) => {
+      callback({
+        params: { id: 'game-1' },
+        url: new URL('http://localhost:3000/games/game-1'),
+        route: { id: '/games/[id]' },
+        status: 200,
+        error: null,
+        data: {},
+        form: null
+      });
+      return () => {};
+    })
+  }
 }));
 
 describe('Game Detail Page - Enhanced Metadata', () => {
@@ -156,14 +182,19 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       isLoading: false,
       error: undefined
     };
+    
+    // Mock fetchUserGames to resolve immediately
+    mockUserGamesStore.fetchUserGames.mockResolvedValue();
   });
 
   describe('Platform Information Display', () => {
-    it('should display platform information when platforms are available', () => {
+    it('should display platform information when platforms are available', async () => {
       render(GameDetailPage);
       
-      // Check for "Available On" section
-      expect(screen.getByText('Available On')).toBeInTheDocument();
+      // Wait for the component to finish loading
+      await waitFor(() => {
+        expect(screen.getByText('Available On')).toBeInTheDocument();
+      });
       
       // Check for platform names
       expect(screen.getByText('PC')).toBeInTheDocument();
