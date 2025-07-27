@@ -155,6 +155,64 @@ describe('Layout Component', () => {
 
       expect(mockAuthStore.logout).toHaveBeenCalledOnce();
     });
+
+    it('should not show admin navigation for regular users', () => {
+      renderComponent(Layout);
+
+      expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+      expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
+      expect(screen.queryByText('Manage Users')).not.toBeInTheDocument();
+      expect(screen.queryByText('Manage Platforms')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Admin User State', () => {
+    beforeEach(() => {
+      // Set admin user state
+      mockAuthStore.value = {
+        user: { id: '1', username: 'admin', isAdmin: true },
+        accessToken: 'test-token',
+        refreshToken: 'test-refresh-token',
+        isLoading: false,
+        error: null
+      };
+    });
+
+    it('should show admin navigation section for admin users', () => {
+      renderComponent(Layout);
+
+      expect(screen.getByText('Administration')).toBeInTheDocument();
+      expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Manage Users')).toBeInTheDocument();
+      expect(screen.getByText('Manage Platforms')).toBeInTheDocument();
+    });
+
+    it('should have correct admin navigation links', () => {
+      renderComponent(Layout);
+
+      const adminDashboardLink = screen.getByText('Admin Dashboard').closest('a');
+      const manageUsersLink = screen.getByText('Manage Users').closest('a');
+      const managePlatformsLink = screen.getByText('Manage Platforms').closest('a');
+
+      expect(adminDashboardLink?.getAttribute('href')).toBe('/admin/dashboard');
+      expect(manageUsersLink?.getAttribute('href')).toBe('/admin/users');
+      expect(managePlatformsLink?.getAttribute('href')).toBe('/admin/platforms');
+    });
+
+    it('should show both regular and admin navigation', () => {
+      renderComponent(Layout);
+
+      // Regular navigation
+      expect(screen.getByText('My Games')).toBeInTheDocument();
+      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Add Game')).toBeInTheDocument();
+
+      // Admin navigation
+      expect(screen.getByText('Administration')).toBeInTheDocument();
+      expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Manage Users')).toBeInTheDocument();
+      expect(screen.getByText('Manage Platforms')).toBeInTheDocument();
+    });
   });
 
   describe('Mobile Navigation', () => {
@@ -252,6 +310,82 @@ describe('Layout Component', () => {
 
       // Check for close X SVG path
       expect(mobileMenuButton.querySelector('path[d*="M6 18L18 6M6 6l12 12"]')).toBeInTheDocument();
+    });
+  });
+
+  describe('Mobile Admin Navigation', () => {
+    beforeEach(() => {
+      // Set admin user state for mobile
+      mockAuthStore.value = {
+        user: { id: '1', username: 'admin', isAdmin: true },
+        accessToken: 'test-token',
+        refreshToken: 'test-refresh-token',
+        isLoading: false,
+        error: null
+      };
+      setMobileViewport();
+    });
+
+    it('should show admin navigation in mobile menu for admin users', async () => {
+      const { container } = renderComponent(Layout);
+
+      const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
+      await userEvent.click(mobileMenuButton);
+
+      expect(screen.getByText('Administration')).toBeInTheDocument();
+      expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Manage Users')).toBeInTheDocument();
+      expect(screen.getByText('Manage Platforms')).toBeInTheDocument();
+    });
+
+    it('should close mobile menu when admin navigation link is clicked', async () => {
+      const { container } = renderComponent(Layout);
+
+      const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
+      await userEvent.click(mobileMenuButton);
+
+      // Click on admin dashboard link
+      const adminDashboardLink = screen.getByText('Admin Dashboard');
+      await userEvent.click(adminDashboardLink);
+
+      // Mobile menu should be closed
+      expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
+    });
+
+    it('should have correct admin navigation links in mobile menu', async () => {
+      const { container } = renderComponent(Layout);
+
+      const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
+      await userEvent.click(mobileMenuButton);
+
+      const adminDashboardLink = screen.getByText('Admin Dashboard').closest('a');
+      const manageUsersLink = screen.getByText('Manage Users').closest('a');
+      const managePlatformsLink = screen.getByText('Manage Platforms').closest('a');
+
+      expect(adminDashboardLink?.getAttribute('href')).toBe('/admin/dashboard');
+      expect(manageUsersLink?.getAttribute('href')).toBe('/admin/users');
+      expect(managePlatformsLink?.getAttribute('href')).toBe('/admin/platforms');
+    });
+
+    it('should not show admin navigation for regular users in mobile menu', async () => {
+      // Switch back to regular user
+      mockAuthStore.value = {
+        user: { id: '1', username: 'testuser', isAdmin: false },
+        accessToken: 'test-token',
+        refreshToken: 'test-refresh-token',
+        isLoading: false,
+        error: null
+      };
+
+      const { container } = renderComponent(Layout);
+
+      const mobileMenuButton = container.querySelector('button[aria-label="Toggle mobile menu"]') as HTMLButtonElement;
+      await userEvent.click(mobileMenuButton);
+
+      expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+      expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
+      expect(screen.queryByText('Manage Users')).not.toBeInTheDocument();
+      expect(screen.queryByText('Manage Platforms')).not.toBeInTheDocument();
     });
   });
 

@@ -75,6 +75,44 @@
                 </li>
               </ul>
             </li>
+            
+            <!-- Admin Section -->
+            {#if auth.value.user?.isAdmin}
+              <li>
+                <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                  Administration
+                </div>
+                <ul role="list" class="-mx-2 mt-2 space-y-1">
+                  <li>
+                    <a
+                      href="/admin/dashboard"
+                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">📊</span>
+                      Admin Dashboard
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/admin/users"
+                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">👥</span>
+                      Manage Users
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/admin/platforms"
+                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">🏢</span>
+                      Manage Platforms
+                    </a>
+                  </li>
+                </ul>
+              </li>
+            {/if}
             <li class="mt-auto">
               <a
                 href="/profile"
@@ -205,6 +243,47 @@
                       </li>
                     </ul>
                   </li>
+                  
+                  <!-- Mobile Admin Section -->
+                  {#if auth.value.user?.isAdmin}
+                    <li>
+                      <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                        Administration
+                      </div>
+                      <ul role="list" class="-mx-2 mt-2 space-y-1">
+                        <li>
+                          <a
+                            href="/admin/dashboard"
+                            on:click={closeMobileMenu}
+                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          >
+                            <span class="text-lg">📊</span>
+                            Admin Dashboard
+                          </a>
+                        </li>
+                        <li>
+                          <a
+                            href="/admin/users"
+                            on:click={closeMobileMenu}
+                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          >
+                            <span class="text-lg">👥</span>
+                            Manage Users
+                          </a>
+                        </li>
+                        <li>
+                          <a
+                            href="/admin/platforms"
+                            on:click={closeMobileMenu}
+                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          >
+                            <span class="text-lg">🏢</span>
+                            Manage Platforms
+                          </a>
+                        </li>
+                      </ul>
+                    </li>
+                  {/if}
                   <li class="mt-auto">
                     <a
                       href="/profile"
