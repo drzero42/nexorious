@@ -10,9 +10,9 @@
   let statusFilter: 'all' | 'active' | 'inactive' | 'admin' = 'all';
 
   // Reactive statements to track admin store state
-  $: adminState = admin.value;
-  $: users = adminState.users;
-  $: error = adminState.error;
+  $: users = $admin.users;
+  $: error = $admin.error;
+  $: isAdminLoading = $admin.isLoading;
 
   // Filtered users based on search and filter criteria
   $: filteredUsers = users.filter(user => {
@@ -171,7 +171,7 @@
       </div>
     </div>
 
-    {#if isLoading || adminState.isLoading}
+    {#if isLoading || isAdminLoading}
       <div class="flex justify-center py-12">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" role="status" aria-label="Loading"></div>
       </div>

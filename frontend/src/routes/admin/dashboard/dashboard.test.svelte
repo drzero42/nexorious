@@ -6,9 +6,9 @@
   let isLoading = true;
 
   // Reactive statements to track admin store state
-  $: adminState = admin.value;
-  $: statistics = adminState.statistics;
-  $: error = adminState.error;
+  $: statistics = $admin.statistics;
+  $: error = $admin.error;
+  $: isAdminLoading = $admin.isLoading;
 
   onMount(async () => {
     // Check if user is admin
@@ -68,7 +68,7 @@
     </div>
   {/if}
 
-  {#if isLoading || adminState.isLoading}
+  {#if isLoading || isAdminLoading}
     <div class="flex justify-center py-12" role="status" aria-label="Loading dashboard">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
     </div>

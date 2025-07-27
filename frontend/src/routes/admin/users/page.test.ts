@@ -16,35 +16,40 @@ vi.mock('$lib/components', () => ({
 }));
 
 // Mock the stores 
-vi.mock('$lib/stores', () => ({
-  admin: {
-    value: {
-      users: [
-        {
-          id: '1',
-          username: 'admin',
-          isAdmin: true,
-          isActive: true,
-          createdAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2023-01-01T00:00:00Z'
-        }
-      ],
-      statistics: null,
-      isLoading: false,
-      error: null
+vi.mock('$lib/stores', () => {
+  const { writable } = require('svelte/store');
+  const adminStore = writable({
+    users: [
+      {
+        id: '1',
+        username: 'admin',
+        isAdmin: true,
+        isActive: true,
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z'
+      }
+    ],
+    statistics: null,
+    isLoading: false,
+    error: null
+  });
+  
+  return {
+    admin: {
+      subscribe: adminStore.subscribe,
+      fetchUsers: vi.fn().mockResolvedValue([]),
+      clearError: vi.fn(),
+      updateUser: vi.fn().mockResolvedValue({})
     },
-    fetchUsers: vi.fn().mockResolvedValue([]),
-    clearError: vi.fn(),
-    updateUser: vi.fn().mockResolvedValue({})
-  },
-  auth: {
-    value: {
-      user: { isAdmin: true },
-      accessToken: 'test-token',
-      isAuthenticated: true
+    auth: {
+      value: {
+        user: { isAdmin: true },
+        accessToken: 'test-token',
+        isAuthenticated: true
+      }
     }
-  }
-}));
+  };
+});
 
 describe('Admin Users Page', () => {
   it('renders without crashing', () => {

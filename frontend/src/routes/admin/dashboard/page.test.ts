@@ -5,27 +5,33 @@ import AdminDashboard from './+page.svelte';
 import { admin, auth } from '$lib/stores';
 
 // Mock the stores
-vi.mock('$lib/stores', () => ({
-  admin: {
-    value: {
-      users: [],
-      statistics: null,
-      isLoading: false,
-      error: null
+vi.mock('$lib/stores', () => {
+  const { writable } = require('svelte/store');
+  const adminStore = writable({
+    users: [],
+    statistics: null,
+    isLoading: false,
+    error: null
+  });
+  
+  return {
+    admin: {
+      subscribe: adminStore.subscribe,
+      fetchStatistics: vi.fn(),
+      clearError: vi.fn(),
+      __mockStore: adminStore  // Expose for testing
     },
-    fetchStatistics: vi.fn(),
-    clearError: vi.fn()
-  },
-  auth: {
-    value: {
-      user: { id: '1', username: 'admin', isAdmin: true },
-      accessToken: 'mock-token',
-      refreshToken: 'mock-refresh-token',
-      isLoading: false,
-      error: null
+    auth: {
+      value: {
+        user: { id: '1', username: 'admin', isAdmin: true },
+        accessToken: 'mock-token',
+        refreshToken: 'mock-refresh-token',
+        isLoading: false,
+        error: null
+      }
     }
-  }
-}));
+  };
+});
 
 // Mock $app/navigation
 vi.mock('$app/navigation', () => ({
@@ -38,12 +44,12 @@ describe('Admin Dashboard Page', () => {
     vi.clearAllMocks();
     
     // Reset admin store mock
-    vi.mocked(admin).value = {
+    (admin as any).__mockStore.set({
       users: [],
       statistics: null,
       isLoading: false,
       error: null
-    };
+    });
     
     // Reset auth store mock
     vi.mocked(auth).value = {
@@ -74,7 +80,12 @@ describe('Admin Dashboard Page', () => {
   });
 
   it('should show loading state', async () => {
-    vi.mocked(admin).value.isLoading = true;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: null,
+      isLoading: true,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -82,7 +93,12 @@ describe('Admin Dashboard Page', () => {
   });
 
   it('should display error message', async () => {
-    vi.mocked(admin).value.error = 'Failed to load dashboard';
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: null,
+      isLoading: false,
+      error: 'Failed to load dashboard'
+    });
 
     render(AdminDashboard);
 
@@ -117,8 +133,12 @@ describe('Admin Dashboard Page', () => {
 
     // Mock fetchStatistics to resolve immediately
     vi.mocked(admin.fetchStatistics).mockResolvedValue(mockStatistics);
-    vi.mocked(admin).value.statistics = mockStatistics;
-    vi.mocked(admin).value.isLoading = false;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -161,8 +181,12 @@ describe('Admin Dashboard Page', () => {
     };
 
     vi.mocked(admin.fetchStatistics).mockResolvedValue(mockStatistics);
-    vi.mocked(admin).value.statistics = mockStatistics;
-    vi.mocked(admin).value.isLoading = false;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -180,8 +204,12 @@ describe('Admin Dashboard Page', () => {
     };
 
     vi.mocked(admin.fetchStatistics).mockResolvedValue(mockStatistics);
-    vi.mocked(admin).value.statistics = mockStatistics;
-    vi.mocked(admin).value.isLoading = false;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -203,7 +231,12 @@ describe('Admin Dashboard Page', () => {
   });
 
   it('should clear error when dismiss button is clicked', async () => {
-    vi.mocked(admin).value.error = 'Some error';
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: null,
+      isLoading: false,
+      error: 'Some error'
+    });
 
     render(AdminDashboard);
 
@@ -231,8 +264,12 @@ describe('Admin Dashboard Page', () => {
     };
 
     vi.mocked(admin.fetchStatistics).mockResolvedValue(mockStatistics);
-    vi.mocked(admin).value.statistics = mockStatistics;
-    vi.mocked(admin).value.isLoading = false;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -260,8 +297,12 @@ describe('Admin Dashboard Page', () => {
     };
 
     vi.mocked(admin.fetchStatistics).mockResolvedValue(mockStatistics);
-    vi.mocked(admin).value.statistics = mockStatistics;
-    vi.mocked(admin).value.isLoading = false;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 
@@ -278,7 +319,12 @@ describe('Admin Dashboard Page', () => {
       recentUsers: []
     };
 
-    vi.mocked(admin).value.statistics = mockStatistics;
+    (admin as any).__mockStore.set({
+      users: [],
+      statistics: mockStatistics,
+      isLoading: false,
+      error: null
+    });
 
     render(AdminDashboard);
 

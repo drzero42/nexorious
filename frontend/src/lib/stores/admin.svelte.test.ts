@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { get } from 'svelte/store';
 import { admin } from './admin.svelte';
 import { auth } from './auth.svelte';
 
@@ -29,17 +30,32 @@ global.fetch = mockFetch;
 describe('Admin Store', () => {
   beforeEach(() => {
     mockFetch.mockClear();
-    // Reset the admin store state
-    admin.clearError();
-    // Reset the users array
-    admin.value.users = [];
-    admin.value.statistics = null;
-    admin.value.isLoading = false;
+    // Reset the admin store state to initial state
+    admin.__reset();
   });
 
   describe('fetchUsers', () => {
     it('should fetch users successfully', async () => {
-      const mockUsers = [
+      const mockBackendUsers = [
+        {
+          id: '1',
+          username: 'admin',
+          is_admin: true,
+          is_active: true,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: '2',
+          username: 'user',
+          is_admin: false,
+          is_active: true,
+          created_at: '2023-01-02T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      const expectedFrontendUsers = [
         {
           id: '1',
           username: 'admin',
@@ -60,7 +76,7 @@ describe('Admin Store', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockUsers
+        json: async () => mockBackendUsers
       });
 
       const result = await admin.fetchUsers();
@@ -71,10 +87,11 @@ describe('Admin Store', () => {
         }
       });
 
-      expect(result).toEqual(mockUsers);
-      expect(admin.value.users).toEqual(mockUsers);
-      expect(admin.value.isLoading).toBe(false);
-      expect(admin.value.error).toBeNull();
+      expect(result).toEqual(expectedFrontendUsers);
+      const state = get(admin);
+      expect(state.users).toEqual(expectedFrontendUsers);
+      expect(state.isLoading).toBe(false);
+      expect(state.error).toBeNull();
     });
 
     it('should handle fetch users error', async () => {
@@ -84,8 +101,8 @@ describe('Admin Store', () => {
       });
 
       await expect(admin.fetchUsers()).rejects.toThrow('Unauthorized');
-      expect(admin.value.error).toBe('Unauthorized');
-      expect(admin.value.isLoading).toBe(false);
+      expect(get(admin).error).toBe('Unauthorized');
+      expect(get(admin).isLoading).toBe(false);
     });
 
     it('should throw error if user is not admin', async () => {
@@ -101,7 +118,26 @@ describe('Admin Store', () => {
 
   describe('fetchStatistics', () => {
     it('should fetch and calculate statistics successfully', async () => {
-      const mockUsers = [
+      const mockBackendUsers = [
+        {
+          id: '1',
+          username: 'admin',
+          is_admin: true,
+          is_active: true,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: '2',
+          username: 'user',
+          is_admin: false,
+          is_active: true,
+          created_at: '2023-01-02T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      const expectedFrontendUsers = [
         {
           id: '1',
           username: 'admin',
@@ -122,7 +158,7 @@ describe('Admin Store', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockUsers
+        json: async () => mockBackendUsers
       });
 
       const result = await admin.fetchStatistics();
@@ -130,8 +166,12 @@ describe('Admin Store', () => {
       expect(result.totalUsers).toBe(2);
       expect(result.totalAdmins).toBe(1);
       expect(result.totalGames).toBe(0);
-      expect(result.recentUsers).toEqual(mockUsers.slice(0, 5));
-      expect(admin.value.statistics).toEqual(result);
+      // Recent users should be sorted by creation date descending (most recent first)
+      const expectedRecentUsers = expectedFrontendUsers
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5);
+      expect(result.recentUsers).toEqual(expectedRecentUsers);
+      expect(get(admin).statistics).toEqual(result);
     });
 
     it('should handle fetch statistics error', async () => {
@@ -141,13 +181,22 @@ describe('Admin Store', () => {
       });
 
       await expect(admin.fetchStatistics()).rejects.toThrow('Failed to fetch users');
-      expect(admin.value.error).toBe('Failed to fetch users');
+      expect(get(admin).error).toBe('Failed to fetch users');
     });
   });
 
   describe('createUser', () => {
     it('should create user successfully', async () => {
-      const mockNewUser = {
+      const mockBackendUser = {
+        id: '3',
+        username: 'newuser',
+        is_admin: false,
+        is_active: true,
+        created_at: '2023-01-03T00:00:00Z',
+        updated_at: '2023-01-03T00:00:00Z'
+      };
+
+      const expectedFrontendUser = {
         id: '3',
         username: 'newuser',
         isAdmin: false,
@@ -158,7 +207,7 @@ describe('Admin Store', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockNewUser
+        json: async () => mockBackendUser
       });
 
       const result = await admin.createUser('newuser', 'password123', false);
@@ -176,9 +225,10 @@ describe('Admin Store', () => {
         })
       });
 
-      expect(result).toEqual(mockNewUser);
-      expect(admin.value.users).toHaveLength(1);
-      expect(admin.value.users[0]).toEqual(mockNewUser);
+      expect(result).toEqual(expectedFrontendUser);
+      const state = get(admin);
+      expect(state.users).toHaveLength(1);
+      expect(state.users[0]).toEqual(expectedFrontendUser);
     });
 
     it('should handle create user error', async () => {
@@ -188,25 +238,39 @@ describe('Admin Store', () => {
       });
 
       await expect(admin.createUser('existing', 'password123')).rejects.toThrow('Username already taken');
-      expect(admin.value.error).toBe('Username already taken');
+      expect(get(admin).error).toBe('Username already taken');
     });
   });
 
   describe('updateUser', () => {
     it('should update user successfully', async () => {
-      // Set initial users
-      admin.value.users = [
-        {
-          id: '1',
-          username: 'testuser',
-          isAdmin: false,
-          isActive: true,
-          createdAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2023-01-01T00:00:00Z'
-        }
-      ];
+      // Set initial users by mocking fetchUsers response
+      const initialUsers = [{
+        id: '1',
+        username: 'testuser',
+        is_admin: false,
+        is_active: true,
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      }];
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => initialUsers
+      });
+      
+      await admin.fetchUsers();
 
-      const mockUpdatedUser = {
+      const mockBackendUpdatedUser = {
+        id: '1',
+        username: 'updateduser',
+        is_admin: false,
+        is_active: true,
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-03T00:00:00Z'
+      };
+
+      const expectedFrontendUpdatedUser = {
         id: '1',
         username: 'updateduser',
         isAdmin: false,
@@ -217,7 +281,7 @@ describe('Admin Store', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockUpdatedUser
+        json: async () => mockBackendUpdatedUser
       });
 
       const result = await admin.updateUser('1', { username: 'updateduser' });
@@ -235,8 +299,8 @@ describe('Admin Store', () => {
         })
       });
 
-      expect(result).toEqual(mockUpdatedUser);
-      expect(admin.value.users[0]).toEqual(mockUpdatedUser);
+      expect(result).toEqual(expectedFrontendUpdatedUser);
+      expect(get(admin).users[0]).toEqual(expectedFrontendUpdatedUser);
     });
   });
 
@@ -268,25 +332,32 @@ describe('Admin Store', () => {
 
   describe('deleteUser', () => {
     it('should delete user successfully', async () => {
-      // Set initial users
-      admin.value.users = [
+      // Set initial users by mocking fetchUsers response
+      const initialUsers = [
         {
           id: '1',
           username: 'user1',
-          isAdmin: false,
-          isActive: true,
-          createdAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2023-01-01T00:00:00Z'
+          is_admin: false,
+          is_active: true,
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
         },
         {
           id: '2',
           username: 'user2',
-          isAdmin: false,
-          isActive: true,
-          createdAt: '2023-01-02T00:00:00Z',
-          updatedAt: '2023-01-02T00:00:00Z'
+          is_admin: false,
+          is_active: true,
+          created_at: '2023-01-02T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z'
         }
       ];
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => initialUsers
+      });
+      
+      await admin.fetchUsers();
 
       const mockResponse = { message: 'User deleted successfully' };
 
@@ -305,19 +376,31 @@ describe('Admin Store', () => {
       });
 
       expect(result).toEqual(mockResponse);
-      expect(admin.value.users).toHaveLength(1);
-      expect(admin.value.users[0]?.id).toBe('2');
+      const state = get(admin);
+      expect(state.users).toHaveLength(1);
+      expect(state.users[0]?.id).toBe('2');
     });
   });
 
   describe('clearError', () => {
-    it('should clear error', () => {
-      // Set an error first
-      admin.value.error = 'Some error';
+    it('should clear error', async () => {
+      // Set an error first by triggering a failed request
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ detail: 'Test error' })
+      });
+      
+      try {
+        await admin.fetchUsers();
+      } catch (e) {
+        // Expected to throw
+      }
+      
+      expect(get(admin).error).toBe('Test error');
       
       admin.clearError();
       
-      expect(admin.value.error).toBeNull();
+      expect(get(admin).error).toBeNull();
     });
   });
 });

@@ -1,3 +1,4 @@
+import { writable } from 'svelte/store';
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 
@@ -31,20 +32,29 @@ const initialState: AdminState = {
   error: null
 };
 
-function createAdminStore() {
-  let state = $state<AdminState>(initialState);
+function mapBackendUserToFrontend(backendUser: any): AdminUser {
+  return {
+    id: backendUser.id,
+    username: backendUser.username,
+    isActive: backendUser.is_active,
+    isAdmin: backendUser.is_admin,
+    createdAt: backendUser.created_at,
+    updatedAt: backendUser.updated_at
+  };
+}
 
-  const adminStore = {
-    get value() {
-      return state;
-    },
+function createAdminStore() {
+  const { subscribe, set, update } = writable<AdminState>(initialState);
+
+  return {
+    subscribe,
 
     fetchUsers: async () => {
       if (!auth.value.user?.isAdmin) {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         const response = await fetch(`${config.apiUrl}/auth/admin/users`, {
@@ -58,12 +68,13 @@ function createAdminStore() {
           throw new Error(errorData.detail || 'Failed to fetch users');
         }
 
-        const users = await response.json();
-        state = { ...state, users, isLoading: false };
+        const backendUsers = await response.json();
+        const users = backendUsers.map(mapBackendUserToFrontend);
+        update(state => ({ ...state, users, isLoading: false }));
         return users;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch users';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
@@ -73,7 +84,7 @@ function createAdminStore() {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         // Fetch users first to calculate statistics
@@ -87,7 +98,8 @@ function createAdminStore() {
           throw new Error('Failed to fetch users');
         }
 
-        const users: AdminUser[] = await usersResponse.json();
+        const backendUsers = await usersResponse.json();
+        const users: AdminUser[] = backendUsers.map(mapBackendUserToFrontend);
         
         // For now, we'll calculate statistics from the users data
         // In the future, we might want a dedicated statistics endpoint
@@ -106,11 +118,11 @@ function createAdminStore() {
           recentUsers
         };
 
-        state = { ...state, statistics, isLoading: false };
+        update(state => ({ ...state, statistics, isLoading: false }));
         return statistics;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch statistics';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
@@ -120,7 +132,7 @@ function createAdminStore() {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         const response = await fetch(`${config.apiUrl}/auth/admin/users`, {
@@ -137,12 +149,13 @@ function createAdminStore() {
           throw new Error(errorData.detail || 'Failed to create user');
         }
 
-        const newUser = await response.json();
-        state = { ...state, users: [...state.users, newUser], isLoading: false };
+        const backendUser = await response.json();
+        const newUser = mapBackendUserToFrontend(backendUser);
+        update(state => ({ ...state, users: [...state.users, newUser], isLoading: false }));
         return newUser;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create user';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
@@ -152,7 +165,7 @@ function createAdminStore() {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         const response = await fetch(`${config.apiUrl}/auth/admin/users/${userId}`, {
@@ -173,16 +186,17 @@ function createAdminStore() {
           throw new Error(errorData.detail || 'Failed to update user');
         }
 
-        const updatedUser = await response.json();
-        state = {
+        const backendUser = await response.json();
+        const updatedUser = mapBackendUserToFrontend(backendUser);
+        update(state => ({
           ...state,
           users: state.users.map(u => u.id === userId ? updatedUser : u),
           isLoading: false
-        };
+        }));
         return updatedUser;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
@@ -192,7 +206,7 @@ function createAdminStore() {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         const response = await fetch(`${config.apiUrl}/auth/admin/users/${userId}/password`, {
@@ -209,11 +223,11 @@ function createAdminStore() {
           throw new Error(errorData.detail || 'Failed to reset password');
         }
 
-        state = { ...state, isLoading: false };
+        update(state => ({ ...state, isLoading: false }));
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to reset password';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
@@ -223,7 +237,7 @@ function createAdminStore() {
         throw new Error('Admin access required');
       }
 
-      state = { ...state, isLoading: true, error: null };
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
         const response = await fetch(`${config.apiUrl}/auth/admin/users/${userId}`, {
@@ -238,25 +252,28 @@ function createAdminStore() {
           throw new Error(errorData.detail || 'Failed to delete user');
         }
 
-        state = {
+        update(state => ({
           ...state,
           users: state.users.filter(u => u.id !== userId),
           isLoading: false
-        };
+        }));
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
-        state = { ...state, isLoading: false, error: errorMessage };
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
     },
 
     clearError: () => {
-      state = { ...state, error: null };
+      update(state => ({ ...state, error: null }));
+    },
+    
+    // Test helper - only use in tests
+    __reset: () => {
+      set(initialState);
     }
   };
-
-  return adminStore;
 }
 
 export const admin = createAdminStore();
