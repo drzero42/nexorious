@@ -445,8 +445,6 @@ To create the definitive self-hosted solution for personal game collection manag
   - Frontend test coverage exceeds 70%
   - All tests pass on both PostgreSQL and SQLite databases
   - CI/CD pipeline blocks deployments if tests fail
-  - Test execution time under 10 minutes for unit tests
-  - Integration and E2E tests complete within 30 minutes
   - All API endpoints have corresponding integration tests
 
 ### Phase 6: Advanced Features

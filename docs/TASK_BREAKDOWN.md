@@ -6,10 +6,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 1: Core Collection Management (MVP)
 **Priority: P0 (Critical)**
-**Estimated Duration: 8-12 weeks**
 
 ### 1.1 Backend Foundation
-**Duration: 3-4 weeks**
 
 #### 1.1.1 Project Setup & Infrastructure
 - [x] Initialize FastAPI project with proper structure
@@ -51,7 +49,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] How Long to Beat integration
 
 ### 1.2 Frontend Foundation
-**Duration: 3-4 weeks**
 
 #### 1.2.1 SvelteKit Project Setup
 - [x] Initialize SvelteKit project with TypeScript
@@ -109,7 +106,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Audit log display
 
 ### 1.3 Testing Infrastructure
-**Duration: 2 weeks**
 
 #### 1.3.1 Backend Testing
 - [x] Unit tests for all business logic (>80% coverage)
@@ -138,10 +134,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 2: Data Integration & Import
 **Priority: P0-P1 (Critical-High)**
-**Estimated Duration: 4-6 weeks**
 
 ### 2.1 CSV Import System
-**Duration: 2 weeks**
 - [ ] CSV parser with validation
 - [ ] Darkadia format support
 - [ ] Generic CSV import with field mapping
@@ -150,7 +144,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Data validation and cleanup
 
 ### 2.2 Steam API Integration
-**Duration: 2-3 weeks**
 - [ ] Steam Web API authentication
 - [ ] Library import functionality
 - [ ] Playtime data synchronization
@@ -159,7 +152,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Privacy settings handling
 
 ### 2.3 Enhanced IGDB Integration
-**Duration: 1-2 weeks**
 - [ ] Improved metadata population
 - [ ] Better fuzzy matching algorithms
 - [ ] Completion time estimates integration
@@ -168,10 +160,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 3: Discovery & Organization
 **Priority: P1-P2 (High-Medium)**
-**Estimated Duration: 3-4 weeks**
 
 ### 3.1 Advanced Search & Filtering
-**Duration: 2 weeks**
 - [ ] Full-text search implementation
 - [ ] Multi-criteria filtering system
 - [ ] Saved filter presets
@@ -179,7 +169,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Search result relevance scoring
 
 ### 3.2 Wishlist Management
-**Duration: 1 week**
 - [ ] Wishlist CRUD operations
 - [ ] Price comparison link generation
 - [ ] IsThereAnyDeal.com integration
@@ -187,7 +176,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Move from wishlist to owned collection
 
 ### 3.3 Statistics Dashboard
-**Duration: 1-2 weeks**
 - [ ] Collection size analytics
 - [ ] Completion rate statistics
 - [ ] "Pile of Shame" tracking
@@ -196,16 +184,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 4: User Experience & Interface
 **Priority: P0-P2 (Critical-Medium)**
-**Estimated Duration: 2-3 weeks**
 
 ### 4.1 Responsive Design
-**Duration: 1-2 weeks**
 - [ ] Mobile-first responsive layout
 - [ ] Touch-friendly interface elements
 - [ ] Performance optimization
 
 ### 4.2 Keyboard Shortcuts
-**Duration: 1 week**
 - [ ] Navigation shortcuts (search, add game, etc.)
 - [ ] Status change shortcuts
 - [ ] Bulk operation shortcuts
@@ -214,10 +199,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 5: Self-Hosting & Deployment
 **Priority: P0 (Critical)**
-**Estimated Duration: 3-4 weeks**
 
 ### 5.1 Containerization
-**Duration: 1-2 weeks**
 - [ ] Docker images for backend and frontend
 - [ ] Multi-stage build optimization
 - [ ] Docker Compose configuration
@@ -225,7 +208,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Volume configuration for data persistence
 
 ### 5.2 Kubernetes Support
-**Duration: 1-2 weeks**
 - [ ] Kubernetes manifests
 - [ ] Helm chart development
 - [ ] Horizontal Pod Autoscaling
@@ -233,7 +215,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] ConfigMap and Secret management
 
 ### 5.3 Database Management
-**Duration: 1 week**
 - [ ] Automated migration system
 - [ ] Backup and restore procedures
 - [ ] Data integrity validation
@@ -244,10 +225,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 6: Advanced Features
 **Priority: P2 (Medium)**
-**Estimated Duration: 4-6 weeks**
 
 ### 6.1 Extended Storefront Integration
-**Duration: 4-6 weeks**
 - [ ] Epic Games Store integration
 - [ ] GOG integration
 - [ ] PlayStation Store integration
@@ -257,10 +236,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ## Phase 7: Performance Optimization (Optional)
 **Priority: P3 (Low)**
-**Estimated Duration: 2-3 weeks**
 
 ### 7.1 Rate Limiting and Caching
-**Duration: 2-3 weeks**
 - [ ] Redis cache implementation for API responses
 - [ ] In-memory caching for frequently accessed data
 - [ ] Rate limiting for external API calls (IGDB, Steam, etc.)
@@ -319,19 +296,5 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - **Scope Creep**: Strict phase boundaries and MVP focus
 - **External Dependencies**: Fallback plans and graceful degradation
 - **Testing Delays**: Parallel development and testing approach
-
-## Resource Requirements
-
-### Development Team
-- 1-2 Backend Developers (Python/FastAPI)
-- 1-2 Frontend Developers (Svelte/SvelteKit)
-- 1 DevOps Engineer (Docker/Kubernetes)
-- 1 QA Engineer (Testing and Automation)
-
-### Infrastructure
-- Development environment setup
-- CI/CD pipeline configuration
-- Test data and mock services
-- Documentation and deployment tools
 
 This breakdown provides a comprehensive roadmap for developing the Game Collection Management Service while maintaining focus on delivering a working MVP in Phase 1, then incrementally adding features in subsequent phases.
