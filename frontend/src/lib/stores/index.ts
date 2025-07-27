@@ -61,3 +61,11 @@ export type {
   SearchState 
 } from './search.svelte';
 
+// Admin store
+export { admin } from './admin.svelte';
+export type { 
+  AdminUser, 
+  SystemStatistics, 
+  AdminState 
+} from './admin.svelte';
+
