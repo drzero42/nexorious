@@ -8,7 +8,6 @@ import {
 import { resetStoresMocks, mockUserGamesStore } from '../../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import GameDetailPage from './+page.svelte';
-import type { UserGame, PlayStatus, OwnershipStatus } from '$lib/stores/user-games.svelte';
 
 // Mock the config module
 vi.mock('$lib/env', () => ({
@@ -73,9 +72,12 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should display platform information when platforms are available', async () => {
-      // Add platform data to the mock for this test
+      // Add platform data to the mock for this test  
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithPlatforms = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         platforms: [
           {
             id: 'platform-1',
@@ -106,7 +108,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           }
         ]
       };
-      mockUserGamesStore.value.userGames = [gameWithPlatforms];
+      (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
       
       render(GameDetailPage);
       
@@ -122,8 +124,11 @@ describe('Game Detail Page - Enhanced Metadata', () => {
 
     it('should display clickable store links with proper accessibility', async () => {
       // Add platform data to the mock for this test
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithPlatforms = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         platforms: [
           {
             id: 'platform-1',
@@ -154,7 +159,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           }
         ]
       };
-      mockUserGamesStore.value.userGames = [gameWithPlatforms];
+      (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
       
       render(GameDetailPage);
       
@@ -196,16 +201,19 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should not display rating section when no rating or verification', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithoutRating = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
-          ...mockUserGamesStore.value.userGames[0].game,
+          ...baseGame.game,
           rating_count: 0,
           rating_average: undefined,
           is_verified: false
         }
       };
-      mockUserGamesStore.value.userGames = [gameWithoutRating];
+      (mockUserGamesStore.value as any).userGames = [gameWithoutRating];
       
       render(GameDetailPage);
       
@@ -253,16 +261,19 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should not display How Long to Beat section when no times available', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithoutTimes = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
-          ...mockUserGamesStore.value.userGames[0].game,
+          ...baseGame.game,
           howlongtobeat_main: undefined,
           howlongtobeat_extra: undefined,
           howlongtobeat_completionist: undefined
         }
       };
-      mockUserGamesStore.value.userGames = [gameWithoutTimes];
+      (mockUserGamesStore.value as any).userGames = [gameWithoutTimes];
       
       render(GameDetailPage);
       
@@ -299,16 +310,19 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should handle missing optional fields gracefully', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithMissingFields = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
-          ...mockUserGamesStore.value.userGames[0].game,
+          ...baseGame.game,
           developer: undefined,
           estimated_playtime_hours: undefined,
           igdb_id: undefined
         }
       };
-      mockUserGamesStore.value.userGames = [gameWithMissingFields];
+      (mockUserGamesStore.value as any).userGames = [gameWithMissingFields];
       
       render(GameDetailPage);
       
@@ -356,21 +370,31 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should handle minimal metadata gracefully', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const minimalGame = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
+          ...baseGame.game,
           id: 'game-minimal',
           title: 'Minimal Game',
+          description: undefined,
+          genre: undefined,
+          developer: undefined,
+          publisher: undefined,
           rating_count: 0,
           rating_average: undefined,
-          game_metadata: '{}',
-          is_verified: false,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
+          estimated_playtime_hours: undefined,
+          howlongtobeat_main: undefined,
+          howlongtobeat_extra: undefined,
+          howlongtobeat_completionist: undefined,
+          igdb_id: undefined,
+          is_verified: false
         },
         platforms: []
       };
-      mockUserGamesStore.value.userGames = [minimalGame];
+      (mockUserGamesStore.value as any).userGames = [minimalGame];
       
       render(GameDetailPage);
       
@@ -397,14 +421,17 @@ describe('Game Detail Page - Enhanced Metadata', () => {
 
   describe('Edge Cases', () => {
     it('should handle decimal rating values correctly', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithDecimalRating = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
-          ...mockUserGamesStore.value.userGames[0].game,
+          ...baseGame.game,
           rating_average: 7.75
         }
       };
-      mockUserGamesStore.value.userGames = [gameWithDecimalRating];
+      (mockUserGamesStore.value as any).userGames = [gameWithDecimalRating];
       
       render(GameDetailPage);
       
@@ -416,14 +443,17 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should handle very large review counts with proper formatting', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
       const gameWithLargeReviewCount = {
-        ...mockUserGamesStore.value.userGames[0],
+        ...baseGame,
         game: {
-          ...mockUserGamesStore.value.userGames[0].game,
+          ...baseGame.game,
           rating_count: 15432
         }
       };
-      mockUserGamesStore.value.userGames = [gameWithLargeReviewCount];
+      (mockUserGamesStore.value as any).userGames = [gameWithLargeReviewCount];
       
       render(GameDetailPage);
       

@@ -9,7 +9,7 @@ vi.mock('$app/navigation', () => ({
 
 // Mock RouteGuard as a simple component that renders its slot
 vi.mock('$lib/components', () => ({
-  RouteGuard: vi.fn(({ children, requireAdmin }: { children: any; requireAdmin?: boolean }) => {
+  RouteGuard: vi.fn(({ children }: { children: any }) => {
     // In test environment, just render the children
     return children;
   })
