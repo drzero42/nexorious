@@ -16,7 +16,8 @@
   let platformForm: PlatformCreateRequest = {
     name: '',
     display_name: '',
-    icon_url: ''
+    icon_url: '',
+    is_active: true
   };
 
   // Storefront form state
@@ -26,7 +27,8 @@
     name: '',
     display_name: '',
     icon_url: '',
-    base_url: ''
+    base_url: '',
+    is_active: true
   };
 
   // Confirmation dialog state
@@ -89,7 +91,8 @@
     platformForm = {
       name: '',
       display_name: '',
-      icon_url: ''
+      icon_url: '',
+      is_active: true
     };
     editingPlatform = null;
     showCreatePlatformForm = false;
@@ -100,7 +103,8 @@
       name: '',
       display_name: '',
       icon_url: '',
-      base_url: ''
+      base_url: '',
+      is_active: true
     };
     editingStorefront = null;
     showCreateStorefrontForm = false;
@@ -110,7 +114,8 @@
     platformForm = {
       name: platform.name,
       display_name: platform.display_name,
-      icon_url: platform.icon_url || ''
+      icon_url: platform.icon_url || '',
+      is_active: platform.is_active
     };
     editingPlatform = platform;
     showCreatePlatformForm = true;
@@ -121,7 +126,8 @@
       name: storefront.name,
       display_name: storefront.display_name,
       icon_url: storefront.icon_url || '',
-      base_url: storefront.base_url || ''
+      base_url: storefront.base_url || '',
+      is_active: storefront.is_active
     };
     editingStorefront = storefront;
     showCreateStorefrontForm = true;
