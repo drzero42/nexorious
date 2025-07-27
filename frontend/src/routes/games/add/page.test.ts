@@ -171,7 +171,7 @@ describe('Game Addition Page', () => {
       // Should show metadata confirmation screen
       await waitFor(() => {
         expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
-        expect(screen.getByText('Review the game information before adding to your collection')).toBeInTheDocument();
+        expect(screen.getByText('Review and customize the information before adding to your collection')).toBeInTheDocument();
       });
 
       // Should not call createFromIGDB yet (only after confirmation)
@@ -202,7 +202,7 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Should call createFromIGDB when confirmed
@@ -256,12 +256,12 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Should fallback to manual entry with pre-filled data
       await waitFor(() => {
-        expect(screen.getByText('Game Details')).toBeInTheDocument();
+        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
         const titleInput = screen.getByDisplayValue('Test IGDB Game');
         expect(titleInput).toBeInTheDocument();
       });
@@ -292,12 +292,12 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Should fallback to manual entry
       await waitFor(() => {
-        expect(screen.getByText('Game Details')).toBeInTheDocument();
+        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
         expect(screen.getByDisplayValue('Test IGDB Game')).toBeInTheDocument();
       });
 
@@ -347,7 +347,7 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       await waitFor(() => {
@@ -377,7 +377,7 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       await waitFor(() => {
@@ -410,12 +410,12 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Should fallback to manual entry form with pre-filled data
       await waitFor(() => {
-        expect(screen.getByText('Game Details')).toBeInTheDocument();
+        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
         expect(screen.getByDisplayValue('Test IGDB Game')).toBeInTheDocument();
       });
       
@@ -462,16 +462,16 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Should fallback to manual entry form
       await waitFor(() => {
-        expect(screen.getByText('Game Details')).toBeInTheDocument();
+        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
         const titleInput = screen.getByDisplayValue('Test IGDB Game');
         fireEvent.input(titleInput, { target: { value: '' } });
         
-        const addButton = screen.getByRole('button', { name: /add game to collection/i });
+        const addButton = screen.getByRole('button', { name: /add to collection/i });
         fireEvent.click(addButton);
       });
       
@@ -533,7 +533,7 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button to trigger the loading state
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Now should see loading state
@@ -603,7 +603,7 @@ describe('Game Addition Page', () => {
       });
 
       // Click confirm button to trigger the loading state
-      const confirmButton = screen.getByRole('button', { name: /confirm and add to collection/i });
+      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
       // Now should see loading state
