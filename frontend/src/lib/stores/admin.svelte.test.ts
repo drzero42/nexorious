@@ -382,6 +382,85 @@ describe('Admin Store', () => {
     });
   });
 
+  describe('getUserById', () => {
+    it('should fetch user by ID successfully', async () => {
+      const mockBackendUser = {
+        id: '1',
+        username: 'testuser',
+        is_admin: false,
+        is_active: true,
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      const expectedFrontendUser = {
+        id: '1',
+        username: 'testuser',
+        isAdmin: false,
+        isActive: true,
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z'
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockBackendUser
+      });
+
+      const result = await admin.getUserById('1');
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8000/auth/admin/users/1', {
+        headers: {
+          'Authorization': 'Bearer mock-token'
+        }
+      });
+
+      expect(result).toEqual(expectedFrontendUser);
+      const state = get(admin);
+      expect(state.isLoading).toBe(false);
+      expect(state.error).toBeNull();
+    });
+
+    it('should handle fetch user by ID error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ detail: 'User not found' })
+      });
+
+      await expect(admin.getUserById('999')).rejects.toThrow('User not found');
+      expect(get(admin).error).toBe('User not found');
+      expect(get(admin).isLoading).toBe(false);
+    });
+
+    it('should throw error if user is not admin', async () => {
+      // Mock non-admin user
+      vi.mocked(auth.value).user = { id: '1', username: 'user', isAdmin: false };
+
+      await expect(admin.getUserById('1')).rejects.toThrow('Admin access required');
+
+      // Restore admin user
+      vi.mocked(auth.value).user = { id: '1', username: 'admin', isAdmin: true };
+    });
+
+    it('should handle network error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(admin.getUserById('1')).rejects.toThrow('Network error');
+      expect(get(admin).error).toBe('Network error');
+      expect(get(admin).isLoading).toBe(false);
+    });
+
+    it('should handle malformed JSON response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        json: async () => { throw new Error('Invalid JSON'); }
+      });
+
+      await expect(admin.getUserById('1')).rejects.toThrow('Failed to fetch user');
+      expect(get(admin).error).toBe('Failed to fetch user');
+    });
+  });
+
   describe('clearError', () => {
     it('should clear error', async () => {
       // Set an error first by triggering a failed request
