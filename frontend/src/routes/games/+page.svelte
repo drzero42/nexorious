@@ -373,7 +373,6 @@
      <option value="release_date">Release Date</option>
      <option value="hours_played">Hours Played</option>
      <option value="acquired_date">Date Acquired</option>
-     <option value="last_played">Last Played</option>
     </select>
    </div>
 

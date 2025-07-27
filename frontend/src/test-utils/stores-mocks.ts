@@ -36,7 +36,6 @@ export const mockUserGame = {
   hours_played: 25,
   personal_notes: 'Great game!',
   acquired_date: '2024-01-01',
-  last_played: '2024-01-15',
   platforms: [],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'

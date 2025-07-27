@@ -49,11 +49,6 @@
   totalGames; // Access totalGames to avoid unused variable warning
  }
 
- // Recent activity (games played recently)
- $: recentGames = userGamesList
-  .filter(g => g.last_played)
-  .sort((a, b) => new Date(b.last_played!).getTime() - new Date(a.last_played!).getTime())
-  .slice(0, 5);
 
  function getStatusColor(status: string) {
   const colors: Record<string, string> = {
@@ -322,45 +317,31 @@
     </div>
    </div>
 
-   <!-- Recent Activity -->
+   <!-- Game Insights -->
    <div class="bg-white rounded-lg shadow p-6">
     <h3 class="text-lg font-semibold text-gray-900 mb-4">
-     Recent Activity
+     Game Insights
     </h3>
-    {#if recentGames.length > 0}
-     <div class="space-y-3">
-      {#each recentGames as userGame}
-       <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-         <div class="flex-shrink-0 w-8 h-8 bg-gray-200 rounded">
-          {#if userGame.game.cover_art_url}
-           <img
-            src={resolveImageUrl(userGame.game.cover_art_url)}
-            alt={userGame.game.title}
-            class="w-full h-full object-cover rounded"
-           />
-          {:else}
-           <div class="w-full h-full bg-gray-300 rounded"></div>
-          {/if}
-         </div>
-         <div>
-          <p class="text-sm font-medium text-gray-900">{userGame.game.title}</p>
-          <p class="text-xs text-gray-500">
-           {new Date(userGame.last_played!).toLocaleDateString()}
-          </p>
-         </div>
-        </div>
-        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getStatusColor(userGame.play_status)}">
-         {getStatusLabel(userGame.play_status)}
-        </span>
-       </div>
-      {/each}
+    <div class="space-y-3">
+     <div class="flex items-center justify-between">
+      <span class="text-sm font-medium text-gray-700">Pile of Shame</span>
+      <span class="text-sm text-gray-600">{pileOfShame} games</span>
      </div>
-    {:else}
-     <p class="text-sm text-gray-500">
-      No recent activity recorded.
-     </p>
-    {/if}
+     <div class="flex items-center justify-between">
+      <span class="text-sm font-medium text-gray-700">Completion Rate</span>
+      <span class="text-sm text-gray-600">{completionRate.toFixed(1)}%</span>
+     </div>
+     <div class="flex items-center justify-between">
+      <span class="text-sm font-medium text-gray-700">Most Played Game</span>
+      <span class="text-sm text-gray-600">
+       {#if userGamesList.length > 0}
+        {userGamesList.reduce((max, game) => game.hours_played > max.hours_played ? game : max).game.title}
+       {:else}
+        None
+       {/if}
+      </span>
+     </div>
+    </div>
    </div>
   </div>
  {/if}

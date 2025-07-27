@@ -64,7 +64,6 @@ class ProgressUpdateRequest(BaseModel):
     play_status: PlayStatus = Field(..., description="Current play status")
     hours_played: Optional[int] = Field(None, ge=0, description="Hours played")
     personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
-    last_played: Optional[datetime] = Field(None, description="Last played timestamp")
 
 
 class UserGamePlatformCreateRequest(BaseModel):
@@ -101,7 +100,6 @@ class UserGameResponse(BaseModel, TimestampMixin):
     hours_played: int
     personal_notes: Optional[str]
     acquired_date: Optional[date]
-    last_played: Optional[datetime]
     platforms: List[UserGamePlatformResponse]
 
     model_config = ConfigDict(from_attributes=True)

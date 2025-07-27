@@ -43,7 +43,6 @@ export interface UserGame {
   hours_played: number;
   personal_notes?: string;
   acquired_date?: string;
-  last_played?: string;
   platforms: UserGamePlatform[];
   created_at: string;
   updated_at: string;
@@ -71,7 +70,6 @@ export interface ProgressUpdateRequest {
   play_status: PlayStatus;
   hours_played?: number;
   personal_notes?: string;
-  last_played?: string;
 }
 
 export interface UserGamePlatformCreateRequest {

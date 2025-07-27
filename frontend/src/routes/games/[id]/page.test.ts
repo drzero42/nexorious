@@ -47,7 +47,6 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   hours_played: 30,
   personal_notes: 'Amazing game with great story!',
   acquired_date: '2024-01-01',
-  last_played: '2024-01-15',
   platforms: [
     {
       id: 'platform-1',

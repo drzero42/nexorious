@@ -144,11 +144,4 @@
     </div>
   {/if}
 
-  {#if userGame.last_played}
-    <div class="mt-3 pt-3 border-t border-gray-100">
-      <p class="text-xs text-gray-500">
-        Last played: {new Date(userGame.last_played).toLocaleDateString()}
-      </p>
-    </div>
-  {/if}
 </div>

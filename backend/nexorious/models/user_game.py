@@ -47,7 +47,6 @@ class UserGame(SQLModel, table=True):
     hours_played: int = Field(default=0)
     personal_notes: Optional[str] = Field(default=None)
     acquired_date: Optional[date] = Field(default=None)
-    last_played: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
