@@ -3,8 +3,7 @@
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, ProgressStatistics } from '$lib/components';
- import { resolveImageUrl } from '$lib/utils/image-url';
-
+ 
  onMount(() => {
   // Load user games for statistics - authentication is handled by RouteGuard
   userGames.fetchUserGames();
@@ -50,33 +49,6 @@
  }
 
 
- function getStatusColor(status: string) {
-  const colors: Record<string, string> = {
-   'not_started': 'bg-gray-100 text-gray-800',
-   'in_progress': 'bg-blue-100 text-blue-800',
-   'completed': 'bg-green-100 text-green-800',
-   'mastered': 'bg-purple-100 text-purple-800',
-   'dominated': 'bg-yellow-100 text-yellow-800',
-   'shelved': 'bg-orange-100 text-orange-800',
-   'dropped': 'bg-red-100 text-red-800',
-   'replay': 'bg-indigo-100 text-indigo-800'
-  };
-  return colors[status] || 'bg-gray-100 text-gray-800';
- }
-
- function getStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-   'not_started': 'Not Started',
-   'in_progress': 'In Progress',
-   'completed': 'Completed',
-   'mastered': 'Mastered',
-   'dominated': 'Dominated',
-   'shelved': 'Shelved',
-   'dropped': 'Dropped',
-   'replay': 'Replay'
-  };
-  return labels[status] || status;
- }
 </script>
 
 <svelte:head>
