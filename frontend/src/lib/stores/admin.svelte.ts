@@ -265,6 +265,36 @@ function createAdminStore() {
       }
     },
 
+    getUserById: async (userId: string) => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      update(state => ({ ...state, isLoading: true, error: null }));
+
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/admin/users/${userId}`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to fetch user');
+        }
+
+        const backendUser = await response.json();
+        const user = mapBackendUserToFrontend(backendUser);
+        update(state => ({ ...state, isLoading: false }));
+        return user;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        throw error;
+      }
+    },
+
     clearError: () => {
       update(state => ({ ...state, error: null }));
     },
