@@ -23,7 +23,7 @@
  // Bulk selection state
  let selectedGameIds: Set<string> = new Set();
  let isSelectingAll = false;
- let showBulkActions = false;
+ // let showBulkActions = false; // Not yet implemented
  let showBulkModal = false;
 
  // Bulk operations modal state
@@ -186,7 +186,7 @@
  }
 
  function updateBulkActionsVisibility() {
-  showBulkActions = selectedGameIds.size > 0;
+  // showBulkActions = selectedGameIds.size > 0; // Not yet implemented
  }
 
  // Reset selection when games change (e.g., after filtering)
@@ -574,7 +574,7 @@
      <div
       on:click={(e) => {
        // Don't navigate if clicking on checkbox
-       if ((e.target as HTMLElement).type !== 'checkbox') {
+       if ((e.target as HTMLInputElement).type !== 'checkbox') {
         handleGameClick(userGame.id);
        }
       }}
@@ -721,7 +721,7 @@
         <tr
          on:click={(e) => {
           // Don't navigate if clicking on checkbox
-          if ((e.target as HTMLElement).type !== 'checkbox') {
+          if ((e.target as HTMLInputElement).type !== 'checkbox') {
            handleGameClick(userGame.id);
           }
          }}

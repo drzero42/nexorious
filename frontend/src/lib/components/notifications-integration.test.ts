@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { notifications } from '../stores/notifications.svelte';
-import Toast from './Toast.svelte';
 import ToastContainer from './ToastContainer.svelte';
 
 // Mock onMount for controlled testing
@@ -124,9 +123,9 @@ describe('Notification System Integration', () => {
 				const children = Array.from(container?.children || []);
 				
 				expect(children).toHaveLength(3);
-				expect(children[0].textContent).toContain('First');
-				expect(children[1].textContent).toContain('Second');
-				expect(children[2].textContent).toContain('Third');
+				expect(children[0]!.textContent).toContain('First');
+				expect(children[1]!.textContent).toContain('Second');
+				expect(children[2]!.textContent).toContain('Third');
 			});
 		});
 

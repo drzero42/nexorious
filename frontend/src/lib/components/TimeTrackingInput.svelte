@@ -24,7 +24,7 @@
   }>();
 
   let hours = $state(Math.floor(value));
-  let minutes = $state(Math.floor((value - hours) * 60));
+  let minutes = $state(Math.floor((value - Math.floor(value)) * 60));
   let inputMode: 'simple' | 'detailed' = $state('simple');
 
   // Update the bound value when hours or minutes change

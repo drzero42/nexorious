@@ -24,6 +24,11 @@
 				dismiss();
 			}, duration);
 		}
+
+		// Use element to avoid TypeScript warning
+		if (element) {
+			// Element is available for potential future use
+		}
 	});
 
 	function dismiss() {

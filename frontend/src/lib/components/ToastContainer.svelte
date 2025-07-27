@@ -10,7 +10,7 @@
 				id={notification.id}
 				type={notification.type}
 				message={notification.message}
-				duration={notification.duration}
+				duration={notification.duration || 5000}
 				onRemove={notifications.remove.bind(notifications)}
 			/>
 		</div>

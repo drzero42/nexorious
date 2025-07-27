@@ -23,7 +23,7 @@ describe('RouteGuard', () => {
 
   it('should allow setting authenticated state', () => {
     setAuthenticatedState({
-      user: { id: '1', username: 'testuser', email: 'test@example.com', isAdmin: false }
+      user: { id: '1', username: 'testuser', isAdmin: false }
     });
     
     expect(mockAuthStore.value.user).toBeDefined();
@@ -33,7 +33,7 @@ describe('RouteGuard', () => {
 
   it('should allow setting unauthenticated state', () => {
     setAuthenticatedState({
-      user: { id: '1', username: 'testuser', email: 'test@example.com', isAdmin: false }
+      user: { id: '1', username: 'testuser', isAdmin: false }
     });
     
     setUnauthenticatedState();
@@ -76,7 +76,7 @@ describe('RouteGuard', () => {
 
   it('should support admin user testing', () => {
     setAuthenticatedState({
-      user: { id: '1', username: 'admin', email: 'admin@example.com', isAdmin: true }
+      user: { id: '1', username: 'admin', isAdmin: true }
     });
     
     expect(mockAuthStore.value.user!.isAdmin).toBe(true);

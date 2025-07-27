@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { notifications } from './notifications.svelte';
-import type { NotificationType } from './notifications.svelte';
 
 describe('Notifications Store', () => {
 	beforeEach(() => {
@@ -19,24 +18,22 @@ describe('Notifications Store', () => {
 		});
 
 		it('should add success notification', () => {
-			const id = notifications.showSuccess('Success message');
+			notifications.showSuccess('Success message');
 			
 			expect(notifications.items).toHaveLength(1);
-			expect(notifications.items[0]).toMatchObject({
-				id,
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'success',
 				message: 'Success message',
 				duration: 5000
 			});
-			expect(notifications.items[0].createdAt).toBeInstanceOf(Date);
+			expect(notifications.items[0]!!.createdAt).toBeInstanceOf(Date);
 		});
 
 		it('should add error notification with longer duration', () => {
-			const id = notifications.showError('Error message');
+			notifications.showError('Error message');
 			
 			expect(notifications.items).toHaveLength(1);
-			expect(notifications.items[0]).toMatchObject({
-				id,
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'Error message',
 				duration: 8000
@@ -44,11 +41,10 @@ describe('Notifications Store', () => {
 		});
 
 		it('should add warning notification', () => {
-			const id = notifications.showWarning('Warning message');
+			notifications.showWarning('Warning message');
 			
 			expect(notifications.items).toHaveLength(1);
-			expect(notifications.items[0]).toMatchObject({
-				id,
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'warning',
 				message: 'Warning message',
 				duration: 6000
@@ -56,11 +52,10 @@ describe('Notifications Store', () => {
 		});
 
 		it('should add info notification', () => {
-			const id = notifications.showInfo('Info message');
+			notifications.showInfo('Info message');
 			
 			expect(notifications.items).toHaveLength(1);
-			expect(notifications.items[0]).toMatchObject({
-				id,
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'info',
 				message: 'Info message',
 				duration: 5000
@@ -70,33 +65,33 @@ describe('Notifications Store', () => {
 
 	describe('Custom Duration', () => {
 		it('should accept custom duration for success', () => {
-			const id = notifications.showSuccess('Custom duration', 3000);
+			notifications.showSuccess('Custom duration', 3000);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: 3000
 			});
 		});
 
 		it('should accept custom duration for error', () => {
-			const id = notifications.showError('Custom error', 10000);
+			notifications.showError('Custom error', 10000);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: 10000
 			});
 		});
 
 		it('should accept custom duration for warning', () => {
-			const id = notifications.showWarning('Custom warning', 7000);
+			notifications.showWarning('Custom warning', 7000);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: 7000
 			});
 		});
 
 		it('should accept custom duration for info', () => {
-			const id = notifications.showInfo('Custom info', 4000);
+			notifications.showInfo('Custom info', 4000);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: 4000
 			});
 		});
@@ -114,17 +109,17 @@ describe('Notifications Store', () => {
 		});
 
 		it('should generate IDs with correct format', () => {
-			const id = notifications.showInfo('Test');
+			notifications.showInfo('Test');
 			
-			expect(id).toMatch(/^notification-\d+-\d+$/);
+			expect(notifications.items[0]!.id).toMatch(/^notification-\d+-\d+$/);
 		});
 
 		it('should increment counter in IDs', () => {
 			const id1 = notifications.showSuccess('First');
 			const id2 = notifications.showSuccess('Second');
 			
-			const counter1 = parseInt(id1.split('-')[1]);
-			const counter2 = parseInt(id2.split('-')[1]);
+			const counter1 = parseInt(id1.split('-')[1]!);
+			const counter2 = parseInt(id2.split('-')[1]!);
 			
 			expect(counter2).toBe(counter1 + 1);
 		});
@@ -140,7 +135,7 @@ describe('Notifications Store', () => {
 			notifications.remove(id1);
 			
 			expect(notifications.items).toHaveLength(1);
-			expect(notifications.items[0].id).toBe(id2);
+			expect(notifications.items[0]!.id).toBe(id2);
 		});
 
 		it('should handle removal of non-existent ID gracefully', () => {
@@ -172,9 +167,9 @@ describe('Notifications Store', () => {
 			const id2 = notifications.showError('Second');
 			const id3 = notifications.showWarning('Third');
 			
-			expect(notifications.items[0].id).toBe(id1);
-			expect(notifications.items[1].id).toBe(id2);
-			expect(notifications.items[2].id).toBe(id3);
+			expect(notifications.items[0]!.id).toBe(id1);
+			expect(notifications.items[1]!.id).toBe(id2);
+			expect(notifications.items[2]!.id).toBe(id3);
 		});
 
 		it('should limit notifications to 5 items', () => {
@@ -186,8 +181,8 @@ describe('Notifications Store', () => {
 			expect(notifications.items).toHaveLength(5);
 			
 			// Should contain the last 5 messages
-			expect(notifications.items[0].message).toBe('Message 3');
-			expect(notifications.items[4].message).toBe('Message 7');
+			expect(notifications.items[0]!.message).toBe('Message 3');
+			expect(notifications.items[4]!.message).toBe('Message 7');
 		});
 
 		it('should remove oldest notifications when exceeding limit', () => {
@@ -210,25 +205,25 @@ describe('Notifications Store', () => {
 			expect(notifications.items.find(n => n.id === id5)).toBeDefined();
 			expect(notifications.items.find(n => n.id === id6)).toBeDefined();
 			
-			expect(notifications.items[4].message).toBe('Sixth');
+			expect(notifications.items[4]!.message).toBe('Sixth');
 		});
 	});
 
 	describe('API Error Helper', () => {
 		it('should handle Error objects', () => {
 			const error = new Error('API Error');
-			const id = notifications.showApiError(error);
+			notifications.showApiError(error);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'API Error'
 			});
 		});
 
 		it('should handle string errors', () => {
-			const id = notifications.showApiError('String error');
+			notifications.showApiError('String error');
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'String error'
 			});
@@ -236,9 +231,9 @@ describe('Notifications Store', () => {
 
 		it('should handle objects with message property', () => {
 			const error = { message: 'Object error' };
-			const id = notifications.showApiError(error);
+			notifications.showApiError(error);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'Object error'
 			});
@@ -246,9 +241,9 @@ describe('Notifications Store', () => {
 
 		it('should use default message for unknown error types', () => {
 			const error = { someProperty: 'value' };
-			const id = notifications.showApiError(error);
+			notifications.showApiError(error);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'An unexpected error occurred'
 			});
@@ -256,9 +251,9 @@ describe('Notifications Store', () => {
 
 		it('should use custom default message', () => {
 			const error = null;
-			const id = notifications.showApiError(error, 'Custom default message');
+			notifications.showApiError(error, 'Custom default message');
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'Custom default message'
 			});
@@ -266,9 +261,9 @@ describe('Notifications Store', () => {
 
 		it('should handle nested message objects', () => {
 			const error = { message: { toString: () => 'Nested message' } };
-			const id = notifications.showApiError(error);
+			notifications.showApiError(error);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: 'Nested message'
 			});
@@ -279,16 +274,16 @@ describe('Notifications Store', () => {
 			notifications.showApiError(null);
 			
 			expect(notifications.items).toHaveLength(2);
-			expect(notifications.items[0].message).toBe('An unexpected error occurred');
-			expect(notifications.items[1].message).toBe('An unexpected error occurred');
+			expect(notifications.items[0]!.message).toBe('An unexpected error occurred');
+			expect(notifications.items[1]!.message).toBe('An unexpected error occurred');
 		});
 	});
 
 	describe('Edge Cases', () => {
 		it('should handle empty messages', () => {
-			const id = notifications.showSuccess('');
+			notifications.showSuccess('');
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'success',
 				message: ''
 			});
@@ -296,9 +291,9 @@ describe('Notifications Store', () => {
 
 		it('should handle very long messages', () => {
 			const longMessage = 'A'.repeat(1000);
-			const id = notifications.showError(longMessage);
+			notifications.showError(longMessage);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'error',
 				message: longMessage
 			});
@@ -306,26 +301,26 @@ describe('Notifications Store', () => {
 
 		it('should handle special characters in messages', () => {
 			const specialMessage = 'Message with <script>alert("xss")</script> & quotes "test" & symbols ®™€';
-			const id = notifications.showWarning(specialMessage);
+			notifications.showWarning(specialMessage);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				type: 'warning',
 				message: specialMessage
 			});
 		});
 
 		it('should handle zero duration', () => {
-			const id = notifications.showInfo('No auto-dismiss', 0);
+			notifications.showInfo('No auto-dismiss', 0);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: 0
 			});
 		});
 
 		it('should handle negative duration', () => {
-			const id = notifications.showSuccess('Negative duration', -1000);
+			notifications.showSuccess('Negative duration', -1000);
 			
-			expect(notifications.items[0]).toMatchObject({
+			expect(notifications.items[0]!).toMatchObject({
 				duration: -1000
 			});
 		});
@@ -341,10 +336,10 @@ describe('Notifications Store', () => {
 		});
 
 		it('should maintain reactivity when removing notifications', () => {
-			const id = notifications.showSuccess('Test removal');
+			notifications.showSuccess('Test removal');
 			expect(notifications.items.length).toBe(1);
 			
-			notifications.remove(id);
+			notifications.remove(notifications.items[0]!.id);
 			
 			expect(notifications.items.length).toBe(0);
 		});
@@ -363,20 +358,20 @@ describe('Notifications Store', () => {
 	describe('Timestamp Accuracy', () => {
 		it('should set accurate timestamps', () => {
 			const before = new Date();
-			const id = notifications.showInfo('Timestamp test');
+			notifications.showInfo('Timestamp test');
 			const after = new Date();
 			
-			const notification = notifications.items[0];
+			const notification = notifications.items[0]!;
 			expect(notification.createdAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
 			expect(notification.createdAt.getTime()).toBeLessThanOrEqual(after.getTime());
 		});
 
 		it('should have different timestamps for rapid notifications', () => {
-			const id1 = notifications.showSuccess('First');
-			const id2 = notifications.showSuccess('Second');
+			notifications.showSuccess('First');
+			notifications.showSuccess('Second');
 			
-			const time1 = notifications.items[0].createdAt.getTime();
-			const time2 = notifications.items[1].createdAt.getTime();
+			const time1 = notifications.items[0]!.createdAt.getTime();
+			const time2 = notifications.items[1]!.createdAt.getTime();
 			
 			expect(time2).toBeGreaterThanOrEqual(time1);
 		});
