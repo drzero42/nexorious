@@ -78,6 +78,8 @@ class UserGamePlatformCreateRequest(BaseModel):
 class UserGamePlatformResponse(BaseModel, TimestampMixin):
     """Response schema for user game platform association."""
     id: str
+    platform_id: str
+    storefront_id: Optional[str]
     platform: PlatformResponse
     storefront: Optional[StorefrontResponse]
     store_game_id: Optional[str]
@@ -126,12 +128,17 @@ class UserGameListResponse(BaseModel):
     pages: int
 
 
-class BulkStatusUpdateRequest(BaseModel):
-    """Request schema for bulk status updates."""
-    user_game_ids: List[str] = Field(..., description="List of user game IDs to update")
+class BulkUpdateData(BaseModel):
+    """Schema for the updates object in bulk operations."""
     play_status: Optional[PlayStatus] = Field(None, description="New play status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="New rating")
     is_loved: Optional[bool] = Field(None, description="New loved status")
+
+
+class BulkStatusUpdateRequest(BaseModel):
+    """Request schema for bulk status updates."""
+    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to update")
+    updates: BulkUpdateData = Field(..., description="Updates to apply to the user games")
 
 
 class CollectionStatsResponse(BaseModel):

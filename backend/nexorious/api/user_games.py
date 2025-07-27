@@ -269,6 +269,60 @@ async def get_collection_stats(
     )
 
 
+@router.put("/bulk-update", response_model=SuccessResponse)
+async def bulk_update_user_games(
+    bulk_data: BulkStatusUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Bulk update multiple user games."""
+    
+    # Get user games to update
+    user_games = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id.in_(bulk_data.user_game_ids),
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).all()
+    
+    found_ids = {user_game.id for user_game in user_games}
+    update_count = 0
+    failed_count = 0
+    
+    # Apply updates
+    for user_game in user_games:
+        updated = False
+        
+        if bulk_data.updates.play_status is not None:
+            user_game.play_status = bulk_data.updates.play_status
+            updated = True
+        
+        if bulk_data.updates.personal_rating is not None:
+            user_game.personal_rating = bulk_data.updates.personal_rating
+            updated = True
+        
+        if bulk_data.updates.is_loved is not None:
+            user_game.is_loved = bulk_data.updates.is_loved
+            updated = True
+        
+        if updated:
+            user_game.updated_at = datetime.now(timezone.utc)
+            update_count += 1
+    
+    # Calculate failed count
+    failed_count = len(bulk_data.user_game_ids) - len(found_ids)
+    
+    session.commit()
+    
+    return SuccessResponse(
+        message="Bulk update completed successfully",
+        updated_count=update_count,
+        failed_count=failed_count
+    )
+
+
 @router.get("/{user_game_id}", response_model=UserGameResponse)
 async def get_user_game(
     user_game_id: str,
@@ -509,9 +563,20 @@ async def get_user_game_platforms(
             detail="User game not found"
         )
     
+    # Get platforms with joined Platform and Storefront data
     platforms = session.exec(
-        select(UserGamePlatform).where(UserGamePlatform.user_game_id == user_game_id)
+        select(UserGamePlatform)
+        .join(Platform)
+        .outerjoin(Storefront)
+        .where(UserGamePlatform.user_game_id == user_game_id)
     ).all()
+    
+    # Manually load relationships for proper serialization
+    for platform in platforms:
+        if platform.platform_id:
+            platform.platform = session.get(Platform, platform.platform_id)
+        if platform.storefront_id:
+            platform.storefront = session.get(Storefront, platform.storefront_id)
     
     return platforms
 
@@ -587,6 +652,11 @@ async def add_platform_to_user_game(
     session.commit()
     session.refresh(new_platform)
     
+    # Load relationships for proper serialization
+    new_platform.platform = session.get(Platform, new_platform.platform_id)
+    if new_platform.storefront_id:
+        new_platform.storefront = session.get(Storefront, new_platform.storefront_id)
+    
     return new_platform
 
 
@@ -620,63 +690,3 @@ async def remove_platform_from_user_game(
     session.commit()
     
     return SuccessResponse(message="Platform association deleted successfully")
-
-
-@router.put("/bulk-update", response_model=SuccessResponse)
-async def bulk_update_user_games(
-    bulk_data: BulkStatusUpdateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Bulk update multiple user games."""
-    
-    if not bulk_data.user_game_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No user game IDs provided"
-        )
-    
-    # Get user games to update
-    user_games = session.exec(
-        select(UserGame).where(
-            and_(
-                UserGame.id.in_(bulk_data.user_game_ids),
-                UserGame.user_id == current_user.id
-            )
-        )
-    ).all()
-    
-    found_ids = {user_game.id for user_game in user_games}
-    update_count = 0
-    failed_count = 0
-    
-    # Apply updates
-    for user_game in user_games:
-        updated = False
-        
-        if bulk_data.play_status is not None:
-            user_game.play_status = bulk_data.play_status
-            updated = True
-        
-        if bulk_data.personal_rating is not None:
-            user_game.personal_rating = bulk_data.personal_rating
-            updated = True
-        
-        if bulk_data.is_loved is not None:
-            user_game.is_loved = bulk_data.is_loved
-            updated = True
-        
-        if updated:
-            user_game.updated_at = datetime.now(timezone.utc)
-            update_count += 1
-    
-    # Calculate failed count
-    failed_count = len(bulk_data.user_game_ids) - len(found_ids)
-    
-    session.commit()
-    
-    return SuccessResponse(
-        message="Bulk update completed successfully",
-        updated_count=update_count,
-        failed_count=failed_count
-    )
