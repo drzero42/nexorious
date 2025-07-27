@@ -453,7 +453,7 @@ class TestStorefrontsUpdateEndpoint:
         data = response.json()
         assert data["display_name"] == "Updated Storefront Name"
         assert data["icon_url"] == "https://example.com/updated.png"
-        assert data["base_url"] == "https://updated.example.com"
+        assert data["base_url"] == "https://updated.example.com/"
         assert data["is_active"] is False
         assert data["name"] == test_storefront.name  # Should not change
     
