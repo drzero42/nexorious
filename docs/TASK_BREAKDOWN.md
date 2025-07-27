@@ -97,7 +97,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.7 Admin Interface
 - [x] Admin dashboard with system statistics
-- [ ] User management list view
+- [x] User management list view
 - [ ] User creation form (username and password)
 - [ ] User edit interface (active status, admin role)
 - [ ] Password reset interface for users
