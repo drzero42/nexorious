@@ -78,6 +78,12 @@ class SetupStatusResponse(BaseModel):
     needs_setup: bool = Field(..., description="Whether initial admin setup is needed")
 
 
+class InitialAdminSetupRequest(BaseModel):
+    """Request schema for initial admin setup."""
+    username: str = Field(..., min_length=3, max_length=100, description="Admin username")
+    password: str = Field(..., min_length=8, max_length=128, description="Admin password")
+
+
 class AdminUserCreateRequest(BaseModel):
     """Request schema for admin to create a new user."""
     username: str = Field(..., min_length=3, max_length=100, description="Username")

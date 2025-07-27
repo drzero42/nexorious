@@ -34,6 +34,7 @@ from ..api.schemas.auth import (
     UsernameAvailabilityResponse,
     LogoutResponse,
     SetupStatusResponse,
+    InitialAdminSetupRequest,
     AdminUserCreateRequest,
     AdminUserUpdateRequest,
     AdminPasswordResetRequest,
@@ -50,6 +51,47 @@ async def get_setup_status(session: Annotated[Session, Depends(get_session)]):
     # Check if any users exist in the database
     user_count = session.exec(select(User)).first()
     return SetupStatusResponse(needs_setup=user_count is None)
+
+
+@router.post("/setup/admin", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
+async def create_initial_admin(
+    admin_data: InitialAdminSetupRequest,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Create initial admin user. Only works when no users exist."""
+    
+    # Check if any users already exist
+    existing_user = session.exec(select(User)).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Initial admin setup is not needed. Users already exist."
+        )
+    
+    # Check if username is already taken (shouldn't happen since no users exist, but for safety)
+    username_check = session.exec(
+        select(User).where(User.username == admin_data.username)
+    ).first()
+    
+    if username_check:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
+    # Create initial admin user
+    hashed_password = get_password_hash(admin_data.password)
+    admin_user = User(
+        username=admin_data.username,
+        password_hash=hashed_password,
+        is_admin=True  # First user is automatically admin
+    )
+    
+    session.add(admin_user)
+    session.commit()
+    session.refresh(admin_user)
+    
+    return admin_user
 
 
 @router.post("/register", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)

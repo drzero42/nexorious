@@ -521,3 +521,107 @@ class TestAuthSetupStatus:
         assert "needs_setup" in data
         assert isinstance(data["needs_setup"], bool)
         assert len(data) == 1  # Should only contain needs_setup field
+
+
+class TestInitialAdminSetup:
+    """Test /api/auth/setup/admin endpoint."""
+    
+    def test_initial_admin_setup_success(self, client: TestClient, session: Session):
+        """Test successful initial admin setup when no users exist."""
+        # Ensure no users exist in database
+        users = session.exec(select(User)).all()
+        for user in users:
+            session.delete(user)
+        session.commit()
+        
+        admin_data = {
+            "username": "admin",
+            "password": "admin123"
+        }
+        response = client.post("/api/auth/setup/admin", json=admin_data)
+        
+        assert_api_success(response, 201)
+        data = response.json()
+        assert data["username"] == admin_data["username"]
+        assert data["is_admin"] is True
+        assert data["is_active"] is True
+        assert "password_hash" not in data
+        
+        # Verify user exists in database
+        user = session.exec(select(User).where(User.username == admin_data["username"])).first()
+        assert user is not None
+        assert user.is_admin is True
+    
+    def test_initial_admin_setup_fails_when_users_exist(self, client: TestClient):
+        """Test initial admin setup fails when users already exist."""
+        # Create a user first
+        user_data = create_test_user_data()
+        client.post("/api/auth/register", json=user_data)
+        
+        admin_data = {
+            "username": "admin",
+            "password": "admin123"
+        }
+        response = client.post("/api/auth/setup/admin", json=admin_data)
+        
+        assert_api_error(response, 400, "Initial admin setup is not needed. Users already exist.")
+    
+    def test_initial_admin_setup_validation(self, client: TestClient, session: Session):
+        """Test initial admin setup with invalid data."""
+        # Ensure no users exist in database
+        users = session.exec(select(User)).all()
+        for user in users:
+            session.delete(user)
+        session.commit()
+        
+        # Test missing fields
+        incomplete_data = {"username": "admin"}
+        response = client.post("/api/auth/setup/admin", json=incomplete_data)
+        assert_api_error(response, 422)
+        
+        # Test password too short
+        short_password_data = {
+            "username": "admin",
+            "password": "short"
+        }
+        response = client.post("/api/auth/setup/admin", json=short_password_data)
+        assert_api_error(response, 422)
+        
+        # Test username too short
+        short_username_data = {
+            "username": "ad",
+            "password": "admin123"
+        }
+        response = client.post("/api/auth/setup/admin", json=short_username_data)
+        assert_api_error(response, 422)
+    
+    def test_initial_admin_setup_response_schema(self, client: TestClient, session: Session):
+        """Test initial admin setup response has correct schema."""
+        # Ensure no users exist in database
+        users = session.exec(select(User)).all()
+        for user in users:
+            session.delete(user)
+        session.commit()
+        
+        admin_data = {
+            "username": "admin",
+            "password": "admin123"
+        }
+        response = client.post("/api/auth/setup/admin", json=admin_data)
+        
+        assert_api_success(response, 201)
+        data = response.json()
+        
+        # Verify response schema matches UserProfileResponse
+        required_fields = ["id", "username", "is_active", "is_admin", "preferences", "created_at", "updated_at"]
+        for field in required_fields:
+            assert field in data
+        
+        # Verify data types
+        assert isinstance(data["id"], str)
+        assert isinstance(data["username"], str)
+        assert isinstance(data["is_active"], bool)
+        assert isinstance(data["is_admin"], bool)
+        assert isinstance(data["preferences"], dict)
+        assert isinstance(data["created_at"], str)
+        assert isinstance(data["updated_at"], str)

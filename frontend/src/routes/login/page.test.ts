@@ -49,13 +49,6 @@ describe('Login Page', () => {
       expect(hasLoginTitle).toBe(true);
     });
 
-    it('should have a link to register page', () => {
-      renderComponent(LoginPage);
-
-      expect(screen.getByText('Sign up')).toBeInTheDocument();
-      const registerLink = screen.getByText('Sign up').closest('a');
-      expect(registerLink?.getAttribute('href')).toBe('/register');
-    });
 
     it('should have proper form structure', () => {
       const { container } = renderComponent(LoginPage);
@@ -362,8 +355,6 @@ describe('Login Page', () => {
       const usernameInput = screen.getByLabelText('Username');
       const passwordInput = screen.getByLabelText('Password');
       const submitButton = screen.getByRole('button', { name: 'Sign In' });
-      const forgotPasswordLink = screen.getByText('Forgot your password?');
-      const registerLink = screen.getByText('Sign up');
 
       // Test tab navigation
       usernameInput.focus();
@@ -374,12 +365,6 @@ describe('Login Page', () => {
 
       await userEvent.keyDown(passwordInput, 'Tab');
       expect(document.activeElement).toBe(submitButton);
-
-      await userEvent.keyDown(submitButton, 'Tab');
-      expect(document.activeElement).toBe(forgotPasswordLink);
-
-      await userEvent.keyDown(forgotPasswordLink, 'Tab');
-      expect(document.activeElement).toBe(registerLink);
     });
   });
 });
