@@ -72,7 +72,7 @@
 
     {#if isLoading || adminState.isLoading}
       <div class="flex justify-center py-12">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" role="status" aria-label="Loading"></div>
       </div>
     {:else if statistics}
       <!-- Statistics Cards -->
