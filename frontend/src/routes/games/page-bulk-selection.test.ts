@@ -41,7 +41,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
 
     // Setup mock data for user games with correct structure
     mockUserGamesStore.value = {
-      userGames: mockGames.map((game, index) => ({
+      games: mockGames.map((game, index) => ({
         id: `user-game-${index + 1}`,
         game: {
           id: game.id,
@@ -80,8 +80,8 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
     };
 
     // Add required methods to mocks
-    mockUserGamesStore.loadUserGames = vi.fn().mockResolvedValue(undefined);
-    mockUserGamesStore.bulkUpdateStatus = vi.fn().mockResolvedValue([]);
+    mockUserGamesStore.fetchUserGames = vi.fn().mockResolvedValue(undefined);
+    mockUserGamesStore.updateProgress = vi.fn().mockResolvedValue([]);
     mockPlatformsStore.loadAll = vi.fn().mockResolvedValue(undefined);
   });
 

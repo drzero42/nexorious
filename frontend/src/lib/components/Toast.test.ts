@@ -92,7 +92,7 @@ describe('Toast Component', () => {
 				} 
 			});
 			
-			expect(screen.getByText(expectedIcons[index])).toBeInTheDocument();
+			expect(screen.getByText(expectedIcons[index]!)).toBeInTheDocument();
 			unmount();
 		});
 	});

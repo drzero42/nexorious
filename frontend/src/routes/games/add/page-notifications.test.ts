@@ -5,8 +5,7 @@ import {
   resetFetchMock,
   mockConfig,
   mockIGDBCandidates,
-  mockGame,
-  APIResponseMock
+  mockGame
 } from '../../../test-utils/api-mocks';
 import { mockGamesStore, mockUserGamesStore, mockPlatformsStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
 import { mockGoto, resetNavigationMocks } from '../../../test-utils/navigation-mocks';
@@ -41,7 +40,6 @@ vi.mock('$lib/stores/notifications.svelte', () => ({
 }));
 
 describe('Game Addition Page - Notifications Integration', () => {
-  let mockFetch: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,7 +47,7 @@ describe('Game Addition Page - Notifications Integration', () => {
     resetStoresMocks();
     resetNavigationMocks();
     resetAuthMocks();
-    mockFetch = setupFetchMock();
+    setupFetchMock();
     setAuthenticatedState();
     vi.useFakeTimers();
   });
@@ -80,7 +78,7 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
 
     it('should show error notification when platforms fail to load', async () => {
-      mockPlatformsStore.loadAll.mockRejectedValue(new Error('Platform load failed'));
+      mockPlatformsStore.fetchPlatforms.mockRejectedValue(new Error('Platform load failed'));
       
       render(GameAddPage);
       
@@ -117,10 +115,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       
       // Wait for search results and select first game
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       
       // Should be on confirmation step, click add to collection
       await waitFor(() => {
@@ -151,10 +149,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       
       // Set some progress data that will fail to save
       await waitFor(() => {
@@ -186,10 +184,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       
       // Set rating that will fail to save
       await waitFor(() => {
@@ -226,10 +224,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       await waitFor(() => {
@@ -253,10 +251,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       await waitFor(() => {
@@ -373,10 +371,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       // Should not redirect immediately
@@ -399,10 +397,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       // Should not redirect immediately
@@ -437,10 +435,10 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /search/i }));
       
       await waitFor(() => {
-        expect(screen.getByText(mockIGDBCandidates[0].title)).toBeInTheDocument();
+        expect(screen.getByText(mockIGDBCandidates[0]!.title)).toBeInTheDocument();
       });
       
-      await fireEvent.click(screen.getByText(mockIGDBCandidates[0].title));
+      await fireEvent.click(screen.getByText(mockIGDBCandidates[0]!.title));
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       await waitFor(() => {

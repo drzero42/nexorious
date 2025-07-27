@@ -55,7 +55,8 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         id: 'pc',
         name: 'PC',
         display_name: 'PC',
-        icon_url: null,
+        icon_url: undefined,
+        source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
@@ -66,6 +67,7 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         display_name: 'Steam',
         icon_url: 'https://example.com/steam-icon.png',
         base_url: 'https://store.steampowered.com',
+        source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
@@ -81,7 +83,8 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         id: 'ps5',
         name: 'PlayStation 5',
         display_name: 'PlayStation 5',
-        icon_url: null,
+        icon_url: undefined,
+        source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
@@ -92,6 +95,7 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         display_name: 'PlayStation Store',
         icon_url: 'https://example.com/psn-icon.png',
         base_url: 'https://store.playstation.com',
+        source: 'manual',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
@@ -111,7 +115,7 @@ const mockUserGamesStore = {
   value: {
     userGames: [createMockUserGame()],
     isLoading: false,
-    error: null
+    error: undefined
   },
   fetchUserGames: vi.fn(),
   updateUserGame: vi.fn(),
@@ -153,7 +157,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     mockUserGamesStore.value = {
       userGames: [createMockUserGame()],
       isLoading: false,
-      error: null
+      error: undefined
     };
   });
 
@@ -218,7 +222,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       const gameWithoutRating = createMockUserGame({
         game: {
           ...createMockUserGame().game,
-          rating_average: null,
+          rating_average: undefined,
           rating_count: 0,
           is_verified: false
         }
@@ -254,9 +258,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       const gameWithoutTimes = createMockUserGame({
         game: {
           ...createMockUserGame().game,
-          howlongtobeat_main: null,
-          howlongtobeat_extra: null,
-          howlongtobeat_completionist: null
+          howlongtobeat_main: undefined,
+          howlongtobeat_extra: undefined,
+          howlongtobeat_completionist: undefined
         }
       });
       mockUserGamesStore.value.userGames = [gameWithoutTimes];
@@ -291,9 +295,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       const gameWithMissingFields = createMockUserGame({
         game: {
           ...createMockUserGame().game,
-          developer: null,
-          estimated_playtime_hours: null,
-          igdb_id: null
+          developer: undefined,
+          estimated_playtime_hours: undefined,
+          igdb_id: undefined
         }
       });
       mockUserGamesStore.value.userGames = [gameWithMissingFields];
@@ -334,20 +338,20 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         game: {
           id: 'game-minimal',
           title: 'Minimal Game',
-          description: null,
-          genre: null,
-          developer: null,
-          publisher: null,
-          release_date: null,
-          cover_art_url: null,
-          rating_average: null,
+          description: undefined,
+          genre: undefined,
+          developer: undefined,
+          publisher: undefined,
+          release_date: undefined,
+          cover_art_url: undefined,
+          rating_average: undefined,
           rating_count: 0,
           game_metadata: '{}',
-          estimated_playtime_hours: null,
-          howlongtobeat_main: null,
-          howlongtobeat_extra: null,
-          howlongtobeat_completionist: null,
-          igdb_id: null,
+          estimated_playtime_hours: undefined,
+          howlongtobeat_main: undefined,
+          howlongtobeat_extra: undefined,
+          howlongtobeat_completionist: undefined,
+          igdb_id: undefined,
           is_verified: false,
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'

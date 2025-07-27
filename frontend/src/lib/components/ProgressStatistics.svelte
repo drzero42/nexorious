@@ -26,7 +26,7 @@
   const completedTotal = $derived(statusCounts.completed + statusCounts.mastered + statusCounts.dominated);
   const completionRate = $derived(totalGames > 0 ? (completedTotal / totalGames) * 100 : 0);
   const activeGames = $derived(statusCounts.in_progress + statusCounts.replay);
-  const abandonedGames = $derived(statusCounts.dropped + statusCounts.shelved);
+  // const abandonedGames = $derived(statusCounts.dropped + statusCounts.shelved); // Not used yet
 
   // Calculate time metrics
   const totalHoursPlayed = $derived(userGames.reduce((sum, g) => sum + (g.hours_played || 0), 0));

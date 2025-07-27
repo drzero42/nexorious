@@ -4,7 +4,6 @@ import type { User, AuthState } from '$lib/stores/auth.svelte';
 export const mockUser: User = {
   id: 'test-user-id',
   username: 'testuser',
-  email: 'test@example.com',
   isAdmin: false
 };
 
@@ -30,7 +29,9 @@ export const mockAuthStore = {
   register: vi.fn(),
   logout: vi.fn(),
   refreshAuth: vi.fn(),
-  clearError: vi.fn()
+  clearError: vi.fn(),
+  checkSetupStatus: vi.fn(),
+  createInitialAdmin: vi.fn()
 };
 
 // Mock the auth store
@@ -72,5 +73,7 @@ export function resetAuthMocks() {
   mockAuthStore.logout.mockClear();
   mockAuthStore.refreshAuth.mockClear();
   mockAuthStore.clearError.mockClear();
+  mockAuthStore.checkSetupStatus.mockClear();
+  mockAuthStore.createInitialAdmin.mockClear();
   setUnauthenticatedState();
 }
