@@ -493,6 +493,8 @@
 
   <!-- Platform Create/Edit Modal -->
   {#if showCreatePlatformForm}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetPlatformForm} on:keydown={(e) => e.key === 'Escape' && resetPlatformForm()}>
       <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
         <div class="mt-3">
@@ -560,6 +562,8 @@
 
   <!-- Storefront Create/Edit Modal -->
   {#if showCreateStorefrontForm}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetStorefrontForm} on:keydown={(e) => e.key === 'Escape' && resetStorefrontForm()}>
       <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
         <div class="mt-3">
@@ -638,6 +642,8 @@
 
   <!-- Delete Confirmation Modal -->
   {#if showDeleteConfirm && deleteTarget}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={cancelDelete} on:keydown={(e) => e.key === 'Escape' && cancelDelete()}>
       <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
         <div class="mt-3">
