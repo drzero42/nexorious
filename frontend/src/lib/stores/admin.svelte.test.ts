@@ -306,7 +306,7 @@ describe('Admin Store', () => {
 
       expect(result).toEqual(mockResponse);
       expect(admin.value.users).toHaveLength(1);
-      expect(admin.value.users[0].id).toBe('2');
+      expect(admin.value.users[0]?.id).toBe('2');
     });
   });
 

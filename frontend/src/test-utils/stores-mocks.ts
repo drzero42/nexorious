@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-// Mock game data
-export const mockGame = {
+// Mock game metadata (separate from user-specific data)
+export const mockGameMetadata = {
   id: 'game-1',
   title: 'Test Game',
   description: 'A test game description',
@@ -10,31 +10,62 @@ export const mockGame = {
   publisher: 'Test Publisher',
   release_date: '2024-01-01',
   cover_art_url: 'https://example.com/cover.jpg',
+  rating_average: 4.5,
+  rating_count: 100,
+  game_metadata: '{}',
+  estimated_playtime_hours: 25,
+  howlongtobeat_main: 18,
+  howlongtobeat_extra: 28,
+  howlongtobeat_completionist: 45,
+  igdb_id: 'igdb-123',
+  is_verified: true,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z'
+};
+
+// Mock user game (includes game metadata + user-specific data)
+export const mockUserGame = {
+  id: 'user-game-1',
+  game: mockGameMetadata,
+  ownership_status: 'owned' as const,
+  is_physical: false,
+  physical_location: undefined,
   personal_rating: 4,
+  is_loved: true,
   play_status: 'completed' as const,
   hours_played: 25,
   personal_notes: 'Great game!',
-  is_loved: true,
-  ownership_status: 'owned' as const,
-  is_physical: false,
+  acquired_date: '2024-01-01',
   last_played: '2024-01-15',
-  acquired_date: '2024-01-01'
+  platforms: [],
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z'
 };
 
-export const mockGames = [
-  mockGame,
+export const mockUserGames = [
+  mockUserGame,
   {
-    ...mockGame,
-    id: 'game-2',
-    title: 'Another Game',
+    ...mockUserGame,
+    id: 'user-game-2',
+    game: {
+      ...mockGameMetadata,
+      id: 'game-2',
+      title: 'Another Game',
+      cover_art_url: 'https://example.com/cover2.jpg'
+    },
     play_status: 'in_progress' as const,
     personal_rating: 5,
     hours_played: 10
   },
   {
-    ...mockGame,
-    id: 'game-3',
-    title: 'Third Game',
+    ...mockUserGame,
+    id: 'user-game-3',
+    game: {
+      ...mockGameMetadata,
+      id: 'game-3',
+      title: 'Third Game',
+      cover_art_url: 'https://example.com/cover3.jpg'
+    },
     play_status: 'not_started' as const,
     personal_rating: null,
     hours_played: 0,
@@ -42,14 +73,27 @@ export const mockGames = [
   }
 ];
 
+// For backwards compatibility
+export const mockGames = mockUserGames;
+
 // Mock user games store
 export const mockUserGamesStore = {
   value: {
-    games: mockGames,
+    userGames: mockUserGames,
+    currentUserGame: null,
+    stats: null,
     isLoading: false,
-    error: null
+    error: null,
+    filters: {},
+    pagination: {
+      page: 1,
+      per_page: 20,
+      total: 3,
+      pages: 1
+    }
   },
   fetchUserGames: vi.fn(),
+  loadUserGames: vi.fn(),
   addUserGame: vi.fn(),
   addGameToCollection: vi.fn(),
   updateUserGame: vi.fn(),
@@ -112,6 +156,9 @@ export const mockPlatformsStore = {
     isLoading: false,
     error: null
   },
+  loadPlatforms: vi.fn(),
+  loadStorefronts: vi.fn(),
+  loadAll: vi.fn(),
   fetchPlatforms: vi.fn(),
   fetchStorefronts: vi.fn(),
   clearError: vi.fn()
@@ -181,6 +228,7 @@ vi.mock('$lib/stores/user-games.svelte', () => ({
 export function resetStoresMocks() {
   // Reset user games store
   mockUserGamesStore.fetchUserGames.mockClear();
+  mockUserGamesStore.loadUserGames.mockClear();
   mockUserGamesStore.addUserGame.mockClear();
   mockUserGamesStore.updateUserGame.mockClear();
   mockUserGamesStore.updateProgress.mockClear();
@@ -188,9 +236,18 @@ export function resetStoresMocks() {
   mockUserGamesStore.deleteUserGame.mockClear();
   mockUserGamesStore.clearError.mockClear();
   mockUserGamesStore.value = {
-    games: mockGames,
+    userGames: mockUserGames,
+    currentUserGame: null,
+    stats: null,
     isLoading: false,
-    error: null
+    error: null,
+    filters: {},
+    pagination: {
+      page: 1,
+      per_page: 20,
+      total: 3,
+      pages: 1
+    }
   };
 
   // Reset games store
@@ -216,6 +273,9 @@ export function resetStoresMocks() {
   };
 
   // Reset other stores
+  mockPlatformsStore.loadPlatforms.mockClear();
+  mockPlatformsStore.loadStorefronts.mockClear();
+  mockPlatformsStore.loadAll.mockClear();
   mockPlatformsStore.fetchPlatforms.mockClear();
   mockPlatformsStore.fetchStorefronts.mockClear();
   mockPlatformsStore.clearError.mockClear();

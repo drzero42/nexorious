@@ -30,7 +30,7 @@
       ],
       content: safeValue,
       editable,
-      onUpdate: ({ editor }) => {
+      onUpdate: ({ editor }: { editor: Editor }) => {
         const html = editor.getHTML();
         value = html;
         onchange?.(new CustomEvent('change', { detail: { value: html } }));

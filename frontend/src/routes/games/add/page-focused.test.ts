@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { 
   mockConfig,
-  mockIGDBCandidates
+  mockIGDBCandidates,
+  setupFetchMock,
+  resetFetchMock
 } from '../../../test-utils/api-mocks';
 import { mockGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
 import { resetNavigationMocks } from '../../../test-utils/navigation-mocks';
@@ -27,9 +29,11 @@ vi.mock('$lib/stores/auth.svelte', () => ({
 describe('Game Addition Page - PR Focused Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFetchMock();
     resetStoresMocks();
     resetNavigationMocks();
     resetAuthMocks();
+    setupFetchMock();
     setAuthenticatedState();
     
     // Set up successful IGDB search mock

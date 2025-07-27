@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
-import AdminDashboard from './+page.test.svelte';
+import AdminDashboard from './+page.svelte';
 import { admin, auth } from '$lib/stores';
 
 // Mock the stores
 vi.mock('$lib/stores', () => ({
   admin: {
     value: {
+      users: [],
       statistics: null,
       isLoading: false,
       error: null
@@ -38,6 +39,7 @@ describe('Admin Dashboard Page', () => {
     
     // Reset admin store mock
     vi.mocked(admin).value = {
+      users: [],
       statistics: null,
       isLoading: false,
       error: null

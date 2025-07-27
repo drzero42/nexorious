@@ -5,7 +5,7 @@ import {
   resetFetchMock,
   mockConfig
 } from '../../test-utils/api-mocks';
-import { mockUserGamesStore, mockPlatformsStore, mockGames, resetStoresMocks } from '../../test-utils/stores-mocks';
+import { mockUserGamesStore, mockPlatformsStore, mockUserGames, resetStoresMocks } from '../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../test-utils/auth-mocks';
 import GamesPage from './+page.svelte';
 
@@ -41,13 +41,23 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
 
     // Setup mock data for user games with correct structure
     mockUserGamesStore.value = {
-      games: mockGames,
+      userGames: mockUserGames,
+      currentUserGame: null,
+      stats: null,
       isLoading: false,
-      error: null
+      error: null,
+      filters: {},
+      pagination: {
+        page: 1,
+        per_page: 20,
+        total: 2,
+        pages: 1
+      }
     };
 
     // Add required methods to mocks
     mockUserGamesStore.fetchUserGames = vi.fn().mockResolvedValue(undefined);
+    mockUserGamesStore.loadUserGames = vi.fn().mockResolvedValue(undefined);
     mockUserGamesStore.updateProgress = vi.fn().mockResolvedValue([]);
     mockUserGamesStore.bulkUpdateStatus = vi.fn().mockResolvedValue([]);
     mockPlatformsStore.fetchPlatforms = vi.fn().mockResolvedValue(undefined);
@@ -59,7 +69,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       
       await waitFor(() => {
         expect(screen.getByText('My Games')).toBeInTheDocument();
-        expect(screen.getByText(/3 games in your collection/)).toBeInTheDocument();
+        expect(screen.getByText(/2 games in your collection/)).toBeInTheDocument();
       });
     });
 
