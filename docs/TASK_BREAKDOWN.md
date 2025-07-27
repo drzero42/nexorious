@@ -62,11 +62,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.2 Authentication & User Management
 - [x] Login form only
-- [ ] Initial admin setup form (first-run only)
+- [x] Initial admin setup form (first-run only)
 - [x] JWT token management
 - [x] Protected route guards
 - [x] User session handling
-- [ ] Admin detection for first-run flow
+- [x] Admin detection for first-run flow
 
 #### 1.2.3 Game Library Interface
 - [x] Game list view with pagination
