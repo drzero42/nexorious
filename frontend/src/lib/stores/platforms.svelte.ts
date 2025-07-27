@@ -30,6 +30,7 @@ export interface PlatformCreateRequest {
   name: string;
   display_name: string;
   icon_url?: string;
+  is_active?: boolean;
 }
 
 export interface PlatformUpdateRequest {
@@ -43,6 +44,7 @@ export interface StorefrontCreateRequest {
   display_name: string;
   icon_url?: string;
   base_url?: string;
+  is_active?: boolean;
 }
 
 export interface StorefrontUpdateRequest {
@@ -173,9 +175,15 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...platformData,
+          icon_url: platformData.icon_url?.trim() || undefined
+        };
+
         const response = await apiCall(`${config.apiUrl}/platforms/`, {
           method: 'POST',
-          body: JSON.stringify(platformData),
+          body: JSON.stringify(cleanedData),
         });
         
         const platform: Platform = await response.json();
@@ -199,9 +207,15 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...platformData,
+          icon_url: platformData.icon_url?.trim() || undefined
+        };
+
         const response = await apiCall(`${config.apiUrl}/platforms/${id}`, {
           method: 'PUT',
-          body: JSON.stringify(platformData),
+          body: JSON.stringify(cleanedData),
         });
         
         const updatedPlatform: Platform = await response.json();
@@ -248,9 +262,16 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...storefrontData,
+          icon_url: storefrontData.icon_url?.trim() || undefined,
+          base_url: storefrontData.base_url?.trim() || undefined
+        };
+
         const response = await apiCall(`${config.apiUrl}/platforms/storefronts/`, {
           method: 'POST',
-          body: JSON.stringify(storefrontData),
+          body: JSON.stringify(cleanedData),
         });
         
         const storefront: Storefront = await response.json();
@@ -274,9 +295,16 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...storefrontData,
+          icon_url: storefrontData.icon_url?.trim() || undefined,
+          base_url: storefrontData.base_url?.trim() || undefined
+        };
+
         const response = await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
           method: 'PUT',
-          body: JSON.stringify(storefrontData),
+          body: JSON.stringify(cleanedData),
         });
         
         const updatedStorefront: Storefront = await response.json();

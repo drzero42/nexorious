@@ -109,7 +109,8 @@ async def create_platform(
     new_platform = Platform(
         name=platform_data.name,
         display_name=platform_data.display_name,
-        icon_url=str(platform_data.icon_url) if platform_data.icon_url else None
+        icon_url=str(platform_data.icon_url) if platform_data.icon_url else None,
+        is_active=platform_data.is_active if platform_data.is_active is not None else True
     )
     
     session.add(new_platform)
@@ -265,7 +266,8 @@ async def create_storefront(
         name=storefront_data.name,
         display_name=storefront_data.display_name,
         icon_url=str(storefront_data.icon_url) if storefront_data.icon_url else None,
-        base_url=str(storefront_data.base_url) if storefront_data.base_url else None
+        base_url=str(storefront_data.base_url) if storefront_data.base_url else None,
+        is_active=storefront_data.is_active if storefront_data.is_active is not None else True
     )
     
     session.add(new_storefront)
