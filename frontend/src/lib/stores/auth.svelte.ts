@@ -7,6 +7,10 @@ export interface User {
   isAdmin: boolean;
 }
 
+export interface SetupStatusResponse {
+  needs_setup: boolean;
+}
+
 export interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -261,6 +265,56 @@ function createAuthStore() {
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to change password';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    checkSetupStatus: async (): Promise<SetupStatusResponse> => {
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/setup/status`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to check setup status');
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Setup status check failed:', error);
+        // Default to not needing setup on error
+        return { needs_setup: false };
+      }
+    },
+
+    createInitialAdmin: async (username: string, password: string) => {
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/setup/admin`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username, password }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to create initial admin');
+        }
+
+        const adminUser = await response.json();
+        state = { ...state, isLoading: false, error: null };
+        
+        return adminUser;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create initial admin';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
