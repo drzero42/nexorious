@@ -36,10 +36,10 @@
   let deleteTarget: { type: 'platform' | 'storefront'; id: string; name: string } | null = null;
 
   // Reactive statements to track platform store state
-  $: platformsList = platforms.value.platforms;
-  $: storefrontsList = platforms.value.storefronts;
-  $: error = platforms.value.error;
-  $: isStoreLoading = platforms.value.isLoading;
+  $: platformsList = $platforms.platforms;
+  $: storefrontsList = $platforms.storefronts;
+  $: error = $platforms.error;
+  $: isStoreLoading = $platforms.isLoading;
 
   // Filtered platforms based on search and filter criteria
   $: filteredPlatforms = platformsList.filter(platform => {
@@ -79,7 +79,8 @@
     }
 
     try {
-      await platforms.loadAll();
+      // Load ALL platforms and storefronts (both active and inactive) for admin management
+      await platforms.fetchAll();
     } catch (err) {
       console.error('Failed to load platforms and storefronts:', err);
     } finally {

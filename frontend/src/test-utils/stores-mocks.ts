@@ -141,34 +141,47 @@ export const mockGamesStore = {
   clearError: vi.fn()
 };
 
-// Mock platforms store
+// Mock platforms store with writable store pattern
 export const mockPlatformsStore = {
-  value: {
-    platforms: [
-      { id: 'pc', name: 'PC', display_name: 'PC' },
-      { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5' }
-    ],
-    storefronts: [
-      { id: 'steam', name: 'Steam', display_name: 'Steam' },
-      { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store' }
-    ],
-    isLoading: false,
-    error: null
-  },
-  loadPlatforms: vi.fn(),
-  loadStorefronts: vi.fn(),
-  loadAll: vi.fn(),
-  fetchPlatforms: vi.fn(),
-  fetchStorefronts: vi.fn(),
-  clearError: vi.fn(),
-  getActivePlatforms: vi.fn(() => [
-    { id: 'pc', name: 'PC', display_name: 'PC' },
-    { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5' }
-  ]),
-  getActiveStorefronts: vi.fn(() => [
-    { id: 'steam', name: 'Steam', display_name: 'Steam' },
-    { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store' }
-  ])
+  subscribe: vi.fn((callback) => {
+    // Call the callback immediately with the mock state
+    callback({
+      platforms: [
+        { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ],
+      storefronts: [
+        { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ],
+      isLoading: false,
+      error: null
+    });
+    // Return an unsubscribe function
+    return () => {};
+  }),
+  fetchPlatforms: vi.fn().mockResolvedValue([]),
+  fetchStorefronts: vi.fn().mockResolvedValue([]),
+  fetchAll: vi.fn(() => {
+    // Return a resolved promise - don't check for admin in tests
+    return Promise.resolve({
+      platforms: [
+        { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ],
+      storefronts: [
+        { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ]
+    });
+  }),
+  createPlatform: vi.fn(),
+  updatePlatform: vi.fn(),
+  deletePlatform: vi.fn(),
+  createStorefront: vi.fn(),
+  updateStorefront: vi.fn(),
+  deleteStorefront: vi.fn(),
+  clearError: vi.fn()
 };
 
 // Mock search store
@@ -208,6 +221,11 @@ vi.mock('$lib/stores', () => ({
   platforms: mockPlatformsStore,
   search: mockSearchStore,
   ui: mockUIStore
+}));
+
+// Mock platforms store specifically
+vi.mock('$lib/stores/platforms.svelte', () => ({
+  platforms: mockPlatformsStore
 }));
 
 // Mock user-games store specifically
@@ -298,19 +316,16 @@ export function resetStoresMocks() {
   };
 
   // Reset platforms store
-  mockPlatformsStore.loadPlatforms.mockClear();
-  mockPlatformsStore.loadStorefronts.mockClear();
-  mockPlatformsStore.loadAll.mockClear();
   mockPlatformsStore.fetchPlatforms.mockClear();
   mockPlatformsStore.fetchStorefronts.mockClear();
+  mockPlatformsStore.fetchAll.mockClear();
+  mockPlatformsStore.createPlatform.mockClear();
+  mockPlatformsStore.updatePlatform.mockClear();
+  mockPlatformsStore.deletePlatform.mockClear();
+  mockPlatformsStore.createStorefront.mockClear();
+  mockPlatformsStore.updateStorefront.mockClear();
+  mockPlatformsStore.deleteStorefront.mockClear();
   mockPlatformsStore.clearError.mockClear();
-  mockPlatformsStore.getActivePlatforms.mockClear();
-  mockPlatformsStore.getActiveStorefronts.mockClear();
-  
-  // Reset to resolved promises by default
-  mockPlatformsStore.loadAll.mockResolvedValue(undefined);
-  mockPlatformsStore.loadPlatforms.mockResolvedValue(undefined);
-  mockPlatformsStore.loadStorefronts.mockResolvedValue(undefined);
 
   // Reset other stores
   mockSearchStore.setQuery.mockClear();
