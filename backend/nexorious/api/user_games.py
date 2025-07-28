@@ -390,8 +390,6 @@ async def add_game_to_collection(
         user_id=current_user.id,
         game_id=user_game_data.game_id,
         ownership_status=user_game_data.ownership_status,
-        is_physical=user_game_data.is_physical,
-        physical_location=user_game_data.physical_location,
         personal_rating=user_game_data.personal_rating,
         is_loved=user_game_data.is_loved,
         play_status=user_game_data.play_status,

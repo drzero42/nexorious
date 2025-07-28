@@ -211,7 +211,6 @@ def test_user_game_fixture(session: Session, test_user: User, test_game: Game) -
         user_id=test_user.id,
         game_id=test_game.id,
         ownership_status="owned",
-        is_physical=False,
         personal_rating=4.5,
         is_loved=True,
         play_status="completed",
@@ -386,7 +385,6 @@ def create_test_storefront_data(
 def create_test_user_game_data(
     game_id: str,
     ownership_status: str = "owned",
-    is_physical: bool = False,
     personal_rating: Optional[float] = None,
     is_loved: bool = False,
     play_status: str = "not_started",
@@ -397,7 +395,6 @@ def create_test_user_game_data(
     data = {
         "game_id": game_id,
         "ownership_status": ownership_status,
-        "is_physical": is_physical,
         "is_loved": is_loved,
         "play_status": play_status,
         "hours_played": hours_played,

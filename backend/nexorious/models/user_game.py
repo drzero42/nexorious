@@ -39,8 +39,6 @@ class UserGame(SQLModel, table=True):
     user_id: str = Field(foreign_key="users.id", index=True)
     game_id: str = Field(foreign_key="games.id", index=True)
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED)
-    is_physical: bool = Field(default=False)
-    physical_location: Optional[str] = Field(default=None, max_length=200)
     personal_rating: Optional[Decimal] = Field(default=None, max_digits=2, decimal_places=1)
     is_loved: bool = Field(default=False, index=True)
     play_status: PlayStatus = Field(default=PlayStatus.NOT_STARTED, index=True)
