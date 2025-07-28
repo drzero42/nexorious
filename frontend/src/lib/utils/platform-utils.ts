@@ -53,8 +53,8 @@ export function createCompactPlatformDisplay(platforms: UserGamePlatform[]): str
   return grouped.map(group => {
     const platformName = group.platform.display_name;
     const storefrontNames = group.storefronts
-      .map(sf => sf.storefront?.display_name || 'Unknown')
-      .filter(name => name !== 'Unknown')
+      .map(sf => sf.storefront?.display_name)
+      .filter(name => name !== undefined && name !== null)
       .join(', ');
     
     return storefrontNames ? `${platformName}: ${storefrontNames}` : platformName;
