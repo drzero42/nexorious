@@ -201,7 +201,9 @@ describe('Pagination Component', () => {
 			
 			// There should be ellipsis in the pagination
 			const ellipsis = screen.getAllByText('...')[0];
-			await fireEvent.click(ellipsis);
+			if (ellipsis) {
+				await fireEvent.click(ellipsis);
+			}
 			
 			expect(onPageChange).not.toHaveBeenCalled();
 		});
@@ -381,12 +383,15 @@ describe('Pagination Component', () => {
 		});
 
 		it('should handle missing callback functions gracefully', async () => {
+			const propsWithoutCallbacks = {
+				currentPage: defaultProps.currentPage,
+				totalPages: defaultProps.totalPages,
+				totalItems: defaultProps.totalItems,
+				itemsPerPage: defaultProps.itemsPerPage
+			};
+			
 			render(Pagination, { 
-				props: { 
-					...defaultProps, 
-					onPageChange: undefined,
-					onItemsPerPageChange: undefined 
-				} 
+				props: propsWithoutCallbacks
 			});
 			
 			// Should not throw errors when clicking

@@ -1,94 +1,233 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { mockGoto, resetNavigationMocks } from '../../test-utils/navigation-mocks';
-import { mockAuthStore, resetAuthMocks, setAuthenticatedState, setUnauthenticatedState } from '../../test-utils/auth-mocks';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render } from '@testing-library/svelte';
+
+// Hoisted mocks
+const { mockGoto, mockAuthStore } = vi.hoisted(() => {
+  const mockGoto = vi.fn();
+  const mockAuthStore = {
+    value: {
+      user: null as any,
+      accessToken: null as any,
+      refreshToken: null as any
+    },
+    refreshAuth: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn()
+  };
+  
+  return { mockGoto, mockAuthStore };
+});
+
+vi.mock('$lib/stores', () => ({
+  auth: mockAuthStore
+}));
+
+vi.mock('$app/navigation', () => ({
+  goto: mockGoto
+}));
+
+vi.mock('$app/environment', () => ({
+  browser: true
+}));
+
+// Import component after mocks
+import RouteGuard from './RouteGuard.svelte';
+
+// Helper functions
+function setAuthenticatedState(authData: { user: { id: string; username: string; isAdmin: boolean } }) {
+  mockAuthStore.value = {
+    ...mockAuthStore.value,
+    ...authData
+  };
+}
+
+function setUnauthenticatedState() {
+  mockAuthStore.value = {
+    user: null,
+    accessToken: null,
+    refreshToken: null
+  };
+}
+
+function resetMocks() {
+  vi.clearAllMocks();
+  mockGoto.mockClear();
+  mockAuthStore.refreshAuth.mockClear();
+  mockAuthStore.login.mockClear();
+  mockAuthStore.logout.mockClear();
+}
 
 describe('RouteGuard', () => {
   beforeEach(() => {
-    resetAuthMocks();
-    resetNavigationMocks();
+    resetMocks();
     setUnauthenticatedState();
   });
 
-  it('should exist as a component', () => {
-    // This test just ensures the RouteGuard component exists and can be imported
-    expect(true).toBe(true);
+  it('should render loading state initially', () => {
+    setUnauthenticatedState();
+    const { container } = render(RouteGuard, { props: { requireAuth: false } });
+    
+    // Component should render (it shows loading divs)
+    expect(container.firstChild).toBeTruthy();
   });
 
-  it('should have working auth and navigation mocks', () => {
-    // Test that our mock system works correctly
-    expect(mockAuthStore.value.user).toBe(null);
-    expect(mockGoto).toBeDefined();
-    expect(typeof mockGoto).toBe('function');
+  it('should render when not require auth and user not authenticated', async () => {
+    setUnauthenticatedState();
+    
+    const { container } = render(RouteGuard, { 
+      props: { requireAuth: false }
+    });
+    
+    // Should not redirect when requireAuth is false
+    expect(mockGoto).not.toHaveBeenCalledWith('/login');
+    expect(container.firstChild).toBeTruthy();
   });
 
-  it('should allow setting authenticated state', () => {
+  it('should redirect to login when requireAuth=true and user not authenticated', async () => {
+    setUnauthenticatedState();
+    
+    render(RouteGuard, { props: { requireAuth: true } });
+    
+    // Wait for onMount to complete
+    await vi.waitFor(() => {
+      expect(mockGoto).toHaveBeenCalledWith('/login');
+    });
+  });
+
+  it('should redirect to custom path when specified', async () => {
+    setUnauthenticatedState();
+    
+    render(RouteGuard, { props: { requireAuth: true, redirectTo: '/custom-login' } });
+    
+    await vi.waitFor(() => {
+      expect(mockGoto).toHaveBeenCalledWith('/custom-login');
+    });
+  });
+
+  it('should not redirect when user is authenticated', async () => {
     setAuthenticatedState({
       user: { id: '1', username: 'testuser', isAdmin: false }
     });
     
-    expect(mockAuthStore.value.user).toBeDefined();
-    expect(mockAuthStore.value.user!.id).toBe('1');
-    expect(mockAuthStore.value.user!.username).toBe('testuser');
+    const { container } = render(RouteGuard, { 
+      props: { requireAuth: true }
+    });
+    
+    // Should not redirect when user is authenticated
+    expect(mockGoto).not.toHaveBeenCalledWith('/login');
+    expect(container.firstChild).toBeTruthy();
   });
 
-  it('should allow setting unauthenticated state', () => {
+  it('should redirect non-admin users when requireAdmin=true', async () => {
     setAuthenticatedState({
       user: { id: '1', username: 'testuser', isAdmin: false }
     });
     
-    setUnauthenticatedState();
+    render(RouteGuard, { props: { requireAuth: true, requireAdmin: true } });
     
-    expect(mockAuthStore.value.user).toBe(null);
-    expect(mockAuthStore.value.accessToken).toBe(null);
-    expect(mockAuthStore.value.refreshToken).toBe(null);
+    await vi.waitFor(() => {
+      expect(mockGoto).toHaveBeenCalledWith('/');
+    });
   });
 
-  it('should have working navigation mocks', () => {
-    mockGoto('/test-path');
-    
-    expect(mockGoto).toHaveBeenCalledWith('/test-path');
-  });
-
-  it('should have working auth store mocks', () => {
-    mockAuthStore.login('test@example.com', 'password');
-    
-    expect(mockAuthStore.login).toHaveBeenCalledWith('test@example.com', 'password');
-  });
-
-  it('should reset mocks correctly', () => {
-    mockGoto('/test');
-    mockAuthStore.login('test@example.com', 'password');
-    
-    resetAuthMocks();
-    resetNavigationMocks();
-    
-    expect(mockGoto).not.toHaveBeenCalled();
-    expect(mockAuthStore.login).not.toHaveBeenCalled();
-  });
-
-  it('should support custom redirect URLs', () => {
-    // Test that we can test different redirect configurations
-    const customRedirect = '/custom-login';
-    mockGoto(customRedirect);
-    
-    expect(mockGoto).toHaveBeenCalledWith(customRedirect);
-  });
-
-  it('should support admin user testing', () => {
+  it('should not redirect admin users when requireAdmin=true', async () => {
     setAuthenticatedState({
       user: { id: '1', username: 'admin', isAdmin: true }
     });
     
-    expect(mockAuthStore.value.user!.isAdmin).toBe(true);
+    const { container } = render(RouteGuard, { 
+      props: { requireAuth: true, requireAdmin: true }
+    });
+    
+    // Should not redirect admin users
+    expect(mockGoto).not.toHaveBeenCalledWith('/');
+    expect(container.firstChild).toBeTruthy();
   });
 
-  it('should support token refresh testing', () => {
-    mockAuthStore.value.accessToken = 'access-token';
-    mockAuthStore.value.refreshToken = 'refresh-token';
-    mockAuthStore.refreshAuth.mockResolvedValue(true);
+  it('should redirect authenticated users when requireAuth=false', async () => {
+    setAuthenticatedState({
+      user: { id: '1', username: 'testuser', isAdmin: false }
+    });
     
-    expect(mockAuthStore.value.accessToken).toBe('access-token');
-    expect(mockAuthStore.value.refreshToken).toBe('refresh-token');
-    expect(mockAuthStore.refreshAuth).toBeDefined();
+    render(RouteGuard, { props: { requireAuth: false } });
+    
+    await vi.waitFor(() => {
+      expect(mockGoto).toHaveBeenCalledWith('/games');
+    });
+  });
+
+  it('should handle auth refresh failure', async () => {
+    // Set state with tokens but no user (simulating expired tokens)
+    mockAuthStore.value = {
+      user: null,
+      accessToken: 'expired-token',
+      refreshToken: 'refresh-token'
+    };
+    mockAuthStore.refreshAuth.mockRejectedValue(new Error('Refresh failed'));
+    
+    render(RouteGuard, { props: { requireAuth: true } });
+    
+    await vi.waitFor(() => {
+      expect(mockAuthStore.refreshAuth).toHaveBeenCalled();
+      expect(mockGoto).toHaveBeenCalledWith('/login');
+    });
+  });
+
+  it('should handle successful auth refresh', async () => {
+    // Set state with tokens but no user
+    mockAuthStore.value = {
+      user: null,
+      accessToken: 'expired-token',
+      refreshToken: 'refresh-token'
+    };
+    
+    // Mock successful refresh that sets user
+    mockAuthStore.refreshAuth.mockImplementation(async () => {
+      mockAuthStore.value.user = { id: '1', username: 'testuser', isAdmin: false };
+      return true;
+    });
+    
+    const { container } = render(RouteGuard, { 
+      props: { requireAuth: true }
+    });
+    
+    await vi.waitFor(() => {
+      expect(mockAuthStore.refreshAuth).toHaveBeenCalled();
+      expect(container.firstChild).toBeTruthy();
+    });
+  });
+
+  it('should handle auth state without tokens', async () => {
+    // Test case where there are no tokens at all
+    mockAuthStore.value = {
+      user: null,
+      accessToken: null,
+      refreshToken: null
+    };
+    
+    render(RouteGuard, { props: { requireAuth: true } });
+    
+    await vi.waitFor(() => {
+      expect(mockGoto).toHaveBeenCalledWith('/login');
+    });
+  });
+
+  it('should handle multiple prop combinations', async () => {
+    // Test various prop combinations
+    setAuthenticatedState({
+      user: { id: '1', username: 'testuser', isAdmin: false }
+    });
+    
+    const { container } = render(RouteGuard, { 
+      props: { 
+        requireAuth: true, 
+        requireAdmin: false,
+        redirectTo: '/custom-login'
+      }
+    });
+    
+    // Should render without redirecting since user is authenticated but not admin required
+    expect(mockGoto).not.toHaveBeenCalled();
+    expect(container.firstChild).toBeTruthy();
   });
 });
