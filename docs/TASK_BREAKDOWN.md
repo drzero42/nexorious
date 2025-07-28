@@ -91,7 +91,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface
-- [ ] Game candidate selection screen with ownership status indicators
+- [x] Game candidate selection screen with ownership status indicators
 - [x] Metadata confirmation and editing
 - [ ] Platform and storefront assignment (new or additional)
 - [x] Ownership status configuration

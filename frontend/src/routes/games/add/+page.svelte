@@ -45,6 +45,8 @@
   onMount(async () => {
     try {
       await platforms.fetchAll();
+      // Load user's game collection to check ownership status
+      await userGames.fetchUserGames({}, 1, 1000); // Load a large number to get all games
     } catch (error) {
       console.error('Failed to load platforms and storefronts:', error);
       notifications.showError('Failed to load platforms and storefronts. Some features may not work properly.');
@@ -54,6 +56,22 @@
   // Reactive statements for active platforms and storefronts
   $: activePlatforms = $platforms.platforms.filter(platform => platform.is_active);
   $: activeStorefronts = $platforms.storefronts.filter(storefront => storefront.is_active);
+
+  // Helper functions for ownership detection
+  function isGameOwned(igdbId: string): boolean {
+    return userGames.value.userGames.some((userGame: any) => 
+      userGame.game.igdb_id === igdbId
+    );
+  }
+
+  function getOwnedPlatformsForGame(igdbId: string): string[] {
+    const userGame = userGames.value.userGames.find((userGame: any) => 
+      userGame.game.igdb_id === igdbId
+    );
+    if (!userGame) return [];
+    
+    return userGame.platforms.map((platform: any) => platform.platform.display_name);
+  }
 
   // Platform selection helpers
   function togglePlatform(platformId: string) {
@@ -506,10 +524,12 @@
             </div>
           {:else}
             {#each searchResults as game}
+              {@const owned = isGameOwned(game.igdb_id)}
+              {@const ownedPlatforms = getOwnedPlatformsForGame(game.igdb_id)}
               <button
                 on:click={() => selectGame(game)}
                 disabled={addingGameId !== null}
-                class="w-full p-4 bg-white border-2 border-gray-200 rounded-lg text-left hover:border-primary-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
+                class="w-full p-4 bg-white border-2 rounded-lg text-left hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group {owned ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-primary-300'}"
               >
                 <div class="flex gap-4">
                   <div class="flex-shrink-0">
@@ -530,9 +550,24 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between mb-2">
-                      <h3 class="text-lg font-medium text-gray-900 group-hover:text-primary-600 transition-colors duration-200">
-                        {game.title}
-                      </h3>
+                      <div class="flex-1 min-w-0">
+                        <h3 class="text-lg font-medium text-gray-900 group-hover:text-primary-600 transition-colors duration-200">
+                          {game.title}
+                        </h3>
+                        {#if owned}
+                          <div class="mt-1 flex items-center gap-2">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                              <svg class="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                              </svg>
+                              Already Owned
+                            </span>
+                            {#if ownedPlatforms.length > 0}
+                              <span class="text-xs text-gray-600">on {ownedPlatforms.join(', ')}</span>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
                       <svg class="h-5 w-5 text-gray-400 group-hover:text-primary-500 transition-colors duration-200 flex-shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
