@@ -46,3 +46,47 @@ The frontend expects the backend API to be available at `http://localhost:8000` 
 - `npm run preview` - Preview production build
 - `npm run lint` - Run linter (if configured)
 - `npm run format` - Format code (if configured)
+
+## Testing
+
+The frontend uses Vitest for testing with comprehensive coverage reporting.
+
+### Running Tests
+
+- `npm test` - Run tests in watch mode (interactive)
+- `npm run test:ui` - Run tests with Vitest UI interface
+- `npm run test:run` - Run all tests once (CI mode)
+- `npm run test:coverage` - Run tests with coverage report
+
+### Test Coverage
+
+The project maintains a **70% coverage threshold** for:
+- Lines of code
+- Functions
+- Branches
+- Statements
+
+#### Coverage Reports
+
+When running `npm run test:coverage`, three types of reports are generated:
+
+1. **Text Report** - Displayed in terminal with summary statistics
+2. **JSON Report** - Machine-readable coverage data
+3. **HTML Report** - Detailed interactive coverage report in `coverage/` directory
+
+To view the detailed HTML coverage report:
+```bash
+npm run test:coverage
+# Open coverage/index.html in your browser
+```
+
+#### Coverage Configuration
+
+The following files are excluded from coverage analysis:
+- `node_modules/`
+- `src/test-utils/` - Test utilities and mocks
+- `**/*.d.ts` - TypeScript declaration files
+- `**/*.config.*` - Configuration files
+- `src/app.html` - HTML template file
+
+Tests must maintain the 70% coverage threshold to pass. You can view current coverage status by running the coverage command and checking the terminal output or HTML report.
