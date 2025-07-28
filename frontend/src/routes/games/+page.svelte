@@ -655,8 +655,8 @@
          {userGame.game.genre || 'Unknown Genre'}
         </p>
         {#if userGame.platforms && userGame.platforms.length > 0}
-         <div class="mt-2">
-          <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={2} />
+         <div class="mt-3">
+          <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={3} />
          </div>
         {/if}
        </div>
@@ -783,8 +783,8 @@
          </td>
          <td class="px-3 py-4 text-sm text-gray-500">
           {#if userGame.platforms && userGame.platforms.length > 0}
-           <div class="max-w-40">
-            <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={2} />
+           <div class="max-w-48">
+            <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={3} />
            </div>
           {:else}
            <span class="text-gray-400">-</span>
