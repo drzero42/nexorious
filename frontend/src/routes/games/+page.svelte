@@ -38,7 +38,7 @@
  onMount(() => {
   // Load user games and platforms - authentication is handled by RouteGuard
   loadGames();
-  platforms.loadAll();
+  platforms.fetchAll();
  });
 
  // Build filters based on current selections
@@ -445,7 +445,7 @@
      class="form-input"
     >
      <option value="">All Platforms</option>
-     {#each platforms.value.platforms as platform (platform.id)}
+     {#each $platforms.platforms as platform (platform.id)}
       <option value={platform.id}>{platform.display_name}</option>
      {/each}
     </select>
@@ -462,7 +462,7 @@
      class="form-input"
     >
      <option value="">All Storefronts</option>
-     {#each platforms.value.storefronts as storefront (storefront.id)}
+     {#each $platforms.storefronts as storefront (storefront.id)}
       <option value={storefront.id}>{storefront.display_name}</option>
      {/each}
     </select>

@@ -49,6 +49,15 @@ export function setAuthenticatedState(overrides: Partial<AuthState> = {}) {
   mockAuthStore.value = { ...mockAuthenticatedState, ...overrides };
 }
 
+export function setAdminState(overrides: Partial<AuthState> = {}) {
+  const adminUser = { ...mockUser, isAdmin: true };
+  mockAuthStore.value = { 
+    ...mockAuthenticatedState, 
+    user: adminUser,
+    ...overrides 
+  };
+}
+
 export function setUnauthenticatedState() {
   mockAuthStore.value = { ...mockUnauthenticatedState };
 }

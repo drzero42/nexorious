@@ -44,12 +44,16 @@
   // Load platforms and storefronts on component mount
   onMount(async () => {
     try {
-      await platforms.loadAll();
+      await platforms.fetchAll();
     } catch (error) {
       console.error('Failed to load platforms and storefronts:', error);
       notifications.showError('Failed to load platforms and storefronts. Some features may not work properly.');
     }
   });
+
+  // Reactive statements for active platforms and storefronts
+  $: activePlatforms = $platforms.platforms.filter(platform => platform.is_active);
+  $: activeStorefronts = $platforms.storefronts.filter(storefront => storefront.is_active);
 
   // Platform selection helpers
   function togglePlatform(platformId: string) {
@@ -863,7 +867,7 @@
         </h3>
         <p class="text-sm text-gray-600 mb-4">Select where you own this game and optionally add store details.</p>
         
-        {#if platforms.value.isLoading}
+        {#if $platforms.isLoading}
           <div class="text-center py-8">
             <svg class="animate-spin h-8 w-8 text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -871,7 +875,7 @@
             </svg>
             <p class="mt-2 text-sm text-gray-500">Loading platforms...</p>
           </div>
-        {:else if platforms.value.error}
+        {:else if $platforms.error}
           <div class="rounded-lg bg-red-50 border border-red-200 p-4">
             <div class="flex">
               <div class="flex-shrink-0">
@@ -881,13 +885,13 @@
               </div>
               <div class="ml-3">
                 <h3 class="text-sm font-medium text-red-900">Platform Loading Error</h3>
-                <p class="mt-1 text-sm text-red-800">{platforms.value.error}</p>
+                <p class="mt-1 text-sm text-red-800">{$platforms.error}</p>
               </div>
             </div>
           </div>
         {:else}
           <div class="space-y-3">
-            {#each platforms.getActivePlatforms() as platform (platform.id)}
+            {#each activePlatforms as platform (platform.id)}
               <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
                 <!-- Platform Header -->
                 <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
@@ -927,7 +931,7 @@
                           class="form-input text-sm py-1.5"
                         >
                           <option value="">No specific storefront</option>
-                          {#each platforms.getActiveStorefronts() as storefront (storefront.id)}
+                          {#each activeStorefronts as storefront (storefront.id)}
                             <option value={storefront.id}>{storefront.display_name}</option>
                           {/each}
                         </select>
@@ -953,7 +957,7 @@
               </div>
             {/each}
             
-            {#if platforms.getActivePlatforms().length === 0}
+            {#if activePlatforms.length === 0}
               <div class="text-center py-8">
                 <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -1298,7 +1302,7 @@
               </h3>
             </div>
             
-            {#if platforms.value.isLoading}
+            {#if $platforms.isLoading}
               <div class="text-center py-6">
                 <svg class="animate-spin h-8 w-8 text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -1306,7 +1310,7 @@
                 </svg>
                 <p class="mt-2 text-sm text-gray-500">Loading platforms...</p>
               </div>
-            {:else if platforms.value.error}
+            {:else if $platforms.error}
               <div class="rounded-lg bg-red-50 border border-red-200 p-4">
                 <div class="flex">
                   <div class="flex-shrink-0">
@@ -1316,13 +1320,13 @@
                   </div>
                   <div class="ml-3">
                     <h3 class="text-sm font-medium text-red-900">Platform Loading Error</h3>
-                    <p class="mt-1 text-sm text-red-800">{platforms.value.error}</p>
+                    <p class="mt-1 text-sm text-red-800">{$platforms.error}</p>
                   </div>
                 </div>
               </div>
             {:else}
               <div class="space-y-3">
-                {#each platforms.getActivePlatforms() as platform (platform.id)}
+                {#each activePlatforms as platform (platform.id)}
                   <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
                     <!-- Platform Header -->
                     <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
@@ -1362,7 +1366,7 @@
                               class="form-input text-sm py-1.5"
                             >
                               <option value="">No specific storefront</option>
-                              {#each platforms.getActiveStorefronts() as storefront (storefront.id)}
+                              {#each activeStorefronts as storefront (storefront.id)}
                                 <option value={storefront.id}>{storefront.display_name}</option>
                               {/each}
                             </select>
@@ -1388,7 +1392,7 @@
                   </div>
                 {/each}
                 
-                {#if platforms.getActivePlatforms().length === 0}
+                {#if activePlatforms.length === 0}
                   <div class="text-center py-8">
                     <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />

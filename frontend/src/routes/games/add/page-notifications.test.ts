@@ -55,7 +55,14 @@ describe('Game Addition Page - Notifications Integration', () => {
     vi.useFakeTimers();
     
     // Reset platforms mock to succeed by default
-    mockPlatformsStore.loadAll.mockResolvedValue(undefined);
+    mockPlatformsStore.fetchAll.mockResolvedValue({
+      platforms: [
+        { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ],
+      storefronts: [
+        { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
+      ]
+    });
     
     // Get fresh reference to mocked notifications after clearing
     const notificationsModule = await import('$lib/stores/notifications.svelte');
@@ -98,7 +105,7 @@ describe('Game Addition Page - Notifications Integration', () => {
 
     it('should show error notification when platforms fail to load', async () => {
       // Setup the rejection before rendering
-      mockPlatformsStore.loadAll.mockRejectedValue(new Error('Platform load failed'));
+      mockPlatformsStore.fetchAll.mockRejectedValue(new Error('Platform load failed'));
       
       render(GameAddPage);
       
@@ -107,7 +114,7 @@ describe('Game Addition Page - Notifications Integration', () => {
       
       // Wait for the method call first
       await waitFor(() => {
-        expect(mockPlatformsStore.loadAll).toHaveBeenCalled();
+        expect(mockPlatformsStore.fetchAll).toHaveBeenCalled();
       }, { timeout: 2000 });
       
       // Advance timers again to allow error handling to complete
