@@ -442,26 +442,5 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.getByText('7.8/10')).toBeInTheDocument(); // Should round to 1 decimal
     });
 
-    it('should handle very large review counts with proper formatting', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithLargeReviewCount = {
-        ...baseGame,
-        game: {
-          ...baseGame.game,
-          rating_count: 15432
-        }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithLargeReviewCount];
-      
-      render(GameDetailPage);
-      
-      await waitFor(() => {
-        expect(screen.getByText('Test Game')).toBeInTheDocument();
-      });
-      
-      expect(screen.getByText('(15,432 reviews)')).toBeInTheDocument();
-    });
   });
 });

@@ -1,5 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Set up Svelte runes mock before any other imports that might use them
+if (typeof globalThis !== 'undefined' && !(globalThis as any).$state) {
+	(globalThis as any).$state = vi.fn((initialValue: any) => {
+		if (typeof initialValue === 'object' && initialValue !== null) {
+			const state = { ...initialValue };
+			return new Proxy(state, {
+				get(target, prop) {
+					return target[prop as keyof typeof target];
+				},
+				set(target, prop, value) {
+					(target as any)[prop] = value;
+					return true;
+				}
+			});
+		}
+		return { value: initialValue };
+	});
+	(globalThis as any).$derived = vi.fn((fn: () => any) => fn());
+	(globalThis as any).$effect = vi.fn(() => () => {});
+	(globalThis as any).$props = vi.fn(() => ({}));
+}
+
 // Import enums first
 const PlayStatus = {
 	NOT_STARTED: 'not_started',
@@ -52,7 +74,7 @@ vi.mock('./games.svelte', () => ({
 				}
 			]
 		},
-		loadGames: vi.fn()
+		loadGames: vi.fn().mockResolvedValue(undefined)
 	}
 }));
 
@@ -91,7 +113,7 @@ vi.mock('./user-games.svelte', () => ({
 				}
 			]
 		},
-		loadUserGames: vi.fn()
+		loadUserGames: vi.fn().mockResolvedValue(undefined)
 	},
 	PlayStatus,
 	OwnershipStatus
@@ -552,7 +574,7 @@ describe('Search Store', () => {
 
 	describe('Predefined Quick Filters - User Games', () => {
 		it('should filter by play status', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByPlayStatus(PlayStatus.COMPLETED);
 
@@ -560,7 +582,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by ownership status', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByOwnershipStatus(OwnershipStatus.OWNED);
 
@@ -568,7 +590,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by loved games', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByLovedGames();
 
@@ -576,7 +598,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by platform', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByPlatform('platform-1');
 
@@ -584,7 +606,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by rating range', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByRating(4, 5);
 
@@ -593,7 +615,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by minimum rating only', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByRating(3);
 
@@ -604,7 +626,7 @@ describe('Search Store', () => {
 
 	describe('Predefined Quick Filters - Games', () => {
 		it('should filter by genre', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByGenre('Action');
 
@@ -612,7 +634,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by developer', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByDeveloper('Test Developer');
 
@@ -620,7 +642,7 @@ describe('Search Store', () => {
 		});
 
 		it('should filter by verified status', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter');
+			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
 			
 			search.filterByVerified(true);
 

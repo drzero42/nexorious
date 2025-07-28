@@ -12,7 +12,7 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.{test,spec}.{js,ts}'],
 		environment: 'jsdom',
-		setupFiles: ['src/test-utils/setup.ts', 'src/test-utils/auth-mocks.ts', 'src/test-utils/navigation-mocks.ts'],
+		setupFiles: ['src/test-utils/svelte-runes-mock.ts', 'src/test-utils/setup.ts', 'src/test-utils/auth-mocks.ts', 'src/test-utils/navigation-mocks.ts'],
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html'],
