@@ -4,6 +4,7 @@
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
+ import { createCompactPlatformDisplay } from '$lib/utils/platform-utils';
  import type { UserGameFilters } from '$lib/stores';
  import { PlayStatus, type BulkStatusUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -654,6 +655,11 @@
         <p class="mt-1 text-sm text-gray-500" title="{userGame.game.genre || 'Unknown Genre'}">
          {userGame.game.genre || 'Unknown Genre'}
         </p>
+        {#if userGame.platforms && userGame.platforms.length > 0}
+         <p class="mt-1 text-xs text-blue-600 truncate" title="{createCompactPlatformDisplay(userGame.platforms)}">
+          {createCompactPlatformDisplay(userGame.platforms)}
+         </p>
+        {/if}
        </div>
        
        <div class="mt-3 flex items-center justify-between">
@@ -703,6 +709,9 @@
         </th>
         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
          Genre
+        </th>
+        <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+         Platforms
         </th>
         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
          Status
@@ -772,6 +781,17 @@
          </td>
          <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
           {userGame.game.genre || 'Unknown'}
+         </td>
+         <td class="px-3 py-4 text-sm text-gray-500">
+          {#if userGame.platforms && userGame.platforms.length > 0}
+           <div class="text-xs max-w-32">
+            <span class="truncate block" title="{createCompactPlatformDisplay(userGame.platforms)}">
+             {createCompactPlatformDisplay(userGame.platforms)}
+            </span>
+           </div>
+          {:else}
+           <span class="text-gray-400">-</span>
+          {/if}
          </td>
          <td class="whitespace-nowrap px-3 py-4 text-sm">
           <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium status-{userGame.play_status.replace('_', '-')}">

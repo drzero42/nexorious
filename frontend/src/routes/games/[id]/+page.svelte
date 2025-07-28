@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
+  import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
 
   let game: UserGame | null = null;
@@ -334,27 +335,35 @@
             {#if game.platforms && game.platforms.length > 0}
               <div>
                 <h3 class="text-lg font-medium text-gray-900">Available On</h3>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  {#each game.platforms as userGamePlatform}
-                    <div class="inline-flex items-center space-x-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-md">
-                      <span class="text-sm font-medium text-blue-900">{userGamePlatform.platform.display_name}</span>
-                      {#if userGamePlatform.storefront}
-                        <span class="text-xs text-blue-600">({userGamePlatform.storefront.display_name})</span>
-                      {/if}
-                      {#if userGamePlatform.store_url}
-                        <a 
-                          href={userGamePlatform.store_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          class="text-blue-600 hover:text-blue-800"
-                          title="View in store"
-                          aria-label="View {userGamePlatform.platform.display_name} store page"
-                        >
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                          </svg>
-                        </a>
-                      {/if}
+                <div class="mt-2 space-y-3">
+                  {#each groupPlatformsByPlatform(game.platforms) as groupedPlatform}
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div class="flex items-start justify-between">
+                        <span class="text-sm font-semibold text-blue-900 mb-2 block">{groupedPlatform.platform.display_name}</span>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        {#each groupedPlatform.storefronts as storefront}
+                          <div class="inline-flex items-center space-x-2 px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                            <span class="text-blue-800 font-medium">
+                              {storefront.storefront?.display_name || 'Unknown Storefront'}
+                            </span>
+                            {#if storefront.store_url}
+                              <a 
+                                href={storefront.store_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                class="text-blue-600 hover:text-blue-800 flex-shrink-0"
+                                title="View in {storefront.storefront?.display_name || 'store'}"
+                                aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
+                              >
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                </svg>
+                              </a>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
                     </div>
                   {/each}
                 </div>
