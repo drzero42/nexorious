@@ -3,6 +3,7 @@ User game collection models for ownership and progress tracking.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import UniqueConstraint
 from typing import Optional, List
 from datetime import datetime, date, timezone
 from decimal import Decimal
@@ -80,8 +81,11 @@ class UserGamePlatform(SQLModel, table=True):
     platform: "Platform" = Relationship(back_populates="user_game_platforms")
     storefront: Optional["Storefront"] = Relationship(back_populates="user_game_platforms")
     
-    # Unique constraint
+    # Unique constraint to support multiple storefronts per platform
+    # Each user_game + platform + storefront combination should be unique
     __table_args__ = (
+        UniqueConstraint("user_game_id", "platform_id", "storefront_id", 
+                        name="uq_user_game_platform_storefront"),
         {"extend_existing": True},
     )
 
