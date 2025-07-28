@@ -81,7 +81,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Sorting options implementation
 - [x] Bulk selection and operations
 - [x] Game detail view with all metadata
-- [ ] Display multiple storefronts per platform in game lists and detail views
+- [x] Display multiple storefronts per platform in game lists and detail views
 - [ ] Handle Physical storefront display same as digital storefronts
 
 #### 1.2.4 Game Addition Flow

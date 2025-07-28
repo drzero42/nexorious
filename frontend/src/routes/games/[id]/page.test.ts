@@ -117,9 +117,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
       
-      // Check for platform names
+      // Check for platform names - now displayed in grouped format
       expect(screen.getByText('PC')).toBeInTheDocument();
-      expect(screen.getByText('(Steam)')).toBeInTheDocument();
+      expect(screen.getByText('Steam')).toBeInTheDocument();
     });
 
     it('should display clickable store links with proper accessibility', async () => {
@@ -167,7 +167,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
       
-      const steamLink = screen.getByLabelText('View PC store page');
+      const steamLink = screen.getByLabelText('View PC on Steam');
       expect(steamLink).toBeInTheDocument();
       expect(steamLink).toHaveAttribute('href', 'https://store.steampowered.com/app/12345/test-game/');
       expect(steamLink).toHaveAttribute('target', '_blank');
