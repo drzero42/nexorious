@@ -2,9 +2,8 @@
  import { userGames, platforms } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
- import { RouteGuard, Pagination } from '$lib/components';
+ import { RouteGuard, Pagination, PlatformBadges } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
- import { createCompactPlatformDisplay } from '$lib/utils/platform-utils';
  import type { UserGameFilters } from '$lib/stores';
  import { PlayStatus, type BulkStatusUpdateRequest } from '$lib/stores/user-games.svelte';
 
@@ -257,7 +256,7 @@
   <div>
    <h1 class="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">My Games</h1>
    <p class="mt-1 text-sm text-gray-500">
-    {userGames.value.pagination.total} games in your collection
+    {userGames.value.pagination.total} unique games across all platforms in your collection
    </p>
   </div>
   <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
@@ -550,7 +549,7 @@
     {userGames.value.pagination.total === 0 ? 'No games in your collection yet' : 'No games match your filters'}
    </h3>
    <p class="mt-2 text-sm text-gray-500">
-    {userGames.value.pagination.total === 0 ? 'Start building your game library by adding your first game.' : 'Try adjusting your search or filter criteria.'}
+    {userGames.value.pagination.total === 0 ? 'Start building your unified game library by adding games from any platform or storefront.' : 'Try adjusting your search or filter criteria.'}
    </p>
    {#if userGames.value.pagination.total === 0}
     <div class="mt-6">
@@ -656,9 +655,9 @@
          {userGame.game.genre || 'Unknown Genre'}
         </p>
         {#if userGame.platforms && userGame.platforms.length > 0}
-         <p class="mt-1 text-xs text-blue-600 truncate" title="{createCompactPlatformDisplay(userGame.platforms)}">
-          {createCompactPlatformDisplay(userGame.platforms)}
-         </p>
+         <div class="mt-2">
+          <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={2} />
+         </div>
         {/if}
        </div>
        
@@ -784,10 +783,8 @@
          </td>
          <td class="px-3 py-4 text-sm text-gray-500">
           {#if userGame.platforms && userGame.platforms.length > 0}
-           <div class="text-xs max-w-32">
-            <span class="truncate block" title="{createCompactPlatformDisplay(userGame.platforms)}">
-             {createCompactPlatformDisplay(userGame.platforms)}
-            </span>
+           <div class="max-w-40">
+            <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={2} />
            </div>
           {:else}
            <span class="text-gray-400">-</span>
