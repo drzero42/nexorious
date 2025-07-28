@@ -121,3 +121,18 @@ class SeedDataResponse(BaseModel):
     mappings_created: int = Field(description="Number of platform-storefront default mappings created")
     total_changes: int = Field(description="Total number of changes made")
     message: str = Field(description="Summary message of the operation")
+
+
+class PlatformDefaultMapping(BaseModel):
+    """Response schema for platform default storefront mapping."""
+    platform_id: str
+    platform_name: str
+    platform_display_name: str
+    default_storefront: Optional['StorefrontResponse'] = Field(None, description="Default storefront for this platform")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UpdatePlatformDefaultRequest(BaseModel):
+    """Request schema for updating platform default storefront."""
+    storefront_id: Optional[str] = Field(None, description="Storefront ID to set as default, or null to remove default")

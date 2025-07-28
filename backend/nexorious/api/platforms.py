@@ -24,7 +24,9 @@ from ..api.schemas.platform import (
     StorefrontStatsResponse,
     PlatformUsageStats,
     StorefrontUsageStats,
-    SeedDataResponse
+    SeedDataResponse,
+    PlatformDefaultMapping,
+    UpdatePlatformDefaultRequest
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -44,7 +46,7 @@ async def list_platforms(
     
     query = select(Platform)
     if active_only:
-        query = query.where(Platform.is_active == True)
+        query = query.where(Platform.is_active)
     if source:
         query = query.where(Platform.source == source)
     
@@ -187,6 +189,84 @@ async def delete_platform(
     return SuccessResponse(message="Platform deleted successfully")
 
 
+@router.get("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
+async def get_platform_default_storefront(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Get the default storefront for a specific platform."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Get the default storefront if it exists
+    default_storefront = None
+    if platform.default_storefront_id:
+        default_storefront = session.get(Storefront, platform.default_storefront_id)
+    
+    return PlatformDefaultMapping(
+        platform_id=platform.id,
+        platform_name=platform.name,
+        platform_display_name=platform.display_name,
+        default_storefront=default_storefront
+    )
+
+
+@router.put("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
+async def update_platform_default_storefront(
+    platform_id: str,
+    update_data: UpdatePlatformDefaultRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Update the default storefront for a specific platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # If storefront_id is provided, validate that it exists
+    if update_data.storefront_id is not None:
+        storefront = session.get(Storefront, update_data.storefront_id)
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Storefront not found"
+            )
+        
+        # Ensure storefront is active
+        if not storefront.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set inactive storefront as default"
+            )
+    
+    # Update the platform's default storefront
+    platform.default_storefront_id = update_data.storefront_id
+    platform.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(platform)
+    
+    # Get the updated default storefront for response
+    default_storefront = None
+    if platform.default_storefront_id:
+        default_storefront = session.get(Storefront, platform.default_storefront_id) 
+    
+    return PlatformDefaultMapping(
+        platform_id=platform.id,
+        platform_name=platform.name,
+        platform_display_name=platform.display_name,
+        default_storefront=default_storefront
+    )
+
+
 # Storefront endpoints
 @router.get("/storefronts/", response_model=StorefrontListResponse)
 async def list_storefronts(
@@ -200,7 +280,7 @@ async def list_storefronts(
     
     query = select(Storefront)
     if active_only:
-        query = query.where(Storefront.is_active == True)
+        query = query.where(Storefront.is_active)
     if source:
         query = query.where(Storefront.source == source)
     

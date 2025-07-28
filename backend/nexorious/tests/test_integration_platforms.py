@@ -647,3 +647,118 @@ class TestPlatformsDataValidation:
         storefront_data = create_test_storefront_data(icon_url="not-a-url")
         response = client.post("/api/platforms/storefronts/", json=storefront_data, headers=admin_headers)
         assert_api_error(response, 422)
+
+
+class TestPlatformDefaultStorefrontGetEndpoint:
+    """Test GET /api/platforms/{platform_id}/default-storefront endpoint."""
+    
+    def test_get_platform_default_storefront_with_default(self, client: TestClient, session: Session, test_platform: Platform, test_storefront: Storefront):
+        """Test getting platform default storefront when one is set."""
+        # Set the storefront as default for the platform
+        test_platform.default_storefront_id = test_storefront.id
+        session.commit()
+        session.refresh(test_platform)
+        
+        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(test_platform.id)
+        assert data["platform_name"] == test_platform.name
+        assert data["platform_display_name"] == test_platform.display_name
+        assert data["default_storefront"] is not None
+        assert data["default_storefront"]["id"] == str(test_storefront.id)
+        assert data["default_storefront"]["name"] == test_storefront.name
+    
+    def test_get_platform_default_storefront_without_default(self, client: TestClient, test_platform: Platform):
+        """Test getting platform default storefront when none is set."""
+        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(test_platform.id)
+        assert data["platform_name"] == test_platform.name
+        assert data["platform_display_name"] == test_platform.display_name
+        assert data["default_storefront"] is None
+    
+    def test_get_platform_default_storefront_not_found(self, client: TestClient):
+        """Test getting default storefront for non-existent platform."""
+        response = client.get("/api/platforms/nonexistent-id/default-storefront")
+        
+        assert_api_error(response, 404, "Platform not found")
+
+
+class TestPlatformDefaultStorefrontUpdateEndpoint:
+    """Test PUT /api/platforms/{platform_id}/default-storefront endpoint."""
+    
+    def test_update_platform_default_storefront_success(self, client: TestClient, session: Session, admin_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
+        """Test successfully updating platform default storefront."""
+        update_data = {"storefront_id": str(test_storefront.id)}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(test_platform.id)
+        assert data["default_storefront"]["id"] == str(test_storefront.id)
+        
+        # Verify in database
+        session.refresh(test_platform)
+        assert test_platform.default_storefront_id == str(test_storefront.id)
+    
+    def test_update_platform_default_storefront_remove_default(self, client: TestClient, session: Session, admin_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
+        """Test removing platform default storefront by setting to null."""
+        # First set a default
+        test_platform.default_storefront_id = test_storefront.id
+        session.commit()
+        
+        # Then remove it
+        update_data = {"storefront_id": None}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(test_platform.id)
+        assert data["default_storefront"] is None
+        
+        # Verify in database
+        session.refresh(test_platform)
+        assert test_platform.default_storefront_id is None
+    
+    def test_update_platform_default_storefront_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str], test_storefront: Storefront):
+        """Test updating default storefront for non-existent platform."""
+        update_data = {"storefront_id": str(test_storefront.id)}
+        response = client.put("/api/platforms/nonexistent-id/default-storefront", json=update_data, headers=admin_headers)
+        
+        assert_api_error(response, 404, "Platform not found")
+    
+    def test_update_platform_default_storefront_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str], test_platform: Platform):
+        """Test updating default storefront with non-existent storefront."""
+        update_data = {"storefront_id": "nonexistent-id"}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        
+        assert_api_error(response, 404, "Storefront not found")
+    
+    def test_update_platform_default_storefront_inactive_storefront(self, client: TestClient, session: Session, admin_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
+        """Test updating default storefront with inactive storefront."""
+        # Make storefront inactive
+        test_storefront.is_active = False
+        session.commit()
+        
+        update_data = {"storefront_id": str(test_storefront.id)}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        
+        assert_api_error(response, 400, "Cannot set inactive storefront as default")
+    
+    def test_update_platform_default_storefront_admin_required(self, client: TestClient, auth_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
+        """Test that admin access is required for updating default storefront."""
+        update_data = {"storefront_id": str(test_storefront.id)}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=auth_headers)
+        
+        assert_api_error(response, 403, "Administrative privileges required")
+    
+    def test_update_platform_default_storefront_unauthenticated(self, client: TestClient, test_platform: Platform, test_storefront: Storefront):
+        """Test that authentication is required for updating default storefront."""
+        update_data = {"storefront_id": str(test_storefront.id)}
+        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data)
+        
+        assert_api_error(response, 403, "Not authenticated")
