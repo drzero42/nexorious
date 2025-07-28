@@ -28,9 +28,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Add Wishlist models
 - [x] Create Import/Export job tracking models
 - [x] Implement all database indexes for performance
-- [x] Create seed data migration/fixtures for platforms and storefronts
-- [ ] Implement seed data validation and integrity checks
-- [ ] Add seed data status tracking in database
+- [ ] Implement default storefront relationship in platforms table
+- [ ] Remove physical fields from user_games table
+- [ ] Update user_game_platforms table constraints to support multiple storefronts per platform
+- [ ] Add Physical storefront to seed data fixtures
+- [ ] Create seed data fixtures for idempotent platform/storefront loading function
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
@@ -43,9 +45,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Rating and tagging system endpoints
 - [x] Search and filtering endpoints
 - [x] Bulk operations endpoints
-- [ ] Seed data initialization endpoint for first-run setup
-- [ ] Seed data status/health check endpoint
-- [ ] Platform and storefront seeding service integration
+- [ ] Idempotent seed data loading endpoint for platforms and storefronts
+- [ ] Integration of seed data function with initial admin setup flow
+- [ ] Platform default storefront management endpoints
+- [ ] API endpoints supporting multiple storefront associations per platform
 
 #### 1.1.4 External API Integration
 - [x] IGDB API integration for game metadata
@@ -78,6 +81,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Sorting options implementation
 - [x] Bulk selection and operations
 - [x] Game detail view with all metadata
+- [ ] Display multiple storefronts per platform in game lists and detail views
+- [ ] Handle Physical storefront display same as digital storefronts
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface
@@ -86,6 +91,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Platform and storefront assignment
 - [x] Ownership status configuration
 - [x] Success/error feedback handling
+- [ ] Automatic default storefront selection when platform is chosen
+- [ ] Multi-select storefront interface per platform during game addition
+- [ ] Physical storefront option in game addition interface
 
 #### 1.2.5 Progress Tracking Interface
 - [x] Play status dropdown with completion levels
@@ -109,6 +117,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Password reset interface for users
 - [ ] User deletion with data handling
 - [x] Platform and storefront management interface (CRUD operations)
+- [ ] Admin interface for setting default storefronts per platform
+- [ ] Admin UI button/interface for manual seed data loading
+- [ ] Display seed data loading status and results
 - [ ] Admin-only navigation indicators
 
 ### 1.3 Testing Infrastructure

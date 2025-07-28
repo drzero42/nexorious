@@ -12,7 +12,7 @@ To create the definitive self-hosted solution for personal game collection manag
 
 - **Primary**: Gaming enthusiasts with large collections across multiple platforms
 - **Secondary**: Casual gamers who want to organize their digital libraries
-- **Tertiary**: Game collectors who mix physical and digital collections
+- **Tertiary**: Game collectors with diverse acquisition sources
 
 ## Core Value Propositions
 
@@ -54,15 +54,14 @@ To create the definitive self-hosted solution for personal game collection manag
   - Require username and password for initial admin account
   - Automatically grant admin privileges to first user
   - Skip this screen if any users already exist in database
-  - Automatically seed platform and storefront data on first startup
-  - Ensure seed data is only loaded once per fresh installation
+  - Automatically run seed data function when initial admin account is created
 - **Acceptance Criteria**:
   - Application detects empty user table and shows setup screen
   - Admin user is created with is_admin=true flag
   - Setup screen is never shown again after first user creation
-  - Platform and storefront seed data is automatically loaded on first startup
+  - Platform and storefront seed data is loaded via idempotent function during admin creation
   - Seed data includes all major gaming platforms and storefronts
-  - Subsequent startups do not duplicate or overwrite existing platform/storefront data
+  - Seed data function can be run multiple times safely without duplicating data
 
 ##### 1.1.2 User Authentication
 - **Authentication Model**:
@@ -87,8 +86,8 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
   - Game metadata storage with comprehensive fields
-  - Multi-platform and multi-storefront association
-  - Physical vs digital ownership tracking
+  - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
+  - Ownership tracking through storefront associations
   - Duplicate detection and prevention
   - IGDB integration for game lookup and metadata retrieval
 - **Frontend Requirements**:
@@ -115,8 +114,10 @@ To create the definitive self-hosted solution for personal game collection manag
      - Release information
      - How Long to Beat estimates
      - Platforms available
-  7. User confirms or edits information before final submission
-  8. Game is added to database and user's collection
+  7. User selects platform(s) for the game, with default storefront automatically selected for each platform
+  8. User can select additional storefronts for each platform and override default selections as needed
+  9. User confirms or edits information before final submission
+  10. Game is added to database and user's collection
 - **Acceptance Criteria**:
   - API endpoints handle all game management operations
   - Frontend forms validate input and provide feedback
@@ -133,21 +134,41 @@ To create the definitive self-hosted solution for personal game collection manag
 - **User Story**: As a user, I want to track which platforms I own games on so I know where to find them
 - **Backend Requirements**:
   - Platform and storefront data models
-  - API endpoints for managing platform associations
+  - API endpoints for managing platform associations with support for multiple storefronts per platform
   - Availability status tracking
   - Platform-specific metadata storage
   - Admin-only access for platform/storefront management (create, update, delete)
-  - Seed data management for initial platform and storefront population
-  - Database migrations to populate seed data on fresh installations
+  - Default storefront assignment for platforms
+  - API endpoints for managing platform default storefront relationships
+  - Idempotent seed data function for platform and storefront population
+  - Function automatically runs during initial admin account creation
+  - Function can be manually triggered by admin users at any time
+  - Function only adds missing default platforms/storefronts, never interferes with custom ones
 - **Frontend Requirements**:
   - Platform selection interface
+  - Multi-select storefront interface per platform
   - Storefront linking components
   - Availability status indicators
   - Platform filtering and sorting
   - Admin interface for platform/storefront management
+  - Admin interface for setting default storefronts per platform
+  - Automatic default storefront selection when platform is chosen during game addition
+  - Admin UI for manual seed data loading
 - **Seed Data Content**:
   - **Platforms**: PC (Windows), PlayStation 5, PlayStation 4, PlayStation 3, Xbox Series X/S, Xbox One, Xbox 360, Nintendo Switch, Nintendo Wii, iOS, Android
-  - **Storefronts**: Steam, Epic Games Store, GOG, PlayStation Store, Microsoft Store, Nintendo eShop, Itch.io, Origin/EA App, Apple App Store, Google Play Store, Humble Bundle
+  - **Storefronts**: Steam, Epic Games Store, GOG, PlayStation Store, Microsoft Store, Nintendo eShop, Itch.io, Origin/EA App, Apple App Store, Google Play Store, Humble Bundle, Physical
+  - **Default Platform-Storefront Mappings**:
+    - PC (Windows) → Steam
+    - PlayStation 5 → PlayStation Store
+    - PlayStation 4 → PlayStation Store
+    - PlayStation 3 → PlayStation Store
+    - Xbox Series X/S → Microsoft Store
+    - Xbox One → Microsoft Store
+    - Xbox 360 → Microsoft Store
+    - Nintendo Switch → Nintendo eShop
+    - Nintendo Wii → Nintendo eShop
+    - iOS → Apple App Store
+    - Android → Google Play Store
 - **Acceptance Criteria**:
   - API supports multiple platforms per game
   - Frontend allows easy platform assignment
@@ -155,8 +176,14 @@ To create the definitive self-hosted solution for personal game collection manag
   - Ownership status is clearly indicated in UI
   - Only admin users can add, update, or remove platforms and storefronts
   - Regular users can only associate existing platforms/storefronts with their games
-  - All seed data platforms and storefronts are available immediately after first startup
-  - Seed data is populated automatically without admin intervention
+  - All seed data platforms and storefronts are loaded during initial admin setup
+  - Default platform-storefront mappings are set during seed data loading
+  - When user selects a platform during game addition, default storefront is automatically selected
+  - Users can select multiple storefronts per platform for the same game
+  - Users can override the default storefront selection if needed
+  - Admin can manually trigger seed data loading function at any time
+  - Admin can modify default storefront assignments for any platform
+  - Seed data loading is idempotent and safe to run multiple times
 
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)
@@ -247,6 +274,7 @@ To create the definitive self-hosted solution for personal game collection manag
 ##### 1.6.3 System Configuration
 - **Requirements**:
   - Platform and storefront management (already defined in 1.3)
+  - Seed data management functionality in admin interface
   - System-wide settings management
   - Import/export job monitoring
   - Database maintenance tools
@@ -590,7 +618,7 @@ CREATE TABLE platforms (
     name VARCHAR(100) UNIQUE NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     icon_url VARCHAR(500),
-    is_active BOOLEAN DEFAULT true,
+    default_storefront_id VARCHAR(36) REFERENCES storefronts(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -601,7 +629,6 @@ CREATE TABLE storefronts (
     display_name VARCHAR(100) NOT NULL,
     icon_url VARCHAR(500),
     base_url VARCHAR(500),
-    is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -643,8 +670,6 @@ CREATE TABLE user_games (
     user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     ownership_status VARCHAR(50) DEFAULT 'owned' CHECK (ownership_status IN ('owned', 'borrowed', 'rented', 'subscription')),
-    is_physical BOOLEAN DEFAULT false,
-    physical_location VARCHAR(200),
     personal_rating DECIMAL(2,1) CHECK (personal_rating >= 1 AND personal_rating <= 5),
     is_loved BOOLEAN DEFAULT false,
     play_status VARCHAR(50) DEFAULT 'not_started' CHECK (play_status IN ('not_started', 'in_progress', 'completed', 'mastered', 'dominated', 'shelved', 'dropped', 'replay')),
@@ -665,7 +690,7 @@ CREATE TABLE user_game_platforms (
     store_url VARCHAR(500),
     is_available BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_game_id, platform_id)
+    UNIQUE(user_game_id, platform_id, storefront_id)
 );
 
 -- Tagging System
