@@ -29,7 +29,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create Import/Export job tracking models
 - [x] Implement all database indexes for performance
 - [x] Implement default storefront relationship in platforms table
-- [ ] Remove physical fields from user_games table
+- [x] Remove physical fields from user_games table
 - [ ] Update user_game_platforms table constraints to support multiple storefronts per platform
 - [ ] Add Physical storefront to seed data fixtures
 - [ ] Create seed data fixtures for idempotent platform/storefront loading function
