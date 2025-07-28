@@ -47,7 +47,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Bulk operations endpoints
 - [x] Idempotent seed data loading endpoint for platforms and storefronts
 - [x] Integration of seed data function with initial admin setup flow
-- [ ] Platform default storefront management endpoints
+- [x] Platform default storefront management endpoints
 - [ ] API endpoints supporting multiple storefront associations per platform
 
 #### 1.1.4 External API Integration
