@@ -21,7 +21,11 @@ export default defineConfig({
 				'src/test-utils/',
 				'**/*.d.ts',
 				'**/*.config.*',
-				'src/app.html'
+				'src/app.html',
+				'.svelte-kit/**/*',
+				'build/**/*',
+				'dist/**/*',
+				'**/*.generated.*'
 			],
 			thresholds: {
 				lines: 70,
@@ -32,7 +36,7 @@ export default defineConfig({
 		},
 		globals: true,
 		silent: false,
-		reporter: ['default'],
+		reporters: ['default'],
 		onConsoleLog: (log: string) => {
 			// Suppress specific JSDOM navigation warnings
 			if (log.includes('Not implemented: navigation') || 
