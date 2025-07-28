@@ -78,7 +78,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game list view with pagination showing unified game cards
 - [x] Game grid view with cover art showing unified game cards
 - [x] Each game appears exactly once with all platforms/storefronts as indicators/badges
-- [ ] Platform and storefront indicators clearly visible on each game card
+- [x] Platform and storefront indicators clearly visible on each game card
 - [ ] Advanced search and filtering interface operating on unique games
 - [ ] Sorting options implementation for unique games
 - [ ] Bulk selection and operations on unique games (not game-platform combinations)
