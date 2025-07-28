@@ -8,6 +8,7 @@ from datetime import timedelta, datetime, timezone
 import json
 import uuid
 from typing import Annotated
+import logging
 
 from ..core.database import get_session
 from ..core.security import (
@@ -43,6 +44,7 @@ from ..api.schemas.auth import (
 from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/setup/status", response_model=SetupStatusResponse)
@@ -90,6 +92,18 @@ async def create_initial_admin(
     session.add(admin_user)
     session.commit()
     session.refresh(admin_user)
+    
+    # Load seed data automatically after creating initial admin
+    try:
+        from ..seed_data.seeder import seed_all_official_data
+        
+        logger.info("Loading seed data for initial setup...")
+        seed_result = seed_all_official_data(session, version="1.0.0")
+        logger.info(f"Seed data loaded successfully: {seed_result}")
+    except Exception as e:
+        logger.error(f"Error loading seed data during initial setup: {str(e)}")
+        # Don't fail the admin creation if seed data fails
+        # Admin can manually load seed data later
     
     return admin_user
 

@@ -8,8 +8,10 @@ from sqlmodel import Session, select
 from typing import Dict, Any
 from unittest.mock import patch
 import logging
+from fastapi.testclient import TestClient
 
 from ..models.platform import Platform, Storefront
+from ..models.user import User
 from ..seed_data.seeder import (
     seed_platforms,
     seed_storefronts, 
@@ -22,7 +24,52 @@ from ..seed_data.storefronts import OFFICIAL_STOREFRONTS
 from ..seed_data.default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
 from .integration_test_utils import (
     session_fixture as session,
+    client_fixture as client,
+    create_test_user_data,
+    register_and_login_user
 )
+from ..core.security import get_password_hash, create_access_token, hash_token
+from datetime import datetime, timedelta, timezone
+import uuid
+
+
+def create_admin_user(session: Session, username: str = "admin", password: str = "testpassword") -> User:
+    """Create an admin user for testing."""
+    admin = User(
+        username=username,
+        password_hash=get_password_hash(password),
+        is_active=True,
+        is_admin=True
+    )
+    session.add(admin)
+    session.commit()
+    session.refresh(admin)
+    return admin
+
+
+def get_admin_headers(client: TestClient, session: Session, username: str = "admin", password: str = "testpassword") -> Dict[str, str]:
+    """Create an admin user and get auth headers."""
+    admin = create_admin_user(session, username, password)
+    
+    # Create session and token
+    from ..models.user import UserSession
+    
+    token = create_access_token(data={"sub": admin.id})
+    
+    # Create session record for the token
+    session_record = UserSession(
+        id=str(uuid.uuid4()),
+        user_id=admin.id,
+        token_hash=hash_token(token),
+        refresh_token_hash=hash_token("test_refresh_token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        user_agent="test-client",
+        ip_address="127.0.0.1"
+    )
+    session.add(session_record)
+    session.commit()
+    
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestDefaultMappingsFixture:
@@ -466,3 +513,133 @@ class TestSeedDataEdgeCases:
         assert any("Seeded" in call and "storefronts" in call for call in info_calls)
         assert any("Created" in call and "mappings" in call for call in info_calls)
         assert any("Completed seeding" in call for call in info_calls)
+
+
+class TestSeedDataAPI:
+    """Test the seed data API endpoint."""
+    
+    def test_seed_endpoint_requires_admin(self, client: TestClient, session: Session):
+        """Test that seed endpoint requires admin authentication."""
+        # Try without authentication
+        response = client.post("/api/platforms/seed")
+        assert response.status_code in [401, 403]  # Could be either unauthorized or forbidden
+        
+        # Try with non-admin user
+        user_data = create_test_user_data(username="testuser", password="testpassword")
+        headers = register_and_login_user(client, user_data)
+        
+        response = client.post("/api/platforms/seed", headers=headers)
+        assert response.status_code == 403
+    
+    def test_seed_endpoint_success(self, client: TestClient, session: Session):
+        """Test successful seed data loading via API."""
+        # Create admin user and get headers
+        headers = get_admin_headers(client, session)
+        
+        # Call seed endpoint
+        response = client.post("/api/platforms/seed", headers=headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "platforms_added" in data
+        assert "storefronts_added" in data
+        assert "mappings_created" in data
+        assert "total_changes" in data
+        assert "message" in data
+        
+        # Verify counts
+        assert data["platforms_added"] == len(OFFICIAL_PLATFORMS)
+        assert data["storefronts_added"] == len(OFFICIAL_STOREFRONTS)
+        assert data["mappings_created"] == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        assert data["total_changes"] > 0
+        assert "Successfully loaded seed data" in data["message"]
+    
+    def test_seed_endpoint_idempotent(self, client: TestClient, session: Session):
+        """Test that seed endpoint is idempotent when called multiple times."""
+        # Create admin user and get headers
+        headers = get_admin_headers(client, session)
+        
+        # First call
+        response1 = client.post("/api/platforms/seed", headers=headers)
+        assert response1.status_code == 200
+        data1 = response1.json()
+        assert data1["total_changes"] > 0
+        
+        # Second call
+        response2 = client.post("/api/platforms/seed", headers=headers)
+        assert response2.status_code == 200
+        data2 = response2.json()
+        
+        # Should have no changes on second call
+        assert data2["platforms_added"] == 0
+        assert data2["storefronts_added"] == 0
+        assert data2["mappings_created"] == 0
+        assert data2["total_changes"] == 0
+        assert "No changes made" in data2["message"]
+    
+    def test_seed_endpoint_with_version_parameter(self, client: TestClient, session: Session):
+        """Test seed endpoint with custom version parameter."""
+        # Create admin user and get headers
+        headers = get_admin_headers(client, session)
+        
+        # Call with custom version
+        response = client.post("/api/platforms/seed?version=2.0.0", headers=headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["total_changes"] > 0
+        
+        # Verify platforms have the specified version
+        platforms = session.exec(select(Platform).where(Platform.source == "official")).all()
+        for platform in platforms:
+            assert platform.version_added == "2.0.0"
+    
+    def test_initial_admin_setup_seeds_data(self, client: TestClient, session: Session):
+        """Test that creating initial admin automatically seeds data."""
+        # Ensure no users exist
+        existing_users = session.exec(select(User)).all()
+        assert len(existing_users) == 0
+        
+        # Create initial admin
+        response = client.post(
+            "/api/auth/setup/admin",
+            json={"username": "admin", "password": "adminpassword"}
+        )
+        assert response.status_code == 201
+        
+        # Verify platforms and storefronts were seeded
+        platforms = session.exec(select(Platform)).all()
+        storefronts = session.exec(select(Storefront)).all()
+        
+        assert len(platforms) == len(OFFICIAL_PLATFORMS)
+        assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
+        
+        # Verify default mappings were created
+        platforms_with_defaults = [p for p in platforms if p.default_storefront_id is not None]
+        assert len(platforms_with_defaults) == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+    
+    def test_seed_endpoint_with_existing_custom_data(self, client: TestClient, session: Session):
+        """Test seed endpoint preserves existing custom data."""
+        # Create admin user and get headers
+        headers = get_admin_headers(client, session)
+        
+        # Create custom platform
+        custom_platform = Platform(
+            name="custom-platform",
+            display_name="Custom Platform",
+            source="custom"
+        )
+        session.add(custom_platform)
+        session.commit()
+        
+        # Call seed endpoint
+        response = client.post("/api/platforms/seed", headers=headers)
+        assert response.status_code == 200
+        
+        # Verify custom platform still exists and is still custom
+        custom = session.exec(
+            select(Platform).where(Platform.name == "custom-platform")
+        ).first()
+        assert custom is not None
+        assert custom.source == "custom"
+        assert custom.display_name == "Custom Platform"
