@@ -165,6 +165,21 @@ def test_storefront_fixture(session: Session) -> Storefront:
     return storefront
 
 
+@pytest.fixture(name="test_storefront_2")
+def test_storefront_2_fixture(session: Session) -> Storefront:
+    """Create a second test storefront in the database."""
+    storefront = Storefront(
+        name="epic",
+        display_name="Epic Games Store",
+        base_url="https://store.epicgames.com/",
+        is_active=True
+    )
+    session.add(storefront)
+    session.commit()
+    session.refresh(storefront)
+    return storefront
+
+
 @pytest.fixture(name="test_game")
 def test_game_fixture(session: Session) -> Game:
     """Create a test game in the database."""
