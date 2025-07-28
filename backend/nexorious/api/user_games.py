@@ -621,12 +621,13 @@ async def add_platform_to_user_game(
                 detail="Storefront not found"
             )
     
-    # Check if association already exists
+    # Check if association already exists (platform + storefront combination)
     existing_platform = session.exec(
         select(UserGamePlatform).where(
             and_(
                 UserGamePlatform.user_game_id == user_game_id,
-                UserGamePlatform.platform_id == platform_data.platform_id
+                UserGamePlatform.platform_id == platform_data.platform_id,
+                UserGamePlatform.storefront_id == platform_data.storefront_id
             )
         )
     ).first()
@@ -634,7 +635,7 @@ async def add_platform_to_user_game(
     if existing_platform:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Platform association already exists"
+            detail="Platform and storefront association already exists"
         )
     
     new_platform = UserGamePlatform(
@@ -656,6 +657,89 @@ async def add_platform_to_user_game(
         new_platform.storefront = session.get(Storefront, new_platform.storefront_id)
     
     return new_platform
+
+
+@router.put("/{user_game_id}/platforms/{platform_association_id}", response_model=UserGamePlatformResponse)
+async def update_platform_association(
+    user_game_id: str,
+    platform_association_id: str,
+    platform_data: UserGamePlatformCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Update a platform association for a user game."""
+    
+    # Verify user owns this game and platform association
+    platform_assoc = session.exec(
+        select(UserGamePlatform).join(UserGame).where(
+            and_(
+                UserGamePlatform.id == platform_association_id,
+                UserGamePlatform.user_game_id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not platform_assoc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform association not found"
+        )
+    
+    # Check if platform exists
+    platform = session.get(Platform, platform_data.platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Check if storefront exists (if provided)
+    if platform_data.storefront_id:
+        storefront = session.get(Storefront, platform_data.storefront_id)
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Storefront not found"
+            )
+    
+    # Check if the updated combination would conflict with existing associations
+    if (platform_assoc.platform_id != platform_data.platform_id or 
+        platform_assoc.storefront_id != platform_data.storefront_id):
+        existing_platform = session.exec(
+            select(UserGamePlatform).where(
+                and_(
+                    UserGamePlatform.user_game_id == user_game_id,
+                    UserGamePlatform.platform_id == platform_data.platform_id,
+                    UserGamePlatform.storefront_id == platform_data.storefront_id,
+                    UserGamePlatform.id != platform_association_id  # Exclude current record
+                )
+            )
+        ).first()
+        
+        if existing_platform:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Platform and storefront association already exists"
+            )
+    
+    # Update the platform association
+    platform_assoc.platform_id = platform_data.platform_id
+    platform_assoc.storefront_id = platform_data.storefront_id
+    platform_assoc.store_game_id = platform_data.store_game_id
+    platform_assoc.store_url = str(platform_data.store_url) if platform_data.store_url else None
+    platform_assoc.is_available = platform_data.is_available
+    platform_assoc.updated_at = datetime.now(timezone.utc)
+    
+    session.commit()
+    session.refresh(platform_assoc)
+    
+    # Load relationships for proper serialization
+    platform_assoc.platform = session.get(Platform, platform_assoc.platform_id)
+    if platform_assoc.storefront_id:
+        platform_assoc.storefront = session.get(Storefront, platform_assoc.storefront_id)
+    
+    return platform_assoc
 
 
 @router.delete("/{user_game_id}/platforms/{platform_association_id}", response_model=SuccessResponse)
