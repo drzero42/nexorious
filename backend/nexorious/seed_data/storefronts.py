@@ -105,5 +105,14 @@ OFFICIAL_STOREFRONTS: List[Dict[str, Any]] = [
         "is_active": True,
         "source": "official",
         "version_added": "1.0.0"
+    },
+    {
+        "name": "physical",
+        "display_name": "Physical",
+        "icon_url": None,
+        "base_url": None,
+        "is_active": True,
+        "source": "official",
+        "version_added": "1.0.0"
     }
 ]

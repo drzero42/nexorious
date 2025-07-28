@@ -31,7 +31,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Implement default storefront relationship in platforms table
 - [x] Remove physical fields from user_games table
 - [x] Update user_game_platforms table constraints to support multiple storefronts per platform
-- [ ] Add Physical storefront to seed data fixtures
+- [x] Add Physical storefront to seed data fixtures
 - [ ] Create seed data fixtures for idempotent platform/storefront loading function
 
 #### 1.1.3 API Endpoints Development
