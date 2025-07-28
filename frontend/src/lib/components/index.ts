@@ -8,3 +8,4 @@ export { default as RichTextEditor } from './RichTextEditor.svelte';
 export { default as ProgressBar } from './ProgressBar.svelte';
 export { default as GameProgressCard } from './GameProgressCard.svelte';
 export { default as ProgressStatistics } from './ProgressStatistics.svelte';
+export { default as PlatformBadges } from './PlatformBadges.svelte';

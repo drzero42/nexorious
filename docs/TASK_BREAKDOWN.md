@@ -75,7 +75,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Admin detection for first-run flow
 
 #### 1.2.3 Game Library Interface
-- [ ] Game list view with pagination showing unified game cards
+- [x] Game list view with pagination showing unified game cards
 - [ ] Game grid view with cover art showing unified game cards
 - [ ] Each game appears exactly once with all platforms/storefronts as indicators/badges
 - [ ] Platform and storefront indicators clearly visible on each game card

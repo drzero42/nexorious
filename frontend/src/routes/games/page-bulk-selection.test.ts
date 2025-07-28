@@ -69,7 +69,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       
       await waitFor(() => {
         expect(screen.getByText('My Games')).toBeInTheDocument();
-        expect(screen.getByText(/2 games in your collection/)).toBeInTheDocument();
+        expect(screen.getByText(/2 unique games across all platforms in your collection/)).toBeInTheDocument();
       });
     });
 
