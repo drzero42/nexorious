@@ -22,6 +22,7 @@ from .integration_test_utils import (
     test_game_fixture as test_game,
     test_platform_fixture as test_platform,
     test_storefront_fixture as test_storefront,
+    test_storefront_2_fixture as test_storefront_2,
     test_user_game_fixture as test_user_game,
     create_test_user_game_data,
     assert_api_error,
@@ -498,19 +499,22 @@ class TestUserGamePlatformsEndpoints:
         assert data["platform_id"] == str(test_platform.id)
         assert data["storefront_id"] is None
     
-    def test_create_user_game_platform_duplicate(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
-        """Test creating duplicate user game platform association."""
-        # Create existing association
+    def test_create_user_game_platform_duplicate_platform_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str], session: Session):
+        """Test creating duplicate user game platform+storefront association."""
+        # Create existing association with specific storefront
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
             platform_id=test_platform.id,
+            storefront_id=test_storefront.id,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         
+        # Try to create the same platform+storefront combination
         platform_data = {
             "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront.id),
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
@@ -534,6 +538,262 @@ class TestUserGamePlatformsEndpoints:
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Platform association deleted successfully"
+
+
+class TestUpdatePlatformAssociation:
+    """Test PUT /api/user-games/{user_game_id}/platforms/{platform_association_id} endpoint."""
+    
+    def test_update_platform_association_success(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, test_storefront_2: Storefront, auth_headers: Dict[str, str], session: Session):
+        """Test successful platform association update."""
+        # Create initial association
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            storefront_id=test_storefront.id,
+            store_game_id="old_id",
+            store_url="https://old.example.com",
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        session.refresh(platform_association)
+        
+        # Update the association
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront_2.id),
+            "store_game_id": "new_id",
+            "store_url": "https://new.example.com",
+            "is_available": False
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(test_platform.id)
+        assert data["storefront_id"] == str(test_storefront_2.id)
+        assert data["store_game_id"] == "new_id"
+        assert data["store_url"] == "https://new.example.com/"
+        assert data["is_available"] is False
+    
+    def test_update_platform_association_conflict(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, test_storefront_2: Storefront, auth_headers: Dict[str, str], session: Session):
+        """Test update platform association with conflict."""
+        # Create two associations
+        association1 = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            storefront_id=test_storefront.id,
+            is_available=True
+        )
+        association2 = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            storefront_id=test_storefront_2.id,
+            is_available=True
+        )
+        session.add(association1)
+        session.add(association2)
+        session.commit()
+        session.refresh(association1)
+        session.refresh(association2)
+        
+        # Try to update association1 to have the same platform+storefront as association2
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront_2.id),
+            "is_available": True
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{association1.id}", json=update_data, headers=auth_headers)
+        
+        assert_api_error(response, 409, "already exists")
+    
+    def test_update_platform_association_not_found(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str]):
+        """Test update with non-existent platform association."""
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "is_available": True
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/non-existent-id", json=update_data, headers=auth_headers)
+        
+        assert_api_error(response, 404, "Platform association not found")
+    
+    def test_update_platform_association_invalid_platform(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
+        """Test update with invalid platform ID."""
+        # Create association
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        session.refresh(platform_association)
+        
+        update_data = {
+            "platform_id": "non-existent-platform",
+            "is_available": True
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
+        
+        assert_api_error(response, 404, "Platform not found")
+    
+    def test_update_platform_association_invalid_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
+        """Test update with invalid storefront ID."""
+        # Create association
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        session.refresh(platform_association)
+        
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": "non-existent-storefront",
+            "is_available": True
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
+        
+        assert_api_error(response, 404, "Storefront not found")
+
+    def test_update_platform_association_without_auth(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, session: Session):
+        """Test update without authentication."""
+        # Create association
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        session.refresh(platform_association)
+        
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "is_available": False
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data)
+        
+        assert_api_error(response, 403, "Not authenticated")
+    
+    def test_update_platform_association_wrong_user(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, session: Session):
+        """Test update by different user."""
+        # Create association
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        session.refresh(platform_association)
+        
+        # Create another user
+        other_user_data = {"username": "other", "password": "password123"}
+        other_headers = register_and_login_user(client, other_user_data)
+        
+        update_data = {
+            "platform_id": str(test_platform.id),
+            "is_available": False
+        }
+        response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=other_headers)
+        
+        assert_api_error(response, 404, "Platform association not found")
+
+
+class TestUserGamePlatformMultipleStorefronts:
+    """Test multiple storefront associations per platform scenarios."""
+    
+    def test_multiple_storefronts_same_platform(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, test_storefront_2: Storefront, auth_headers: Dict[str, str]):
+        """Test adding multiple storefronts for the same platform."""
+        # Add first storefront for platform
+        platform_data_1 = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront.id),
+            "store_game_id": "steam_123",
+            "is_available": True
+        }
+        response1 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_1, headers=auth_headers)
+        assert_api_success(response1, 201)
+        
+        # Add second storefront for same platform
+        platform_data_2 = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront_2.id),
+            "store_game_id": "epic_456",
+            "is_available": True
+        }
+        response2 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_2, headers=auth_headers)
+        assert_api_success(response2, 201)
+        
+        # Verify both associations exist
+        response = client.get(f"/api/user-games/{test_user_game.id}/platforms", headers=auth_headers)
+        assert_api_success(response, 200)
+        platforms = response.json()
+        assert len(platforms) == 2
+        
+        # Check that we have both storefronts for the same platform
+        storefront_ids = {p["storefront_id"] for p in platforms}
+        assert str(test_storefront.id) in storefront_ids
+        assert str(test_storefront_2.id) in storefront_ids
+        
+        # Both should be for the same platform
+        platform_ids = {p["platform_id"] for p in platforms}
+        assert len(platform_ids) == 1
+        assert str(test_platform.id) in platform_ids
+    
+    def test_platform_with_null_and_specific_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str]):
+        """Test platform with NULL storefront and specific storefront."""
+        # Add platform without storefront (NULL)
+        platform_data_1 = {
+            "platform_id": str(test_platform.id),
+            "is_available": True
+        }
+        response1 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_1, headers=auth_headers)
+        assert_api_success(response1, 201)
+        
+        # Add same platform with specific storefront
+        platform_data_2 = {
+            "platform_id": str(test_platform.id),
+            "storefront_id": str(test_storefront.id),
+            "is_available": True
+        }
+        response2 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_2, headers=auth_headers)
+        assert_api_success(response2, 201)
+        
+        # Verify both associations exist
+        response = client.get(f"/api/user-games/{test_user_game.id}/platforms", headers=auth_headers)
+        assert_api_success(response, 200)
+        platforms = response.json()
+        assert len(platforms) == 2
+        
+        # One should have null storefront, one should have specific storefront
+        storefront_ids = [p["storefront_id"] for p in platforms]
+        assert None in storefront_ids
+        assert str(test_storefront.id) in storefront_ids
+    
+    def test_duplicate_null_storefront_prevented(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
+        """Test that duplicate NULL storefront combinations are prevented."""
+        # Create existing association with NULL storefront
+        platform_association = UserGamePlatform(
+            user_game_id=test_user_game.id,
+            platform_id=test_platform.id,
+            storefront_id=None,
+            is_available=True
+        )
+        session.add(platform_association)
+        session.commit()
+        
+        # Try to create another association with same platform and NULL storefront
+        platform_data = {
+            "platform_id": str(test_platform.id),
+            "is_available": True
+        }
+        response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
+        
+        assert_api_error(response, 409, "already exists")
 
 
 class TestUserGamesBulkUpdateEndpoint:
