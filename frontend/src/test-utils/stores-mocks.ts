@@ -205,7 +205,14 @@ export const mockUIStore = {
     mobileMenuOpen: false
   },
   toggleSidebar: vi.fn(),
-  toggleMobileMenu: vi.fn()
+  toggleMobileMenu: vi.fn(),
+  showSuccess: vi.fn(),
+  showError: vi.fn(),
+  showWarning: vi.fn(),
+  showInfo: vi.fn(),
+  addNotification: vi.fn(),
+  removeNotification: vi.fn(),
+  clearNotifications: vi.fn()
 };
 
 // Mock auth store (importing from auth mocks)
@@ -245,6 +252,11 @@ vi.mock('$lib/stores/user-games.svelte', () => ({
     DROPPED: 'dropped',
     REPLAY: 'replay'
   }
+}));
+
+// Mock ui store specifically
+vi.mock('$lib/stores/ui.svelte', () => ({
+  ui: mockUIStore
 }));
 
 // Reset functions for test cleanup
@@ -334,4 +346,11 @@ export function resetStoresMocks() {
 
   mockUIStore.toggleSidebar.mockClear();
   mockUIStore.toggleMobileMenu.mockClear();
+  mockUIStore.showSuccess.mockClear();
+  mockUIStore.showError.mockClear();
+  mockUIStore.showWarning.mockClear();
+  mockUIStore.showInfo.mockClear();
+  mockUIStore.addNotification.mockClear();
+  mockUIStore.removeNotification.mockClear();
+  mockUIStore.clearNotifications.mockClear();
 }

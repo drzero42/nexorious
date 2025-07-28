@@ -31,7 +31,10 @@ export const mockAuthStore = {
   refreshAuth: vi.fn(),
   clearError: vi.fn(),
   checkSetupStatus: vi.fn(),
-  createInitialAdmin: vi.fn()
+  createInitialAdmin: vi.fn(),
+  checkUsernameAvailability: vi.fn(),
+  changeUsername: vi.fn(),
+  changePassword: vi.fn()
 };
 
 // Mock the auth store
@@ -39,10 +42,24 @@ vi.mock('$lib/stores/auth.svelte', () => ({
   auth: mockAuthStore
 }));
 
-// Also mock the main stores module
+// Simple UI store mock to avoid circular imports
+const mockUIStore = {
+  showSuccess: vi.fn(),
+  showError: vi.fn(),
+  showWarning: vi.fn(),
+  showInfo: vi.fn(),
+  addNotification: vi.fn(),
+  removeNotification: vi.fn(),
+  clearNotifications: vi.fn()
+};
+
 vi.mock('$lib/stores', () => ({
-  auth: mockAuthStore
+  auth: mockAuthStore,
+  ui: mockUIStore
 }));
+
+// Export UI store mock for use in tests
+export { mockUIStore };
 
 // Helper functions for test setup
 export function setAuthenticatedState(overrides: Partial<AuthState> = {}) {
@@ -84,5 +101,18 @@ export function resetAuthMocks() {
   mockAuthStore.clearError.mockClear();
   mockAuthStore.checkSetupStatus.mockClear();
   mockAuthStore.createInitialAdmin.mockClear();
+  mockAuthStore.checkUsernameAvailability.mockClear();
+  mockAuthStore.changeUsername.mockClear();
+  mockAuthStore.changePassword.mockClear();
+  
+  // Clear UI store mocks
+  mockUIStore.showSuccess.mockClear();
+  mockUIStore.showError.mockClear();
+  mockUIStore.showWarning.mockClear();
+  mockUIStore.showInfo.mockClear();
+  mockUIStore.addNotification.mockClear();
+  mockUIStore.removeNotification.mockClear();
+  mockUIStore.clearNotifications.mockClear();
+  
   setUnauthenticatedState();
 }
