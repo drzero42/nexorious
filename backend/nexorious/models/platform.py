@@ -17,6 +17,7 @@ class Platform(SQLModel, table=True):
     name: str = Field(unique=True, index=True, max_length=100)
     display_name: str = Field(max_length=100)
     icon_url: Optional[str] = Field(default=None, max_length=500)
+    default_storefront_id: Optional[str] = Field(default=None, foreign_key="storefronts.id", description="Default storefront for this platform")
     is_active: bool = Field(default=True)
     source: str = Field(default="custom", max_length=20, description="Source of the platform: 'official' or 'custom'")
     version_added: Optional[str] = Field(default=None, max_length=10, description="Version when this official platform was added")
@@ -25,6 +26,10 @@ class Platform(SQLModel, table=True):
     
     # Relationships
     user_game_platforms: List["UserGamePlatform"] = Relationship(back_populates="platform")
+    default_storefront: Optional["Storefront"] = Relationship(
+        back_populates="default_for_platforms",
+        sa_relationship_kwargs={"foreign_keys": "[Platform.default_storefront_id]"}
+    )
 
 
 class Storefront(SQLModel, table=True):
@@ -45,6 +50,10 @@ class Storefront(SQLModel, table=True):
     
     # Relationships
     user_game_platforms: List["UserGamePlatform"] = Relationship(back_populates="storefront")
+    default_for_platforms: List["Platform"] = Relationship(
+        back_populates="default_storefront",
+        sa_relationship_kwargs={"foreign_keys": "[Platform.default_storefront_id]"}
+    )
 
 
 # Import forward references
