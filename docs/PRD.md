@@ -82,22 +82,24 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 1.2 Game Library Management
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to add games to my collection so I can track what I own
+- **User Story**: As a user, I want to add games to my collection so I can track what I own across all platforms and storefronts in a unified view
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
   - Game metadata storage with comprehensive fields
   - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
   - Ownership tracking through storefront associations
-  - Duplicate detection and prevention
+  - Duplicate detection and prevention at the game level (not platform level)
   - IGDB integration for game lookup and metadata retrieval
 - **Frontend Requirements**:
-  - Game creation and editing forms
-  - Game library list and grid views
-  - Platform and storefront indicators
-  - Search and filter interface
-  - Bulk selection and operations
+  - Game creation and editing forms with platform/storefront management
+  - Game library list and grid views showing unified game cards
+  - Each game appears once with all owned platforms/storefronts displayed as indicators/badges
+  - Platform and storefront indicators clearly showing all ownership locations
+  - Search and filter interface operating on unique games (not game-platform combinations)
+  - Bulk selection and operations on unique games
   - IGDB game search interface with candidate selection
   - Game metadata acceptance/confirmation screen
+  - Game editing interface for adding/removing platform and storefront ownership
 - **Game Addition Flow**:
   1. User searches for a game by title
   2. System queries IGDB API for matching games
@@ -106,6 +108,7 @@ To create the definitive self-hosted solution for personal game collection manag
      - Cover art thumbnail
      - Platform information
      - Brief description
+     - Indication if user already owns this game (with existing platforms shown)
   4. User selects the correct game from the candidates
   5. System retrieves full metadata from IGDB for chosen game
   6. Present acceptance screen showing all retrieved information:
@@ -114,20 +117,61 @@ To create the definitive self-hosted solution for personal game collection manag
      - Release information
      - How Long to Beat estimates
      - Platforms available
+     - If game already exists in user's collection: current platform/storefront ownership displayed
   7. User selects platform(s) for the game, with default storefront automatically selected for each platform
   8. User can select additional storefronts for each platform and override default selections as needed
   9. User confirms or edits information before final submission
-  10. Game is added to database and user's collection
+  10. If game already exists in user's collection: additional platforms/storefronts are added to existing entry
+  11. If game is new to user's collection: game is added to database and user's collection
+  12. System ensures each game appears only once in user's library regardless of platform/storefront count
 - **Acceptance Criteria**:
   - API endpoints handle all game management operations
   - Frontend forms validate input and provide feedback
-  - Games display with all relevant metadata
-  - Duplicate detection prevents redundant entries
-  - Bulk operations work efficiently
-  - IGDB search returns relevant game candidates
+  - Games display with all relevant metadata in unified cards
+  - Each game appears exactly once in the user's collection view
+  - All owned platforms/storefronts are clearly displayed on each game card
+  - Duplicate detection prevents redundant entries at the game level
+  - Platform/storefront indicators are visually distinct and informative
+  - Bulk operations work efficiently on unique games
+  - IGDB search returns relevant game candidates with ownership status
   - User can distinguish between similar games in candidate list
   - Metadata acceptance screen shows complete, accurate information
   - Users can modify auto-populated data before saving
+  - Adding platforms to existing games updates the existing entry, not creating duplicates
+  - Search and filtering operate on unique games, not game-platform combinations
+
+#### 1.2.5 Game Editing & Platform Management
+**Priority**: P0 (Critical)
+- **User Story**: As a user, I want to edit my games and manage which platforms and storefronts I own them on so I can keep my collection accurate
+- **Backend Requirements**:
+  - RESTful endpoints for updating game metadata and platform/storefront associations
+  - Platform/storefront addition and removal for existing games
+  - Validation to prevent removal of all platforms (orphaned games)
+  - Audit logging for ownership changes
+- **Frontend Requirements**:
+  - Game editing form with metadata modification capabilities
+  - Platform and storefront management interface within game editing
+  - Add/remove platform associations with visual feedback
+  - Add/remove storefront associations per platform
+  - Confirmation dialogs for removing platform/storefront ownership
+  - Bulk editing capabilities for multiple games
+  - Visual indicators showing current ownership status during editing
+- **Game Editing Flow**:
+  1. User selects a game from their collection
+  2. System displays game editing interface with current metadata and ownership
+  3. User can modify game metadata (title, notes, ratings, etc.)
+  4. User can add new platforms/storefronts to their ownership
+  5. User can remove existing platforms/storefronts from their ownership
+  6. System validates changes and prevents invalid states (e.g., no platforms)
+  7. Changes are saved and reflected immediately in the collection view
+  8. Game continues to appear once in collection with updated platform/storefront indicators
+- **Acceptance Criteria**:
+  - Users can edit all game metadata and ownership information
+  - Platform/storefront changes are reflected immediately in collection views
+  - Games cannot be left without any platform associations
+  - Bulk editing works efficiently for multiple games
+  - Changes are validated and error messages are clear
+  - Audit trail maintains history of ownership changes
 
 #### 1.3 Platform & Storefront Tracking
 **Priority**: P0 (Critical)

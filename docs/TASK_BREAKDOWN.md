@@ -75,33 +75,60 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Admin detection for first-run flow
 
 #### 1.2.3 Game Library Interface
-- [x] Game list view with pagination
-- [x] Game grid view with cover art
-- [x] Advanced search and filtering interface
-- [x] Sorting options implementation
-- [x] Bulk selection and operations
-- [x] Game detail view with all metadata
+- [ ] Game list view with pagination showing unified game cards
+- [ ] Game grid view with cover art showing unified game cards
+- [ ] Each game appears exactly once with all platforms/storefronts as indicators/badges
+- [ ] Platform and storefront indicators clearly visible on each game card
+- [ ] Advanced search and filtering interface operating on unique games
+- [ ] Sorting options implementation for unique games
+- [ ] Bulk selection and operations on unique games (not game-platform combinations)
+- [ ] Game detail view with all metadata and comprehensive platform/storefront ownership
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
+- [ ] Visual design for platform/storefront badges that clearly shows all ownership
+- [ ] Responsive design ensuring platform indicators work on mobile devices
+- [ ] Hover/click interactions for platform indicators showing additional details
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface
-- [x] Game candidate selection screen
+- [ ] Game candidate selection screen with ownership status indicators
 - [x] Metadata confirmation and editing
-- [x] Platform and storefront assignment
+- [ ] Platform and storefront assignment (new or additional)
 - [x] Ownership status configuration
 - [x] Success/error feedback handling
+- [ ] Detection and handling of existing games in user's collection
+- [ ] Show current platform/storefront ownership when adding to existing game
+- [ ] Interface for adding additional platforms/storefronts to existing games
+- [ ] Confirmation flow that clearly indicates adding to existing vs. new game
+- [ ] Update existing game entry instead of creating duplicates
+- [ ] Prevent duplicate game entries in user's collection
 - [ ] Automatic default storefront selection when platform is chosen
 - [ ] Multi-select storefront interface per platform during game addition
 - [ ] Physical storefront option in game addition interface
 
-#### 1.2.5 Progress Tracking Interface
+#### 1.2.5 Game Editing & Platform Management Interface
+- [ ] Game editing form with comprehensive metadata fields
+- [ ] Platform and storefront management interface within game editing
+- [ ] Add new platform associations to existing games
+- [ ] Remove platform associations from existing games
+- [ ] Add new storefront associations per platform
+- [ ] Remove storefront associations per platform
+- [ ] Visual indicators showing current ownership status during editing
+- [ ] Confirmation dialogs for removing platform/storefront ownership
+- [ ] Validation preventing removal of all platforms (orphaned games)
+- [ ] Bulk editing interface for multiple games
+- [ ] Real-time updates to collection view after edits
+- [ ] Error handling and validation feedback
+- [ ] Audit trail display for ownership changes (optional for MVP)
+- [ ] Save/cancel functionality with unsaved changes warnings
+
+#### 1.2.6 Progress Tracking Interface
 - [x] Play status dropdown with completion levels
 - [x] Time tracking input forms
 - [x] Personal notes editor with rich text
 - [x] Progress visualization components
 
-#### 1.2.6 Rating & Tagging System
+#### 1.2.7 Rating & Tagging System
 - [ ] Star rating component (1-5 stars)
 - [ ] Loved games toggle
 - [ ] Tag creation and management interface
@@ -109,7 +136,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Tag-based filtering
 - [ ] Color-coded tag display
 
-#### 1.2.7 Admin Interface
+#### 1.2.8 Admin Interface
 - [x] Admin dashboard with system statistics
 - [x] User management list view
 - [x] User creation form (username and password)
