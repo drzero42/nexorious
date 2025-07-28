@@ -28,8 +28,6 @@ export const mockUserGame = {
   id: 'user-game-1',
   game: mockGameMetadata,
   ownership_status: 'owned' as const,
-  is_physical: false,
-  physical_location: undefined,
   personal_rating: 4,
   is_loved: true,
   play_status: 'completed' as const,
