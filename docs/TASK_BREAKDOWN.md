@@ -45,8 +45,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Rating and tagging system endpoints
 - [x] Search and filtering endpoints
 - [x] Bulk operations endpoints
-- [ ] Idempotent seed data loading endpoint for platforms and storefronts
-- [ ] Integration of seed data function with initial admin setup flow
+- [x] Idempotent seed data loading endpoint for platforms and storefronts
+- [x] Integration of seed data function with initial admin setup flow
 - [ ] Platform default storefront management endpoints
 - [ ] API endpoints supporting multiple storefront associations per platform
 

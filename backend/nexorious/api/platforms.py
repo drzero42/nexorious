@@ -23,7 +23,8 @@ from ..api.schemas.platform import (
     PlatformStatsResponse,
     StorefrontStatsResponse,
     PlatformUsageStats,
-    StorefrontUsageStats
+    StorefrontUsageStats,
+    SeedDataResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -431,4 +432,39 @@ async def get_storefront_usage_stats(
         storefronts=storefront_stats,
         total_storefronts=total_storefronts,
         total_usage=total_usage
+    )
+
+
+# Seed data endpoint
+@router.post("/seed", response_model=SeedDataResponse)
+async def seed_platforms_and_storefronts(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    version: Optional[str] = Query(default="1.0.0", description="Version string for tracking when data was added")
+):
+    """
+    Load official platforms, storefronts, and their default mappings into the database.
+    
+    This operation is idempotent - it can be safely run multiple times.
+    Only official data will be added, and existing custom data will be preserved.
+    
+    Admin access required.
+    """
+    from ..seed_data.seeder import seed_all_official_data
+    
+    # Load seed data
+    result = seed_all_official_data(session, version)
+    
+    # Create response message
+    if result["total"] == 0:
+        message = "No changes made. All official platforms, storefronts, and mappings are already up to date."
+    else:
+        message = f"Successfully loaded seed data: {result['platforms']} platforms, {result['storefronts']} storefronts, {result['mappings']} default mappings."
+    
+    return SeedDataResponse(
+        platforms_added=result["platforms"],
+        storefronts_added=result["storefronts"],
+        mappings_created=result["mappings"],
+        total_changes=result["total"],
+        message=message
     )

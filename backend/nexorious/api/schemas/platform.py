@@ -112,3 +112,12 @@ class StorefrontStatsResponse(BaseModel):
     storefronts: List[StorefrontUsageStats]
     total_storefronts: int
     total_usage: int = Field(description="Total storefront associations across all users")
+
+
+class SeedDataResponse(BaseModel):
+    """Response schema for seed data loading operation."""
+    platforms_added: int = Field(description="Number of platforms added or updated")
+    storefronts_added: int = Field(description="Number of storefronts added or updated")
+    mappings_created: int = Field(description="Number of platform-storefront default mappings created")
+    total_changes: int = Field(description="Total number of changes made")
+    message: str = Field(description="Summary message of the operation")
