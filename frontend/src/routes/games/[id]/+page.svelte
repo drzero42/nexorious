@@ -347,7 +347,7 @@
                             <span class="text-blue-800 font-medium">
                               {storefront.storefront?.display_name || 'Unknown Storefront'}
                             </span>
-                            {#if storefront.store_url}
+                            {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
                               <a 
                                 href={storefront.store_url} 
                                 target="_blank" 
