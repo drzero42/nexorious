@@ -215,7 +215,6 @@ class TestUserGamesDetailEndpoint:
         data = response.json()
         assert data["id"] == str(test_user_game.id)
         assert data["ownership_status"] == test_user_game.ownership_status
-        assert data["is_physical"] == test_user_game.is_physical
         assert data["personal_rating"] == test_user_game.personal_rating
         assert data["is_loved"] == test_user_game.is_loved
         assert data["play_status"] == test_user_game.play_status
@@ -257,7 +256,6 @@ class TestUserGamesCreateEndpoint:
         data = response.json()
         assert data["game"]["id"] == str(test_game.id)
         assert data["ownership_status"] == user_game_data["ownership_status"]
-        assert data["is_physical"] == user_game_data["is_physical"]
         assert data["is_loved"] == user_game_data["is_loved"]
         assert data["play_status"] == user_game_data["play_status"]
         assert data["hours_played"] == user_game_data["hours_played"]
@@ -315,7 +313,6 @@ class TestUserGamesUpdateEndpoint:
         """Test successful user game update."""
         update_data = {
             "ownership_status": "borrowed",
-            "is_physical": True,
             "personal_rating": 3.5,
             "is_loved": False,
             "play_status": "in_progress",
@@ -327,7 +324,6 @@ class TestUserGamesUpdateEndpoint:
         assert_api_success(response, 200)
         data = response.json()
         assert data["ownership_status"] == "borrowed"
-        assert data["is_physical"] is True
         assert data["personal_rating"] == 3.5
         assert data["is_loved"] is False
         assert data["play_status"] == "in_progress"

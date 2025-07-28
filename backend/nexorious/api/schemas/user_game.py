@@ -35,8 +35,6 @@ class UserGameCreateRequest(BaseModel):
     """Request schema for adding a game to user's collection."""
     game_id: str = Field(..., description="Game ID to add to collection")
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status")
-    is_physical: bool = Field(default=False, description="Whether it's a physical copy")
-    physical_location: Optional[str] = Field(None, max_length=200, description="Physical location if applicable")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: bool = Field(default=False, description="Whether game is marked as loved")
     play_status: PlayStatus = Field(default=PlayStatus.NOT_STARTED, description="Current play status")
@@ -49,8 +47,6 @@ class UserGameCreateRequest(BaseModel):
 class UserGameUpdateRequest(BaseModel):
     """Request schema for updating user's game collection entry."""
     ownership_status: Optional[OwnershipStatus] = Field(None, description="Ownership status")
-    is_physical: Optional[bool] = Field(None, description="Whether it's a physical copy")
-    physical_location: Optional[str] = Field(None, max_length=200, description="Physical location")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: Optional[bool] = Field(None, description="Whether game is marked as loved")
     play_status: Optional[PlayStatus] = Field(None, description="Current play status")
@@ -94,8 +90,6 @@ class UserGameResponse(BaseModel, TimestampMixin):
     id: str
     game: GameResponse
     ownership_status: OwnershipStatus
-    is_physical: bool
-    physical_location: Optional[str]
     personal_rating: Optional[float]
     is_loved: bool
     play_status: PlayStatus
