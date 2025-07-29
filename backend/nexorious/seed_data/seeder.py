@@ -16,13 +16,14 @@ from .default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
 logger = logging.getLogger(__name__)
 
 
-def seed_platforms(session: Session, version: str = "1.0.0") -> int:
+def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool = True) -> int:
     """
     Seed official platforms with conflict resolution.
     
     Args:
         session: Database session
         version: Version string for tracking when platforms were added
+        set_defaults: Whether to set default storefronts during platform creation
         
     Returns:
         Number of platforms seeded (created or updated)
@@ -35,9 +36,9 @@ def seed_platforms(session: Session, version: str = "1.0.0") -> int:
             select(Platform).where(Platform.name == platform_data["name"])
         ).first()
         
-        # Look up default storefront ID if specified
+        # Look up default storefront ID if specified and defaults should be set
         default_storefront_id = None
-        if platform_data.get("default_storefront_name"):
+        if set_defaults and platform_data.get("default_storefront_name"):
             default_storefront = session.exec(
                 select(Storefront).where(Storefront.name == platform_data["default_storefront_name"])
             ).first()
@@ -220,7 +221,8 @@ def seed_all_official_data(session: Session, version: str = "1.0.0") -> Dict[str
     
     # Seed storefronts first since platforms may reference them for default storefronts
     storefront_count = seed_storefronts(session, version)
-    platform_count = seed_platforms(session, version)
+    # Create platforms without defaults so mapping function can set them
+    platform_count = seed_platforms(session, version, set_defaults=False)
     mapping_count = seed_default_platform_storefront_mappings(session)
     
     result = {
