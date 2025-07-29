@@ -179,11 +179,34 @@
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
-        // TODO: Add platform details (storefront and URL) support
-        // Currently the API only supports basic platform IDs during creation
-        // Enhanced platform details with storefront and URL will be added in a future update
-        
+        // Add detailed platform information (storefront and URL) for each selected platform
         let partialErrors = [];
+        for (const platformId of selectedPlatforms) {
+          const storefrontId = platformStorefronts.get(platformId);
+          const storeUrl = platformStoreUrls.get(platformId);
+          
+          // Only add platform details if we have storefront or URL information
+          if (storefrontId || storeUrl) {
+            try {
+              const platformData: any = {
+                platform_id: platformId
+              };
+              
+              if (storefrontId) {
+                platformData.storefront_id = storefrontId;
+              }
+              
+              if (storeUrl) {
+                platformData.store_url = storeUrl;
+              }
+              
+              await userGames.addPlatformToUserGame(userGame.id, platformData);
+            } catch (platformError) {
+              console.error(`Failed to add platform details for platform ${platformId}:`, platformError);
+              partialErrors.push(`Failed to save details for some platforms`);
+            }
+          }
+        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
@@ -280,11 +303,34 @@
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
-        // TODO: Add platform details (storefront and URL) support
-        // Currently the API only supports basic platform IDs during creation
-        // Enhanced platform details with storefront and URL will be added in a future update
-        
+        // Add detailed platform information (storefront and URL) for each selected platform
         let partialErrors = [];
+        for (const platformId of selectedPlatforms) {
+          const storefrontId = platformStorefronts.get(platformId);
+          const storeUrl = platformStoreUrls.get(platformId);
+          
+          // Only add platform details if we have storefront or URL information
+          if (storefrontId || storeUrl) {
+            try {
+              const platformData: any = {
+                platform_id: platformId
+              };
+              
+              if (storefrontId) {
+                platformData.storefront_id = storefrontId;
+              }
+              
+              if (storeUrl) {
+                platformData.store_url = storeUrl;
+              }
+              
+              await userGames.addPlatformToUserGame(userGame.id, platformData);
+            } catch (platformError) {
+              console.error(`Failed to add platform details for platform ${platformId}:`, platformError);
+              partialErrors.push(`Failed to save details for some platforms`);
+            }
+          }
+        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {

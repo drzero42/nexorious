@@ -93,7 +93,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB search interface
 - [x] Game candidate selection screen with ownership status indicators
 - [x] Metadata confirmation and editing
-- [ ] Platform and storefront assignment (new or additional)
+- [x] Platform and storefront assignment (new or additional)
 - [x] Ownership status configuration
 - [x] Success/error feedback handling
 - [ ] Detection and handling of existing games in user's collection
@@ -110,8 +110,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game editing form with comprehensive metadata fields
 - [x] Add new platform associations to existing games
 - [x] Remove platform associations from existing games
-- [ ] Add new storefront associations per platform
-- [ ] Remove storefront associations per platform
 - [ ] Visual indicators showing current ownership status during editing
 - [ ] Confirmation dialogs for removing platform/storefront ownership
 - [ ] Validation preventing removal of all platforms (orphaned games)
