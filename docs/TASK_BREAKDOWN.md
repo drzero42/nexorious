@@ -39,7 +39,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] User authentication endpoints (login, refresh, logout)
 - [x] Admin user management endpoints (create, update, deactivate users)
 - [x] Game CRUD operations with comprehensive metadata
-- [x] Platform and storefront management (admin-only)
+- [ ] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion
 - [x] Rating and tagging system endpoints
@@ -108,7 +108,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.5 Game Editing & Platform Management Interface
 - [x] Game editing form with comprehensive metadata fields
-- [ ] Platform and storefront management interface within game editing
 - [ ] Add new platform associations to existing games
 - [ ] Remove platform associations from existing games
 - [ ] Add new storefront associations per platform
@@ -143,9 +142,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] User edit interface (active status, admin role)
 - [x] Password reset interface for users
 - [ ] User deletion with data handling
-- [x] Platform and storefront management interface (CRUD operations)
-- [ ] Admin interface for setting default storefronts per platform
-- [ ] Admin UI button/interface for manual seed data loading
+- [ ] Platform and storefront management interface (ADMIN-ONLY CRUD operations for platforms and storefronts)
+- [ ] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
+- [ ] Admin UI button/interface for manual seed data loading (ADMIN-ONLY)
 - [ ] Display seed data loading status and results
 - [ ] Admin-only navigation indicators
 
@@ -158,6 +157,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Authentication and authorization tests
 - [ ] Initial admin setup flow tests
 - [ ] Admin-only user management tests
+- [ ] Admin-only platform and storefront management authorization tests
 - [ ] External API integration tests with mocking
 - [ ] Performance tests for critical operations
 

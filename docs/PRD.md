@@ -173,31 +173,33 @@ To create the definitive self-hosted solution for personal game collection manag
   - Changes are validated and error messages are clear
   - Audit trail maintains history of ownership changes
 
-#### 1.3 Platform & Storefront Tracking
+#### 1.3 Platform & Storefront Tracking (Admin-Only Management)
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to track which platforms I own games on so I know where to find them
+- **User Story**: As an administrator, I want to manage the available platforms and storefronts in the system so that users can accurately track their game ownership, while as a user, I want to associate my games with existing platforms and storefronts so I know where to find them
 - **Backend Requirements**:
   - Platform and storefront data models
   - API endpoints for managing platform associations with support for multiple storefronts per platform
   - Availability status tracking
   - Platform-specific metadata storage
-  - Admin-only access for platform/storefront management (create, update, delete)
-  - Default storefront assignment for platforms
-  - API endpoints for managing platform default storefront relationships
-  - Idempotent seed data function for platform and storefront population
+  - **ADMIN-ONLY ACCESS**: All platform/storefront management operations (create, update, delete) require admin privileges
+  - **SECURITY NOTE**: Platform and storefront management is restricted to admins to maintain data consistency and prevent unauthorized system configuration changes
+  - Default storefront assignment for platforms (admin-only configuration)
+  - API endpoints for managing platform default storefront relationships (admin-only)
+  - Idempotent seed data function for platform and storefront population (admin-triggered)
   - Function automatically runs during initial admin account creation
   - Function can be manually triggered by admin users at any time
   - Function only adds missing default platforms/storefronts, never interferes with custom ones
 - **Frontend Requirements**:
-  - Platform selection interface
-  - Multi-select storefront interface per platform
+  - Platform selection interface (for users to associate games with existing platforms)
+  - Multi-select storefront interface per platform (for users to associate games with existing storefronts)
   - Storefront linking components
   - Availability status indicators
   - Platform filtering and sorting
-  - Admin interface for platform/storefront management
-  - Admin interface for setting default storefronts per platform
+  - **ADMIN-ONLY**: Complete platform/storefront management interface (create, edit, delete platforms and storefronts)
+  - **ADMIN-ONLY**: Interface for setting default storefronts per platform
+  - **ADMIN-ONLY**: Manual seed data loading interface
   - Automatic default storefront selection when platform is chosen during game addition
-  - Admin UI for manual seed data loading
+  - Clear visual distinction between admin-only management features and user association features
 - **Seed Data Content**:
   - **Platforms**: PC (Windows), PlayStation 5, PlayStation 4, PlayStation 3, Xbox Series X/S, Xbox One, Xbox 360, Nintendo Switch, Nintendo Wii, iOS, Android
   - **Storefronts**: Steam, Epic Games Store, GOG, PlayStation Store, Microsoft Store, Nintendo eShop, Itch.io, Origin/EA App, Apple App Store, Google Play Store, Humble Bundle, Physical
@@ -215,11 +217,12 @@ To create the definitive self-hosted solution for personal game collection manag
     - Android → Google Play Store
 - **Acceptance Criteria**:
   - API supports multiple platforms per game
-  - Frontend allows easy platform assignment
+  - Frontend allows easy platform assignment for users (from existing platforms only)
   - Storefront links are preserved and accessible
   - Ownership status is clearly indicated in UI
-  - Only admin users can add, update, or remove platforms and storefronts
-  - Regular users can only associate existing platforms/storefronts with their games
+  - **CRITICAL**: Only admin users can add, update, or remove platforms and storefronts
+  - **CRITICAL**: Regular users can ONLY associate existing platforms/storefronts with their games - no creation/modification rights
+  - **CRITICAL**: All platform/storefront management endpoints require admin authentication and return 403 for non-admin users
   - All seed data platforms and storefronts are loaded during initial admin setup
   - Default platform-storefront mappings are set during seed data loading
   - When user selects a platform during game addition, default storefront is automatically selected
@@ -228,6 +231,8 @@ To create the definitive self-hosted solution for personal game collection manag
   - Admin can manually trigger seed data loading function at any time
   - Admin can modify default storefront assignments for any platform
   - Seed data loading is idempotent and safe to run multiple times
+  - Admin-only features are clearly visually distinguished in the UI
+  - Non-admin users cannot access admin-only platform/storefront management routes
 
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)
