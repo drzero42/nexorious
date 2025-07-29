@@ -141,6 +141,10 @@ To create the definitive self-hosted solution for personal game collection manag
   - **ADMIN-ONLY**: Interface for setting default storefronts per platform
   - **ADMIN-ONLY**: Manual seed data loading interface
   - Automatic default storefront selection when platform is chosen during game addition
+  - Platform filtering during game addition and editing based on IGDB platform data
+  - Primary platform list shows only platforms reported by IGDB for the selected game
+  - "Others" expandable section contains all remaining platforms, collapsed by default
+  - Users can still select any platform from the "Others" section to handle IGDB data inaccuracies
   - Clear visual distinction between admin-only management features and user association features
 - **Seed Data Content**:
   - **Platforms**: PC (Windows), PlayStation 5, PlayStation 4, PlayStation 3, Xbox Series X/S, Xbox One, Xbox 360, Nintendo Switch, Nintendo Wii, iOS, Android
@@ -163,6 +167,28 @@ To create the definitive self-hosted solution for personal game collection manag
   - Seed data loaded automatically during initial admin setup
   - Default storefront auto-selected when choosing platforms
   - Seed data loading is idempotent and admin-triggered
+
+#### 1.3.5 IGDB Platform Filtering
+**Priority**: P1 (High)
+- **User Story**: As a user, I want to see only relevant platforms when adding or editing games so I can quickly find the platforms the game was actually released on
+- **Requirements**:
+  - During game addition and editing, filter platform list based on IGDB platform data
+  - Show IGDB-reported platforms prominently in the main platform selection area
+  - Provide an "Others" expandable section containing all remaining platforms
+  - "Others" section should be collapsed by default but easily accessible
+  - Maintain full platform selection capability for cases where IGDB data is incomplete or incorrect
+  - Apply filtering consistently across both Add Game and Edit Game interfaces
+- **Implementation Details**:
+  - IGDB platform data should be retrieved and cached during game search/selection
+  - Platform filtering should work with the existing default storefront selection logic
+  - "Others" section should clearly indicate these are additional platforms not reported by IGDB
+  - Users should be able to expand/collapse the "Others" section as needed
+- **Acceptance Criteria**:
+  - Add Game interface shows IGDB platforms first, others in collapsed section
+  - Edit Game interface applies same filtering logic when modifying platform ownership
+  - All platforms remain selectable despite filtering
+  - "Others" section provides clear visual distinction from main platform list
+  - Platform filtering integrates seamlessly with existing default storefront selection
 
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)

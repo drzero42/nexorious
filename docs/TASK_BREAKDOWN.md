@@ -58,6 +58,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Metadata population and refresh capabilities
 - [x] Cover art download and storage (automatic during import)
 - [x] How Long to Beat integration
+- [ ] IGDB platform data caching and retrieval for platform filtering
 
 ### 1.2 Frontend Foundation
 
@@ -111,6 +112,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Automatic default storefront selection when platform is chosen
 - [ ] Multi-select storefront interface per platform during game addition
 - [ ] Physical storefront option in game addition interface
+- [ ] IGDB platform filtering during game addition (show IGDB platforms first)
+- [ ] "Others" expandable section for additional platforms (collapsed by default)
+- [ ] Platform filtering integration with existing default storefront selection
 
 #### 1.2.5 Game Editing & Platform Management Interface
 - [x] Game editing form with comprehensive metadata fields
@@ -123,6 +127,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Real-time updates to collection view after edits
 - [ ] Error handling and validation feedback
 - [ ] Save/cancel functionality with unsaved changes warnings
+- [ ] IGDB platform filtering during game editing (show IGDB platforms first)
+- [ ] "Others" expandable section for additional platforms in game editing interface
 
 #### 1.2.6 Progress Tracking Interface
 - [x] Play status dropdown with completion levels
