@@ -1,17 +1,20 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { userGames } from '$lib/stores';
+  import { games } from '$lib/stores/games.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
+  import type { Game } from '$lib/stores/games.svelte';
 
   let game: UserGame | null = null;
   let isLoading = true;
   let isEditing = false;
   let editData: {
+    // Personal data
     personal_rating?: number | undefined;
     play_status: PlayStatus;
     hours_played: number;
@@ -19,12 +22,27 @@
     is_loved: boolean;
     ownership_status: OwnershipStatus;
     is_physical: boolean;
+    // Game metadata
+    title: string;
+    description?: string | undefined;
+    genre?: string | undefined;
+    developer?: string | undefined;
+    publisher?: string | undefined;
+    release_date?: string | undefined;
+    estimated_playtime_hours?: number | undefined;
   } = {
     play_status: 'not_started' as PlayStatus,
     hours_played: 0,
     is_loved: false,
     ownership_status: 'owned' as OwnershipStatus,
-    is_physical: false
+    is_physical: false,
+    title: '',
+    description: undefined,
+    genre: undefined,
+    developer: undefined,
+    publisher: undefined,
+    release_date: undefined,
+    estimated_playtime_hours: undefined
   };
 
   $: gameId = $page.params.id!;
@@ -61,13 +79,22 @@
   function resetEditData() {
     if (game) {
       editData = {
+        // Personal data
         personal_rating: game.personal_rating || undefined,
         play_status: game.play_status,
         hours_played: game.hours_played,
         personal_notes: game.personal_notes || undefined,
         is_loved: game.is_loved,
         ownership_status: game.ownership_status,
-        is_physical: game.is_physical
+        is_physical: game.is_physical,
+        // Game metadata
+        title: game.game.title,
+        description: game.game.description || undefined,
+        genre: game.game.genre || undefined,
+        developer: game.game.developer || undefined,
+        publisher: game.game.publisher || undefined,
+        release_date: game.game.release_date || undefined,
+        estimated_playtime_hours: game.game.estimated_playtime_hours || undefined
       };
     }
   }
@@ -84,7 +111,7 @@
 
   async function saveChanges() {
     try {
-      // Split editData into user game update and progress update
+      // Split editData into user game update, progress update, and game metadata update
       const userGameUpdate: UserGameUpdateRequest = {
         ownership_status: editData.ownership_status,
         is_physical: editData.is_physical,
@@ -103,8 +130,37 @@
       if (editData.personal_notes !== undefined) {
         progressUpdate.personal_notes = editData.personal_notes;
       }
+
+      // Game metadata update - only include defined values
+      const gameMetadataUpdate: Partial<Game> = {
+        title: editData.title
+      };
       
-      // Update game in backend
+      if (editData.description !== undefined) {
+        gameMetadataUpdate.description = editData.description;
+      }
+      if (editData.genre !== undefined) {
+        gameMetadataUpdate.genre = editData.genre;
+      }
+      if (editData.developer !== undefined) {
+        gameMetadataUpdate.developer = editData.developer;
+      }
+      if (editData.publisher !== undefined) {
+        gameMetadataUpdate.publisher = editData.publisher;
+      }
+      if (editData.release_date !== undefined) {
+        gameMetadataUpdate.release_date = editData.release_date;
+      }
+      if (editData.estimated_playtime_hours !== undefined) {
+        gameMetadataUpdate.estimated_playtime_hours = editData.estimated_playtime_hours;
+      }
+      
+      // Update game metadata first
+      if (game?.game.id) {
+        await games.updateGame(game.game.id, gameMetadataUpdate);
+      }
+      
+      // Update user game data
       await userGames.updateUserGame(gameId, userGameUpdate);
       await userGames.updateProgress(gameId, progressUpdate);
       
@@ -453,108 +509,209 @@
             
         {#if isEditing}
           <!-- Edit Form -->
-          <form on:submit|preventDefault={saveChanges} class="space-y-6">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <label for="play_status" class="form-label">
-                  Play Status
-                </label>
-                <PlayStatusDropdown
-                  id="play_status"
-                  bind:value={editData.play_status}
-                  on:change={(e: CustomEvent<{ value: PlayStatus }>) => {
-                    editData.play_status = e.detail.value;
-                  }}
-                />
-              </div>
+          <form on:submit|preventDefault={saveChanges} class="space-y-8">
+            <!-- Game Metadata Section -->
+            <div>
+              <h4 class="text-lg font-medium text-gray-900 mb-4">Game Information</h4>
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <label for="title" class="form-label">
+                    Title
+                  </label>
+                  <input
+                    id="title"
+                    type="text"
+                    bind:value={editData.title}
+                    class="form-input"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label for="ownership_status" class="form-label">
-                  Ownership Status
-                </label>
-                <select
-                  id="ownership_status"
-                  bind:value={editData.ownership_status}
-                  class="form-input"
-                >
-                  <option value="owned">Owned</option>
-                  <option value="borrowed">Borrowed</option>
-                  <option value="rented">Rented</option>
-                  <option value="subscription">Subscription</option>
-                </select>
-              </div>
+                <div>
+                  <label for="genre" class="form-label">
+                    Genre
+                  </label>
+                  <input
+                    id="genre"
+                    type="text"
+                    bind:value={editData.genre}
+                    class="form-input"
+                    placeholder="e.g., Action, RPG, Strategy"
+                  />
+                </div>
 
-              <div>
-                <label for="personal_rating" class="form-label">
-                  Personal Rating
-                </label>
-                <select
-                  id="personal_rating"
-                  bind:value={editData.personal_rating}
-                  class="form-input"
-                >
-                  <option value={null}>No Rating</option>
-                  <option value={1}>1 Star</option>
-                  <option value={2}>2 Stars</option>
-                  <option value={3}>3 Stars</option>
-                  <option value={4}>4 Stars</option>
-                  <option value={5}>5 Stars</option>
-                </select>
-              </div>
+                <div>
+                  <label for="developer" class="form-label">
+                    Developer
+                  </label>
+                  <input
+                    id="developer"
+                    type="text"
+                    bind:value={editData.developer}
+                    class="form-input"
+                    placeholder="e.g., FromSoftware"
+                  />
+                </div>
 
-              <div>
-                <label for="hours_played" class="form-label">
-                  Hours Played
-                </label>
-                <TimeTrackingInput
-                  id="hours_played"
-                  bind:value={editData.hours_played}
-                  on:change={(e: CustomEvent<{ value: number }>) => {
-                    editData.hours_played = e.detail.value;
-                  }}
-                />
+                <div>
+                  <label for="publisher" class="form-label">
+                    Publisher
+                  </label>
+                  <input
+                    id="publisher"
+                    type="text"
+                    bind:value={editData.publisher}
+                    class="form-input"
+                    placeholder="e.g., Bandai Namco"
+                  />
+                </div>
+
+                <div>
+                  <label for="release_date" class="form-label">
+                    Release Date
+                  </label>
+                  <input
+                    id="release_date"
+                    type="date"
+                    bind:value={editData.release_date}
+                    class="form-input"
+                  />
+                </div>
+
+                <div>
+                  <label for="estimated_playtime_hours" class="form-label">
+                    Estimated Playtime (hours)
+                  </label>
+                  <input
+                    id="estimated_playtime_hours"
+                    type="number"
+                    min="0"
+                    bind:value={editData.estimated_playtime_hours}
+                    class="form-input"
+                    placeholder="e.g., 40"
+                  />
+                </div>
+
+                <div class="lg:col-span-2">
+                  <label for="description" class="form-label">
+                    Description
+                  </label>
+                  <textarea
+                    id="description"
+                    bind:value={editData.description}
+                    rows="4"
+                    class="form-input"
+                    placeholder="Enter a description of the game..."
+                  ></textarea>
+                </div>
               </div>
             </div>
 
-            <div class="space-y-4">
-              <div class="flex items-center space-x-6">
-                <label class="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    bind:checked={editData.is_physical}
-                    class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            <!-- Personal Information Section -->
+            <div class="pt-6 border-t border-gray-200">
+              <h4 class="text-lg font-medium text-gray-900 mb-4">Your Information</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label for="play_status" class="form-label">
+                    Play Status
+                  </label>
+                  <PlayStatusDropdown
+                    id="play_status"
+                    bind:value={editData.play_status}
+                    on:change={(e: CustomEvent<{ value: PlayStatus }>) => {
+                      editData.play_status = e.detail.value;
+                    }}
                   />
-                  <span class="ml-2 text-sm text-gray-700">Physical copy</span>
-                </label>
+                </div>
 
-                <label class="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    bind:checked={editData.is_loved}
-                    class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                <div>
+                  <label for="ownership_status" class="form-label">
+                    Ownership Status
+                  </label>
+                  <select
+                    id="ownership_status"
+                    bind:value={editData.ownership_status}
+                    class="form-input"
+                  >
+                    <option value="owned">Owned</option>
+                    <option value="borrowed">Borrowed</option>
+                    <option value="rented">Rented</option>
+                    <option value="subscription">Subscription</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="personal_rating" class="form-label">
+                    Personal Rating
+                  </label>
+                  <select
+                    id="personal_rating"
+                    bind:value={editData.personal_rating}
+                    class="form-input"
+                  >
+                    <option value={null}>No Rating</option>
+                    <option value={1}>1 Star</option>
+                    <option value={2}>2 Stars</option>
+                    <option value={3}>3 Stars</option>
+                    <option value={4}>4 Stars</option>
+                    <option value={5}>5 Stars</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="hours_played" class="form-label">
+                    Hours Played
+                  </label>
+                  <TimeTrackingInput
+                    id="hours_played"
+                    bind:value={editData.hours_played}
+                    on:change={(e: CustomEvent<{ value: number }>) => {
+                      editData.hours_played = e.detail.value;
+                    }}
                   />
-                  <span class="ml-2 text-sm text-gray-700">
-                    <span class="text-red-500">♥</span> Loved game
-                  </span>
-                </label>
+                </div>
               </div>
 
-              <div>
-                <label for="personal_notes" class="form-label">
-                  Personal Notes
-                </label>
-                <RichTextEditor
-                  bind:value={editData.personal_notes}
-                  placeholder="Add your personal notes about this game..."
-                  editable={true}
-                  onchange={(e: CustomEvent<{ value: string }>) => {
-                    editData.personal_notes = e.detail.value;
-                  }}
-                />
+              <div class="mt-6 space-y-4">
+                <div class="flex items-center space-x-6">
+                  <label class="inline-flex items-center">
+                    <input
+                      type="checkbox"
+                      bind:checked={editData.is_physical}
+                      class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <span class="ml-2 text-sm text-gray-700">Physical copy</span>
+                  </label>
+
+                  <label class="inline-flex items-center">
+                    <input
+                      type="checkbox"
+                      bind:checked={editData.is_loved}
+                      class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <span class="ml-2 text-sm text-gray-700">
+                      <span class="text-red-500">♥</span> Loved game
+                    </span>
+                  </label>
+                </div>
+
+                <div>
+                  <label for="personal_notes" class="form-label">
+                    Personal Notes
+                  </label>
+                  <RichTextEditor
+                    bind:value={editData.personal_notes}
+                    placeholder="Add your personal notes about this game..."
+                    editable={true}
+                    onchange={(e: CustomEvent<{ value: string }>) => {
+                      editData.personal_notes = e.detail.value;
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
-            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+            <div class="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200">
               <button
                 type="button"
                 on:click={cancelEditing}
