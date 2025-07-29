@@ -1,8 +1,8 @@
 """Initial database schema
 
-Revision ID: d94a790338d9
+Revision ID: 2ef4c8daba74
 Revises: 
-Create Date: 2025-07-26 21:27:05.696876
+Create Date: 2025-07-29 13:20:50.215730
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'd94a790338d9'
+revision: str = '2ef4c8daba74'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -46,19 +46,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_games_igdb_id'), 'games', ['igdb_id'], unique=False)
     op.create_index(op.f('ix_games_title'), 'games', ['title'], unique=False)
-    op.create_table('platforms',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
-    sa.Column('display_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
-    sa.Column('icon_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
-    sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
-    sa.Column('version_added', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_platforms_name'), 'platforms', ['name'], unique=True)
     op.create_table('storefronts',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
@@ -113,6 +100,21 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_import_jobs_status'), 'import_jobs', ['status'], unique=False)
     op.create_index(op.f('ix_import_jobs_user_id'), 'import_jobs', ['user_id'], unique=False)
+    op.create_table('platforms',
+    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
+    sa.Column('display_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
+    sa.Column('icon_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('default_storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
+    sa.Column('version_added', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['default_storefront_id'], ['storefronts.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_platforms_name'), 'platforms', ['name'], unique=True)
     op.create_table('tags',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -130,8 +132,6 @@ def upgrade() -> None:
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('ownership_status', sa.Enum('OWNED', 'BORROWED', 'RENTED', 'SUBSCRIPTION', name='ownershipstatus'), nullable=False),
-    sa.Column('is_physical', sa.Boolean(), nullable=False),
-    sa.Column('physical_location', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('personal_rating', sa.Numeric(precision=2, scale=1), nullable=True),
     sa.Column('is_loved', sa.Boolean(), nullable=False),
     sa.Column('play_status', sa.Enum('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'MASTERED', 'DOMINATED', 'SHELVED', 'DROPPED', 'REPLAY', name='playstatus'), nullable=False),
@@ -187,7 +187,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['platform_id'], ['platforms.id'], ),
     sa.ForeignKeyConstraint(['storefront_id'], ['storefronts.id'], ),
     sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_game_id', 'platform_id', 'storefront_id', name='uq_user_game_platform_storefront')
     )
     op.create_index(op.f('ix_user_game_platforms_platform_id'), 'user_game_platforms', ['platform_id'], unique=False)
     op.create_index(op.f('ix_user_game_platforms_user_game_id'), 'user_game_platforms', ['user_game_id'], unique=False)
@@ -227,6 +228,8 @@ def downgrade() -> None:
     op.drop_table('user_games')
     op.drop_index(op.f('ix_tags_user_id'), table_name='tags')
     op.drop_table('tags')
+    op.drop_index(op.f('ix_platforms_name'), table_name='platforms')
+    op.drop_table('platforms')
     op.drop_index(op.f('ix_import_jobs_user_id'), table_name='import_jobs')
     op.drop_index(op.f('ix_import_jobs_status'), table_name='import_jobs')
     op.drop_table('import_jobs')
@@ -237,8 +240,6 @@ def downgrade() -> None:
     op.drop_table('users')
     op.drop_index(op.f('ix_storefronts_name'), table_name='storefronts')
     op.drop_table('storefronts')
-    op.drop_index(op.f('ix_platforms_name'), table_name='platforms')
-    op.drop_table('platforms')
     op.drop_index(op.f('ix_games_title'), table_name='games')
     op.drop_index(op.f('ix_games_igdb_id'), table_name='games')
     op.drop_table('games')

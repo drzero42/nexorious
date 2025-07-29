@@ -105,6 +105,70 @@ The application supports both SQLite and PostgreSQL databases. Configure the `DA
 - SQLite: `sqlite:///./nexorious.db`
 - PostgreSQL: `postgresql://username:password@localhost:5432/nexorious`
 
+## Seed Data Management
+
+The application includes official seed data for platforms and storefronts that provide the foundation for game collection management.
+
+### What is Seed Data?
+
+Seed data includes:
+- **11 Official Platforms**: PC (Windows), PlayStation 5, PlayStation 4, PlayStation 3, Xbox Series X/S, Xbox One, Xbox 360, Nintendo Switch, Nintendo Wii, iOS, Android
+- **12 Official Storefronts**: Steam, Epic Games Store, GOG, PlayStation Store, Microsoft Store, Nintendo eShop, Itch.io, Origin/EA App, Apple App Store, Google Play Store, Humble Bundle, Physical
+- **Default Platform-Storefront Mappings**: Pre-configured associations (e.g., PC → Steam, PlayStation 5 → PlayStation Store)
+
+### Automatic Loading
+
+Seed data is **automatically loaded** when you create the initial admin user during first-time setup. No manual intervention is required for new installations.
+
+### Manual Seed Data Management
+
+For recovery, updates, or troubleshooting, you can manually manage seed data using the CLI tool:
+
+#### Basic Commands
+
+Load all official seed data:
+```bash
+uv run python -m nexorious.seed_data.cli
+```
+
+Check for potential conflicts before seeding:
+```bash
+uv run python -m nexorious.seed_data.cli --check-conflicts
+```
+
+Force seeding (skip conflict prompts):
+```bash
+uv run python -m nexorious.seed_data.cli --force
+```
+
+Load seed data with version tracking:
+```bash
+uv run python -m nexorious.seed_data.cli --version "2.0.0"
+```
+
+#### Conflict Resolution
+
+The CLI tool intelligently handles conflicts with existing data:
+- **Official entries**: Skipped (already exists)
+- **Custom entries with same names**: Converted to official entries, preserving custom fields
+- **Interactive prompts**: Asks for confirmation unless `--force` is used
+
+#### When to Use Manual Seeding
+
+- **Recovery**: After accidental deletion of platforms/storefronts
+- **Updates**: When new official platforms/storefronts are added
+- **Fresh installations**: If automatic loading failed during initial setup
+- **Development**: When testing with clean database states
+
+#### CLI Options Reference
+
+| Option | Description |
+|--------|-------------|
+| `--help` | Show usage information |
+| `--version VERSION` | Set version string for tracking (default: "1.0.0") |
+| `--check-conflicts` | Check for conflicts without making changes |
+| `--force` | Skip confirmation prompts and force seeding |
+
 ## Environment Variables
 
 See `.env.example` for all available configuration options.

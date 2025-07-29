@@ -4,9 +4,9 @@ CLI tool for seeding platforms and storefronts.
 
 import argparse
 import sys
-from sqlmodel import create_engine, Session
+from sqlmodel import Session
 
-from ..core.database import get_database_url
+from ..core.database import engine
 from .seeder import seed_all_official_data, get_seeding_conflicts
 
 
@@ -31,10 +31,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Create database engine and session
-    database_url = get_database_url()
-    engine = create_engine(database_url)
-    
+    # Use existing database engine and session
     with Session(engine) as session:
         if args.check_conflicts:
             conflicts = get_seeding_conflicts(session)
