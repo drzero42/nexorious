@@ -8,7 +8,8 @@
   let confirmPassword = '';
   let isLoading = false;
   let error = '';
-  let needsSetup = true;
+  let needsSetup: boolean | null = null; // null means we're still checking
+  let usernameInput: HTMLInputElement;
 
   onMount(async () => {
     // Check if setup is actually needed
@@ -18,6 +19,10 @@
       goto('/login');
     } else {
       needsSetup = true;
+      // Focus the username input after setup status is confirmed
+      if (usernameInput) {
+        usernameInput.focus();
+      }
     }
   });
 
@@ -75,7 +80,7 @@
   <title>Initial Setup - Nexorious</title>
 </svelte:head>
 
-{#if needsSetup}
+{#if needsSetup === true}
 <div class="flex min-h-screen flex-col justify-center bg-gray-50 py-12 sm:px-6 lg:px-8">
   <div class="sm:mx-auto sm:w-full sm:max-w-md">
     <div class="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
@@ -115,6 +120,7 @@
             id="username"
             type="text"
             bind:value={username}
+            bind:this={usernameInput}
             on:keydown={handleKeydown}
             required
             minlength="3"
