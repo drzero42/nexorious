@@ -82,7 +82,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Advanced search and filtering interface operating on unique games
 - [ ] Sorting options implementation for unique games
 - [ ] Bulk selection and operations on unique games (not game-platform combinations)
-- [ ] Game detail view with all metadata and comprehensive platform/storefront ownership
+- [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
 - [ ] Visual design for platform/storefront badges that clearly shows all ownership
@@ -97,6 +97,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Ownership status configuration
 - [x] Success/error feedback handling
 - [ ] Detection and handling of existing games in user's collection
+- [ ] Logic to open game detail view when clicking on owned games in search results
+- [ ] Logic to proceed to addition flow when clicking on unowned games in search results
 - [ ] Show current platform/storefront ownership when adding to existing game
 - [ ] Interface for adding additional platforms/storefronts to existing games
 - [ ] Confirmation flow that clearly indicates adding to existing vs. new game
@@ -116,7 +118,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Bulk editing interface for multiple games
 - [ ] Real-time updates to collection view after edits
 - [ ] Error handling and validation feedback
-- [ ] Audit trail display for ownership changes (optional for MVP)
 - [ ] Save/cancel functionality with unsaved changes warnings
 
 #### 1.2.6 Progress Tracking Interface

@@ -109,7 +109,9 @@ To create the definitive self-hosted solution for personal game collection manag
      - Platform information
      - Brief description
      - Indication if user already owns this game (with existing platforms shown)
-  4. User selects the correct game from the candidates
+  4. User selects the correct game from the candidates:
+     - If user already owns this game: open the game detail view showing current ownership and metadata
+     - If user does not own this game: proceed to game addition flow (steps 5-12)
   5. System retrieves full metadata from IGDB for chosen game
   6. Present acceptance screen showing all retrieved information:
      - Complete game details (title, description, genre, developer, etc.)
@@ -135,6 +137,9 @@ To create the definitive self-hosted solution for personal game collection manag
   - Bulk operations work efficiently on unique games
   - IGDB search returns relevant game candidates with ownership status
   - User can distinguish between similar games in candidate list
+  - Clicking on owned games in search results opens the game detail view
+  - Clicking on unowned games in search results proceeds to game addition flow
+  - Game detail view is accessible from both collection view and search results
   - Metadata acceptance screen shows complete, accurate information
   - Users can modify auto-populated data before saving
   - Adding platforms to existing games updates the existing entry, not creating duplicates
