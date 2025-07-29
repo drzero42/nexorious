@@ -75,6 +75,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Protected route guards
 - [x] User session handling
 - [x] Admin detection for first-run flow
+- [ ] Username field focus and tab order implementation for login form
+- [ ] Username field focus and tab order implementation for initial admin setup form
 
 #### 1.2.3 Game Library Interface
 - [x] Game list view with pagination showing unified game cards

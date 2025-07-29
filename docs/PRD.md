@@ -52,6 +52,9 @@ To create the definitive self-hosted solution for personal game collection manag
 - Secure password hashing (bcrypt/scrypt)
 - JWT tokens with refresh mechanism
 - Username uniqueness enforced system-wide
+- **UX Requirements**:
+  - Username field must be focused by default on login form
+  - Username field must be first in tab order for keyboard navigation
 
 #### 1.2 Game Library Management
 **Priority**: P0 (Critical)
@@ -237,6 +240,9 @@ To create the definitive self-hosted solution for personal game collection manag
   - User edit capabilities (username, active status, admin role)
   - Password reset interface
   - User deletion with data handling options
+  - **UX Requirements**:
+    - Username field must be focused by default on initial admin setup form
+    - Username field must be first in tab order for keyboard navigation
 - **Acceptance Criteria**:
   - Only admins can create new user accounts
   - Usernames must be unique across the system
