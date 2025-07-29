@@ -18,18 +18,30 @@ export interface SystemStatistics {
   recentUsers: AdminUser[];
 }
 
+export interface SeedDataResponse {
+  platforms_added: number;
+  storefronts_added: number;
+  mappings_created: number;
+  total_changes: number;
+  message: string;
+}
+
 export interface AdminState {
   users: AdminUser[];
   statistics: SystemStatistics | null;
   isLoading: boolean;
   error: string | null;
+  seedDataResult: SeedDataResponse | null;
+  isSeedDataLoading: boolean;
 }
 
 const initialState: AdminState = {
   users: [],
   statistics: null,
   isLoading: false,
-  error: null
+  error: null,
+  seedDataResult: null,
+  isSeedDataLoading: false
 };
 
 function mapBackendUserToFrontend(backendUser: any): AdminUser {
@@ -295,8 +307,42 @@ function createAdminStore() {
       }
     },
 
+    loadSeedData: async () => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      update(state => ({ ...state, isSeedDataLoading: true, error: null, seedDataResult: null }));
+
+      try {
+        const response = await fetch(`${config.apiUrl}/platforms/seed`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to load seed data');
+        }
+
+        const seedDataResult: SeedDataResponse = await response.json();
+        update(state => ({ ...state, seedDataResult, isSeedDataLoading: false }));
+        return seedDataResult;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load seed data';
+        update(state => ({ ...state, isSeedDataLoading: false, error: errorMessage }));
+        throw error;
+      }
+    },
+
     clearError: () => {
       update(state => ({ ...state, error: null }));
+    },
+
+    clearSeedDataResult: () => {
+      update(state => ({ ...state, seedDataResult: null }));
     },
     
     // Test helper - only use in tests
