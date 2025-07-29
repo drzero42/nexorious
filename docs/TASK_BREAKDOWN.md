@@ -23,6 +23,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create User management models (users without email, user_sessions)
 - [x] Implement Platform and Storefront models
 - [x] Design Game metadata models with IGDB integration fields
+- [ ] Add IGDB slug field to Game model for proper link generation
 - [x] Create User Game Collection models (user_games, user_game_platforms)
 - [x] Implement Tagging system models (tags, user_game_tags)
 - [x] Add Wishlist models
@@ -60,6 +61,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Cover art download and storage (automatic during import)
 - [x] How Long to Beat integration
 - [x] IGDB platform data caching and retrieval for platform filtering
+- [ ] Update IGDB service to retrieve and store game slug field from API responses
+- [ ] Create database migration to add igdb_slug field to games table
 
 ### 1.2 Frontend Foundation
 
@@ -89,6 +92,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Sorting options implementation for unique games
 - [ ] Bulk selection and operations on unique games (not game-platform combinations)
 - [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
+- [ ] Update IGDB link generation to use game slug for URLs while displaying game ID
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
 - [ ] Visual design for platform/storefront badges that clearly shows all ownership
@@ -172,6 +176,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Admin-only user management authorization tests
 - [ ] Admin-only platform and storefront management authorization tests
 - [ ] External API integration tests with mocked responses (IGDB, Steam, etc.)
+- [ ] Unit tests for IGDB slug field storage and retrieval
+- [ ] Integration tests for IGDB link generation using slug
 - [ ] Performance tests for critical operations
 - [ ] Database migration tests for both PostgreSQL and SQLite
 - [ ] Admin privilege enforcement tests across all endpoints
@@ -185,6 +191,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Cross-browser compatibility tests
 - [ ] Admin interface authorization tests
 - [ ] Responsive design tests for mobile devices
+- [ ] Update tests to verify IGDB slug functionality and link generation
 
 #### 1.3.3 CI/CD Pipeline
 - [x] Automated test execution on pull requests

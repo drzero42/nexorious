@@ -61,11 +61,11 @@ To create the definitive self-hosted solution for personal game collection manag
 - **User Story**: As a user, I want to add games to my collection so I can track what I own across all platforms and storefronts in a unified view
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
-  - Game metadata storage with comprehensive fields
+  - Game metadata storage with comprehensive fields including IGDB slug for proper link generation
   - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
   - Ownership tracking through storefront associations
   - Duplicate detection and prevention at the game level (not platform level)
-  - IGDB integration for game lookup and metadata retrieval
+  - IGDB integration for game lookup and metadata retrieval with slug field storage
 - **Frontend Requirements**:
   - Game creation and editing forms with platform/storefront management
   - Game library list and grid views showing unified game cards
@@ -321,17 +321,20 @@ To create the definitive self-hosted solution for personal game collection manag
 **Priority**: P1 (High)
 - **User Story**: As a user, I want game metadata to be automatically populated so I don't have to enter descriptions and cover art manually
 - **Requirements**:
-  - IGDB API integration for game metadata
+  - IGDB API integration for game metadata including game slug for proper URL generation
   - Automatic population of descriptions, release dates, genres, cover art
   - "How Long to Beat" completion time estimates integration
   - Fuzzy matching for game title lookups
   - Metadata refresh capabilities
+  - Storage of both IGDB ID (for display) and IGDB slug (for functional links)
 - **Acceptance Criteria**:
   - Game metadata is automatically populated when adding games
   - Cover art is downloaded and stored locally
   - Completion time estimates are displayed for planning purposes
   - Users can manually trigger metadata refresh
   - Fuzzy matching handles slight title variations
+  - IGDB links are functional using game slug while displaying game ID in frontend
+  - Game slug is retrieved and stored during metadata population
 
 ### Phase 3: Discovery & Organization
 
@@ -586,6 +589,7 @@ Key architectural decisions:
 - Support for both PostgreSQL (production) and SQLite (development)
 - Multi-platform game ownership tracking
 - User-defined tagging and rating systems
+- IGDB integration with both ID (for display) and slug (for functional links) storage
 
 ### C. Additional Documentation
 - Deployment configurations in `/docs/deployment/`
