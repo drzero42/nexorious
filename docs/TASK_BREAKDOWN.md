@@ -109,7 +109,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 1.2.5 Game Editing & Platform Management Interface
 - [x] Game editing form with comprehensive metadata fields
 - [x] Add new platform associations to existing games
-- [ ] Remove platform associations from existing games
+- [x] Remove platform associations from existing games
 - [ ] Add new storefront associations per platform
 - [ ] Remove storefront associations per platform
 - [ ] Visual indicators showing current ownership status during editing

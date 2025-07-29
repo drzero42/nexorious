@@ -64,6 +64,8 @@
   };
   let isAddingPlatform = false;
   let isLoadingPlatforms = false;
+  let isRemovingPlatform = false;
+  let platformToRemove: { platformAssociationId: string; platformName: string; storefrontName: string } | null = null;
 
   $: gameId = $page.params.id!;
 
@@ -157,6 +159,63 @@
       notifications.showError('Failed to add platform. Please try again.');
     } finally {
       isAddingPlatform = false;
+    }
+  }
+
+  function confirmRemovePlatform(platformAssociationId: string, platformName: string, storefrontName: string) {
+    console.log('🗑️ Remove button clicked:', { 
+      platformAssociationId, 
+      platformName, 
+      storefrontName,
+      gamePlatformsCount: game?.platforms?.length,
+      allPlatforms: game?.platforms,
+      groupedPlatforms: game?.platforms ? groupPlatformsByPlatform(game.platforms) : []
+    });
+    
+    // Check if this would leave the game with no platform associations
+    // Note: game.platforms contains UserGamePlatform objects (platform-storefront combinations)
+    // We should prevent removal only if this is the last platform association
+    if (game && game.platforms && game.platforms.length <= 1) {
+      console.log('❌ Cannot remove - only one platform association remaining');
+      notifications.showError('Cannot remove the last platform. Games must have at least one platform.');
+      return;
+    }
+    
+    console.log('✅ Setting platformToRemove');
+    platformToRemove = { platformAssociationId, platformName, storefrontName };
+    console.log('✅ platformToRemove set:', platformToRemove);
+  }
+
+  function cancelRemovePlatform() {
+    platformToRemove = null;
+  }
+
+  async function removePlatform() {
+    if (!platformToRemove || !game) {
+      return;
+    }
+
+    try {
+      isRemovingPlatform = true;
+      
+      // Call the API to remove the platform
+      await userGames.removePlatformFromUserGame(game.id, platformToRemove.platformAssociationId);
+      
+      // Reload the game to get updated platform data
+      await loadGame();
+      
+      // Clear the confirmation dialog
+      platformToRemove = null;
+
+      // Show success message
+      notifications.showSuccess('Platform removed successfully');
+      
+    } catch (error) {
+      console.error('Failed to remove platform:', error);
+      // Show error message
+      notifications.showError('Failed to remove platform. Please try again.');
+    } finally {
+      isRemovingPlatform = false;
     }
   }
 
@@ -829,11 +888,26 @@
                                       </svg>
                                     </a>
                                   {/if}
+                                  <button 
+                                    type="button"
+                                    on:click={() => {
+                                      console.log('🖱️ Button clicked, storefront data:', storefront);
+                                      console.log('🖱️ Button disabled state:', game && game.platforms && game.platforms.length <= 1);
+                                      confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront');
+                                    }}
+                                    class="text-red-600 hover:text-red-800 flex-shrink-0 ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={game && game.platforms && game.platforms.length <= 1 ? "Cannot remove - game must have at least one platform" : "Remove this platform/storefront combination"}
+                                    aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
+                                    disabled={game && game.platforms && game.platforms.length <= 1}
+                                  >
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                  </button>
                                 </div>
                               {/each}
                             </div>
                           </div>
-                          <!-- TODO: Add remove platform button here -->
                         </div>
                       </div>
                     {/each}
@@ -1041,4 +1115,53 @@
     </div>
 {/if}
 </div>
+
+<!-- Platform Removal Confirmation Dialog -->
+{#if platformToRemove}
+  <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+      <div class="mt-3 text-center">
+        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+          <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mt-2">Remove Platform</h3>
+        <div class="mt-2 px-7 py-3">
+          <p class="text-sm text-gray-500">
+            Are you sure you want to remove <strong>{platformToRemove.platformName}</strong> on <strong>{platformToRemove.storefrontName}</strong> from this game?
+          </p>
+          <p class="text-xs text-gray-400 mt-2">
+            This action cannot be undone.
+          </p>
+        </div>
+        <div class="flex gap-4 px-7 py-3">
+          <button
+            type="button"
+            on:click={cancelRemovePlatform}
+            class="btn-secondary flex-1"
+            disabled={isRemovingPlatform}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            on:click={removePlatform}
+            disabled={isRemovingPlatform}
+            class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-x-2"
+          >
+            {#if isRemovingPlatform}
+              <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Removing...
+            {:else}
+              Remove
+            {/if}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 </RouteGuard>
