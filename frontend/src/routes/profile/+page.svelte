@@ -273,6 +273,7 @@
               type="button"
               on:click={() => showCurrentPassword = !showCurrentPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
+              aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
             >
               {#if showCurrentPassword}
                 <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -303,6 +304,7 @@
               type="button"
               on:click={() => showNewPassword = !showNewPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
+              aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
             >
               {#if showNewPassword}
                 <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -352,6 +354,7 @@
               type="button"
               on:click={() => showConfirmPassword = !showConfirmPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
+              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
             >
               {#if showConfirmPassword}
                 <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

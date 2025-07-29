@@ -138,6 +138,9 @@ describe('Game Addition Page', () => {
 
   describe('Game Selection and Confirmation', () => {
     beforeEach(async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates,
         total: mockIGDBCandidates.length
@@ -232,6 +235,9 @@ describe('Game Addition Page', () => {
     });
 
     it('should fallback to manual entry when IGDB import fails after confirmation', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       // Mock IGDB import to fail
       mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Import failed'));
       
@@ -313,6 +319,9 @@ describe('Game Addition Page', () => {
 
   describe('Game Addition Process', () => {
     beforeEach(async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates,
         total: mockIGDBCandidates.length
@@ -434,6 +443,9 @@ describe('Game Addition Page', () => {
     });
 
     it('should validate required fields in manual entry form', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       // Mock IGDB search to succeed but import to fail so we get to manual entry step
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates,
@@ -505,6 +517,9 @@ describe('Game Addition Page', () => {
     });
 
     it('should show loading state during game addition', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       let resolvePromise: (value: any) => void;
       const pendingPromise = new Promise((resolve) => {
         resolvePromise = resolve;
