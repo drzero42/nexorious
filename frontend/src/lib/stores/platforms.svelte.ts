@@ -10,7 +10,7 @@ export interface Platform {
   is_active: boolean;
   source: string;
   version_added?: string;
-  default_storefront_id?: string;
+  default_storefront_id?: string | undefined;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +54,17 @@ export interface StorefrontUpdateRequest {
   icon_url?: string;
   base_url?: string;
   is_active?: boolean;
+}
+
+export interface PlatformDefaultMapping {
+  platform_id: string;
+  platform_name: string;
+  platform_display_name: string;
+  default_storefront?: Storefront;
+}
+
+export interface UpdatePlatformDefaultRequest {
+  storefront_id?: string | null;
 }
 
 export interface PlatformsState {
@@ -444,6 +455,61 @@ function createPlatformsStore() {
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch active platforms and storefronts';
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        throw error;
+      }
+    },
+
+    // Get platform default storefront
+    getPlatformDefaultStorefront: async (platformId: string): Promise<PlatformDefaultMapping> => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/default-storefront`);
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get platform default storefront';
+        update(state => ({ ...state, error: errorMessage }));
+        throw error;
+      }
+    },
+
+    // Update platform default storefront
+    updatePlatformDefaultStorefront: async (platformId: string, storefrontId?: string): Promise<PlatformDefaultMapping> => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      update(state => ({ ...state, isLoading: true, error: null }));
+
+      try {
+        const requestData: UpdatePlatformDefaultRequest = {
+          storefront_id: storefrontId || null
+        };
+
+        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/default-storefront`, {
+          method: 'PUT',
+          body: JSON.stringify(requestData),
+        });
+        
+        const updatedMapping: PlatformDefaultMapping = await response.json();
+
+        // Update the platform in the store with the new default_storefront_id
+        update(state => ({
+          ...state,
+          platforms: state.platforms.map((platform: Platform): Platform => 
+            platform.id === platformId 
+              ? { ...platform, default_storefront_id: storefrontId || undefined }
+              : platform
+          ),
+          isLoading: false
+        }));
+
+        return updatedMapping;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update platform default storefront';
         update(state => ({ ...state, isLoading: false, error: errorMessage }));
         throw error;
       }
