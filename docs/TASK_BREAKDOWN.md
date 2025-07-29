@@ -160,9 +160,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Password reset interface for users
 - [x] Admin UI button/interface for manual seed data loading (ADMIN-ONLY)
 - [x] Display seed data loading status and results in admin interface
-- [ ] User deletion with data handling options
 - [ ] Platform and storefront management interface (ADMIN-ONLY CRUD operations for platforms and storefronts)
 - [ ] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
+- [ ] User deletion with data handling options
 - [ ] Admin-only navigation indicators with clear visual distinction
 - [ ] System configuration management interface
 - [ ] Import/export job monitoring interface
