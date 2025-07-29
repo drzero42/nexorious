@@ -579,7 +579,7 @@ async def get_user_game_platforms(
     return platforms
 
 
-@router.post("/{user_game_id}/platforms", response_model=UserGamePlatformResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{user_game_id}/platforms", response_model=UserGameResponse, status_code=status.HTTP_201_CREATED)
 async def add_platform_to_user_game(
     user_game_id: str,
     platform_data: UserGamePlatformCreateRequest,
@@ -651,12 +651,18 @@ async def add_platform_to_user_game(
     session.commit()
     session.refresh(new_platform)
     
-    # Load relationships for proper serialization
-    new_platform.platform = session.get(Platform, new_platform.platform_id)
-    if new_platform.storefront_id:
-        new_platform.storefront = session.get(Storefront, new_platform.storefront_id)
+    # Return the updated user game with all relationships loaded
+    updated_user_game = session.exec(
+        select(UserGame).where(UserGame.id == user_game_id)
+    ).first()
     
-    return new_platform
+    if not updated_user_game:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve updated user game"
+        )
+    
+    return updated_user_game
 
 
 @router.put("/{user_game_id}/platforms/{platform_association_id}", response_model=UserGamePlatformResponse)
