@@ -939,6 +939,12 @@
                           newPlatformData.storefront_id = '';
                           newPlatformData.store_url = '';
                           newPlatformData.store_game_id = '';
+                          
+                          // Auto-select default storefront if available
+                          const selectedPlatform = availablePlatforms.find(p => p.id === newPlatformData.platform_id);
+                          if (selectedPlatform && selectedPlatform.default_storefront_id) {
+                            newPlatformData.storefront_id = selectedPlatform.default_storefront_id;
+                          }
                         }}
                       >
                         <option value="">Select a platform...</option>
