@@ -161,7 +161,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Admin UI button/interface for manual seed data loading (ADMIN-ONLY)
 - [x] Display seed data loading status and results in admin interface
 - [x] Platform and storefront management interface (ADMIN-ONLY CRUD operations for platforms and storefronts)
-- [ ] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
+- [x] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
 - [ ] User deletion with data handling options
 - [ ] Admin-only navigation indicators with clear visual distinction
 - [ ] System configuration management interface

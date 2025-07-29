@@ -10,7 +10,7 @@ export interface Platform {
   is_active: boolean;
   source: string;
   version_added?: string;
-  default_storefront_id?: string;
+  default_storefront_id?: string | undefined;
   created_at: string;
   updated_at: string;
 }
@@ -33,12 +33,14 @@ export interface PlatformCreateRequest {
   display_name: string;
   icon_url?: string;
   is_active?: boolean;
+  default_storefront_id?: string;
 }
 
 export interface PlatformUpdateRequest {
   display_name?: string;
   icon_url?: string;
   is_active?: boolean;
+  default_storefront_id?: string | null;
 }
 
 export interface StorefrontCreateRequest {
@@ -55,6 +57,7 @@ export interface StorefrontUpdateRequest {
   base_url?: string;
   is_active?: boolean;
 }
+
 
 export interface PlatformsState {
   platforms: Platform[];
@@ -448,6 +451,7 @@ function createPlatformsStore() {
         throw error;
       }
     },
+
 
     // Clear error
     clearError: () => {

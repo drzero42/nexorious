@@ -17,7 +17,8 @@
     name: '',
     display_name: '',
     icon_url: '',
-    is_active: true
+    is_active: true,
+    default_storefront_id: ''
   };
 
   // Storefront form state
@@ -34,6 +35,7 @@
   // Confirmation dialog state
   let showDeleteConfirm = false;
   let deleteTarget: { type: 'platform' | 'storefront'; id: string; name: string } | null = null;
+
 
   // Reactive statements to track platform store state
   $: platformsList = $platforms.platforms;
@@ -93,7 +95,8 @@
       name: '',
       display_name: '',
       icon_url: '',
-      is_active: true
+      is_active: true,
+      default_storefront_id: ''
     };
     editingPlatform = null;
     showCreatePlatformForm = false;
@@ -116,7 +119,8 @@
       name: platform.name,
       display_name: platform.display_name,
       icon_url: platform.icon_url || '',
-      is_active: platform.is_active
+      is_active: platform.is_active,
+      default_storefront_id: platform.default_storefront_id || ''
     };
     editingPlatform = platform;
     showCreatePlatformForm = true;
@@ -144,10 +148,20 @@
         if (platformForm.icon_url && platformForm.icon_url.trim()) {
           updateData.icon_url = platformForm.icon_url;
         }
+        // Handle default storefront - empty string means no default
+        if (platformForm.default_storefront_id && platformForm.default_storefront_id.trim()) {
+          updateData.default_storefront_id = platformForm.default_storefront_id;
+        } else {
+          updateData.default_storefront_id = null;
+        }
         await platforms.updatePlatform(editingPlatform.id, updateData);
       } else {
-        // Create new platform
-        await platforms.createPlatform(platformForm);
+        // Create new platform - include default storefront
+        const createData = { ...platformForm };
+        if (!createData.default_storefront_id || !createData.default_storefront_id.trim()) {
+          delete createData.default_storefront_id;
+        }
+        await platforms.createPlatform(createData);
       }
       resetPlatformForm();
     } catch (err) {
@@ -230,6 +244,7 @@
       minute: '2-digit'
     });
   }
+
 </script>
 
 <RouteGuard requireAdmin={true}>
@@ -407,7 +422,7 @@
             {/if}
           </div>
         </div>
-      {:else}
+      {:else if activeTab === 'storefronts'}
         <!-- Storefronts Management -->
         <div class="bg-white shadow rounded-lg">
           <div class="px-4 py-5 sm:p-6">
@@ -544,6 +559,21 @@
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
                 placeholder="https://example.com/icon.png"
               />
+            </div>
+            
+            <div>
+              <label for="platform-default-storefront" class="block text-sm font-medium text-gray-700">Default Storefront (Optional)</label>
+              <select
+                id="platform-default-storefront"
+                bind:value={platformForm.default_storefront_id}
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+              >
+                <option value="">No Default</option>
+                {#each storefrontsList.filter(s => s.is_active) as storefront}
+                  <option value={storefront.id}>{storefront.display_name}</option>
+                {/each}
+              </select>
+              <p class="mt-1 text-sm text-gray-500">The storefront that will be automatically selected when users add games for this platform.</p>
             </div>
             
             <div class="flex justify-end space-x-3 pt-4">
