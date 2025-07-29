@@ -73,6 +73,21 @@
     return userGame.platforms.map((platform: any) => platform.platform.display_name);
   }
 
+  function handleGameClick(game: IGDBGameCandidate, isOwned: boolean) {
+    if (isOwned) {
+      // For owned games, navigate to the game detail view
+      const userGame = userGames.value.userGames.find((userGame: any) => 
+        userGame.game.igdb_id === game.igdb_id
+      );
+      if (userGame) {
+        goto(`/games/${userGame.id}`);
+      }
+    } else {
+      // For unowned games, proceed with the addition flow
+      selectGame(game);
+    }
+  }
+
   // Platform selection helpers
   function togglePlatform(platformId: string) {
     if (selectedPlatforms.has(platformId)) {
@@ -535,7 +550,7 @@
               {@const owned = isGameOwned(game.igdb_id)}
               {@const ownedPlatforms = getOwnedPlatformsForGame(game.igdb_id)}
               <button
-                on:click={() => selectGame(game)}
+                on:click={() => handleGameClick(game, owned)}
                 disabled={addingGameId !== null}
                 class="w-full p-4 bg-white border-2 rounded-lg text-left hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group {owned ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-primary-300'}"
               >
@@ -573,6 +588,20 @@
                             {#if ownedPlatforms.length > 0}
                               <span class="text-xs text-gray-600">on {ownedPlatforms.join(', ')}</span>
                             {/if}
+                          </div>
+                          <div class="mt-2 text-xs text-blue-600 flex items-center">
+                            <svg class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            Click to view details
+                          </div>
+                        {:else}
+                          <div class="mt-2 text-xs text-primary-600 flex items-center">
+                            <svg class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            Click to add to collection
                           </div>
                         {/if}
                       </div>

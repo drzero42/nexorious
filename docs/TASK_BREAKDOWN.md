@@ -100,7 +100,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Platform and storefront assignment (new or additional)
 - [x] Ownership status configuration
 - [x] Success/error feedback handling
-- [ ] Detection and handling of existing games in user's collection
+- [x] Detection and handling of existing games in user's collection
 - [ ] Logic to open game detail view when clicking on owned games in search results
 - [ ] Logic to proceed to addition flow when clicking on unowned games in search results
 - [ ] Show current platform/storefront ownership when adding to existing game

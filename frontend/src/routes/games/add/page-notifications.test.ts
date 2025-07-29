@@ -140,6 +140,9 @@ describe('Game Addition Page - Notifications Integration', () => {
       });
       mockUserGamesStore.updateProgress.mockResolvedValue({});
       mockUserGamesStore.updateUserGame.mockResolvedValue({});
+      
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
     });
 
     it('should show success notifications for complete IGDB import flow', async () => {
@@ -248,6 +251,9 @@ describe('Game Addition Page - Notifications Integration', () => {
 
   describe('Game Import Error Flow', () => {
     it('should handle IGDB import failure and fallback to manual entry', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates
       });
@@ -277,6 +283,9 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
 
     it('should handle collection addition failure', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.createFromIGDB.mockResolvedValue(mockGame);
       mockUserGamesStore.addGameToCollection.mockRejectedValue(new Error('Collection add failed'));
       
@@ -394,6 +403,9 @@ describe('Game Addition Page - Notifications Integration', () => {
 
   describe('Redirect Timing', () => {
     it('should delay redirect for success to show message', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.createFromIGDB.mockResolvedValue(mockGame);
       mockUserGamesStore.addGameToCollection.mockResolvedValue({
         id: 'user-game-1',
@@ -423,6 +435,9 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
 
     it('should have longer delay for error redirects', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.createFromIGDB.mockResolvedValue(mockGame);
       mockUserGamesStore.addGameToCollection.mockRejectedValue(new Error('Collection failed'));
       
@@ -455,6 +470,9 @@ describe('Game Addition Page - Notifications Integration', () => {
 
   describe('Notification Message Content', () => {
     it('should include game title in success messages', async () => {
+      // Clear user games collection so the IGDB game doesn't appear as already owned
+      mockUserGamesStore.value.userGames = [];
+      
       mockGamesStore.createFromIGDB.mockResolvedValue({
         ...mockGame,
         title: 'Specific Game Title'

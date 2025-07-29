@@ -15,12 +15,14 @@
     if (!browser) return;
 
     // Check if user is authenticated
-    const authState = auth.value;
+    let authState = auth.value;
     
     // If we have tokens but no user, try to refresh
     if (authState.accessToken && authState.refreshToken && !authState.user) {
       try {
         await auth.refreshAuth();
+        // Re-read auth state after refresh attempt
+        authState = auth.value;
       } catch (error) {
         console.error('Failed to refresh auth:', error);
         if (requireAuth) {
