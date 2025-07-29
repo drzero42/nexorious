@@ -61,7 +61,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Cover art download and storage (automatic during import)
 - [x] How Long to Beat integration
 - [x] IGDB platform data caching and retrieval for platform filtering
-- [ ] Update IGDB service to retrieve and store game slug field from API responses
+- [x] Update IGDB service to retrieve and store game slug field from API responses
 - [x] Create database migration to add igdb_slug field to games table
 
 ### 1.2 Frontend Foundation
