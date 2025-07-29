@@ -98,6 +98,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Visual design for platform/storefront badges that clearly shows all ownership
 - [ ] Responsive design ensuring platform indicators work on mobile devices
 - [ ] Hover/click interactions for platform indicators showing additional details
+- [ ] IGDB rating display formatting: Create utility function to convert IGDB ratings from integer (0-100) to decimal format (0.0-10.0)
+- [ ] Update all rating display components to use IGDB rating conversion utility
+- [ ] Apply IGDB rating formatting consistently across game cards, detail views, and search results
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface
@@ -192,6 +195,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Admin interface authorization tests
 - [ ] Responsive design tests for mobile devices
 - [ ] Update tests to verify IGDB slug functionality and link generation
+- [ ] Unit tests for IGDB rating conversion utility function
+- [ ] Component tests to verify IGDB ratings display correctly (integer input → decimal output)
+- [ ] Integration tests for IGDB rating display across game cards, detail views, and search results
 
 #### 1.3.3 CI/CD Pipeline
 - [x] Automated test execution on pull requests

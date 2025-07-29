@@ -76,6 +76,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - IGDB game search interface with candidate selection
   - Game metadata acceptance/confirmation screen
   - Game editing interface for adding/removing platform and storefront ownership
+  - IGDB rating display formatting: Convert IGDB ratings from integer (0-100) to decimal format (0.0-10.0) for proper user display
 - **Game Addition Flow**:
   1. User searches for game by title using IGDB integration
   2. System presents game candidates with ownership status indicators
