@@ -13,7 +13,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "steam"
     },
     {
         "name": "playstation-5",
@@ -21,7 +22,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "playstation-store"
     },
     {
         "name": "playstation-4",
@@ -29,7 +31,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "playstation-store"
     },
     {
         "name": "playstation-3",
@@ -37,7 +40,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "playstation-store"
     },
     {
         "name": "xbox-series",
@@ -45,7 +49,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "microsoft-store"
     },
     {
         "name": "xbox-one",
@@ -53,7 +58,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "microsoft-store"
     },
     {
         "name": "xbox-360",
@@ -61,7 +67,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "microsoft-store"
     },
     {
         "name": "nintendo-switch",
@@ -69,7 +76,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "nintendo-eshop"
     },
     {
         "name": "nintendo-wii",
@@ -77,7 +85,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "nintendo-eshop"
     },
     {
         "name": "ios",
@@ -85,7 +94,8 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "apple-app-store"
     },
     {
         "name": "android",
@@ -93,6 +103,7 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "icon_url": None,
         "is_active": True,
         "source": "official",
-        "version_added": "1.0.0"
+        "version_added": "1.0.0",
+        "default_storefront_name": "google-play-store"
     }
 ]

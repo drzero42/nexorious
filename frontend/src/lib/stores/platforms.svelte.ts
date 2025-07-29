@@ -10,6 +10,7 @@ export interface Platform {
   is_active: boolean;
   source: string;
   version_added?: string;
+  default_storefront_id?: string;
   created_at: string;
   updated_at: string;
 }
