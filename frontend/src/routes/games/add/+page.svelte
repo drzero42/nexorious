@@ -164,12 +164,19 @@
       
       try {
         // Add the game to the user's collection with form values
-        const platformIds = Array.from(selectedPlatforms);
+        const platformData = Array.from(selectedPlatforms).map(platformId => ({
+          platform_id: platformId,
+          storefront_id: platformStorefronts.get(platformId) || null,
+          store_game_id: null,
+          store_url: platformStoreUrls.get(platformId) || null,
+          is_available: true
+        }));
+        
         const addRequest: any = {
           game_id: createdGame.id,
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
           is_physical: gameData.is_physical || false,
-          platforms: platformIds.length > 0 ? platformIds : undefined
+          platforms: platformData.length > 0 ? platformData : undefined
         };
         
         // Only add physical_location if it has a value
@@ -179,34 +186,8 @@
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
-        // Add detailed platform information (storefront and URL) for each selected platform
+        // Platform details are now included in the initial request, so no separate API calls needed
         let partialErrors = [];
-        for (const platformId of selectedPlatforms) {
-          const storefrontId = platformStorefronts.get(platformId);
-          const storeUrl = platformStoreUrls.get(platformId);
-          
-          // Only add platform details if we have storefront or URL information
-          if (storefrontId || storeUrl) {
-            try {
-              const platformData: any = {
-                platform_id: platformId
-              };
-              
-              if (storefrontId) {
-                platformData.storefront_id = storefrontId;
-              }
-              
-              if (storeUrl) {
-                platformData.store_url = storeUrl;
-              }
-              
-              await userGames.addPlatformToUserGame(userGame.id, platformData);
-            } catch (platformError) {
-              console.error(`Failed to add platform details for platform ${platformId}:`, platformError);
-              partialErrors.push(`Failed to save details for some platforms`);
-            }
-          }
-        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
@@ -288,12 +269,19 @@
       
       try {
         // Then add it to the user's collection with personal information
-        const platformIds = Array.from(selectedPlatforms);
+        const platformData = Array.from(selectedPlatforms).map(platformId => ({
+          platform_id: platformId,
+          storefront_id: platformStorefronts.get(platformId) || null,
+          store_game_id: null,
+          store_url: platformStoreUrls.get(platformId) || null,
+          is_available: true
+        }));
+        
         const addRequest: any = {
           game_id: createdGame.id,
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
           is_physical: gameData.is_physical || false,
-          platforms: platformIds.length > 0 ? platformIds : undefined
+          platforms: platformData.length > 0 ? platformData : undefined
         };
         
         // Only add physical_location if it has a value
@@ -303,34 +291,8 @@
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
-        // Add detailed platform information (storefront and URL) for each selected platform
+        // Platform details are now included in the initial request, so no separate API calls needed
         let partialErrors = [];
-        for (const platformId of selectedPlatforms) {
-          const storefrontId = platformStorefronts.get(platformId);
-          const storeUrl = platformStoreUrls.get(platformId);
-          
-          // Only add platform details if we have storefront or URL information
-          if (storefrontId || storeUrl) {
-            try {
-              const platformData: any = {
-                platform_id: platformId
-              };
-              
-              if (storefrontId) {
-                platformData.storefront_id = storefrontId;
-              }
-              
-              if (storeUrl) {
-                platformData.store_url = storeUrl;
-              }
-              
-              await userGames.addPlatformToUserGame(userGame.id, platformData);
-            } catch (platformError) {
-              console.error(`Failed to add platform details for platform ${platformId}:`, platformError);
-              partialErrors.push(`Failed to save details for some platforms`);
-            }
-          }
-        }
         
         // Update progress with personal information if any were provided
         if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
