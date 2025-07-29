@@ -16,13 +16,14 @@ from .default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
 logger = logging.getLogger(__name__)
 
 
-def seed_platforms(session: Session, version: str = "1.0.0") -> int:
+def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool = True) -> int:
     """
     Seed official platforms with conflict resolution.
     
     Args:
         session: Database session
         version: Version string for tracking when platforms were added
+        set_defaults: Whether to set default storefronts during platform creation
         
     Returns:
         Number of platforms seeded (created or updated)
@@ -34,6 +35,19 @@ def seed_platforms(session: Session, version: str = "1.0.0") -> int:
         existing_platform = session.exec(
             select(Platform).where(Platform.name == platform_data["name"])
         ).first()
+        
+        # Look up default storefront ID if specified and defaults should be set
+        default_storefront_id = None
+        if set_defaults and platform_data.get("default_storefront_name"):
+            default_storefront = session.exec(
+                select(Storefront).where(Storefront.name == platform_data["default_storefront_name"])
+            ).first()
+            
+            if default_storefront:
+                default_storefront_id = default_storefront.id
+                logger.debug(f"Found default storefront '{platform_data['default_storefront_name']}' for platform '{platform_data['name']}'")
+            else:
+                logger.warning(f"Default storefront '{platform_data['default_storefront_name']}' not found for platform '{platform_data['name']}'")
         
         if existing_platform:
             # If it's a custom platform, update it to official
@@ -49,6 +63,11 @@ def seed_platforms(session: Session, version: str = "1.0.0") -> int:
                 if not existing_platform.icon_url and platform_data.get("icon_url"):
                     existing_platform.icon_url = platform_data["icon_url"]
                 
+                # Set default storefront if not already set and we found one
+                if existing_platform.default_storefront_id is None and default_storefront_id:
+                    existing_platform.default_storefront_id = default_storefront_id
+                    logger.info(f"Set default storefront for existing platform '{platform_data['name']}'")
+                
                 session.add(existing_platform)
                 seeded_count += 1
             else:
@@ -61,6 +80,7 @@ def seed_platforms(session: Session, version: str = "1.0.0") -> int:
                 name=platform_data["name"],
                 display_name=platform_data["display_name"],
                 icon_url=platform_data.get("icon_url"),
+                default_storefront_id=default_storefront_id,
                 is_active=platform_data.get("is_active", True),
                 source="official",
                 version_added=version,
@@ -199,8 +219,10 @@ def seed_all_official_data(session: Session, version: str = "1.0.0") -> Dict[str
     """
     logger.info(f"Starting seeding of official data for version {version}")
     
-    platform_count = seed_platforms(session, version)
+    # Seed storefronts first since platforms may reference them for default storefronts
     storefront_count = seed_storefronts(session, version)
+    # Create platforms without defaults so mapping function can set them
+    platform_count = seed_platforms(session, version, set_defaults=False)
     mapping_count = seed_default_platform_storefront_mappings(session)
     
     result = {

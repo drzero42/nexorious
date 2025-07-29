@@ -31,6 +31,7 @@ class PlatformResponse(BaseModel, TimestampMixin):
     is_active: bool
     source: str = Field(description="Source of the platform: 'official' or 'custom'")
     version_added: Optional[str] = Field(None, description="Version when this official platform was added")
+    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
 
     model_config = ConfigDict(from_attributes=True)
 
