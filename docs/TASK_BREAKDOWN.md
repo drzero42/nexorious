@@ -33,6 +33,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update user_game_platforms table constraints to support multiple storefronts per platform
 - [x] Add Physical storefront to seed data fixtures
 - [x] Create seed data fixtures for idempotent platform/storefront loading function
+- [x] Seed data includes all 11 platforms, 12 storefronts, and 11 default mappings per PRD specifications
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
@@ -104,14 +105,14 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Detection and handling of existing games in user's collection
 - [x] Logic to open game detail view when clicking on owned games in search results
 - [x] Logic to proceed to addition flow when clicking on unowned games in search results
-- [ ] Automatic default storefront selection when platform is chosen
+- [x] Automatic default storefront selection when platform is chosen
 - [ ] Show current platform/storefront ownership when adding to existing game
 - [ ] Interface for adding additional platforms/storefronts to existing games
 - [ ] Confirmation flow that clearly indicates adding to existing vs. new game
-- [ ] Update existing game entry instead of creating duplicates
-- [ ] Prevent duplicate game entries in user's collection
+- [x] Update existing game entry instead of creating duplicates
+- [x] Prevent duplicate game entries in user's collection
 - [ ] Multi-select storefront interface per platform during game addition
-- [ ] Physical storefront option in game addition interface
+- [x] Physical storefront option in game addition interface
 - [ ] IGDB platform filtering during game addition (show IGDB platforms first)
 - [ ] "Others" expandable section for additional platforms (collapsed by default)
 - [ ] Platform filtering integration with existing default storefront selection
