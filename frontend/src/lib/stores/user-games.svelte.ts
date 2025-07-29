@@ -228,7 +228,7 @@ function createUserGamesStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`${config.apiUrl}/user-games?${params}`);
+        const response = await apiCall(`${config.apiUrl}/user-games/?${params}`);
         const data: UserGameListResponse = await response.json();
 
         state = {
@@ -277,7 +277,7 @@ function createUserGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games`, {
+        const response = await apiCall(`${config.apiUrl}/user-games/`, {
           method: 'POST',
           body: JSON.stringify(gameData),
         });
