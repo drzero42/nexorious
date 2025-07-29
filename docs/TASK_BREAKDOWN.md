@@ -104,12 +104,12 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Detection and handling of existing games in user's collection
 - [x] Logic to open game detail view when clicking on owned games in search results
 - [x] Logic to proceed to addition flow when clicking on unowned games in search results
+- [ ] Automatic default storefront selection when platform is chosen
 - [ ] Show current platform/storefront ownership when adding to existing game
 - [ ] Interface for adding additional platforms/storefronts to existing games
 - [ ] Confirmation flow that clearly indicates adding to existing vs. new game
 - [ ] Update existing game entry instead of creating duplicates
 - [ ] Prevent duplicate game entries in user's collection
-- [ ] Automatic default storefront selection when platform is chosen
 - [ ] Multi-select storefront interface per platform during game addition
 - [ ] Physical storefront option in game addition interface
 - [ ] IGDB platform filtering during game addition (show IGDB platforms first)
