@@ -34,51 +34,24 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 1.0 API Development
 **Priority**: P0 (Critical)
-- **User Story**: As a developer, I want a REST API so the frontend can interact with the backend and custom integrations can be built
-- **Requirements**:
-  - RESTful API with OpenAPI documentation
-  - Authentication and authorization
-  - CORS configuration for frontend access
-- **Acceptance Criteria**:
-  - API documentation is comprehensive and accurate
-  - Authentication works with JWT tokens
-  - Frontend can consume all necessary endpoints
+- RESTful API with OpenAPI documentation
+- JWT authentication and authorization
+- CORS configuration for frontend access
 
 #### 1.1 Initial Setup & User Authentication
 **Priority**: P0 (Critical)
 - **User Story**: As an administrator, I want to create the initial admin user on first startup and manage all subsequent user accounts
 
 ##### 1.1.1 First-Run Admin Setup
-- **Requirements**:
-  - On first startup when no users exist, display admin user creation screen
-  - Require username and password for initial admin account
-  - Automatically grant admin privileges to first user
-  - Skip this screen if any users already exist in database
-  - Automatically run seed data function when initial admin account is created
-- **Acceptance Criteria**:
-  - Application detects empty user table and shows setup screen
-  - Admin user is created with is_admin=true flag
-  - Setup screen is never shown again after first user creation
-  - Platform and storefront seed data is loaded via idempotent function during admin creation
-  - Seed data includes all major gaming platforms and storefronts
-  - Seed data function can be run multiple times safely without duplicating data
+- Display admin creation screen on first startup (empty user table)
+- Automatically load platform/storefront seed data during admin creation
+- Seed data function is idempotent and safe to run multiple times
 
 ##### 1.1.2 User Authentication
-- **Authentication Model**:
-  - **Username**: Primary user identifier for login and display purposes
-  - **Password**: Secure authentication credential
-  - **Database ID**: Internal UUID primary key for database relationships
-- **Requirements**:
-  - Username-based login system only
-  - No user self-registration capability
-  - Password hashing with secure algorithm (bcrypt/scrypt)
-  - JWT token-based session management
-  - Session refresh token mechanism
-- **Acceptance Criteria**:
-  - Users can login with username and password
-  - No registration option available to non-authenticated users
-  - Username uniqueness is enforced across the system
-  - Database maintains id as primary key for relationships
+- Username-based login (no self-registration)
+- Secure password hashing (bcrypt/scrypt)
+- JWT tokens with refresh mechanism
+- Username uniqueness enforced system-wide
 
 #### 1.2 Game Library Management
 **Priority**: P0 (Critical)
@@ -101,49 +74,15 @@ To create the definitive self-hosted solution for personal game collection manag
   - Game metadata acceptance/confirmation screen
   - Game editing interface for adding/removing platform and storefront ownership
 - **Game Addition Flow**:
-  1. User searches for a game by title
-  2. System queries IGDB API for matching games
-  3. If multiple games found, present user with list of candidates showing:
-     - Game title and release year
-     - Cover art thumbnail
-     - Platform information
-     - Brief description
-     - Indication if user already owns this game (with existing platforms shown)
-  4. User selects the correct game from the candidates:
-     - If user already owns this game: open the game detail view showing current ownership and metadata
-     - If user does not own this game: proceed to game addition flow (steps 5-12)
-  5. System retrieves full metadata from IGDB for chosen game
-  6. Present acceptance screen showing all retrieved information:
-     - Complete game details (title, description, genre, developer, etc.)
-     - Cover art
-     - Release information
-     - How Long to Beat estimates
-     - Platforms available
-     - If game already exists in user's collection: current platform/storefront ownership displayed
-  7. User selects platform(s) for the game, with default storefront automatically selected for each platform
-  8. User can select additional storefronts for each platform and override default selections as needed
-  9. User confirms or edits information before final submission
-  10. If game already exists in user's collection: additional platforms/storefronts are added to existing entry
-  11. If game is new to user's collection: game is added to database and user's collection
-  12. System ensures each game appears only once in user's library regardless of platform/storefront count
+  1. User searches for game by title using IGDB integration
+  2. System presents game candidates with ownership status indicators
+  3. User selects game and configures platforms/storefronts with automatic defaults
+  4. System adds to collection or updates existing entry to prevent duplicates
 - **Acceptance Criteria**:
-  - API endpoints handle all game management operations
-  - Frontend forms validate input and provide feedback
-  - Games display with all relevant metadata in unified cards
-  - Each game appears exactly once in the user's collection view
-  - All owned platforms/storefronts are clearly displayed on each game card
-  - Duplicate detection prevents redundant entries at the game level
-  - Platform/storefront indicators are visually distinct and informative
-  - Bulk operations work efficiently on unique games
-  - IGDB search returns relevant game candidates with ownership status
-  - User can distinguish between similar games in candidate list
-  - Clicking on owned games in search results opens the game detail view
-  - Clicking on unowned games in search results proceeds to game addition flow
-  - Game detail view is accessible from both collection view and search results
-  - Metadata acceptance screen shows complete, accurate information
-  - Users can modify auto-populated data before saving
-  - Adding platforms to existing games updates the existing entry, not creating duplicates
-  - Search and filtering operate on unique games, not game-platform combinations
+  - Games appear once in collection with platform/storefront indicators
+  - IGDB integration provides accurate metadata and search
+  - Duplicate detection prevents redundant entries
+  - Bulk operations work on unified game view
 
 #### 1.2.5 Game Editing & Platform Management
 **Priority**: P0 (Critical)
@@ -152,7 +91,6 @@ To create the definitive self-hosted solution for personal game collection manag
   - RESTful endpoints for updating game metadata and platform/storefront associations
   - Platform/storefront addition and removal for existing games
   - Validation to prevent removal of all platforms (orphaned games)
-  - Audit logging for ownership changes
 - **Frontend Requirements**:
   - Game editing form with metadata modification capabilities
   - Platform and storefront management interface within game editing
@@ -171,12 +109,8 @@ To create the definitive self-hosted solution for personal game collection manag
   7. Changes are saved and reflected immediately in the collection view
   8. Game continues to appear once in collection with updated platform/storefront indicators
 - **Acceptance Criteria**:
-  - Users can edit all game metadata and ownership information
-  - Platform/storefront changes are reflected immediately in collection views
-  - Games cannot be left without any platform associations
-  - Bulk editing works efficiently for multiple games
-  - Changes are validated and error messages are clear
-  - Audit trail maintains history of ownership changes
+  - Platform/storefront ownership can be added/removed with validation
+  - Bulk editing supported with immediate UI updates
 
 #### 1.3 Platform & Storefront Tracking (Admin-Only Management)
 **Priority**: P0 (Critical)
@@ -221,23 +155,11 @@ To create the definitive self-hosted solution for personal game collection manag
     - iOS → Apple App Store
     - Android → Google Play Store
 - **Acceptance Criteria**:
-  - API supports multiple platforms per game
-  - Frontend allows easy platform assignment for users (from existing platforms only)
-  - Storefront links are preserved and accessible
-  - Ownership status is clearly indicated in UI
-  - **CRITICAL**: Only admin users can add, update, or remove platforms and storefronts
-  - **CRITICAL**: Regular users can ONLY associate existing platforms/storefronts with their games - no creation/modification rights
-  - **CRITICAL**: All platform/storefront management endpoints require admin authentication and return 403 for non-admin users
-  - All seed data platforms and storefronts are loaded during initial admin setup
-  - Default platform-storefront mappings are set during seed data loading
-  - When user selects a platform during game addition, default storefront is automatically selected
-  - Users can select multiple storefronts per platform for the same game
-  - Users can override the default storefront selection if needed
-  - Admin can manually trigger seed data loading function at any time
-  - Admin can modify default storefront assignments for any platform
-  - Seed data loading is idempotent and safe to run multiple times
-  - Admin-only features are clearly visually distinguished in the UI
-  - Non-admin users cannot access admin-only platform/storefront management routes
+  - Only admins can create/modify platforms and storefronts
+  - Users can only associate existing platforms/storefronts with games
+  - Seed data loaded automatically during initial admin setup
+  - Default storefront auto-selected when choosing platforms
+  - Seed data loading is idempotent and admin-triggered
 
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)
@@ -262,12 +184,9 @@ To create the definitive self-hosted solution for personal game collection manag
   - **Dropped**: Permanently abandoned
   - **Replay**: Playing again after previous completion
 - **Acceptance Criteria**:
-  - API handles all progress tracking operations
-  - Frontend provides intuitive status updates with clear completion level definitions
-  - Time tracking accepts manual input
-  - Notes support rich text formatting
-  - Progress changes are reflected immediately
-  - Completion levels provide meaningful progression tracking
+  - Status updates with completion levels (Not Started → Dominated)
+  - Manual time tracking and rich text notes
+  - Progress changes reflected immediately
 
 #### 1.5 Personal Rating System
 **Priority**: P1 (High)
@@ -558,49 +477,33 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ## Technical Architecture
 
-### Backend Stack
-- **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL (production) / SQLite (single-instance, small deployments)
-- **ORM**: SQLModel for database models and queries
-- **Migrations**: Alembic for database schema migrations
-- **Authentication**: JWT tokens with refresh mechanism
-- **API Documentation**: OpenAPI/Swagger
-- **Background Tasks**: Celery with Redis
-- **File Storage**: Local filesystem with S3 compatibility
-- **Testing**: Pytest for unit and integration tests
+### Backend
+- **FastAPI** (Python) with SQLModel ORM
+- **PostgreSQL** (production) / **SQLite** (development)
+- **JWT authentication** with refresh tokens
+- **IGDB API** integration for game metadata
 
-### Frontend Stack
-- **Framework**: Svelte/SvelteKit
-- **State Management**: Svelte stores
-- **Styling**: Tailwind CSS
-- **Build Tool**: Vite
-- **Testing**: Vitest for unit tests, Playwright for E2E tests
+### Frontend
+- **SvelteKit** with TypeScript
+- **Tailwind CSS** for styling
+- **Svelte stores** for state management
 
-### Infrastructure
-- **Containerization**: Docker with multi-stage builds
-- **Orchestration**: Docker Compose (local) / Kubernetes (production)
-- **Monitoring**: Prometheus metrics, structured logging
-- **Security**: Input validation, secure defaults
-- **Backup**: Automated database backups with retention policies
-- **CI/CD**: Automated testing pipeline on all code changes
+### Deployment
+- **Docker** containers with Docker Compose
+- **Kubernetes** support with Helm charts
+- Automated testing and CI/CD pipelines
 
 ## Risk Assessment
 
 ### Technical Risks
-- **API Rate Limits**: Steam, IGDB, and other services may impose strict rate limits
-  - *Mitigation*: Basic request throttling for MVP, with optional caching and advanced rate limiting in later phases
-- **Data Migration**: Database schema changes could break existing installations
-  - *Mitigation*: Comprehensive migration testing, rollback procedures
-- **Storefront API Changes**: External APIs may change without notice
-  - *Mitigation*: Abstraction layers, monitoring, and graceful error handling
+- **API Rate Limits**: External service limits (Steam, IGDB)
+- **Data Migration**: Schema changes in existing installations
+- **API Changes**: External services may change without notice
 
 ### Product Risks
-- **User Adoption**: Self-hosted software requires technical knowledge
-  - *Mitigation*: Comprehensive documentation, Docker Compose simplification
-- **Competition**: Existing services like HowLongToBeat, Backloggd
-  - *Mitigation*: Focus on self-hosting, privacy, and comprehensive storefront support
-- **Maintenance Burden**: Supporting multiple storefronts and integrations
-  - *Mitigation*: Modular architecture, community contributions, automated testing
+- **User Adoption**: Self-hosting requires technical knowledge
+- **Maintenance**: Supporting multiple platform integrations
+- **Competition**: Existing services (HowLongToBeat, Backloggd)
 
 ## Success Criteria
 
@@ -640,243 +543,19 @@ To create the definitive self-hosted solution for personal game collection manag
 - Migration strategy for schema changes
 - Backup and restore procedures
 
-#### SQL Schema (Database Agnostic)
+#### Database Schema
 
-```sql
--- User Management
-CREATE TABLE users (
-    id VARCHAR(36) PRIMARY KEY,                    -- Internal UUID primary key for database relationships
-    username VARCHAR(100) UNIQUE NOT NULL,        -- Primary user identifier for login and display
-    password_hash VARCHAR(255) NOT NULL,          -- Secure password hash for authentication
-    is_active BOOLEAN DEFAULT true,
-    is_admin BOOLEAN DEFAULT false,
-    preferences TEXT DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+Complete database schema and models are implemented using SQLModel and can be found in the codebase at:
+- `backend/nexorious/models/` - SQLModel definitions
+- `backend/alembic/versions/` - Database migration files
 
-CREATE TABLE user_sessions (
-    id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash VARCHAR(255) NOT NULL,
-    refresh_token_hash VARCHAR(255) NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    user_agent TEXT,
-    ip_address VARCHAR(45)
-);
+Key architectural decisions:
+- UUID primary keys for security and distribution
+- Support for both PostgreSQL (production) and SQLite (development)
+- Multi-platform game ownership tracking
+- User-defined tagging and rating systems
 
--- Platform and Storefront Management
-CREATE TABLE platforms (
-    id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    display_name VARCHAR(100) NOT NULL,
-    icon_url VARCHAR(500),
-    default_storefront_id VARCHAR(36) REFERENCES storefronts(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE storefronts (
-    id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    display_name VARCHAR(100) NOT NULL,
-    icon_url VARCHAR(500),
-    base_url VARCHAR(500),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Game Metadata
-CREATE TABLE games (
-    id VARCHAR(36) PRIMARY KEY,
-    title VARCHAR(500) NOT NULL,
-    description TEXT,
-    genre VARCHAR(200),
-    developer VARCHAR(200),
-    publisher VARCHAR(200),
-    release_date DATE,
-    cover_art_url VARCHAR(500),
-    rating_average DECIMAL(3,2),
-    rating_count INTEGER DEFAULT 0,
-    metadata TEXT DEFAULT '{}',
-    estimated_playtime_hours INTEGER,
-    howlongtobeat_main INTEGER,
-    howlongtobeat_extra INTEGER,
-    howlongtobeat_completionist INTEGER,
-    igdb_id VARCHAR(50),
-    is_verified BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE game_aliases (
-    id VARCHAR(36) PRIMARY KEY,
-    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    alias_title VARCHAR(500) NOT NULL,
-    source VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- User Game Collections
-CREATE TABLE user_games (
-    id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    ownership_status VARCHAR(50) DEFAULT 'owned' CHECK (ownership_status IN ('owned', 'borrowed', 'rented', 'subscription')),
-    personal_rating DECIMAL(2,1) CHECK (personal_rating >= 1 AND personal_rating <= 5),
-    is_loved BOOLEAN DEFAULT false,
-    play_status VARCHAR(50) DEFAULT 'not_started' CHECK (play_status IN ('not_started', 'in_progress', 'completed', 'mastered', 'dominated', 'shelved', 'dropped', 'replay')),
-    hours_played INTEGER DEFAULT 0,
-    personal_notes TEXT,
-    acquired_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, game_id)
-);
-
-CREATE TABLE user_game_platforms (
-    id VARCHAR(36) PRIMARY KEY,
-    user_game_id VARCHAR(36) NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
-    platform_id VARCHAR(36) NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
-    storefront_id VARCHAR(36) REFERENCES storefronts(id) ON DELETE SET NULL,
-    store_game_id VARCHAR(200),
-    store_url VARCHAR(500),
-    is_available BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_game_id, platform_id, storefront_id)
-);
-
--- Tagging System
-CREATE TABLE tags (
-    id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    color VARCHAR(7) DEFAULT '#6B7280',
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, name)
-);
-
-CREATE TABLE user_game_tags (
-    id VARCHAR(36) PRIMARY KEY,
-    user_game_id VARCHAR(36) NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
-    tag_id VARCHAR(36) NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_game_id, tag_id)
-);
-
--- Wishlist Management
-CREATE TABLE wishlists (
-    id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    game_id VARCHAR(36) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, game_id)
-);
-
--- Import/Export Tracking
-CREATE TABLE import_jobs (
-    id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    import_type VARCHAR(50) NOT NULL CHECK (import_type IN ('csv', 'steam', 'epic', 'gog', 'xbox', 'playstation')),
-    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-    total_records INTEGER DEFAULT 0,
-    processed_records INTEGER DEFAULT 0,
-    failed_records INTEGER DEFAULT 0,
-    error_log TEXT DEFAULT '[]',
-    metadata TEXT DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
-);
-
--- Indexes for Performance
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
-CREATE INDEX idx_user_sessions_token_hash ON user_sessions(token_hash);
-CREATE INDEX idx_games_title ON games(title);
-CREATE INDEX idx_games_igdb_id ON games(igdb_id);
-CREATE INDEX idx_game_aliases_game_id ON game_aliases(game_id);
-CREATE INDEX idx_game_aliases_title ON game_aliases(alias_title);
-CREATE INDEX idx_user_games_user_id ON user_games(user_id);
-CREATE INDEX idx_user_games_game_id ON user_games(game_id);
-CREATE INDEX idx_user_games_play_status ON user_games(play_status);
-CREATE INDEX idx_user_games_personal_rating ON user_games(personal_rating);
-CREATE INDEX idx_user_games_is_loved ON user_games(is_loved);
-CREATE INDEX idx_user_game_platforms_user_game_id ON user_game_platforms(user_game_id);
-CREATE INDEX idx_user_game_platforms_platform_id ON user_game_platforms(platform_id);
-CREATE INDEX idx_tags_user_id ON tags(user_id);
-CREATE INDEX idx_user_game_tags_user_game_id ON user_game_tags(user_game_id);
-CREATE INDEX idx_user_game_tags_tag_id ON user_game_tags(tag_id);
-CREATE INDEX idx_wishlists_user_id ON wishlists(user_id);
-CREATE INDEX idx_import_jobs_user_id ON import_jobs(user_id);
-CREATE INDEX idx_import_jobs_status ON import_jobs(status);
-```
-
-#### Key Schema Features
-
-- **UUID Primary Keys**: All tables use VARCHAR(36) to store UUIDs for better distribution and security (generated by application)
-- **Comprehensive User Management**: User accounts, sessions, and preferences with clear identifier roles:
-  - **id**: Primary key for database relationships and internal references
-  - **username**: Primary user identifier for login authentication and display
-  - **is_admin**: Boolean flag for administrative privileges
-- **Flexible Game Metadata**: Support for multiple data sources with JSON text fields for extensibility
-- **Multi-Platform Support**: Games can exist on multiple platforms
-- **Progress Tracking**: Detailed play status with completion levels (Completed, Mastered, Dominated) and time logging
-- **Tagging System**: User-defined tags with color coding for organization
-- **Wishlist Management**: Simple wishlist with dynamic price comparison links
-- **Import/Export Jobs**: Tracking for batch operations and data migrations
-- **Performance Indexes**: Strategic indexing for common query patterns including username-based lookups
-- **Data Integrity**: Foreign key constraints and check constraints for data validation
-- **Timestamp Management**: Created and updated timestamps handled by SQLModel in the application layer
-
-#### Database Compatibility Notes
-
-- **Data Types**: Uses standard SQL data types compatible with both SQLite and PostgreSQL
-- **UUIDs**: Stored as VARCHAR(36) and generated by the application layer
-- **JSON Fields**: Stored as TEXT with JSON serialization handled by SQLModel
-- **Timestamps**: SQLModel will automatically manage created_at and updated_at fields
-- **Full-Text Search**: Will be implemented at the application layer using SQLModel queries
-- **No Database-Specific Features**: Avoids triggers, stored procedures, or PostgreSQL-specific functions
-
-### C. Deployment Configurations
-- Docker Compose examples
-- Kubernetes manifests
-- Environment variable reference
-- Reverse proxy configurations
-
-### D. Community Guidelines
-- Contribution guidelines
-- Code of conduct
-- Issue reporting templates
-- Feature request process
-
-### E. Operational Procedures
-- Admin user recovery procedures
-- Database-level password reset instructions
-- User account management best practices
-- Security incident response procedures
-
-#### Database Password Reset Procedure
-
-When an administrator needs to reset a user's password directly in the database:
-
-1. **Generate a new password hash** using the same algorithm as the application (bcrypt/scrypt)
-2. **Connect to the database** using appropriate credentials
-3. **Execute the update query**:
-   ```sql
-   UPDATE users 
-   SET password_hash = 'new_hash_value', 
-       updated_at = CURRENT_TIMESTAMP 
-   WHERE username = 'target_username';
-   ```
-4. **Verify the update** was successful
-5. **Communicate the temporary password** to the user through a secure channel
-6. **Require password change** on next login (if implemented)
-
-**Security Notes**:
-- Never store plaintext passwords
-- Use the application's password hashing function when possible
-- Document all manual password resets for audit purposes
-- Consider implementing an in-app admin password reset feature to avoid direct database access
+### C. Additional Documentation
+- Deployment configurations in `/docs/deployment/`
+- API integration details in `/docs/integrations/`
+- Community guidelines in repository root
