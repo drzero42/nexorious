@@ -86,6 +86,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_extra: 28,
             howlongtobeat_completionist: 45,
             igdb_id: 'igdb-123',
+            igdb_slug: 'test-game-slug',
             is_verified: true,
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z'
@@ -120,6 +121,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_extra: 70,
             howlongtobeat_completionist: 120,
             igdb_id: 'igdb-456',
+            igdb_slug: 'rpg-game-slug',
             is_verified: true,
             created_at: '2024-02-01T00:00:00Z',
             updated_at: '2024-02-01T00:00:00Z'
@@ -154,6 +156,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_extra: 25,
             howlongtobeat_completionist: 40,
             igdb_id: 'igdb-101',
+            igdb_slug: 'action-game-2-slug',
             is_verified: true,
             created_at: '2024-04-01T00:00:00Z',
             updated_at: '2024-04-01T00:00:00Z'

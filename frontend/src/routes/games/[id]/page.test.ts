@@ -306,7 +306,34 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
       const igdbLink = screen.getByText('igdb-123');
       expect(igdbLink).toBeInTheDocument();
-      expect(igdbLink.closest('a')).toHaveAttribute('href', 'https://www.igdb.com/games/igdb-123');
+      expect(igdbLink.closest('a')).toHaveAttribute('href', 'https://www.igdb.com/games/test-game-slug');
+    });
+
+    it('should display IGDB ID as plain text when slug is missing', async () => {
+      const baseGame = mockUserGamesStore.value.userGames[0];
+      if (!baseGame) throw new Error('Base game not found in mock');
+      
+      const gameWithoutSlug = {
+        ...baseGame,
+        game: {
+          ...baseGame.game,
+          igdb_slug: undefined // Remove slug but keep ID
+        }
+      };
+      (mockUserGamesStore.value as any).userGames = [gameWithoutSlug];
+      
+      render(GameDetailPage);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Test Game')).toBeInTheDocument();
+      });
+      
+      expect(screen.getByText('IGDB ID')).toBeInTheDocument();
+      const igdbText = screen.getByText('igdb-123');
+      expect(igdbText).toBeInTheDocument();
+      // Should NOT be a link when no slug
+      expect(igdbText.closest('a')).toBeNull();
+      expect(igdbText.tagName.toLowerCase()).toBe('span');
     });
 
     it('should handle missing optional fields gracefully', async () => {

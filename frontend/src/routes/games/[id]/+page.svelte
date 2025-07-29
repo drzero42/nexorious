@@ -513,17 +513,21 @@
                   <div>
                     <dt class="text-sm font-medium text-gray-500">IGDB ID</dt>
                     <dd class="mt-1 text-sm text-gray-900">
-                      <a 
-                        href="https://www.igdb.com/games/{game.game.igdb_id}" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        class="text-blue-600 hover:text-blue-800 inline-flex items-center"
-                      >
-                        {game.game.igdb_id}
-                        <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                        </svg>
-                      </a>
+                      {#if game.game.igdb_slug}
+                        <a 
+                          href="https://www.igdb.com/games/{game.game.igdb_slug}" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          class="text-blue-600 hover:text-blue-800 inline-flex items-center"
+                        >
+                          {game.game.igdb_id}
+                          <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                          </svg>
+                        </a>
+                      {:else}
+                        <span>{game.game.igdb_id}</span>
+                      {/if}
                     </dd>
                   </div>
                 {/if}

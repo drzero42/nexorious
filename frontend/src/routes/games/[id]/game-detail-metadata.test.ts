@@ -84,12 +84,24 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
       expect(mockGame.howlongtobeat_completionist).toBeGreaterThan(mockGame.howlongtobeat_extra);
     });
 
-    it('should generate correct IGDB URLs', () => {
-      // Test IGDB link generation
-      const igdbId = 'igdb-123';
-      const expectedUrl = `https://www.igdb.com/games/${igdbId}`;
+    it('should generate correct IGDB URLs using slug', () => {
+      // Test IGDB link generation using slug
+      const igdbSlug = 'test-game-slug';
+      const expectedUrl = `https://www.igdb.com/games/${igdbSlug}`;
       
-      expect(expectedUrl).toBe('https://www.igdb.com/games/igdb-123');
+      expect(expectedUrl).toBe('https://www.igdb.com/games/test-game-slug');
+    });
+
+    it('should handle missing slug gracefully', () => {
+      // Test behavior when slug is missing
+      const gameWithoutSlug = {
+        igdb_id: 'igdb-123',
+        igdb_slug: undefined
+      };
+      
+      // When slug is undefined, should not generate link
+      expect(gameWithoutSlug.igdb_slug).toBeUndefined();
+      expect(gameWithoutSlug.igdb_id).toBe('igdb-123');
     });
 
     it('should handle missing metadata gracefully', () => {
@@ -185,6 +197,7 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
         howlongtobeat_extra: 35,
         howlongtobeat_completionist: 50,
         igdb_id: 'igdb-123',
+        igdb_slug: 'test-game-slug',
         is_verified: true
       };
 
@@ -196,6 +209,7 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
       expect(completeGame.howlongtobeat_extra).toBeDefined();
       expect(completeGame.howlongtobeat_completionist).toBeDefined();
       expect(completeGame.igdb_id).toBeDefined();
+      expect(completeGame.igdb_slug).toBeDefined();
       expect(completeGame.is_verified).toBeDefined();
     });
 
