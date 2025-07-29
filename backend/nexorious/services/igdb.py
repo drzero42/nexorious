@@ -44,6 +44,7 @@ class GameMetadata:
     
     igdb_id: str
     title: str
+    igdb_slug: Optional[str] = None
     description: Optional[str] = None
     genre: Optional[str] = None
     developer: Optional[str] = None
@@ -161,7 +162,7 @@ class IGDBService:
             
             # First, try exact/close search with IGDB's built-in search
             igdb_query = f'''
-                fields id, name, summary, genres.name, involved_companies.company.name, 
+                fields id, name, slug, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
                        first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
                 search "{query.strip()}";
@@ -249,7 +250,7 @@ class IGDBService:
             wrapper = await self._get_wrapper()
             
             igdb_query = f'''
-                fields id, name, summary, genres.name, involved_companies.company.name, 
+                fields id, name, slug, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
                        first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
                 where id = {igdb_id};
@@ -373,6 +374,7 @@ class IGDBService:
             return GameMetadata(
                 igdb_id=str(game_data['id']),
                 title=game_data.get('name', ''),
+                igdb_slug=game_data.get('slug'),
                 description=game_data.get('summary'),
                 genre=genre,
                 developer=developer,
@@ -451,6 +453,7 @@ class IGDBService:
             updated_metadata = GameMetadata(
                 igdb_id=current_metadata.igdb_id,
                 title=current_metadata.title or fresh_metadata.title,
+                igdb_slug=current_metadata.igdb_slug or fresh_metadata.igdb_slug,
                 description=current_metadata.description or fresh_metadata.description,
                 genre=current_metadata.genre or fresh_metadata.genre,
                 developer=current_metadata.developer or fresh_metadata.developer,
@@ -476,7 +479,7 @@ class IGDBService:
         differences = {}
         
         fields_to_compare = [
-            'title', 'description', 'genre', 'developer', 'publisher',
+            'title', 'igdb_slug', 'description', 'genre', 'developer', 'publisher',
             'release_date', 'cover_art_url', 'rating_average', 'rating_count',
             'estimated_playtime_hours', 'hastily', 'normally', 'completely'
         ]
@@ -495,7 +498,7 @@ class IGDBService:
     
     async def get_metadata_completeness(self, metadata: GameMetadata) -> dict:
         """Analyze metadata completeness and return missing fields."""
-        essential_fields = ['title', 'description', 'genre', 'developer', 'publisher', 'release_date']
+        essential_fields = ['title', 'igdb_slug', 'description', 'genre', 'developer', 'publisher', 'release_date']
         optional_fields = ['cover_art_url', 'rating_average', 'rating_count', 'estimated_playtime_hours', 'hastily', 'normally', 'completely']
         
         missing_essential = []
