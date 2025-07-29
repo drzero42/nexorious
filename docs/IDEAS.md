@@ -11,3 +11,6 @@ Should focus the username field
 
 ## Default storefronts for platform
 When choosing a platform for a game you are adding, for some platforms there are obvious defaults that should be chosen. Ie. Playstation Store for PS4 and PS5.
+
+## Filter platforms when adding games from IGDB search
+When adding a game from an IGDB search, there are platforms that the game was published for included. The add screen should filter the list of platforms so only the ones listed in the data from IGDB are shown. The rest should be hidden under a fold-out called "Others". The user should still be allowed to choose from the ones that are under "Others" as the IGDB data might be incorrect.
