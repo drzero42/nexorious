@@ -6,7 +6,7 @@
   import type { Platform, Storefront, PlatformCreateRequest, StorefrontCreateRequest, PlatformUpdateRequest, StorefrontUpdateRequest } from '$lib/stores/platforms.svelte';
 
   let isLoading = true;
-  let activeTab: 'platforms' | 'storefronts' | 'default-storefronts' = 'platforms';
+  let activeTab: 'platforms' | 'storefronts' = 'platforms';
   let searchQuery = '';
   let statusFilter: 'all' | 'active' | 'inactive' = 'all';
   
@@ -17,7 +17,8 @@
     name: '',
     display_name: '',
     icon_url: '',
-    is_active: true
+    is_active: true,
+    default_storefront_id: ''
   };
 
   // Storefront form state
@@ -35,9 +36,6 @@
   let showDeleteConfirm = false;
   let deleteTarget: { type: 'platform' | 'storefront'; id: string; name: string } | null = null;
 
-  // Default storefront management state
-  let pendingDefaultChanges: Map<string, string | null> = new Map(); // platformId -> storefrontId (null for remove)
-  let savingDefaults = false;
 
   // Reactive statements to track platform store state
   $: platformsList = $platforms.platforms;
@@ -97,7 +95,8 @@
       name: '',
       display_name: '',
       icon_url: '',
-      is_active: true
+      is_active: true,
+      default_storefront_id: ''
     };
     editingPlatform = null;
     showCreatePlatformForm = false;
@@ -120,7 +119,8 @@
       name: platform.name,
       display_name: platform.display_name,
       icon_url: platform.icon_url || '',
-      is_active: platform.is_active
+      is_active: platform.is_active,
+      default_storefront_id: platform.default_storefront_id || ''
     };
     editingPlatform = platform;
     showCreatePlatformForm = true;
@@ -148,10 +148,20 @@
         if (platformForm.icon_url && platformForm.icon_url.trim()) {
           updateData.icon_url = platformForm.icon_url;
         }
+        // Handle default storefront - empty string means no default
+        if (platformForm.default_storefront_id && platformForm.default_storefront_id.trim()) {
+          updateData.default_storefront_id = platformForm.default_storefront_id;
+        } else {
+          updateData.default_storefront_id = null;
+        }
         await platforms.updatePlatform(editingPlatform.id, updateData);
       } else {
-        // Create new platform
-        await platforms.createPlatform(platformForm);
+        // Create new platform - include default storefront
+        const createData = { ...platformForm };
+        if (!createData.default_storefront_id || !createData.default_storefront_id.trim()) {
+          delete createData.default_storefront_id;
+        }
+        await platforms.createPlatform(createData);
       }
       resetPlatformForm();
     } catch (err) {
@@ -235,62 +245,6 @@
     });
   }
 
-  // Default storefront management functions
-  function handleDefaultStorefrontChange(platformId: string, storefrontId: string) {
-    // If "none" is selected, set to null (remove default)
-    const value = storefrontId === 'none' ? null : storefrontId;
-    pendingDefaultChanges.set(platformId, value);
-    pendingDefaultChanges = new Map(pendingDefaultChanges); // Trigger reactivity
-  }
-
-  function getCurrentDefaultStorefront(platform: Platform): string {
-    // Check if there's a pending change first
-    if (pendingDefaultChanges.has(platform.id)) {
-      const pendingValue = pendingDefaultChanges.get(platform.id);
-      return pendingValue || 'none';
-    }
-    // Otherwise return the current value
-    return platform.default_storefront_id || 'none';
-  }
-
-  function hasPendingChanges(): boolean {
-    return pendingDefaultChanges.size > 0;
-  }
-
-  async function saveDefaultStorefrontChanges() {
-    if (!hasPendingChanges()) return;
-
-    savingDefaults = true;
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const [platformId, storefrontId] of pendingDefaultChanges) {
-      try {
-        await platforms.updatePlatformDefaultStorefront(platformId, storefrontId || undefined);
-        successCount++;
-      } catch (err) {
-        console.error(`Failed to update default storefront for platform ${platformId}:`, err);
-        errorCount++;
-      }
-    }
-
-    // Clear pending changes after processing
-    pendingDefaultChanges.clear();
-    pendingDefaultChanges = new Map(pendingDefaultChanges);
-    savingDefaults = false;
-
-    // Show success/error feedback could be added here
-    if (errorCount === 0) {
-      console.log(`Successfully updated ${successCount} platform default storefronts`);
-    } else {
-      console.log(`Updated ${successCount} platform default storefronts, ${errorCount} failed`);
-    }
-  }
-
-  function cancelDefaultStorefrontChanges() {
-    pendingDefaultChanges.clear();
-    pendingDefaultChanges = new Map(pendingDefaultChanges);
-  }
 </script>
 
 <RouteGuard requireAdmin={true}>
@@ -327,17 +281,6 @@
         >
           <span class="mr-2">🏪</span>
           Storefronts
-        </button>
-        <button
-          on:click={() => activeTab = 'default-storefronts'}
-          class={`py-2 px-1 border-b-2 font-medium text-sm ${
-            activeTab === 'default-storefronts'
-              ? 'border-primary-500 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
-        >
-          <span class="mr-2">⚙️</span>
-          Default Storefronts
         </button>
       </nav>
     </div>
@@ -390,7 +333,6 @@
               <option value="inactive">Inactive Only</option>
             </select>
           </div>
-          {#if activeTab !== 'default-storefronts'}
           <div>
             <button
               on:click={() => activeTab === 'platforms' ? (showCreatePlatformForm = true) : (showCreateStorefrontForm = true)}
@@ -400,31 +342,6 @@
               Add {activeTab === 'platforms' ? 'Platform' : 'Storefront'}
             </button>
           </div>
-          {:else}
-          <div class="flex space-x-3">
-            <button
-              on:click={saveDefaultStorefrontChanges}
-              disabled={!hasPendingChanges() || savingDefaults}
-              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {#if savingDefaults}
-                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Saving...
-              {:else}
-                <span class="mr-2">💾</span>
-                Save Changes
-              {/if}
-            </button>
-            <button
-              on:click={cancelDefaultStorefrontChanges}
-              disabled={!hasPendingChanges() || savingDefaults}
-              class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              <span class="mr-2">✖️</span>
-              Cancel
-            </button>
-          </div>
-          {/if}
         </div>
       </div>
 
@@ -592,90 +509,6 @@
             {/if}
           </div>
         </div>
-      {:else if activeTab === 'default-storefronts'}
-        <!-- Default Storefronts Management -->
-        <div class="bg-white shadow rounded-lg">
-          <div class="px-4 py-5 sm:p-6">
-            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-6">Default Storefronts Configuration</h3>
-            <p class="text-sm text-gray-600 mb-6">Set the default storefront for each platform. When users add games, the default storefront will be automatically selected for each platform.</p>
-            
-            {#if filteredPlatforms.length === 0}
-              <div class="text-center py-12">
-                <div class="text-gray-400 text-lg mb-2">⚙️</div>
-                <p class="text-gray-500">No platforms found</p>
-              </div>
-            {:else}
-              <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-                <table class="min-w-full divide-y divide-gray-300">
-                  <thead class="bg-gray-50">
-                    <tr>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Platform</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Default</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Set Default Storefront</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody class="bg-white divide-y divide-gray-200">
-                    {#each filteredPlatforms as platform}
-                      <tr class={pendingDefaultChanges.has(platform.id) ? 'bg-yellow-50' : ''}>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <div class="flex items-center">
-                            <div>
-                              <div class="text-sm font-medium text-gray-900">{platform.display_name}</div>
-                              <div class="text-sm text-gray-500">{platform.name}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {#if platform.default_storefront_id}
-                            {@const defaultStorefront = storefrontsList.find(s => s.id === platform.default_storefront_id)}
-                            {#if defaultStorefront}
-                              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {defaultStorefront.display_name}
-                              </span>
-                            {:else}
-                              <span class="text-gray-400">Unknown storefront</span>
-                            {/if}
-                          {:else}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              None
-                            </span>
-                          {/if}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <select
-                            value={getCurrentDefaultStorefront(platform)}
-                            on:change={(e) => handleDefaultStorefrontChange(platform.id, (e.target as HTMLSelectElement).value)}
-                            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                          >
-                            <option value="none">No Default</option>
-                            {#each storefrontsList.filter(s => s.is_active) as storefront}
-                              <option value={storefront.id}>{storefront.display_name}</option>
-                            {/each}
-                          </select>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <span class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            platform.is_active 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {platform.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                          {#if pendingDefaultChanges.has(platform.id)}
-                            <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                              Pending
-                            </span>
-                          {/if}
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-            {/if}
-          </div>
-        </div>
       {/if}
     {/if}
   </div>
@@ -726,6 +559,21 @@
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
                 placeholder="https://example.com/icon.png"
               />
+            </div>
+            
+            <div>
+              <label for="platform-default-storefront" class="block text-sm font-medium text-gray-700">Default Storefront (Optional)</label>
+              <select
+                id="platform-default-storefront"
+                bind:value={platformForm.default_storefront_id}
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+              >
+                <option value="">No Default</option>
+                {#each storefrontsList.filter(s => s.is_active) as storefront}
+                  <option value={storefront.id}>{storefront.display_name}</option>
+                {/each}
+              </select>
+              <p class="mt-1 text-sm text-gray-500">The storefront that will be automatically selected when users add games for this platform.</p>
             </div>
             
             <div class="flex justify-end space-x-3 pt-4">

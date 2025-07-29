@@ -109,11 +109,26 @@ async def create_platform(
             detail="Platform name already exists"
         )
     
+    # Validate default_storefront_id if provided
+    if platform_data.default_storefront_id:
+        storefront = session.get(Storefront, platform_data.default_storefront_id)
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default storefront not found"
+            )
+        if not storefront.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set inactive storefront as default"
+            )
+    
     new_platform = Platform(
         name=platform_data.name,
         display_name=platform_data.display_name,
         icon_url=str(platform_data.icon_url) if platform_data.icon_url else None,
-        is_active=platform_data.is_active if platform_data.is_active is not None else True
+        is_active=platform_data.is_active if platform_data.is_active is not None else True,
+        default_storefront_id=platform_data.default_storefront_id
     )
     
     session.add(new_platform)
@@ -141,6 +156,21 @@ async def update_platform(
     
     # Update fields
     update_data = platform_data.model_dump(exclude_unset=True)
+    
+    # Validate default_storefront_id if provided
+    if "default_storefront_id" in update_data and update_data["default_storefront_id"] is not None:
+        storefront_id = update_data["default_storefront_id"]
+        storefront = session.get(Storefront, storefront_id)
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default storefront not found"
+            )
+        if not storefront.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set inactive storefront as default"
+            )
     
     for field, value in update_data.items():
         if field == "icon_url" and value:

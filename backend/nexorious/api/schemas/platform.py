@@ -13,6 +13,7 @@ class PlatformCreateRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100, description="Display name for platform")
     icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
     is_active: Optional[bool] = Field(True, description="Whether platform is active")
+    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
 
 
 class PlatformUpdateRequest(BaseModel):
@@ -20,6 +21,7 @@ class PlatformUpdateRequest(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100, description="Display name for platform")
     icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
     is_active: Optional[bool] = Field(None, description="Whether platform is active")
+    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
 
 
 class PlatformResponse(BaseModel, TimestampMixin):
