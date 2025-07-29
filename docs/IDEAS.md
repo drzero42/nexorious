@@ -8,7 +8,3 @@ When choosing a platform for a game you are adding, for some platforms there are
 
 ## Filter platforms when adding games from IGDB search
 When adding a game from an IGDB search, there are platforms that the game was published for included. The add screen should filter the list of platforms so only the ones listed in the data from IGDB are shown. The rest should be hidden under a fold-out called "Others". The user should still be allowed to choose from the ones that are under "Others" as the IGDB data might be incorrect.
-
-## Login and Initial Admin Creation form
-The username field should be focused by default on the login and initial admin creation forms.
-The username field should also be first in the tab index.
