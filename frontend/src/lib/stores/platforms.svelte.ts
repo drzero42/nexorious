@@ -416,6 +416,38 @@ function createPlatformsStore() {
       throw new Error('Use store subscription with client-side filtering instead');
     },
 
+    // Fetch active platforms and storefronts for regular users
+    fetchActivePlatformsAndStorefronts: async () => {
+      update(state => ({ ...state, isLoading: true, error: null }));
+      try {
+        // Load only active platforms and storefronts in parallel
+        const [platformsResponse, storefrontsResponse] = await Promise.all([
+          apiCall(`${config.apiUrl}/platforms/?active_only=true`),
+          apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=true`)
+        ]);
+        const [platformsData, storefrontsData] = await Promise.all([
+          platformsResponse.json(),
+          storefrontsResponse.json()
+        ]);
+        
+        update(state => ({
+          ...state,
+          platforms: platformsData.platforms,
+          storefronts: storefrontsData.storefronts,
+          isLoading: false
+        }));
+        
+        return {
+          platforms: platformsData.platforms,
+          storefronts: storefrontsData.storefronts
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch active platforms and storefronts';
+        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        throw error;
+      }
+    },
+
     // Clear error
     clearError: () => {
       update(state => ({ ...state, error: null }));
