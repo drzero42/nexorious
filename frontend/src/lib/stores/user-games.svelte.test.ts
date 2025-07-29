@@ -206,7 +206,7 @@ describe('UserGames Store', () => {
 			await userGamesStore.loadUserGames();
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://localhost:8000/api/user-games?page=1&per_page=20',
+				'http://localhost:8000/api/user-games/?page=1&per_page=20',
 				expect.objectContaining({
 					headers: expect.objectContaining({
 						'Authorization': 'Bearer test-access-token'
@@ -314,7 +314,7 @@ describe('UserGames Store', () => {
 			const result = await userGamesStore.addGameToCollection(gameData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://localhost:8000/api/user-games',
+				'http://localhost:8000/api/user-games/',
 				expect.objectContaining({
 					method: 'POST',
 					body: JSON.stringify(gameData)
