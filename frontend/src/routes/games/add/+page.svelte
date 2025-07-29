@@ -57,6 +57,34 @@
   $: activePlatforms = $platforms.platforms.filter(platform => platform.is_active);
   $: activeStorefronts = $platforms.storefronts.filter(storefront => storefront.is_active);
 
+  // IGDB platform filtering helpers
+  function isPlatformInIGDB(platform: any, igdbPlatforms: string[]): boolean {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return false;
+    
+    return igdbPlatforms.some(igdbPlatform => 
+      igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
+      igdbPlatform.toLowerCase() === platform.name.toLowerCase()
+    );
+  }
+
+  function getIGDBPlatforms(platforms: any[], igdbPlatforms: string[]): any[] {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return [];
+    return platforms.filter(platform => isPlatformInIGDB(platform, igdbPlatforms));
+  }
+
+  function getOtherPlatforms(platforms: any[], igdbPlatforms: string[]): any[] {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return platforms;
+    return platforms.filter(platform => !isPlatformInIGDB(platform, igdbPlatforms));
+  }
+
+  // Reactive statements for filtered platforms
+  $: igdbPlatformNames = selectedGame?.platforms || [];
+  $: igdbPlatforms = getIGDBPlatforms(activePlatforms, igdbPlatformNames);
+  $: otherPlatforms = getOtherPlatforms(activePlatforms, igdbPlatformNames);
+  
+  // Others section expand/collapse state
+  let showOtherPlatforms = false;
+
   // Helper functions for ownership detection
   function isGameOwned(igdbId: string): boolean {
     return userGames.value.userGames.some((userGame: any) => 
@@ -969,71 +997,244 @@
           </div>
         {:else}
           <div class="space-y-3">
-            {#each activePlatforms as platform (platform.id)}
-              <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
-                <!-- Platform Header -->
-                <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
-                  <input
-                    id="platform-{platform.id}"
-                    type="checkbox"
-                    checked={selectedPlatforms.has(platform.id)}
-                    on:change={() => togglePlatform(platform.id)}
-                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <div class="ml-3 flex items-center gap-2 flex-1">
-                    {#if platform.icon_url}
-                      <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
-                    {/if}
-                    <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
-                  </div>
-                  {#if selectedPlatforms.has(platform.id)}
-                    <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
-                  {/if}
-                </label>
-
-                <!-- Platform Details (shown when selected) -->
-                {#if selectedPlatforms.has(platform.id)}
-                  <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
-                      <!-- Storefront Selection -->
-                      <div>
-                        <label for="storefront-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                          Storefront (optional)
-                        </label>
-                        <select
-                          id="storefront-{platform.id}"
-                          value={platformStorefronts.get(platform.id) || ''}
-                          on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                          class="form-input text-sm py-1.5"
-                        >
-                          <option value="">No specific storefront</option>
-                          {#each activeStorefronts as storefront (storefront.id)}
-                            <option value={storefront.id}>{storefront.display_name}</option>
-                          {/each}
-                        </select>
-                      </div>
-
-                      <!-- Store URL -->
-                      <div>
-                        <label for="store-url-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                          Store URL (optional)
-                        </label>
+            <!-- IGDB Platforms Section -->
+            {#if igdbPlatforms.length > 0}
+              <div class="mb-4">
+                <h4 class="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                  <svg class="h-4 w-4 text-primary-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                  Available on these platforms
+                </h4>
+                <div class="space-y-3">
+                  {#each igdbPlatforms as platform (platform.id)}
+                    <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                      <!-- Platform Header -->
+                      <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
                         <input
-                          id="store-url-{platform.id}"
-                          type="url"
-                          value={platformStoreUrls.get(platform.id) || ''}
-                          on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
-                          placeholder="https://store.example.com/game"
-                          class="form-input text-sm py-1.5"
+                          id="platform-{platform.id}"
+                          type="checkbox"
+                          checked={selectedPlatforms.has(platform.id)}
+                          on:change={() => togglePlatform(platform.id)}
+                          class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                         />
-                      </div>
+                        <div class="ml-3 flex items-center gap-2 flex-1">
+                          {#if platform.icon_url}
+                            <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                          {/if}
+                          <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                        </div>
+                        {#if selectedPlatforms.has(platform.id)}
+                          <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                          </svg>
+                        {/if}
+                      </label>
+
+                      <!-- Platform Details (shown when selected) -->
+                      {#if selectedPlatforms.has(platform.id)}
+                        <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                            <!-- Storefront Selection -->
+                            <div>
+                              <label for="storefront-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                Storefront (optional)
+                              </label>
+                              <select
+                                id="storefront-{platform.id}"
+                                value={platformStorefronts.get(platform.id) || ''}
+                                on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                                class="form-input text-sm py-1.5"
+                              >
+                                <option value="">No specific storefront</option>
+                                {#each activeStorefronts as storefront (storefront.id)}
+                                  <option value={storefront.id}>{storefront.display_name}</option>
+                                {/each}
+                              </select>
+                            </div>
+
+                            <!-- Store URL -->
+                            <div>
+                              <label for="store-url-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                Store URL (optional)
+                              </label>
+                              <input
+                                id="store-url-{platform.id}"
+                                type="url"
+                                value={platformStoreUrls.get(platform.id) || ''}
+                                on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                                placeholder="https://store.example.com/game"
+                                class="form-input text-sm py-1.5"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      {/if}
                     </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Others Section -->
+            {#if otherPlatforms.length > 0}
+              <div>
+                <button
+                  type="button"
+                  on:click={() => showOtherPlatforms = !showOtherPlatforms}
+                  class="w-full flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                >
+                  <span class="text-sm font-medium text-gray-700 flex items-center">
+                    <svg class="h-4 w-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
+                    </svg>
+                    Other platforms ({otherPlatforms.length})
+                  </span>
+                  <svg class="h-4 w-4 text-gray-400 transition-transform duration-200 {showOtherPlatforms ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {#if showOtherPlatforms}
+                  <div class="mt-3 space-y-3">
+                    {#each otherPlatforms as platform (platform.id)}
+                      <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                        <!-- Platform Header -->
+                        <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
+                          <input
+                            id="platform-other-{platform.id}"
+                            type="checkbox"
+                            checked={selectedPlatforms.has(platform.id)}
+                            on:change={() => togglePlatform(platform.id)}
+                            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                          />
+                          <div class="ml-3 flex items-center gap-2 flex-1">
+                            {#if platform.icon_url}
+                              <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                            {/if}
+                            <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                          </div>
+                          {#if selectedPlatforms.has(platform.id)}
+                            <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                          {/if}
+                        </label>
+
+                        <!-- Platform Details (shown when selected) -->
+                        {#if selectedPlatforms.has(platform.id)}
+                          <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                              <!-- Storefront Selection -->
+                              <div>
+                                <label for="storefront-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                  Storefront (optional)
+                                </label>
+                                <select
+                                  id="storefront-other-{platform.id}"
+                                  value={platformStorefronts.get(platform.id) || ''}
+                                  on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                                  class="form-input text-sm py-1.5"
+                                >
+                                  <option value="">No specific storefront</option>
+                                  {#each activeStorefronts as storefront (storefront.id)}
+                                    <option value={storefront.id}>{storefront.display_name}</option>
+                                  {/each}
+                                </select>
+                              </div>
+
+                              <!-- Store URL -->
+                              <div>
+                                <label for="store-url-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                  Store URL (optional)
+                                </label>
+                                <input
+                                  id="store-url-other-{platform.id}"
+                                  type="url"
+                                  value={platformStoreUrls.get(platform.id) || ''}
+                                  on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                                  placeholder="https://store.example.com/game"
+                                  class="form-input text-sm py-1.5"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
                   </div>
                 {/if}
               </div>
-            {/each}
+            {/if}
+
+            <!-- Fallback: Show all platforms if no IGDB data -->
+            {#if igdbPlatforms.length === 0 && otherPlatforms.length === 0}
+              {#each activePlatforms as platform (platform.id)}
+                <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                  <!-- Platform Header -->
+                  <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
+                    <input
+                      id="platform-{platform.id}"
+                      type="checkbox"
+                      checked={selectedPlatforms.has(platform.id)}
+                      on:change={() => togglePlatform(platform.id)}
+                      class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <div class="ml-3 flex items-center gap-2 flex-1">
+                      {#if platform.icon_url}
+                        <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                      {/if}
+                      <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                    </div>
+                    {#if selectedPlatforms.has(platform.id)}
+                      <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                      </svg>
+                    {/if}
+                  </label>
+
+                  <!-- Platform Details (shown when selected) -->
+                  {#if selectedPlatforms.has(platform.id)}
+                    <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                        <!-- Storefront Selection -->
+                        <div>
+                          <label for="storefront-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                            Storefront (optional)
+                          </label>
+                          <select
+                            id="storefront-{platform.id}"
+                            value={platformStorefronts.get(platform.id) || ''}
+                            on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                            class="form-input text-sm py-1.5"
+                          >
+                            <option value="">No specific storefront</option>
+                            {#each activeStorefronts as storefront (storefront.id)}
+                              <option value={storefront.id}>{storefront.display_name}</option>
+                            {/each}
+                          </select>
+                        </div>
+
+                        <!-- Store URL -->
+                        <div>
+                          <label for="store-url-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                            Store URL (optional)
+                          </label>
+                          <input
+                            id="store-url-{platform.id}"
+                            type="url"
+                            value={platformStoreUrls.get(platform.id) || ''}
+                            on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                            placeholder="https://store.example.com/game"
+                            class="form-input text-sm py-1.5"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            {/if}
             
             {#if activePlatforms.length === 0}
               <div class="text-center py-8">
@@ -1404,73 +1605,248 @@
               </div>
             {:else}
               <div class="space-y-3">
-                {#each activePlatforms as platform (platform.id)}
-                  <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
-                    <!-- Platform Header -->
-                    <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
-                      <input
-                        id="platform-details-{platform.id}"
-                        type="checkbox"
-                        checked={selectedPlatforms.has(platform.id)}
-                        on:change={() => togglePlatform(platform.id)}
-                        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                      />
-                      <div class="ml-3 flex items-center gap-2 flex-1">
-                        {#if platform.icon_url}
-                          <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
-                        {/if}
-                        <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
-                      </div>
-                      {#if selectedPlatforms.has(platform.id)}
-                        <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                        </svg>
-                      {/if}
-                    </label>
-
-                    <!-- Platform Details (shown when selected) -->
-                    {#if selectedPlatforms.has(platform.id)}
-                      <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
-                          <!-- Storefront Selection -->
-                          <div>
-                            <label for="storefront-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                              Storefront (optional)
-                            </label>
-                            <select
-                              id="storefront-details-{platform.id}"
-                              value={platformStorefronts.get(platform.id) || ''}
-                              on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                              class="form-input text-sm py-1.5"
-                            >
-                              <option value="">No specific storefront</option>
-                              {#each activeStorefronts as storefront (storefront.id)}
-                                <option value={storefront.id}>{storefront.display_name}</option>
-                              {/each}
-                            </select>
-                          </div>
-
-                          <!-- Store URL -->
-                          <div>
-                            <label for="store-url-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                              Store URL (optional)
-                            </label>
+                <!-- IGDB Platforms Section -->
+                {#if igdbPlatforms.length > 0}
+                  <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                      <svg class="h-4 w-4 text-primary-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                      </svg>
+                      Available on these platforms
+                    </h4>
+                    <div class="space-y-3">
+                      {#each igdbPlatforms as platform (platform.id)}
+                        <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                          <!-- Platform Header -->
+                          <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
                             <input
-                              id="store-url-details-{platform.id}"
-                              type="url"
-                              value={platformStoreUrls.get(platform.id) || ''}
-                              on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
-                              placeholder="https://store.example.com/game"
-                              class="form-input text-sm py-1.5"
+                              id="platform-details-{platform.id}"
+                              type="checkbox"
+                              checked={selectedPlatforms.has(platform.id)}
+                              on:change={() => togglePlatform(platform.id)}
+                              class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                             />
-                          </div>
+                            <div class="ml-3 flex items-center gap-2 flex-1">
+                              {#if platform.icon_url}
+                                <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                              {/if}
+                              <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                            </div>
+                            {#if selectedPlatforms.has(platform.id)}
+                              <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                              </svg>
+                            {/if}
+                          </label>
+
+                          <!-- Platform Details (shown when selected) -->
+                          {#if selectedPlatforms.has(platform.id)}
+                            <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                                <!-- Storefront Selection -->
+                                <div>
+                                  <label for="storefront-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                    Storefront (optional)
+                                  </label>
+                                  <select
+                                    id="storefront-details-{platform.id}"
+                                    value={platformStorefronts.get(platform.id) || ''}
+                                    on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                                    class="form-input text-sm py-1.5"
+                                  >
+                                    <option value="">No specific storefront</option>
+                                    {#each activeStorefronts as storefront (storefront.id)}
+                                      <option value={storefront.id}>{storefront.display_name}</option>
+                                    {/each}
+                                  </select>
+                                </div>
+
+                                <!-- Store URL -->
+                                <div>
+                                  <label for="store-url-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                    Store URL (optional)
+                                  </label>
+                                  <input
+                                    id="store-url-details-{platform.id}"
+                                    type="url"
+                                    value={platformStoreUrls.get(platform.id) || ''}
+                                    on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                                    placeholder="https://store.example.com/game"
+                                    class="form-input text-sm py-1.5"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          {/if}
                         </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Others Section -->
+                {#if otherPlatforms.length > 0}
+                  <div>
+                    <button
+                      type="button"
+                      on:click={() => showOtherPlatforms = !showOtherPlatforms}
+                      class="w-full flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                    >
+                      <span class="text-sm font-medium text-gray-700 flex items-center">
+                        <svg class="h-4 w-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
+                        </svg>
+                        Other platforms ({otherPlatforms.length})
+                      </span>
+                      <svg class="h-4 w-4 text-gray-400 transition-transform duration-200 {showOtherPlatforms ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    
+                    {#if showOtherPlatforms}
+                      <div class="mt-3 space-y-3">
+                        {#each otherPlatforms as platform (platform.id)}
+                          <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                            <!-- Platform Header -->
+                            <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
+                              <input
+                                id="platform-details-other-{platform.id}"
+                                type="checkbox"
+                                checked={selectedPlatforms.has(platform.id)}
+                                on:change={() => togglePlatform(platform.id)}
+                                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                              />
+                              <div class="ml-3 flex items-center gap-2 flex-1">
+                                {#if platform.icon_url}
+                                  <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                                {/if}
+                                <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                              </div>
+                              {#if selectedPlatforms.has(platform.id)}
+                                <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                </svg>
+                              {/if}
+                            </label>
+
+                            <!-- Platform Details (shown when selected) -->
+                            {#if selectedPlatforms.has(platform.id)}
+                              <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                                  <!-- Storefront Selection -->
+                                  <div>
+                                    <label for="storefront-details-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                      Storefront (optional)
+                                    </label>
+                                    <select
+                                      id="storefront-details-other-{platform.id}"
+                                      value={platformStorefronts.get(platform.id) || ''}
+                                      on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                                      class="form-input text-sm py-1.5"
+                                    >
+                                      <option value="">No specific storefront</option>
+                                      {#each activeStorefronts as storefront (storefront.id)}
+                                        <option value={storefront.id}>{storefront.display_name}</option>
+                                      {/each}
+                                    </select>
+                                  </div>
+
+                                  <!-- Store URL -->
+                                  <div>
+                                    <label for="store-url-details-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                      Store URL (optional)
+                                    </label>
+                                    <input
+                                      id="store-url-details-other-{platform.id}"
+                                      type="url"
+                                      value={platformStoreUrls.get(platform.id) || ''}
+                                      on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                                      placeholder="https://store.example.com/game"
+                                      class="form-input text-sm py-1.5"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            {/if}
+                          </div>
+                        {/each}
                       </div>
                     {/if}
                   </div>
-                {/each}
-                
-                {#if activePlatforms.length === 0}
+                {/if}
+
+                <!-- Fallback: Show all platforms if no IGDB data -->
+                {#if igdbPlatforms.length === 0 && otherPlatforms.length === 0}
+                  {#each activePlatforms as platform (platform.id)}
+                    <div class="border border-gray-200 rounded-lg overflow-hidden transition-all duration-200 {selectedPlatforms.has(platform.id) ? 'border-primary-300 shadow-sm' : ''}">
+                      <!-- Platform Header -->
+                      <label class="flex items-center p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200">
+                        <input
+                          id="platform-details-{platform.id}"
+                          type="checkbox"
+                          checked={selectedPlatforms.has(platform.id)}
+                          on:change={() => togglePlatform(platform.id)}
+                          class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                        />
+                        <div class="ml-3 flex items-center gap-2 flex-1">
+                          {#if platform.icon_url}
+                            <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                          {/if}
+                          <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                        </div>
+                        {#if selectedPlatforms.has(platform.id)}
+                          <svg class="h-5 w-5 text-primary-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                          </svg>
+                        {/if}
+                      </label>
+
+                      <!-- Platform Details (shown when selected) -->
+                      {#if selectedPlatforms.has(platform.id)}
+                        <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                            <!-- Storefront Selection -->
+                            <div>
+                              <label for="storefront-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                Storefront (optional)
+                              </label>
+                              <select
+                                id="storefront-details-{platform.id}"
+                                value={platformStorefronts.get(platform.id) || ''}
+                                on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
+                                class="form-input text-sm py-1.5"
+                              >
+                                <option value="">No specific storefront</option>
+                                {#each activeStorefronts as storefront (storefront.id)}
+                                  <option value={storefront.id}>{storefront.display_name}</option>
+                                {/each}
+                              </select>
+                            </div>
+
+                            <!-- Store URL -->
+                            <div>
+                              <label for="store-url-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                Store URL (optional)
+                              </label>
+                              <input
+                                id="store-url-details-{platform.id}"
+                                type="url"
+                                value={platformStoreUrls.get(platform.id) || ''}
+                                on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                                placeholder="https://store.example.com/game"
+                                class="form-input text-sm py-1.5"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+            
+            {#if activePlatforms.length === 0}
                   <div class="text-center py-8">
                     <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -1480,8 +1856,6 @@
                   </div>
                 {/if}
               </div>
-            {/if}
-          </div>
 
           <!-- Personal Notes -->
           <div class="space-y-4">
