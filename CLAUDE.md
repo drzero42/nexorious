@@ -4,14 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python project named "nexorious" that appears to be in its initial setup phase. The repository currently contains only basic project structure files and is licensed under the MIT License.
+This is a project named "nexorious". The backend is written in Python with FastAPI and the frontend is written in Typescript with Svelte. It is licensed under the MIT License.
 
 ## Repository Structure
 
-The project is currently minimal with only essential files:
-- `README.md` - Basic project information
+The project is a full-featured game collection management service with comprehensive backend and frontend implementations:
+
+### Core Directories
+- `backend/` - FastAPI Python backend with complete API implementation
+  - `nexorious/` - Main application package with API routes, models, services
+  - `alembic/` - Database migration management
+  - `storage/` - File storage for cover art and uploads
+  - `tests/` - Comprehensive test suite with >80% coverage
+- `frontend/` - SvelteKit TypeScript frontend with complete UI
+  - `src/` - Application source code with components, routes, stores
+  - `tests/` - Frontend test suite with >70% coverage
+  - `static/` - Static assets and PWA configuration
+- `docs/` - Project documentation and planning
+  - `PRD.md` - Product Requirements Document
+  - `TASK_BREAKDOWN.md` - Detailed task tracking
+  - `wireframes/` - UI/UX design mockups
+- `storage/` - Runtime file storage for cover art
+
+### Configuration Files
+- `flake.nix` / `flake.lock` - Nix development environment
+- `backend/pyproject.toml` - Python dependencies and project configuration
+- `frontend/package.json` - Node.js dependencies and scripts
+- `README.md` - Project overview and setup instructions
 - `LICENSE` - MIT license
-- `.gitignore` - Python-focused gitignore with comprehensive exclusions
 
 ## Development Environment
 
@@ -22,25 +42,199 @@ The project includes a `flake.nix` file that provides a reproducible development
 - Uses nixpkgs unstable for latest packages
 
 ### Python Package Managers
-Based on the `.gitignore` file, this project is set up to support multiple Python package managers and tools:
-- Standard Python development (pip, setuptools)
-- Modern Python tooling (uv, poetry, pdm, pixi)
+This project uses **uv** for Python dependency management with support for:
+- Standard Python development
+- Modern Python tooling
 - Development tools (pytest, mypy, ruff)
 - IDE support (PyCharm, VSCode, Cursor)
-- Jupyter notebooks and documentation tools
+
+## Backend Development
+
+### Setup and Dependencies
+```bash
+cd /home/abo/workspace/home/nexorious/backend
+uv sync  # Install all dependencies including dev dependencies
+```
+
+### Database Management
+```bash
+# Run database migrations
+uv run alembic upgrade head
+
+# Create new migration (after model changes)
+uv run alembic revision --autogenerate -m "description of changes"
+```
+
+### Development Server
+```bash
+# Start development server with auto-reload
+uv run python -m nexorious.main
+
+# Alternative using uvicorn directly
+uv run uvicorn nexorious.main:app --reload
+```
+
+### Testing and Quality Assurance
+```bash
+# Run all tests
+uv run pytest
+
+# Run tests with coverage (target >80%)
+uv run pytest --cov=nexorious --cov-report=term-missing
+
+# Generate HTML coverage report
+uv run pytest --cov=nexorious --cov-report=html
+
+# Run specific test file
+uv run pytest nexorious/tests/test_business_logic.py
+
+# Run tests with verbose output
+uv run pytest -v
+```
+
+### API Documentation
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc  
+- Health check: http://localhost:8000/health
+
+## Frontend Development
+
+### Setup and Dependencies
+```bash
+cd /home/abo/workspace/home/nexorious/frontend
+npm install  # Install all dependencies
+```
+
+### Development Server
+```bash
+# Start development server with hot reload
+npm run dev
+```
+
+### Building and Checking
+```bash
+# Type checking and validation
+npm run check
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Testing
+```bash
+# Run all tests
+npm run test
+
+# Run tests with coverage (target >70%)
+npm run test:coverage
+
+# Run tests with UI
+npm run test:ui
+
+# Run tests once (CI mode)
+npm run test:run
+```
+
+## Testing Framework and Coverage Requirements
+
+### Backend Testing (pytest)
+- **Framework**: pytest with pytest-asyncio for async testing
+- **Coverage Target**: >80% for all business logic, API endpoints, and services
+- **Test Types**:
+  - Unit tests for models, services, and business logic
+  - Integration tests for API endpoints with database
+  - External API integration tests with mocking (IGDB)
+- **Coverage Analysis**: HTML reports generated in `htmlcov/` directory
+- **Database Testing**: Supports both PostgreSQL and SQLite test databases
+
+### Frontend Testing (Vitest)
+- **Framework**: Vitest with @testing-library/svelte
+- **Coverage Target**: >70% for components, stores, and utilities  
+- **Test Types**:
+  - Unit tests for Svelte components and stores
+  - Integration tests for user workflows
+  - Utility function tests
+- **Coverage Analysis**: HTML reports generated in `coverage/` directory
+- **DOM Testing**: jsdom environment with @testing-library utilities
+
+### Test Naming Conventions
+- Backend: `test_*.py` files in `nexorious/tests/`
+- Frontend: `*.test.ts` files alongside source code (NOT starting with `+` for Svelte files)
 
 ## Standard operating procedure
 
 These rules must always be adhered to during development.
-- This project has a frontend and a backend. They live in dirs called frontend and backend.
+
+### Directory and Command Management
+- This project has a frontend and a backend. They live in dirs called `frontend/` and `backend/`.
 - Always cd into the frontend dir before running commands related to the frontend.
 - Always cd into the backend dir before running commands related to the backend.
 - When running cd always use full paths.
+- Always use `uv run python` instead of just `python` for backend commands.
+
+### Planning and Documentation
 - Before performing any work always read @docs/PRD.md and @docs/TASK_BREAKDOWN.md
 - When a task has been implemented mark the task(s) as done in the task breakdown
 - When you are writing code, please use context7 MCP to learn the APIs used and verify that your generated code is valid
+
+### Version Control and Branching
 - When you are asked to work on a task you will create a branch that contains the task name.
 - When you are told 'lets work on task XXX' you must first create a branch that contains the task name.
-- Always use `uv run python` instead of just `python`
-- For Svelte Typescript tests, the filename is not allowed to start with +
+
+### Frontend Development Rules
+- For Svelte Typescript tests, the filename is not allowed to start with `+`
 - Whenever you have created any Svelte code, run `npm run check` and fix any errors found
+- Run `npm run test` after making frontend changes to ensure tests pass
+
+### Backend Development Rules  
+- Run database migrations with `uv run alembic upgrade head` after pulling changes
+- Run `uv run pytest --cov=nexorious --cov-report=term-missing` to verify test coverage meets >80% requirement
+- Always test API endpoints manually using Swagger UI at http://localhost:8000/docs
+
+### Quality Assurance
+- Backend code coverage must maintain >80%
+- Frontend code coverage must maintain >70%
+- All tests must pass before committing changes
+- Use type checking tools (`npm run check` for frontend, mypy via pytest for backend)
+
+## Project Architecture
+
+### Backend Stack
+- **Framework**: FastAPI (Python 3.13) - High-performance async web framework  
+- **Database**: SQLModel ORM supporting both PostgreSQL (production) and SQLite (development)
+- **Migrations**: Alembic for database schema versioning
+- **Authentication**: JWT tokens with refresh mechanism
+- **External APIs**: IGDB integration for game metadata and cover art
+- **File Storage**: Local filesystem storage for cover art with configurable paths
+- **Testing**: pytest with >80% coverage requirement
+
+### Frontend Stack  
+- **Framework**: SvelteKit with TypeScript - Modern reactive frontend framework
+- **Styling**: Tailwind CSS for utility-first styling
+- **State Management**: Svelte stores for reactive state
+- **Rich Text**: TipTap editor for notes and descriptions
+- **Build Tool**: Vite for fast development and optimized builds
+- **Testing**: Vitest with @testing-library/svelte, >70% coverage requirement
+
+### Database Design
+- **Primary Database**: PostgreSQL for production deployments
+- **Development Database**: SQLite for local development and testing
+- **Schema**: Comprehensive game collection models with platform/storefront relationships
+- **Migrations**: Automatic schema management via Alembic
+- **Seeding**: Idempotent seed data for platforms and storefronts
+
+### External Integrations
+- **IGDB API**: Game metadata, cover art, and completion time estimates
+- **Cover Art Storage**: Automatic download and local storage during game import
+- **Platform Support**: Multi-platform game ownership tracking
+- **Storefront Integration**: Support for Steam, Epic, GOG, PlayStation, Xbox, Nintendo, and physical media
+
+### Development Workflow
+1. **Planning**: Tasks defined in `docs/TASK_BREAKDOWN.md`
+2. **Development**: Feature branches with descriptive names
+3. **Testing**: Automated testing with coverage requirements
+4. **Quality Assurance**: Type checking and linting
+5. **Documentation**: Comprehensive API documentation via OpenAPI/Swagger
