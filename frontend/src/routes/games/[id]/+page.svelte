@@ -163,27 +163,13 @@
   }
 
   function confirmRemovePlatform(platformAssociationId: string, platformName: string, storefrontName: string) {
-    console.log('🗑️ Remove button clicked:', { 
-      platformAssociationId, 
-      platformName, 
-      storefrontName,
-      gamePlatformsCount: game?.platforms?.length,
-      allPlatforms: game?.platforms,
-      groupedPlatforms: game?.platforms ? groupPlatformsByPlatform(game.platforms) : []
-    });
-    
     // Check if this would leave the game with no platform associations
-    // Note: game.platforms contains UserGamePlatform objects (platform-storefront combinations)
-    // We should prevent removal only if this is the last platform association
     if (game && game.platforms && game.platforms.length <= 1) {
-      console.log('❌ Cannot remove - only one platform association remaining');
       notifications.showError('Cannot remove the last platform. Games must have at least one platform.');
       return;
     }
     
-    console.log('✅ Setting platformToRemove');
     platformToRemove = { platformAssociationId, platformName, storefrontName };
-    console.log('✅ platformToRemove set:', platformToRemove);
   }
 
   function cancelRemovePlatform() {
@@ -890,11 +876,7 @@
                                   {/if}
                                   <button 
                                     type="button"
-                                    on:click={() => {
-                                      console.log('🖱️ Button clicked, storefront data:', storefront);
-                                      console.log('🖱️ Button disabled state:', game && game.platforms && game.platforms.length <= 1);
-                                      confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront');
-                                    }}
+                                    on:click={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
                                     class="text-red-600 hover:text-red-800 flex-shrink-0 ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                     title={game && game.platforms && game.platforms.length <= 1 ? "Cannot remove - game must have at least one platform" : "Remove this platform/storefront combination"}
                                     aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
