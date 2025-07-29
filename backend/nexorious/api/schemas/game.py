@@ -60,6 +60,7 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_extra: Optional[int]
     howlongtobeat_completionist: Optional[int]
     igdb_id: Optional[str]
+    igdb_platform_ids: Optional[str]
     is_verified: bool
     aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
 

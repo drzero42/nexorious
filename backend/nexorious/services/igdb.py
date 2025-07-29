@@ -19,6 +19,24 @@ from nexorious.services.storage import storage_service
 
 logger = logging.getLogger(__name__)
 
+# IGDB Platform ID to internal platform name mapping
+# Based on IGDB platform IDs from their API documentation
+IGDB_PLATFORM_MAPPING = {
+    6: "pc-windows",         # PC (Microsoft Windows)
+    3: "pc-windows",         # Linux (map to PC Windows for simplicity) 
+    14: "pc-windows",        # Mac (map to PC Windows for simplicity)
+    48: "playstation-4",     # PlayStation 4
+    167: "playstation-5",    # PlayStation 5
+    9: "playstation-3",      # PlayStation 3
+    49: "xbox-one",          # Xbox One
+    169: "xbox-series",      # Xbox Series X|S
+    12: "xbox-360",          # Xbox 360
+    130: "nintendo-switch",  # Nintendo Switch
+    5: "nintendo-wii",       # Nintendo Wii
+    39: "ios",               # iOS
+    34: "android",           # Android
+}
+
 
 @dataclass
 class GameMetadata:
@@ -39,6 +57,9 @@ class GameMetadata:
     hastily: Optional[int] = None
     normally: Optional[int] = None
     completely: Optional[int] = None
+    # Platform data from IGDB
+    igdb_platform_ids: Optional[List[int]] = None
+    platform_names: Optional[List[str]] = None
 
 
 class TwitchAuthError(Exception):
@@ -142,7 +163,7 @@ class IGDBService:
             igdb_query = f'''
                 fields id, name, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
-                       first_release_date, cover.image_id, rating, rating_count;
+                       first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
                 search "{query.strip()}";
                 limit {limit * 2};
             '''
@@ -230,7 +251,7 @@ class IGDBService:
             igdb_query = f'''
                 fields id, name, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
-                       first_release_date, cover.image_id, rating, rating_count;
+                       first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
                 where id = {igdb_id};
             '''
             
@@ -335,6 +356,20 @@ class IGDBService:
                 image_id = game_data['cover']['image_id']
                 cover_art_url = f"https://images.igdb.com/igdb/image/upload/t_cover_big/{image_id}.jpg"
             
+            # Extract platform data
+            igdb_platform_ids = []
+            platform_names = []
+            platforms = game_data.get('platforms', [])
+            for platform in platforms:
+                platform_id = platform.get('id')
+                if platform_id and platform_id in IGDB_PLATFORM_MAPPING:
+                    igdb_platform_ids.append(platform_id)
+                    platform_names.append(IGDB_PLATFORM_MAPPING[platform_id])
+            
+            # Only set platform data if we found any mapped platforms
+            igdb_platform_ids = igdb_platform_ids if igdb_platform_ids else None
+            platform_names = platform_names if platform_names else None
+            
             return GameMetadata(
                 igdb_id=str(game_data['id']),
                 title=game_data.get('name', ''),
@@ -350,7 +385,10 @@ class IGDBService:
                 # Time-to-beat data will be populated separately
                 hastily=None,
                 normally=None,
-                completely=None
+                completely=None,
+                # Platform data from IGDB
+                igdb_platform_ids=igdb_platform_ids,
+                platform_names=platform_names
             )
             
         except Exception as e:

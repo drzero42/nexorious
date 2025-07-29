@@ -59,7 +59,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Metadata population and refresh capabilities
 - [x] Cover art download and storage (automatic during import)
 - [x] How Long to Beat integration
-- [ ] IGDB platform data caching and retrieval for platform filtering
+- [x] IGDB platform data caching and retrieval for platform filtering
 
 ### 1.2 Frontend Foundation
 
