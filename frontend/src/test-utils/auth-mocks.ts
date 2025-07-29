@@ -30,7 +30,7 @@ export const mockAuthStore = {
   logout: vi.fn(),
   refreshAuth: vi.fn(),
   clearError: vi.fn(),
-  checkSetupStatus: vi.fn(),
+  checkSetupStatus: vi.fn().mockResolvedValue({ needs_setup: false }),
   createInitialAdmin: vi.fn(),
   checkUsernameAvailability: vi.fn(),
   changeUsername: vi.fn(),
@@ -52,6 +52,8 @@ const mockUIStore = {
   removeNotification: vi.fn(),
   clearNotifications: vi.fn()
 };
+
+// Note: SvelteKit navigation is mocked locally in individual test files as needed
 
 vi.mock('$lib/stores', () => ({
   auth: mockAuthStore,
@@ -93,6 +95,18 @@ export function setErrorState(error: string) {
   };
 }
 
+export function setSetupNeeded() {
+  mockAuthStore.checkSetupStatus.mockResolvedValue({ needs_setup: true });
+}
+
+export function setSetupNotNeeded() {
+  mockAuthStore.checkSetupStatus.mockResolvedValue({ needs_setup: false });
+}
+
+export function setSetupStatusError(error: string = 'Setup status check failed') {
+  mockAuthStore.checkSetupStatus.mockRejectedValue(new Error(error));
+}
+
 export function resetAuthMocks() {
   mockAuthStore.login.mockClear();
   mockAuthStore.register.mockClear();
@@ -115,4 +129,5 @@ export function resetAuthMocks() {
   mockUIStore.clearNotifications.mockClear();
   
   setUnauthenticatedState();
+  setSetupNotNeeded(); // Default to setup not needed
 }

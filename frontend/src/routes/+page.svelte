@@ -1,5 +1,34 @@
 <script lang="ts">
  import { auth } from '$lib/stores';
+ import { goto } from '$app/navigation';
+ import { onMount } from 'svelte';
+
+ let isCheckingAuth = false;
+
+ onMount(async () => {
+   // If user is not authenticated, check setup status and redirect appropriately
+   if (!auth.value.user) {
+     isCheckingAuth = true;
+     
+     try {
+       const setupStatus = await auth.checkSetupStatus();
+       
+       if (setupStatus.needs_setup) {
+         // Redirect to initial admin setup
+         goto('/setup');
+       } else {
+         // Redirect to login page
+         goto('/login');
+       }
+     } catch (error) {
+       console.error('Failed to check setup status:', error);
+       // Default to login page on error
+       goto('/login');
+     } finally {
+       isCheckingAuth = false;
+     }
+   }
+ });
 </script>
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -74,17 +103,25 @@
      </a>
     </div>
    </div>
-  {:else}
-   <!-- Not logged in -->
+  {:else if isCheckingAuth}
+   <!-- Checking authentication status -->
    <div class="mt-12 text-center">
-    <p class="text-lg text-gray-600 mb-6">
-     Please log in with your username to start managing your game collection
-    </p>
-    <div class="space-x-4">
-     <a href="/login" class="btn-primary">
-      Login
-     </a>
+    <div class="flex items-center justify-center mb-4">
+     <svg class="animate-spin h-8 w-8 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+     </svg>
     </div>
+    <p class="text-lg text-gray-600">
+     Checking authentication status...
+    </p>
+   </div>
+  {:else}
+   <!-- Fallback - should not normally be seen due to redirects -->
+   <div class="mt-12 text-center">
+    <p class="text-lg text-gray-600">
+     Redirecting to login...
+    </p>
    </div>
   {/if}
  </div>
