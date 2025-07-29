@@ -31,6 +31,15 @@ class PlayStatus(str, Enum):
     REPLAY = "replay"
 
 
+class UserGamePlatformCreateRequest(BaseModel):
+    """Request schema for adding platform association to user game."""
+    platform_id: str = Field(..., description="Platform ID")
+    storefront_id: Optional[str] = Field(None, description="Storefront ID")
+    store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
+    store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
+    is_available: bool = Field(default=True, description="Whether the game is available on this platform")
+
+
 class UserGameCreateRequest(BaseModel):
     """Request schema for adding a game to user's collection."""
     game_id: str = Field(..., description="Game ID to add to collection")
@@ -41,7 +50,7 @@ class UserGameCreateRequest(BaseModel):
     hours_played: int = Field(default=0, ge=0, description="Hours played")
     personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
     acquired_date: Optional[date] = Field(None, description="Date when game was acquired")
-    platforms: Optional[List[str]] = Field(default_factory=list, description="Platform IDs where game is owned")
+    platforms: Optional[List[UserGamePlatformCreateRequest]] = Field(default_factory=list, description="Platform associations with complete details")
 
 
 class UserGameUpdateRequest(BaseModel):
@@ -60,15 +69,6 @@ class ProgressUpdateRequest(BaseModel):
     play_status: PlayStatus = Field(..., description="Current play status")
     hours_played: Optional[int] = Field(None, ge=0, description="Hours played")
     personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
-
-
-class UserGamePlatformCreateRequest(BaseModel):
-    """Request schema for adding platform association to user game."""
-    platform_id: str = Field(..., description="Platform ID")
-    storefront_id: Optional[str] = Field(None, description="Storefront ID")
-    store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
-    store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
-    is_available: bool = Field(default=True, description="Whether the game is available on this platform")
 
 
 class UserGamePlatformResponse(BaseModel, TimestampMixin):

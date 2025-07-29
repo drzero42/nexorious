@@ -411,17 +411,31 @@ async def add_game_to_collection(
     # Add platform associations if provided
     if user_game_data.platforms:
         logger.info(f"Adding {len(user_game_data.platforms)} platforms to user game")
-        for platform_id in user_game_data.platforms:
-            platform = session.get(Platform, platform_id)
-            if platform:
-                platform_assoc = UserGamePlatform(
-                    user_game_id=new_user_game.id,
-                    platform_id=platform_id
-                )
-                session.add(platform_assoc)
-                logger.info(f"Added platform {platform_id} to user game {new_user_game.id}")
-            else:
-                logger.warning(f"Platform not found: {platform_id}")
+        for platform_data in user_game_data.platforms:
+            # Validate platform exists
+            platform = session.get(Platform, platform_data.platform_id)
+            if not platform:
+                logger.warning(f"Platform not found: {platform_data.platform_id}")
+                continue
+            
+            # Validate storefront exists if provided
+            if platform_data.storefront_id:
+                storefront = session.get(Storefront, platform_data.storefront_id)
+                if not storefront:
+                    logger.warning(f"Storefront not found: {platform_data.storefront_id}")
+                    continue
+            
+            # Create complete platform association
+            platform_assoc = UserGamePlatform(
+                user_game_id=new_user_game.id,
+                platform_id=platform_data.platform_id,
+                storefront_id=platform_data.storefront_id,
+                store_game_id=platform_data.store_game_id,
+                store_url=str(platform_data.store_url) if platform_data.store_url else None,
+                is_available=platform_data.is_available
+            )
+            session.add(platform_assoc)
+            logger.info(f"Added platform {platform_data.platform_id} with storefront {platform_data.storefront_id} to user game {new_user_game.id}")
         
         session.commit()
         logger.info("Committed platform associations")
