@@ -78,14 +78,11 @@
    <!-- Not logged in -->
    <div class="mt-12 text-center">
     <p class="text-lg text-gray-600 mb-6">
-     Please log in to start managing your game collection
+     Please log in with your username to start managing your game collection
     </p>
     <div class="space-x-4">
      <a href="/login" class="btn-primary">
       Login
-     </a>
-     <a href="/register" class="btn-secondary">
-      Register
      </a>
     </div>
    </div>
