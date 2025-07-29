@@ -10,6 +10,8 @@
   $: statistics = $admin.statistics;
   $: error = $admin.error;
   $: isAdminLoading = $admin.isLoading;
+  $: seedDataResult = $admin.seedDataResult;
+  $: isSeedDataLoading = $admin.isSeedDataLoading;
 
   onMount(async () => {
     // Check if user is admin
@@ -36,6 +38,21 @@
       minute: '2-digit'
     });
   }
+
+  async function handleLoadSeedData() {
+    const confirmed = confirm(
+      'This will load official platforms, storefronts, and their default mappings into the database. ' +
+      'Existing data will be preserved. Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      await admin.loadSeedData();
+    } catch (err) {
+      console.error('Failed to load seed data:', err);
+    }
+  }
 </script>
 
 <RouteGuard requireAdmin={true}>
@@ -61,6 +78,43 @@
                 on:click={() => admin.clearError()}
                 type="button"
                 class="rounded-md bg-red-50 text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Seed Data Result -->
+    {#if seedDataResult}
+      <div class="rounded-md bg-green-50 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <div class="text-green-400">
+              <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+            </div>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-green-800">Seed Data Loading Complete</h3>
+            <div class="mt-2 text-sm text-green-700">
+              <p>{seedDataResult.message}</p>
+              {#if seedDataResult.total_changes > 0}
+                <ul class="mt-2 list-disc list-inside">
+                  <li>{seedDataResult.platforms_added} platforms added/updated</li>
+                  <li>{seedDataResult.storefronts_added} storefronts added/updated</li>
+                  <li>{seedDataResult.mappings_created} default mappings created</li>
+                </ul>
+              {/if}
+            </div>
+            <div class="mt-4">
+              <button
+                on:click={() => admin.clearSeedDataResult()}
+                type="button"
+                class="rounded-md bg-green-50 text-green-800 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
               >
                 Dismiss
               </button>
@@ -232,6 +286,19 @@
               <span class="mr-2">🎮</span>
               Manage Platforms
             </a>
+            <button
+              on:click={handleLoadSeedData}
+              disabled={isSeedDataLoading}
+              class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {#if isSeedDataLoading}
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                Loading...
+              {:else}
+                <span class="mr-2">📦</span>
+                Load Seed Data
+              {/if}
+            </button>
           </div>
         </div>
       </div>
