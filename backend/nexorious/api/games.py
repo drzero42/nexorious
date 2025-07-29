@@ -393,17 +393,8 @@ async def search_igdb(
         # Convert GameMetadata objects to IGDBGameCandidate objects
         candidates = []
         for metadata in game_metadata_list:
-            # Extract platform info from metadata if available
-            platforms = []
-            if metadata.description:
-                # Basic platform extraction - these are actual platforms, not storefronts
-                platform_keywords = ["PC", "PlayStation", "Xbox", "Nintendo", "Switch", "Steam Deck", "Mac", "Linux"]
-                for keyword in platform_keywords:
-                    if keyword.lower() in metadata.description.lower():
-                        platforms.append(keyword)
-            
-            if not platforms:
-                platforms = ["PC"]  # Default platform
+            # Use IGDB platform data if available, otherwise empty list
+            platforms = metadata.platform_names if metadata.platform_names else []
             
             candidate = IGDBGameCandidate(
                 igdb_id=metadata.igdb_id,
@@ -490,6 +481,7 @@ async def import_from_igdb(
             "howlongtobeat_extra": game_metadata.normally,
             "howlongtobeat_completionist": game_metadata.completely,
             "igdb_id": game_metadata.igdb_id,
+            "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids) if game_metadata.igdb_platform_ids else None,
             "game_metadata": "{}",
             "is_verified": True  # Games imported from IGDB are considered verified
         }

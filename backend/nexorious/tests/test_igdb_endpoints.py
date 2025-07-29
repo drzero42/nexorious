@@ -83,7 +83,9 @@ class TestIGDBSearchEndpoint:
                 developer="Test Studio",
                 publisher="Test Publisher",
                 release_date="2023-01-01",
-                cover_art_url="https://example.com/cover.jpg"
+                cover_art_url="https://example.com/cover.jpg",
+                igdb_platform_ids=[6, 48],
+                platform_names=["pc-windows", "playstation-4"]
             )
         ]
         
@@ -106,8 +108,8 @@ class TestIGDBSearchEndpoint:
             assert candidate["igdb_id"] == "123"
             assert candidate["title"] == "Test Game"
             assert candidate["description"] == "A test game for PC and PlayStation"
-            assert "PC" in candidate["platforms"]
-            assert "PlayStation" in candidate["platforms"]
+            assert "pc-windows" in candidate["platforms"]
+            assert "playstation-4" in candidate["platforms"]
             
         finally:
             # Clean up overrides
@@ -183,7 +185,9 @@ class TestIGDBSearchEndpoint:
                 igdb_id="123",
                 title="Test Game",
                 description="Available on PC, PlayStation 5, Xbox Series X/S and Nintendo Switch",
-                genre="Action"
+                genre="Action",
+                igdb_platform_ids=[6, 167, 169, 130],
+                platform_names=["pc-windows", "playstation-5", "xbox-series", "nintendo-switch"]
             )
         ]
         
@@ -203,11 +207,11 @@ class TestIGDBSearchEndpoint:
             candidate = data["games"][0]
             platforms = candidate["platforms"]
             
-            # Should extract multiple platforms from description
-            assert "PC" in platforms
-            assert "PlayStation" in platforms
-            assert "Xbox" in platforms
-            assert "Nintendo" in platforms
+            # Should extract multiple platforms from IGDB data
+            assert "pc-windows" in platforms
+            assert "playstation-5" in platforms
+            assert "xbox-series" in platforms
+            assert "nintendo-switch" in platforms
             
         finally:
             # Clean up overrides
