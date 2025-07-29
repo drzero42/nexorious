@@ -2,11 +2,19 @@
  import { auth } from '$lib/stores';
  import { goto } from '$app/navigation';
  import { RouteGuard } from '$lib/components';
+ import { onMount } from 'svelte';
 
  let username = '';
  let password = '';
  let isLoading = false;
  let error = '';
+ let usernameInput: HTMLInputElement;
+
+ onMount(() => {
+  if (usernameInput) {
+   usernameInput.focus();
+  }
+ });
 
  async function handleLogin() {
   if (!username || !password) {
@@ -78,6 +86,7 @@
       id="username"
       type="text"
       bind:value={username}
+      bind:this={usernameInput}
       on:keydown={handleKeydown}
       required
       placeholder="Enter your username"
