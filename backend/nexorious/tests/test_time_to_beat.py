@@ -319,6 +319,7 @@ class TestIGDBService:
         metadata = GameMetadata(
             igdb_id="12345",
             title="Test Game",
+            igdb_slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Studio",

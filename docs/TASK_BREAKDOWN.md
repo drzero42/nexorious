@@ -23,7 +23,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create User management models (users without email, user_sessions)
 - [x] Implement Platform and Storefront models
 - [x] Design Game metadata models with IGDB integration fields
-- [ ] Add IGDB slug field to Game model for proper link generation
+- [x] Add IGDB slug field to Game model for proper link generation
 - [x] Create User Game Collection models (user_games, user_game_platforms)
 - [x] Implement Tagging system models (tags, user_game_tags)
 - [x] Add Wishlist models
@@ -61,8 +61,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Cover art download and storage (automatic during import)
 - [x] How Long to Beat integration
 - [x] IGDB platform data caching and retrieval for platform filtering
-- [ ] Update IGDB service to retrieve and store game slug field from API responses
-- [ ] Create database migration to add igdb_slug field to games table
+- [x] Update IGDB service to retrieve and store game slug field from API responses
+- [x] Create database migration to add igdb_slug field to games table
 
 ### 1.2 Frontend Foundation
 
