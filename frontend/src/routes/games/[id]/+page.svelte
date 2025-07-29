@@ -2,13 +2,16 @@
   import { page } from '$app/stores';
   import { userGames } from '$lib/stores';
   import { games } from '$lib/stores/games.svelte';
+  import { platforms } from '$lib/stores/platforms.svelte';
+  import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
-  import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest } from '$lib/stores/user-games.svelte';
+  import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
+  import type { Platform, Storefront } from '$lib/stores/platforms.svelte';
 
   let game: UserGame | null = null;
   let isLoading = true;
@@ -45,11 +48,31 @@
     estimated_playtime_hours: undefined
   };
 
+  // Platform management variables
+  let availablePlatforms: Platform[] = [];
+  let availableStorefronts: Storefront[] = [];
+  let newPlatformData: {
+    platform_id: string;
+    storefront_id: string;
+    store_url: string;
+    store_game_id: string;
+  } = {
+    platform_id: '',
+    storefront_id: '',
+    store_url: '',
+    store_game_id: ''
+  };
+  let isAddingPlatform = false;
+  let isLoadingPlatforms = false;
+
   $: gameId = $page.params.id!;
 
   onMount(async () => {
-    // Load game details - authentication is handled by RouteGuard
-    await loadGame();
+    // Load game details and platforms - authentication is handled by RouteGuard
+    await Promise.all([
+      loadGame(),
+      loadPlatforms()
+    ]);
   });
 
   async function loadGame() {
@@ -73,6 +96,67 @@
       console.error('Failed to load game:', error);
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function loadPlatforms() {
+    try {
+      isLoadingPlatforms = true;
+      const data = await platforms.fetchActivePlatformsAndStorefronts();
+      availablePlatforms = data.platforms;
+      availableStorefronts = data.storefronts;
+    } catch (error) {
+      console.error('Failed to load platforms:', error);
+    } finally {
+      isLoadingPlatforms = false;
+    }
+  }
+
+  async function addPlatform() {
+    if (!newPlatformData.platform_id || !newPlatformData.storefront_id || !game) {
+      return;
+    }
+
+    try {
+      isAddingPlatform = true;
+      
+      // Create the platform data for the API call
+      const platformData: UserGamePlatformCreateRequest = {
+        platform_id: newPlatformData.platform_id,
+        storefront_id: newPlatformData.storefront_id
+      };
+
+      // Only include optional fields if they have values
+      if (newPlatformData.store_url.trim()) {
+        platformData.store_url = newPlatformData.store_url.trim();
+      }
+      if (newPlatformData.store_game_id.trim()) {
+        platformData.store_game_id = newPlatformData.store_game_id.trim();
+      }
+
+      // Call the API to add the platform
+      await userGames.addPlatformToUserGame(game.id, platformData);
+      
+      // Reload the game to get updated platform data
+      await loadGame();
+      
+      // Reset form data
+      newPlatformData = {
+        platform_id: '',
+        storefront_id: '',
+        store_url: '',
+        store_game_id: ''
+      };
+
+      // Show success message
+      notifications.showSuccess('Platform added successfully');
+      
+    } catch (error) {
+      console.error('Failed to add platform:', error);
+      // Show error message
+      notifications.showError('Failed to add platform. Please try again.');
+    } finally {
+      isAddingPlatform = false;
     }
   }
 
@@ -708,6 +792,155 @@
                     }}
                   />
                 </div>
+              </div>
+            </div>
+
+            <!-- Platform Management Section -->
+            <div class="pt-6 border-t border-gray-200">
+              <h4 class="text-lg font-medium text-gray-900 mb-4">Platform Management</h4>
+              
+              <!-- Current Platforms -->
+              <div class="mb-6">
+                <h5 class="text-md font-medium text-gray-700 mb-3">Current Platforms</h5>
+                {#if game && game.platforms && game.platforms.length > 0}
+                  <div class="space-y-3">
+                    {#each groupPlatformsByPlatform(game.platforms) as groupedPlatform}
+                      <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="flex items-start justify-between">
+                          <div class="flex-1">
+                            <span class="text-sm font-semibold text-blue-900 mb-2 block">{groupedPlatform.platform.display_name}</span>
+                            <div class="flex flex-wrap gap-2">
+                              {#each groupedPlatform.storefronts as storefront}
+                                <div class="inline-flex items-center space-x-2 px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                  <span class="text-blue-800 font-medium">
+                                    {storefront.storefront?.display_name || 'Unknown Storefront'}
+                                  </span>
+                                  {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
+                                    <a 
+                                      href={storefront.store_url} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      class="text-blue-600 hover:text-blue-800 flex-shrink-0"
+                                      title="View in {storefront.storefront?.display_name || 'store'}"
+                                      aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
+                                    >
+                                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                      </svg>
+                                    </a>
+                                  {/if}
+                                </div>
+                              {/each}
+                            </div>
+                          </div>
+                          <!-- TODO: Add remove platform button here -->
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="text-sm text-gray-500 italic">No platforms added yet.</p>
+                {/if}
+              </div>
+
+              <!-- Add New Platform -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <h5 class="text-md font-medium text-gray-700 mb-3">Add New Platform</h5>
+                {#if isLoadingPlatforms}
+                  <div class="flex items-center justify-center py-4">
+                    <svg class="animate-spin h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span class="ml-2 text-sm text-gray-500">Loading platforms...</span>
+                  </div>
+                {:else if availablePlatforms.length === 0}
+                  <p class="text-sm text-gray-500 italic">No platforms available to add.</p>
+                {:else}
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Platform Selection -->
+                    <div>
+                      <label for="new_platform" class="form-label">Platform</label>
+                      <select
+                        id="new_platform"
+                        bind:value={newPlatformData.platform_id}
+                        class="form-input"
+                        on:change={() => {
+                          // Reset storefront when platform changes
+                          newPlatformData.storefront_id = '';
+                          newPlatformData.store_url = '';
+                          newPlatformData.store_game_id = '';
+                        }}
+                      >
+                        <option value="">Select a platform...</option>
+                        {#each availablePlatforms as platform}
+                          <option value={platform.id}>{platform.display_name}</option>
+                        {/each}
+                      </select>
+                    </div>
+
+                    <!-- Storefront Selection -->
+                    <div>
+                      <label for="new_storefront" class="form-label">Storefront</label>
+                      <select
+                        id="new_storefront"
+                        bind:value={newPlatformData.storefront_id}
+                        class="form-input"
+                        disabled={!newPlatformData.platform_id}
+                      >
+                        <option value="">Select a storefront...</option>
+                        {#each availableStorefronts as storefront}
+                          <option value={storefront.id}>{storefront.display_name}</option>
+                        {/each}
+                      </select>
+                    </div>
+
+                    <!-- Store URL (Optional) -->
+                    <div>
+                      <label for="new_store_url" class="form-label">Store URL (Optional)</label>
+                      <input
+                        id="new_store_url"
+                        type="url"
+                        bind:value={newPlatformData.store_url}
+                        class="form-input"
+                        placeholder="https://store.example.com/game/..."
+                      />
+                    </div>
+
+                    <!-- Store Game ID (Optional) -->
+                    <div>
+                      <label for="new_store_game_id" class="form-label">Store Game ID (Optional)</label>
+                      <input
+                        id="new_store_game_id"
+                        type="text"
+                        bind:value={newPlatformData.store_game_id}
+                        class="form-input"
+                        placeholder="Game ID in the store"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Add Platform Button -->
+                  <div class="mt-4">
+                    <button
+                      type="button"
+                      on:click={addPlatform}
+                      disabled={!newPlatformData.platform_id || !newPlatformData.storefront_id || isAddingPlatform}
+                      class="btn-secondary inline-flex items-center gap-x-2"
+                    >
+                      {#if isAddingPlatform}
+                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Adding...
+                      {:else}
+                        <svg class="-ml-0.5 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
+                        Add Platform
+                      {/if}
+                    </button>
+                  </div>
+                {/if}
               </div>
             </div>
 
