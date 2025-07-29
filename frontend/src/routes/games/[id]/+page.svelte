@@ -115,18 +115,27 @@
   }
 
   async function addPlatform() {
-    if (!newPlatformData.platform_id || !newPlatformData.storefront_id || !game) {
+    console.log('addPlatform called with data:', newPlatformData);
+    console.log('game object:', game);
+    
+    if (!newPlatformData.platform_id || !game) {
+      console.log('Missing required data - platform_id:', newPlatformData.platform_id, 'game:', !!game);
       return;
     }
 
     try {
+      console.log('Starting platform addition...');
       isAddingPlatform = true;
       
       // Create the platform data for the API call
       const platformData: UserGamePlatformCreateRequest = {
-        platform_id: newPlatformData.platform_id,
-        storefront_id: newPlatformData.storefront_id
+        platform_id: newPlatformData.platform_id
       };
+
+      // Only include storefront_id if it has a value
+      if (newPlatformData.storefront_id && newPlatformData.storefront_id.trim()) {
+        platformData.storefront_id = newPlatformData.storefront_id;
+      }
 
       // Only include optional fields if they have values
       if (newPlatformData.store_url.trim()) {
@@ -136,8 +145,12 @@
         platformData.store_game_id = newPlatformData.store_game_id.trim();
       }
 
+      console.log('Sending platform data to API:', platformData);
+
       // Call the API to add the platform
       await userGames.addPlatformToUserGame(game.id, platformData);
+      
+      console.log('API call successful, reloading game data...');
       
       // Reload the game to get updated platform data
       await loadGame();
@@ -150,6 +163,7 @@
         store_game_id: ''
       };
 
+      console.log('Platform added successfully');
       // Show success message
       notifications.showSuccess('Platform added successfully');
       
@@ -980,7 +994,7 @@
                     <button
                       type="button"
                       on:click={addPlatform}
-                      disabled={!newPlatformData.platform_id || !newPlatformData.storefront_id || isAddingPlatform}
+                      disabled={!newPlatformData.platform_id || isAddingPlatform}
                       class="btn-secondary inline-flex items-center gap-x-2"
                     >
                       {#if isAddingPlatform}

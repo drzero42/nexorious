@@ -480,11 +480,16 @@ class TestUserGamePlatformsEndpoints:
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["storefront_id"] == str(test_storefront.id)
-        assert data["store_game_id"] == "steam_12345"
-        assert data["store_url"] == "https://store.example.com/game/12345"
-        assert data["is_available"] is True
+        # Verify the response is a UserGameResponse with the new platform added
+        assert data["id"] == str(test_user_game.id)
+        assert "platforms" in data
+        assert len(data["platforms"]) == 1
+        platform = data["platforms"][0]
+        assert platform["platform_id"] == str(test_platform.id)
+        assert platform["storefront_id"] == str(test_storefront.id)
+        assert platform["store_game_id"] == "steam_12345"
+        assert platform["store_url"] == "https://store.example.com/game/12345"
+        assert platform["is_available"] is True
     
     def test_create_user_game_platform_without_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str]):
         """Test creating a user game platform association without storefront."""
@@ -496,8 +501,13 @@ class TestUserGamePlatformsEndpoints:
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["storefront_id"] is None
+        # Verify the response is a UserGameResponse with the new platform added
+        assert data["id"] == str(test_user_game.id)
+        assert "platforms" in data
+        assert len(data["platforms"]) == 1
+        platform = data["platforms"][0]
+        assert platform["platform_id"] == str(test_platform.id)
+        assert platform["storefront_id"] is None
     
     def test_create_user_game_platform_duplicate_platform_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str], session: Session):
         """Test creating duplicate user game platform+storefront association."""
