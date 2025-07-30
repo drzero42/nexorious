@@ -10,7 +10,8 @@
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
-  import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
+  import { OwnershipStatus } from '$lib/stores/user-games.svelte';
+  import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
   import type { Platform, Storefront } from '$lib/stores/platforms.svelte';
 
@@ -195,10 +196,18 @@
 
       console.log('Sending platform data to API:', platformData);
 
+      // Check if adding platform to no-longer-owned game
+      const wasNoLongerOwned = game.ownership_status === 'no_longer_owned';
+
       // Call the API to add the platform
       await userGames.addPlatformToUserGame(game.id, platformData);
       
       console.log('API call successful, reloading game data...');
+      
+      // Immediately update dropdown if adding to no-longer-owned game
+      if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
+        editData.ownership_status = OwnershipStatus.OWNED;
+      }
       
       // Reload the game to get updated platform data
       await loadGame();
@@ -245,6 +254,11 @@
       
       // Call the API to remove the platform
       await userGames.removePlatformFromUserGame(game.id, platformToRemove.platformAssociationId);
+      
+      // Immediately update dropdown if this was the last platform
+      if (isLastPlatform && editData.ownership_status === OwnershipStatus.OWNED) {
+        editData.ownership_status = OwnershipStatus.NO_LONGER_OWNED;
+      }
       
       // Reload the game to get updated platform data
       await loadGame();
