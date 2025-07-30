@@ -50,28 +50,31 @@ def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool 
                 logger.warning(f"Default storefront '{platform_data['default_storefront_name']}' not found for platform '{platform_data['name']}'")
         
         if existing_platform:
-            # If it's a custom platform, update it to official
-            if existing_platform.source == "custom":
-                logger.info(f"Converting custom platform '{platform_data['name']}' to official")
-                existing_platform.source = "official"
-                existing_platform.version_added = version
-                existing_platform.updated_at = datetime.now(timezone.utc)
-                
-                # Preserve custom display name and icon if they exist
-                if not existing_platform.display_name:
+            # Only update if it's an official platform; preserve custom platforms
+            if existing_platform.source == "official":
+                # Check if any values actually need updating (excluding version)
+                needs_update = False
+                if existing_platform.display_name != platform_data["display_name"]:
                     existing_platform.display_name = platform_data["display_name"]
-                if not existing_platform.icon_url and platform_data.get("icon_url"):
-                    existing_platform.icon_url = platform_data["icon_url"]
-                
-                # Set default storefront if not already set and we found one
-                if existing_platform.default_storefront_id is None and default_storefront_id:
+                    needs_update = True
+                if existing_platform.icon_url != platform_data.get("icon_url"):
+                    existing_platform.icon_url = platform_data.get("icon_url")
+                    needs_update = True
+                if default_storefront_id and existing_platform.default_storefront_id != default_storefront_id:
                     existing_platform.default_storefront_id = default_storefront_id
-                    logger.info(f"Set default storefront for existing platform '{platform_data['name']}'")
+                    needs_update = True
+                    logger.info(f"Updated default storefront for official platform '{platform_data['name']}'")
                 
-                session.add(existing_platform)
-                seeded_count += 1
+                if needs_update:
+                    logger.info(f"Updating official platform '{platform_data['name']}' with seed data")
+                    existing_platform.version_added = version  # Update version only when other changes are made
+                    existing_platform.updated_at = datetime.now(timezone.utc)
+                    session.add(existing_platform)
+                    seeded_count += 1
+                else:
+                    logger.debug(f"Official platform '{platform_data['name']}' already up to date")
             else:
-                logger.debug(f"Official platform '{platform_data['name']}' already exists, skipping")
+                logger.debug(f"Custom platform '{platform_data['name']}' exists, preserving it and skipping seed data")
         else:
             # Create new official platform
             logger.info(f"Creating new official platform '{platform_data['name']}'")
@@ -115,25 +118,30 @@ def seed_storefronts(session: Session, version: str = "1.0.0") -> int:
         ).first()
         
         if existing_storefront:
-            # If it's a custom storefront, update it to official
-            if existing_storefront.source == "custom":
-                logger.info(f"Converting custom storefront '{storefront_data['name']}' to official")
-                existing_storefront.source = "official"
-                existing_storefront.version_added = version
-                existing_storefront.updated_at = datetime.now(timezone.utc)
-                
-                # Preserve custom display name, icon, and base_url if they exist
-                if not existing_storefront.display_name:
+            # Only update if it's an official storefront; preserve custom storefronts
+            if existing_storefront.source == "official":
+                # Check if any values actually need updating (excluding version)
+                needs_update = False
+                if existing_storefront.display_name != storefront_data["display_name"]:
                     existing_storefront.display_name = storefront_data["display_name"]
-                if not existing_storefront.icon_url and storefront_data.get("icon_url"):
-                    existing_storefront.icon_url = storefront_data["icon_url"]
-                if not existing_storefront.base_url and storefront_data.get("base_url"):
-                    existing_storefront.base_url = storefront_data["base_url"]
+                    needs_update = True
+                if existing_storefront.icon_url != storefront_data.get("icon_url"):
+                    existing_storefront.icon_url = storefront_data.get("icon_url")
+                    needs_update = True
+                if existing_storefront.base_url != storefront_data.get("base_url"):
+                    existing_storefront.base_url = storefront_data.get("base_url")
+                    needs_update = True
                 
-                session.add(existing_storefront)
-                seeded_count += 1
+                if needs_update:
+                    logger.info(f"Updating official storefront '{storefront_data['name']}' with seed data")
+                    existing_storefront.version_added = version  # Update version only when other changes are made
+                    existing_storefront.updated_at = datetime.now(timezone.utc)
+                    session.add(existing_storefront)
+                    seeded_count += 1
+                else:
+                    logger.debug(f"Official storefront '{storefront_data['name']}' already up to date")
             else:
-                logger.debug(f"Official storefront '{storefront_data['name']}' already exists, skipping")
+                logger.debug(f"Custom storefront '{storefront_data['name']}' exists, preserving it and skipping seed data")
         else:
             # Create new official storefront
             logger.info(f"Creating new official storefront '{storefront_data['name']}'")
@@ -238,17 +246,17 @@ def seed_all_official_data(session: Session, version: str = "1.0.0") -> Dict[str
 
 def get_seeding_conflicts(session: Session) -> Dict[str, List[str]]:
     """
-    Check for potential conflicts with official data.
+    Check for custom platforms/storefronts that will be preserved during seeding.
     
     Args:
         session: Database session
         
     Returns:
-        Dictionary with lists of conflicting platform and storefront names
+        Dictionary with lists of custom platform and storefront names that match official names
     """
     conflicts = {"platforms": [], "storefronts": []}
     
-    # Check platform conflicts
+    # Check for custom platforms with official names (these will be preserved)
     for platform_data in OFFICIAL_PLATFORMS:
         existing_platform = session.exec(
             select(Platform).where(
@@ -260,7 +268,7 @@ def get_seeding_conflicts(session: Session) -> Dict[str, List[str]]:
         if existing_platform:
             conflicts["platforms"].append(platform_data["name"])
     
-    # Check storefront conflicts
+    # Check for custom storefronts with official names (these will be preserved)
     for storefront_data in OFFICIAL_STOREFRONTS:
         existing_storefront = session.exec(
             select(Storefront).where(

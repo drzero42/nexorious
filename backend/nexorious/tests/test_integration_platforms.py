@@ -237,6 +237,38 @@ class TestPlatformsUpdateEndpoint:
         data = response.json()
         assert data["display_name"] == "Updated Name"
         assert data["icon_url"] == test_platform.icon_url  # Should remain unchanged
+    
+    def test_update_official_platform_changes_source_to_custom(self, client: TestClient, session: Session, admin_headers: Dict[str, str]):
+        """Test that updating an official platform changes its source to custom."""
+        # Create an official platform
+        official_platform = Platform(
+            name="test-official-platform",
+            display_name="Test Official Platform",
+            source="official",
+            version_added="1.0.0"
+        )
+        session.add(official_platform)
+        session.commit()
+        session.refresh(official_platform)
+        
+        # Verify it's official
+        assert official_platform.source == "official"
+        
+        # Update the platform
+        update_data = {
+            "display_name": "Updated Test Official Platform"
+        }
+        
+        response = client.put(f"/api/platforms/{official_platform.id}", json=update_data, headers=admin_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["display_name"] == "Updated Test Official Platform"
+        assert data["source"] == "custom"  # Should have changed to custom
+        
+        # Verify in database
+        session.refresh(official_platform)
+        assert official_platform.source == "custom"
 
 
 class TestPlatformsDeleteEndpoint:
@@ -487,6 +519,39 @@ class TestStorefrontsUpdateEndpoint:
         data = response.json()
         assert data["display_name"] == "Updated Name"
         assert data["base_url"] == test_storefront.base_url  # Should remain unchanged
+    
+    def test_update_official_storefront_changes_source_to_custom(self, client: TestClient, session: Session, admin_headers: Dict[str, str]):
+        """Test that updating an official storefront changes its source to custom."""
+        # Create an official storefront
+        official_storefront = Storefront(
+            name="test-official-storefront",
+            display_name="Test Official Storefront",
+            base_url="https://test-official-store.com",
+            source="official",
+            version_added="1.0.0"
+        )
+        session.add(official_storefront)
+        session.commit()
+        session.refresh(official_storefront)
+        
+        # Verify it's official
+        assert official_storefront.source == "official"
+        
+        # Update the storefront
+        update_data = {
+            "display_name": "Updated Test Official Storefront"
+        }
+        
+        response = client.put(f"/api/platforms/storefronts/{official_storefront.id}", json=update_data, headers=admin_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["display_name"] == "Updated Test Official Storefront"
+        assert data["source"] == "custom"  # Should have changed to custom
+        
+        # Verify in database
+        session.refresh(official_storefront)
+        assert official_storefront.source == "custom"
 
 
 class TestStorefrontsDeleteEndpoint:

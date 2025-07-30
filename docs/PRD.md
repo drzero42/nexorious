@@ -120,17 +120,19 @@ To create the definitive self-hosted solution for personal game collection manag
 **Priority**: P0 (Critical)
 - **User Story**: As an administrator, I want to manage the available platforms and storefronts in the system so that users can accurately track their game ownership, while as a user, I want to associate my games with existing platforms and storefronts so I know where to find them
 - **Backend Requirements**:
-  - Platform and storefront data models
+  - Simplified platform and storefront data models with minimal fields
+  - Platform model: name, display_name, icon_url, default_storefront_id, source (official/custom)
+  - Storefront model: name, display_name, icon_url, base_url, source (official/custom)
   - API endpoints for managing platform associations with support for multiple storefronts per platform
-  - Platform-specific metadata storage
   - **ADMIN-ONLY ACCESS**: All platform/storefront management operations (create, update, delete) require admin privileges
   - **SECURITY NOTE**: Platform and storefront management is restricted to admins to maintain data consistency and prevent unauthorized system configuration changes
+  - **Admin Editing Behavior**: When admin edits official platform/storefront, source changes to "custom"
   - Default storefront assignment for platforms (admin-only configuration)
   - API endpoints for managing platform default storefront relationships (admin-only)
   - Idempotent seed data function for platform and storefront population (admin-triggered)
   - Function automatically runs during initial admin account creation
   - Function can be manually triggered by admin users at any time
-  - Function only adds missing default platforms/storefronts, never interferes with custom ones
+  - **Seed Data Behavior**: Only overwrites platforms/storefronts with source=official, preserves custom entries
 - **Frontend Requirements**:
   - Platform selection interface (for users to associate games with existing platforms)
   - Multi-select storefront interface per platform (for users to associate games with existing storefronts)
