@@ -859,6 +859,7 @@
               <option value="borrowed">🤝 Borrowed</option>
               <option value="rented">📅 Rented</option>
               <option value="subscription">📱 Subscription</option>
+              <option value="no_longer_owned">📦 No Longer Owned</option>
             </select>
             <p class="mt-1 text-xs text-gray-500">
               {#if gameData.ownership_status === 'owned'}
@@ -869,6 +870,8 @@
                 Rented from a store or service
               {:else if gameData.ownership_status === 'subscription'}
                 Available through a subscription service
+              {:else if gameData.ownership_status === 'no_longer_owned'}
+                Previously owned but no longer have access
               {/if}
             </p>
           </div>
@@ -1480,6 +1483,7 @@
                   <option value="borrowed">🤝 Borrowed</option>
                   <option value="rented">📅 Rented</option>
                   <option value="subscription">📱 Subscription</option>
+                  <option value="no_longer_owned">📦 No Longer Owned</option>
                 </select>
                 <p class="mt-1 text-xs text-gray-500">
                   {#if gameData.ownership_status === 'owned'}
@@ -1490,6 +1494,8 @@
                     Rented from a store or service
                   {:else if gameData.ownership_status === 'subscription'}
                     Available through a subscription service
+                  {:else if gameData.ownership_status === 'no_longer_owned'}
+                    Previously owned but no longer have access
                   {/if}
                 </p>
               </div>

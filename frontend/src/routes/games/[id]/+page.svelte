@@ -8,6 +8,7 @@
   import { goto } from '$app/navigation';
   import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
+  import { formatOwnershipStatus } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
@@ -831,6 +832,7 @@
                     <option value="borrowed">Borrowed</option>
                     <option value="rented">Rented</option>
                     <option value="subscription">Subscription</option>
+                    <option value="no_longer_owned">No Longer Owned</option>
                   </select>
                 </div>
 
@@ -1217,8 +1219,8 @@
 
               <div class="bg-gray-50 p-4 rounded-lg">
                 <dt class="text-sm font-medium text-gray-500">Ownership</dt>
-                <dd class="mt-1 text-sm text-gray-900 capitalize">
-                  {game.ownership_status}
+                <dd class="mt-1 text-sm text-gray-900">
+                  {formatOwnershipStatus(game.ownership_status)}
                   {#if game.is_physical}
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 ml-2">
                       Physical

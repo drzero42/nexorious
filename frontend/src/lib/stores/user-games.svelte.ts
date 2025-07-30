@@ -7,7 +7,8 @@ export enum OwnershipStatus {
   OWNED = 'owned',
   BORROWED = 'borrowed',
   RENTED = 'rented',
-  SUBSCRIPTION = 'subscription'
+  SUBSCRIPTION = 'subscription',
+  NO_LONGER_OWNED = 'no_longer_owned'
 }
 
 export enum PlayStatus {

@@ -431,6 +431,7 @@
      <option value="borrowed">Borrowed</option>
      <option value="rented">Rented</option>
      <option value="subscription">Subscription</option>
+     <option value="no_longer_owned">No Longer Owned</option>
     </select>
    </div>
 
