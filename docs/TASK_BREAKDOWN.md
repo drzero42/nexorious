@@ -88,11 +88,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game grid view with cover art showing unified game cards
 - [x] Each game appears exactly once with all platforms/storefronts as indicators/badges
 - [x] Platform and storefront indicators clearly visible on each game card
+- [x] Update IGDB link generation to use game slug for URLs while displaying game ID
 - [ ] Advanced search and filtering interface operating on unique games
 - [ ] Sorting options implementation for unique games
 - [ ] Bulk selection and operations on unique games (not game-platform combinations)
 - [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
-- [ ] Update IGDB link generation to use game slug for URLs while displaying game ID
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
 - [ ] Visual design for platform/storefront badges that clearly shows all ownership

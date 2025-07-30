@@ -205,6 +205,7 @@ class TestIGDBSearchWithPlatforms:
             GameMetadata(
                 igdb_id="123",
                 title="Test Game",
+                igdb_slug="test-game",
                 description="A test game",
                 genre="Action",
                 igdb_platform_ids=[6, 48, 130],
@@ -249,6 +250,7 @@ class TestIGDBSearchWithPlatforms:
             GameMetadata(
                 igdb_id="123",
                 title="Test Game",
+                igdb_slug="test-game",
                 description="A test game",
                 genre="Action",
                 igdb_platform_ids=None,

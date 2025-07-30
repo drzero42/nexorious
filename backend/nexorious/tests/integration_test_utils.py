@@ -248,6 +248,7 @@ def mock_igdb_service_fixture():
         GameMetadata(
             igdb_id="12345",
             title="Test Game",
+            igdb_slug="test-game",
             description="A test game",
             genre="Action",
             developer="Test Developer",
@@ -264,6 +265,7 @@ def mock_igdb_service_fixture():
     mock_service.get_game_by_id.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
+        igdb_slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",
@@ -279,6 +281,7 @@ def mock_igdb_service_fixture():
     mock_service.refresh_game_metadata.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
+        igdb_slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",
@@ -294,6 +297,7 @@ def mock_igdb_service_fixture():
     mock_service.populate_missing_metadata.return_value = GameMetadata(
         igdb_id="12345",
         title="Test Game",
+        igdb_slug="test-game",
         description="A test game",
         genre="Action",
         developer="Test Developer",

@@ -78,6 +78,7 @@ class TestIGDBSearchEndpoint:
             GameMetadata(
                 igdb_id="123",
                 title="Test Game",
+                igdb_slug="test-game",
                 description="A test game for PC and PlayStation",
                 genre="Action",
                 developer="Test Studio",
@@ -184,6 +185,7 @@ class TestIGDBSearchEndpoint:
             GameMetadata(
                 igdb_id="123",
                 title="Test Game",
+                igdb_slug="test-game", 
                 description="Available on PC, PlayStation 5, Xbox Series X/S and Nintendo Switch",
                 genre="Action",
                 igdb_platform_ids=[6, 167, 169, 130],

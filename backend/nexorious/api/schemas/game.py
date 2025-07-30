@@ -22,6 +22,7 @@ class GameCreateRequest(BaseModel):
     howlongtobeat_extra: Optional[int] = Field(None, ge=0, description="Main + extras hours from HowLongToBeat")
     howlongtobeat_completionist: Optional[int] = Field(None, ge=0, description="Completionist hours from HowLongToBeat")
     igdb_id: Optional[str] = Field(None, max_length=50, description="IGDB identifier")
+    igdb_slug: Optional[str] = Field(None, max_length=200, description="IGDB slug for URL generation")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
 
 
@@ -39,6 +40,7 @@ class GameUpdateRequest(BaseModel):
     howlongtobeat_extra: Optional[int] = Field(None, ge=0, description="Main + extras hours from HowLongToBeat")
     howlongtobeat_completionist: Optional[int] = Field(None, ge=0, description="Completionist hours from HowLongToBeat")
     igdb_id: Optional[str] = Field(None, max_length=50, description="IGDB identifier")
+    igdb_slug: Optional[str] = Field(None, max_length=200, description="IGDB slug for URL generation")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
 
@@ -60,6 +62,7 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_extra: Optional[int]
     howlongtobeat_completionist: Optional[int]
     igdb_id: Optional[str]
+    igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
     is_verified: bool
     aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
@@ -111,6 +114,7 @@ class IGDBSearchRequest(BaseModel):
 class IGDBGameCandidate(BaseModel):
     """Schema for IGDB game search candidate."""
     igdb_id: str
+    igdb_slug: Optional[str]
     title: str
     release_date: Optional[date]
     cover_art_url: Optional[str]

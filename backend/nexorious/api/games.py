@@ -481,6 +481,7 @@ async def import_from_igdb(
             "howlongtobeat_extra": game_metadata.normally,
             "howlongtobeat_completionist": game_metadata.completely,
             "igdb_id": game_metadata.igdb_id,
+            "igdb_slug": game_metadata.igdb_slug,
             "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids) if game_metadata.igdb_platform_ids else None,
             "game_metadata": "{}",
             "is_verified": True  # Games imported from IGDB are considered verified
@@ -578,6 +579,7 @@ async def get_metadata_status(
     
     game_metadata = GameMetadata(
         igdb_id=game.igdb_id or "",
+        igdb_slug=game.igdb_slug,
         title=game.title,
         description=game.description,
         genre=game.genre,
@@ -650,7 +652,7 @@ async def refresh_game_metadata(
         fields_to_refresh = refresh_request.fields or [
             'title', 'description', 'genre', 'developer', 'publisher',
             'release_date', 'cover_art_url', 'rating_average', 'rating_count',
-            'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
+            'igdb_slug', 'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
         ]
         
         for field in fields_to_refresh:
@@ -735,6 +737,7 @@ async def populate_game_metadata(
         
         current_metadata = GameMetadata(
             igdb_id=game.igdb_id,
+            igdb_slug=game.igdb_slug,
             title=game.title,
             description=game.description,
             genre=game.genre,
@@ -766,7 +769,7 @@ async def populate_game_metadata(
         fields_to_populate = populate_request.fields or [
             'title', 'description', 'genre', 'developer', 'publisher',
             'release_date', 'cover_art_url', 'rating_average', 'rating_count',
-            'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
+            'igdb_slug', 'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
         ]
         
         for field in fields_to_populate:
@@ -854,7 +857,7 @@ async def bulk_metadata_operation(
                 if fresh_metadata:
                     # Update all fields
                     updated_fields = []
-                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url']:
+                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url', 'igdb_slug']:
                         fresh_value = getattr(fresh_metadata, field)
                         if fresh_value:
                             setattr(game, field, fresh_value)
@@ -892,6 +895,7 @@ async def bulk_metadata_operation(
                 
                 current_metadata = GameMetadata(
                     igdb_id=game.igdb_id,
+                    igdb_slug=game.igdb_slug,
                     title=game.title,
                     description=game.description,
                     genre=game.genre,
@@ -910,7 +914,7 @@ async def bulk_metadata_operation(
                 updated_metadata = await igdb_service.populate_missing_metadata(current_metadata, game.igdb_id)
                 if updated_metadata:
                     populated_fields = []
-                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url']:
+                    for field in ['title', 'description', 'genre', 'developer', 'publisher', 'cover_art_url', 'igdb_slug']:
                         current_value = getattr(game, field, None)
                         updated_value = getattr(updated_metadata, field)
                         if updated_value and not current_value:

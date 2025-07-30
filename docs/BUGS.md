@@ -1,6 +1,4 @@
 # Known issues
 
-## ~~Default storefront not used on edit game screen~~ ✅ FIXED
-~~When editing a game and adding a platform association, the default storefront is not automatically chosen.~~
-
-**Fixed**: Updated the game editing interface to auto-select default storefronts when platforms are selected, matching the behavior of the game addition flow.
+## Error notification
+When loading the Add Game screen (where you can search IGDB), a popup notification in the upper right hand corner shows the text "Failed to load platforms and storefronts. Some features may not work properly."
