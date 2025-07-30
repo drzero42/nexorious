@@ -93,7 +93,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Basic search interface for game titles and simple filtering
 - [x] Basic sorting options (alphabetical, date added, play status)
 - [x] Simple bulk operations (status updates, deletion)
-- [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
+- [x] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
 - [ ] Visual design for platform/storefront badges that clearly shows all ownership
