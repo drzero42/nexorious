@@ -260,8 +260,9 @@
         editData.ownership_status = OwnershipStatus.NO_LONGER_OWNED;
       }
       
-      // Reload the game to get updated platform data
-      await loadGame();
+      // Force fresh data fetch from server, then reload game with updated data
+      await userGames.fetchUserGames(); // Force refresh from server
+      await loadGame(); // Now uses fresh data
       
       // Clear the confirmation dialog
       platformToRemove = null;
