@@ -256,7 +256,7 @@
       await userGames.removePlatformFromUserGame(game.id, platformToRemove.platformAssociationId);
       
       // Immediately update dropdown if this was the last platform
-      if (isLastPlatform && editData.ownership_status === OwnershipStatus.OWNED) {
+      if (isLastPlatform && game.ownership_status === OwnershipStatus.OWNED) {
         editData.ownership_status = OwnershipStatus.NO_LONGER_OWNED;
       }
       
