@@ -122,7 +122,6 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - Platform and storefront data models
   - API endpoints for managing platform associations with support for multiple storefronts per platform
-  - Availability status tracking
   - Platform-specific metadata storage
   - **ADMIN-ONLY ACCESS**: All platform/storefront management operations (create, update, delete) require admin privileges
   - **SECURITY NOTE**: Platform and storefront management is restricted to admins to maintain data consistency and prevent unauthorized system configuration changes
@@ -136,7 +135,6 @@ To create the definitive self-hosted solution for personal game collection manag
   - Platform selection interface (for users to associate games with existing platforms)
   - Multi-select storefront interface per platform (for users to associate games with existing storefronts)
   - Storefront linking components
-  - Availability status indicators
   - Platform filtering and sorting
   - **ADMIN-ONLY**: Complete platform/storefront management interface (create, edit, delete platforms and storefronts)
   - **ADMIN-ONLY**: Interface for setting default storefronts per platform

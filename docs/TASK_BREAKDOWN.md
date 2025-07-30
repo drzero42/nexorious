@@ -44,6 +44,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
 - [ ] Platform and storefront availability status tracking endpoints
 - [ ] Platform-specific metadata storage endpoints
+- [ ] Backend validation endpoints to prevent removal of all platforms (orphaned games)
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion
 - [x] Rating and tagging system endpoints
@@ -117,10 +118,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] "Others" expandable section for additional platforms (collapsed by default)
 - [ ] Show current platform/storefront ownership when adding to existing game
 - [ ] Interface for adding additional platforms/storefronts to existing games
-- [ ] Confirmation flow that clearly indicates adding to existing vs. new game
 - [x] Update existing game entry instead of creating duplicates
 - [x] Prevent duplicate game entries in user's collection
 - [ ] Multi-select storefront interface per platform during game addition
+- [ ] Confirmation flow that clearly indicates adding to existing vs. new game with visual feedback
 - [x] Physical storefront option in game addition interface
 - [ ] Platform filtering integration with existing default storefront selection
 
@@ -130,11 +131,15 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove platform associations from existing games
 - [x] IGDB platform filtering during game editing (show IGDB platforms first)
 - [x] "Others" expandable section for additional platforms in game editing interface
+- [ ] Add/remove storefront associations per platform with visual feedback
+- [ ] Confirmation dialogs for removing platform/storefront ownership
 - [ ] Validation preventing removal of all platforms (orphaned games)
+- [ ] Visual indicators showing current ownership status during editing
 - [ ] Bulk editing interface for multiple games
-- [ ] Real-time updates to collection view after edits
+- [ ] Real-time updates to collection view after edits (changes reflected immediately)
 - [ ] Error handling and validation feedback
 - [ ] Save/cancel functionality with unsaved changes warnings
+- [ ] Game continues to appear once in collection with updated platform/storefront indicators
 
 #### 1.2.6 Progress Tracking Interface
 - [x] Play status dropdown with completion levels
@@ -182,6 +187,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Performance tests for critical operations
 - [ ] Database migration tests for both PostgreSQL and SQLite
 - [ ] Admin privilege enforcement tests across all endpoints
+- [ ] Validation tests for orphaned game prevention (must have at least one platform)
+- [ ] Multi-storefront per platform association tests
+- [ ] Platform/storefront removal validation tests with confirmation dialogs
 
 #### 1.3.2 Frontend Testing
 - [x] Unit tests for components and stores (>70% coverage) - Pagination component tests completed
@@ -196,6 +204,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Unit tests for IGDB rating conversion utility function
 - [ ] Component tests to verify IGDB ratings display correctly (integer input → decimal output)
 - [ ] Integration tests for IGDB rating display across game cards, detail views, and search results
+- [ ] Frontend tests for multi-storefront per platform interface functionality
+- [ ] Frontend tests for orphaned game prevention validation with user feedback
+- [ ] Component tests for confirmation dialogs in platform/storefront removal
 
 #### 1.3.3 CI/CD Pipeline
 - [x] Automated test execution on pull requests
