@@ -377,7 +377,7 @@ describe('Dashboard Page', () => {
       render(DashboardPage);
       
       // Should format large numbers with commas
-      expect(screen.getByText('1,000h')).toBeInTheDocument();
+      expect(screen.getByText('1.000h')).toBeInTheDocument();
     });
   });
 

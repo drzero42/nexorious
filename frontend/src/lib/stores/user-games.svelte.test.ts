@@ -488,14 +488,16 @@ describe('UserGames Store', () => {
 				is_loved: true
 			};
 
-			const updatedGames = [
-				{ ...mockUserGame, id: '1', play_status: PlayStatus.COMPLETED, is_loved: true },
-				{ ...mockUserGame, id: '2', play_status: PlayStatus.COMPLETED, is_loved: true }
-			];
+			const successResponse = {
+				success: true,
+				message: 'Bulk update completed successfully',
+				updated_count: 2,
+				failed_count: 0
+			};
 
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
-				json: () => Promise.resolve(updatedGames)
+				json: () => Promise.resolve(successResponse)
 			});
 
 			// Set initial state
@@ -510,12 +512,16 @@ describe('UserGames Store', () => {
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/bulk-update',
 				expect.objectContaining({
-					method: 'POST',
+					method: 'PUT',
+					headers: expect.objectContaining({
+						'Authorization': 'Bearer test-access-token',
+						'Content-Type': 'application/json'
+					}),
 					body: JSON.stringify(bulkData)
 				})
 			);
 
-			expect(result).toEqual(updatedGames);
+			expect(result).toEqual(successResponse);
 		});
 	});
 

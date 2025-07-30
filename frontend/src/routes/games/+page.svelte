@@ -897,6 +897,7 @@ async function confirmBulkDelete() {
   class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
   role="dialog" 
   aria-modal="true" 
+  aria-labelledby="modal-title"
   tabindex="-1" 
   on:click={closeBulkModal} 
   on:keydown={(e) => e.key === 'Escape' && closeBulkModal()}
