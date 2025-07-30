@@ -6,7 +6,7 @@
   import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
@@ -601,38 +601,80 @@
             <!-- Platform Information -->
             {#if game.platforms && game.platforms.length > 0}
               <div>
-                <h3 class="text-lg font-medium text-gray-900">Available On</h3>
-                <div class="mt-2 space-y-3">
-                  {#each groupPlatformsByPlatform(game.platforms) as groupedPlatform}
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <div class="flex items-start justify-between">
-                        <span class="text-sm font-semibold text-blue-900 mb-2 block">{groupedPlatform.platform.display_name}</span>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        {#each groupedPlatform.storefronts as storefront}
-                          <div class="inline-flex items-center space-x-2 px-2 py-1 bg-white border border-blue-300 rounded text-xs">
-                            <span class="text-blue-800 font-medium">
-                              {storefront.storefront?.display_name || 'Unknown Storefront'}
-                            </span>
-                            {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
-                              <a 
-                                href={storefront.store_url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                class="text-blue-600 hover:text-blue-800 flex-shrink-0"
-                                title="View in {storefront.storefront?.display_name || 'store'}"
-                                aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
-                              >
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                </svg>
-                              </a>
+                <h3 class="text-lg font-medium text-gray-900 mb-3">Available On</h3>
+                <div class="space-y-4">
+                  <!-- Enhanced Platform Badges with detailed view -->
+                  <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <PlatformBadges 
+                      platforms={game.platforms} 
+                      compact={false} 
+                      maxVisible={10} 
+                      showDetails={true}
+                      enableHover={true}
+                    />
+                  </div>
+                  
+                  <!-- Store Links Section -->
+                  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                    {#each groupPlatformsByPlatform(game.platforms) as groupedPlatform}
+                      {#if groupedPlatform.storefronts.some(sf => sf.store_url && sf.storefront?.name !== 'physical')}
+                        <div class="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                          <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            {#if groupedPlatform.platform.name?.toLowerCase().includes('playstation')}
+                              <span role="img" aria-hidden="true">🎮</span>
+                            {:else if groupedPlatform.platform.name?.toLowerCase().includes('xbox')}
+                              <span role="img" aria-hidden="true">🎮</span>
+                            {:else if groupedPlatform.platform.name?.toLowerCase().includes('nintendo')}
+                              <span role="img" aria-hidden="true">🎮</span>
+                            {:else if groupedPlatform.platform.name?.toLowerCase().includes('pc')}
+                              <span role="img" aria-hidden="true">💻</span>
+                            {:else if groupedPlatform.platform.name?.toLowerCase().includes('ios')}
+                              <span role="img" aria-hidden="true">📱</span>
+                            {:else if groupedPlatform.platform.name?.toLowerCase().includes('android')}
+                              <span role="img" aria-hidden="true">📱</span>
+                            {:else}
+                              <span role="img" aria-hidden="true">🎯</span>
                             {/if}
+                            {groupedPlatform.platform.display_name} Links
+                          </h4>
+                          <div class="flex flex-wrap gap-2">
+                            {#each groupedPlatform.storefronts as storefront}
+                              {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
+                                <a 
+                                  href={storefront.store_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  class="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-md border border-blue-200 hover:bg-blue-100 hover:text-blue-800 transition-colors duration-200 text-sm font-medium"
+                                  title="View in {storefront.storefront?.display_name || 'store'}"
+                                  aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
+                                >
+                                  <span role="img" aria-hidden="true">
+                                    {#if storefront.storefront?.name?.toLowerCase().includes('steam')}🔥
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('epic')}🎮
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('gog')}🏪
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('playstation')}🎮
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('microsoft') || storefront.storefront?.name?.toLowerCase().includes('xbox')}🎮
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('nintendo')}🎮
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('app store') || storefront.storefront?.name?.toLowerCase().includes('apple')}📱
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('google play')}🤖
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('humble')}🎁
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('itch')}🕹️
+                                    {:else if storefront.storefront?.name?.toLowerCase().includes('origin') || storefront.storefront?.name?.toLowerCase().includes('ea')}🎮
+                                    {:else}🏪
+                                    {/if}
+                                  </span>
+                                  {storefront.storefront?.display_name || 'Unknown Store'}
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                  </svg>
+                                </a>
+                              {/if}
+                            {/each}
                           </div>
-                        {/each}
-                      </div>
-                    </div>
-                  {/each}
+                        </div>
+                      {/if}
+                    {/each}
+                  </div>
                 </div>
               </div>
             {/if}
@@ -931,42 +973,84 @@
               <div class="mb-6">
                 <h5 class="text-md font-medium text-gray-700 mb-3">Current Platforms</h5>
                 {#if game && game.platforms && game.platforms.length > 0}
+                  <div class="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+                    <PlatformBadges 
+                      platforms={game.platforms} 
+                      compact={false} 
+                      maxVisible={10} 
+                      showDetails={true}
+                      enableHover={false}
+                    />
+                  </div>
+                  
+                  <!-- Platform Management with Remove Buttons -->
                   <div class="space-y-3">
                     {#each groupPlatformsByPlatform(game.platforms) as groupedPlatform}
-                      <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div class="bg-red-50 border border-red-200 rounded-lg p-3">
                         <div class="flex items-start justify-between">
                           <div class="flex-1">
-                            <span class="text-sm font-semibold text-blue-900 mb-2 block">{groupedPlatform.platform.display_name}</span>
-                            <div class="flex flex-wrap gap-2">
+                            <span class="text-sm font-semibold text-red-900 mb-2 block flex items-center gap-2">
+                              <span role="img" aria-hidden="true">
+                                {#if groupedPlatform.platform.name?.toLowerCase().includes('playstation')}🎮
+                                {:else if groupedPlatform.platform.name?.toLowerCase().includes('xbox')}🎮
+                                {:else if groupedPlatform.platform.name?.toLowerCase().includes('nintendo')}🎮
+                                {:else if groupedPlatform.platform.name?.toLowerCase().includes('pc')}💻
+                                {:else if groupedPlatform.platform.name?.toLowerCase().includes('ios')}📱
+                                {:else if groupedPlatform.platform.name?.toLowerCase().includes('android')}📱
+                                {:else}🎯
+                                {/if}
+                              </span>
+                              {groupedPlatform.platform.display_name} - Management
+                            </span>
+                            <div class="space-y-2">
                               {#each groupedPlatform.storefronts as storefront}
-                                <div class="inline-flex items-center space-x-2 px-2 py-1 bg-white border border-blue-300 rounded text-xs">
-                                  <span class="text-blue-800 font-medium">
-                                    {storefront.storefront?.display_name || 'Unknown Storefront'}
-                                  </span>
-                                  {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
-                                    <a 
-                                      href={storefront.store_url} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      class="text-blue-600 hover:text-blue-800 flex-shrink-0"
-                                      title="View in {storefront.storefront?.display_name || 'store'}"
-                                      aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
-                                    >
-                                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                      </svg>
-                                    </a>
-                                  {/if}
+                                <div class="flex items-center justify-between bg-white border border-red-300 rounded-md p-2">
+                                  <div class="flex items-center space-x-2">
+                                    <span role="img" aria-hidden="true" class="text-sm">
+                                      {#if storefront.storefront?.name?.toLowerCase().includes('steam')}🔥
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('epic')}🎮
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('gog')}🏪
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('playstation')}🎮
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('microsoft') || storefront.storefront?.name?.toLowerCase().includes('xbox')}🎮
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('nintendo')}🎮
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('app store') || storefront.storefront?.name?.toLowerCase().includes('apple')}📱
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('google play')}🤖
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('physical')}📦
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('humble')}🎁
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('itch')}🕹️
+                                      {:else if storefront.storefront?.name?.toLowerCase().includes('origin') || storefront.storefront?.name?.toLowerCase().includes('ea')}🎮
+                                      {:else}🏪
+                                      {/if}
+                                    </span>
+                                    <span class="text-red-800 font-medium text-sm">
+                                      {storefront.storefront?.display_name || 'Unknown Storefront'}
+                                    </span>
+                                    {#if storefront.store_url && storefront.storefront?.name !== 'physical'}
+                                      <a 
+                                        href={storefront.store_url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        class="text-blue-600 hover:text-blue-800 flex-shrink-0"
+                                        title="View in {storefront.storefront?.display_name || 'store'}"
+                                        aria-label="View {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
+                                      >
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                        </svg>
+                                      </a>
+                                    {/if}
+                                  </div>
                                   <button 
                                     type="button"
                                     on:click={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
-                                    class="text-red-600 hover:text-red-800 flex-shrink-0 ml-1"
+                                    class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded hover:bg-red-200 hover:text-red-800 transition-colors duration-200"
                                     title={game && game.platforms && game.platforms.length <= 1 ? "Remove this platform/storefront combination (ownership will become 'No Longer Owned')" : "Remove this platform/storefront combination"}
                                     aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
                                   >
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                     </svg>
+                                    Remove
                                   </button>
                                 </div>
                               {/each}
@@ -977,7 +1061,12 @@
                     {/each}
                   </div>
                 {:else}
-                  <p class="text-sm text-gray-500 italic">No platforms added yet.</p>
+                  <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p class="text-sm text-gray-500 italic flex items-center gap-2">
+                      <span role="img" aria-hidden="true">❌</span>
+                      No platforms added yet.
+                    </p>
+                  </div>
                 {/if}
               </div>
 

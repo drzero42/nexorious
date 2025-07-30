@@ -119,7 +119,10 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       
       // Check for platform names - now displayed in grouped format
       expect(screen.getByText('PC')).toBeInTheDocument();
-      expect(screen.getByText('Steam')).toBeInTheDocument();
+      
+      // Steam now appears in multiple places (PlatformBadges + store links), so use getAllByText
+      const steamElements = screen.getAllByText('Steam');
+      expect(steamElements.length).toBeGreaterThan(0);
     });
 
     it('should display clickable store links with proper accessibility', async () => {
