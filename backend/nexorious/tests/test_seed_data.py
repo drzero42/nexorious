@@ -158,8 +158,8 @@ class TestSeedPlatforms:
         platforms = session.exec(select(Platform)).all()
         assert len(platforms) == len(OFFICIAL_PLATFORMS)
     
-    def test_seed_platforms_converts_custom_to_official(self, session: Session):
-        """Test that custom platforms are converted to official during seeding."""
+    def test_seed_platforms_preserves_custom_platforms(self, session: Session):
+        """Test that custom platforms are preserved during seeding and official data doesn't overwrite them."""
         # Create a custom platform with same name as official one
         custom_platform = Platform(
             name="pc-windows",
@@ -173,13 +173,13 @@ class TestSeedPlatforms:
         # Seed platforms
         count = seed_platforms(session, "1.0.0")
         
-        # Should have converted the custom platform
-        assert count == len(OFFICIAL_PLATFORMS)
+        # Should have created other official platforms but left the custom one alone
+        assert count == len(OFFICIAL_PLATFORMS) - 1  # One less because pc-windows is custom and preserved
         
-        # Verify the platform was converted but custom data preserved
+        # Verify the custom platform was preserved
         platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
-        assert platform.source == "official"
-        assert platform.version_added == "1.0.0"
+        assert platform.source == "custom"  # Still custom
+        assert platform.version_added is None  # No version set for custom
         assert platform.display_name == "My Custom PC"  # Custom name preserved
         assert platform.icon_url == "https://custom.com/icon.png"  # Custom icon preserved
 
@@ -226,8 +226,8 @@ class TestSeedStorefronts:
         storefronts = session.exec(select(Storefront)).all()
         assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
     
-    def test_seed_storefronts_converts_custom_to_official(self, session: Session):
-        """Test that custom storefronts are converted to official during seeding."""
+    def test_seed_storefronts_preserves_custom_storefronts(self, session: Session):
+        """Test that custom storefronts are preserved during seeding and official data doesn't overwrite them."""
         # Create a custom storefront with same name as official one
         custom_storefront = Storefront(
             name="steam",
@@ -242,13 +242,13 @@ class TestSeedStorefronts:
         # Seed storefronts
         count = seed_storefronts(session, "1.0.0")
         
-        # Should have converted the custom storefront
-        assert count == len(OFFICIAL_STOREFRONTS)
+        # Should have created other official storefronts but left the custom one alone
+        assert count == len(OFFICIAL_STOREFRONTS) - 1  # One less because steam is custom and preserved
         
-        # Verify the storefront was converted but custom data preserved
+        # Verify the custom storefront was preserved
         storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
-        assert storefront.source == "official"
-        assert storefront.version_added == "1.0.0"
+        assert storefront.source == "custom"  # Still custom
+        assert storefront.version_added is None  # No version set for custom
         assert storefront.display_name == "My Custom Steam"  # Custom name preserved
         assert storefront.icon_url == "https://custom.com/steam.png"  # Custom icon preserved
         assert storefront.base_url == "https://custom.steamstore.com"  # Custom URL preserved

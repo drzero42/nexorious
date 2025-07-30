@@ -42,7 +42,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Admin user management endpoints (create, update, deactivate users)
 - [x] Game CRUD operations with comprehensive metadata
 - [x] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
-- [ ] Platform-specific metadata storage endpoints
+- [x] Simplified platform/storefront data models with minimal required fields only
 - [ ] Backend validation endpoints to prevent removal of all platforms (orphaned games)
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion

@@ -172,6 +172,10 @@ async def update_platform(
                 detail="Cannot set inactive storefront as default"
             )
     
+    # Change source to "custom" when admin edits official platform
+    if platform.source == "official":
+        platform.source = "custom"
+    
     for field, value in update_data.items():
         if field == "icon_url" and value:
             setattr(platform, field, str(value))
@@ -406,6 +410,10 @@ async def update_storefront(
     
     # Update fields
     update_data = storefront_data.model_dump(exclude_unset=True)
+    
+    # Change source to "custom" when admin edits official storefront
+    if storefront.source == "official":
+        storefront.source = "custom"
     
     for field, value in update_data.items():
         if field in ["icon_url", "base_url"] and value:
