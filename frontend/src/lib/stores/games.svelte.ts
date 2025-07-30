@@ -18,6 +18,7 @@ export interface Game {
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
   igdb_id?: string;
+  igdb_slug?: string;
   is_verified: boolean;
   created_at: string;
   updated_at: string;
@@ -42,6 +43,7 @@ export interface GameListResponse {
 
 export interface IGDBGameCandidate {
   igdb_id: string;
+  igdb_slug?: string;
   title: string;
   release_date?: string;
   cover_art_url?: string;

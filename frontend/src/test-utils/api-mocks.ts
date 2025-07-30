@@ -19,6 +19,7 @@ export const mockGame: Game = {
   howlongtobeat_extra: 28,  // Realistic main + extras completion time
   howlongtobeat_completionist: 45,  // Realistic completionist time
   igdb_id: 'igdb-123',
+  igdb_slug: 'test-game-slug',
   is_verified: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
@@ -43,6 +44,7 @@ export const mockGames: Game[] = [
 // Mock IGDB game candidates
 export const mockIGDBCandidate: IGDBGameCandidate = {
   igdb_id: 'igdb-123',
+  igdb_slug: 'test-igdb-game-slug',
   title: 'Test IGDB Game',
   release_date: '2024-01-01',
   cover_art_url: 'https://example.com/igdb-cover.jpg',

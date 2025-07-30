@@ -18,6 +18,7 @@ export const mockGameMetadata = {
   howlongtobeat_extra: 28,
   howlongtobeat_completionist: 45,
   igdb_id: 'igdb-123',
+  igdb_slug: 'test-game-slug',
   is_verified: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
@@ -104,6 +105,7 @@ export const mockUserGamesStore = {
 export const mockIGDBCandidates = [
   {
     igdb_id: 'igdb-123',
+    igdb_slug: 'test-igdb-game-slug',
     title: 'Test IGDB Game',
     release_date: '2024-01-01',
     cover_art_url: 'https://example.com/igdb-cover.jpg',
