@@ -4,6 +4,7 @@ Tests all user games API endpoints with proper request/response validation.
 """
 
 import pytest
+import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 from typing import Dict, Any
@@ -833,10 +834,8 @@ class TestUserGamesBulkUpdateEndpoint:
         
         bulk_data = {
             "user_game_ids": [str(test_user_game.id), str(user_game2.id)],
-            "updates": {
-                "play_status": "completed",
-                "is_loved": True
-            }
+            "play_status": "completed",
+            "is_loved": True
         }
         response = client.put("/api/user-games/bulk-update", json=bulk_data, headers=auth_headers)
         
@@ -849,9 +848,7 @@ class TestUserGamesBulkUpdateEndpoint:
         """Test bulk update with some failures."""
         bulk_data = {
             "user_game_ids": [str(test_user_game.id), "non-existent-id"],
-            "updates": {
-                "play_status": "completed"
-            }
+            "play_status": "completed"
         }
         response = client.put("/api/user-games/bulk-update", json=bulk_data, headers=auth_headers)
         
@@ -864,7 +861,7 @@ class TestUserGamesBulkUpdateEndpoint:
         """Test bulk update without authentication."""
         bulk_data = {
             "user_game_ids": [str(test_user_game.id)],
-            "updates": {"play_status": "completed"}
+            "play_status": "completed"
         }
         response = client.put("/api/user-games/bulk-update", json=bulk_data)
         
@@ -874,9 +871,86 @@ class TestUserGamesBulkUpdateEndpoint:
         """Test bulk update with empty user game IDs."""
         bulk_data = {
             "user_game_ids": [],
-            "updates": {"play_status": "completed"}
+            "play_status": "completed"
         }
         response = client.put("/api/user-games/bulk-update", json=bulk_data, headers=auth_headers)
+        
+        assert_api_error(response, 422)
+
+
+class TestUserGamesBulkDeleteEndpoint:
+    """Test bulk delete endpoints."""
+    
+    def test_bulk_delete_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
+        """Test successful bulk delete."""
+        # Create another user game
+        game2 = Game(
+            title="Game 2",
+            description="Second game",
+            is_verified=True
+        )
+        session.add(game2)
+        session.commit()
+        session.refresh(game2)
+        
+        user_game2 = UserGame(
+            user_id=test_user_game.user_id,
+            game_id=game2.id,
+            ownership_status="owned",
+            play_status="not_started"
+        )
+        session.add(user_game2)
+        session.commit()
+        session.refresh(user_game2)
+        
+        bulk_data = {
+            "user_game_ids": [str(test_user_game.id), str(user_game2.id)]
+        }
+        response = client.request("DELETE", "/api/user-games/bulk-delete", content=json.dumps(bulk_data), headers={**auth_headers, "Content-Type": "application/json"})
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["message"] == "Bulk deletion completed successfully"
+        assert data["deleted_count"] == 2
+        assert data["failed_count"] == 0
+        
+        # Verify games are deleted (refresh session to see the changes)
+        session.refresh_all = True
+        session.close()
+        from ..core.database import get_session
+        with next(get_session()) as fresh_session:
+            deleted_game1 = fresh_session.get(UserGame, test_user_game.id)
+            deleted_game2 = fresh_session.get(UserGame, user_game2.id)
+            assert deleted_game1 is None
+            assert deleted_game2 is None
+    
+    def test_bulk_delete_partial_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
+        """Test bulk delete with some failures."""
+        bulk_data = {
+            "user_game_ids": [str(test_user_game.id), "non-existent-id"]
+        }
+        response = client.request("DELETE", "/api/user-games/bulk-delete", content=json.dumps(bulk_data), headers={**auth_headers, "Content-Type": "application/json"})
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["deleted_count"] == 1
+        assert data["failed_count"] == 1
+    
+    def test_bulk_delete_without_auth(self, client: TestClient, test_user_game: UserGame):
+        """Test bulk delete without authentication."""
+        bulk_data = {
+            "user_game_ids": [str(test_user_game.id)]
+        }
+        response = client.request("DELETE", "/api/user-games/bulk-delete", content=json.dumps(bulk_data), headers={"Content-Type": "application/json"})
+        
+        assert_api_error(response, 403, "Not authenticated")
+    
+    def test_bulk_delete_empty_ids(self, client: TestClient, auth_headers: Dict[str, str]):
+        """Test bulk delete with empty user game IDs."""
+        bulk_data = {
+            "user_game_ids": []
+        }
+        response = client.request("DELETE", "/api/user-games/bulk-delete", content=json.dumps(bulk_data), headers={**auth_headers, "Content-Type": "application/json"})
         
         assert_api_error(response, 422)
 

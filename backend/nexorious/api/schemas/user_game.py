@@ -123,17 +123,17 @@ class UserGameListResponse(BaseModel):
     pages: int
 
 
-class BulkUpdateData(BaseModel):
-    """Schema for the updates object in bulk operations."""
+class BulkStatusUpdateRequest(BaseModel):
+    """Request schema for bulk status updates."""
+    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to update")
     play_status: Optional[PlayStatus] = Field(None, description="New play status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="New rating")
     is_loved: Optional[bool] = Field(None, description="New loved status")
 
 
-class BulkStatusUpdateRequest(BaseModel):
-    """Request schema for bulk status updates."""
-    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to update")
-    updates: BulkUpdateData = Field(..., description="Updates to apply to the user games")
+class BulkDeleteRequest(BaseModel):
+    """Request schema for bulk deletion operations."""
+    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to delete")
 
 
 class CollectionStatsResponse(BaseModel):
