@@ -406,6 +406,7 @@ async def search_igdb(
             
             candidate = IGDBGameCandidate(
                 igdb_id=metadata.igdb_id,
+                igdb_slug=metadata.igdb_slug,
                 title=metadata.title,
                 release_date=metadata.release_date,
                 cover_art_url=metadata.cover_art_url,
