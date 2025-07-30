@@ -10,7 +10,8 @@
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
-  import type { UserGame, PlayStatus, OwnershipStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
+  import { OwnershipStatus } from '$lib/stores/user-games.svelte';
+  import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
   import type { Platform, Storefront } from '$lib/stores/platforms.svelte';
 
@@ -195,10 +196,18 @@
 
       console.log('Sending platform data to API:', platformData);
 
+      // Check if adding platform to no-longer-owned game
+      const wasNoLongerOwned = game.ownership_status === 'no_longer_owned';
+
       // Call the API to add the platform
       await userGames.addPlatformToUserGame(game.id, platformData);
       
       console.log('API call successful, reloading game data...');
+      
+      // Immediately update dropdown if adding to no-longer-owned game
+      if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
+        editData.ownership_status = OwnershipStatus.OWNED;
+      }
       
       // Reload the game to get updated platform data
       await loadGame();
@@ -225,12 +234,6 @@
   }
 
   function confirmRemovePlatform(platformAssociationId: string, platformName: string, storefrontName: string) {
-    // Check if this would leave the game with no platform associations
-    if (game && game.platforms && game.platforms.length <= 1) {
-      notifications.showError('Cannot remove the last platform. Games must have at least one platform.');
-      return;
-    }
-    
     platformToRemove = { platformAssociationId, platformName, storefrontName };
   }
 
@@ -246,17 +249,30 @@
     try {
       isRemovingPlatform = true;
       
+      // Check if this is the last platform before removal
+      const isLastPlatform = game.platforms && game.platforms.length <= 1;
+      
       // Call the API to remove the platform
       await userGames.removePlatformFromUserGame(game.id, platformToRemove.platformAssociationId);
       
-      // Reload the game to get updated platform data
-      await loadGame();
+      // Immediately update dropdown if this was the last platform
+      if (isLastPlatform && game.ownership_status === OwnershipStatus.OWNED) {
+        editData.ownership_status = OwnershipStatus.NO_LONGER_OWNED;
+      }
+      
+      // Force fresh data fetch from server, then reload game with updated data
+      await userGames.fetchUserGames(); // Force refresh from server
+      await loadGame(); // Now uses fresh data
       
       // Clear the confirmation dialog
       platformToRemove = null;
 
-      // Show success message
-      notifications.showSuccess('Platform removed successfully');
+      // Show appropriate success message
+      if (isLastPlatform) {
+        notifications.showSuccess('Platform removed successfully. Ownership status automatically changed to "No Longer Owned".');
+      } else {
+        notifications.showSuccess('Platform removed successfully');
+      }
       
     } catch (error) {
       console.error('Failed to remove platform:', error);
@@ -944,10 +960,9 @@
                                   <button 
                                     type="button"
                                     on:click={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
-                                    class="text-red-600 hover:text-red-800 flex-shrink-0 ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={game && game.platforms && game.platforms.length <= 1 ? "Cannot remove - game must have at least one platform" : "Remove this platform/storefront combination"}
+                                    class="text-red-600 hover:text-red-800 flex-shrink-0 ml-1"
+                                    title={game && game.platforms && game.platforms.length <= 1 ? "Remove this platform/storefront combination (ownership will become 'No Longer Owned')" : "Remove this platform/storefront combination"}
                                     aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
-                                    disabled={game && game.platforms && game.platforms.length <= 1}
                                   >
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>

@@ -32,6 +32,43 @@ router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
 logger = logging.getLogger(__name__)
 
 
+def _update_ownership_status_after_platform_change(
+    session: Session, 
+    user_game: UserGame
+) -> None:
+    """
+    Update ownership status automatically based on platform associations.
+    
+    Rules:
+    - If last platform is removed from an OWNED game, change to NO_LONGER_OWNED
+    - If platform is added to a NO_LONGER_OWNED game, change to OWNED
+    - Only affects OWNED and NO_LONGER_OWNED statuses, leaves others unchanged
+    """
+    # Only manage OWNED and NO_LONGER_OWNED statuses automatically
+    if user_game.ownership_status not in [OwnershipStatus.OWNED, OwnershipStatus.NO_LONGER_OWNED]:
+        return
+    
+    # Count current platform associations
+    platform_count = session.exec(
+        select(func.count()).where(UserGamePlatform.user_game_id == user_game.id)
+    ).one()
+    
+    old_status = user_game.ownership_status
+    
+    # Apply ownership status rules
+    if platform_count == 0 and user_game.ownership_status == OwnershipStatus.OWNED:
+        # Last platform removed from owned game -> no longer owned
+        user_game.ownership_status = OwnershipStatus.NO_LONGER_OWNED
+        user_game.updated_at = datetime.now(timezone.utc)
+        logger.info(f"Automatically changed ownership status from {old_status} to {user_game.ownership_status} for user game {user_game.id} (no platforms remaining)")
+    
+    elif platform_count > 0 and user_game.ownership_status == OwnershipStatus.NO_LONGER_OWNED:
+        # Platform added to no longer owned game -> owned
+        user_game.ownership_status = OwnershipStatus.OWNED
+        user_game.updated_at = datetime.now(timezone.utc)
+        logger.info(f"Automatically changed ownership status from {old_status} to {user_game.ownership_status} for user game {user_game.id} (platforms available)")
+
+
 @router.get("/", response_model=UserGameListResponse)
 async def list_user_games(
     session: Annotated[Session, Depends(get_session)],
@@ -662,6 +699,10 @@ async def add_platform_to_user_game(
     )
     
     session.add(new_platform)
+    
+    # Update ownership status automatically after platform addition
+    _update_ownership_status_after_platform_change(session, user_game)
+    
     session.commit()
     session.refresh(new_platform)
     
@@ -788,7 +829,30 @@ async def remove_platform_from_user_game(
             detail="Platform association not found"
         )
     
+    # Get the user game for ownership status management
+    user_game = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id == user_game_id,
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).first()
+    
+    if not user_game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User game not found"
+        )
+    
     session.delete(platform_assoc)
+    
+    # Flush pending delete operations so the count query sees the correct number of platforms
+    session.flush()
+    
+    # Update ownership status automatically after platform removal
+    _update_ownership_status_after_platform_change(session, user_game)
+    
     session.commit()
     
     return SuccessResponse(message="Platform association deleted successfully")
