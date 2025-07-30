@@ -90,9 +90,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Each game appears exactly once with all platforms/storefronts as indicators/badges
 - [x] Platform and storefront indicators clearly visible on each game card
 - [x] Update IGDB link generation to use game slug for URLs while displaying game ID
-- [ ] Basic search interface for game titles and simple filtering
-- [ ] Basic sorting options (alphabetical, date added, play status)
-- [ ] Simple bulk operations (status updates, deletion)
+- [x] Basic search interface for game titles and simple filtering
+- [x] Basic sorting options (alphabetical, date added, play status)
+- [x] Simple bulk operations (status updates, deletion)
 - [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts

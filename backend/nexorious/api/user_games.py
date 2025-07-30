@@ -24,6 +24,7 @@ from ..api.schemas.user_game import (
     UserGameListResponse,
     UserGamePlatformResponse,
     BulkStatusUpdateRequest,
+    BulkDeleteRequest,
     CollectionStatsResponse
 )
 from ..api.schemas.common import SuccessResponse
@@ -332,16 +333,16 @@ async def bulk_update_user_games(
     for user_game in user_games:
         updated = False
         
-        if bulk_data.updates.play_status is not None:
-            user_game.play_status = bulk_data.updates.play_status
+        if bulk_data.play_status is not None:
+            user_game.play_status = bulk_data.play_status
             updated = True
         
-        if bulk_data.updates.personal_rating is not None:
-            user_game.personal_rating = bulk_data.updates.personal_rating
+        if bulk_data.personal_rating is not None:
+            user_game.personal_rating = bulk_data.personal_rating
             updated = True
         
-        if bulk_data.updates.is_loved is not None:
-            user_game.is_loved = bulk_data.updates.is_loved
+        if bulk_data.is_loved is not None:
+            user_game.is_loved = bulk_data.is_loved
             updated = True
         
         if updated:
@@ -356,6 +357,41 @@ async def bulk_update_user_games(
     return SuccessResponse(
         message="Bulk update completed successfully",
         updated_count=update_count,
+        failed_count=failed_count
+    )
+
+
+@router.delete("/bulk-delete", response_model=SuccessResponse)
+async def bulk_delete_user_games(
+    bulk_data: BulkDeleteRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Bulk delete multiple user games."""
+    
+    # Get user games to delete
+    user_games = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id.in_(bulk_data.user_game_ids),
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).all()
+    
+    found_ids = {user_game.id for user_game in user_games}
+    delete_count = len(user_games)
+    failed_count = len(bulk_data.user_game_ids) - len(found_ids)
+    
+    # Delete the user games
+    for user_game in user_games:
+        session.delete(user_game)
+    
+    session.commit()
+    
+    return SuccessResponse(
+        message="Bulk deletion completed successfully",
+        deleted_count=delete_count,
         failed_count=failed_count
     )
 

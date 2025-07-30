@@ -14,6 +14,7 @@ class SuccessResponse(BaseModel):
     
     # Optional fields for bulk operations
     updated_count: Optional[int] = None
+    deleted_count: Optional[int] = None
     failed_count: Optional[int] = None
 
 

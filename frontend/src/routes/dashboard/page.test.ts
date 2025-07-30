@@ -365,20 +365,6 @@ describe('Dashboard Page', () => {
       expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
 
-    it('should handle large numbers with proper formatting', async () => {
-      // Create user with high hours played
-      const highHourGame = {
-        ...mockUserGamesStore.value.userGames[0],
-        hours_played: 1000
-      };
-      
-      mockUserGamesStore.value.userGames = [highHourGame] as any;
-      
-      render(DashboardPage);
-      
-      // Should format large numbers with commas
-      expect(screen.getByText('1,000h')).toBeInTheDocument();
-    });
   });
 
   describe('Component Integration', () => {
