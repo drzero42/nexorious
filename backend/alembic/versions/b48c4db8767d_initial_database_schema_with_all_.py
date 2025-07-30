@@ -1,8 +1,8 @@
-"""Initial database schema
+"""Initial database schema with all features
 
-Revision ID: 2ef4c8daba74
+Revision ID: b48c4db8767d
 Revises: 
-Create Date: 2025-07-29 13:20:50.215730
+Create Date: 2025-07-30 15:37:11.148380
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '2ef4c8daba74'
+revision: str = 'b48c4db8767d'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -39,12 +39,16 @@ def upgrade() -> None:
     sa.Column('howlongtobeat_extra', sa.Integer(), nullable=True),
     sa.Column('howlongtobeat_completionist', sa.Integer(), nullable=True),
     sa.Column('igdb_id', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=True),
+    sa.Column('igdb_slug', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
+    sa.Column('igdb_platform_ids', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('igdb_platform_names', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('is_verified', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_games_igdb_id'), 'games', ['igdb_id'], unique=False)
+    op.create_index(op.f('ix_games_igdb_slug'), 'games', ['igdb_slug'], unique=False)
     op.create_index(op.f('ix_games_title'), 'games', ['title'], unique=False)
     op.create_table('storefronts',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -131,7 +135,7 @@ def upgrade() -> None:
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ownership_status', sa.Enum('OWNED', 'BORROWED', 'RENTED', 'SUBSCRIPTION', name='ownershipstatus'), nullable=False),
+    sa.Column('ownership_status', sa.Enum('OWNED', 'BORROWED', 'RENTED', 'SUBSCRIPTION', 'NO_LONGER_OWNED', name='ownershipstatus'), nullable=False),
     sa.Column('personal_rating', sa.Numeric(precision=2, scale=1), nullable=True),
     sa.Column('is_loved', sa.Boolean(), nullable=False),
     sa.Column('play_status', sa.Enum('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'MASTERED', 'DOMINATED', 'SHELVED', 'DROPPED', 'REPLAY', name='playstatus'), nullable=False),
@@ -241,6 +245,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_storefronts_name'), table_name='storefronts')
     op.drop_table('storefronts')
     op.drop_index(op.f('ix_games_title'), table_name='games')
+    op.drop_index(op.f('ix_games_igdb_slug'), table_name='games')
     op.drop_index(op.f('ix_games_igdb_id'), table_name='games')
     op.drop_table('games')
     # ### end Alembic commands ###
