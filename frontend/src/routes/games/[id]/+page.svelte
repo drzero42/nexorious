@@ -980,7 +980,7 @@
                   <div class="space-y-4">
                     <!-- Platform Selection with IGDB Filtering -->
                     <div>
-                      <label class="form-label">Platform</label>
+                      <h6 class="form-label">Platform</h6>
                       
                       <!-- IGDB Platforms Section -->
                       {#if igdbPlatforms.length > 0}
