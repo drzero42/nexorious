@@ -90,9 +90,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Each game appears exactly once with all platforms/storefronts as indicators/badges
 - [x] Platform and storefront indicators clearly visible on each game card
 - [x] Update IGDB link generation to use game slug for URLs while displaying game ID
-- [ ] Advanced search and filtering interface operating on unique games
-- [ ] Sorting options implementation for unique games
-- [ ] Bulk selection and operations on unique games (not game-platform combinations)
+- [ ] Basic search interface for game titles and simple filtering
+- [ ] Basic sorting options (alphabetical, date added, play status)
+- [ ] Simple bulk operations (status updates, deletion)
 - [ ] Game detail view with all metadata and comprehensive platform/storefront ownership (accessible from collection view and search results)
 - [x] Display multiple storefronts per platform in game lists and detail views
 - [x] Handle Physical storefront display same as digital storefronts
@@ -250,11 +250,16 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Priority: P1-P2 (High-Medium)**
 
 ### 3.1 Advanced Search & Filtering
-- [ ] Full-text search implementation
-- [ ] Multi-criteria filtering system
-- [ ] Saved filter presets
-- [ ] Advanced sorting options
-- [ ] Search result relevance scoring
+- [ ] Full-text search implementation across all game metadata
+- [ ] Multi-criteria filtering system (platform, genre, status, rating, tags, release date)
+- [ ] Advanced search with multiple parameters and operators
+- [ ] Saved filter presets for frequently used searches
+- [ ] Advanced sorting options (rating, playtime, completion rate, release date, last played)
+- [ ] Search result relevance scoring and ranking
+- [ ] Complex boolean search queries
+- [ ] Real-time search suggestions and autocomplete
+- [ ] Advanced bulk operations on filtered results
+- [ ] Export search results to various formats
 
 ### 3.2 Wishlist Management
 - [ ] Wishlist CRUD operations

@@ -73,7 +73,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Game library list and grid views showing unified game cards
   - Each game appears once with all owned platforms/storefronts displayed as indicators/badges
   - Platform and storefront indicators clearly showing all ownership locations
-  - Search and filter interface operating on unique games (not game-platform combinations)
+  - Basic search interface for game titles with simple filtering options
   - Bulk selection and operations on unique games
   - IGDB game search interface with candidate selection
   - Game metadata acceptance/confirmation screen
@@ -344,19 +344,28 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Phase 3: Discovery & Organization
 
-#### 3.1 Search & Filtering
+#### 3.1 Advanced Search & Filtering
 **Priority**: P1 (High)
-- **User Story**: As a user, I want to search and filter my collection so I can find specific games quickly
+- **User Story**: As a user, I want advanced search and filtering capabilities so I can quickly find specific games in large collections using complex criteria
 - **Requirements**:
-  - Full-text search across game titles and metadata
-  - Advanced filtering by platform, status, rating, genre
-  - Sorting by various criteria (alphabetical, rating, playtime, etc.)
-  - Saved filter presets
+  - Full-text search across all game metadata (titles, descriptions, genres, developers)
+  - Multi-criteria filtering system supporting platform, genre, status, rating, tags, release date
+  - Advanced search with multiple parameters and boolean operators (AND, OR, NOT)
+  - Saved filter presets for frequently used search patterns
+  - Advanced sorting options (rating, playtime, completion rate, release date, last played)
+  - Search result relevance scoring and intelligent ranking
+  - Real-time search suggestions and autocomplete functionality
+  - Complex boolean search queries with parentheses support
+  - Advanced bulk operations on filtered search results
+  - Export search results to various formats (CSV, JSON)
 - **Acceptance Criteria**:
-  - Search returns relevant results quickly
-  - Filters can be combined for complex queries
-  - Sort options work correctly
-  - Filter presets can be saved and reused
+  - Search returns relevant results quickly with sub-second response times
+  - Filters can be combined for complex queries with multiple criteria
+  - Advanced sort options work correctly across all metadata fields
+  - Filter presets can be saved, shared, and reused across sessions
+  - Boolean search operators work correctly for complex queries
+  - Bulk operations can be performed on filtered results efficiently
+  - Search autocomplete provides relevant suggestions as user types
 
 #### 3.2 Wishlist Management
 **Priority**: P2 (Medium)
