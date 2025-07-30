@@ -44,7 +44,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game CRUD operations with comprehensive metadata
 - [x] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
 - [x] Simplified platform/storefront data models with minimal required fields only
-- [ ] Backend automatic ownership status management: automatically change ownership status to "no_longer_owned" when last platform is removed from owned game, and to "owned" when platform is added to "no_longer_owned" game
+- [x] Backend automatic ownership status management: automatically change ownership status to "no_longer_owned" when last platform is removed from owned game, and to "owned" when platform is added to "no_longer_owned" game
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion
 - [x] Rating and tagging system endpoints
