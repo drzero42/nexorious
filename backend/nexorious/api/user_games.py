@@ -847,6 +847,9 @@ async def remove_platform_from_user_game(
     
     session.delete(platform_assoc)
     
+    # Flush pending delete operations so the count query sees the correct number of platforms
+    session.flush()
+    
     # Update ownership status automatically after platform removal
     _update_ownership_status_after_platform_change(session, user_game)
     
