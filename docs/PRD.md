@@ -65,6 +65,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
   - Ownership tracking through storefront associations
   - Support for games with no platform associations when ownership status indicates the game is no longer owned
+  - **Automatic Ownership Status Management**: When the last platform is removed from an owned game, automatically change ownership status to "no_longer_owned"; when a platform is added to a "no_longer_owned" game, automatically change ownership status to "owned"
   - Duplicate detection and prevention at the game level (not platform level)
   - IGDB integration for game lookup and metadata retrieval with slug field storage
 - **Frontend Requirements**:
@@ -95,7 +96,8 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - RESTful endpoints for updating game metadata and platform/storefront associations
   - Platform/storefront addition and removal for existing games
-  - Validation to prevent removal of all platforms unless ownership status indicates the game is no longer owned
+  - **Automatic Ownership Status Transitions**: When platforms are added or removed, automatically update ownership status (remove last platform → "no_longer_owned", add platform to "no_longer_owned" game → "owned")
+  - Validation to work with automatic ownership status transitions
 - **Frontend Requirements**:
   - Game editing form with metadata modification capabilities
   - Platform and storefront management interface within game editing
@@ -111,11 +113,12 @@ To create the definitive self-hosted solution for personal game collection manag
   3. User can modify game metadata (title, notes, ratings, etc.)
   4. User can add new platforms/storefronts to their ownership
   5. User can remove existing platforms/storefronts from their ownership
-  6. System validates changes and prevents invalid states (e.g., no platforms unless ownership status is "no longer owned")
+  6. System automatically updates ownership status based on platform changes (remove last platform → "no_longer_owned", add platform to "no_longer_owned" game → "owned") and validates all changes
   7. Changes are saved and reflected immediately in the collection view
   8. Game continues to appear once in collection with updated platform/storefront indicators
 - **Acceptance Criteria**:
-  - Platform/storefront ownership can be added/removed with validation
+  - Platform/storefront ownership can be added/removed with automatic ownership status transitions
+  - Ownership status automatically changes when last platform is removed or first platform is added
   - Bulk editing supported with immediate UI updates
 
 #### 1.3 Platform & Storefront Tracking (Admin-Only Management)

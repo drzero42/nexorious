@@ -44,7 +44,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game CRUD operations with comprehensive metadata
 - [x] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
 - [x] Simplified platform/storefront data models with minimal required fields only
-- [ ] Backend validation endpoints to prevent removal of all platforms unless ownership status is "no longer owned"
+- [ ] Backend automatic ownership status management: automatically change ownership status to "no_longer_owned" when last platform is removed from owned game, and to "owned" when platform is added to "no_longer_owned" game
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion
 - [x] Rating and tagging system endpoints
@@ -133,8 +133,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] "Others" expandable section for additional platforms in game editing interface
 - [ ] Add/remove storefront associations per platform with visual feedback
 - [ ] Confirmation dialogs for removing platform/storefront ownership
-- [ ] Validation preventing removal of all platforms unless ownership status is "no longer owned"
-- [ ] Visual indicators showing current ownership status during editing
+- [ ] Automatic ownership status updates when platforms are added/removed with visual feedback
+- [ ] Visual indicators showing current ownership status during editing and automatic status changes
 - [ ] Bulk editing interface for multiple games
 - [ ] Real-time updates to collection view after edits (changes reflected immediately)
 - [ ] Error handling and validation feedback
@@ -187,9 +187,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Performance tests for critical operations
 - [ ] Database migration tests for both PostgreSQL and SQLite
 - [ ] Admin privilege enforcement tests across all endpoints
-- [ ] Validation tests for platform removal based on ownership status
+- [ ] Unit tests for automatic ownership status transitions (owned ↔ no_longer_owned)
+- [ ] Validation tests for automatic ownership status changes based on platform operations
 - [ ] Multi-storefront per platform association tests
-- [ ] Platform/storefront removal validation tests with confirmation dialogs
+- [ ] Integration tests for platform/storefront operations with automatic ownership status updates
 
 #### 1.3.2 Frontend Testing
 - [x] Unit tests for components and stores (>70% coverage) - Pagination component tests completed
@@ -205,8 +206,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Component tests to verify IGDB ratings display correctly (integer input → decimal output)
 - [ ] Integration tests for IGDB rating display across game cards, detail views, and search results
 - [ ] Frontend tests for multi-storefront per platform interface functionality
-- [ ] Frontend tests for platform removal validation based on ownership status
-- [ ] Component tests for confirmation dialogs in platform/storefront removal
+- [ ] Frontend tests for automatic ownership status updates when platforms are added/removed
+- [ ] UI tests for visual feedback during automatic ownership status changes
+- [ ] Component tests for automatic ownership status transitions in game editing interface
 
 #### 1.3.3 CI/CD Pipeline
 - [x] Automated test execution on pull requests
