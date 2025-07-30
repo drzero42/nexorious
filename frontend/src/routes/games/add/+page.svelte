@@ -43,13 +43,20 @@
 
   // Load platforms and storefronts on component mount
   onMount(async () => {
+    // Load platforms and storefronts first
     try {
       await platforms.fetchAll();
-      // Load user's game collection to check ownership status
-      await userGames.fetchUserGames({}, 1, 1000); // Load a large number to get all games
     } catch (error) {
       console.error('Failed to load platforms and storefronts:', error);
       notifications.showError('Failed to load platforms and storefronts. Some features may not work properly.');
+    }
+
+    // Load user's game collection to check ownership status (separate error handling)
+    try {
+      await userGames.fetchUserGames({}, 1, 100); // Load up to 100 games (backend limit)
+    } catch (error) {
+      console.error('Failed to load user game collection:', error);
+      notifications.showWarning('Could not load your game collection. Ownership indicators may not be accurate.');
     }
   });
 

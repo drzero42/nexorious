@@ -168,12 +168,8 @@ function createPlatformsStore() {
       }
     },
 
-    // Fetch both platforms and storefronts (like admin.fetchUsers())
+    // Fetch both platforms and storefronts (accessible to all authenticated users)  
     fetchAll: async () => {
-      if (!auth.value.user?.isAdmin) {
-        throw new Error('Admin access required');
-      }
-
       update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
