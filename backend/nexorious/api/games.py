@@ -382,17 +382,25 @@ async def search_igdb(
 ):
     """Search for games in IGDB database with fuzzy matching."""
     
+    logger.info(f"IGDB search request from user {current_user.username}: query='{search_data.query}', limit={search_data.limit}")
+    logger.debug(f"Full search request: {search_data.model_dump()}")
+    
     try:
         # Search games using IGDB service with fuzzy matching
+        logger.debug("Calling IGDB service for game search")
         game_metadata_list = await igdb_service.search_games(
             query=search_data.query,
             limit=search_data.limit or 10,
             fuzzy_threshold=0.6
         )
         
+        logger.debug(f"IGDB service returned {len(game_metadata_list)} results")
+        
         # Convert GameMetadata objects to IGDBGameCandidate objects
         candidates = []
-        for metadata in game_metadata_list:
+        for i, metadata in enumerate(game_metadata_list):
+            logger.debug(f"Converting metadata {i+1}/{len(game_metadata_list)}: {metadata.title}")
+            
             # Use IGDB platform data if available, otherwise empty list
             platforms = metadata.platform_names if metadata.platform_names else []
             
@@ -409,25 +417,32 @@ async def search_igdb(
             )
             candidates.append(candidate)
         
+        logger.info(f"Successfully processed IGDB search for '{search_data.query}': {len(candidates)} candidates returned")
+        
         return IGDBSearchResponse(
             games=candidates,
             total=len(candidates)
         )
         
-    except HTTPException:
+    except HTTPException as e:
+        logger.warning(f"HTTP exception during IGDB search for '{search_data.query}': {e.status_code} - {e.detail}")
         # Re-raise HTTPException as-is
         raise
     except TwitchAuthError as e:
+        logger.error(f"Twitch authentication failed for IGDB search '{search_data.query}': {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"IGDB authentication failed: {str(e)}"
         )
     except IGDBError as e:
+        logger.error(f"IGDB API error during search for '{search_data.query}': {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"IGDB API error: {str(e)}"
         )
     except Exception as e:
+        logger.error(f"Unexpected error during IGDB search for '{search_data.query}': {str(e)}", exc_info=True)
+        logger.debug(f"Search request that caused error: {search_data.model_dump()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

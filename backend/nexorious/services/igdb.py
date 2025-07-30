@@ -106,15 +106,18 @@ class IGDBService:
     async def _get_access_token(self) -> str:
         """Get or refresh Twitch access token using client credentials flow."""
         if not self.client_id or not self.client_secret:
+            logger.error("IGDB client ID and secret not configured")
             raise TwitchAuthError("IGDB client ID and secret must be configured")
         
         # Check if current token is still valid
         if (self._access_token and 
             self._token_expires_at and 
             datetime.now(timezone.utc) < self._token_expires_at - timedelta(minutes=5)):
+            logger.debug(f"Using existing access token (expires at {self._token_expires_at})")
             return self._access_token
         
         logger.info("Requesting new Twitch access token")
+        logger.debug(f"Using client ID: {self.client_id[:8]}...")
         
         try:
             response = await self._http_client.post(
@@ -125,6 +128,8 @@ class IGDBService:
                     "grant_type": "client_credentials"
                 }
             )
+            
+            logger.debug(f"Twitch auth response status: {response.status_code}")
             response.raise_for_status()
             
             token_data = response.json()
@@ -133,34 +138,50 @@ class IGDBService:
             self._token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             
             logger.info(f"Successfully obtained Twitch access token, expires at {self._token_expires_at}")
+            logger.debug(f"Token preview: {self._access_token[:10]}...")
             return self._access_token
             
         except httpx.HTTPError as e:
-            logger.error(f"Failed to get Twitch access token: {e}")
+            logger.error(f"HTTP error getting Twitch access token: {e}")
+            if hasattr(e.response, 'text'):
+                logger.debug(f"Response body: {e.response.text}")
+            raise TwitchAuthError(f"Failed to authenticate with Twitch: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting access token: {e}", exc_info=True)
             raise TwitchAuthError(f"Failed to authenticate with Twitch: {e}")
     
     async def _get_wrapper(self) -> IGDBWrapper:
         """Get initialized IGDB wrapper with valid access token."""
         if not self._wrapper:
             if not self.client_id:
+                logger.error("IGDB client ID is required for wrapper initialization")
                 raise TwitchAuthError("IGDB client ID is required")
             
+            logger.debug("Initializing IGDB wrapper")
             access_token = await self._get_access_token()
             if not access_token:
+                logger.error("Failed to obtain valid access token for IGDB wrapper")
                 raise TwitchAuthError("Failed to obtain valid access token")
             
+            logger.debug("Creating IGDBWrapper instance")
             self._wrapper = IGDBWrapper(self.client_id, access_token)
+            
         return self._wrapper
     
     async def search_games(self, query: str, limit: int = 10, fuzzy_threshold: float = 0.6) -> List[GameMetadata]:
         """Search for games by title with fuzzy matching."""
         if not query.strip():
+            logger.debug("Empty search query provided")
             return []
         
+        logger.info(f"Starting IGDB search for query: '{query}' (limit: {limit}, threshold: {fuzzy_threshold})")
+        
         try:
+            # Get authenticated wrapper
+            logger.debug("Getting IGDB wrapper with authentication")
             wrapper = await self._get_wrapper()
             
-            # First, try exact/close search with IGDB's built-in search
+            # Build IGDB query
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
@@ -169,39 +190,63 @@ class IGDBService:
                 limit {limit * 2};
             '''
             
+            logger.debug(f"IGDB query: {igdb_query.strip()}")
+            
             # Execute search in thread pool to avoid blocking
+            logger.debug("Executing IGDB API request")
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None, 
                 lambda: wrapper.api_request('games', igdb_query)
             )
             
+            logger.debug(f"IGDB API response received: {len(response)} bytes")
+            
             # Parse JSON response
-            games_data = json.loads(response.decode('utf-8'))
+            try:
+                games_data = json.loads(response.decode('utf-8'))
+                logger.debug(f"Parsed {len(games_data)} games from IGDB response")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse IGDB response as JSON: {e}")
+                logger.debug(f"Raw response (first 500 chars): {response[:500]}")
+                raise IGDBError(f"Invalid JSON response from IGDB: {e}")
             
             # Convert to GameMetadata objects and fetch time-to-beat data
             games = []
-            for game_data in games_data:
+            for i, game_data in enumerate(games_data):
+                logger.debug(f"Processing game {i+1}/{len(games_data)}: {game_data.get('name', 'Unknown')}")
+                
                 metadata = self._parse_game_data(game_data)
                 if metadata:
                     # Fetch time-to-beat data for each game
+                    logger.debug(f"Fetching time-to-beat data for game {metadata.igdb_id}")
                     time_to_beat_data = await self._get_time_to_beat_data(metadata.igdb_id)
                     if time_to_beat_data:
                         metadata.hastily = time_to_beat_data.get("hastily")
                         metadata.normally = time_to_beat_data.get("normally")
                         metadata.completely = time_to_beat_data.get("completely")
+                        logger.debug(f"Added time-to-beat data for {metadata.title}")
                     games.append(metadata)
+                else:
+                    logger.debug(f"Failed to parse game data for item {i+1}")
+            
+            logger.debug(f"Successfully parsed {len(games)} valid games")
             
             # Apply fuzzy matching and ranking
             if games:
+                logger.debug("Applying fuzzy matching and ranking")
                 games = self._rank_games_by_fuzzy_match(games, query, fuzzy_threshold)
                 games = games[:limit]  # Limit results after ranking
+                logger.debug(f"After fuzzy matching and limiting: {len(games)} games")
             
-            logger.info(f"Found {len(games)} games for query: {query}")
+            logger.info(f"Successfully found {len(games)} games for query: '{query}'")
             return games
             
+        except IGDBError:
+            # Re-raise IGDB errors as-is
+            raise
         except Exception as e:
-            logger.error(f"Error searching games: {e}")
+            logger.error(f"Unexpected error during IGDB search for query '{query}': {e}", exc_info=True)
             raise IGDBError(f"Failed to search games: {e}")
     
     def _rank_games_by_fuzzy_match(self, games: List[GameMetadata], query: str, threshold: float = 0.6) -> List[GameMetadata]:
@@ -327,6 +372,15 @@ class IGDBService:
     def _parse_game_data(self, game_data: Dict[str, Any]) -> Optional[GameMetadata]:
         """Parse IGDB game data into GameMetadata object."""
         try:
+            game_id = game_data.get('id')
+            game_name = game_data.get('name', 'Unknown')
+            
+            if not game_id:
+                logger.warning(f"Game data missing required 'id' field for {game_name}")
+                return None
+                
+            logger.debug(f"Parsing game data for {game_name} (ID: {game_id})")
+            
             # Extract genres
             genres = game_data.get('genres', [])
             genre_names = [g.get('name') for g in genres if g.get('name')]
@@ -348,14 +402,19 @@ class IGDBService:
             # Extract release date
             release_date = None
             if 'first_release_date' in game_data:
-                release_timestamp = game_data['first_release_date']
-                release_date = datetime.fromtimestamp(release_timestamp).strftime('%Y-%m-%d')
+                try:
+                    release_timestamp = game_data['first_release_date']
+                    release_date = datetime.fromtimestamp(release_timestamp).strftime('%Y-%m-%d')
+                    logger.debug(f"Parsed release date for {game_name}: {release_date}")
+                except (ValueError, OSError) as e:
+                    logger.warning(f"Invalid release date timestamp for {game_name}: {e}")
             
             # Extract cover art URL
             cover_art_url = None
             if 'cover' in game_data and 'image_id' in game_data['cover']:
                 image_id = game_data['cover']['image_id']
                 cover_art_url = f"https://images.igdb.com/igdb/image/upload/t_cover_big/{image_id}.jpg"
+                logger.debug(f"Generated cover art URL for {game_name}: {cover_art_url}")
             
             # Extract platform data
             igdb_platform_ids = []
@@ -366,14 +425,18 @@ class IGDBService:
                 if platform_id and platform_id in IGDB_PLATFORM_MAPPING:
                     igdb_platform_ids.append(platform_id)
                     platform_names.append(IGDB_PLATFORM_MAPPING[platform_id])
+                elif platform_id:
+                    logger.debug(f"Unknown platform ID {platform_id} for game {game_name}")
             
             # Only set platform data if we found any mapped platforms
             igdb_platform_ids = igdb_platform_ids if igdb_platform_ids else None
             platform_names = platform_names if platform_names else None
             
+            logger.debug(f"Successfully parsed {game_name}: genres={genre}, platforms={len(platform_names) if platform_names else 0}")
+            
             return GameMetadata(
-                igdb_id=str(game_data['id']),
-                title=game_data.get('name', ''),
+                igdb_id=str(game_id),
+                title=game_name,
                 igdb_slug=game_data.get('slug'),
                 description=game_data.get('summary'),
                 genre=genre,
@@ -393,8 +456,13 @@ class IGDBService:
                 platform_names=platform_names
             )
             
+        except KeyError as e:
+            logger.error(f"Missing required field in game data: {e}")
+            logger.debug(f"Game data keys available: {list(game_data.keys())}")
+            return None
         except Exception as e:
-            logger.error(f"Error parsing game data: {e}")
+            logger.error(f"Unexpected error parsing game data: {e}", exc_info=True)
+            logger.debug(f"Problematic game data: {game_data}")
             return None
     
     async def download_cover_art(self, cover_url: str) -> Optional[bytes]:

@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     app_name: str = "Nexorious Game Collection Management"
     app_version: str = "0.1.0"
     debug: bool = False
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    )
     
     # Database
     database_url: Optional[str] = Field(

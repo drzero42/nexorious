@@ -13,8 +13,22 @@ from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
 
 # Configure logging
+def get_log_level(level_str: str) -> int:
+    """Convert string log level to logging constant."""
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL
+    }
+    return level_map.get(level_str.upper(), logging.INFO)
+
+# Set log level based on configuration
+log_level = get_log_level(settings.log_level)
+
 logging.basicConfig(
-    level=logging.INFO if not settings.debug else logging.DEBUG,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
