@@ -1,11 +1,11 @@
 <script lang="ts">
- import { userGames, platforms } from '$lib/stores';
+ import { userGames, platforms, ui } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination, PlatformBadges } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
- import { PlayStatus, type BulkStatusUpdateRequest } from '$lib/stores/user-games.svelte';
+ import { PlayStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest } from '$lib/stores/user-games.svelte';
 
  let viewMode: 'grid' | 'list' = 'grid';
  let searchQuery = '';
@@ -31,6 +31,8 @@
  let bulkRating = '';
  let bulkIsLoved = false;
  let isBulkUpdating = false;
+let showDeleteConfirmation = false;
+let isDeletingBulk = false;
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
@@ -230,19 +232,75 @@
 
    await userGames.bulkUpdateStatus(updateData);
    
-   // Clear selection and close modal
+   // Show success notification
+   ui.showSuccess(
+    'Bulk Update Successful', 
+    `Updated ${selectedGameIds.size} game${selectedGameIds.size !== 1 ? 's' : ''} successfully.`
+   );
+   
+   // Clear selection and close modal immediately after success
    clearSelection();
    closeBulkModal();
-   
-   // Reload games to reflect changes
-   await loadGames();
   } catch (error) {
    console.error('Failed to apply bulk operations:', error);
-   // You might want to show an error message to the user here
+   const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+   ui.showError(
+    'Bulk Update Failed', 
+    `Failed to update games: ${errorMessage}`
+   );
+   // Still close modal and clear selection on error
+   clearSelection();
+   closeBulkModal();
   } finally {
    isBulkUpdating = false;
   }
  }
+
+function showBulkDeleteConfirmation() {
+ showDeleteConfirmation = true;
+}
+
+function cancelBulkDelete() {
+ showDeleteConfirmation = false;
+}
+
+async function confirmBulkDelete() {
+ if (selectedGameIds.size === 0) return;
+
+ isDeletingBulk = true;
+ 
+ try {
+  const deleteData: BulkDeleteRequest = {
+   user_game_ids: Array.from(selectedGameIds)
+  };
+
+  await userGames.bulkDelete(deleteData);
+  
+  // Show success notification
+  ui.showSuccess(
+   'Bulk Delete Successful', 
+   `Deleted ${selectedGameIds.size} game${selectedGameIds.size !== 1 ? 's' : ''} successfully.`
+  );
+  
+  // Close modals and clear selection immediately after success
+  clearSelection();
+  showDeleteConfirmation = false;
+  closeBulkModal();
+ } catch (error) {
+  console.error('Failed to delete bulk games:', error);
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+  ui.showError(
+   'Bulk Delete Failed', 
+   `Failed to delete games: ${errorMessage}`
+  );
+  // Still close modals and clear selection on error
+  clearSelection();
+  showDeleteConfirmation = false;
+  closeBulkModal();
+ } finally {
+  isDeletingBulk = false;
+ }
+}
 </script>
 
 <svelte:head>
@@ -833,20 +891,17 @@
 
 <!-- Bulk Operations Modal -->
 {#if showBulkModal}
- <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-  <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-   <!-- Background overlay -->
-   <div 
-    class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
-    on:click={closeBulkModal}
-    on:keydown={(e) => e.key === 'Escape' && closeBulkModal()}
-    role="button"
-    tabindex="-1"
-    aria-label="Close modal"
-   ></div>
-
-   <!-- Modal panel -->
-   <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+ <!-- svelte-ignore a11y-click-events-have-key-events -->
+ <!-- svelte-ignore a11y-no-static-element-interactions -->
+ <div 
+  class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
+  role="dialog" 
+  aria-modal="true" 
+  tabindex="-1" 
+  on:click={closeBulkModal} 
+  on:keydown={(e) => e.key === 'Escape' && closeBulkModal()}
+ >
+  <div class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" on:click|stopPropagation>
     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
      <div class="sm:flex sm:items-start">
       <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-primary-100 sm:mx-0 sm:h-10 sm:w-10">
@@ -942,6 +997,14 @@
      <button
       type="button"
       disabled={isBulkUpdating}
+      on:click={showBulkDeleteConfirmation}
+      class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Delete Selected
+     </button>
+     <button
+      type="button"
+      disabled={isBulkUpdating}
       on:click={closeBulkModal}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
@@ -950,7 +1013,68 @@
     </div>
    </div>
   </div>
- </div>
+{/if}
+
+<!-- Bulk Delete Confirmation Modal -->
+{#if showDeleteConfirmation}
+ <!-- svelte-ignore a11y-click-events-have-key-events -->
+ <!-- svelte-ignore a11y-no-static-element-interactions -->
+ <div 
+  class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
+  role="dialog" 
+  aria-modal="true" 
+  tabindex="-1" 
+  on:click={cancelBulkDelete} 
+  on:keydown={(e) => e.key === 'Escape' && cancelBulkDelete()}
+ >
+  <div class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+     <div class="sm:flex sm:items-start">
+      <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+       <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+       </svg>
+      </div>
+      <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+        Delete Selected Games
+       </h3>
+       <div class="mt-2">
+        <p class="text-sm text-gray-500">
+         Are you sure you want to delete {selectedGameIds.size} selected game{selectedGameIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+        </p>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+     <button
+      type="button"
+      disabled={isDeletingBulk}
+      on:click={confirmBulkDelete}
+      class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      {#if isDeletingBulk}
+       <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+       </svg>
+       Deleting...
+      {:else}
+       Delete
+      {/if}
+     </button>
+     <button
+      type="button"
+      disabled={isDeletingBulk}
+      on:click={cancelBulkDelete}
+      class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Cancel
+     </button>
+    </div>
+   </div>
+  </div>
 {/if}
 
 </RouteGuard>

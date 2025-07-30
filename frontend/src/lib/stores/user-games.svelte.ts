@@ -109,6 +109,18 @@ export interface BulkStatusUpdateRequest {
   is_loved?: boolean;
 }
 
+export interface BulkDeleteRequest {
+  user_game_ids: string[];
+}
+
+export interface SuccessResponse {
+  success: boolean;
+  message: string;
+  updated_count?: number;
+  deleted_count?: number;
+  failed_count?: number;
+}
+
 export interface CollectionStats {
   total_games: number;
   by_status: Record<PlayStatus, number>;
@@ -444,25 +456,71 @@ function createUserGamesStore() {
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/bulk-update`, {
-          method: 'POST',
+          method: 'PUT',
           body: JSON.stringify(data),
         });
         
-        const updatedUserGames: UserGame[] = await response.json();
+        const result: SuccessResponse = await response.json();
 
-        // Update the affected user games in the state
+        // Manually update the affected user games in the state based on request data
         state = {
           ...state,
           userGames: state.userGames.map(userGame => {
-            const updated = updatedUserGames.find(updated => updated.id === userGame.id);
-            return updated || userGame;
+            // Check if this game was in the bulk update
+            if (data.user_game_ids.includes(userGame.id)) {
+              // Create updated user game with changes applied
+              const updatedUserGame = { ...userGame };
+              
+              if (data.play_status !== undefined) {
+                updatedUserGame.play_status = data.play_status;
+              }
+              if (data.personal_rating !== undefined) {
+                updatedUserGame.personal_rating = data.personal_rating;
+              }
+              if (data.is_loved !== undefined) {
+                updatedUserGame.is_loved = data.is_loved;
+              }
+              
+              // Update the timestamp
+              updatedUserGame.updated_at = new Date().toISOString();
+              
+              return updatedUserGame;
+            }
+            return userGame;
           }),
           isLoading: false
         };
 
-        return updatedUserGames;
+        return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk update status';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Bulk delete games
+    bulkDelete: async (data: BulkDeleteRequest) => {
+      state = { ...state, isLoading: true, error: null };
+
+      try {
+        await apiCall(`${config.apiUrl}/user-games/bulk-delete`, {
+          method: 'DELETE',
+          body: JSON.stringify(data),
+        });
+
+        // Remove the deleted games from the state
+        state = {
+          ...state,
+          userGames: state.userGames.filter(userGame => !data.user_game_ids.includes(userGame.id)),
+          pagination: {
+            ...state.pagination,
+            total: state.pagination.total - data.user_game_ids.length
+          },
+          isLoading: false
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to bulk delete games';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }

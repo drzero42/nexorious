@@ -37,6 +37,8 @@ export type {
   UserGameFilters, 
   UserGameListResponse, 
   BulkStatusUpdateRequest, 
+  BulkDeleteRequest,
+  SuccessResponse,
   CollectionStats, 
   UserGamesState, 
   OwnershipStatus, 
