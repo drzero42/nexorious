@@ -222,14 +222,44 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 ## Phase 2: Data Integration & Import
 **Priority: P0-P1 (Critical-High)**
 
-### 2.1 CSV Import System
+### 2.1 Darkadia CSV Import System
 **Priority**: P0 (Critical)
-- [ ] CSV parser with validation
-- [ ] Darkadia format support
-- [ ] Generic CSV import with field mapping
-- [ ] Progress tracking during import
-- [ ] Error handling and reporting
-- [ ] Data validation and cleanup
+
+#### 2.1.1 Backend Enhancements
+- [ ] Add fuzzy matching parameter to games search API for deduplication
+- [ ] Enhance platform endpoints to include storefront data efficiently
+- [ ] Verify existing APIs handle import validation scenarios properly
+
+#### 2.1.2 Import Script Development
+- [ ] Set up import script project structure under `backend/scripts/`
+- [ ] Add required dependencies (pandas, rich, click) to pyproject.toml
+- [ ] Implement Darkadia CSV parser with field validation
+- [ ] Create platform/storefront mapping system
+- [ ] Build data transformation functions (play status, ownership, dates)  
+- [ ] Implement game deduplication logic (within CSV and against database)
+- [ ] Create Nexorious API client wrapper for individual operations
+- [ ] Develop three merge strategies (interactive, overwrite, preserve)
+- [ ] Implement interactive conflict resolution UI
+- [ ] Add progress tracking and console reporting
+- [ ] Create comprehensive error handling and retry logic
+- [ ] Add command-line interface with click
+- [ ] Implement progress saving/resume functionality
+
+#### 2.1.3 Testing
+- [ ] Unit tests for CSV parsing and validation
+- [ ] Unit tests for data transformation functions
+- [ ] Unit tests for merge strategy logic
+- [ ] Integration tests for API client
+- [ ] End-to-end import workflow tests
+- [ ] Performance tests with sequential processing
+- [ ] Error scenario testing (network failures, API errors)
+- [ ] Create sample test data based on Darkadia format
+
+#### 2.1.4 Documentation
+- [ ] Create import script usage documentation
+- [ ] Document merge strategy behaviors and use cases
+- [ ] Add troubleshooting guide for common import issues
+- [ ] Document platform/storefront mapping tables
 
 ### 2.2 Steam API Integration
 - [ ] Steam Web API authentication
