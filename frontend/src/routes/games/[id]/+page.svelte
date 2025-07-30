@@ -225,12 +225,6 @@
   }
 
   function confirmRemovePlatform(platformAssociationId: string, platformName: string, storefrontName: string) {
-    // Check if this would leave the game with no platform associations
-    if (game && game.platforms && game.platforms.length <= 1) {
-      notifications.showError('Cannot remove the last platform. Games must have at least one platform.');
-      return;
-    }
-    
     platformToRemove = { platformAssociationId, platformName, storefrontName };
   }
 
@@ -246,6 +240,9 @@
     try {
       isRemovingPlatform = true;
       
+      // Check if this is the last platform before removal
+      const isLastPlatform = game.platforms && game.platforms.length <= 1;
+      
       // Call the API to remove the platform
       await userGames.removePlatformFromUserGame(game.id, platformToRemove.platformAssociationId);
       
@@ -255,8 +252,12 @@
       // Clear the confirmation dialog
       platformToRemove = null;
 
-      // Show success message
-      notifications.showSuccess('Platform removed successfully');
+      // Show appropriate success message
+      if (isLastPlatform) {
+        notifications.showSuccess('Platform removed successfully. Ownership status automatically changed to "No Longer Owned".');
+      } else {
+        notifications.showSuccess('Platform removed successfully');
+      }
       
     } catch (error) {
       console.error('Failed to remove platform:', error);
