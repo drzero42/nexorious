@@ -914,15 +914,14 @@ class TestUserGamesBulkDeleteEndpoint:
         assert data["deleted_count"] == 2
         assert data["failed_count"] == 0
         
-        # Verify games are deleted (refresh session to see the changes)
-        session.refresh_all = True
-        session.close()
-        from ..core.database import get_session
-        with next(get_session()) as fresh_session:
-            deleted_game1 = fresh_session.get(UserGame, test_user_game.id)
-            deleted_game2 = fresh_session.get(UserGame, user_game2.id)
-            assert deleted_game1 is None
-            assert deleted_game2 is None
+        # Verify games are deleted (store IDs before they get detached)
+        game1_id = test_user_game.id
+        game2_id = user_game2.id
+        session.expire_all()
+        deleted_game1 = session.get(UserGame, game1_id)
+        deleted_game2 = session.get(UserGame, game2_id)
+        assert deleted_game1 is None
+        assert deleted_game2 is None
     
     def test_bulk_delete_partial_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
         """Test bulk delete with some failures."""
