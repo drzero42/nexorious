@@ -67,6 +67,34 @@
   let isRemovingPlatform = false;
   let platformToRemove: { platformAssociationId: string; platformName: string; storefrontName: string } | null = null;
 
+  // IGDB platform filtering helpers
+  function isPlatformInIGDB(platform: any, igdbPlatforms: string[]): boolean {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return false;
+    
+    return igdbPlatforms.some(igdbPlatform => 
+      igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
+      igdbPlatform.toLowerCase() === platform.name.toLowerCase()
+    );
+  }
+
+  function getIGDBPlatforms(platforms: any[], igdbPlatforms: string[]): any[] {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return [];
+    return platforms.filter(platform => isPlatformInIGDB(platform, igdbPlatforms));
+  }
+
+  function getOtherPlatforms(platforms: any[], igdbPlatforms: string[]): any[] {
+    if (!igdbPlatforms || igdbPlatforms.length === 0) return platforms;
+    return platforms.filter(platform => !isPlatformInIGDB(platform, igdbPlatforms));
+  }
+
+  // IGDB platform data and filtering state
+  let igdbPlatformNames: string[] = [];
+  let showOtherPlatforms = false;
+
+  // Reactive statements for filtered platforms
+  $: igdbPlatforms = getIGDBPlatforms(availablePlatforms, igdbPlatformNames);
+  $: otherPlatforms = getOtherPlatforms(availablePlatforms, igdbPlatformNames);
+
   $: gameId = $page.params.id!;
 
   onMount(async () => {
@@ -93,11 +121,43 @@
       
       if (game) {
         resetEditData();
+        // Try to get IGDB platform data for filtering
+        await loadIGDBPlatformData();
       }
     } catch (error) {
       console.error('Failed to load game:', error);
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function loadIGDBPlatformData() {
+    if (!game || !game.game.igdb_id) {
+      // No IGDB ID available, reset platform filtering to show all platforms
+      igdbPlatformNames = [];
+      return;
+    }
+
+    try {
+      // Search for the game by title to get platform data
+      // We use the game title since we need the platform data, not just the ID
+      const searchResponse = await games.searchIGDB(game.game.title, 5);
+      
+      // Find the matching game by IGDB ID
+      const matchingGame = searchResponse.games?.find(candidate => 
+        candidate.igdb_id === game!.game.igdb_id
+      );
+      
+      if (matchingGame && matchingGame.platforms) {
+        igdbPlatformNames = matchingGame.platforms;
+      } else {
+        // No platform data found, fall back to showing all platforms
+        igdbPlatformNames = [];
+      }
+    } catch (error) {
+      console.error('Failed to load IGDB platform data:', error);
+      // Fall back to showing all platforms
+      igdbPlatformNames = [];
     }
   }
 
@@ -930,32 +990,140 @@
                 {:else if availablePlatforms.length === 0}
                   <p class="text-sm text-gray-500 italic">No platforms available to add.</p>
                 {:else}
-                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <!-- Platform Selection -->
+                  <div class="space-y-4">
+                    <!-- Platform Selection with IGDB Filtering -->
                     <div>
-                      <label for="new_platform" class="form-label">Platform</label>
-                      <select
-                        id="new_platform"
-                        bind:value={newPlatformData.platform_id}
-                        class="form-input"
-                        on:change={() => {
-                          // Reset storefront when platform changes
-                          newPlatformData.storefront_id = '';
-                          newPlatformData.store_url = '';
-                          newPlatformData.store_game_id = '';
+                      <label class="form-label">Platform</label>
+                      
+                      <!-- IGDB Platforms Section -->
+                      {#if igdbPlatforms.length > 0}
+                        <div class="mb-4">
+                          <h6 class="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                            <svg class="h-4 w-4 text-primary-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                            Available on these platforms
+                          </h6>
+                          <div class="space-y-2">
+                            {#each igdbPlatforms as platform}
+                              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors duration-200 {newPlatformData.platform_id === platform.id ? 'border-primary-300 bg-primary-50' : ''}">
+                                <input
+                                  type="radio"
+                                  name="platform_selection"
+                                  value={platform.id}
+                                  bind:group={newPlatformData.platform_id}
+                                  on:change={() => {
+                                    // Reset storefront when platform changes
+                                    newPlatformData.storefront_id = '';
+                                    newPlatformData.store_url = '';
+                                    newPlatformData.store_game_id = '';
+                                    
+                                    // Auto-select default storefront if available
+                                    if (platform.default_storefront_id) {
+                                      newPlatformData.storefront_id = platform.default_storefront_id;
+                                    }
+                                  }}
+                                  class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                                />
+                                <div class="ml-3 flex items-center gap-2">
+                                  {#if platform.icon_url}
+                                    <img src={platform.icon_url} alt={platform.display_name} class="w-5 h-5 object-contain" />
+                                  {/if}
+                                  <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                                </div>
+                              </label>
+                            {/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Others Section -->
+                      {#if otherPlatforms.length > 0}
+                        <div>
+                          <button
+                            type="button"
+                            on:click={() => showOtherPlatforms = !showOtherPlatforms}
+                            class="w-full flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                          >
+                            <span class="text-sm font-medium text-gray-700 flex items-center">
+                              <svg class="h-4 w-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
+                              </svg>
+                              Other platforms ({otherPlatforms.length})
+                            </span>
+                            <svg class="h-4 w-4 text-gray-400 transition-transform duration-200 {showOtherPlatforms ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
                           
-                          // Auto-select default storefront if available
-                          const selectedPlatform = availablePlatforms.find(p => p.id === newPlatformData.platform_id);
-                          if (selectedPlatform && selectedPlatform.default_storefront_id) {
-                            newPlatformData.storefront_id = selectedPlatform.default_storefront_id;
-                          }
-                        }}
-                      >
-                        <option value="">Select a platform...</option>
-                        {#each availablePlatforms as platform}
-                          <option value={platform.id}>{platform.display_name}</option>
-                        {/each}
-                      </select>
+                          {#if showOtherPlatforms}
+                            <div class="mt-3 space-y-2">
+                              {#each otherPlatforms as platform}
+                                <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors duration-200 {newPlatformData.platform_id === platform.id ? 'border-primary-300 bg-primary-50' : ''}">
+                                  <input
+                                    type="radio"
+                                    name="platform_selection"
+                                    value={platform.id}
+                                    bind:group={newPlatformData.platform_id}
+                                    on:change={() => {
+                                      // Reset storefront when platform changes
+                                      newPlatformData.storefront_id = '';
+                                      newPlatformData.store_url = '';
+                                      newPlatformData.store_game_id = '';
+                                      
+                                      // Auto-select default storefront if available
+                                      if (platform.default_storefront_id) {
+                                        newPlatformData.storefront_id = platform.default_storefront_id;
+                                      }
+                                    }}
+                                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                                  />
+                                  <div class="ml-3 flex items-center gap-2">
+                                    {#if platform.icon_url}
+                                      <img src={platform.icon_url} alt={platform.display_name} class="w-5 h-5 object-contain" />
+                                    {/if}
+                                    <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                                  </div>
+                                </label>
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {/if}
+
+                      <!-- Fallback: Show all platforms if no IGDB data -->
+                      {#if igdbPlatforms.length === 0 && otherPlatforms.length === 0}
+                        <div class="space-y-2">
+                          {#each availablePlatforms as platform}
+                            <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors duration-200 {newPlatformData.platform_id === platform.id ? 'border-primary-300 bg-primary-50' : ''}">
+                              <input
+                                type="radio"
+                                name="platform_selection"
+                                value={platform.id}
+                                bind:group={newPlatformData.platform_id}
+                                on:change={() => {
+                                  // Reset storefront when platform changes
+                                  newPlatformData.storefront_id = '';
+                                  newPlatformData.store_url = '';
+                                  newPlatformData.store_game_id = '';
+                                  
+                                  // Auto-select default storefront if available
+                                  if (platform.default_storefront_id) {
+                                    newPlatformData.storefront_id = platform.default_storefront_id;
+                                  }
+                                }}
+                                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                              />
+                              <div class="ml-3 flex items-center gap-2">
+                                {#if platform.icon_url}
+                                  <img src={platform.icon_url} alt={platform.display_name} class="w-5 h-5 object-contain" />
+                                {/if}
+                                <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
+                              </div>
+                            </label>
+                          {/each}
+                        </div>
+                      {/if}
                     </div>
 
                     <!-- Storefront Selection -->
@@ -973,29 +1141,33 @@
                         {/each}
                       </select>
                     </div>
+                    
+                    <!-- Additional fields in a grid layout -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
 
-                    <!-- Store URL (Optional) -->
-                    <div>
-                      <label for="new_store_url" class="form-label">Store URL (Optional)</label>
-                      <input
-                        id="new_store_url"
-                        type="url"
-                        bind:value={newPlatformData.store_url}
-                        class="form-input"
-                        placeholder="https://store.example.com/game/..."
-                      />
-                    </div>
+                      <!-- Store URL (Optional) -->
+                      <div>
+                        <label for="new_store_url" class="form-label">Store URL (Optional)</label>
+                        <input
+                          id="new_store_url"
+                          type="url"
+                          bind:value={newPlatformData.store_url}
+                          class="form-input"
+                          placeholder="https://store.example.com/game/..."
+                        />
+                      </div>
 
-                    <!-- Store Game ID (Optional) -->
-                    <div>
-                      <label for="new_store_game_id" class="form-label">Store Game ID (Optional)</label>
-                      <input
-                        id="new_store_game_id"
-                        type="text"
-                        bind:value={newPlatformData.store_game_id}
-                        class="form-input"
-                        placeholder="Game ID in the store"
-                      />
+                      <!-- Store Game ID (Optional) -->
+                      <div>
+                        <label for="new_store_game_id" class="form-label">Store Game ID (Optional)</label>
+                        <input
+                          id="new_store_game_id"
+                          type="text"
+                          bind:value={newPlatformData.store_game_id}
+                          class="form-input"
+                          placeholder="Game ID in the store"
+                        />
+                      </div>
                     </div>
                   </div>
 

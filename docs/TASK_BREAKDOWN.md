@@ -128,8 +128,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game editing form with comprehensive metadata fields
 - [x] Add new platform associations to existing games
 - [x] Remove platform associations from existing games
-- [ ] IGDB platform filtering during game editing (show IGDB platforms first)
-- [ ] "Others" expandable section for additional platforms in game editing interface
+- [x] IGDB platform filtering during game editing (show IGDB platforms first)
+- [x] "Others" expandable section for additional platforms in game editing interface
 - [ ] Validation preventing removal of all platforms (orphaned games)
 - [ ] Bulk editing interface for multiple games
 - [ ] Real-time updates to collection view after edits
