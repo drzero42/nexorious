@@ -35,6 +35,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Add Physical storefront to seed data fixtures
 - [x] Create seed data fixtures for idempotent platform/storefront loading function
 - [x] Seed data includes all 11 platforms, 12 storefronts, and 11 default mappings per PRD specifications
+- [x] Support ownership status that allows zero platform associations
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
@@ -43,7 +44,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Game CRUD operations with comprehensive metadata
 - [x] Platform and storefront management endpoints (ADMIN-ONLY: create, update, delete platforms and storefronts)
 - [x] Simplified platform/storefront data models with minimal required fields only
-- [ ] Backend validation endpoints to prevent removal of all platforms (orphaned games)
+- [ ] Backend validation endpoints to prevent removal of all platforms unless ownership status is "no longer owned"
 - [x] User game collection management
 - [x] Progress tracking endpoints with multi-level completion
 - [x] Rating and tagging system endpoints
@@ -132,7 +133,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] "Others" expandable section for additional platforms in game editing interface
 - [ ] Add/remove storefront associations per platform with visual feedback
 - [ ] Confirmation dialogs for removing platform/storefront ownership
-- [ ] Validation preventing removal of all platforms (orphaned games)
+- [ ] Validation preventing removal of all platforms unless ownership status is "no longer owned"
 - [ ] Visual indicators showing current ownership status during editing
 - [ ] Bulk editing interface for multiple games
 - [ ] Real-time updates to collection view after edits (changes reflected immediately)
@@ -186,7 +187,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Performance tests for critical operations
 - [ ] Database migration tests for both PostgreSQL and SQLite
 - [ ] Admin privilege enforcement tests across all endpoints
-- [ ] Validation tests for orphaned game prevention (must have at least one platform)
+- [ ] Validation tests for platform removal based on ownership status
 - [ ] Multi-storefront per platform association tests
 - [ ] Platform/storefront removal validation tests with confirmation dialogs
 
@@ -204,7 +205,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Component tests to verify IGDB ratings display correctly (integer input → decimal output)
 - [ ] Integration tests for IGDB rating display across game cards, detail views, and search results
 - [ ] Frontend tests for multi-storefront per platform interface functionality
-- [ ] Frontend tests for orphaned game prevention validation with user feedback
+- [ ] Frontend tests for platform removal validation based on ownership status
 - [ ] Component tests for confirmation dialogs in platform/storefront removal
 
 #### 1.3.3 CI/CD Pipeline

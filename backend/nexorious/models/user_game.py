@@ -17,6 +17,7 @@ class OwnershipStatus(str, Enum):
     BORROWED = "borrowed"
     RENTED = "rented"
     SUBSCRIPTION = "subscription"
+    NO_LONGER_OWNED = "no_longer_owned"
 
 
 class PlayStatus(str, Enum):

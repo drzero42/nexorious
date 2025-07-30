@@ -58,12 +58,13 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 1.2 Game Library Management
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to add games to my collection so I can track what I own across all platforms and storefronts in a unified view
+- **User Story**: As a user, I want to add games to my collection so I can track what I own across all platforms and storefronts in a unified view, including games I've completed but no longer own
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
   - Game metadata storage with comprehensive fields including IGDB slug for proper link generation
   - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
   - Ownership tracking through storefront associations
+  - Support for games with no platform associations when ownership status indicates the game is no longer owned
   - Duplicate detection and prevention at the game level (not platform level)
   - IGDB integration for game lookup and metadata retrieval with slug field storage
 - **Frontend Requirements**:
@@ -94,12 +95,13 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - RESTful endpoints for updating game metadata and platform/storefront associations
   - Platform/storefront addition and removal for existing games
-  - Validation to prevent removal of all platforms (orphaned games)
+  - Validation to prevent removal of all platforms unless ownership status indicates the game is no longer owned
 - **Frontend Requirements**:
   - Game editing form with metadata modification capabilities
   - Platform and storefront management interface within game editing
   - Add/remove platform associations with visual feedback
   - Add/remove storefront associations per platform
+  - Allow removal of all platforms when ownership status is set to "no longer owned"
   - Confirmation dialogs for removing platform/storefront ownership
   - Bulk editing capabilities for multiple games
   - Visual indicators showing current ownership status during editing
@@ -109,7 +111,7 @@ To create the definitive self-hosted solution for personal game collection manag
   3. User can modify game metadata (title, notes, ratings, etc.)
   4. User can add new platforms/storefronts to their ownership
   5. User can remove existing platforms/storefronts from their ownership
-  6. System validates changes and prevents invalid states (e.g., no platforms)
+  6. System validates changes and prevents invalid states (e.g., no platforms unless ownership status is "no longer owned")
   7. Changes are saved and reflected immediately in the collection view
   8. Game continues to appear once in collection with updated platform/storefront indicators
 - **Acceptance Criteria**:
