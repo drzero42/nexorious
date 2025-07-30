@@ -144,6 +144,7 @@ class TestIGDBPlatformDataStorage:
             
             # Verify platform data was stored
             assert data["igdb_platform_ids"] == "[6, 48, 167]"
+            assert data["igdb_platform_names"] == '["pc-windows", "playstation-4", "playstation-5"]'
             
         finally:
             # Clean up overrides
@@ -187,8 +188,9 @@ class TestIGDBPlatformDataStorage:
             assert response.status_code == 201
             data = response.json()
             
-            # Verify platform data field is null when no data available  
+            # Verify platform data fields is null when no data available  
             assert data["igdb_platform_ids"] is None
+            assert data["igdb_platform_names"] is None
             
         finally:
             # Clean up overrides

@@ -121,8 +121,8 @@
       
       if (game) {
         resetEditData();
-        // Try to get IGDB platform data for filtering
-        await loadIGDBPlatformData();
+        // Load IGDB platform data for filtering from stored data
+        loadIGDBPlatformData();
       }
     } catch (error) {
       console.error('Failed to load game:', error);
@@ -131,31 +131,18 @@
     }
   }
 
-  async function loadIGDBPlatformData() {
-    if (!game || !game.game.igdb_id) {
-      // No IGDB ID available, reset platform filtering to show all platforms
+  function loadIGDBPlatformData() {
+    if (!game || !game.game.igdb_platform_names) {
+      // No IGDB platform data available, reset platform filtering to show all platforms
       igdbPlatformNames = [];
       return;
     }
 
     try {
-      // Search for the game by title to get platform data
-      // We use the game title since we need the platform data, not just the ID
-      const searchResponse = await games.searchIGDB(game.game.title, 5);
-      
-      // Find the matching game by IGDB ID
-      const matchingGame = searchResponse.games?.find(candidate => 
-        candidate.igdb_id === game!.game.igdb_id
-      );
-      
-      if (matchingGame && matchingGame.platforms) {
-        igdbPlatformNames = matchingGame.platforms;
-      } else {
-        // No platform data found, fall back to showing all platforms
-        igdbPlatformNames = [];
-      }
+      // Parse stored platform names from the database
+      igdbPlatformNames = JSON.parse(game.game.igdb_platform_names);
     } catch (error) {
-      console.error('Failed to load IGDB platform data:', error);
+      console.error('Failed to parse IGDB platform data:', error);
       // Fall back to showing all platforms
       igdbPlatformNames = [];
     }

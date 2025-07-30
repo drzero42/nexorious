@@ -64,6 +64,7 @@ class GameResponse(BaseModel, TimestampMixin):
     igdb_id: Optional[str]
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
+    igdb_platform_names: Optional[str]
     is_verified: bool
     aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
 

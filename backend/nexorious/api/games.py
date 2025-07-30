@@ -499,6 +499,7 @@ async def import_from_igdb(
             "igdb_id": game_metadata.igdb_id,
             "igdb_slug": game_metadata.igdb_slug,
             "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids) if game_metadata.igdb_platform_ids else None,
+            "igdb_platform_names": json.dumps(game_metadata.platform_names) if game_metadata.platform_names else None,
             "game_metadata": "{}",
             "is_verified": True  # Games imported from IGDB are considered verified
         }
