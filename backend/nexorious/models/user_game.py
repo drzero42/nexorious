@@ -53,8 +53,8 @@ class UserGame(SQLModel, table=True):
     # Relationships
     user: "User" = Relationship(back_populates="user_games")
     game: "Game" = Relationship(back_populates="user_games")
-    platforms: List["UserGamePlatform"] = Relationship(back_populates="user_game")
-    tags: List["UserGameTag"] = Relationship(back_populates="user_game")
+    platforms: List["UserGamePlatform"] = Relationship(back_populates="user_game", cascade_delete=True)
+    tags: List["UserGameTag"] = Relationship(back_populates="user_game", cascade_delete=True)
     
     # Unique constraint
     __table_args__ = (
