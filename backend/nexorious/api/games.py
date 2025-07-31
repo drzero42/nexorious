@@ -9,6 +9,7 @@ import json
 import re
 import logging
 from typing import Annotated, Optional, List
+from rapidfuzz import fuzz
 
 from ..core.database import get_session
 from ..core.security import get_current_user, get_current_admin_user
@@ -63,6 +64,47 @@ def parse_date_string(date_string: Optional[str]) -> Optional[date]:
         return None
 
 
+def _rank_games_by_fuzzy_match(games: List[Game], query: str, threshold: float = 0.6) -> List[Game]:
+    """Rank games by fuzzy matching similarity to query."""
+    if not games or not query.strip():
+        return games
+    
+    query_lower = query.lower().strip()
+    
+    # Calculate similarity scores for each game
+    scored_games = []
+    for game in games:
+        # Calculate multiple similarity scores
+        title_lower = game.title.lower()
+        
+        # Different matching strategies
+        exact_score = 1.0 if query_lower == title_lower else 0.0
+        ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
+        partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
+        token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
+        token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
+        
+        # Calculate weighted final score
+        final_score = max(
+            exact_score * 1.0,  # Exact match gets highest priority
+            ratio_score * 0.9,  # Overall similarity
+            partial_score * 0.8,  # Partial match
+            token_sort_score * 0.7,  # Token order similarity
+            token_set_score * 0.6  # Token set similarity
+        )
+        
+        # Only include games above threshold
+        if final_score >= threshold:
+            scored_games.append((game, final_score))
+    
+    # Sort by score (descending) and return games
+    scored_games.sort(key=lambda x: x[1], reverse=True)
+    
+    logger.debug(f"Fuzzy matching results for '{query}': {[(g.title, s) for g, s in scored_games[:5]]}")
+    
+    return [game for game, score in scored_games]
+
+
 @router.get("/", response_model=GameListResponse)
 async def list_games(
     session: Annotated[Session, Depends(get_session)],
@@ -75,7 +117,8 @@ async def list_games(
     release_year: Optional[int] = Query(default=None, description="Filter by release year"),
     is_verified: Optional[bool] = Query(default=None, description="Filter by verification status"),
     sort_by: Optional[str] = Query(default="title", description="Sort field"),
-    sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order")
+    sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order"),
+    fuzzy_threshold: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Fuzzy matching threshold for title search (0.0-1.0)")
 ):
     """List games with optional search and filtering."""
     
@@ -84,12 +127,13 @@ async def list_games(
     
     # Apply filters
     filters = []
+    fuzzy_search_mode = q and fuzzy_threshold is not None
     
-    if q:
-        # Search in title, description, and aliases
+    if q and not fuzzy_search_mode:
+        # Regular search in title, description, and aliases
         search_filter = or_(
             Game.title.icontains(q),
-            Game.description.icontains(q) if Game.description.is_not(None) else False
+            and_(Game.description.is_not(None), Game.description.icontains(q))
         )
         filters.append(search_filter)
     
@@ -108,34 +152,62 @@ async def list_games(
     if is_verified is not None:
         filters.append(Game.is_verified == is_verified)
     
-    if filters:
-        query = query.where(and_(*filters))
-    
-    # Apply sorting
-    sort_field = getattr(Game, sort_by, Game.title)
-    if sort_order == "desc":
-        query = query.order_by(sort_field.desc())
+    if fuzzy_search_mode:
+        # For fuzzy search, we need to get all matching games first, then apply fuzzy matching
+        if filters:
+            query = query.where(and_(*filters))
+        
+        # Get all games matching non-text filters
+        all_games = session.exec(query).all()
+        
+        # Apply fuzzy matching
+        fuzzy_games = _rank_games_by_fuzzy_match(all_games, q, fuzzy_threshold)
+        
+        # Apply pagination to fuzzy results
+        total = len(fuzzy_games)
+        offset = (page - 1) * per_page
+        games = fuzzy_games[offset:offset + per_page]
+        
+        # Calculate pages
+        pages = (total + per_page - 1) // per_page
+        
+        return GameListResponse(
+            games=games,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
     else:
-        query = query.order_by(sort_field.asc())
-    
-    # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
-    total = session.exec(count_query).one()
-    
-    # Apply pagination
-    offset = (page - 1) * per_page
-    games = session.exec(query.offset(offset).limit(per_page)).all()
-    
-    # Calculate pages
-    pages = (total + per_page - 1) // per_page
-    
-    return GameListResponse(
-        games=games,
-        total=total,
-        page=page,
-        per_page=per_page,
-        pages=pages
-    )
+        # Regular search with database-level sorting and pagination
+        if filters:
+            query = query.where(and_(*filters))
+        
+        # Apply sorting
+        sort_field = getattr(Game, sort_by, Game.title)
+        if sort_order == "desc":
+            query = query.order_by(sort_field.desc())
+        else:
+            query = query.order_by(sort_field.asc())
+        
+        # Get total count
+        count_query = select(func.count()).select_from(query.subquery())
+        total = session.exec(count_query).one()
+        
+        # Apply pagination
+        offset = (page - 1) * per_page
+        games = session.exec(query.offset(offset).limit(per_page)).all()
+        
+        # Calculate pages
+        pages = (total + per_page - 1) // per_page
+        
+        return GameListResponse(
+            games=games,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
 
 
 @router.get("/{game_id}", response_model=GameResponse)
