@@ -230,31 +230,44 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Verify existing APIs handle import validation scenarios properly
 
 #### 2.1.2 Import Script Development
-- [ ] Set up import script project structure under `backend/scripts/`
-- [ ] Add required dependencies (pandas, rich, click) to pyproject.toml
-- [ ] Implement Darkadia CSV parser with field validation
-- [ ] Create platform/storefront mapping system
-- [ ] Build data transformation functions (play status, ownership, dates)  
-- [ ] Implement game deduplication logic (within CSV and against database)
-- [ ] Create Nexorious API client wrapper for individual operations
-- [ ] Develop three merge strategies (interactive, overwrite, preserve)
-- [ ] Implement interactive conflict resolution UI
-- [ ] Add progress tracking and console reporting
-- [ ] Create comprehensive error handling and retry logic
-- [ ] Add command-line interface with click
-- [ ] Implement progress saving/resume functionality
+- [x] Set up import script project structure under `backend/scripts/`
+- [x] Add required dependencies (pandas, rich, click) to pyproject.toml
+- [x] Implement Darkadia CSV parser with field validation
+- [x] Create platform/storefront mapping system
+- [x] Build data transformation functions (play status, ownership, dates)  
+- [x] Implement game deduplication logic (within CSV and against database)
+- [x] Create Nexorious API client wrapper for individual operations
+- [x] Develop three merge strategies (interactive, overwrite, preserve)
+- [x] Implement interactive conflict resolution UI
+- [x] Add progress tracking and console reporting
+- [x] Create comprehensive error handling and retry logic
+- [x] Add command-line interface with click
+- [x] ~~Implement progress saving/resume functionality~~ (SUPERSEDED: Made import idempotent instead)
+
+#### 2.1.2.1 Idempotency Implementation Tasks
+- [ ] Ensure game deduplication logic is fully idempotent across all merge strategies
+- [ ] Update CLI to remove --resume option from implementation (docs already updated)
+- [ ] Verify Interactive merger handles re-running without duplicate prompts for same conflicts
+- [ ] Verify Overwrite merger produces identical results on re-run
+- [ ] Verify Preserve merger doesn't create duplicate platforms on re-run
+- [ ] Ensure API client properly handles existing game detection for idempotency
+- [ ] Update platform association logic to prevent duplicates on re-run
 
 #### 2.1.3 Testing
-- [ ] Unit tests for CSV parsing and validation
-- [ ] Unit tests for data transformation functions
-- [ ] Unit tests for merge strategy logic
-- [ ] Integration tests for API client
+- [x] Unit tests for CSV parsing and validation
+- [x] Unit tests for data transformation functions
+- [x] Unit tests for merge strategy logic
+- [x] Integration tests for API client
 - [ ] End-to-end import workflow tests
 - [ ] Performance tests with sequential processing
 - [ ] Error scenario testing (network failures, API errors)
-- [ ] Create sample test data based on Darkadia format
+- [x] Create sample test data based on Darkadia format
+- [ ] Add idempotency validation tests (run import twice, verify same result)
+- [ ] Add end-to-end test for interrupted import scenario (simulate failure and re-run)
+- [ ] Test merge strategy idempotency behavior across all three strategies
 
 #### 2.1.4 Documentation
+- [x] Document idempotent operation requirement and behavior
 - [ ] Create import script usage documentation
 - [ ] Document merge strategy behaviors and use cases
 - [ ] Add troubleshooting guide for common import issues
