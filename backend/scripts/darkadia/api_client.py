@@ -98,6 +98,39 @@ class NexoriousAPIClient:
         except httpx.RequestError as e:
             raise APIException(f"Network error during authentication: {str(e)}")
     
+    async def get_current_user(self) -> Dict[str, Any]:
+        """
+        Get current user's profile information.
+        
+        Returns:
+            User profile data including id, username, etc.
+            
+        Raises:
+            APIException: If request fails or user is not authenticated
+        """
+        
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/auth/me"
+            )
+            
+            if response.status_code == 200:
+                user_data = response.json()
+                console.print(f"✓ Retrieved user profile: {user_data.get('username')}")
+                return user_data
+            else:
+                error_msg = f"Failed to get current user: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    error_msg += f" - {error_data.get('detail', 'Unknown error')}"
+                except:
+                    error_msg += f" - {response.text}"
+                
+                raise APIException(error_msg, response.status_code)
+                
+        except httpx.RequestError as e:
+            raise APIException(f"Network error getting current user: {str(e)}")
+    
     async def health_check(self) -> bool:
         """Check if the API is healthy."""
         try:

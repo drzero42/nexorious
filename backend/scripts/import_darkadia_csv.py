@@ -3,10 +3,15 @@
 Darkadia CSV Import Script for Nexorious
 
 This script imports game collections from Darkadia CSV export files into
-the Nexorious game collection management system.
+the Nexorious game collection management system. Games are imported for
+the authenticated user only.
 
 Usage:
     python import_darkadia_csv.py [CSV_FILE] [OPTIONS]
+
+Authentication:
+    Must provide either --auth-token OR --username/--password
+    Games will be imported for the authenticated user
 
 The script supports three merge strategies for handling conflicts:
 - Interactive: Ask user for resolution (default)
@@ -35,7 +40,6 @@ console = Console()
 
 @click.command()
 @click.argument('csv_file', type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option('--user-id', required=True, help='User ID for import')
 @click.option('--api-base', default='http://localhost:8000', help='Backend API base URL')
 @click.option('--interactive', 'merge_strategy', flag_value='interactive', default=True,
               help='Pause and ask user for conflict resolution (default)')
@@ -51,7 +55,6 @@ console = Console()
 @click.option('--verbose', is_flag=True, help='Enable verbose logging')
 def import_csv(
     csv_file: Path,
-    user_id: str,
     api_base: str,
     merge_strategy: str,
     dry_run: bool,
@@ -61,11 +64,10 @@ def import_csv(
     password: Optional[str],
     verbose: bool
 ):
-    """Import games from Darkadia CSV export file."""
+    """Import games from Darkadia CSV export file for the authenticated user."""
     
     console.print("[bold green]Darkadia CSV Import Tool[/bold green]")
     console.print(f"CSV File: {csv_file}")
-    console.print(f"Target User: {user_id}")
     console.print(f"Merge Strategy: {merge_strategy}")
     
     if dry_run:
@@ -75,7 +77,6 @@ def import_csv(
         # Run the async import process
         asyncio.run(run_import(
             csv_file=csv_file,
-            user_id=user_id,
             api_base=api_base,
             merge_strategy=merge_strategy,
             dry_run=dry_run,
@@ -99,7 +100,6 @@ def import_csv(
 
 async def run_import(
     csv_file: Path,
-    user_id: str,
     api_base: str,
     merge_strategy: str,
     dry_run: bool,
@@ -109,7 +109,7 @@ async def run_import(
     password: Optional[str],
     verbose: bool
 ):
-    """Run the main import process."""
+    """Run the main import process for the authenticated user."""
     
     # Phase 1: Parse CSV file
     console.print("\n[cyan]Phase 1: Parsing CSV file...[/cyan]")
@@ -136,8 +136,20 @@ async def run_import(
     
     console.print("✓ API connection established")
     
-    # Phase 4: Setup merge strategy
-    console.print(f"\n[cyan]Phase 4: Setting up {merge_strategy} merge strategy...[/cyan]")
+    # Phase 4: Get current user information
+    console.print("\n[cyan]Phase 4: Retrieving user information...[/cyan]")
+    current_user = await api_client.get_current_user()
+    user_id = current_user.get('id')
+    username_display = current_user.get('username')
+    
+    if not user_id:
+        console.print("[red]Error: Unable to retrieve user ID from profile[/red]")
+        return
+    
+    console.print(f"✓ Target User: {username_display}")
+    
+    # Phase 5: Setup merge strategy
+    console.print(f"\n[cyan]Phase 5: Setting up {merge_strategy} merge strategy...[/cyan]")
     
     if merge_strategy == 'interactive':
         merger = InteractiveMerger(console, api_client, dry_run)
@@ -150,8 +162,8 @@ async def run_import(
     
     console.print("✓ Merge strategy configured")
     
-    # Phase 5: Process games
-    console.print(f"\n[cyan]Phase 5: Processing {len(unique_games)} games...[/cyan]")
+    # Phase 6: Process games
+    console.print(f"\n[cyan]Phase 6: Processing {len(unique_games)} games...[/cyan]")
     
     results = await merger.process_games(
         unique_games, 
@@ -159,8 +171,8 @@ async def run_import(
         batch_size=batch_size
     )
     
-    # Phase 6: Generate report
-    console.print("\n[cyan]Phase 6: Generating report...[/cyan]")
+    # Phase 7: Generate report
+    console.print("\n[cyan]Phase 7: Generating report...[/cyan]")
     generate_final_report(results, csv_file, merge_strategy)
     
     console.print("\n[bold green]Import completed successfully![/bold green]")

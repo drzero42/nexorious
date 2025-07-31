@@ -69,6 +69,50 @@ class TestNexoriousAPIClient:
         assert 'Network error during authentication' in str(exc_info.value)
     
     @pytest.mark.asyncio
+    async def test_get_current_user_success(self, api_client, mock_httpx_client):
+        """Test successful current user retrieval."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'id': 'user_123',
+            'username': 'testuser',
+            'is_admin': False,
+            'is_active': True
+        }
+        mock_httpx_client.get.return_value = mock_response
+        
+        user_data = await api_client.get_current_user()
+        
+        assert user_data['id'] == 'user_123'
+        assert user_data['username'] == 'testuser'
+        mock_httpx_client.get.assert_called_once_with('http://localhost:8000/api/auth/me')
+    
+    @pytest.mark.asyncio
+    async def test_get_current_user_failure(self, api_client, mock_httpx_client):
+        """Test current user retrieval failure."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.json.return_value = {'detail': 'Unauthorized'}
+        mock_response.text = 'Unauthorized'
+        mock_httpx_client.get.return_value = mock_response
+        
+        with pytest.raises(APIException) as exc_info:
+            await api_client.get_current_user()
+        
+        assert exc_info.value.status_code == 401
+        assert 'Failed to get current user' in str(exc_info.value)
+    
+    @pytest.mark.asyncio
+    async def test_get_current_user_network_error(self, api_client, mock_httpx_client):
+        """Test current user retrieval with network error."""
+        mock_httpx_client.get.side_effect = httpx.RequestError("Connection failed")
+        
+        with pytest.raises(APIException) as exc_info:
+            await api_client.get_current_user()
+        
+        assert 'Network error getting current user' in str(exc_info.value)
+    
+    @pytest.mark.asyncio
     async def test_health_check_success(self, api_client, mock_httpx_client):
         """Test successful health check."""
         mock_response = MagicMock()
