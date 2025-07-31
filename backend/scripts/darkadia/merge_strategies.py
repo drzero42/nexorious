@@ -487,6 +487,9 @@ class OverwriteMerger(MergeStrategy):
         ) as progress:
             task = progress.add_task("Processing games...", total=len(games))
             
+            # Set progress console for API client messages
+            self.api_client.set_progress_console(progress.console)
+            
             for darkadia_game in games:
                 try:
                     await self._process_single_game(darkadia_game, user_id)
@@ -494,6 +497,9 @@ class OverwriteMerger(MergeStrategy):
                     self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
                 finally:
                     progress.update(task, advance=1)
+            
+            # Reset to default console after progress tracking
+            self.api_client.set_progress_console(None)
         
         return self.results
     
@@ -562,6 +568,9 @@ class PreserveMerger(MergeStrategy):
         ) as progress:
             task = progress.add_task("Processing games...", total=len(games))
             
+            # Set progress console for API client messages
+            self.api_client.set_progress_console(progress.console)
+            
             for darkadia_game in games:
                 try:
                     await self._process_single_game(darkadia_game, user_id)
@@ -569,6 +578,9 @@ class PreserveMerger(MergeStrategy):
                     self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
                 finally:
                     progress.update(task, advance=1)
+            
+            # Reset to default console after progress tracking
+            self.api_client.set_progress_console(None)
         
         return self.results
     

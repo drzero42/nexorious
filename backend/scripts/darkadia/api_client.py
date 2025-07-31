@@ -29,11 +29,14 @@ class APIException(Exception):
 class NexoriousAPIClient:
     """Client for interacting with the Nexorious API."""
     
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, timeout: float = 30.0, progress_console: Optional[Console] = None):
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         self.auth_token: Optional[str] = None
         self.client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+        
+        # Use progress console if provided, otherwise fall back to global console
+        self.console = progress_console or console
         
         # Cache for platforms and storefronts
         self._platforms_cache: Optional[List[Dict[str, Any]]] = None
@@ -54,6 +57,10 @@ class NexoriousAPIClient:
         """Set the authentication token."""
         self.auth_token = token
         self.client.headers.update({'Authorization': f'Bearer {token}'})
+    
+    def set_progress_console(self, progress_console: Optional[Console]):
+        """Set the progress console for messages during progress tracking."""
+        self.console = progress_console or console
     
     async def authenticate(self, username: str, password: str) -> str:
         """
@@ -81,7 +88,7 @@ class NexoriousAPIClient:
                 token = data.get('access_token')
                 if token:
                     self.set_token(token)
-                    console.print("✓ Authentication successful")
+                    self.console.print("✓ Authentication successful")
                     return token
                 else:
                     raise APIException("No access token in response")
@@ -116,7 +123,7 @@ class NexoriousAPIClient:
             
             if response.status_code == 200:
                 user_data = response.json()
-                console.print(f"✓ Retrieved user profile: {user_data.get('username')}")
+                self.console.print(f"✓ Retrieved user profile: {user_data.get('username')}")
                 return user_data
             else:
                 error_msg = f"Failed to get current user: {response.status_code}"
@@ -167,11 +174,11 @@ class NexoriousAPIClient:
                 data = response.json()
                 return data.get('user_games', [])
             else:
-                console.print(f"[yellow]Search failed: {response.status_code}[/yellow]")
+                self.console.print(f"[yellow]Search failed: {response.status_code}[/yellow]")
                 return []
                 
         except httpx.RequestError as e:
-            console.print(f"[yellow]Search error: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]Search error: {str(e)}[/yellow]")
             return []
     
     async def search_igdb_games(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -196,11 +203,11 @@ class NexoriousAPIClient:
                 data = response.json()
                 return data.get('games', [])
             else:
-                console.print(f"[yellow]IGDB search failed: {response.status_code}[/yellow]")
+                self.console.print(f"[yellow]IGDB search failed: {response.status_code}[/yellow]")
                 return []
                 
         except httpx.RequestError as e:
-            console.print(f"[yellow]IGDB search error: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]IGDB search error: {str(e)}[/yellow]")
             return []
     
     async def create_user_game(self, user_id: str, game_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -226,14 +233,14 @@ class NexoriousAPIClient:
             for platform_info in game_data.get('platforms', []):
                 platform_id = await self.get_platform_id(platform_info['platform_name'])
                 if not platform_id:
-                    console.print(f"[yellow]Platform not found: {platform_info['platform_name']}[/yellow]")
+                    self.console.print(f"[yellow]Platform not found: {platform_info['platform_name']}[/yellow]")
                     continue
                 
                 storefront_id = None
                 if platform_info.get('storefront_name'):
                     storefront_id = await self.get_storefront_id(platform_info['storefront_name'])
                     if not storefront_id:
-                        console.print(f"[yellow]Storefront not found: {platform_info['storefront_name']}[/yellow]")
+                        self.console.print(f"[yellow]Storefront not found: {platform_info['storefront_name']}[/yellow]")
                         continue
                 
                 platform_associations.append({
@@ -263,7 +270,7 @@ class NexoriousAPIClient:
             
             if response.status_code == 201:
                 created_game = response.json()
-                console.print(f"\n✓ Created user game: {game_record['title']}", end="")
+                self.console.print(f"\n✓ Created user game: {game_record['title']}")
                 return created_game
             else:
                 error_msg = f"Failed to create user game: {response.status_code}"
@@ -357,7 +364,7 @@ class NexoriousAPIClient:
                 return False
             
         except httpx.RequestError as e:
-            console.print(f"[yellow]Error adding platform: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]Error adding platform: {str(e)}[/yellow]")
             return False
     
     async def get_user_game_details(self, user_game_id: str) -> Optional[Dict[str, Any]]:
@@ -380,7 +387,7 @@ class NexoriousAPIClient:
                 return None
                 
         except httpx.RequestError as e:
-            console.print(f"[yellow]Error getting user game details: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]Error getting user game details: {str(e)}[/yellow]")
             return None
     
     async def get_platforms(self) -> List[Dict[str, Any]]:
@@ -404,11 +411,11 @@ class NexoriousAPIClient:
                 
                 return self._platforms_cache
             else:
-                console.print(f"[yellow]Failed to get platforms: {response.status_code}[/yellow]")
+                self.console.print(f"[yellow]Failed to get platforms: {response.status_code}[/yellow]")
                 return []
                 
         except httpx.RequestError as e:
-            console.print(f"[yellow]Error getting platforms: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]Error getting platforms: {str(e)}[/yellow]")
             return []
     
     async def get_storefronts(self) -> List[Dict[str, Any]]:
@@ -432,11 +439,11 @@ class NexoriousAPIClient:
                 
                 return self._storefronts_cache
             else:
-                console.print(f"[yellow]Failed to get storefronts: {response.status_code}[/yellow]")
+                self.console.print(f"[yellow]Failed to get storefronts: {response.status_code}[/yellow]")
                 return []
                 
         except httpx.RequestError as e:
-            console.print(f"[yellow]Error getting storefronts: {str(e)}[/yellow]")
+            self.console.print(f"[yellow]Error getting storefronts: {str(e)}[/yellow]")
             return []
     
     async def validate_platform_storefront(self, platform_name: str, storefront_name: str) -> bool:
@@ -520,7 +527,7 @@ class NexoriousAPIClient:
             igdb_candidates = await self.search_igdb_games(game_title, limit=5)
             
             if not igdb_candidates:
-                console.print(f"[yellow]No IGDB results found for: {game_title}[/yellow]")
+                self.console.print(f"[yellow]No IGDB results found for: {game_title}[/yellow]")
                 return None
             
             # Take the first (best) match
@@ -539,10 +546,10 @@ class NexoriousAPIClient:
                     # Look for existing game with same IGDB ID
                     for game in existing_games:
                         if game.get('igdb_id') == best_match.get('igdb_id'):
-                            console.print(f"✓ Found existing game: {game['title']} (ID: {game['id']})")
+                            self.console.print(f"✓ Found existing game: {game['title']} (ID: {game['id']})")
                             return game
             except Exception as e:
-                console.print(f"[yellow]Error searching existing games: {str(e)}[/yellow]")
+                self.console.print(f"[yellow]Error searching existing games: {str(e)}[/yellow]")
             
             # Game doesn't exist, create it from IGDB data
             try:
@@ -558,25 +565,34 @@ class NexoriousAPIClient:
                 
                 if response.status_code == 201:
                     new_game = response.json()
-                    console.print(f"\n✓ Created new game: {new_game['title']} (ID: {new_game['id']})", end="")
+                    self.console.print(f"\n✓ Created new game: {new_game['title']} (ID: {new_game['id']})")
                     return new_game
                 else:
-                    error_msg = f"Failed to import game from IGDB: {response.status_code}"
+                    # Build detailed error message with game context
+                    error_msg = f"Failed to import '{game_title}' from IGDB: {response.status_code}"
+                    
+                    # Extract detailed error information
                     try:
                         error_data = response.json()
-                        error_msg += f" - {error_data.get('detail', 'Unknown error')}"
+                        # Try to get the most informative error message
+                        error_detail = error_data.get('error') or error_data.get('detail', 'Unknown error')
+                        error_msg += f" - {error_detail}"
+                        
+                        # Add IGDB ID context if available
+                        if best_match and best_match.get('igdb_id'):
+                            error_msg += f" (IGDB ID: {best_match['igdb_id']})"
                     except:
                         error_msg += f" - {response.text}"
                     
-                    console.print(f"[red]Error creating game: {error_msg}[/red]")
+                    self.console.print(f"\n[red]Error creating game: {error_msg}[/red]")
                     return None
                     
             except httpx.RequestError as e:
-                console.print(f"[red]Network error creating game: {str(e)}[/red]")
+                self.console.print(f"\n[red]Network error creating game '{game_title}': {str(e)}[/red]")
                 return None
                 
         except Exception as e:
-            console.print(f"[red]Error in find_or_create_game: {str(e)}[/red]")
+            self.console.print(f"\n[red]Error finding/creating game '{game_title}': {str(e)}[/red]")
             return None
     
     async def retry_request(self, func, max_retries: int = 3, backoff_factor: float = 1.0) -> Any:
@@ -602,7 +618,7 @@ class NexoriousAPIClient:
                 
                 if attempt < max_retries:
                     delay = backoff_factor * (2 ** attempt)
-                    console.print(f"[yellow]Request failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay}s...[/yellow]")
+                    self.console.print(f"[yellow]Request failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay}s...[/yellow]")
                     await asyncio.sleep(delay)
                 else:
                     break
