@@ -189,7 +189,7 @@ async def list_user_games(
         query = query.join(Game)
         query = query.where(or_(
             Game.title.icontains(q),
-            UserGame.personal_notes.icontains(q) if UserGame.personal_notes.is_not(None) else False
+            and_(UserGame.personal_notes.is_not(None), UserGame.personal_notes.icontains(q))
         ))
     
     if fuzzy_search_mode:
