@@ -137,6 +137,59 @@ def convert_ownership_status(row):
 - **Additional Notes**: Append relevant copy notes if present
 - **Format**: Combine with separator if multiple note sources exist
 
+## Idempotent Operation Requirement
+
+### Core Principle
+The Darkadia CSV import script **MUST** be idempotent, meaning that running the same import command multiple times with the same CSV file should produce identical results in the user's game collection. This design eliminates the need for complex progress tracking and resume functionality.
+
+### Benefits of Idempotent Design
+- **Simple Recovery**: Users can safely re-run the same command if the import is interrupted by network issues, API errors, or system problems
+- **No State Management**: No need to maintain progress files or intermediate state that could become corrupted
+- **Predictable Behavior**: Users always know that re-running the import will not create duplicate games or corrupt existing data
+- **Error Resilience**: Temporary failures (network timeouts, API rate limits) can be resolved by simply running the import again
+- **Development Simplicity**: No complex resume logic, checkpoint management, or partial state recovery
+
+### Implementation Requirements
+
+#### Game Deduplication
+- **Fuzzy Matching**: Use title-based fuzzy matching to detect existing games in the user's collection
+- **Conflict Resolution**: Apply the selected merge strategy consistently across runs
+- **Platform Handling**: Additive platform associations without creating duplicates
+
+#### Merge Strategy Behavior
+- **Interactive Mode**: 
+  - Same conflicts should be resolvable the same way on re-runs
+  - Batch decisions should apply consistently
+  - Skip option should not affect subsequent runs
+- **Overwrite Mode**: 
+  - Always produces identical final state regardless of starting state
+  - CSV data takes precedence consistently
+- **Preserve Mode**: 
+  - Only adds new games and platforms
+  - Never modifies existing data, ensuring consistent results
+
+#### Error Handling
+- **Graceful Failures**: Individual game failures should not prevent processing of remaining games
+- **Detailed Logging**: Log all operations for troubleshooting without affecting idempotency
+- **Partial Success**: Successfully imported games remain imported on subsequent runs
+
+### User Experience
+When an import is interrupted, users simply re-run the exact same command:
+```bash
+# Original command
+python import_darkadia_csv.py my_collection.csv --user-id 123 --overwrite
+
+# After interruption, same command continues where it left off
+python import_darkadia_csv.py my_collection.csv --user-id 123 --overwrite
+```
+
+The script will:
+1. Parse the CSV file again
+2. Detect which games are already in the collection  
+3. Apply the merge strategy to any new or changed games
+4. Skip games that are already correctly imported
+5. Complete the import with the same final result
+
 ## Import Script Implementation Strategy
 
 ### Script Location and Structure
@@ -164,8 +217,12 @@ Additional Options:
   --dry-run            Preview changes without making them
   --batch-size N       Process N games at a time (default: 10)
   --auth-token TOKEN   API authentication token
+  --username           Username for authentication (if no token provided)
+  --password           Password for authentication (if no token provided)
   --verbose            Enable verbose logging
-  --resume FILE        Resume from saved progress file
+
+Note: The import is idempotent - you can safely re-run the same command multiple 
+times. If interrupted, simply run the same command again to continue.
 ```
 
 ### Three Merge Strategies
@@ -176,7 +233,7 @@ Additional Options:
 - Display side-by-side comparison of existing vs CSV data
 - Ask user to choose resolution strategy
 - Allow batch decisions for similar conflicts
-- Save progress and support resume functionality
+- **Idempotent**: Re-running applies same conflict resolutions consistently
 
 **User Prompts:**
 ```
@@ -207,6 +264,7 @@ Choice [1-5]:
 - Add new platforms/storefronts (additive)
 - Fast, fully automated processing
 - No user interaction required
+- **Idempotent**: Always produces same final state regardless of re-runs
 
 **Conflict Resolution:**
 - Rating: Use CSV rating
@@ -222,6 +280,7 @@ Choice [1-5]:
 - Only add new platforms to existing games
 - Skip games that already exist with data
 - Safe mode to prevent data loss
+- **Idempotent**: Re-running only adds new games/platforms, never duplicates
 
 **Conflict Resolution:**
 - Rating: Keep existing, ignore CSV
