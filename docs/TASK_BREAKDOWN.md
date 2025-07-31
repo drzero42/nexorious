@@ -376,9 +376,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Note**: This phase is not explicitly defined in the PRD but represents potential future enhancements for scalability and performance.
 
 ### 7.1 Rate Limiting and Caching
+- [ ] Rate limiting for external API calls (IGDB, Steam, etc.)
 - [ ] Redis cache implementation for API responses
 - [ ] In-memory caching for frequently accessed data
-- [ ] Rate limiting for external API calls (IGDB, Steam, etc.)
 - [ ] Request queuing and throttling mechanisms
 - [ ] Cache invalidation strategies
 - [ ] Performance monitoring and metrics
