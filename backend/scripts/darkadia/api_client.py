@@ -263,7 +263,7 @@ class NexoriousAPIClient:
             
             if response.status_code == 201:
                 created_game = response.json()
-                console.print(f"✓ Created user game: {game_record['title']}")
+                console.print(f"\n✓ Created user game: {game_record['title']}", end="")
                 return created_game
             else:
                 error_msg = f"Failed to create user game: {response.status_code}"
@@ -558,7 +558,7 @@ class NexoriousAPIClient:
                 
                 if response.status_code == 201:
                     new_game = response.json()
-                    console.print(f"✓ Created new game: {new_game['title']} (ID: {new_game['id']})")
+                    console.print(f"\n✓ Created new game: {new_game['title']} (ID: {new_game['id']})", end="")
                     return new_game
                 else:
                     error_msg = f"Failed to import game from IGDB: {response.status_code}"
