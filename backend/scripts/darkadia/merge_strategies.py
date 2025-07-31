@@ -194,25 +194,18 @@ class InteractiveMerger(MergeStrategy):
         if self.dry_run:
             console.print("[yellow]DRY RUN MODE - No changes will be made[/yellow]")
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            transient=False
-        ) as progress:
-            task = progress.add_task("Processing games...", total=len(games))
+        for i, darkadia_game in enumerate(games):
+            game_title = darkadia_game.get('Name', 'Unknown Game')
+            console.print(f"\n[cyan]Processing game {i+1} of {len(games)}: {game_title}[/cyan]")
             
-            for i, darkadia_game in enumerate(games):
-                try:
-                    await self._process_single_game(darkadia_game, user_id)
-                    progress.update(task, advance=1)
-                    
-                except KeyboardInterrupt:
-                    console.print("\n[yellow]Import cancelled by user[/yellow]")
-                    break
-                except Exception as e:
-                    self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
-                    progress.update(task, advance=1)
+            try:
+                await self._process_single_game(darkadia_game, user_id)
+                
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Import cancelled by user[/yellow]")
+                break
+            except Exception as e:
+                self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
         
         # Save any new decisions for future runs
         self._save_persistent_decisions()
@@ -273,7 +266,7 @@ class InteractiveMerger(MergeStrategy):
     async def handle_conflict(self, existing_game: Dict[str, Any], csv_game: Dict[str, Any]) -> Dict[str, Any]:
         """Handle conflict with interactive prompts."""
         
-        game_title = existing_game.get('title', 'Unknown Game')
+        game_title = existing_game.get('title', csv_game.get('title', 'Unknown Game'))
         
         # Check for cached decision first
         conflict_signature = self._create_conflict_signature(existing_game, csv_game)
@@ -293,24 +286,49 @@ class InteractiveMerger(MergeStrategy):
         # Create comparison table
         table = Table(title="Data Comparison")
         table.add_column("Field", style="cyan")
-        table.add_column("Existing Data", style="green")
         table.add_column("CSV Data", style="yellow")
+        table.add_column("Existing Data", style="green")
         
-        # Compare key fields
-        comparisons = [
+        # Compare key fields - only show fields that actually differ
+        all_comparisons = [
             ('Rating', existing_game.get('personal_rating'), csv_game.get('personal_rating')),
             ('Play Status', existing_game.get('play_status'), csv_game.get('play_status')),
             ('Loved', existing_game.get('is_loved'), csv_game.get('is_loved')),
             ('Hours', existing_game.get('hours_played', 0), csv_game.get('hours_played', 0)),
+            ('Ownership Status', existing_game.get('ownership_status'), csv_game.get('ownership_status')),
+            ('Acquired Date', existing_game.get('acquired_date'), csv_game.get('acquired_date')),
             ('Notes', (existing_game.get('personal_notes') or '')[:50] + '...' if len(existing_game.get('personal_notes', '')) > 50 else existing_game.get('personal_notes', ''),
                      (csv_game.get('personal_notes') or '')[:50] + '...' if len(csv_game.get('personal_notes', '')) > 50 else csv_game.get('personal_notes', ''))
         ]
         
-        for field, existing, csv_val in comparisons:
-            table.add_row(field, str(existing) if existing is not None else 'None', 
-                         str(csv_val) if csv_val is not None else 'None')
+        # Filter to only show differences
+        differences = []
+        for field, existing, csv_val in all_comparisons:
+            if existing != csv_val:
+                differences.append((field, existing, csv_val))
+        
+        if differences:
+            for field, existing, csv_val in differences:
+                table.add_row(field, str(csv_val) if csv_val is not None else 'None',
+                             str(existing) if existing is not None else 'None')
+        else:
+            table.add_row("No Data Differences", "All fields match", "All fields match")
         
         console.print(table)
+        
+        # Show platform/storefront differences
+        existing_platforms = existing_game.get('platforms', [])
+        csv_platforms = csv_game.get('platforms', [])
+        
+        if csv_platforms:
+            console.print(f"\n[bold cyan]Platform Changes:[/bold cyan]")
+            console.print(f"  Current platforms: {len(existing_platforms)}")
+            for platform in existing_platforms:
+                console.print(f"    • {platform.get('platform_name', 'Unknown')} ({platform.get('storefront_name', 'Unknown')})")
+            
+            console.print(f"  Adding from CSV: {len(csv_platforms)}")
+            for platform in csv_platforms:
+                console.print(f"    • {platform.get('platform_name', 'Unknown')} ({platform.get('storefront_name', 'Unknown')})")
         
         # Show resolution options
         console.print("\n[bold]Resolution Options:[/bold]")
@@ -320,7 +338,7 @@ class InteractiveMerger(MergeStrategy):
         console.print("  4) Skip this game")
         console.print("  5) Apply to all similar conflicts")
         
-        choice = Prompt.ask("Choice", choices=['1', '2', '3', '4', '5'], default='1')
+        choice = await asyncio.to_thread(Prompt.ask, "Choice", choices=['1', '2', '3', '4', '5'], default='1')
         
         # Create decision record for caching
         choice_descriptions = {
@@ -355,7 +373,7 @@ class InteractiveMerger(MergeStrategy):
             self.persistent_decisions[conflict_signature] = decision_record
             return {'action': 'skip'}
         elif choice == '5':
-            batch_choice = Prompt.ask("Apply which strategy to similar conflicts?", 
+            batch_choice = await asyncio.to_thread(Prompt.ask, "Apply which strategy to similar conflicts?", 
                                     choices=['1', '2', '3'], default='1')
             self.batch_decisions[conflict_type] = batch_choice
             # Update decision record with batch choice details
