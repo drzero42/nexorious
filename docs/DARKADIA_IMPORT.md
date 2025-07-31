@@ -177,10 +177,10 @@ The Darkadia CSV import script **MUST** be idempotent, meaning that running the 
 When an import is interrupted, users simply re-run the exact same command:
 ```bash
 # Original command
-python import_darkadia_csv.py my_collection.csv --user-id 123 --overwrite
+python import_darkadia_csv.py my_collection.csv --overwrite --username admin --password your_password
 
 # After interruption, same command continues where it left off
-python import_darkadia_csv.py my_collection.csv --user-id 123 --overwrite
+python import_darkadia_csv.py my_collection.csv --overwrite --username admin --password your_password
 ```
 
 The script will:
@@ -205,7 +205,6 @@ Required Arguments:
   CSV_FILE              Path to Darkadia CSV export file
 
 Options:
-  --user-id USER_ID     User ID for import (required)
   --api-base URL        Backend API base URL (default: http://localhost:8000)
   
 Merge Strategy (choose one):
@@ -216,13 +215,16 @@ Merge Strategy (choose one):
 Additional Options:
   --dry-run            Preview changes without making them
   --batch-size N       Process N games at a time (default: 10)
-  --auth-token TOKEN   API authentication token
-  --username           Username for authentication (if no token provided)
-  --password           Password for authentication (if no token provided)
   --verbose            Enable verbose logging
 
+Authentication (required - choose one):
+  --auth-token TOKEN   API authentication token
+  --username USER      Username for authentication (use with --password)
+  --password PASS      Password for authentication (use with --username)
+
 Note: The import is idempotent - you can safely re-run the same command multiple 
-times. If interrupted, simply run the same command again to continue.
+times. If interrupted, simply run the same command again to continue. Games are 
+imported for the authenticated user automatically.
 ```
 
 ### Three Merge Strategies

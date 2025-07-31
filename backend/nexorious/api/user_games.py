@@ -7,6 +7,7 @@ from sqlmodel import Session, select, and_, func, or_
 from datetime import datetime, timezone
 from typing import Annotated, Optional, List
 import logging
+from rapidfuzz import fuzz
 
 from ..core.database import get_session
 from ..core.security import get_current_user
@@ -31,6 +32,47 @@ from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
 logger = logging.getLogger(__name__)
+
+
+def _rank_user_games_by_fuzzy_match(user_games: List[UserGame], query: str, threshold: float = 0.6) -> List[UserGame]:
+    """Rank user games by fuzzy matching similarity to query."""
+    if not user_games or not query.strip():
+        return user_games
+    
+    query_lower = query.lower().strip()
+    
+    # Calculate similarity scores for each user game
+    scored_games = []
+    for user_game in user_games:
+        # Calculate multiple similarity scores using game title
+        title_lower = user_game.game.title.lower()
+        
+        # Different matching strategies
+        exact_score = 1.0 if query_lower == title_lower else 0.0
+        ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
+        partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
+        token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
+        token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
+        
+        # Calculate weighted final score
+        final_score = max(
+            exact_score * 1.0,  # Exact match gets highest priority
+            ratio_score * 0.9,  # Overall similarity
+            partial_score * 0.8,  # Partial match
+            token_sort_score * 0.7,  # Token order similarity
+            token_set_score * 0.6  # Token set similarity
+        )
+        
+        # Only include games above threshold
+        if final_score >= threshold:
+            scored_games.append((user_game, final_score))
+    
+    # Sort by score (descending) and return user games
+    scored_games.sort(key=lambda x: x[1], reverse=True)
+    
+    logger.debug(f"Fuzzy matching results for '{query}': {[(ug.game.title, s) for ug, s in scored_games[:5]]}")
+    
+    return [user_game for user_game, score in scored_games]
 
 
 def _update_ownership_status_after_platform_change(
@@ -76,6 +118,7 @@ async def list_user_games(
     current_user: Annotated[User, Depends(get_current_user)],
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    limit: Optional[int] = Query(default=None, ge=1, le=100, description="Items per page (alias for per_page)"),
     play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
     ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
     is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
@@ -85,10 +128,15 @@ async def list_user_games(
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
     has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
     q: Optional[str] = Query(default=None, description="Search in game titles and notes"),
+    fuzzy_threshold: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Fuzzy matching threshold for title search (0.0-1.0)"),
     sort_by: Optional[str] = Query(default="created_at", description="Sort field"),
     sort_order: Optional[str] = Query(default="desc", pattern="^(asc|desc)$", description="Sort order")
 ):
     """List user's game collection with filtering and sorting."""
+    
+    # Handle limit parameter as alias for per_page
+    if limit is not None:
+        per_page = limit
     
     # Build base query
     query = select(UserGame).where(UserGame.user_id == current_user.id)
@@ -129,16 +177,47 @@ async def list_user_games(
         # Join with UserGamePlatform to filter by storefront
         query = query.join(UserGamePlatform).where(UserGamePlatform.storefront_id == storefront_id)
     
-    if q:
-        # Search in game title and personal notes
+    # Apply filters
+    if filters:
+        query = query.where(and_(*filters))
+    
+    # Check if we're in fuzzy search mode
+    fuzzy_search_mode = q and fuzzy_threshold is not None
+    
+    if q and not fuzzy_search_mode:
+        # Regular search in game title and personal notes
         query = query.join(Game)
-        filters.append(or_(
+        query = query.where(or_(
             Game.title.icontains(q),
             UserGame.personal_notes.icontains(q) if UserGame.personal_notes.is_not(None) else False
         ))
     
-    if filters:
-        query = query.where(and_(*filters))
+    if fuzzy_search_mode:
+        # For fuzzy search, we need to get all matching games first, then apply fuzzy matching
+        # Always join with Game table for fuzzy search
+        query = query.join(Game)
+        
+        # Get all user games matching non-text filters
+        all_user_games = session.exec(query).all()
+        
+        # Apply fuzzy matching
+        fuzzy_user_games = _rank_user_games_by_fuzzy_match(all_user_games, q, fuzzy_threshold)
+        
+        # Apply pagination to fuzzy results
+        total = len(fuzzy_user_games)
+        offset = (page - 1) * per_page
+        user_games = fuzzy_user_games[offset:offset + per_page]
+        
+        # Calculate pages
+        pages = (total + per_page - 1) // per_page
+        
+        return UserGameListResponse(
+            user_games=user_games,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
     
     # Apply sorting
     # Check if we need to join with Game table for sorting

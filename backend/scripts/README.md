@@ -13,19 +13,19 @@ The main import functionality for Darkadia CSV exports.
 cd /path/to/nexorious/backend
 
 # Run import (example)
-uv run python scripts/import_darkadia_csv.py path/to/export.csv --user-id USER_UUID --username admin --password your_password
+uv run python scripts/import_darkadia_csv.py path/to/export.csv --username admin --password your_password
 
 # Interactive mode (asks for conflict resolution)
-uv run python scripts/import_darkadia_csv.py export.csv --user-id USER_UUID --interactive --auth-token YOUR_JWT_TOKEN
+uv run python scripts/import_darkadia_csv.py export.csv --interactive --auth-token YOUR_JWT_TOKEN
 
 # Overwrite mode (CSV data takes precedence)
-uv run python scripts/import_darkadia_csv.py export.csv --user-id USER_UUID --overwrite --username admin --password your_password
+uv run python scripts/import_darkadia_csv.py export.csv --overwrite --username admin --password your_password
 
 # Preserve mode (never overwrite existing data)
-uv run python scripts/import_darkadia_csv.py export.csv --user-id USER_UUID --preserve --auth-token YOUR_JWT_TOKEN
+uv run python scripts/import_darkadia_csv.py export.csv --preserve --auth-token YOUR_JWT_TOKEN
 
 # Dry run (preview changes without making them)
-uv run python scripts/import_darkadia_csv.py export.csv --user-id USER_UUID --dry-run --username admin --password your_password
+uv run python scripts/import_darkadia_csv.py export.csv --dry-run --username admin --password your_password
 ```
 
 ### Features
@@ -67,13 +67,15 @@ The script supports two authentication methods:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--user-id` | User ID for import (required) | - |
 | `--api-base` | Backend API base URL | `http://localhost:8000` |
 | `--interactive` | Interactive merge strategy | `true` |
 | `--overwrite` | Overwrite merge strategy | `false` |
 | `--preserve` | Preserve merge strategy | `false` |
 | `--dry-run` | Preview changes without making them | `false` |
 | `--batch-size` | Process N games at a time | `10` |
+| `--auth-token` | API authentication token | - |
+| `--username` | Username for authentication (if no token provided) | - |
+| `--password` | Password for authentication (if no token provided) | - |
 | `--verbose` | Enable verbose logging | `false` |
 
 ## Testing
