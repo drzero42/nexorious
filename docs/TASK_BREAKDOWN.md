@@ -245,33 +245,35 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] ~~Implement progress saving/resume functionality~~ (SUPERSEDED: Made import idempotent instead)
 
 #### 2.1.2.1 Idempotency Implementation Tasks
-- [ ] Ensure game deduplication logic is fully idempotent across all merge strategies
-- [ ] Update CLI to remove --resume option from implementation (docs already updated)
-- [ ] Verify Interactive merger handles re-running without duplicate prompts for same conflicts
-- [ ] Verify Overwrite merger produces identical results on re-run
-- [ ] Verify Preserve merger doesn't create duplicate platforms on re-run
-- [ ] Ensure API client properly handles existing game detection for idempotency
-- [ ] Update platform association logic to prevent duplicates on re-run
+- [x] Ensure game deduplication logic is fully idempotent across all merge strategies
+- [x] Update CLI to remove --resume option from implementation (docs already updated)
+- [x] Verify Interactive merger handles re-running without duplicate prompts for same conflicts
+- [x] Verify Overwrite merger produces identical results on re-run
+- [x] Verify Preserve merger doesn't create duplicate platforms on re-run
+- [x] Ensure API client properly handles existing game detection for idempotency
+- [x] Update platform association logic to prevent duplicates on re-run
 
 #### 2.1.3 Testing
 - [x] Unit tests for CSV parsing and validation
 - [x] Unit tests for data transformation functions
 - [x] Unit tests for merge strategy logic
 - [x] Integration tests for API client
-- [ ] End-to-end import workflow tests
+- [x] End-to-end import workflow tests
 - [ ] Performance tests with sequential processing
 - [ ] Error scenario testing (network failures, API errors)
 - [x] Create sample test data based on Darkadia format
-- [ ] Add idempotency validation tests (run import twice, verify same result)
-- [ ] Add end-to-end test for interrupted import scenario (simulate failure and re-run)
-- [ ] Test merge strategy idempotency behavior across all three strategies
+- [x] Add idempotency validation tests (run import twice, verify same result)
+- [x] Add end-to-end test for interrupted import scenario (simulate failure and re-run)
+- [x] Test merge strategy idempotency behavior across all three strategies
 
 #### 2.1.4 Documentation
 - [x] Document idempotent operation requirement and behavior
-- [ ] Create import script usage documentation
-- [ ] Document merge strategy behaviors and use cases
-- [ ] Add troubleshooting guide for common import issues
-- [ ] Document platform/storefront mapping tables
+- [x] Create import script usage documentation (`backend/scripts/README.md`)
+- [x] Document merge strategy behaviors and use cases
+- [x] Add troubleshooting guide for common import issues
+- [x] Document platform/storefront mapping tables
+- [x] Create comprehensive testing documentation (`backend/scripts/tests/README.md`)
+- [x] Update main project documentation with CSV import testing section
 
 ### 2.2 Steam API Integration
 - [ ] Steam Web API authentication

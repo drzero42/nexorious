@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import json
 from pathlib import Path
+import hashlib
 
 from rich.console import Console
 from rich.table import Table
@@ -41,7 +42,7 @@ class MergeStrategy(ABC):
     
     @abstractmethod
     async def process_games(self, games: List[Dict[str, Any]], user_id: str, 
-                           batch_size: int = 10, resume_file: Optional[Path] = None) -> Dict[str, Any]:
+                           batch_size: int = 10) -> Dict[str, Any]:
         """Process a list of games according to the merge strategy."""
         pass
     
@@ -51,12 +52,39 @@ class MergeStrategy(ABC):
         pass
     
     async def find_existing_game(self, game_title: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """Find existing game in user's collection."""
+        """
+        Find existing game in user's collection with enhanced matching logic.
+        
+        Uses a tiered approach:
+        1. Exact title match (case insensitive)
+        2. High fuzzy threshold match (0.95)
+        3. Medium fuzzy threshold match (0.85)
+        """
         try:
+            normalized_title = game_title.strip().lower()
+            
+            # Try exact match first with high fuzzy threshold
+            search_results = await self.api_client.search_games(game_title, fuzzy_threshold=0.95)
+            
+            if search_results:
+                # Look for exact title match first
+                for game in search_results:
+                    if game.get('title', '').strip().lower() == normalized_title:
+                        return game
+                
+                # Return the highest scoring match if no exact match
+                return search_results[0]
+            
+            # Try with lower threshold if no high-confidence matches
             search_results = await self.api_client.search_games(game_title, fuzzy_threshold=0.85)
             
             if search_results:
-                # Return first match for now - could be made more sophisticated
+                # Still prefer exact matches even at lower threshold
+                for game in search_results:
+                    if game.get('title', '').strip().lower() == normalized_title:
+                        return game
+                
+                # Return first result only if confidence is reasonable
                 return search_results[0]
             
             return None
@@ -70,6 +98,43 @@ class MergeStrategy(ABC):
         self.results['errors'] += 1
         error_detail = f"{game_title}: {error_msg}" if game_title else error_msg
         self.results['error_details'].append(error_detail)
+    
+    async def _add_new_platforms_only(self, existing_game: Dict[str, Any], new_platforms: List[Dict[str, Any]]):
+        """Add only platforms that don't already exist for the game."""
+        existing_platforms = existing_game.get('platforms', [])
+        
+        for platform in new_platforms:
+            # Check if this platform/storefront combination already exists
+            platform_exists = any(
+                ep.get('platform_name') == platform.get('platform_name') and
+                ep.get('storefront_name') == platform.get('storefront_name')
+                for ep in existing_platforms
+            )
+            
+            if not platform_exists:
+                try:
+                    await self.api_client.add_platform_to_user_game(existing_game['id'], platform)
+                except APIException as e:
+                    self._record_error(f"Failed to add platform {platform.get('platform_name', 'Unknown')}: {str(e)}", 
+                                     existing_game.get('title', 'Unknown'))
+    
+    def _get_new_platforms_to_add(self, existing_game: Dict[str, Any], new_platforms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Get list of platforms that need to be added (filtering out duplicates)."""
+        existing_platforms = existing_game.get('platforms', [])
+        platforms_to_add = []
+        
+        for platform in new_platforms:
+            # Check if this platform/storefront combination already exists
+            platform_exists = any(
+                ep.get('platform_name') == platform.get('platform_name') and
+                ep.get('storefront_name') == platform.get('storefront_name')
+                for ep in existing_platforms
+            )
+            
+            if not platform_exists:
+                platforms_to_add.append(platform)
+        
+        return platforms_to_add
 
 
 class InteractiveMerger(MergeStrategy):
@@ -79,9 +144,49 @@ class InteractiveMerger(MergeStrategy):
         super().__init__(api_client, dry_run)
         self.console = console
         self.batch_decisions = {}  # Cache decisions for similar conflicts
+        self.decision_cache_file = Path.home() / '.nexorious' / 'import_decisions.json'
+        self.persistent_decisions = {}  # Loaded from file
+        self._load_persistent_decisions()
+    
+    def _load_persistent_decisions(self):
+        """Load previously saved decisions from disk."""
+        try:
+            if self.decision_cache_file.exists():
+                with open(self.decision_cache_file, 'r') as f:
+                    self.persistent_decisions = json.load(f)
+                console.print(f"[cyan]Loaded {len(self.persistent_decisions)} cached decisions[/cyan]")
+        except Exception as e:
+            console.print(f"[yellow]Could not load decision cache: {e}[/yellow]")
+            self.persistent_decisions = {}
+    
+    def _save_persistent_decisions(self):
+        """Save decisions to disk for future runs."""
+        try:
+            self.decision_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.decision_cache_file, 'w') as f:
+                json.dump(self.persistent_decisions, f, indent=2)
+        except Exception as e:
+            console.print(f"[yellow]Could not save decision cache: {e}[/yellow]")
+    
+    def _create_conflict_signature(self, existing_game: Dict[str, Any], csv_game: Dict[str, Any]) -> str:
+        """Create a unique signature for a conflict to enable caching."""
+        # Create a hash based on the game title and the conflicting data
+        conflict_data = {
+            'title': existing_game.get('title', '').lower().strip(),
+            'existing_rating': existing_game.get('personal_rating'),
+            'existing_status': existing_game.get('play_status'),
+            'existing_loved': existing_game.get('is_loved'),
+            'csv_rating': csv_game.get('personal_rating'),
+            'csv_status': csv_game.get('play_status'),
+            'csv_loved': csv_game.get('is_loved'),
+        }
+        
+        # Create hash from the conflict signature
+        conflict_json = json.dumps(conflict_data, sort_keys=True)
+        return hashlib.md5(conflict_json.encode()).hexdigest()
     
     async def process_games(self, games: List[Dict[str, Any]], user_id: str, 
-                           batch_size: int = 10, resume_file: Optional[Path] = None) -> Dict[str, Any]:
+                           batch_size: int = 10) -> Dict[str, Any]:
         """Process games with interactive conflict resolution."""
         
         console.print(f"Starting interactive import of {len(games)} games...")
@@ -108,6 +213,9 @@ class InteractiveMerger(MergeStrategy):
                 except Exception as e:
                     self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
                     progress.update(task, advance=1)
+        
+        # Save any new decisions for future runs
+        self._save_persistent_decisions()
         
         return self.results
     
@@ -138,9 +246,9 @@ class InteractiveMerger(MergeStrategy):
                 if not self.dry_run:
                     try:
                         await self.api_client.update_user_game(existing_game['id'], resolution['data'])
-                        # Add any new platforms
-                        for platform in nexorious_game.get('platforms', []):
-                            await self.api_client.add_platform_to_user_game(existing_game['id'], platform)
+                        
+                        # Add only new platforms (check for duplicates)
+                        await self._add_new_platforms_only(existing_game, nexorious_game.get('platforms', []))
                         
                         self.results['updated_games'] += 1
                         console.print(f"[green]✓ Updated: {game_title}[/green]")
@@ -166,6 +274,13 @@ class InteractiveMerger(MergeStrategy):
         """Handle conflict with interactive prompts."""
         
         game_title = existing_game.get('title', 'Unknown Game')
+        
+        # Check for cached decision first
+        conflict_signature = self._create_conflict_signature(existing_game, csv_game)
+        if conflict_signature in self.persistent_decisions:
+            cached_decision = self.persistent_decisions[conflict_signature]
+            console.print(f"[cyan]Using cached decision for '{game_title}': {cached_decision['choice_description']}[/cyan]")
+            return self._apply_cached_decision(existing_game, csv_game, cached_decision)
         
         # Check if we have a batch decision for this type of conflict
         conflict_type = self._classify_conflict(existing_game, csv_game)
@@ -207,6 +322,54 @@ class InteractiveMerger(MergeStrategy):
         
         choice = Prompt.ask("Choice", choices=['1', '2', '3', '4', '5'], default='1')
         
+        # Create decision record for caching
+        choice_descriptions = {
+            '1': 'Keep existing data',
+            '2': 'Use CSV data',
+            '3': 'Merge intelligently',
+            '4': 'Skip this game',
+            '5': 'Apply to all similar conflicts'
+        }
+        
+        decision_record = {
+            'choice': choice,
+            'choice_description': choice_descriptions[choice],
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        if choice == '1':
+            # Save decision to cache
+            self.persistent_decisions[conflict_signature] = decision_record
+            return {'action': 'skip'}  # Keep existing, don't update
+        elif choice == '2':
+            # Save decision to cache
+            self.persistent_decisions[conflict_signature] = decision_record
+            return {'action': 'update', 'data': csv_game}
+        elif choice == '3':
+            # Save decision to cache
+            self.persistent_decisions[conflict_signature] = decision_record
+            merged_data = self._merge_intelligently(existing_game, csv_game)
+            return {'action': 'update', 'data': merged_data}
+        elif choice == '4':
+            # Save decision to cache
+            self.persistent_decisions[conflict_signature] = decision_record
+            return {'action': 'skip'}
+        elif choice == '5':
+            batch_choice = Prompt.ask("Apply which strategy to similar conflicts?", 
+                                    choices=['1', '2', '3'], default='1')
+            self.batch_decisions[conflict_type] = batch_choice
+            # Update decision record with batch choice details
+            decision_record['batch_choice'] = batch_choice
+            decision_record['choice_description'] = f"Apply '{choice_descriptions[batch_choice]}' to similar conflicts"
+            self.persistent_decisions[conflict_signature] = decision_record
+            return self._apply_batch_decision(existing_game, csv_game, batch_choice)
+        
+        return {'action': 'skip'}
+    
+    def _apply_cached_decision(self, existing_game: Dict[str, Any], csv_game: Dict[str, Any], cached_decision: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a previously cached decision."""
+        choice = cached_decision.get('choice', '1')
+        
         if choice == '1':
             return {'action': 'skip'}  # Keep existing, don't update
         elif choice == '2':
@@ -217,9 +380,8 @@ class InteractiveMerger(MergeStrategy):
         elif choice == '4':
             return {'action': 'skip'}
         elif choice == '5':
-            batch_choice = Prompt.ask("Apply which strategy to similar conflicts?", 
-                                    choices=['1', '2', '3'], default='1')
-            self.batch_decisions[conflict_type] = batch_choice
+            # Use the batch choice from the cached decision
+            batch_choice = cached_decision.get('batch_choice', '1')
             return self._apply_batch_decision(existing_game, csv_game, batch_choice)
         
         return {'action': 'skip'}
@@ -294,7 +456,7 @@ class OverwriteMerger(MergeStrategy):
     """Overwrite merge strategy - CSV data always takes precedence."""
     
     async def process_games(self, games: List[Dict[str, Any]], user_id: str, 
-                           batch_size: int = 10, resume_file: Optional[Path] = None) -> Dict[str, Any]:
+                           batch_size: int = 10) -> Dict[str, Any]:
         """Process games with overwrite strategy."""
         
         console.print(f"Starting overwrite import of {len(games)} games...")
@@ -340,9 +502,9 @@ class OverwriteMerger(MergeStrategy):
             if not self.dry_run:
                 try:
                     await self.api_client.update_user_game(existing_game['id'], resolution['data'])
-                    # Add any new platforms
-                    for platform in nexorious_game.get('platforms', []):
-                        await self.api_client.add_platform_to_user_game(existing_game['id'], platform)
+                    
+                    # Add only new platforms (check for duplicates)
+                    await self._add_new_platforms_only(existing_game, nexorious_game.get('platforms', []))
                     
                     self.results['updated_games'] += 1
                 except APIException as e:
@@ -369,7 +531,7 @@ class PreserveMerger(MergeStrategy):
     """Preserve merge strategy - never overwrite existing data."""
     
     async def process_games(self, games: List[Dict[str, Any]], user_id: str, 
-                           batch_size: int = 10, resume_file: Optional[Path] = None) -> Dict[str, Any]:
+                           batch_size: int = 10) -> Dict[str, Any]:
         """Process games with preserve strategy."""
         
         console.print(f"Starting preserve import of {len(games)} games...")
@@ -410,26 +572,11 @@ class PreserveMerger(MergeStrategy):
         
         if existing_game:
             # Only add new platforms, don't update game data
-            new_platforms_added = False
+            platforms_to_add = self._get_new_platforms_to_add(existing_game, nexorious_game.get('platforms', []))
             
-            if not self.dry_run:
-                for platform in nexorious_game.get('platforms', []):
-                    # Check if this platform is already associated
-                    existing_platforms = existing_game.get('platforms', [])
-                    platform_exists = any(
-                        ep.get('platform_name') == platform['platform_name'] and
-                        ep.get('storefront_name') == platform['storefront_name']
-                        for ep in existing_platforms
-                    )
-                    
-                    if not platform_exists:
-                        try:
-                            await self.api_client.add_platform_to_user_game(existing_game['id'], platform)
-                            new_platforms_added = True
-                        except APIException as e:
-                            self._record_error(f"Failed to add platform: {str(e)}", game_title)
-            
-            if new_platforms_added:
+            if platforms_to_add:
+                if not self.dry_run:
+                    await self._add_new_platforms_only(existing_game, platforms_to_add)
                 self.results['updated_games'] += 1
             else:
                 self.results['skipped_games'] += 1

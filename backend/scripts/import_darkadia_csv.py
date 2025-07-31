@@ -49,7 +49,6 @@ console = Console()
 @click.option('--username', help='Username for authentication (if no token provided)')
 @click.option('--password', help='Password for authentication (if no token provided)')
 @click.option('--verbose', is_flag=True, help='Enable verbose logging')
-@click.option('--resume', type=click.Path(path_type=Path), help='Resume from saved progress file')
 def import_csv(
     csv_file: Path,
     user_id: str,
@@ -60,8 +59,7 @@ def import_csv(
     auth_token: Optional[str],
     username: Optional[str],
     password: Optional[str],
-    verbose: bool,
-    resume: Optional[Path]
+    verbose: bool
 ):
     """Import games from Darkadia CSV export file."""
     
@@ -85,8 +83,7 @@ def import_csv(
             auth_token=auth_token,
             username=username,
             password=password,
-            verbose=verbose,
-            resume=resume
+            verbose=verbose
         ))
         
     except KeyboardInterrupt:
@@ -110,8 +107,7 @@ async def run_import(
     auth_token: Optional[str],
     username: Optional[str],
     password: Optional[str],
-    verbose: bool,
-    resume: Optional[Path]
+    verbose: bool
 ):
     """Run the main import process."""
     
@@ -160,8 +156,7 @@ async def run_import(
     results = await merger.process_games(
         unique_games, 
         user_id, 
-        batch_size=batch_size, 
-        resume_file=resume
+        batch_size=batch_size
     )
     
     # Phase 6: Generate report
