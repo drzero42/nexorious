@@ -18,12 +18,187 @@ console = Console()
 
 
 class APIException(Exception):
-    """Exception raised for API errors."""
+    """Exception raised for API errors with enhanced error details."""
     
     def __init__(self, message: str, status_code: Optional[int] = None, response_data: Optional[Dict] = None):
         super().__init__(message)
         self.status_code = status_code
         self.response_data = response_data or {}
+        self.error_type = self._determine_error_type()
+        self.validation_errors = self._extract_validation_errors()
+        self.conflict_details = self._extract_conflict_details()
+    
+    def _determine_error_type(self) -> str:
+        """Determine the type of error based on status code and response."""
+        if not self.status_code:
+            return "network"
+        
+        if self.status_code == 400:
+            return "validation"
+        elif self.status_code == 401:
+            return "authentication"
+        elif self.status_code == 403:
+            return "authorization"
+        elif self.status_code == 404:
+            return "not_found"
+        elif self.status_code == 409:
+            return "conflict"
+        elif self.status_code == 422:
+            return "validation"
+        elif 400 <= self.status_code < 500:
+            return "client_error"
+        elif 500 <= self.status_code < 600:
+            return "server_error"
+        else:
+            return "unknown"
+    
+    def _extract_validation_errors(self) -> List[Dict[str, Any]]:
+        """Extract detailed validation errors from response."""
+        validation_errors = []
+        
+        if not self.response_data:
+            return validation_errors
+        
+        # Handle FastAPI validation errors (422)
+        if self.status_code == 422 and 'detail' in self.response_data:
+            detail = self.response_data['detail']
+            if isinstance(detail, list):
+                for error in detail:
+                    if isinstance(error, dict):
+                        validation_errors.append({
+                            'field': '.'.join(str(loc) for loc in error.get('loc', [])),
+                            'message': error.get('msg', 'Validation error'),
+                            'type': error.get('type', 'unknown'),
+                            'input': error.get('input')
+                        })
+        
+        # Handle general validation errors (400)
+        elif self.status_code == 400 and 'detail' in self.response_data:
+            detail = self.response_data['detail']
+            if isinstance(detail, dict) and 'errors' in detail:
+                # Handle structured validation errors
+                for field, messages in detail['errors'].items():
+                    if isinstance(messages, list):
+                        for msg in messages:
+                            validation_errors.append({
+                                'field': field,
+                                'message': msg,
+                                'type': 'validation'
+                            })
+                    else:
+                        validation_errors.append({
+                            'field': field,
+                            'message': str(messages),
+                            'type': 'validation'
+                        })
+        
+        return validation_errors
+    
+    def _extract_conflict_details(self) -> Dict[str, Any]:
+        """Extract detailed conflict information from 409 responses."""
+        conflict_details = {}
+        
+        if self.status_code != 409 or not self.response_data:
+            return conflict_details
+        
+        detail = self.response_data.get('detail', '')
+        if not detail:
+            return conflict_details
+        
+        # Parse different types of conflicts
+        if "Game with title" in detail and "already exists" in detail:
+            # Extract the conflicting title
+            import re
+            title_match = re.search(r"Game with title '([^']+)' already exists", detail)
+            if title_match:
+                conflict_details.update({
+                    'type': 'duplicate_title',
+                    'conflicting_title': title_match.group(1),
+                    'reason': 'A game with this exact title already exists in the database',
+                    'recommendation': 'Check if this is the same game or modify the title to distinguish different versions'
+                })
+        
+        elif "Game already exists in database" in detail:
+            # IGDB ID conflict
+            igdb_id = self.response_data.get('igdb_id')
+            game_title = self.response_data.get('game_title', 'Unknown')
+            
+            conflict_details.update({
+                'type': 'duplicate_igdb_id',
+                'conflicting_igdb_id': igdb_id,
+                'game_title': game_title,
+                'reason': 'A game with this IGDB ID already exists in the database',
+                'recommendation': 'This appears to be a duplicate entry - consider skipping this import'
+            })
+        
+        elif "already exists" in detail.lower():
+            # Generic conflict
+            conflict_details.update({
+                'type': 'generic_conflict',
+                'reason': detail,
+                'recommendation': 'Review the existing data to understand the conflict'
+            })
+        
+        return conflict_details
+    
+    def get_user_friendly_message(self) -> str:
+        """Get a user-friendly error message."""
+        if self.validation_errors:
+            # Create a summary of validation errors
+            field_errors = []
+            for error in self.validation_errors:
+                field = error.get('field', 'unknown field')
+                message = error.get('message', 'invalid value')
+                field_errors.append(f"{field}: {message}")
+            
+            return f"Validation failed: {'; '.join(field_errors)}"
+        
+        # Handle 409 conflicts with detailed explanations
+        if self.conflict_details:
+            conflict_type = self.conflict_details.get('type', 'unknown')
+            reason = self.conflict_details.get('reason', 'Conflict detected')
+            
+            if conflict_type == 'duplicate_title':
+                title = self.conflict_details.get('conflicting_title', 'Unknown')
+                return f"Duplicate game title: '{title}' already exists in your collection"
+            elif conflict_type == 'duplicate_igdb_id':
+                igdb_id = self.conflict_details.get('conflicting_igdb_id', 'Unknown')
+                return f"Duplicate game: IGDB ID {igdb_id} already exists in the database"
+            else:
+                return reason
+        
+        # Extract meaningful message from response
+        if self.response_data:
+            detail = self.response_data.get('detail', '')
+            if detail and detail != 'Unknown error':
+                return detail
+            
+            # Try other common error message fields
+            for field in ['error', 'message', 'msg']:
+                if field in self.response_data:
+                    return str(self.response_data[field])
+        
+        # Fall back to the original message
+        return str(self)
+    
+    def get_troubleshooting_hint(self) -> str:
+        """Get a troubleshooting hint based on the error type."""
+        # Provide specific hints for 409 conflicts
+        if self.conflict_details:
+            return self.conflict_details.get('recommendation', 'Review the conflict and take appropriate action.')
+        
+        hints = {
+            "authentication": "Check your username and password. If you're using a token, ensure it's valid and not expired.",
+            "authorization": "You don't have permission to perform this operation. Contact an administrator.",
+            "validation": "Check the data you're trying to submit. Some required fields may be missing or invalid.",
+            "not_found": "The requested resource was not found. It may have been deleted or moved.",
+            "conflict": "This operation conflicts with existing data. Check for duplicates or related records.",
+            "network": "Check your internet connection and ensure the API server is running.",
+            "server_error": "The server encountered an error. Try again later or contact support.",
+            "client_error": "There's an issue with the request. Check the data and try again."
+        }
+        
+        return hints.get(self.error_type, "Review the error details and try again.")
 
 
 class NexoriousAPIClient:
@@ -273,14 +448,18 @@ class NexoriousAPIClient:
                 self.console.print(f"\n✓ Created user game: {game_record['title']}")
                 return created_game
             else:
-                error_msg = f"Failed to create user game: {response.status_code}"
+                # Parse response data for detailed error information
                 try:
                     error_data = response.json()
-                    error_msg += f" - {error_data.get('detail', 'Unknown error')}"
                 except:
-                    error_msg += f" - {response.text}"
+                    error_data = {"detail": response.text}
                 
-                raise APIException(error_msg, response.status_code, response.json() if response.content else {})
+                # Add context to error data
+                error_data['game_title'] = game_record.get('title', 'Unknown')
+                error_data['operation'] = 'create_user_game'
+                
+                error_msg = f"Failed to create user game"
+                raise APIException(error_msg, response.status_code, error_data)
                 
         except httpx.RequestError as e:
             raise APIException(f"Network error creating user game: {str(e)}")
@@ -318,14 +497,19 @@ class NexoriousAPIClient:
             if response.status_code == 200:
                 return response.json()
             else:
-                error_msg = f"Failed to update user game: {response.status_code}"
+                # Parse response data for detailed error information
                 try:
                     error_data = response.json()
-                    error_msg += f" - {error_data.get('detail', 'Unknown error')}"
                 except:
-                    error_msg += f" - {response.text}"
+                    error_data = {"detail": response.text}
                 
-                raise APIException(error_msg, response.status_code)
+                # Add context to error data
+                error_data['user_game_id'] = user_game_id
+                error_data['operation'] = 'update_user_game'
+                error_data['payload_fields'] = list(payload.keys())
+                
+                error_msg = f"Failed to update user game"
+                raise APIException(error_msg, response.status_code, error_data)
                 
         except httpx.RequestError as e:
             raise APIException(f"Network error updating user game: {str(e)}")
@@ -568,23 +752,25 @@ class NexoriousAPIClient:
                     self.console.print(f"\n✓ Created new game: {new_game['title']} (ID: {new_game['id']})")
                     return new_game
                 else:
-                    # Build detailed error message with game context
-                    error_msg = f"Failed to import '{game_title}' from IGDB: {response.status_code}"
-                    
-                    # Extract detailed error information
+                    # Create detailed APIException with response data
                     try:
                         error_data = response.json()
-                        # Try to get the most informative error message
-                        error_detail = error_data.get('error') or error_data.get('detail', 'Unknown error')
-                        error_msg += f" - {error_detail}"
-                        
-                        # Add IGDB ID context if available
-                        if best_match and best_match.get('igdb_id'):
-                            error_msg += f" (IGDB ID: {best_match['igdb_id']})"
                     except:
-                        error_msg += f" - {response.text}"
+                        error_data = {"detail": response.text}
                     
-                    self.console.print(f"\n[red]Error creating game: {error_msg}[/red]")
+                    # Add context to error data
+                    error_data['game_title'] = game_title
+                    if best_match and best_match.get('igdb_id'):
+                        error_data['igdb_id'] = best_match['igdb_id']
+                    
+                    error_msg = f"Failed to import '{game_title}' from IGDB"
+                    api_exception = APIException(error_msg, response.status_code, error_data)
+                    
+                    self.console.print(f"\n[red]Error creating game: {api_exception.get_user_friendly_message()}[/red]")
+                    if best_match and best_match.get('igdb_id'):
+                        self.console.print(f"[red]IGDB ID: {best_match['igdb_id']}[/red]")
+                    
+                    # Don't raise the exception, just return None for backward compatibility
                     return None
                     
             except httpx.RequestError as e:

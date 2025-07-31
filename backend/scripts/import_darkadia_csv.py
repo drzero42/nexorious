@@ -179,7 +179,7 @@ async def run_import(
 
 
 def generate_final_report(results: dict, csv_file: Path, merge_strategy: str):
-    """Generate and display the final import report."""
+    """Generate and display the comprehensive final import report."""
     
     console.print("\n[bold blue]Import Summary Report[/bold blue]")
     
@@ -198,20 +198,245 @@ def generate_final_report(results: dict, csv_file: Path, merge_strategy: str):
     
     console.print(table)
     
-    # Show errors if any
-    if results.get('error_details'):
+    # Show detailed error analysis if any errors occurred
+    structured_errors = results.get('structured_errors', [])
+    if structured_errors:
+        _show_categorized_errors(structured_errors)
+        _show_detailed_error_list(structured_errors)
+        _show_troubleshooting_guidance(structured_errors)
+    elif results.get('error_details'):
+        # Fallback for legacy error format
         console.print("\n[bold red]Error Details:[/bold red]")
         for i, error in enumerate(results['error_details'], 1):
             console.print(f"  {i}. {error}")
     
-    # Show recommendations
-    console.print("\n[bold blue]Recommendations:[/bold blue]")
-    if results.get('errors', 0) == 0:
-        console.print("  ✓ Import completed without errors")
+    # Show success/recommendations
+    _show_final_recommendations(results, structured_errors)
+
+
+def _show_categorized_errors(structured_errors):
+    """Show errors grouped by category."""
+    console.print("\n[bold red]Error Summary by Category[/bold red]")
+    
+    # Group errors by category
+    error_categories = {}
+    for error in structured_errors:
+        category = error.category.value
+        if category not in error_categories:
+            error_categories[category] = []
+        error_categories[category].append(error)
+    
+    # Create category summary table
+    category_table = Table(title="Error Categories")
+    category_table.add_column("Category", style="red")
+    category_table.add_column("Count", justify="right", style="bold red")
+    category_table.add_column("Description", style="dim")
+    
+    category_descriptions = {
+        "csv_data": "Issues with CSV data format or content",
+        "game_creation": "Failed to create new games",
+        "game_update": "Failed to update existing games",
+        "platform_mapping": "Platform or storefront mapping issues",
+        "api_validation": "API validation errors",
+        "authentication": "Authentication or authorization issues",
+        "network": "Network connectivity problems",
+        "igdb_integration": "IGDB API integration issues",
+        "unexpected": "Unexpected or unknown errors"
+    }
+    
+    for category, errors in sorted(error_categories.items()):
+        description = category_descriptions.get(category, "Unknown error category")
+        category_table.add_row(
+            category.replace('_', ' ').title(),
+            str(len(errors)),
+            description
+        )
+    
+    console.print(category_table)
+
+
+def _show_detailed_error_list(structured_errors):
+    """Show detailed list of all errors with context."""
+    console.print("\n[bold red]Detailed Error Information[/bold red]")
+    
+    for i, error in enumerate(structured_errors, 1):
+        console.print(f"\n[bold red]{i}. {error.category.value.replace('_', ' ').title()} Error[/bold red]")
+        
+        # Show detailed message
+        detailed_msg = error.get_detailed_message()
+        console.print(f"   {detailed_msg}")
+        
+        # Show API error details if available
+        if error.api_error:
+            # Show validation errors
+            if error.api_error.validation_errors:
+                console.print("   [dim]Validation Details:[/dim]")
+                for val_error in error.api_error.validation_errors:
+                    field = val_error.get('field', 'unknown')
+                    message = val_error.get('message', 'validation failed')
+                    console.print(f"     • {field}: {message}")
+            
+            # Show conflict details for 409 errors
+            if error.api_error.conflict_details:
+                console.print("   [dim]Conflict Details:[/dim]")
+                conflict = error.api_error.conflict_details
+                
+                conflict_type = conflict.get('type', 'unknown')
+                reason = conflict.get('reason', 'Unknown conflict')
+                recommendation = conflict.get('recommendation', 'Review the conflict')
+                
+                console.print(f"     • Reason: {reason}")
+                
+                if conflict_type == 'duplicate_title':
+                    title = conflict.get('conflicting_title', 'Unknown')
+                    console.print(f"     • Existing title: '{title}'")
+                elif conflict_type == 'duplicate_igdb_id':
+                    igdb_id = conflict.get('conflicting_igdb_id', 'Unknown')
+                    console.print(f"     • Conflicting IGDB ID: {igdb_id}")
+                
+                console.print(f"     • Recommendation: {recommendation}")
+        
+        # Show CSV data context if available
+        if error.csv_data and error.game_title:
+            console.print(f"   [dim]CSV Context: Game '{error.game_title}'[/dim]")
+            if error.csv_row:
+                console.print(f"   [dim]CSV Row: {error.csv_row}[/dim]")
+        
+        # Show additional context
+        if error.context:
+            operation = error.context.get('operation')
+            if operation:
+                console.print(f"   [dim]Operation: {operation}[/dim]")
+
+
+def _show_troubleshooting_guidance(structured_errors):
+    """Show specific troubleshooting guidance based on error types."""
+    console.print("\n[bold blue]Troubleshooting Guide[/bold blue]")
+    
+    # Group errors by category for targeted advice
+    error_categories = {}
+    for error in structured_errors:
+        category = error.category.value
+        if category not in error_categories:
+            error_categories[category] = []
+        error_categories[category].append(error)
+    
+    # Provide specific guidance for each category
+    guidance_shown = set()
+    
+    for category, errors in error_categories.items():
+        if category in guidance_shown:
+            continue
+        
+        guidance_shown.add(category)
+        
+        console.print(f"\n[bold cyan]{category.replace('_', ' ').title()} Issues ({len(errors)} errors):[/bold cyan]")
+        
+        if category == "csv_data":
+            console.print("  • Check CSV file format and ensure all required columns are present")
+            console.print("  • Verify game titles are not empty or contain special characters")
+            console.print("  • Review CSV encoding (should be UTF-8)")
+            
+        elif category == "game_creation":
+            console.print("  • Verify API connectivity and authentication")
+            console.print("  • Check if IGDB integration is working properly")
+            console.print("  • Some games may not exist in IGDB database")
+            console.print("  • Try manually searching for failed games in IGDB")
+            
+        elif category == "game_update":
+            console.print("  • Check if games still exist in your collection")  
+            console.print("  • Verify you have permission to update these games")
+            console.print("  • Review data validation errors for specific field issues")
+            
+        elif category == "platform_mapping":
+            console.print("  • Check platform and storefront names in your CSV")
+            console.print("  • Verify platform/storefront combinations are valid")
+            console.print("  • Some platforms may need to be created by an administrator")
+            
+        elif category == "api_validation":
+            console.print("  • Check data formats (dates, ratings, etc.)")
+            console.print("  • Verify required fields are not missing")
+            console.print("  • Review field length limits and constraints")
+            
+            # Check for conflicts specifically
+            conflict_errors = [e for e in errors if e.api_error and e.api_error.conflict_details]
+            if conflict_errors:
+                console.print("  [yellow]Duplicate Game Conflicts:[/yellow]")
+                for error in conflict_errors[:3]:  # Show up to 3 examples
+                    conflict = error.api_error.conflict_details
+                    if conflict.get('type') == 'duplicate_title':
+                        console.print(f"    - '{error.game_title}': Title already exists - consider modifying the title")
+                    elif conflict.get('type') == 'duplicate_igdb_id':
+                        console.print(f"    - '{error.game_title}': Exact game already in database - consider skipping")
+                if len(conflict_errors) > 3:
+                    console.print(f"    - And {len(conflict_errors) - 3} more conflicts...")
+            
+        elif category == "authentication":
+            console.print("  • Verify username and password are correct")
+            console.print("  • Check if your user account is active")
+            console.print("  • Try logging in through the web interface first")
+            
+        elif category == "network":
+            console.print("  • Check internet connectivity")
+            console.print("  • Verify API server is running and accessible")
+            console.print("  • Try again later if server is temporarily unavailable")
+            
+        elif category == "igdb_integration":
+            console.print("  • IGDB API may be temporarily unavailable")
+            console.print("  • Some games may not exist in IGDB database")
+            console.print("  • Check IGDB API rate limits")
+            
+        # Show specific examples from errors if available
+        example_games = [e.game_title for e in errors[:3] if e.game_title]
+        if example_games:
+            console.print(f"  [dim]Affected games: {', '.join(example_games)}{' (and others)' if len(errors) > 3 else ''}[/dim]")
+
+
+def _show_final_recommendations(results, structured_errors):
+    """Show final recommendations and next steps."""
+    console.print("\n[bold blue]Next Steps & Recommendations[/bold blue]")
+    
+    total_errors = results.get('errors', 0)
+    total_processed = results.get('total_processed', 0)
+    
+    if total_errors == 0:
+        console.print("  ✓ [green]Import completed successfully without errors![/green]")
+        console.print("  ✓ All games have been processed and added to your collection")
     else:
-        console.print("  • Review error details above")
-        console.print("  • Consider manual addition of failed games")
-        console.print("  • Check platform mappings for unknown platforms")
+        success_rate = ((total_processed - total_errors) / total_processed * 100) if total_processed > 0 else 0
+        console.print(f"  • [yellow]Import completed with {total_errors} errors[/yellow]")
+        console.print(f"  • [green]Success rate: {success_rate:.1f}% ({total_processed - total_errors}/{total_processed} games)[/green]")
+        
+        # Specific recommendations based on error types
+        if structured_errors:
+            critical_categories = ["authentication", "network", "csv_data"]
+            critical_errors = [e for e in structured_errors if e.category.value in critical_categories]
+            
+            if critical_errors:
+                console.print("  • [red]Critical issues detected - fix these first:[/red]")
+                for category in critical_categories:
+                    count = len([e for e in critical_errors if e.category.value == category])
+                    if count > 0:
+                        console.print(f"    - {category.replace('_', ' ').title()}: {count} errors")
+            
+            # Suggest retry for certain error types
+            retry_categories = ["network", "igdb_integration"]
+            retry_errors = [e for e in structured_errors if e.category.value in retry_categories]
+            if retry_errors:
+                console.print(f"  • [yellow]Consider retrying import - {len(retry_errors)} errors may be temporary[/yellow]")
+        
+        console.print("  • Review the detailed error information above")
+        console.print("  • Fix issues in your CSV file and retry import")
+        console.print("  • Contact support if problems persist")
+    
+    # Show import summary
+    new_games = results.get('new_games', 0)
+    updated_games = results.get('updated_games', 0)
+    
+    if new_games > 0:
+        console.print(f"  ✓ [green]{new_games} new games added to your collection[/green]")
+    if updated_games > 0:
+        console.print(f"  ✓ [green]{updated_games} existing games updated[/green]")
 
 
 if __name__ == "__main__":

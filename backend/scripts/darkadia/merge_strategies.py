@@ -12,6 +12,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import hashlib
+from enum import Enum
 
 from rich.console import Console
 from rich.table import Table
@@ -24,6 +25,80 @@ from .mapper import DarkadiaDataMapper
 console = Console()
 
 
+class ErrorCategory(Enum):
+    """Categories for different types of import errors."""
+    AUTHENTICATION = "authentication"
+    NETWORK = "network"
+    API_VALIDATION = "api_validation"
+    PLATFORM_MAPPING = "platform_mapping"
+    GAME_CREATION = "game_creation"
+    GAME_UPDATE = "game_update"
+    CSV_DATA = "csv_data"
+    IGDB_INTEGRATION = "igdb_integration"
+    UNEXPECTED = "unexpected"
+
+
+class ImportError:
+    """Structured error information for import failures."""
+    
+    def __init__(
+        self,
+        category: ErrorCategory,
+        message: str,
+        game_title: str = "",
+        csv_row: Optional[int] = None,
+        csv_data: Optional[Dict[str, Any]] = None,
+        api_error: Optional[APIException] = None,
+        timestamp: Optional[datetime] = None,
+        context: Optional[Dict[str, Any]] = None
+    ):
+        self.category = category
+        self.message = message
+        self.game_title = game_title
+        self.csv_row = csv_row
+        self.csv_data = csv_data or {}
+        self.api_error = api_error
+        self.timestamp = timestamp or datetime.now()
+        self.context = context or {}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert error to dictionary format for reporting."""
+        return {
+            'category': self.category.value,
+            'message': self.message,
+            'game_title': self.game_title,
+            'csv_row': self.csv_row,
+            'csv_data': self.csv_data,
+            'api_status_code': self.api_error.status_code if self.api_error else None,
+            'api_response': self.api_error.response_data if self.api_error else None,
+            'timestamp': self.timestamp.isoformat(),
+            'context': self.context
+        }
+    
+    def get_detailed_message(self) -> str:
+        """Get a detailed error message with context."""
+        parts = []
+        
+        if self.game_title:
+            parts.append(f"Game: '{self.game_title}'")
+        
+        if self.csv_row:
+            parts.append(f"CSV Row: {self.csv_row}")
+        
+        parts.append(f"Error: {self.message}")
+        
+        if self.api_error and self.api_error.status_code:
+            parts.append(f"API Status: {self.api_error.status_code}")
+        
+        if self.api_error and self.api_error.response_data:
+            # Extract meaningful error details from API response
+            api_detail = self.api_error.response_data.get('detail', '')
+            if api_detail and api_detail != 'Unknown error':
+                parts.append(f"Details: {api_detail}")
+        
+        return " | ".join(parts)
+
+
 class MergeStrategy(ABC):
     """Abstract base class for merge strategies."""
     
@@ -31,13 +106,15 @@ class MergeStrategy(ABC):
         self.api_client = api_client
         self.dry_run = dry_run
         self.mapper = DarkadiaDataMapper()
+        self.current_csv_row = 0  # Track current CSV row being processed
         self.results = {
             'total_processed': 0,
             'new_games': 0,
             'updated_games': 0,
             'skipped_games': 0,
             'errors': 0,
-            'error_details': []
+            'error_details': [],  # Keep for backward compatibility
+            'structured_errors': []  # New structured error list
         }
     
     @abstractmethod
@@ -93,11 +170,42 @@ class MergeStrategy(ABC):
             console.print(f"[yellow]Error searching for game '{game_title}': {str(e)}[/yellow]")
             return None
     
-    def _record_error(self, error_msg: str, game_title: str = ""):
-        """Record an error for reporting."""
+    def _record_error(
+        self, 
+        category: ErrorCategory,
+        message: str, 
+        game_title: str = "",
+        csv_data: Optional[Dict[str, Any]] = None,
+        api_error: Optional[APIException] = None,
+        context: Optional[Dict[str, Any]] = None
+    ):
+        """Record a structured error for reporting."""
         self.results['errors'] += 1
-        error_detail = f"{game_title}: {error_msg}" if game_title else error_msg
+        
+        # Create structured error
+        import_error = ImportError(
+            category=category,
+            message=message,
+            game_title=game_title,
+            csv_row=self.current_csv_row if self.current_csv_row > 0 else None,
+            csv_data=csv_data,
+            api_error=api_error,
+            context=context
+        )
+        
+        self.results['structured_errors'].append(import_error)
+        
+        # Keep backward compatibility
+        error_detail = f"{game_title}: {message}" if game_title else message
         self.results['error_details'].append(error_detail)
+    
+    def _record_simple_error(self, error_msg: str, game_title: str = ""):
+        """Legacy method for simple error recording - for backward compatibility."""
+        self._record_error(
+            category=ErrorCategory.UNEXPECTED,
+            message=error_msg,
+            game_title=game_title
+        )
     
     async def _add_new_platforms_only(self, existing_game: Dict[str, Any], new_platforms: List[Dict[str, Any]]):
         """Add only platforms that don't already exist for the game."""
@@ -115,8 +223,13 @@ class MergeStrategy(ABC):
                 try:
                     await self.api_client.add_platform_to_user_game(existing_game['id'], platform)
                 except APIException as e:
-                    self._record_error(f"Failed to add platform {platform.get('platform_name', 'Unknown')}: {str(e)}", 
-                                     existing_game.get('title', 'Unknown'))
+                    self._record_error(
+                        category=ErrorCategory.PLATFORM_MAPPING,
+                        message=f"Failed to add platform {platform.get('platform_name', 'Unknown')}",
+                        game_title=existing_game.get('title', 'Unknown'),
+                        api_error=e,
+                        context={'platform': platform, 'operation': 'add_platform'}
+                    )
     
     def _get_new_platforms_to_add(self, existing_game: Dict[str, Any], new_platforms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get list of platforms that need to be added (filtering out duplicates)."""
@@ -195,6 +308,7 @@ class InteractiveMerger(MergeStrategy):
             console.print("[yellow]DRY RUN MODE - No changes will be made[/yellow]")
         
         for i, darkadia_game in enumerate(games):
+            self.current_csv_row = i + 1  # Track CSV row (1-based)
             game_title = darkadia_game.get('Name', 'Unknown Game')
             console.print(f"\n[cyan]Processing game {i+1} of {len(games)}: {game_title}[/cyan]")
             
@@ -205,7 +319,13 @@ class InteractiveMerger(MergeStrategy):
                 console.print("\n[yellow]Import cancelled by user[/yellow]")
                 break
             except Exception as e:
-                self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
+                self._record_error(
+                    category=ErrorCategory.UNEXPECTED,
+                    message=f"Unexpected error: {str(e)}",
+                    game_title=darkadia_game.get('Name', 'Unknown'),
+                    csv_data=darkadia_game,
+                    context={'operation': 'process_single_game', 'csv_index': i}
+                )
         
         # Save any new decisions for future runs
         self._save_persistent_decisions()
@@ -217,7 +337,12 @@ class InteractiveMerger(MergeStrategy):
         
         game_title = darkadia_game.get('Name', '').strip()
         if not game_title:
-            self._record_error("Empty game title", "")
+            self._record_error(
+                category=ErrorCategory.CSV_DATA,
+                message="Empty game title",
+                csv_data=darkadia_game,
+                context={'operation': 'validate_game_title'}
+            )
             return
         
         self.results['total_processed'] += 1
@@ -246,7 +371,14 @@ class InteractiveMerger(MergeStrategy):
                         self.results['updated_games'] += 1
                         console.print(f"[green]✓ Updated: {game_title}[/green]")
                     except APIException as e:
-                        self._record_error(f"Failed to update: {str(e)}", game_title)
+                        self._record_error(
+                            category=ErrorCategory.GAME_UPDATE,
+                            message="Failed to update game",
+                            game_title=game_title,
+                            csv_data=darkadia_game,
+                            api_error=e,
+                            context={'operation': 'update_user_game'}
+                        )
                 else:
                     console.print(f"[blue]DRY RUN: Would update {game_title}[/blue]")
                     self.results['updated_games'] += 1
@@ -258,7 +390,14 @@ class InteractiveMerger(MergeStrategy):
                     self.results['new_games'] += 1
                     console.print(f"[green]✓ Added: {game_title}[/green]")
                 except APIException as e:
-                    self._record_error(f"Failed to create: {str(e)}", game_title)
+                    self._record_error(
+                        category=ErrorCategory.GAME_CREATION,
+                        message="Failed to create game",
+                        game_title=game_title,
+                        csv_data=darkadia_game,
+                        api_error=e,
+                        context={'operation': 'create_user_game'}
+                    )
             else:
                 console.print(f"[blue]DRY RUN: Would add {game_title}[/blue]")
                 self.results['new_games'] += 1
@@ -490,11 +629,18 @@ class OverwriteMerger(MergeStrategy):
             # Set progress console for API client messages
             self.api_client.set_progress_console(progress.console)
             
-            for darkadia_game in games:
+            for i, darkadia_game in enumerate(games):
+                self.current_csv_row = i + 1  # Track CSV row (1-based)
                 try:
                     await self._process_single_game(darkadia_game, user_id)
                 except Exception as e:
-                    self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
+                    self._record_error(
+                        category=ErrorCategory.UNEXPECTED,
+                        message=f"Unexpected error: {str(e)}",
+                        game_title=darkadia_game.get('Name', 'Unknown'),
+                        csv_data=darkadia_game,
+                        context={'operation': 'process_single_game', 'csv_index': i}
+                    )
                 finally:
                     progress.update(task, advance=1)
             
@@ -508,7 +654,12 @@ class OverwriteMerger(MergeStrategy):
         
         game_title = darkadia_game.get('Name', '').strip()
         if not game_title:
-            self._record_error("Empty game title", "")
+            self._record_error(
+                category=ErrorCategory.CSV_DATA,
+                message="Empty game title",
+                csv_data=darkadia_game,
+                context={'operation': 'validate_game_title'}
+            )
             return
         
         self.results['total_processed'] += 1
@@ -532,7 +683,14 @@ class OverwriteMerger(MergeStrategy):
                     
                     self.results['updated_games'] += 1
                 except APIException as e:
-                    self._record_error(f"Failed to update: {str(e)}", game_title)
+                    self._record_error(
+                        category=ErrorCategory.GAME_UPDATE,
+                        message="Failed to update game",
+                        game_title=game_title,
+                        csv_data=darkadia_game,
+                        api_error=e,
+                        context={'operation': 'update_user_game'}
+                    )
             else:
                 self.results['updated_games'] += 1
         else:
@@ -542,7 +700,14 @@ class OverwriteMerger(MergeStrategy):
                     await self.api_client.create_user_game(user_id, nexorious_game)
                     self.results['new_games'] += 1
                 except APIException as e:
-                    self._record_error(f"Failed to create: {str(e)}", game_title)
+                    self._record_error(
+                        category=ErrorCategory.GAME_CREATION,
+                        message="Failed to create game",
+                        game_title=game_title,
+                        csv_data=darkadia_game,
+                        api_error=e,
+                        context={'operation': 'create_user_game'}
+                    )
             else:
                 self.results['new_games'] += 1
     
@@ -571,11 +736,18 @@ class PreserveMerger(MergeStrategy):
             # Set progress console for API client messages
             self.api_client.set_progress_console(progress.console)
             
-            for darkadia_game in games:
+            for i, darkadia_game in enumerate(games):
+                self.current_csv_row = i + 1  # Track CSV row (1-based)
                 try:
                     await self._process_single_game(darkadia_game, user_id)
                 except Exception as e:
-                    self._record_error(f"Unexpected error: {str(e)}", darkadia_game.get('Name', 'Unknown'))
+                    self._record_error(
+                        category=ErrorCategory.UNEXPECTED,
+                        message=f"Unexpected error: {str(e)}",
+                        game_title=darkadia_game.get('Name', 'Unknown'),
+                        csv_data=darkadia_game,
+                        context={'operation': 'process_single_game', 'csv_index': i}
+                    )
                 finally:
                     progress.update(task, advance=1)
             
@@ -589,7 +761,12 @@ class PreserveMerger(MergeStrategy):
         
         game_title = darkadia_game.get('Name', '').strip()
         if not game_title:
-            self._record_error("Empty game title", "")
+            self._record_error(
+                category=ErrorCategory.CSV_DATA,
+                message="Empty game title",
+                csv_data=darkadia_game,
+                context={'operation': 'validate_game_title'}
+            )
             return
         
         self.results['total_processed'] += 1
@@ -617,7 +794,14 @@ class PreserveMerger(MergeStrategy):
                     await self.api_client.create_user_game(user_id, nexorious_game)
                     self.results['new_games'] += 1
                 except APIException as e:
-                    self._record_error(f"Failed to create: {str(e)}", game_title)
+                    self._record_error(
+                        category=ErrorCategory.GAME_CREATION,
+                        message="Failed to create game",
+                        game_title=game_title,
+                        csv_data=darkadia_game,
+                        api_error=e,
+                        context={'operation': 'create_user_game'}
+                    )
             else:
                 self.results['new_games'] += 1
     

@@ -441,7 +441,8 @@ class TestScalabilityIdempotency:
         # Second run
         merger.results = {
             'total_processed': 0, 'new_games': 0, 'updated_games': 0,
-            'skipped_games': 0, 'errors': 0, 'error_details': []
+            'skipped_games': 0, 'errors': 0, 'error_details': [],
+            'structured_errors': []
         }
         
         results2 = await merger.process_games(large_dataset, 'user123')
@@ -509,7 +510,8 @@ class TestScalabilityIdempotency:
         # Second run
         merger.results = {
             'total_processed': 0, 'new_games': 0, 'updated_games': 0,
-            'skipped_games': 0, 'errors': 0, 'error_details': []
+            'skipped_games': 0, 'errors': 0, 'error_details': [],
+            'structured_errors': []
         }
         mock_api_client.create_user_game.reset_mock()
         mock_api_client.add_platform_to_user_game.reset_mock()

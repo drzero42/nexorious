@@ -454,7 +454,8 @@ class TestIdempotency:
         # Reset for second run
         merger.results = {
             'total_processed': 0, 'new_games': 0, 'updated_games': 0,
-            'skipped_games': 0, 'errors': 0, 'error_details': []
+            'skipped_games': 0, 'errors': 0, 'error_details': [],
+            'structured_errors': []
         }
         merger.mapper.convert_to_nexorious_game.side_effect = [
             {'title': 'Test Game 1', 'personal_rating': 4.0, 'platforms': []},
