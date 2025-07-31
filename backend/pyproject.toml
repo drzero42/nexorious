@@ -19,6 +19,7 @@ dependencies = [
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.20",
     "rapidfuzz>=3.10.0",
+    "requests>=2.32.4",
     "sqlmodel>=0.0.24",
     "uvicorn>=0.35.0",
 ]
