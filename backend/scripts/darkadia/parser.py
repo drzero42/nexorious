@@ -21,6 +21,22 @@ from .mapper import DarkadiaDataMapper
 console = Console()
 
 
+def safe_strip(value, default=''):
+    """
+    Safely strip a value, handling pandas NaN and None values.
+    
+    Args:
+        value: Value to strip (can be string, float NaN, None, etc.)
+        default: Default value to return for invalid inputs
+        
+    Returns:
+        Stripped string or default value
+    """
+    if pd.isna(value) or value is None:
+        return default
+    return str(value).strip()
+
+
 class DarkadiaCSVParser:
     """Parser for Darkadia CSV export files."""
     
@@ -73,6 +89,10 @@ class DarkadiaCSVParser:
             
             # Clean and process data
             df = await self._clean_dataframe(df)
+            
+            # Replace any remaining NaN values with empty strings before dict conversion
+            # This prevents float NaN from appearing in the dictionaries
+            df = df.fillna('')
             
             # Convert to list of dictionaries
             games_data = df.to_dict('records')
@@ -292,7 +312,9 @@ class DarkadiaCSVParser:
             merged['Added'] = max(dates)
         
         # Combine notes
-        notes = [row.get('Notes', '') for row in group if row.get('Notes') and row.get('Notes').strip()]
+        notes = [safe_strip(note) for row in group 
+                for note in [row.get('Notes')] 
+                if note is not None and safe_strip(note)]
         if notes:
             merged['Notes'] = ' | '.join(set(notes))  # Remove duplicates
         
