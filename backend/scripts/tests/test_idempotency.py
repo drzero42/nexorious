@@ -387,6 +387,24 @@ class TestImportIdempotency:
 class TestScalabilityIdempotency:
     """Test idempotency with larger datasets and edge cases."""
     
+    @pytest.fixture
+    def mock_api_client(self):
+        """Create a comprehensive mock API client."""
+        client = AsyncMock(spec=NexoriousAPIClient)
+        
+        # Mock platform/storefront data
+        client.get_platforms.return_value = [
+            {'name': 'PC (Windows)', 'display_name': 'PC (Windows)'},
+            {'name': 'PlayStation 4', 'display_name': 'PlayStation 4'}
+        ]
+        client.get_storefronts.return_value = [
+            {'name': 'Steam', 'display_name': 'Steam'},
+            {'name': 'PlayStation Store', 'display_name': 'PlayStation Store'},
+            {'name': 'Epic Games Store', 'display_name': 'Epic Games Store'}
+        ]
+        
+        return client
+    
     @pytest.mark.asyncio
     async def test_large_dataset_idempotency(self, mock_api_client):
         """Test idempotency with a large number of games."""

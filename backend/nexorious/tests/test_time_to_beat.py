@@ -103,6 +103,11 @@ class TestIGDBService:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
+            # Rate limiting settings
+            mock_settings.igdb_requests_per_second = 4.0
+            mock_settings.igdb_burst_capacity = 8
+            mock_settings.igdb_backoff_factor = 1.0
+            mock_settings.igdb_max_retries = 3
             service = IGDBService()
             return service
     

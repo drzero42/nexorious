@@ -47,6 +47,24 @@ class Settings(BaseSettings):
         description="IGDB API Access Token (Twitch Bearer Token)"
     )
     
+    # IGDB Rate Limiting
+    igdb_requests_per_second: float = Field(
+        default=4.0,
+        description="IGDB API rate limit in requests per second (default: 4.0)"
+    )
+    igdb_burst_capacity: int = Field(
+        default=8,
+        description="IGDB API burst capacity - maximum tokens in bucket (default: 8)"
+    )
+    igdb_backoff_factor: float = Field(
+        default=1.0,
+        description="Backoff factor for IGDB API retries (default: 1.0 second)"
+    )
+    igdb_max_retries: int = Field(
+        default=3,
+        description="Maximum number of retries for IGDB API calls (default: 3)"
+    )
+    
     # Storage
     storage_path: Optional[str] = Field(
         default="storage",

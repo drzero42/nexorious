@@ -250,7 +250,8 @@ These rules must always be adhered to during development.
 - **Seeding**: Idempotent seed data for platforms and storefronts
 
 ### External Integrations
-- **IGDB API**: Game metadata, cover art, and completion time estimates
+- **IGDB API**: Game metadata, cover art, and completion time estimates with built-in rate limiting (4 req/s)
+- **Rate Limiting**: Token bucket algorithm with configurable burst capacity and automatic retries
 - **Cover Art Storage**: Automatic download and local storage during game import
 - **Platform Support**: Multi-platform game ownership tracking
 - **Storefront Integration**: Support for Steam, Epic, GOG, PlayStation, Xbox, Nintendo, and physical media

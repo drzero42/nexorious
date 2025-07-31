@@ -15,6 +15,12 @@ from rapidfuzz import fuzz, process
 
 from nexorious.core.config import settings
 from nexorious.services.storage import storage_service
+from nexorious.utils.rate_limiter import (
+    RateLimitConfig, 
+    RateLimitedClient, 
+    create_igdb_rate_limiter,
+    RateLimitExceeded
+)
 
 
 logger = logging.getLogger(__name__)
@@ -97,11 +103,65 @@ class IGDBService:
         self._wrapper: Optional[IGDBWrapper] = None
         self._http_client = httpx.AsyncClient()
         
+        # Initialize rate limiter with settings
+        rate_config = RateLimitConfig(
+            requests_per_second=settings.igdb_requests_per_second,
+            burst_capacity=settings.igdb_burst_capacity,
+            backoff_factor=settings.igdb_backoff_factor,
+            max_retries=settings.igdb_max_retries
+        )
+        self._rate_limiter = create_igdb_rate_limiter(rate_config)
+        
+        logger.info(
+            f"IGDB service initialized with rate limiting: {rate_config.requests_per_second} req/s, "
+            f"burst: {rate_config.burst_capacity}, retries: {rate_config.max_retries}"
+        )
+        
     async def __aenter__(self):
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._http_client.aclose()
+    
+    async def _rate_limited_api_request(self, endpoint: str, query: str) -> bytes:
+        """
+        Make a rate-limited IGDB API request.
+        
+        Args:
+            endpoint: IGDB API endpoint (e.g., 'games', 'game_time_to_beats')
+            query: IGDB query string
+            
+        Returns:
+            Raw response bytes from IGDB API
+            
+        Raises:
+            IGDBError: If API request fails
+            RateLimitExceeded: If rate limit cannot be satisfied
+        """
+        try:
+            wrapper = await self._get_wrapper()
+            
+            # Create the API request function
+            async def make_request():
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(
+                    None,
+                    lambda: wrapper.api_request(endpoint, query)
+                )
+            
+            # Execute with rate limiting
+            logger.debug(f"Making rate-limited IGDB API request to {endpoint}")
+            response = await self._rate_limiter.call(make_request)
+            
+            logger.debug(f"IGDB API request successful: {len(response)} bytes received")
+            return response
+            
+        except RateLimitExceeded as e:
+            logger.error(f"IGDB rate limit exceeded for {endpoint}: {str(e)}")
+            raise IGDBError(f"Rate limit exceeded for IGDB API: {str(e)}")
+        except Exception as e:
+            logger.error(f"IGDB API request failed for {endpoint}: {str(e)}")
+            raise IGDBError(f"IGDB API request failed: {str(e)}")
     
     async def _get_access_token(self) -> str:
         """Get or refresh Twitch access token using client credentials flow."""
@@ -177,10 +237,6 @@ class IGDBService:
         logger.info(f"Starting IGDB search for query: '{query}' (limit: {limit}, threshold: {fuzzy_threshold})")
         
         try:
-            # Get authenticated wrapper
-            logger.debug("Getting IGDB wrapper with authentication")
-            wrapper = await self._get_wrapper()
-            
             # Build IGDB query
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name, 
@@ -192,13 +248,9 @@ class IGDBService:
             
             logger.debug(f"IGDB query: {igdb_query.strip()}")
             
-            # Execute search in thread pool to avoid blocking
-            logger.debug("Executing IGDB API request")
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, 
-                lambda: wrapper.api_request('games', igdb_query)
-            )
+            # Execute rate-limited search
+            logger.debug("Executing rate-limited IGDB API request")
+            response = await self._rate_limited_api_request('games', igdb_query)
             
             logger.debug(f"IGDB API response received: {len(response)} bytes")
             
@@ -292,8 +344,6 @@ class IGDBService:
     async def get_game_by_id(self, igdb_id: str) -> Optional[GameMetadata]:
         """Get game metadata by IGDB ID."""
         try:
-            wrapper = await self._get_wrapper()
-            
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name, 
                        involved_companies.developer, involved_companies.publisher, 
@@ -301,11 +351,7 @@ class IGDBService:
                 where id = {igdb_id};
             '''
             
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, 
-                lambda: wrapper.api_request('games', igdb_query)
-            )
+            response = await self._rate_limited_api_request('games', igdb_query)
             
             games_data = json.loads(response.decode('utf-8'))
             
@@ -336,18 +382,12 @@ class IGDBService:
         This method converts the seconds to hours before returning.
         """
         try:
-            wrapper = await self._get_wrapper()
-            
             time_query = f'''
                 fields hastily, normally, completely;
                 where game_id = {igdb_id};
             '''
             
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, 
-                lambda: wrapper.api_request('game_time_to_beats', time_query)
-            )
+            response = await self._rate_limited_api_request('game_time_to_beats', time_query)
             
             time_data = json.loads(response.decode('utf-8'))
             
@@ -593,3 +633,12 @@ class IGDBService:
             'total_fields': total_fields,
             'filled_fields': filled_fields
         }
+    
+    def get_rate_limiter_status(self) -> dict:
+        """
+        Get current rate limiter status for monitoring.
+        
+        Returns:
+            Dictionary with rate limiter status information
+        """
+        return self._rate_limiter.get_status()

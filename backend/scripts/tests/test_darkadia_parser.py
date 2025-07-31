@@ -101,7 +101,7 @@ class TestDarkadiaCSVParser:
         csv_file = self.create_temp_csv([])
         
         try:
-            with pytest.raises(ValueError, match="CSV file contains no data"):
+            with pytest.raises(ValueError, match="CSV file is empty"):
                 await parser.parse_csv(csv_file)
         finally:
             csv_file.unlink()

@@ -214,10 +214,35 @@ class TestNexoriousAPIClient:
     @pytest.mark.asyncio
     async def test_create_user_game_success(self, api_client, mock_httpx_client):
         """Test successful user game creation."""
-        mock_response = MagicMock()
-        mock_response.status_code = 201
-        mock_response.json.return_value = {'id': 'game_123', 'title': 'New Game'}
-        mock_httpx_client.post.return_value = mock_response
+        # Mock IGDB search response (200 with game candidates)
+        igdb_search_response = MagicMock()
+        igdb_search_response.status_code = 200
+        igdb_search_response.json.return_value = {
+            'games': [{'igdb_id': '12345', 'title': 'New Game'}]
+        }
+        
+        # Mock IGDB import response (201 for game creation)
+        igdb_import_response = MagicMock()
+        igdb_import_response.status_code = 201
+        igdb_import_response.json.return_value = {'id': 'game_123', 'title': 'New Game'}
+        
+        # Mock user game creation response (201)
+        user_game_response = MagicMock()
+        user_game_response.status_code = 201
+        user_game_response.json.return_value = {'id': 'user_game_123'}
+        
+        # Mock GET requests (for existing games search)
+        get_response = MagicMock()
+        get_response.status_code = 200
+        get_response.json.return_value = {'games': []}
+        mock_httpx_client.get.return_value = get_response
+        
+        # Set up POST responses for different endpoints
+        mock_httpx_client.post.side_effect = [
+            igdb_search_response,    # First POST: IGDB search
+            igdb_import_response,    # Second POST: IGDB import
+            user_game_response       # Third POST: User game creation
+        ]
         
         game_data = {
             'title': 'New Game',
@@ -232,25 +257,29 @@ class TestNexoriousAPIClient:
         result = await api_client.create_user_game('user_123', game_data)
         
         assert result is not None
-        assert result['id'] == 'game_123'
-        mock_httpx_client.post.assert_called_once()
+        assert result['id'] == 'user_game_123'
+        # Should have made 3 POST calls (IGDB search, IGDB import, user game creation)
+        assert mock_httpx_client.post.call_count == 3
     
     @pytest.mark.asyncio
     async def test_create_user_game_failure(self, api_client, mock_httpx_client):
         """Test user game creation failure."""
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        mock_response.json.return_value = {'detail': 'Invalid data'}
-        mock_response.content = b'{"detail": "Invalid data"}'
-        mock_httpx_client.post.return_value = mock_response
+        # Mock IGDB search to return no results (simulating game not found)
+        igdb_search_response = MagicMock()
+        igdb_search_response.status_code = 200
+        igdb_search_response.json.return_value = {'games': []}  # No games found
+        
+        mock_httpx_client.post.return_value = igdb_search_response
         
         game_data = {'title': 'Bad Game'}
         
         with pytest.raises(APIException) as exc_info:
             await api_client.create_user_game('user_123', game_data)
         
-        assert exc_info.value.status_code == 400
-        assert 'Failed to create user game' in str(exc_info.value)
+        # Since IGDB search returns no results, find_or_create_game returns None
+        # and create_user_game throws APIException without status_code
+        assert exc_info.value.status_code is None
+        assert 'Failed to find or create game: Bad Game' in str(exc_info.value)
     
     @pytest.mark.asyncio
     async def test_update_user_game_success(self, api_client, mock_httpx_client):
