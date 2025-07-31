@@ -150,6 +150,29 @@ npm run test:run
 - **Coverage Analysis**: HTML reports generated in `htmlcov/` directory
 - **Database Testing**: Supports both PostgreSQL and SQLite test databases
 
+#### CSV Import Testing
+The Darkadia CSV import system has comprehensive test coverage (>90%):
+- **Location**: `backend/scripts/tests/`
+- **Test Files**: 5 modules covering all import functionality
+- **Key Features**:
+  - Idempotency validation (safe to re-run imports)
+  - All three merge strategies (Interactive, Overwrite, Preserve)
+  - Decision caching for Interactive merger
+  - Platform duplicate prevention
+  - Large dataset performance testing
+- **Quick Test Commands**:
+  ```bash
+  # Run all import tests
+  uv run pytest scripts/tests/ -v
+  
+  # Run with coverage
+  uv run pytest scripts/tests/ --cov=scripts --cov-report=term-missing
+  
+  # Test specific functionality
+  uv run pytest scripts/tests/test_idempotency.py -v
+  ```
+- **Documentation**: See `backend/scripts/tests/README.md` for complete testing guide
+
 ### Frontend Testing (Vitest)
 - **Framework**: Vitest with @testing-library/svelte
 - **Coverage Target**: >70% for components, stores, and utilities  

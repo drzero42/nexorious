@@ -294,11 +294,41 @@ class NexoriousAPIClient:
                 json=payload
             )
             
-            return response.status_code in [200, 201]
+            # Handle the case where platform already exists (409 Conflict or similar)
+            if response.status_code in [200, 201]:
+                return True
+            elif response.status_code == 409:
+                # Platform already exists - this is OK for idempotency
+                return True
+            else:
+                return False
             
         except httpx.RequestError as e:
             console.print(f"[yellow]Error adding platform: {str(e)}[/yellow]")
             return False
+    
+    async def get_user_game_details(self, user_game_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a user game including platforms.
+        
+        Args:
+            user_game_id: User game ID
+            
+        Returns:
+            User game details with platforms or None if not found
+        """
+        
+        try:
+            response = await self.client.get(f"{self.base_url}/api/user-games/{user_game_id}")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+                
+        except httpx.RequestError as e:
+            console.print(f"[yellow]Error getting user game details: {str(e)}[/yellow]")
+            return None
     
     async def get_platforms(self) -> List[Dict[str, Any]]:
         """Get list of available platforms."""
