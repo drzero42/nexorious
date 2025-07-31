@@ -31,8 +31,6 @@
     hours_played: 0,
     personal_notes: '',
     ownership_status: 'owned',
-    is_physical: false,
-    physical_location: '',
     is_loved: false
   };
 
@@ -231,14 +229,8 @@
         const addRequest: any = {
           game_id: createdGame.id,
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
-          is_physical: gameData.is_physical || false,
           platforms: platformData.length > 0 ? platformData : undefined
         };
-        
-        // Only add physical_location if it has a value
-        if (gameData.physical_location.trim()) {
-          addRequest.physical_location = gameData.physical_location.trim();
-        }
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
@@ -336,14 +328,8 @@
         const addRequest: any = {
           game_id: createdGame.id,
           ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
-          is_physical: gameData.is_physical || false,
           platforms: platformData.length > 0 ? platformData : undefined
         };
-        
-        // Only add physical_location if it has a value
-        if (gameData.physical_location.trim()) {
-          addRequest.physical_location = gameData.physical_location.trim();
-        }
         
         const userGame = await userGames.addGameToCollection(addRequest);
 
@@ -915,47 +901,19 @@
           </div>
         </div>
 
-        <div class="mt-6 space-y-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
-              <input
-                id="metadata-is-physical"
-                type="checkbox"
-                bind:checked={gameData.is_physical}
-                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <span class="ml-3 text-sm font-medium text-gray-900">💿 Physical Copy</span>
-            </label>
-
-            <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
-              <input
-                id="metadata-is-loved"
-                type="checkbox"
-                bind:checked={gameData.is_loved}
-                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <span class="ml-3 text-sm font-medium text-gray-900 flex items-center gap-1">
-                <span>Loved Game</span>
-                <span class="text-red-500">♥</span>
-              </span>
-            </label>
-          </div>
-
-          {#if gameData.is_physical}
-            <div class="pl-1">
-              <label for="metadata-physical-location" class="form-label">
-                Physical Location
-              </label>
-              <input
-                id="metadata-physical-location"
-                type="text"
-                bind:value={gameData.physical_location}
-                placeholder="e.g., Living room shelf, Bedroom cabinet, Storage box #3"
-                class="form-input"
-              />
-              <p class="mt-1 text-xs text-gray-500">Where is this physical copy stored?</p>
-            </div>
-          {/if}
+        <div class="mt-6">
+          <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
+            <input
+              id="metadata-is-loved"
+              type="checkbox"
+              bind:checked={gameData.is_loved}
+              class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <span class="ml-3 text-sm font-medium text-gray-900 flex items-center gap-1">
+              <span>Loved Game</span>
+              <span class="text-red-500">♥</span>
+            </span>
+          </label>
         </div>
 
         <!-- Personal Notes -->
@@ -1539,47 +1497,19 @@
               </div>
             </div>
 
-            <div class="mt-4 space-y-4">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
-                  <input
-                    id="is_physical"
-                    type="checkbox"
-                    bind:checked={gameData.is_physical}
-                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <span class="ml-3 text-sm font-medium text-gray-900">💿 Physical Copy</span>
-                </label>
-
-                <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
-                  <input
-                    id="is_loved"
-                    type="checkbox"
-                    bind:checked={gameData.is_loved}
-                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <span class="ml-3 text-sm font-medium text-gray-900 flex items-center gap-1">
-                    <span>Loved Game</span>
-                    <span class="text-red-500">♥</span>
-                  </span>
-                </label>
-              </div>
-
-              {#if gameData.is_physical}
-                <div class="pl-1">
-                  <label for="physical_location" class="form-label">
-                    Physical Location
-                  </label>
-                  <input
-                    id="physical_location"
-                    type="text"
-                    bind:value={gameData.physical_location}
-                    placeholder="e.g., Living room shelf, Bedroom cabinet, Storage box #3"
-                    class="form-input"
-                  />
-                  <p class="mt-1 text-xs text-gray-500">Where is this physical copy stored?</p>
-                </div>
-              {/if}
+            <div class="mt-4">
+              <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors duration-200">
+                <input
+                  id="is_loved"
+                  type="checkbox"
+                  bind:checked={gameData.is_loved}
+                  class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <span class="ml-3 text-sm font-medium text-gray-900 flex items-center gap-1">
+                  <span>Loved Game</span>
+                  <span class="text-red-500">♥</span>
+                </span>
+              </label>
             </div>
           </div>
 
