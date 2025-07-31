@@ -59,6 +59,7 @@
         # Environment variables
         PYTHONPATH = "";
         UV_CACHE_DIR = "./.uv-cache";
+        LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib/:${pkgs.lib.makeLibraryPath [pkgs.zlib]}";
       };
     });
 }
