@@ -227,8 +227,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.1.1 Backend Enhancements
 - [x] Add fuzzy matching parameter to games search API for deduplication
-- [ ] Enhance platform endpoints to include storefront data efficiently
-- [ ] Verify existing APIs handle import validation scenarios properly
+- [x] Verify existing APIs handle import validation scenarios properly
 
 #### 2.1.2 Import Script Development
 - [ ] Set up import script project structure under `backend/scripts/`
