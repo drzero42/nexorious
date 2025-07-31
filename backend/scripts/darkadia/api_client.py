@@ -205,7 +205,7 @@ class NexoriousAPIClient:
     
     async def create_user_game(self, user_id: str, game_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Create a new user game entry.
+        Create a new user game entry with proper workflow.
         
         Args:
             user_id: User ID
@@ -216,9 +216,35 @@ class NexoriousAPIClient:
         """
         
         try:
-            # Prepare the payload
+            # Step 1: Find or create the game record
+            game_record = await self.find_or_create_game(game_data['title'])
+            if not game_record:
+                raise APIException(f"Failed to find or create game: {game_data['title']}")
+            
+            # Step 2: Resolve platform and storefront names to IDs
+            platform_associations = []
+            for platform_info in game_data.get('platforms', []):
+                platform_id = await self.get_platform_id(platform_info['platform_name'])
+                if not platform_id:
+                    console.print(f"[yellow]Platform not found: {platform_info['platform_name']}[/yellow]")
+                    continue
+                
+                storefront_id = None
+                if platform_info.get('storefront_name'):
+                    storefront_id = await self.get_storefront_id(platform_info['storefront_name'])
+                    if not storefront_id:
+                        console.print(f"[yellow]Storefront not found: {platform_info['storefront_name']}[/yellow]")
+                        continue
+                
+                platform_associations.append({
+                    'platform_id': platform_id,
+                    'storefront_id': storefront_id,
+                    'is_available': platform_info.get('is_available', True)
+                })
+            
+            # Step 3: Prepare the payload with proper format
             payload = {
-                'title': game_data['title'],
+                'game_id': game_record['id'],  # Required field
                 'ownership_status': game_data['ownership_status'],
                 'play_status': game_data['play_status'],
                 'personal_rating': game_data.get('personal_rating'),
@@ -226,25 +252,19 @@ class NexoriousAPIClient:
                 'personal_notes': game_data.get('personal_notes', ''),
                 'acquired_date': game_data.get('acquired_date'),
                 'hours_played': game_data.get('hours_played', 0),
-                'platforms': []
+                'platforms': platform_associations  # Use resolved IDs
             }
             
-            # Add platform associations
-            for platform_info in game_data.get('platforms', []):
-                platform_data = {
-                    'platform_name': platform_info['platform_name'],
-                    'storefront_name': platform_info['storefront_name'],
-                    'is_available': platform_info.get('is_available', True)
-                }
-                payload['platforms'].append(platform_data)
-            
+            # Step 4: Create the user game
             response = await self.client.post(
                 f"{self.base_url}/api/user-games",
                 json=payload
             )
             
             if response.status_code == 201:
-                return response.json()
+                created_game = response.json()
+                console.print(f"✓ Created user game: {game_record['title']}")
+                return created_game
             else:
                 error_msg = f"Failed to create user game: {response.status_code}"
                 try:
@@ -398,12 +418,19 @@ class NexoriousAPIClient:
             return self._storefronts_cache
         
         try:
-            response = await self.client.get(f"{self.base_url}/api/storefronts")
+            response = await self.client.get(f"{self.base_url}/api/platforms/storefronts/")
             
             if response.status_code == 200:
-                storefronts = response.json()
-                self._storefronts_cache = storefronts
-                return storefronts
+                data = response.json()
+                # Handle different response formats
+                if isinstance(data, list):
+                    self._storefronts_cache = data
+                elif isinstance(data, dict) and 'storefronts' in data:
+                    self._storefronts_cache = data['storefronts']
+                else:
+                    self._storefronts_cache = []
+                
+                return self._storefronts_cache
             else:
                 console.print(f"[yellow]Failed to get storefronts: {response.status_code}[/yellow]")
                 return []
@@ -436,6 +463,121 @@ class NexoriousAPIClient:
                                for s in storefronts)
         
         return platform_exists and storefront_exists
+    
+    async def get_platform_id(self, platform_name: str) -> Optional[str]:
+        """
+        Get platform ID from platform name.
+        
+        Args:
+            platform_name: Platform display name or name
+            
+        Returns:
+            Platform ID if found, None otherwise
+        """
+        
+        platforms = await self.get_platforms()
+        
+        for platform in platforms:
+            if (platform.get('display_name') == platform_name or 
+                platform.get('name') == platform_name):
+                return platform.get('id')
+        
+        return None
+    
+    async def get_storefront_id(self, storefront_name: str) -> Optional[str]:
+        """
+        Get storefront ID from storefront name.
+        
+        Args:
+            storefront_name: Storefront display name or name
+            
+        Returns:
+            Storefront ID if found, None otherwise
+        """
+        
+        storefronts = await self.get_storefronts()
+        
+        for storefront in storefronts:
+            if (storefront.get('display_name') == storefront_name or 
+                storefront.get('name') == storefront_name):
+                return storefront.get('id')
+        
+        return None
+    
+    async def find_or_create_game(self, game_title: str) -> Optional[Dict[str, Any]]:
+        """
+        Find an existing game or create a new one from IGDB data.
+        
+        Args:
+            game_title: Game title to search for
+            
+        Returns:
+            Game data with id field, or None if failed
+        """
+        
+        try:
+            # First, search IGDB for the game
+            igdb_candidates = await self.search_igdb_games(game_title, limit=5)
+            
+            if not igdb_candidates:
+                console.print(f"[yellow]No IGDB results found for: {game_title}[/yellow]")
+                return None
+            
+            # Take the first (best) match
+            best_match = igdb_candidates[0]
+            
+            # Check if game already exists in our database by IGDB ID
+            try:
+                response = await self.client.get(
+                    f"{self.base_url}/api/games",
+                    params={"q": game_title, "limit": 50}
+                )
+                
+                if response.status_code == 200:
+                    existing_games = response.json().get('games', [])
+                    
+                    # Look for existing game with same IGDB ID
+                    for game in existing_games:
+                        if game.get('igdb_id') == best_match.get('igdb_id'):
+                            console.print(f"✓ Found existing game: {game['title']} (ID: {game['id']})")
+                            return game
+            except Exception as e:
+                console.print(f"[yellow]Error searching existing games: {str(e)}[/yellow]")
+            
+            # Game doesn't exist, create it from IGDB data
+            try:
+                import_payload = {
+                    "igdb_id": best_match['igdb_id'],
+                    "custom_overrides": {}
+                }
+                
+                response = await self.client.post(
+                    f"{self.base_url}/api/games/igdb-import",
+                    json=import_payload
+                )
+                
+                if response.status_code == 201:
+                    new_game = response.json()
+                    console.print(f"✓ Created new game: {new_game['title']} (ID: {new_game['id']})")
+                    return new_game
+                else:
+                    error_msg = f"Failed to import game from IGDB: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        error_msg += f" - {error_data.get('detail', 'Unknown error')}"
+                    except:
+                        error_msg += f" - {response.text}"
+                    
+                    console.print(f"[red]Error creating game: {error_msg}[/red]")
+                    return None
+                    
+            except httpx.RequestError as e:
+                console.print(f"[red]Network error creating game: {str(e)}[/red]")
+                return None
+                
+        except Exception as e:
+            console.print(f"[red]Error in find_or_create_game: {str(e)}[/red]")
+            return None
     
     async def retry_request(self, func, max_retries: int = 3, backoff_factor: float = 1.0) -> Any:
         """
