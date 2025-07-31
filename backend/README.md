@@ -105,6 +105,42 @@ The application supports both SQLite and PostgreSQL databases. Configure the `DA
 - SQLite: `sqlite:///./nexorious.db`
 - PostgreSQL: `postgresql://username:password@localhost:5432/nexorious`
 
+## Configuration
+
+### IGDB Rate Limiting
+
+The application includes built-in rate limiting for IGDB API calls to respect their 4 requests per second limit. You can configure the rate limiting behavior via environment variables:
+
+```bash
+# IGDB rate limiting configuration
+IGDB_REQUESTS_PER_SECOND=4.0      # Requests per second (default: 4.0)
+IGDB_BURST_CAPACITY=8             # Maximum burst tokens (default: 8)
+IGDB_BACKOFF_FACTOR=1.0          # Retry backoff factor in seconds (default: 1.0)
+IGDB_MAX_RETRIES=3               # Maximum retry attempts (default: 3)
+```
+
+#### Rate Limiting Features
+
+- **Token Bucket Algorithm**: Allows brief bursts while maintaining average rate
+- **Automatic Retries**: Failed requests are retried with exponential backoff
+- **Concurrent Safety**: Multiple simultaneous requests are properly queued
+- **Monitoring**: Rate limiter status can be monitored via the IGDBService
+- **Error Handling**: Rate limit violations are converted to user-friendly errors
+
+#### Monitoring Rate Limits
+
+You can monitor rate limiter status programmatically:
+
+```python
+# In your code
+from nexorious.services.igdb import IGDBService
+
+async with IGDBService() as igdb:
+    status = igdb.get_rate_limiter_status()
+    print(f"Tokens available: {status['tokens_available']}")
+    print(f"Utilization: {status['utilization']*100:.1f}%")
+```
+
 ## Seed Data Management
 
 The application includes official seed data for platforms and storefronts that provide the foundation for game collection management.
