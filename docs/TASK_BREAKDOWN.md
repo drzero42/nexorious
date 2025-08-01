@@ -36,6 +36,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create seed data fixtures for idempotent platform/storefront loading function
 - [x] Seed data includes all 11 platforms, 12 storefronts, and 11 default mappings per PRD specifications
 - [x] Support ownership status that allows zero platform associations
+- [ ] Create platform_storefronts junction table for many-to-many platform-storefront associations
+- [ ] Database migration for platform_storefronts table with proper constraints
+- [ ] Update seed data with realistic platform-storefront associations (PC→Steam/Epic/GOG, mobile platforms→Epic Games Store, etc.)
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
@@ -54,6 +57,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Integration of seed data function with initial admin setup flow
 - [x] Platform default storefront management endpoints
 - [x] API endpoints supporting multiple storefront associations per platform
+- [ ] API endpoint to get associated storefronts for a platform (GET /api/platforms/{platform_id}/storefronts)
+- [ ] API endpoints for admin management of platform-storefront associations (POST/DELETE)
+- [ ] Enhanced platform list endpoints to include associated storefronts in response
 
 #### 1.1.4 External API Integration
 - [x] IGDB API integration for game metadata
@@ -123,6 +129,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Multi-select storefront interface per platform during game addition
 - [x] Physical storefront option in game addition interface
 - [ ] Platform filtering integration with existing default storefront selection
+- [ ] Storefront filtering logic: organize storefronts into primary (associated) and "Other" (non-associated) sections
+- [ ] Implement "Other" collapsible section for non-associated storefronts in game addition interface
+- [ ] Visual distinction between primary and other storefronts during game addition
 
 #### 1.2.5 Game Editing & Platform Management Interface
 - [x] Game editing form with comprehensive metadata fields
@@ -131,6 +140,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB platform filtering during game editing (show IGDB platforms first)
 - [x] "Others" expandable section for additional platforms in game editing interface
 - [ ] Add/remove storefront associations per platform with visual feedback
+- [ ] Storefront filtering logic in game editing: organize storefronts into primary (associated) and "Other" sections
+- [ ] Implement "Other" collapsible section for non-associated storefronts in game editing interface
 - [ ] Confirmation dialogs for removing platform/storefront ownership
 - [ ] Automatic ownership status updates when platforms are added/removed with visual feedback
 - [ ] Visual indicators showing current ownership status during editing and automatic status changes
@@ -164,6 +175,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Display seed data loading status and results in admin interface
 - [x] Platform and storefront management interface (ADMIN-ONLY CRUD operations for platforms and storefronts)
 - [x] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
+- [ ] Admin interface for managing platform-storefront associations using simple checkboxes/buttons
 - [ ] User deletion with data handling options
 - [ ] Admin-only navigation indicators with clear visual distinction
 - [ ] System configuration management interface
@@ -190,6 +202,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Validation tests for automatic ownership status changes based on platform operations
 - [ ] Multi-storefront per platform association tests
 - [ ] Integration tests for platform/storefront operations with automatic ownership status updates
+- [ ] Unit tests for new platform_storefronts junction table and relationships
+- [ ] Integration tests for platform-storefront association API endpoints
+- [ ] Admin authorization tests for platform-storefront management endpoints
 
 #### 1.3.2 Frontend Testing
 - [x] Unit tests for components and stores (>70% coverage) - Pagination component tests completed
@@ -208,6 +223,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Frontend tests for automatic ownership status updates when platforms are added/removed
 - [ ] UI tests for visual feedback during automatic ownership status changes
 - [ ] Component tests for automatic ownership status transitions in game editing interface
+- [ ] Frontend component tests for storefront filtering logic (primary vs "Other" sections)
+- [ ] Integration tests for storefront filtering in game addition and editing interfaces
+- [ ] UI tests for "Other" collapsible section functionality
+- [ ] Admin interface tests for platform-storefront association management
 
 #### 1.3.3 CI/CD Pipeline
 - [x] Automated test execution on pull requests

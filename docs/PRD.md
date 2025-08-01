@@ -197,6 +197,35 @@ To create the definitive self-hosted solution for personal game collection manag
   - "Others" section provides clear visual distinction from main platform list
   - Platform filtering integrates seamlessly with existing default storefront selection
 
+#### 1.3.6 Platform-Storefront Associations
+**Priority**: P1 (High)
+- **User Story**: As a user, I want to see only relevant storefronts when selecting platforms so I can quickly find the storefronts that are actually available for each platform
+- **Requirements**:
+  - Each platform should have a list of associated/supported storefronts beyond just the default storefront
+  - During game addition and editing, organize storefronts for each platform into two sections:
+    - **Primary section**: Storefronts associated with the selected platform (shown by default)
+    - **"Other" section**: Non-associated storefronts (collapsed by default, expandable)
+  - This provides clearer organization and reduces choice paralysis while maintaining flexibility
+  - Apply consistent storefront filtering across both Add Game and Edit Game interfaces
+- **Implementation Details**:
+  - Create many-to-many relationship between platforms and storefronts for associations
+  - Update seed data with realistic platform-storefront associations:
+    - PC (Windows) → Steam, Epic Games Store, GOG, Origin/EA App, Microsoft Store
+    - PlayStation 5/4/3 → PlayStation Store, Physical
+    - Xbox Series X/S/One/360 → Microsoft Store, Physical
+    - Nintendo Switch/Wii → Nintendo eShop, Physical
+    - iOS → Apple App Store, Epic Games Store
+    - Android → Google Play Store, Epic Games Store
+  - Admin interface for managing platform-storefront associations using simple checkboxes/buttons
+  - Integration with existing default storefront selection logic
+- **Acceptance Criteria**:
+  - Game addition interface shows associated storefronts first, others in collapsed "Other" section
+  - Game editing interface applies same storefront filtering logic
+  - All storefronts remain selectable despite filtering for flexibility
+  - "Other" section provides clear visual distinction from primary storefronts
+  - Admin can manage platform-storefront associations through simple interface
+  - Storefront filtering works seamlessly with existing default storefront selection
+
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)
 - **User Story**: As a user, I want to track my progress through games so I can see what I've completed
