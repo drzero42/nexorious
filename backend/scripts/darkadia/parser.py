@@ -194,7 +194,7 @@ class DarkadiaCSVParser:
         
         # Forward-fill the Name column to handle continuation rows
         df['Name'] = df['Name'].replace('', pd.NA)  # Convert empty strings to NaN
-        df['Name'] = df['Name'].fillna(method='ffill')
+        df['Name'] = df['Name'].ffill()
         
         # Remove rows that are completely empty (all NaN except potentially Name)
         df = df.dropna(how='all', subset=[col for col in df.columns if col != 'Name'])
