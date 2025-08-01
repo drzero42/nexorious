@@ -1,7 +1,9 @@
 <script lang="ts">
  import type { UserGamePlatform } from '$lib/stores/user-games.svelte';
+ import { userGames } from '$lib/stores/user-games.svelte';
  import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
- import { onMount } from 'svelte';
+ import { onMount, tick } from 'svelte';
+ import Portal from './Portal.svelte';
 
  export let platforms: UserGamePlatform[] = [];
  export let compact: boolean = false;
@@ -10,21 +12,111 @@
  export let enableHover: boolean = true; // To control hover interactions
  export let showDetailedTooltips: boolean = true; // Enable rich tooltips
  export let showStoreLinks: boolean = false; // Include store links in tooltips
- export let tooltipPosition: 'top' | 'bottom' | 'auto' = 'auto'; // Tooltip positioning
+ // Note: tooltipPosition prop removed - now using automatic positioning
 
  // Tooltip state management
  let activeTooltip: string | null = null;
  let tooltipElements: { [key: string]: HTMLElement } = {};
  let isMobile = false;
 
+// Hover delay management
+let showTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
+let hideTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
+const SHOW_DELAY = 300; // ms delay before showing tooltip
+const HIDE_DELAY = 100; // ms delay before hiding tooltip
+
+// Tooltip positioning state for fixed positioning
+let badgeElements: { [key: string]: HTMLElement } = {};
+let tooltipCoords = { top: 0, left: 0 };
+let tooltipPlacement: 'top' | 'bottom' | 'left' | 'right' = 'top';
+
  onMount(() => {
-   // Detect if we're on a touch device
-   isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+   // ===== COMPONENT INITIALIZATION DEBUG =====
+   console.log('🔍 PlatformBadges: Component mounted with props:', {
+     platforms: platforms?.length || 0,
+     compact,
+     maxVisible,
+     showDetails,
+     enableHover,
+     showDetailedTooltips,
+     showStoreLinks
+   });
+   
+   // More accurate mobile detection - check for small screen size AND touch capability
+   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+   const isSmallScreen = window.innerWidth <= 768; // Common mobile breakpoint
+   const isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
+   
+   // Consider it mobile if it has touch AND either small screen or coarse pointer
+   isMobile = hasTouch && (isSmallScreen || isTouchPrimary);
+   
+   // ===== MOBILE DETECTION DEBUG =====
+   console.log('📱 PlatformBadges: Mobile detection results:', {
+     hasTouch,
+     isSmallScreen,
+     isTouchPrimary,
+     isMobile,
+     userAgent: navigator.userAgent
+   });
  });
+
+// Clear all timeouts on component cleanup
+function clearAllTimeouts() {
+  Object.values(showTimeouts).forEach(clearTimeout);
+  Object.values(hideTimeouts).forEach(clearTimeout);
+  showTimeouts = {};
+  hideTimeouts = {};
+}
+
+onMount(() => {
+  return () => {
+    clearAllTimeouts();
+  };
+});
 
  $: groupedPlatforms = groupPlatformsByPlatform(platforms);
  $: visiblePlatforms = groupedPlatforms.slice(0, maxVisible);
  $: hiddenCount = Math.max(0, groupedPlatforms.length - maxVisible);
+
+ // ===== DATA STRUCTURE DEBUG =====
+ $: {
+   console.log('📊 PlatformBadges: Data processed:', {
+     originalPlatforms: platforms?.length || 0,
+     groupedPlatforms: groupedPlatforms?.length || 0,
+     visiblePlatforms: visiblePlatforms?.length || 0,
+     hiddenCount,
+     firstGroupId: visiblePlatforms?.[0] ? `platform-${visiblePlatforms[0].platform.id}` : 'none'
+   });
+   
+   if (visiblePlatforms?.length > 0) {
+     console.log('🎯 PlatformBadges: First visible platform details:', {
+       platform: visiblePlatforms[0]?.platform,
+       storefronts: visiblePlatforms[0]?.storefronts?.length || 0
+     });
+   }
+ }
+
+ // ===== ACTIVE TOOLTIP STATE DEBUG =====
+ $: {
+   console.log('🎭 PlatformBadges: activeTooltip state changed:', {
+     activeTooltip,
+     showDetailedTooltips,
+     shouldRenderTooltip: !!activeTooltip && showDetailedTooltips
+   });
+ }
+ 
+ // Template condition verification
+ $: {
+   console.log('🔍 Template conditions check:', {
+     showDetailedTooltips,
+     activeTooltip,
+     'should render for each groupId': visiblePlatforms?.map(group => ({
+       groupId: `platform-${group.platform.id}`,
+       matches: activeTooltip === `platform-${group.platform.id}`,
+       shouldRender: showDetailedTooltips && activeTooltip === `platform-${group.platform.id}`
+     }))
+   });
+ }
 
  // Enhanced platform-specific styling with better visual design
  function getPlatformStyle(platformName: string): { bg: string, border: string, text: string, icon: string } {
@@ -119,30 +211,191 @@
    : `${platformName} - No specific storefront`;
  }
 
- // Show detailed tooltip
+ // Show detailed tooltip with delay
  function showTooltip(groupId: string, event?: Event) {
-   if (!showDetailedTooltips) return;
+   // ===== EVENT FLOW DEBUG =====
+   console.log('🎯 PlatformBadges: showTooltip called:', {
+     groupId,
+     hasEvent: !!event,
+     eventType: event?.type,
+     showDetailedTooltips,
+     isMobile,
+     currentActiveTooltip: activeTooltip
+   });
+   
+   if (!showDetailedTooltips) {
+     console.log('❌ PlatformBadges: showDetailedTooltips is false, aborting');
+     return;
+   }
+   
+   // Clear any existing hide timeout for this tooltip
+   if (hideTimeouts[groupId]) {
+     clearTimeout(hideTimeouts[groupId]);
+     delete hideTimeouts[groupId];
+     console.log('⏰ Cleared hide timeout for:', groupId);
+   }
+   
+   // If tooltip is already active, no need to delay
+   if (activeTooltip === groupId) {
+     console.log('✅ Tooltip already active for:', groupId);
+     return;
+   }
+   
+   const previousActiveTooltip = activeTooltip;
    
    if (isMobile && event) {
-     // On mobile, toggle tooltip on tap
+     // On mobile, toggle tooltip immediately on tap
      event.preventDefault();
      event.stopPropagation();
      activeTooltip = activeTooltip === groupId ? null : groupId;
+     console.log('📝 Mobile: activeTooltip changed immediately:', {
+       from: previousActiveTooltip,
+       to: activeTooltip
+     });
    } else {
-     // On desktop, show on hover
-     activeTooltip = groupId;
+     // On desktop, show tooltip after delay
+     if (showTimeouts[groupId]) {
+       clearTimeout(showTimeouts[groupId]);
+     }
+     
+     console.log('⏰ Setting show timeout for:', groupId, 'delay:', SHOW_DELAY);
+     showTimeouts[groupId] = setTimeout(() => {
+       activeTooltip = groupId;
+       delete showTimeouts[groupId];
+       console.log('📝 Desktop: activeTooltip changed after delay:', {
+         from: previousActiveTooltip,
+         to: activeTooltip,
+         shouldShowTooltip: true
+       });
+     }, SHOW_DELAY);
    }
  }
 
- // Hide tooltip
+ // Hide tooltip with delay
  function hideTooltip(groupId: string) {
    if (!showDetailedTooltips || isMobile) return;
-   if (activeTooltip === groupId) {
-     activeTooltip = null;
+   
+   // Clear any pending show timeout for this tooltip
+   if (showTimeouts[groupId]) {
+     clearTimeout(showTimeouts[groupId]);
+     delete showTimeouts[groupId];
+     console.log('⏰ Cleared show timeout for:', groupId);
    }
+   
+   // Only hide if this tooltip is currently active
+   if (activeTooltip !== groupId) {
+     console.log('ℹ️ Tooltip not active for:', groupId, 'current:', activeTooltip);
+     return;
+   }
+   
+   console.log('⏰ Setting hide timeout for:', groupId, 'delay:', HIDE_DELAY);
+   hideTimeouts[groupId] = setTimeout(() => {
+     // Double-check tooltip is still the active one before hiding
+     if (activeTooltip === groupId) {
+       console.log('🚷 hideTooltip after delay:', groupId);
+       activeTooltip = null;
+     }
+     delete hideTimeouts[groupId];
+   }, HIDE_DELAY);
  }
 
- // Handle click events
+ // Calculate tooltip position using getBoundingClientRect for fixed positioning
+function calculateTooltipPosition(badgeElement: HTMLElement, tooltipWidth: number = 256, tooltipHeight: number = 200): { top: number, left: number, placement: 'top' | 'bottom' | 'left' | 'right' } {
+ const badgeRect = badgeElement.getBoundingClientRect();
+ const viewportWidth = window.innerWidth;
+ const viewportHeight = window.innerHeight;
+ const scrollX = window.scrollX;
+ const scrollY = window.scrollY;
+ 
+ // Calculate potential positions
+ const positions = {
+  top: {
+   top: badgeRect.top + scrollY - tooltipHeight - 8,
+   left: badgeRect.left + scrollX + (badgeRect.width / 2) - (tooltipWidth / 2),
+   placement: 'top' as const
+  },
+  bottom: {
+   top: badgeRect.bottom + scrollY + 8,
+   left: badgeRect.left + scrollX + (badgeRect.width / 2) - (tooltipWidth / 2),
+   placement: 'bottom' as const
+  },
+  left: {
+   top: badgeRect.top + scrollY + (badgeRect.height / 2) - (tooltipHeight / 2),
+   left: badgeRect.left + scrollX - tooltipWidth - 8,
+   placement: 'left' as const
+  },
+  right: {
+   top: badgeRect.top + scrollY + (badgeRect.height / 2) - (tooltipHeight / 2),
+   left: badgeRect.right + scrollX + 8,
+   placement: 'right' as const
+  }
+ };
+ 
+ // Check which positions fit in viewport (prefer top, then bottom, then sides)
+ const preferredOrder: ('top' | 'bottom' | 'left' | 'right')[] = ['top', 'bottom', 'left', 'right'];
+ 
+ for (const placement of preferredOrder) {
+  const pos = positions[placement];
+  const fitsHorizontally = pos.left >= 0 && pos.left + tooltipWidth <= viewportWidth;
+  const fitsVertically = pos.top >= 0 && pos.top + tooltipHeight <= viewportHeight;
+  
+  if (fitsHorizontally && fitsVertically) {
+   return pos;
+  }
+ }
+ 
+ // If nothing fits perfectly, use top and clamp to viewport
+ const fallbackPos = positions.top;
+ return {
+  top: Math.max(0, Math.min(fallbackPos.top, viewportHeight - tooltipHeight)),
+  left: Math.max(0, Math.min(fallbackPos.left, viewportWidth - tooltipWidth)),
+  placement: 'top'
+ };
+}
+
+// Update tooltip position when badge is hovered/clicked
+function updateTooltipPosition(groupId: string) {
+ // ===== ELEMENT BINDING & POSITIONING DEBUG =====
+ const badgeElement = badgeElements[groupId];
+ console.log('📍 PlatformBadges: updateTooltipPosition called:', {
+   groupId,
+   hasBadgeElement: !!badgeElement,
+   badgeElementKeys: Object.keys(badgeElements),
+   activeTooltip
+ });
+ 
+ if (!badgeElement) {
+   console.error('❌ PlatformBadges: Badge element not found for groupId:', groupId);
+   return;
+ }
+ 
+ console.log('📐 PlatformBadges: Badge element bounds:', badgeElement.getBoundingClientRect());
+ 
+ const position = calculateTooltipPosition(badgeElement);
+ const previousCoords = { ...tooltipCoords };
+ tooltipCoords = { top: position.top, left: position.left };
+ tooltipPlacement = position.placement;
+ 
+ console.log('🎯 PlatformBadges: Tooltip position calculated:', {
+   previousCoords,
+   newCoords: tooltipCoords,
+   placement: tooltipPlacement,
+   viewport: {
+     width: window.innerWidth,
+     height: window.innerHeight
+   }
+ });
+}
+
+// Handle positioning after Portal is ready
+async function handlePortalReady(groupId: string) {
+  await tick(); // Wait for DOM updates
+  console.log('🚪 Portal ready for:', groupId, 'recalculating position...');
+  updateTooltipPosition(groupId);
+}
+
+
+// Handle click events
  function handleClick(groupId: string, event: Event) {
    if (!showDetailedTooltips) return;
    
@@ -205,10 +458,22 @@
         tabindex="0"
         title="{showDetailedTooltips ? 'Click for details' : generateTooltipText(group)}"
         aria-label="{showDetailedTooltips ? 'Show platform details for ' + group.platform.display_name : generateTooltipText(group)}"
-        bind:this={tooltipElements[groupId]}
-        on:mouseenter={() => showTooltip(groupId)}
-        on:mouseleave={() => hideTooltip(groupId)}
-        on:click={(e) => handleClick(groupId, e)}
+        bind:this={badgeElements[groupId]}
+        on:mouseenter={() => {
+          showTooltip(groupId);
+          if (activeTooltip === groupId) {
+            updateTooltipPosition(groupId);
+          }
+        }}
+        on:mouseleave={() => {
+          hideTooltip(groupId);
+        }}
+        on:click={(e) => {
+          handleClick(groupId, e);
+          if (activeTooltip === groupId) {
+            updateTooltipPosition(groupId);
+          }
+        }}
         on:keydown={(e) => handleKeydown(groupId, e)}
    >
     
@@ -270,17 +535,32 @@
     {/if}
     
     <!-- Detailed Tooltip -->
-    {#if showDetailedTooltips && activeTooltip === groupId}
-     <div 
-          class="absolute z-50 w-64 p-3 bg-white border border-gray-300 rounded-lg shadow-xl
-                 {tooltipPosition === 'top' ? 'bottom-full mb-2' : tooltipPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}
-                 left-1/2 transform -translate-x-1/2"
-          role="tooltip"
-          aria-labelledby="tooltip-{groupId}"
-     >
+    {#if showDetailedTooltips && activeTooltip === groupId && !userGames?.value?.isLoading}
+     <Portal onPortalReady={() => handlePortalReady(groupId)}>
+      <div 
+           class="fixed z-[9999] w-64 p-3 bg-white border border-gray-300 rounded-lg shadow-xl"
+           style="top: {tooltipCoords.top}px; left: {tooltipCoords.left}px;"
+           role="tooltip"
+           aria-labelledby="tooltip-{groupId}"
+           data-tooltip-id="{groupId}"
+           data-tooltip-coords="{tooltipCoords.top},{tooltipCoords.left}"
+           bind:this={tooltipElements[groupId]}
+           on:mouseenter={() => {
+             // Cancel any pending hide timeout when hovering over tooltip
+             if (hideTimeouts[groupId]) {
+               clearTimeout(hideTimeouts[groupId]);
+               delete hideTimeouts[groupId];
+               console.log('⏰ Tooltip hover: cleared hide timeout for:', groupId);
+             }
+           }}
+           on:mouseleave={() => {
+             // Start hide timeout when leaving tooltip
+             hideTooltip(groupId);
+           }}
+      >
       <!-- Arrow -->
       <div class="absolute left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-gray-300 rotate-45
-                  {tooltipPosition === 'top' ? 'top-full -mt-1.5' : tooltipPosition === 'bottom' ? 'bottom-full -mb-1.5' : 'top-full -mt-1.5'}"></div>
+                  {tooltipPlacement === 'top' ? 'top-full -mt-1.5' : tooltipPlacement === 'bottom' ? 'bottom-full -mb-1.5' : tooltipPlacement === 'left' ? 'right-full -mr-1.5 top-1/2 -translate-y-1/2' : tooltipPlacement === 'right' ? 'left-full -ml-1.5 top-1/2 -translate-y-1/2' : 'top-full -mt-1.5'}"></div>
       
       <!-- Platform Header -->
       <div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
@@ -336,7 +616,8 @@
         Click to keep open • Hover to show
        </div>
       {/if}
-     </div>
+      </div>
+     </Portal>
     {/if}
    </div>
   {/each}
@@ -354,10 +635,22 @@
         tabindex="0"
         title="{showDetailedTooltips ? 'Click to see more platforms' : 'There are ' + hiddenCount + ' more platform' + (hiddenCount !== 1 ? 's' : '') + ' not shown'}"
         aria-label="{showDetailedTooltips ? 'Show ' + hiddenCount + ' more platforms' : 'There are ' + hiddenCount + ' more platform' + (hiddenCount !== 1 ? 's' : '') + ' not shown'}"
-        bind:this={tooltipElements[hiddenGroupId]}
-        on:mouseenter={() => showTooltip(hiddenGroupId)}
-        on:mouseleave={() => hideTooltip(hiddenGroupId)}
-        on:click={(e) => handleClick(hiddenGroupId, e)}
+        bind:this={badgeElements[hiddenGroupId]}
+        on:mouseenter={() => {
+          showTooltip(hiddenGroupId);
+          if (activeTooltip === hiddenGroupId) {
+            updateTooltipPosition(hiddenGroupId);
+          }
+        }}
+        on:mouseleave={() => {
+          hideTooltip(hiddenGroupId);
+        }}
+        on:click={(e) => {
+          handleClick(hiddenGroupId, e);
+          if (activeTooltip === hiddenGroupId) {
+            updateTooltipPosition(hiddenGroupId);
+          }
+        }}
         on:keydown={(e) => handleKeydown(hiddenGroupId, e)}>
     <div class="flex items-center {compact ? 'gap-1.5' : 'gap-2'}">
      <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}" role="img" aria-hidden="true">📦</span>
@@ -365,17 +658,32 @@
     </div>
     
     <!-- Hidden Platforms Tooltip -->
-    {#if showDetailedTooltips && activeTooltip === hiddenGroupId}
-     {@const hiddenPlatforms = groupedPlatforms.slice(maxVisible)}
-     <div 
-          class="absolute z-50 w-72 p-3 bg-white border border-gray-300 rounded-lg shadow-xl
-                 {tooltipPosition === 'top' ? 'bottom-full mb-2' : tooltipPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}
-                 left-1/2 transform -translate-x-1/2"
-          role="tooltip"
-          aria-labelledby="tooltip-{hiddenGroupId}">
+    {#if showDetailedTooltips && activeTooltip === hiddenGroupId && !userGames?.value?.isLoading}
+     <Portal onPortalReady={() => handlePortalReady(hiddenGroupId)}>
+      {@const hiddenPlatforms = groupedPlatforms.slice(maxVisible)}
+      <div 
+           class="fixed z-[9999] w-72 p-3 bg-white border border-gray-300 rounded-lg shadow-xl"
+           style="top: {tooltipCoords.top}px; left: {tooltipCoords.left}px;"
+           role="tooltip"
+           aria-labelledby="tooltip-{hiddenGroupId}"
+           data-tooltip-id="{hiddenGroupId}"
+           data-tooltip-coords="{tooltipCoords.top},{tooltipCoords.left}"
+           bind:this={tooltipElements[hiddenGroupId]}
+           on:mouseenter={() => {
+             // Cancel any pending hide timeout when hovering over tooltip
+             if (hideTimeouts[hiddenGroupId]) {
+               clearTimeout(hideTimeouts[hiddenGroupId]);
+               delete hideTimeouts[hiddenGroupId];
+               console.log('⏰ Hidden tooltip hover: cleared hide timeout for:', hiddenGroupId);
+             }
+           }}
+           on:mouseleave={() => {
+             // Start hide timeout when leaving tooltip
+             hideTooltip(hiddenGroupId);
+           }}>
       <!-- Arrow -->
       <div class="absolute left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-gray-300 rotate-45
-                  {tooltipPosition === 'top' ? 'top-full -mt-1.5' : tooltipPosition === 'bottom' ? 'bottom-full -mb-1.5' : 'top-full -mt-1.5'}"></div>
+                  {tooltipPlacement === 'top' ? 'top-full -mt-1.5' : tooltipPlacement === 'bottom' ? 'bottom-full -mb-1.5' : tooltipPlacement === 'left' ? 'right-full -mr-1.5 top-1/2 -translate-y-1/2' : tooltipPlacement === 'right' ? 'left-full -ml-1.5 top-1/2 -translate-y-1/2' : 'top-full -mt-1.5'}"></div>
       
       <!-- Header -->
       <div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
@@ -430,7 +738,8 @@
         Click to keep open • Hover to show
        </div>
       {/if}
-     </div>
+      </div>
+     </Portal>
     {/if}
    </div>
   {/if}

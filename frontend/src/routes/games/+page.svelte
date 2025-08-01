@@ -191,7 +191,7 @@ let isDeletingBulk = false;
  }
 
  // Reset selection when games change (e.g., after filtering)
- $: if (userGames.value.userGames) {
+ $: if (userGames.value.userGames && Array.isArray(userGames.value.userGames)) {
   // Remove any selected IDs that are no longer in current results
   const currentGameIds = new Set(userGames.value.userGames.map(game => game.id));
   selectedGameIds = new Set([...selectedGameIds].filter(id => currentGameIds.has(id)));
@@ -345,12 +345,12 @@ async function confirmBulkDelete() {
     {/if}
     
     <!-- Bulk Selection Controls -->
-    {#if userGames.value.userGames.length > 0}
+    {#if userGames.value.userGames?.length > 0}
      <div class="flex items-center space-x-2">
-      {#if selectedGameIds.size < userGames.value.userGames.length}
+      {#if selectedGameIds.size < (userGames.value.userGames?.length ?? 0)}
        <button
         on:click={() => {
-         selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+         selectedGameIds = new Set(userGames.value.userGames?.map(game => game.id) ?? []);
          isSelectingAll = true;
          updateBulkActionsVisibility();
         }}
@@ -614,7 +614,7 @@ async function confirmBulkDelete() {
     <p class="mt-2 text-sm text-gray-500">Loading games...</p>
    </div>
   </div>
- {:else if userGames.value.userGames.length === 0}
+ {:else if (userGames.value.userGames?.length ?? 0) === 0}
   <div class="text-center py-12">
    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -643,7 +643,7 @@ async function confirmBulkDelete() {
   <!-- Grid View -->
   {#if viewMode === 'grid'}
    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-    {#each userGames.value.userGames as userGame (userGame.id)}
+    {#each userGames.value.userGames ?? [] as userGame (userGame.id)}
      <div
       on:click={(e) => {
        // Don't navigate if clicking on checkbox
@@ -728,7 +728,9 @@ async function confirmBulkDelete() {
         <p class="mt-1 text-sm text-gray-500" title="{userGame.game.genre || 'Unknown Genre'}">
          {userGame.game.genre || 'Unknown Genre'}
         </p>
+        <!-- ===== PLATFORM BADGES CONDITIONAL DEBUG ===== -->
         {#if userGame.platforms && userGame.platforms.length > 0}
+         <!-- SHOULD RENDER PLATFORMBADGES: platforms={userGame.platforms?.length || 0} -->
          <div class="mt-3">
           <PlatformBadges 
             platforms={userGame.platforms} 
@@ -736,8 +738,12 @@ async function confirmBulkDelete() {
             maxVisible={3} 
             showDetailedTooltips={true}
             showStoreLinks={false}
-            tooltipPosition="auto"
           />
+         </div>
+        {:else}
+         <!-- NO PLATFORMS FOR GAME: {userGame.game.title} -->
+         <div class="mt-3 text-xs text-gray-500">
+          DEBUG: No platforms for {userGame.game.title}
          </div>
         {/if}
        </div>
@@ -783,7 +789,7 @@ async function confirmBulkDelete() {
            if (isSelectingAll) {
             clearSelection();
            } else {
-            selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+            selectedGameIds = new Set(userGames.value.userGames?.map(game => game.id) ?? []);
             isSelectingAll = true;
             updateBulkActionsVisibility();
            }
@@ -813,7 +819,7 @@ async function confirmBulkDelete() {
        </tr>
       </thead>
       <tbody class="divide-y divide-gray-200 bg-white">
-       {#each userGames.value.userGames as userGame (userGame.id)}
+       {#each userGames.value.userGames ?? [] as userGame (userGame.id)}
         <tr
          on:click={(e) => {
           // Don't navigate if clicking on checkbox
@@ -871,7 +877,9 @@ async function confirmBulkDelete() {
           {userGame.game.genre || 'Unknown'}
          </td>
          <td class="px-3 py-4 text-sm text-gray-500">
+          <!-- ===== LIST VIEW PLATFORM BADGES DEBUG ===== -->
           {#if userGame.platforms && userGame.platforms.length > 0}
+           <!-- LIST VIEW SHOULD RENDER PLATFORMBADGES: platforms={userGame.platforms?.length || 0} -->
            <div class="max-w-48">
             <PlatformBadges 
               platforms={userGame.platforms} 
@@ -879,11 +887,11 @@ async function confirmBulkDelete() {
               maxVisible={2}
               showDetailedTooltips={true}
               showStoreLinks={false}
-              tooltipPosition="auto"
             />
            </div>
           {:else}
-           <span class="text-gray-400">-</span>
+           <!-- LIST VIEW NO PLATFORMS: {userGame.game.title} -->
+           <span class="text-gray-400">DEBUG: No platforms for {userGame.game.title}</span>
           {/if}
          </td>
          <td class="whitespace-nowrap px-3 py-4 text-sm">
