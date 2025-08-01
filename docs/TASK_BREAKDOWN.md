@@ -57,7 +57,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Integration of seed data function with initial admin setup flow
 - [x] Platform default storefront management endpoints
 - [x] API endpoints supporting multiple storefront associations per platform
-- [ ] API endpoint to get associated storefronts for a platform (GET /api/platforms/{platform_id}/storefronts)
+- [x] API endpoint to get associated storefronts for a platform (GET /api/platforms/{platform_id}/storefronts)
 - [ ] API endpoints for admin management of platform-storefront associations (POST/DELETE)
 - [ ] Enhanced platform list endpoints to include associated storefronts in response
 

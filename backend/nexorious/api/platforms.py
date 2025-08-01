@@ -10,7 +10,7 @@ from typing import Annotated, Optional
 from ..core.database import get_session
 from ..core.security import get_current_admin_user
 from ..models.user import User
-from ..models.platform import Platform, Storefront
+from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..api.schemas.platform import (
     PlatformCreateRequest,
     PlatformUpdateRequest,
@@ -26,7 +26,8 @@ from ..api.schemas.platform import (
     StorefrontUsageStats,
     SeedDataResponse,
     PlatformDefaultMapping,
-    UpdatePlatformDefaultRequest
+    UpdatePlatformDefaultRequest,
+    PlatformStorefrontsResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -88,6 +89,47 @@ async def get_platform(
         )
     
     return platform
+
+
+@router.get("/{platform_id}/storefronts", response_model=PlatformStorefrontsResponse)
+async def get_platform_storefronts(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    active_only: bool = Query(default=True, description="Show only active storefronts")
+):
+    """Get all storefronts associated with a specific platform."""
+    
+    # First, verify the platform exists
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Query for associated storefronts via the junction table
+    query = (
+        select(Storefront)
+        .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+        .where(PlatformStorefront.platform_id == platform_id)
+    )
+    
+    # Filter by active status if requested
+    if active_only:
+        query = query.where(Storefront.is_active)
+    
+    # Order by storefront display name
+    query = query.order_by(Storefront.display_name)
+    
+    storefronts = session.exec(query).all()
+    
+    return PlatformStorefrontsResponse(
+        platform_id=platform.id,
+        platform_name=platform.name,
+        platform_display_name=platform.display_name,
+        storefronts=storefronts,
+        total_storefronts=len(storefronts)
+    )
 
 
 @router.post("/", response_model=PlatformResponse, status_code=status.HTTP_201_CREATED)
