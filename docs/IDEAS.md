@@ -16,3 +16,6 @@ It should be possible to pull new data from IGDB for games with an IGDB ID. Game
 
 ## Platforms and storefront icons based on the real logos
 Platforms and storefronts all have logos. These should be used in the platform badges.
+
+## Database migrations automatically run at startup
+When starting the backend, it should automatically run the database migrations.
