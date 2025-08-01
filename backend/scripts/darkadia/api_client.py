@@ -13,6 +13,7 @@ import json
 
 import httpx
 from rich.console import Console
+from rapidfuzz import fuzz
 
 console = Console()
 
@@ -695,6 +696,54 @@ class NexoriousAPIClient:
         
         return None
     
+    def _validate_fuzzy_match(self, candidate_title: str, original_query: str, threshold: float = 0.8) -> tuple[bool, float]:
+        """
+        Validate that an IGDB candidate is a good fuzzy match for the original query.
+        
+        Uses enhanced fuzzy matching logic optimized for CSV imports to prevent poor matches.
+        
+        Args:
+            candidate_title: Title of the IGDB candidate game
+            original_query: Original game title from CSV
+            threshold: Minimum similarity score to accept (0.0-1.0)
+            
+        Returns:
+            Tuple of (is_valid_match, similarity_score)
+        """
+        if not candidate_title or not original_query:
+            return False, 0.0
+            
+        query_lower = original_query.lower().strip()
+        title_lower = candidate_title.lower().strip()
+        
+        # Calculate multiple similarity scores
+        exact_score = 1.0 if query_lower == title_lower else 0.0
+        ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
+        partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
+        token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
+        token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
+        
+        # Calculate length ratio to penalize very different lengths
+        len_query = len(query_lower)
+        len_title = len(title_lower)
+        length_ratio = min(len_query, len_title) / max(len_query, len_title) if max(len_query, len_title) > 0 else 0.0
+        
+        # Adjust partial score based on length similarity for CSV imports
+        # If the query is much shorter than the candidate, reduce partial score weight
+        adjusted_partial_weight = 0.8 * length_ratio if length_ratio < 0.6 else 0.8
+        
+        # Calculate weighted final score with enhanced logic for CSV imports
+        final_score = max(
+            exact_score * 1.0,                    # Exact match gets highest priority
+            ratio_score * 0.9,                    # Overall similarity
+            partial_score * adjusted_partial_weight,  # Adjusted partial match
+            token_sort_score * 0.7,               # Token order similarity  
+            token_set_score * 0.6                 # Token set similarity
+        )
+        
+        is_valid = final_score >= threshold
+        return is_valid, final_score
+    
     async def find_or_create_game(self, game_title: str) -> Optional[Dict[str, Any]]:
         """
         Find an existing game or create a new one from IGDB data.
@@ -714,8 +763,27 @@ class NexoriousAPIClient:
                 self.console.print(f"[yellow]No IGDB results found for: {game_title}[/yellow]")
                 return None
             
-            # Take the first (best) match
-            best_match = igdb_candidates[0]
+            # Find the best fuzzy match using strict validation
+            best_match = None
+            best_score = 0.0
+            
+            self.console.print(f"[cyan]Validating {len(igdb_candidates)} IGDB candidates for '{game_title}'[/cyan]")
+            
+            for i, candidate in enumerate(igdb_candidates):
+                candidate_title = candidate.get('title', '')
+                is_valid, score = self._validate_fuzzy_match(candidate_title, game_title, threshold=0.8)
+                
+                self.console.print(f"  {i+1}. '{candidate_title}' - Score: {score:.3f} {'✓' if is_valid else '✗'}")
+                
+                if is_valid and score > best_score:
+                    best_match = candidate
+                    best_score = score
+            
+            if not best_match:
+                self.console.print(f"[red]No suitable IGDB match found for '{game_title}' (all candidates scored below 0.8 threshold)[/red]")
+                return None
+            
+            self.console.print(f"[green]Selected best match: '{best_match.get('title')}' (Score: {best_score:.3f})[/green]")
             
             # Check if game already exists in our database by IGDB ID
             try:

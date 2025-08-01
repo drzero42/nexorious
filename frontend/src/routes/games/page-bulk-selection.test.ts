@@ -148,7 +148,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
   });
 
   describe('Select All Functionality', () => {
-    it('should change button text when select all is clicked', async () => {
+    it('should show deselect all button after select all is clicked', async () => {
       render(GamesPage);
       
       await waitFor(() => {
@@ -158,10 +158,13 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       const selectAllButton = screen.getByText(/select all/i);
       await fireEvent.click(selectAllButton);
       
-      // After clicking select all, it should change to "Clear All"
+      // After clicking select all, should show "Deselect All" button
       await waitFor(() => {
-        expect(screen.getByText(/clear all/i)).toBeInTheDocument();
+        expect(screen.getByText(/deselect all/i)).toBeInTheDocument();
       });
+      
+      // Select All button should no longer be visible since all games are selected
+      expect(screen.queryByText('Select All')).not.toBeInTheDocument();
     });
 
     it('should check all game checkboxes when select all is clicked', async () => {

@@ -75,6 +75,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Platform and storefront indicators clearly showing all ownership locations
   - Basic search interface for game titles with simple filtering options
   - Bulk selection and operations on unique games
+  - **Multi-Selection UX Enhancement**: When games are selected for bulk operations, clicking anywhere on another game card should select that game rather than following the normal navigation link, providing a more intuitive multi-selection experience
   - IGDB game search interface with candidate selection
   - Game metadata acceptance/confirmation screen
   - Game editing interface for adding/removing platform and storefront ownership
