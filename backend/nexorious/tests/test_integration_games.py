@@ -385,6 +385,28 @@ class TestIGDBIntegrationEndpoints:
         assert data["title"] == "Custom Title"
         assert data["description"] == "Custom description"
     
+    def test_igdb_import_existing_game(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
+        """Test IGDB import when game already exists - should return existing game."""
+        # First import - use the IGDB ID that the mock service returns
+        import_data = {
+            "igdb_id": "12345",
+            "title": "Test Game"
+        }
+        response1 = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=auth_headers)
+        assert_api_success(response1, 201)
+        data1 = response1.json()
+        game_id = data1["id"]
+        
+        # Second import of same game - should return existing game, not error
+        response2 = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=auth_headers)
+        assert_api_success(response2, 201)  # Should still be 201 for consistency
+        data2 = response2.json()
+        
+        # Should return the same game
+        assert data2["id"] == game_id
+        assert data2["igdb_id"] == "12345"
+        assert data2["title"] == "Test Game"
+    
     def test_igdb_import_without_auth(self, client_with_mock_igdb: TestClient):
         """Test IGDB import without authentication."""
         import_data = {

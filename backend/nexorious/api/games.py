@@ -558,8 +558,8 @@ async def import_from_igdb(
         ).first()
         
         if existing_game:
-            logger.error(
-                f"409 CONFLICT - IGDB game import failed due to existing game. "
+            logger.info(
+                f"IGDB game import found existing game - returning existing entry. "
                 f"IGDB ID: {import_data.igdb_id} | "
                 f"Existing game ID: {existing_game.id} | "
                 f"Existing title: '{existing_game.title}' | "
@@ -570,10 +570,15 @@ async def import_from_igdb(
                 f"IGDB developer: {game_metadata.developer} | "
                 f"Requested by user: {current_user.username} ({current_user.id})"
             )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Game already exists in database"
-            )
+            # Apply any custom overrides from the user to the existing game if requested
+            if import_data.custom_overrides:
+                for key, value in import_data.custom_overrides.items():
+                    if hasattr(existing_game, key) and value is not None:
+                        setattr(existing_game, key, value)
+                session.commit()
+                session.refresh(existing_game)
+            
+            return GameResponse.model_validate(existing_game)
         
         # Create game from IGDB metadata
         game_data = {

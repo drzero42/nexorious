@@ -214,7 +214,7 @@
       }
       
       const createdGame = await games.createFromIGDB(selectedGame.igdb_id, customOverrides);
-      notifications.showSuccess('Game metadata imported successfully from IGDB');
+      notifications.showSuccess(`Adding "${createdGame.title}" to your collection`);
       
       try {
         // Add the game to the user's collection with form values
