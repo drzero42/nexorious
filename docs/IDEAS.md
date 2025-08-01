@@ -13,3 +13,6 @@ During import of Darkadia games with non-interactive strategies, all games that 
 
 ## Update game data from IGDB
 It should be possible to pull new data from IGDB for games with an IGDB ID. Games with an IGDB ID should not have their data changable by the users.
+
+## Platforms and storefront icons based on the real logos
+Platforms and storefronts all have logos. These should be used in the platform badges.
