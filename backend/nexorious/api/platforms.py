@@ -63,11 +63,30 @@ async def list_platforms(
     offset = (page - 1) * per_page
     platforms = session.exec(query.offset(offset).limit(per_page)).all()
     
+    # Get associated storefronts for each platform
+    platform_responses = []
+    for platform in platforms:
+        # Query associated storefronts for this platform
+        storefront_query = (
+            select(Storefront)
+            .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+            .where(PlatformStorefront.platform_id == platform.id)
+            .where(Storefront.is_active == True)  # Only include active storefronts
+            .order_by(Storefront.display_name)
+        )
+        
+        associated_storefronts = session.exec(storefront_query).all()
+        
+        # Create platform response with storefronts
+        platform_dict = platform.model_dump()
+        platform_dict['storefronts'] = associated_storefronts
+        platform_responses.append(platform_dict)
+    
     # Calculate pages
     pages = (total + per_page - 1) // per_page
     
     return PlatformListResponse(
-        platforms=platforms,
+        platforms=platform_responses,
         total=total,
         page=page,
         per_page=per_page,

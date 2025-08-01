@@ -42,6 +42,9 @@ class TestPlatformsListEndpoint:
         assert data["platforms"][0]["id"] == str(test_platform.id)
         assert data["platforms"][0]["name"] == test_platform.name
         assert data["platforms"][0]["display_name"] == test_platform.display_name
+        # Verify storefronts field is present (should be empty for test_platform with no associations)
+        assert "storefronts" in data["platforms"][0]
+        assert data["platforms"][0]["storefronts"] == []
     
     def test_list_platforms_empty(self, client: TestClient):
         """Test platforms list with no platforms."""
@@ -96,6 +99,117 @@ class TestPlatformsListEndpoint:
         data = response.json()
         assert len(data["platforms"]) == 2
         assert data["total"] == 5
+    
+    def test_list_platforms_includes_associated_storefronts(self, client: TestClient, session: Session):
+        """Test that platforms list includes associated storefronts for each platform."""
+        # Create platforms
+        platform1 = Platform(
+            name="platform-1",
+            display_name="Platform 1",
+            is_active=True
+        )
+        platform2 = Platform(
+            name="platform-2", 
+            display_name="Platform 2",
+            is_active=True
+        )
+        session.add(platform1)
+        session.add(platform2)
+        
+        # Create storefronts
+        storefront1 = Storefront(
+            name="storefront-1",
+            display_name="Storefront 1",
+            is_active=True
+        )
+        storefront2 = Storefront(
+            name="storefront-2",
+            display_name="Storefront 2", 
+            is_active=True
+        )
+        storefront3 = Storefront(
+            name="storefront-3",
+            display_name="Storefront 3",
+            is_active=True
+        )
+        inactive_storefront = Storefront(
+            name="inactive-storefront",
+            display_name="Inactive Storefront",
+            is_active=False
+        )
+        session.add(storefront1)
+        session.add(storefront2)
+        session.add(storefront3)
+        session.add(inactive_storefront)
+        session.commit()
+        
+        # Create platform-storefront associations
+        # Platform 1 has storefront 1 and 2
+        assoc1 = PlatformStorefront(platform_id=platform1.id, storefront_id=storefront1.id)
+        assoc2 = PlatformStorefront(platform_id=platform1.id, storefront_id=storefront2.id)
+        # Platform 1 also has inactive storefront (should be filtered out)
+        assoc_inactive = PlatformStorefront(platform_id=platform1.id, storefront_id=inactive_storefront.id)
+        # Platform 2 has storefront 3
+        assoc3 = PlatformStorefront(platform_id=platform2.id, storefront_id=storefront3.id)
+        
+        session.add(assoc1)
+        session.add(assoc2)
+        session.add(assoc_inactive)
+        session.add(assoc3)
+        session.commit()
+        
+        response = client.get("/api/platforms/")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert len(data["platforms"]) == 2
+        
+        # Find each platform in response
+        platform1_data = next(p for p in data["platforms"] if p["name"] == "platform-1")
+        platform2_data = next(p for p in data["platforms"] if p["name"] == "platform-2")
+        
+        # Check platform 1 has 2 associated storefronts (inactive one filtered out)
+        assert "storefronts" in platform1_data
+        assert len(platform1_data["storefronts"]) == 2
+        storefront_names = [s["name"] for s in platform1_data["storefronts"]]
+        assert "storefront-1" in storefront_names
+        assert "storefront-2" in storefront_names
+        assert "inactive-storefront" not in storefront_names
+        
+        # Check platform 2 has 1 associated storefront
+        assert "storefronts" in platform2_data
+        assert len(platform2_data["storefronts"]) == 1
+        assert platform2_data["storefronts"][0]["name"] == "storefront-3"
+        
+        # Verify storefront objects have all expected fields
+        storefront = platform1_data["storefronts"][0]
+        assert "id" in storefront
+        assert "name" in storefront
+        assert "display_name" in storefront
+        assert "is_active" in storefront
+        assert storefront["is_active"] is True
+    
+    def test_list_platforms_with_no_storefront_associations(self, client: TestClient, session: Session):
+        """Test that platforms with no storefront associations return empty storefronts list."""
+        # Create platform with no associations
+        platform = Platform(
+            name="isolated-platform",
+            display_name="Isolated Platform",
+            is_active=True
+        )
+        session.add(platform)
+        session.commit()
+        
+        response = client.get("/api/platforms/")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert len(data["platforms"]) == 1
+        
+        platform_data = data["platforms"][0]
+        assert "storefronts" in platform_data
+        assert len(platform_data["storefronts"]) == 0
+        assert platform_data["storefronts"] == []
 
 
 class TestPlatformsDetailEndpoint:
