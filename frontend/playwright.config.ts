@@ -22,6 +22,10 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+    
+    /* Increase timeouts for E2E tests */
+    actionTimeout: 10000,
+    navigationTimeout: 15000,
   },
 
   /* Configure projects for major browsers */
@@ -62,10 +66,22 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-  },
+  /* Run both backend and frontend servers before starting the tests */
+  webServer: [
+    {
+      command: 'cd ../backend && DATABASE_URL=sqlite:///:memory: SECRET_KEY=test-secret-key DEBUG=false uv run uvicorn nexorious.main:app --host 127.0.0.1 --port 8001',
+      url: 'http://localhost:8001/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000, // 2 minutes for backend to start
+    },
+    {
+      command: 'npm run dev',
+      url: 'http://localhost:5173',
+      reuseExistingServer: !process.env.CI,
+      env: {
+        // Configure frontend to use test backend
+        PUBLIC_API_URL: 'http://localhost:8001/api'
+      }
+    },
+  ],
 });
