@@ -191,6 +191,8 @@ The Darkadia CSV import system has comprehensive test coverage (>90%):
 
 These rules must always be adhered to during development.
 
+** ALWAYS ASK QUESTIONS IF YOU ARE UNCERTAIN ABOUT SOMETHING! **
+
 ### Directory and Command Management
 - This project has a frontend and a backend. They live in dirs called `frontend/` and `backend/`.
 - Always cd into the frontend dir before running commands related to the frontend.
