@@ -2,7 +2,7 @@
 Platform and storefront management endpoints (admin-only).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlmodel import Session, select, func
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -27,7 +27,8 @@ from ..api.schemas.platform import (
     SeedDataResponse,
     PlatformDefaultMapping,
     UpdatePlatformDefaultRequest,
-    PlatformStorefrontsResponse
+    PlatformStorefrontsResponse,
+    PlatformStorefrontAssociationResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -129,6 +130,138 @@ async def get_platform_storefronts(
         platform_display_name=platform.display_name,
         storefronts=storefronts,
         total_storefronts=len(storefronts)
+    )
+
+
+@router.post("/{platform_id}/storefronts/{storefront_id}", response_model=PlatformStorefrontAssociationResponse)
+async def create_platform_storefront_association(
+    platform_id: str,
+    storefront_id: str,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Create a platform-storefront association (admin only)."""
+    
+    # Verify platform exists and is active
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    if not platform.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create association with inactive platform"
+        )
+    
+    # Verify storefront exists and is active
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    if not storefront.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create association with inactive storefront"
+        )
+    
+    # Check if association already exists
+    existing_association = session.exec(
+        select(PlatformStorefront).where(
+            PlatformStorefront.platform_id == platform_id,
+            PlatformStorefront.storefront_id == storefront_id
+        )
+    ).first()
+    
+    if existing_association:
+        # Association already exists, return 200 with appropriate message
+        response.status_code = status.HTTP_200_OK
+        return PlatformStorefrontAssociationResponse(
+            platform_id=platform.id,
+            platform_name=platform.name,
+            platform_display_name=platform.display_name,
+            storefront_id=storefront.id,
+            storefront_name=storefront.name,
+            storefront_display_name=storefront.display_name,
+            message="Association already exists"
+        )
+    
+    # Create new association
+    new_association = PlatformStorefront(
+        platform_id=platform_id,
+        storefront_id=storefront_id
+    )
+    
+    session.add(new_association)
+    session.commit()
+    
+    # Set 201 status code for successful creation
+    response.status_code = status.HTTP_201_CREATED
+    return PlatformStorefrontAssociationResponse(
+        platform_id=platform.id,
+        platform_name=platform.name,
+        platform_display_name=platform.display_name,
+        storefront_id=storefront.id,
+        storefront_name=storefront.name,
+        storefront_display_name=storefront.display_name,
+        message="Association created successfully"
+    )
+
+
+@router.delete("/{platform_id}/storefronts/{storefront_id}", response_model=PlatformStorefrontAssociationResponse)
+async def delete_platform_storefront_association(
+    platform_id: str,
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
+):
+    """Remove a platform-storefront association (admin only)."""
+    
+    # Verify platform exists
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Verify storefront exists
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    # Find the association
+    association = session.exec(
+        select(PlatformStorefront).where(
+            PlatformStorefront.platform_id == platform_id,
+            PlatformStorefront.storefront_id == storefront_id
+        )
+    ).first()
+    
+    message = "Association removed successfully"
+    if association:
+        # Remove the association
+        session.delete(association)
+        session.commit()
+    else:
+        # Association doesn't exist, but return success anyway (idempotent operation)
+        message = "Association does not exist"
+    
+    return PlatformStorefrontAssociationResponse(
+        platform_id=platform.id,
+        platform_name=platform.name,
+        platform_display_name=platform.display_name,
+        storefront_id=storefront.id,
+        storefront_name=storefront.name,
+        storefront_display_name=storefront.display_name,
+        message=message
     )
 
 
