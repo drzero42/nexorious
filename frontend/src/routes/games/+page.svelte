@@ -26,6 +26,9 @@
  // let showBulkActions = false; // Not yet implemented
  let showBulkModal = false;
 
+ // Computed state for bulk selection mode
+ $: isBulkSelectionMode = selectedGameIds.size > 0;
+
  // Bulk operations modal state
  let bulkStatus = '';
  let bulkRating = '';
@@ -108,7 +111,13 @@ let isDeletingBulk = false;
  }
 
  function handleGameClick(gameId: string) {
-  goto(`/games/${gameId}`);
+  if (isBulkSelectionMode) {
+   // In bulk selection mode, toggle selection instead of navigating
+   toggleGameSelection(gameId);
+  } else {
+   // Normal mode, navigate to game detail
+   goto(`/games/${gameId}`);
+  }
  }
 
  // Pagination handlers
@@ -170,17 +179,7 @@ let isDeletingBulk = false;
   updateBulkActionsVisibility();
  }
 
- function selectAllGames() {
-  if (isSelectingAll) {
-   selectedGameIds = new Set();
-   isSelectingAll = false;
-  } else {
-   selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
-   isSelectingAll = true;
-  }
-  updateBulkActionsVisibility();
- }
-
+   
  function clearSelection() {
   selectedGameIds = new Set();
   isSelectingAll = false;
@@ -348,15 +347,31 @@ async function confirmBulkDelete() {
     <!-- Bulk Selection Controls -->
     {#if userGames.value.userGames.length > 0}
      <div class="flex items-center space-x-2">
-      <button
-       on:click={selectAllGames}
-       class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
-      >
-       {isSelectingAll ? 'Clear All' : 'Select All'}
-      </button>
+      {#if selectedGameIds.size < userGames.value.userGames.length}
+       <button
+        on:click={() => {
+         selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+         isSelectingAll = true;
+         updateBulkActionsVisibility();
+        }}
+        class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
+       >
+        Select All
+       </button>
+      {/if}
+      {#if selectedGameIds.size > 0}
+       <button
+        on:click={clearSelection}
+        class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
+       >
+        Deselect All
+       </button>
+      {/if}
       {#if selectedGameIds.size > 0}
        <span class="text-sm text-gray-500">|</span>
        <span class="text-sm text-gray-600">{selectedGameIds.size} selected</span>
+       <span class="text-sm text-gray-500">|</span>
+       <span class="text-xs text-primary-600">Click games to select/deselect</span>
        <button
         on:click={() => showBulkModal = true}
         class="btn-secondary text-sm px-3 py-1"
@@ -639,8 +654,8 @@ async function confirmBulkDelete() {
       on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
       tabindex="0"
       role="button"
-      aria-label="View details for {userGame.game.title}"
-      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''}"
+      aria-label="{isBulkSelectionMode ? 'Select ' + userGame.game.title : 'View details for ' + userGame.game.title}"
+      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow {isBulkSelectionMode ? 'cursor-pointer' : 'cursor-pointer'} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''} {isBulkSelectionMode ? 'hover:ring-2 hover:ring-primary-300' : ''}"
      >
       <!-- Selection Checkbox -->
       <div class="absolute top-2 left-2 z-10">
@@ -757,7 +772,15 @@ async function confirmBulkDelete() {
          <input
           type="checkbox"
           checked={isSelectingAll}
-          on:change={selectAllGames}
+          on:change={() => {
+           if (isSelectingAll) {
+            clearSelection();
+           } else {
+            selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+            isSelectingAll = true;
+            updateBulkActionsVisibility();
+           }
+          }}
           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
           aria-label="Select all games"
          />
@@ -793,7 +816,7 @@ async function confirmBulkDelete() {
          }}
          on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
          tabindex="0"
-         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''}"
+         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''} {isBulkSelectionMode ? 'hover:bg-primary-50' : ''}"
         >
          <td class="whitespace-nowrap py-4 pl-4 pr-2 text-sm sm:pl-6">
           <input
