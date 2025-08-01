@@ -187,7 +187,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       });
       
       expect(screen.getByText('Game Rating')).toBeInTheDocument();
-      expect(screen.getByText('4.5/10')).toBeInTheDocument();
+      expect(screen.getByText('4.5/10')).toBeInTheDocument(); // formatIgdbRating(45) = 4.5
       expect(screen.getByText('(100 reviews)')).toBeInTheDocument();
     });
 
@@ -386,7 +386,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       
       // Verify specific content from mockGameMetadata
       expect(screen.getByText('A test game description')).toBeInTheDocument();
-      expect(screen.getByText('4.5/10')).toBeInTheDocument();
+      expect(screen.getByText('4.5/10')).toBeInTheDocument(); // formatIgdbRating(45) = 4.5
       expect(screen.getByText('Verified')).toBeInTheDocument();
       
       // Check for time values (these appear in both How Long to Beat and GameProgressCard)
@@ -458,7 +458,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         ...baseGame,
         game: {
           ...baseGame.game,
-          rating_average: 7.75
+          rating_average: 77.5
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithDecimalRating];
@@ -469,7 +469,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
       
-      expect(screen.getByText('7.8/10')).toBeInTheDocument(); // Should round to 1 decimal
+      expect(screen.getByText('7.75/10')).toBeInTheDocument(); // formatIgdbRating(77.5) = 7.75
     });
 
   });

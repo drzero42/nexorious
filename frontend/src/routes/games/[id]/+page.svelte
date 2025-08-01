@@ -8,7 +8,7 @@
   import { goto } from '$app/navigation';
   import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
-  import { formatOwnershipStatus } from '$lib/utils/format-utils';
+  import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
@@ -689,7 +689,7 @@
                       <div class="flex items-center">
                         <span class="text-yellow-400 text-lg">★</span>
                         <span class="ml-1 text-sm font-medium text-gray-900">
-                          {Number(game.game.rating_average).toFixed(1)}/10
+                          {formatIgdbRating(game.game.rating_average) || 'N/A'}/10
                         </span>
                       </div>
                       {#if game.game.rating_count > 0}

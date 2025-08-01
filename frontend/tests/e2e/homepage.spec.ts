@@ -22,7 +22,7 @@ test.describe('Homepage', () => {
   });
 
   test.describe('Authenticated Homepage', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async () => {
       // Admin should already exist, just ensure we're logged in
       // Auth session should be inherited from auth tests, but login if needed
       if (!(await helpers.isAuthenticated())) {
