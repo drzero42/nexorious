@@ -247,6 +247,16 @@ async def create_game(
     # Check for duplicate title
     existing_game = session.exec(select(Game).where(Game.title == game_data.title)).first()
     if existing_game:
+        logger.error(
+            f"409 CONFLICT - Game creation failed due to duplicate title. "
+            f"Title: '{game_data.title}' | "
+            f"Existing game ID: {existing_game.id} | "
+            f"Existing game IGDB ID: {existing_game.igdb_id} | "
+            f"Existing game created: {existing_game.created_at} | "
+            f"Developer: {existing_game.developer} | "
+            f"Publisher: {existing_game.publisher} | "
+            f"Requested by user: {current_user.username} ({current_user.id})"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Game with title '{game_data.title}' already exists"
@@ -548,6 +558,18 @@ async def import_from_igdb(
         ).first()
         
         if existing_game:
+            logger.error(
+                f"409 CONFLICT - IGDB game import failed due to existing game. "
+                f"IGDB ID: {import_data.igdb_id} | "
+                f"Existing game ID: {existing_game.id} | "
+                f"Existing title: '{existing_game.title}' | "
+                f"IGDB title: '{game_metadata.title}' | "
+                f"Title match: {existing_game.title == game_metadata.title} | "
+                f"Existing game created: {existing_game.created_at} | "
+                f"Existing developer: {existing_game.developer} | "
+                f"IGDB developer: {game_metadata.developer} | "
+                f"Requested by user: {current_user.username} ({current_user.id})"
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Game already exists in database"

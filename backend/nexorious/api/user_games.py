@@ -531,7 +531,18 @@ async def add_game_to_collection(
     ).first()
     
     if existing_user_game:
-        logger.warning(f"Game {user_game_data.game_id} already exists for user {current_user.id}")
+        logger.error(
+            f"409 CONFLICT - User game addition failed due to existing collection entry. "
+            f"User: {current_user.username} ({current_user.id}) | "
+            f"Game ID: {user_game_data.game_id} | "
+            f"Game title: '{game.title}' | "
+            f"Existing user game ID: {existing_user_game.id} | "
+            f"Existing entry created: {existing_user_game.created_at} | "
+            f"Existing ownership status: {existing_user_game.ownership_status} | "
+            f"Existing play status: {existing_user_game.play_status} | "
+            f"Requested ownership status: {user_game_data.ownership_status} | "
+            f"Requested play status: {user_game_data.play_status}"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Game already exists in your collection"
@@ -799,6 +810,21 @@ async def add_platform_to_user_game(
     ).first()
     
     if existing_platform:
+        storefront_name = storefront.name if platform_data.storefront_id and 'storefront' in locals() else "None"
+        logger.error(
+            f"409 CONFLICT - Platform association addition failed due to existing combination. "
+            f"User: {current_user.username} ({current_user.id}) | "
+            f"User game ID: {user_game_id} | "
+            f"Game title: '{user_game.game.title}' | "
+            f"Platform: {platform.name} (ID: {platform_data.platform_id}) | "
+            f"Storefront: {storefront_name} (ID: {platform_data.storefront_id}) | "
+            f"Existing association ID: {existing_platform.id} | "
+            f"Existing association created: {existing_platform.created_at} | "
+            f"Existing store game ID: {existing_platform.store_game_id} | "
+            f"Existing store URL: {existing_platform.store_url} | "
+            f"Requested store game ID: {platform_data.store_game_id} | "
+            f"Requested store URL: {platform_data.store_url}"
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Platform and storefront association already exists"
@@ -894,6 +920,22 @@ async def update_platform_association(
         ).first()
         
         if existing_platform:
+            storefront_name = storefront.name if platform_data.storefront_id and 'storefront' in locals() else "None" 
+            old_platform = session.get(Platform, platform_assoc.platform_id)
+            old_storefront = session.get(Storefront, platform_assoc.storefront_id) if platform_assoc.storefront_id else None
+            logger.error(
+                f"409 CONFLICT - Platform association update failed due to existing combination. "
+                f"User: {current_user.username} ({current_user.id}) | "
+                f"User game ID: {user_game_id} | "
+                f"Platform association ID: {platform_association_id} | "
+                f"Current platform: {old_platform.name if old_platform else 'Unknown'} (ID: {platform_assoc.platform_id}) | "
+                f"Current storefront: {old_storefront.name if old_storefront else 'None'} (ID: {platform_assoc.storefront_id}) | "
+                f"Requested platform: {platform.name} (ID: {platform_data.platform_id}) | "
+                f"Requested storefront: {storefront_name} (ID: {platform_data.storefront_id}) | "
+                f"Conflicting existing association ID: {existing_platform.id} | "
+                f"Conflicting association created: {existing_platform.created_at} | "
+                f"Update attempt vs existing combination"
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Platform and storefront association already exists"
