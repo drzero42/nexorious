@@ -38,7 +38,7 @@
 
   // Platform association data
   let selectedPlatforms = new Set<string>();
-  let platformStorefronts = new Map<string, string>(); // platform_id -> storefront_id
+  let platformStorefronts = new Map<string, Set<string>>(); // platform_id -> Set<storefront_id>
   let platformStoreUrls = new Map<string, string>(); // platform_id -> store_url
 
   // Load platforms and storefronts on component mount
@@ -135,7 +135,12 @@
       // Automatically set the default storefront if one exists for this platform
       const platform = activePlatforms.find(p => p.id === platformId);
       if (platform && platform.default_storefront_id) {
-        platformStorefronts.set(platformId, platform.default_storefront_id);
+        const storefronts = new Set<string>();
+        storefronts.add(platform.default_storefront_id);
+        platformStorefronts.set(platformId, storefronts);
+      } else {
+        // Initialize empty set for this platform
+        platformStorefronts.set(platformId, new Set<string>());
       }
     }
     selectedPlatforms = new Set(selectedPlatforms); // Trigger reactivity
@@ -143,13 +148,22 @@
     platformStoreUrls = new Map(platformStoreUrls);
   }
 
-  function setStorefrontForPlatform(platformId: string, storefrontId: string) {
-    if (storefrontId) {
-      platformStorefronts.set(platformId, storefrontId);
+  function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
+    const storefronts = platformStorefronts.get(platformId) || new Set<string>();
+    
+    if (storefronts.has(storefrontId)) {
+      storefronts.delete(storefrontId);
     } else {
-      platformStorefronts.delete(platformId);
+      storefronts.add(storefrontId);
     }
+    
+    platformStorefronts.set(platformId, storefronts);
     platformStorefronts = new Map(platformStorefronts); // Trigger reactivity
+  }
+
+  function isStorefrontSelectedForPlatform(platformId: string, storefrontId: string): boolean {
+    const storefronts = platformStorefronts.get(platformId);
+    return storefronts ? storefronts.has(storefrontId) : false;
   }
 
   function setStoreUrlForPlatform(platformId: string, storeUrl: string) {
@@ -220,13 +234,32 @@
       
       try {
         // Add the game to the user's collection with form values
-        const platformData = Array.from(selectedPlatforms).map(platformId => ({
-          platform_id: platformId,
-          storefront_id: platformStorefronts.get(platformId) || null,
-          store_game_id: null,
-          store_url: platformStoreUrls.get(platformId) || null,
-          is_available: true
-        }));
+        const platformData: any[] = [];
+        for (const platformId of selectedPlatforms) {
+          const storefronts = platformStorefronts.get(platformId) || new Set<string>();
+          
+          if (storefronts.size === 0) {
+            // No storefronts selected for this platform
+            platformData.push({
+              platform_id: platformId,
+              storefront_id: null,
+              store_game_id: null,
+              store_url: platformStoreUrls.get(platformId) || null,
+              is_available: true
+            });
+          } else {
+            // Create an entry for each selected storefront
+            for (const storefrontId of storefronts) {
+              platformData.push({
+                platform_id: platformId,
+                storefront_id: storefrontId,
+                store_game_id: null,
+                store_url: platformStoreUrls.get(platformId) || null,
+                is_available: true
+              });
+            }
+          }
+        }
         
         const addRequest: any = {
           game_id: createdGame.id,
@@ -319,13 +352,32 @@
       
       try {
         // Then add it to the user's collection with personal information
-        const platformData = Array.from(selectedPlatforms).map(platformId => ({
-          platform_id: platformId,
-          storefront_id: platformStorefronts.get(platformId) || null,
-          store_game_id: null,
-          store_url: platformStoreUrls.get(platformId) || null,
-          is_available: true
-        }));
+        const platformData: any[] = [];
+        for (const platformId of selectedPlatforms) {
+          const storefronts = platformStorefronts.get(platformId) || new Set<string>();
+          
+          if (storefronts.size === 0) {
+            // No storefronts selected for this platform
+            platformData.push({
+              platform_id: platformId,
+              storefront_id: null,
+              store_game_id: null,
+              store_url: platformStoreUrls.get(platformId) || null,
+              is_available: true
+            });
+          } else {
+            // Create an entry for each selected storefront
+            for (const storefrontId of storefronts) {
+              platformData.push({
+                platform_id: platformId,
+                storefront_id: storefrontId,
+                store_game_id: null,
+                store_url: platformStoreUrls.get(platformId) || null,
+                is_available: true
+              });
+            }
+          }
+        }
         
         const addRequest: any = {
           game_id: createdGame.id,
@@ -1014,22 +1066,27 @@
                         <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                             <!-- Storefront Selection -->
-                            <div>
-                              <label for="storefront-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                                Storefront (optional)
-                              </label>
-                              <select
-                                id="storefront-{platform.id}"
-                                value={platformStorefronts.get(platform.id) || ''}
-                                on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                                class="form-input text-sm py-1.5"
-                              >
-                                <option value="">No specific storefront</option>
+                            <fieldset>
+                              <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                Storefronts (optional)
+                              </legend>
+                              <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                                 {#each activeStorefronts as storefront (storefront.id)}
-                                  <option value={storefront.id}>{storefront.display_name}</option>
+                                  <label class="flex items-center cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                      on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                    />
+                                    <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                                  </label>
                                 {/each}
-                              </select>
-                            </div>
+                                {#if activeStorefronts.length === 0}
+                                  <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                {/if}
+                              </div>
+                            </fieldset>
 
                             <!-- Store URL -->
                             <div>
@@ -1104,22 +1161,27 @@
                           <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                               <!-- Storefront Selection -->
-                              <div>
-                                <label for="storefront-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                                  Storefront (optional)
-                                </label>
-                                <select
-                                  id="storefront-other-{platform.id}"
-                                  value={platformStorefronts.get(platform.id) || ''}
-                                  on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                                  class="form-input text-sm py-1.5"
-                                >
-                                  <option value="">No specific storefront</option>
+                              <fieldset>
+                                <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                  Storefronts (optional)
+                                </legend>
+                                <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                                   {#each activeStorefronts as storefront (storefront.id)}
-                                    <option value={storefront.id}>{storefront.display_name}</option>
+                                    <label class="flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                        on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                        class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                      />
+                                      <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                                    </label>
                                   {/each}
-                                </select>
-                              </div>
+                                  {#if activeStorefronts.length === 0}
+                                    <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                  {/if}
+                                </div>
+                              </fieldset>
 
                               <!-- Store URL -->
                               <div>
@@ -1176,22 +1238,27 @@
                     <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                         <!-- Storefront Selection -->
-                        <div>
-                          <label for="storefront-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                            Storefront (optional)
-                          </label>
-                          <select
-                            id="storefront-{platform.id}"
-                            value={platformStorefronts.get(platform.id) || ''}
-                            on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                            class="form-input text-sm py-1.5"
-                          >
-                            <option value="">No specific storefront</option>
+                        <fieldset>
+                          <legend class="block text-xs font-medium text-gray-700 mb-2">
+                            Storefronts (optional)
+                          </legend>
+                          <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                             {#each activeStorefronts as storefront (storefront.id)}
-                              <option value={storefront.id}>{storefront.display_name}</option>
+                              <label class="flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                  on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                  class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                              </label>
                             {/each}
-                          </select>
-                        </div>
+                            {#if activeStorefronts.length === 0}
+                              <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                            {/if}
+                          </div>
+                        </fieldset>
 
                         <!-- Store URL -->
                         <div>
@@ -1597,22 +1664,27 @@
                             <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                                 <!-- Storefront Selection -->
-                                <div>
-                                  <label for="storefront-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                                    Storefront (optional)
-                                  </label>
-                                  <select
-                                    id="storefront-details-{platform.id}"
-                                    value={platformStorefronts.get(platform.id) || ''}
-                                    on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                                    class="form-input text-sm py-1.5"
-                                  >
-                                    <option value="">No specific storefront</option>
+                                <fieldset>
+                                  <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                    Storefronts (optional)
+                                  </legend>
+                                  <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                                     {#each activeStorefronts as storefront (storefront.id)}
-                                      <option value={storefront.id}>{storefront.display_name}</option>
+                                      <label class="flex items-center cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                          on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                          class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                        />
+                                        <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                                      </label>
                                     {/each}
-                                  </select>
-                                </div>
+                                    {#if activeStorefronts.length === 0}
+                                      <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                    {/if}
+                                  </div>
+                                </fieldset>
 
                                 <!-- Store URL -->
                                 <div>
@@ -1687,22 +1759,27 @@
                               <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                                   <!-- Storefront Selection -->
-                                  <div>
-                                    <label for="storefront-details-other-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                                      Storefront (optional)
-                                    </label>
-                                    <select
-                                      id="storefront-details-other-{platform.id}"
-                                      value={platformStorefronts.get(platform.id) || ''}
-                                      on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                                      class="form-input text-sm py-1.5"
-                                    >
-                                      <option value="">No specific storefront</option>
+                                  <fieldset>
+                                    <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                      Storefronts (optional)
+                                    </legend>
+                                    <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                                       {#each activeStorefronts as storefront (storefront.id)}
-                                        <option value={storefront.id}>{storefront.display_name}</option>
+                                        <label class="flex items-center cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                            on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                          />
+                                          <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                                        </label>
                                       {/each}
-                                    </select>
-                                  </div>
+                                      {#if activeStorefronts.length === 0}
+                                        <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                      {/if}
+                                    </div>
+                                  </fieldset>
 
                                   <!-- Store URL -->
                                   <div>
@@ -1759,22 +1836,27 @@
                         <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
                           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                             <!-- Storefront Selection -->
-                            <div>
-                              <label for="storefront-details-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
-                                Storefront (optional)
-                              </label>
-                              <select
-                                id="storefront-details-{platform.id}"
-                                value={platformStorefronts.get(platform.id) || ''}
-                                on:change={(e) => setStorefrontForPlatform(platform.id, e.currentTarget.value)}
-                                class="form-input text-sm py-1.5"
-                              >
-                                <option value="">No specific storefront</option>
+                            <fieldset>
+                              <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                Storefronts (optional)
+                              </legend>
+                              <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                                 {#each activeStorefronts as storefront (storefront.id)}
-                                  <option value={storefront.id}>{storefront.display_name}</option>
+                                  <label class="flex items-center cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                      on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                    />
+                                    <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
+                                  </label>
                                 {/each}
-                              </select>
-                            </div>
+                                {#if activeStorefronts.length === 0}
+                                  <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                {/if}
+                              </div>
+                            </fieldset>
 
                             <!-- Store URL -->
                             <div>
