@@ -117,7 +117,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Automatic default storefront selection when platform is chosen
 - [x] IGDB platform filtering during game addition (show IGDB platforms first)
 - [x] "Others" expandable section for additional platforms (collapsed by default)
-- [ ] Show current platform/storefront ownership when adding to existing game
+- [x] Show current platform/storefront ownership when adding to existing game
 - [ ] Interface for adding additional platforms/storefronts to existing games
 - [x] Update existing game entry instead of creating duplicates
 - [x] Prevent duplicate game entries in user's collection

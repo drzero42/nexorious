@@ -1,10 +1,12 @@
 <script lang="ts">
   import { games } from '$lib/stores';
   import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
+  import type { UserGamePlatform } from '$lib/stores/user-games.svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
   import { notifications } from '$lib/stores/notifications.svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import PlatformBadges from '$lib/components/PlatformBadges.svelte';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import { onMount } from 'svelte';
@@ -97,13 +99,13 @@
     );
   }
 
-  function getOwnedPlatformsForGame(igdbId: string): string[] {
+  function getOwnedPlatformDetailsForGame(igdbId: string): UserGamePlatform[] {
     const userGame = userGames.value.userGames.find((userGame: any) => 
       userGame.game.igdb_id === igdbId
     );
     if (!userGame) return [];
     
-    return userGame.platforms.map((platform: any) => platform.platform.display_name);
+    return userGame.platforms as UserGamePlatform[];
   }
 
   function handleGameClick(game: IGDBGameCandidate, isOwned: boolean) {
@@ -575,7 +577,7 @@
           {:else}
             {#each searchResults as game}
               {@const owned = isGameOwned(game.igdb_id)}
-              {@const ownedPlatforms = getOwnedPlatformsForGame(game.igdb_id)}
+              {@const ownedPlatformDetails = getOwnedPlatformDetailsForGame(game.igdb_id)}
               <button
                 on:click={() => handleGameClick(game, owned)}
                 disabled={addingGameId !== null}
@@ -612,8 +614,16 @@
                               </svg>
                               Already Owned
                             </span>
-                            {#if ownedPlatforms.length > 0}
-                              <span class="text-xs text-gray-600">on {ownedPlatforms.join(', ')}</span>
+                            {#if ownedPlatformDetails.length > 0}
+                              <div class="mt-1">
+                                <PlatformBadges 
+                                  platforms={ownedPlatformDetails} 
+                                  compact={true}
+                                  maxVisible={2}
+                                  showDetailedTooltips={true}
+                                  enableHover={true}
+                                />
+                              </div>
                             {/if}
                           </div>
                           <div class="mt-2 text-xs text-blue-600 flex items-center">
