@@ -58,7 +58,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Platform default storefront management endpoints
 - [x] API endpoints supporting multiple storefront associations per platform
 - [x] API endpoint to get associated storefronts for a platform (GET /api/platforms/{platform_id}/storefronts)
-- [ ] API endpoints for admin management of platform-storefront associations (POST/DELETE)
+- [x] API endpoints for admin management of platform-storefront associations (POST/DELETE)
 - [ ] Enhanced platform list endpoints to include associated storefronts in response
 
 #### 1.1.4 External API Integration

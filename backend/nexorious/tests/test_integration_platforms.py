@@ -947,3 +947,352 @@ class TestPlatformStorefrontsEndpoint:
         response = client.get("/api/platforms/nonexistent-id/storefronts")
         
         assert_api_error(response, 404, "Platform not found")
+
+
+class TestPlatformStorefrontAssociationEndpoints:
+    """Test POST/DELETE /api/platforms/{platform_id}/storefronts/{storefront_id} endpoints."""
+    
+    def test_create_platform_storefront_association_success(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test successful platform-storefront association creation."""
+        # Create platform and storefront
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_success(response, 201)
+        data = response.json()
+        assert data["platform_id"] == str(platform.id)
+        assert data["platform_name"] == platform.name
+        assert data["platform_display_name"] == platform.display_name
+        assert data["storefront_id"] == str(storefront.id)
+        assert data["storefront_name"] == storefront.name
+        assert data["storefront_display_name"] == storefront.display_name
+        assert data["message"] == "Association created successfully"
+        
+        # Verify association was created in database
+        association = session.exec(
+            select(PlatformStorefront).where(
+                PlatformStorefront.platform_id == platform.id,
+                PlatformStorefront.storefront_id == storefront.id
+            )
+        ).first()
+        assert association is not None
+    
+    def test_create_platform_storefront_association_duplicate(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test creating duplicate platform-storefront association."""
+        # Create platform and storefront
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront", 
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        # Create existing association
+        association = PlatformStorefront(
+            platform_id=platform.id,
+            storefront_id=storefront.id
+        )
+        session.add(association)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["message"] == "Association already exists"
+    
+    def test_create_platform_storefront_association_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test creating association with non-existent platform."""
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/nonexistent-id/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 404, "Platform not found")
+    
+    def test_create_platform_storefront_association_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test creating association with non-existent storefront."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        session.add(platform)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/nonexistent-id",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 404, "Storefront not found")
+    
+    def test_create_platform_storefront_association_inactive_platform(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test creating association with inactive platform."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=False
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 400, "Cannot create association with inactive platform")
+    
+    def test_create_platform_storefront_association_inactive_storefront(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test creating association with inactive storefront."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=False
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 400, "Cannot create association with inactive storefront")
+    
+    def test_create_platform_storefront_association_requires_admin(self, client: TestClient, auth_headers: Dict[str, str], session: Session):
+        """Test that creating association requires admin privileges."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=auth_headers
+        )
+        
+        assert_api_error(response, 403, "Administrative privileges required")
+    
+    def test_create_platform_storefront_association_requires_auth(self, client: TestClient, session: Session):
+        """Test that creating association requires authentication."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.post(f"/api/platforms/{platform.id}/storefronts/{storefront.id}")
+        
+        assert_api_error(response, 403, "Not authenticated")
+    
+    def test_delete_platform_storefront_association_success(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test successful platform-storefront association removal."""
+        # Create platform and storefront
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        # Create association
+        association = PlatformStorefront(
+            platform_id=platform.id,
+            storefront_id=storefront.id
+        )
+        session.add(association)
+        session.commit()
+        
+        response = client.delete(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(platform.id)
+        assert data["storefront_id"] == str(storefront.id)
+        assert data["message"] == "Association removed successfully"
+        
+        # Verify association was removed from database
+        association = session.exec(
+            select(PlatformStorefront).where(
+                PlatformStorefront.platform_id == platform.id,
+                PlatformStorefront.storefront_id == storefront.id
+            )
+        ).first()
+        assert association is None
+    
+    def test_delete_platform_storefront_association_not_exists(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test removing non-existent platform-storefront association (idempotent)."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.delete(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["message"] == "Association does not exist"
+    
+    def test_delete_platform_storefront_association_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test removing association with non-existent platform."""
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(storefront)
+        session.commit()
+        
+        response = client.delete(
+            f"/api/platforms/nonexistent-id/storefronts/{storefront.id}",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 404, "Platform not found")
+    
+    def test_delete_platform_storefront_association_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
+        """Test removing association with non-existent storefront."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        session.add(platform)
+        session.commit()
+        
+        response = client.delete(
+            f"/api/platforms/{platform.id}/storefronts/nonexistent-id",
+            headers=admin_headers
+        )
+        
+        assert_api_error(response, 404, "Storefront not found")
+    
+    def test_delete_platform_storefront_association_requires_admin(self, client: TestClient, auth_headers: Dict[str, str], session: Session):
+        """Test that removing association requires admin privileges."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.delete(
+            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            headers=auth_headers
+        )
+        
+        assert_api_error(response, 403, "Administrative privileges required")
+    
+    def test_delete_platform_storefront_association_requires_auth(self, client: TestClient, session: Session):
+        """Test that removing association requires authentication."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        storefront = Storefront(
+            name="test-storefront",
+            display_name="Test Storefront",
+            is_active=True
+        )
+        session.add(platform)
+        session.add(storefront)
+        session.commit()
+        
+        response = client.delete(f"/api/platforms/{platform.id}/storefronts/{storefront.id}")
+        
+        assert_api_error(response, 403, "Not authenticated")

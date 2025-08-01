@@ -150,3 +150,16 @@ class PlatformStorefrontsResponse(BaseModel):
     total_storefronts: int = Field(description="Total number of associated storefronts")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PlatformStorefrontAssociationResponse(BaseModel):
+    """Response schema for platform-storefront association operations."""
+    platform_id: str
+    platform_name: str
+    platform_display_name: str
+    storefront_id: str
+    storefront_name: str
+    storefront_display_name: str
+    message: str = Field(description="Operation result message")
+
+    model_config = ConfigDict(from_attributes=True)
