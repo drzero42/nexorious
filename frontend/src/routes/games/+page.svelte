@@ -179,17 +179,7 @@ let isDeletingBulk = false;
   updateBulkActionsVisibility();
  }
 
- function selectAllGames() {
-  if (isSelectingAll) {
-   selectedGameIds = new Set();
-   isSelectingAll = false;
-  } else {
-   selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
-   isSelectingAll = true;
-  }
-  updateBulkActionsVisibility();
- }
-
+   
  function clearSelection() {
   selectedGameIds = new Set();
   isSelectingAll = false;
@@ -357,12 +347,26 @@ async function confirmBulkDelete() {
     <!-- Bulk Selection Controls -->
     {#if userGames.value.userGames.length > 0}
      <div class="flex items-center space-x-2">
-      <button
-       on:click={selectAllGames}
-       class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
-      >
-       {isSelectingAll ? 'Clear All' : 'Select All'}
-      </button>
+      {#if selectedGameIds.size < userGames.value.userGames.length}
+       <button
+        on:click={() => {
+         selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+         isSelectingAll = true;
+         updateBulkActionsVisibility();
+        }}
+        class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
+       >
+        Select All
+       </button>
+      {/if}
+      {#if selectedGameIds.size > 0}
+       <button
+        on:click={clearSelection}
+        class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
+       >
+        Deselect All
+       </button>
+      {/if}
       {#if selectedGameIds.size > 0}
        <span class="text-sm text-gray-500">|</span>
        <span class="text-sm text-gray-600">{selectedGameIds.size} selected</span>
@@ -768,7 +772,15 @@ async function confirmBulkDelete() {
          <input
           type="checkbox"
           checked={isSelectingAll}
-          on:change={selectAllGames}
+          on:change={() => {
+           if (isSelectingAll) {
+            clearSelection();
+           } else {
+            selectedGameIds = new Set(userGames.value.userGames.map(game => game.id));
+            isSelectingAll = true;
+            updateBulkActionsVisibility();
+           }
+          }}
           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
           aria-label="Select all games"
          />
