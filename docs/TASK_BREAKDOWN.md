@@ -36,7 +36,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create seed data fixtures for idempotent platform/storefront loading function
 - [x] Seed data includes all 11 platforms, 12 storefronts, and 11 default mappings per PRD specifications
 - [x] Support ownership status that allows zero platform associations
-- [ ] Create platform_storefronts junction table for many-to-many platform-storefront associations
+- [x] Create PlatformStorefront model and platform_storefronts junction table for many-to-many platform-storefront associations
 - [ ] Database migration for platform_storefronts table with proper constraints
 - [ ] Update seed data with realistic platform-storefront associations (PC→Steam/Epic/GOG, mobile platforms→Epic Games Store, etc.)
 

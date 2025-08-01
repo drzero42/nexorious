@@ -5,7 +5,7 @@ This module contains all SQLModel definitions for the application.
 """
 
 from .user import User, UserSession
-from .platform import Platform, Storefront
+from .platform import Platform, Storefront, PlatformStorefront
 from .game import Game, GameAlias
 from .user_game import UserGame, UserGamePlatform
 from .tag import Tag, UserGameTag
@@ -17,6 +17,7 @@ __all__ = [
     "UserSession",
     "Platform",
     "Storefront",
+    "PlatformStorefront",
     "Game",
     "GameAlias",
     "UserGame",
