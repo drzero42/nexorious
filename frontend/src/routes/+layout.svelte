@@ -9,6 +9,7 @@
   onMount(() => {
     // Check if user is authenticated and refresh token if needed
     const authState = auth.value;
+    
     if (authState.accessToken && authState.refreshToken) {
       // Optionally refresh token on app start
       auth.refreshAuth();

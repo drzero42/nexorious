@@ -38,6 +38,9 @@
 
           # SQLite for working with DBs
           sqlite
+
+          # Playwright
+          playwright-test
         ];
 
         shellHook = ''
