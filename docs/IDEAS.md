@@ -7,3 +7,6 @@ Uses sorting and filtering based on genres, platforms and time-to-beat to help t
 
 ## Backlog management
 Add a new view that shows all games that are not completed (/mastered/dominated) and not shelved.
+
+## Better handling of games not imported with Darkadia CSV import
+During import of Darkadia games with non-interactive strategies, all games that fail should be written to a new CSV file named the same as the one being imported, with an added -failed to the name. The output format should be the same as the Darkadia CSV. This will allow the user to go through all failed games and add by hand.
