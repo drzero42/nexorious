@@ -37,8 +37,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Seed data includes all 11 platforms, 12 storefronts, and 11 default mappings per PRD specifications
 - [x] Support ownership status that allows zero platform associations
 - [x] Create PlatformStorefront model and platform_storefronts junction table for many-to-many platform-storefront associations
-- [ ] Database migration for platform_storefronts table with proper constraints
-- [ ] Update seed data with realistic platform-storefront associations (PC→Steam/Epic/GOG, mobile platforms→Epic Games Store, etc.)
+- [x] Database migration for platform_storefronts table with proper constraints
+- [x] Update seed data with realistic platform-storefront associations (PC→Steam/Epic/GOG, mobile platforms→Epic Games Store, etc.)
 
 #### 1.1.3 API Endpoints Development
 - [x] Initial admin setup detection endpoint
