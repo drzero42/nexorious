@@ -52,6 +52,7 @@
           echo "  - uv: Fast Python package manager"
           echo "  - ruff: Python linter and formatter"
           echo "  - mypy: Static type checker"
+          echo "  - playwright: End-to-end testing framework"
           echo ""
           echo "To get started:"
           echo "  uv init --help    # Initialize a new project"
