@@ -19,3 +19,6 @@ Platforms and storefronts all have logos. These should be used in the platform b
 
 ## Database migrations automatically run at startup
 When starting the backend, it should automatically run the database migrations.
+
+## No direct SQLAlchemy usage
+Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
