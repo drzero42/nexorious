@@ -91,6 +91,7 @@
   
   // Others section expand/collapse state
   let showOtherPlatforms = false;
+  let showOtherStorefronts = new Map<string, boolean>(); // platform_id -> boolean
 
   // Helper functions for ownership detection
   function isGameOwned(igdbId: string): boolean {
@@ -173,6 +174,39 @@
       platformStoreUrls.delete(platformId);
     }
     platformStoreUrls = new Map(platformStoreUrls); // Trigger reactivity
+  }
+
+  // Storefront filtering helpers
+  function getPrimaryStorefrontsForPlatform(platformId: string): any[] {
+    const platform = activePlatforms.find(p => p.id === platformId);
+    if (!platform || !platform.storefronts) {
+      return [];
+    }
+    // Return associated storefronts that are also active
+    return platform.storefronts.filter(storefront => 
+      activeStorefronts.some(active => active.id === storefront.id)
+    );
+  }
+
+  function getOtherStorefrontsForPlatform(platformId: string): any[] {
+    const platform = activePlatforms.find(p => p.id === platformId);
+    if (!platform || !platform.storefronts) {
+      return activeStorefronts;
+    }
+    
+    // Get storefront IDs that are associated with this platform
+    const associatedStorefrontIds = new Set(platform.storefronts.map(s => s.id));
+    
+    // Return active storefronts that are NOT associated with this platform
+    return activeStorefronts.filter(storefront => 
+      !associatedStorefrontIds.has(storefront.id)
+    );
+  }
+
+  function toggleOtherStorefronts(platformId: string) {
+    const current = showOtherStorefronts.get(platformId) || false;
+    showOtherStorefronts.set(platformId, !current);
+    showOtherStorefronts = new Map(showOtherStorefronts); // Trigger reactivity
   }
 
   async function handleSearch() {
@@ -1071,7 +1105,8 @@
                                 Storefronts (optional)
                               </legend>
                               <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
-                                {#each activeStorefronts as storefront (storefront.id)}
+                                <!-- Primary storefronts (associated with platform) -->
+                                {#each getPrimaryStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
                                   <label class="flex items-center cursor-pointer">
                                     <input
                                       type="checkbox"
@@ -1082,7 +1117,45 @@
                                     <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
                                   </label>
                                 {/each}
-                                {#if activeStorefronts.length === 0}
+                                
+                                <!-- Other storefronts (collapsed by default) -->
+                                {#if getOtherStorefrontsForPlatform(platform.id).length > 0}
+                                  <div class="border-t border-gray-200 pt-2 mt-2">
+                                    <button
+                                      type="button"
+                                      on:click={() => toggleOtherStorefronts(platform.id)}
+                                      class="flex items-center justify-between w-full text-xs text-gray-600 hover:text-gray-800 transition-colors duration-200"
+                                    >
+                                      <span class="flex items-center">
+                                        <svg class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                        Other storefronts ({getOtherStorefrontsForPlatform(platform.id).length})
+                                      </span>
+                                      <svg class="h-3 w-3 text-gray-400 transition-transform duration-200 {showOtherStorefronts.get(platform.id) ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </button>
+                                    
+                                    {#if showOtherStorefronts.get(platform.id)}
+                                      <div class="mt-2 space-y-2">
+                                        {#each getOtherStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
+                                          <label class="flex items-center cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                              on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                            />
+                                            <span class="ml-2 text-sm text-gray-500">{storefront.display_name}</span>
+                                          </label>
+                                        {/each}
+                                      </div>
+                                    {/if}
+                                  </div>
+                                {/if}
+                                
+                                {#if getPrimaryStorefrontsForPlatform(platform.id).length === 0 && getOtherStorefrontsForPlatform(platform.id).length === 0}
                                   <p class="text-xs text-gray-500 italic">No storefronts available</p>
                                 {/if}
                               </div>
@@ -1841,7 +1914,8 @@
                                 Storefronts (optional)
                               </legend>
                               <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
-                                {#each activeStorefronts as storefront (storefront.id)}
+                                <!-- Primary storefronts (associated with platform) -->
+                                {#each getPrimaryStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
                                   <label class="flex items-center cursor-pointer">
                                     <input
                                       type="checkbox"
@@ -1852,7 +1926,45 @@
                                     <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
                                   </label>
                                 {/each}
-                                {#if activeStorefronts.length === 0}
+                                
+                                <!-- Other storefronts (collapsed by default) -->
+                                {#if getOtherStorefrontsForPlatform(platform.id).length > 0}
+                                  <div class="border-t border-gray-200 pt-2 mt-2">
+                                    <button
+                                      type="button"
+                                      on:click={() => toggleOtherStorefronts(platform.id)}
+                                      class="flex items-center justify-between w-full text-xs text-gray-600 hover:text-gray-800 transition-colors duration-200"
+                                    >
+                                      <span class="flex items-center">
+                                        <svg class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                        Other storefronts ({getOtherStorefrontsForPlatform(platform.id).length})
+                                      </span>
+                                      <svg class="h-3 w-3 text-gray-400 transition-transform duration-200 {showOtherStorefronts.get(platform.id) ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </button>
+                                    
+                                    {#if showOtherStorefronts.get(platform.id)}
+                                      <div class="mt-2 space-y-2">
+                                        {#each getOtherStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
+                                          <label class="flex items-center cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                              on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                            />
+                                            <span class="ml-2 text-sm text-gray-500">{storefront.display_name}</span>
+                                          </label>
+                                        {/each}
+                                      </div>
+                                    {/if}
+                                  </div>
+                                {/if}
+                                
+                                {#if getPrimaryStorefrontsForPlatform(platform.id).length === 0 && getOtherStorefrontsForPlatform(platform.id).length === 0}
                                   <p class="text-xs text-gray-500 italic">No storefronts available</p>
                                 {/if}
                               </div>
