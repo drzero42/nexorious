@@ -11,6 +11,7 @@ export interface Platform {
   source: string;
   version_added?: string;
   default_storefront_id?: string | undefined;
+  storefronts?: Storefront[];
   created_at: string;
   updated_at: string;
 }
