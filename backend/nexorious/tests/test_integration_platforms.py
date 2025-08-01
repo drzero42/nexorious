@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 from typing import Dict, Any
 
-from ..models.platform import Platform, Storefront
+from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.user import User
 from .integration_test_utils import (
     client_fixture as client,
@@ -827,3 +827,123 @@ class TestPlatformDefaultStorefrontUpdateEndpoint:
         response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data)
         
         assert_api_error(response, 403, "Not authenticated")
+
+
+class TestPlatformStorefrontsEndpoint:
+    """Test GET /api/platforms/{platform_id}/storefronts endpoint."""
+    
+    def test_get_platform_storefronts_success(self, client: TestClient, session: Session):
+        """Test successful retrieval of platform storefronts."""
+        # Create platform and storefronts
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        session.add(platform)
+        
+        storefront1 = Storefront(
+            name="test-storefront-1",
+            display_name="Test Storefront 1",
+            is_active=True
+        )
+        storefront2 = Storefront(
+            name="test-storefront-2", 
+            display_name="Test Storefront 2",
+            is_active=True
+        )
+        session.add(storefront1)
+        session.add(storefront2)
+        session.commit()
+        
+        # Create platform-storefront associations
+        assoc1 = PlatformStorefront(platform_id=platform.id, storefront_id=storefront1.id)
+        assoc2 = PlatformStorefront(platform_id=platform.id, storefront_id=storefront2.id)
+        session.add(assoc1)
+        session.add(assoc2)
+        session.commit()
+        
+        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(platform.id)
+        assert data["platform_name"] == platform.name
+        assert data["platform_display_name"] == platform.display_name
+        assert data["total_storefronts"] == 2
+        assert len(data["storefronts"]) == 2
+        
+        # Check that storefronts are returned in correct order (by display name)
+        assert data["storefronts"][0]["name"] == "test-storefront-1"
+        assert data["storefronts"][1]["name"] == "test-storefront-2"
+    
+    def test_get_platform_storefronts_empty(self, client: TestClient, session: Session):
+        """Test platform with no storefront associations."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        session.add(platform)
+        session.commit()
+        
+        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["platform_id"] == str(platform.id)
+        assert data["total_storefronts"] == 0
+        assert len(data["storefronts"]) == 0
+    
+    def test_get_platform_storefronts_active_only(self, client: TestClient, session: Session):
+        """Test platform storefronts with active_only filter."""
+        platform = Platform(
+            name="test-platform",
+            display_name="Test Platform",
+            is_active=True
+        )
+        session.add(platform)
+        
+        active_storefront = Storefront(
+            name="active-storefront",
+            display_name="Active Storefront",
+            is_active=True
+        )
+        inactive_storefront = Storefront(
+            name="inactive-storefront",
+            display_name="Inactive Storefront", 
+            is_active=False
+        )
+        session.add(active_storefront)
+        session.add(inactive_storefront)
+        session.commit()
+        
+        # Create associations for both storefronts
+        assoc1 = PlatformStorefront(platform_id=platform.id, storefront_id=active_storefront.id)
+        assoc2 = PlatformStorefront(platform_id=platform.id, storefront_id=inactive_storefront.id)
+        session.add(assoc1)
+        session.add(assoc2)
+        session.commit()
+        
+        # Test with active_only=true (default)
+        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["total_storefronts"] == 1
+        assert len(data["storefronts"]) == 1
+        assert data["storefronts"][0]["name"] == "active-storefront"
+        
+        # Test with active_only=false
+        response = client.get(f"/api/platforms/{platform.id}/storefronts?active_only=false")
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["total_storefronts"] == 2
+        assert len(data["storefronts"]) == 2
+    
+    def test_get_platform_storefronts_platform_not_found(self, client: TestClient):
+        """Test platform storefronts for non-existent platform."""
+        response = client.get("/api/platforms/nonexistent-id/storefronts")
+        
+        assert_api_error(response, 404, "Platform not found")

@@ -139,3 +139,14 @@ class PlatformDefaultMapping(BaseModel):
 class UpdatePlatformDefaultRequest(BaseModel):
     """Request schema for updating platform default storefront."""
     storefront_id: Optional[str] = Field(None, description="Storefront ID to set as default, or null to remove default")
+
+
+class PlatformStorefrontsResponse(BaseModel):
+    """Response schema for platform storefronts list."""
+    platform_id: str
+    platform_name: str
+    platform_display_name: str
+    storefronts: List[StorefrontResponse]
+    total_storefronts: int = Field(description="Total number of associated storefronts")
+
+    model_config = ConfigDict(from_attributes=True)
