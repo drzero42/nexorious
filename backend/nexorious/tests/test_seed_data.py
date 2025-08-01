@@ -22,6 +22,7 @@ from ..seed_data.seeder import (
 from ..seed_data.platforms import OFFICIAL_PLATFORMS
 from ..seed_data.storefronts import OFFICIAL_STOREFRONTS
 from ..seed_data.default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
+from ..seed_data.platform_storefront_associations import PLATFORM_STOREFRONT_ASSOCIATIONS
 from .integration_test_utils import (
     session_fixture as session,
     client_fixture as client,
@@ -368,16 +369,19 @@ class TestSeedAllOfficialData:
         assert "platforms" in result
         assert "storefronts" in result
         assert "mappings" in result
+        assert "associations" in result
         assert "total" in result
         
         # Verify counts
         assert result["platforms"] == len(OFFICIAL_PLATFORMS)
         assert result["storefronts"] == len(OFFICIAL_STOREFRONTS)
         assert result["mappings"] == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        assert result["associations"] == len(PLATFORM_STOREFRONT_ASSOCIATIONS)
         assert result["total"] == (
             len(OFFICIAL_PLATFORMS) + 
             len(OFFICIAL_STOREFRONTS) + 
-            len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+            len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS) +
+            len(PLATFORM_STOREFRONT_ASSOCIATIONS)
         )
         
         # Verify data was actually seeded

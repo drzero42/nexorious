@@ -8,10 +8,11 @@ from typing import List, Dict, Any, Optional
 from sqlmodel import Session, select
 import logging
 
-from ..models.platform import Platform, Storefront
+from ..models.platform import Platform, Storefront, PlatformStorefront
 from .platforms import OFFICIAL_PLATFORMS
 from .storefronts import OFFICIAL_STOREFRONTS
 from .default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
+from .platform_storefront_associations import PLATFORM_STOREFRONT_ASSOCIATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -214,16 +215,77 @@ def seed_default_platform_storefront_mappings(session: Session) -> int:
     return mapped_count
 
 
+def seed_platform_storefront_associations(session: Session) -> int:
+    """
+    Seed many-to-many platform-storefront associations.
+    
+    Args:
+        session: Database session
+        
+    Returns:
+        Number of platform-storefront associations created
+    """
+    association_count = 0
+    
+    for association in PLATFORM_STOREFRONT_ASSOCIATIONS:
+        platform_name = association["platform_name"]
+        storefront_name = association["storefront_name"]
+        
+        # Find the platform
+        platform = session.exec(
+            select(Platform).where(Platform.name == platform_name)
+        ).first()
+        
+        if not platform:
+            logger.warning(f"Platform '{platform_name}' not found for association")
+            continue
+            
+        # Find the storefront
+        storefront = session.exec(
+            select(Storefront).where(Storefront.name == storefront_name)
+        ).first()
+        
+        if not storefront:
+            logger.warning(f"Storefront '{storefront_name}' not found for association")
+            continue
+            
+        # Check if association already exists
+        existing_association = session.exec(
+            select(PlatformStorefront).where(
+                PlatformStorefront.platform_id == platform.id,
+                PlatformStorefront.storefront_id == storefront.id
+            )
+        ).first()
+        
+        if existing_association:
+            logger.debug(f"Association '{platform_name}' → '{storefront_name}' already exists, skipping")
+            continue
+            
+        # Create new association
+        logger.info(f"Creating platform-storefront association '{platform_name}' → '{storefront_name}'")
+        new_association = PlatformStorefront(
+            platform_id=platform.id,
+            storefront_id=storefront.id,
+            created_at=datetime.now(timezone.utc)
+        )
+        session.add(new_association)
+        association_count += 1
+    
+    session.commit()
+    logger.info(f"Created {association_count} platform-storefront associations")
+    return association_count
+
+
 def seed_all_official_data(session: Session, version: str = "1.0.0") -> Dict[str, int]:
     """
-    Seed all official platforms, storefronts, and their default mappings.
+    Seed all official platforms, storefronts, their default mappings, and many-to-many associations.
     
     Args:
         session: Database session
         version: Version string for tracking when data was added
         
     Returns:
-        Dictionary with counts of seeded platforms, storefronts, and mappings
+        Dictionary with counts of seeded platforms, storefronts, mappings, and associations
     """
     logger.info(f"Starting seeding of official data for version {version}")
     
@@ -232,12 +294,15 @@ def seed_all_official_data(session: Session, version: str = "1.0.0") -> Dict[str
     # Create platforms without defaults so mapping function can set them
     platform_count = seed_platforms(session, version, set_defaults=False)
     mapping_count = seed_default_platform_storefront_mappings(session)
+    # Seed many-to-many platform-storefront associations
+    association_count = seed_platform_storefront_associations(session)
     
     result = {
         "platforms": platform_count,
         "storefronts": storefront_count,
         "mappings": mapping_count,
-        "total": platform_count + storefront_count + mapping_count
+        "associations": association_count,
+        "total": platform_count + storefront_count + mapping_count + association_count
     }
     
     logger.info(f"Completed seeding: {result}")
