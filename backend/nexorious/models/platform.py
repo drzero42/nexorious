@@ -3,6 +3,7 @@ Platform and storefront models for gaming platforms and digital stores.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import UniqueConstraint
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
@@ -53,6 +54,22 @@ class Storefront(SQLModel, table=True):
     default_for_platforms: List["Platform"] = Relationship(
         back_populates="default_storefront",
         sa_relationship_kwargs={"foreign_keys": "[Platform.default_storefront_id]"}
+    )
+
+
+class PlatformStorefront(SQLModel, table=True):
+    """Junction table for many-to-many platform-storefront associations."""
+    
+    __tablename__ = "platform_storefronts"
+    
+    platform_id: str = Field(foreign_key="platforms.id", primary_key=True)
+    storefront_id: str = Field(foreign_key="storefronts.id", primary_key=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Unique constraint (redundant with composite primary key, but explicit)
+    __table_args__ = (
+        UniqueConstraint("platform_id", "storefront_id", name="uq_platform_storefront"),
+        {"extend_existing": True},
     )
 
 
