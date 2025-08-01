@@ -169,7 +169,7 @@ describe('Game Addition Page - Notifications Integration', () => {
       
       // Verify success notifications
       await waitFor(() => {
-        expect(mockNotifications.showSuccess).toHaveBeenCalledWith('Game metadata imported successfully from IGDB');
+        expect(mockNotifications.showSuccess).toHaveBeenCalledWith(`Adding "${mockGame.title}" to your collection`);
         expect(mockNotifications.showSuccess).toHaveBeenCalledWith(`"${mockGame.title}" successfully added to your collection!`);
       });
       
@@ -304,7 +304,7 @@ describe('Game Addition Page - Notifications Integration', () => {
       await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
       
       await waitFor(() => {
-        expect(mockNotifications.showSuccess).toHaveBeenCalledWith('Game metadata imported successfully from IGDB');
+        expect(mockNotifications.showSuccess).toHaveBeenCalledWith(`Adding "${mockGame.title}" to your collection`);
         expect(mockNotifications.showError).toHaveBeenCalledWith(
           'Game was imported but couldn\'t be added to your collection. You can try adding it manually from your games list.'
         );

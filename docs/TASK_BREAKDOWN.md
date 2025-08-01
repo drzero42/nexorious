@@ -101,8 +101,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Responsive design ensuring platform indicators work on mobile devices
 - [x] Hover/click interactions for platform indicators showing additional details
 - [x] IGDB rating display formatting: Create utility function to convert IGDB ratings from integer (0-100) to decimal format (0.0-10.0)
-- [ ] Update all rating display components to use IGDB rating conversion utility
-- [ ] Apply IGDB rating formatting consistently across game cards, detail views, and search results
+- [x] Update all rating display components to use IGDB rating conversion utility
+- [x] Apply IGDB rating formatting consistently across game cards, detail views, and search results
 
 #### 1.2.4 Game Addition Flow
 - [x] IGDB search interface

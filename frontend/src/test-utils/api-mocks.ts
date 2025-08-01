@@ -11,7 +11,7 @@ export const mockGame: Game = {
   publisher: 'Test Publisher',
   release_date: '2024-01-01',
   cover_art_url: 'https://example.com/cover.jpg',
-  rating_average: 4.5,
+  rating_average: 45,
   rating_count: 100,
   game_metadata: '{}',
   estimated_playtime_hours: 25,
