@@ -730,7 +730,14 @@ async function confirmBulkDelete() {
         </p>
         {#if userGame.platforms && userGame.platforms.length > 0}
          <div class="mt-3">
-          <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={3} />
+          <PlatformBadges 
+            platforms={userGame.platforms} 
+            compact={true} 
+            maxVisible={3} 
+            showDetailedTooltips={true}
+            showStoreLinks={false}
+            tooltipPosition="auto"
+          />
          </div>
         {/if}
        </div>
@@ -866,7 +873,14 @@ async function confirmBulkDelete() {
          <td class="px-3 py-4 text-sm text-gray-500">
           {#if userGame.platforms && userGame.platforms.length > 0}
            <div class="max-w-48">
-            <PlatformBadges platforms={userGame.platforms} compact={true} maxVisible={2} />
+            <PlatformBadges 
+              platforms={userGame.platforms} 
+              compact={true} 
+              maxVisible={2}
+              showDetailedTooltips={true}
+              showStoreLinks={false}
+              tooltipPosition="auto"
+            />
            </div>
           {:else}
            <span class="text-gray-400">-</span>

@@ -1,12 +1,26 @@
 <script lang="ts">
  import type { UserGamePlatform } from '$lib/stores/user-games.svelte';
  import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
+ import { onMount } from 'svelte';
 
  export let platforms: UserGamePlatform[] = [];
  export let compact: boolean = false;
  export let maxVisible: number = 3;
  export let showDetails: boolean = false; // For expanded detail view
  export let enableHover: boolean = true; // To control hover interactions
+ export let showDetailedTooltips: boolean = true; // Enable rich tooltips
+ export let showStoreLinks: boolean = false; // Include store links in tooltips
+ export let tooltipPosition: 'top' | 'bottom' | 'auto' = 'auto'; // Tooltip positioning
+
+ // Tooltip state management
+ let activeTooltip: string | null = null;
+ let tooltipElements: { [key: string]: HTMLElement } = {};
+ let isMobile = false;
+
+ onMount(() => {
+   // Detect if we're on a touch device
+   isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+ });
 
  $: groupedPlatforms = groupPlatformsByPlatform(platforms);
  $: visiblePlatforms = groupedPlatforms.slice(0, maxVisible);
@@ -104,21 +118,98 @@
    ? `${platformName} - Available on: ${storefrontNames}`
    : `${platformName} - No specific storefront`;
  }
+
+ // Show detailed tooltip
+ function showTooltip(groupId: string, event?: Event) {
+   if (!showDetailedTooltips) return;
+   
+   if (isMobile && event) {
+     // On mobile, toggle tooltip on tap
+     event.preventDefault();
+     event.stopPropagation();
+     activeTooltip = activeTooltip === groupId ? null : groupId;
+   } else {
+     // On desktop, show on hover
+     activeTooltip = groupId;
+   }
+ }
+
+ // Hide tooltip
+ function hideTooltip(groupId: string) {
+   if (!showDetailedTooltips || isMobile) return;
+   if (activeTooltip === groupId) {
+     activeTooltip = null;
+   }
+ }
+
+ // Handle click events
+ function handleClick(groupId: string, event: Event) {
+   if (!showDetailedTooltips) return;
+   
+   if (isMobile) {
+     showTooltip(groupId, event);
+   } else {
+     // On desktop, clicking toggles persistent tooltip
+     event.preventDefault();
+     event.stopPropagation();
+     activeTooltip = activeTooltip === groupId ? null : groupId;
+   }
+ }
+
+ // Handle keyboard interactions
+ function handleKeydown(groupId: string, event: KeyboardEvent) {
+   if (!showDetailedTooltips) return;
+   
+   if (event.key === 'Enter' || event.key === ' ') {
+     event.preventDefault();
+     activeTooltip = activeTooltip === groupId ? null : groupId;
+   } else if (event.key === 'Escape') {
+     activeTooltip = null;
+   }
+ }
+
+ // Close tooltip when clicking outside
+ function handleDocumentClick(event: Event) {
+   if (!activeTooltip) return;
+   
+   const target = event.target as Element;
+   const tooltipElement = tooltipElements[activeTooltip];
+   
+   if (tooltipElement && !tooltipElement.contains(target)) {
+     activeTooltip = null;
+   }
+ }
+
+ onMount(() => {
+   document.addEventListener('click', handleDocumentClick);
+   return () => {
+     document.removeEventListener('click', handleDocumentClick);
+   };
+ });
 </script>
 
 {#if groupedPlatforms.length > 0}
  <div class="flex flex-wrap {compact ? 'gap-1.5' : 'gap-2 sm:gap-2.5'}">
   {#each visiblePlatforms as group (group.platform.id)}
    {@const platformStyle = getPlatformStyle(group.platform.display_name)}
-   <div class="inline-flex items-center rounded-lg transition-all duration-200 border-2 shadow-lg
+   {@const groupId = `platform-${group.platform.id}`}
+   <div 
+        class="relative inline-flex items-center rounded-lg transition-all duration-200 border-2 shadow-lg
                {platformStyle.bg} {platformStyle.border} {platformStyle.text}
                {compact 
                  ? 'px-2.5 py-1.5 min-h-[32px]' 
                  : 'px-3 py-2 min-h-[44px] sm:px-4 sm:py-2.5 sm:min-h-[40px]'}
-               {enableHover ? 'active:scale-95 sm:hover:scale-105 sm:hover:shadow-xl cursor-help' : ''}" 
-        role="status" 
-        title="{generateTooltipText(group)}"
-        aria-label="{generateTooltipText(group)}"
+               {enableHover ? 'active:scale-95 sm:hover:scale-105 sm:hover:shadow-xl' : ''}
+               {showDetailedTooltips ? 'cursor-pointer' : 'cursor-help'}" 
+        role="button" 
+        tabindex="0"
+        title="{showDetailedTooltips ? 'Click for details' : generateTooltipText(group)}"
+        aria-label="{showDetailedTooltips ? 'Show platform details for ' + group.platform.display_name : generateTooltipText(group)}"
+        bind:this={tooltipElements[groupId]}
+        on:mouseenter={() => showTooltip(groupId)}
+        on:mouseleave={() => hideTooltip(groupId)}
+        on:click={(e) => handleClick(groupId, e)}
+        on:keydown={(e) => handleKeydown(groupId, e)}
    >
     
     <!-- Platform Icon and Name -->
@@ -177,22 +268,170 @@
       </div>
      </div>
     {/if}
+    
+    <!-- Detailed Tooltip -->
+    {#if showDetailedTooltips && activeTooltip === groupId}
+     <div 
+          class="absolute z-50 w-64 p-3 bg-white border border-gray-300 rounded-lg shadow-xl
+                 {tooltipPosition === 'top' ? 'bottom-full mb-2' : tooltipPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}
+                 left-1/2 transform -translate-x-1/2"
+          role="tooltip"
+          aria-labelledby="tooltip-{groupId}"
+     >
+      <!-- Arrow -->
+      <div class="absolute left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-gray-300 rotate-45
+                  {tooltipPosition === 'top' ? 'top-full -mt-1.5' : tooltipPosition === 'bottom' ? 'bottom-full -mb-1.5' : 'top-full -mt-1.5'}"></div>
+      
+      <!-- Platform Header -->
+      <div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
+       <span class="text-lg" role="img" aria-hidden="true">{platformStyle.icon}</span>
+       <h4 class="font-semibold text-gray-900 text-sm" id="tooltip-{groupId}">
+        {group.platform.display_name}
+       </h4>
+      </div>
+      
+      <!-- Storefronts List -->
+      {#if group.storefronts.length > 0}
+       <div class="space-y-2">
+        <h5 class="text-xs font-medium text-gray-700 uppercase tracking-wide">Available On:</h5>
+        <div class="space-y-1.5">
+         {#each group.storefronts as storefront}
+          <div class="flex items-center justify-between gap-2 text-sm">
+           <div class="flex items-center gap-2 flex-1 min-w-0">
+            <span class="text-sm" role="img" aria-hidden="true">
+             {getStorefrontIcon(storefront.storefront?.display_name || '')}
+            </span>
+            <span class="text-gray-800 truncate">
+             {storefront.storefront?.display_name || 'Unknown Store'}
+            </span>
+           </div>
+           {#if showStoreLinks && storefront.store_url && storefront.storefront?.name !== 'physical'}
+            <a 
+                 href={storefront.store_url} 
+                 target="_blank" 
+                 rel="noopener noreferrer"
+                 class="flex-shrink-0 text-blue-600 hover:text-blue-800 transition-colors"
+                 title="Open in {storefront.storefront?.display_name}"
+                 aria-label="Open {storefront.storefront?.display_name} store page"
+                 on:click|stopPropagation
+            >
+             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+             </svg>
+            </a>
+           {/if}
+          </div>
+         {/each}
+        </div>
+       </div>
+      {:else}
+       <div class="text-sm text-gray-500 italic">
+        No specific storefront
+       </div>
+      {/if}
+      
+      <!-- Instructions -->
+      {#if !isMobile}
+       <div class="mt-3 pt-2 border-t border-gray-200 text-xs text-gray-500">
+        Click to keep open • Hover to show
+       </div>
+      {/if}
+     </div>
+    {/if}
    </div>
   {/each}
   
   {#if hiddenCount > 0}
-   <div class="inline-flex items-center rounded-lg transition-all duration-200 border-2 shadow-lg
+   {@const hiddenGroupId = 'hidden-platforms'}
+   <div class="relative inline-flex items-center rounded-lg transition-all duration-200 border-2 shadow-lg
                bg-gradient-to-r from-gray-600 to-gray-700 border-gray-800 text-white
                {compact 
                  ? 'px-2.5 py-1.5 min-h-[32px]' 
                  : 'px-3 py-2 min-h-[44px] sm:px-4 sm:py-2.5 sm:min-h-[40px]'}
-               {enableHover ? 'active:scale-95 sm:hover:scale-105 sm:hover:shadow-xl cursor-help' : ''}"
-        title="There are {hiddenCount} more platform{hiddenCount !== 1 ? 's' : ''} not shown"
-        aria-label="There are {hiddenCount} more platform{hiddenCount !== 1 ? 's' : ''} not shown">
+               {enableHover ? 'active:scale-95 sm:hover:scale-105 sm:hover:shadow-xl' : ''}
+               {showDetailedTooltips ? 'cursor-pointer' : 'cursor-help'}"
+        role="button"
+        tabindex="0"
+        title="{showDetailedTooltips ? 'Click to see more platforms' : 'There are ' + hiddenCount + ' more platform' + (hiddenCount !== 1 ? 's' : '') + ' not shown'}"
+        aria-label="{showDetailedTooltips ? 'Show ' + hiddenCount + ' more platforms' : 'There are ' + hiddenCount + ' more platform' + (hiddenCount !== 1 ? 's' : '') + ' not shown'}"
+        bind:this={tooltipElements[hiddenGroupId]}
+        on:mouseenter={() => showTooltip(hiddenGroupId)}
+        on:mouseleave={() => hideTooltip(hiddenGroupId)}
+        on:click={(e) => handleClick(hiddenGroupId, e)}
+        on:keydown={(e) => handleKeydown(hiddenGroupId, e)}>
     <div class="flex items-center {compact ? 'gap-1.5' : 'gap-2'}">
      <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}" role="img" aria-hidden="true">📦</span>
      <span class="{compact ? 'text-xs' : 'text-sm'} font-bold">+{hiddenCount} {compact ? '' : 'more'}</span>
     </div>
+    
+    <!-- Hidden Platforms Tooltip -->
+    {#if showDetailedTooltips && activeTooltip === hiddenGroupId}
+     {@const hiddenPlatforms = groupedPlatforms.slice(maxVisible)}
+     <div 
+          class="absolute z-50 w-72 p-3 bg-white border border-gray-300 rounded-lg shadow-xl
+                 {tooltipPosition === 'top' ? 'bottom-full mb-2' : tooltipPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}
+                 left-1/2 transform -translate-x-1/2"
+          role="tooltip"
+          aria-labelledby="tooltip-{hiddenGroupId}">
+      <!-- Arrow -->
+      <div class="absolute left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-gray-300 rotate-45
+                  {tooltipPosition === 'top' ? 'top-full -mt-1.5' : tooltipPosition === 'bottom' ? 'bottom-full -mb-1.5' : 'top-full -mt-1.5'}"></div>
+      
+      <!-- Header -->
+      <div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
+       <span class="text-lg" role="img" aria-hidden="true">📦</span>
+       <h4 class="font-semibold text-gray-900 text-sm" id="tooltip-{hiddenGroupId}">
+        Additional Platforms ({hiddenCount})
+       </h4>
+      </div>
+      
+      <!-- Hidden Platforms List -->
+      <div class="space-y-3 max-h-48 overflow-y-auto">
+       {#each hiddenPlatforms as group}
+        {@const platformStyle = getPlatformStyle(group.platform.display_name)}
+        <div class="flex items-start gap-3">
+         <span class="text-sm flex-shrink-0 mt-0.5" role="img" aria-hidden="true">{platformStyle.icon}</span>
+         <div class="flex-1 min-w-0">
+          <div class="font-medium text-gray-900 text-sm truncate">{group.platform.display_name}</div>
+          {#if group.storefronts.length > 0}
+           <div class="mt-1 space-y-1">
+            {#each group.storefronts as storefront}
+             <div class="flex items-center gap-2 text-xs text-gray-600">
+              <span role="img" aria-hidden="true">{getStorefrontIcon(storefront.storefront?.display_name || '')}</span>
+              <span class="truncate">{storefront.storefront?.display_name || 'Unknown Store'}</span>
+              {#if showStoreLinks && storefront.store_url && storefront.storefront?.name !== 'physical'}
+               <a 
+                    href={storefront.store_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    class="flex-shrink-0 text-blue-600 hover:text-blue-800 transition-colors ml-auto"
+                    title="Open in {storefront.storefront?.display_name}"
+                    aria-label="Open {storefront.storefront?.display_name} store page"
+                    on:click|stopPropagation>
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
+               </a>
+              {/if}
+             </div>
+            {/each}
+           </div>
+          {:else}
+           <div class="text-xs text-gray-500 italic mt-1">No specific storefront</div>
+          {/if}
+         </div>
+        </div>
+       {/each}
+      </div>
+      
+      <!-- Instructions -->
+      {#if !isMobile}
+       <div class="mt-3 pt-2 border-t border-gray-200 text-xs text-gray-500">
+        Click to keep open • Hover to show
+       </div>
+      {/if}
+     </div>
+    {/if}
    </div>
   {/if}
  </div>
