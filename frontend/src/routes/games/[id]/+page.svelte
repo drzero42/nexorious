@@ -6,7 +6,7 @@
   import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, IGDBVerificationBadge } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
@@ -608,9 +608,14 @@
           <div class="space-y-6">
             <div class="space-y-4">
               <div class="flex items-start justify-between">
-                <h1 class="text-3xl font-bold text-gray-900">
-                  {game.game.title}
-                </h1>
+                <div class="flex-1">
+                  <div class="flex items-center space-x-3">
+                    <h1 class="text-3xl font-bold text-gray-900">
+                      {game.game.title}
+                    </h1>
+                    <IGDBVerificationBadge isVerified={game.game.is_verified} size="lg" />
+                  </div>
+                </div>
                 {#if game.is_loved}
                   <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 text-lg">♥</span>
                 {/if}
@@ -770,14 +775,7 @@
                       {/if}
                     </div>
                   {/if}
-                  {#if game.game.is_verified}
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                      </svg>
-                      Verified
-                    </span>
-                  {/if}
+                  <IGDBVerificationBadge isVerified={game.game.is_verified} size="md" />
                 </div>
               </div>
             {/if}

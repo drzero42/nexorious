@@ -334,15 +334,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 ### 2.4 IGDB Game Data Update System
 - [x] Backend: Modify IGDB import process to automatically mark games as verified when imported from IGDB
-- [ ] Backend: Update API permission system to restrict IGDB game metadata editing to admin users only
-- [ ] Backend: Create admin-only bulk IGDB refresh endpoint with filtering capabilities
-- [ ] Frontend: Add visual indicators (badges/icons) for IGDB-verified games in collection views
-- [ ] Frontend: Implement admin-only "Update from IGDB" interface for individual games
-- [ ] Frontend: Create bulk IGDB update functionality with admin interface and progress tracking
+- [x] Frontend: Add visual indicators (badges/icons) for IGDB-verified games in collection views
+- [ ] Frontend: Implement "Update from IGDB" interface for individual games
 - [ ] Frontend: Update game editing forms to show locked metadata fields vs editable personal data fields
-- [ ] Testing: Add comprehensive tests for IGDB verification system and permission controls
-- [ ] Testing: Add tests for bulk IGDB update operations and data integrity preservation
-- [ ] Documentation: Update API documentation for new admin-only IGDB refresh endpoints
+- [ ] Testing: Add comprehensive tests for IGDB verification system
+- [ ] Documentation: Update API documentation for new IGDB refresh endpoints
 
 ## Phase 3: Discovery & Organization
 **Priority: P1-P2 (High-Medium)**
