@@ -480,12 +480,20 @@ describe('Game Addition Page', () => {
       // Should fallback to manual entry form
       await waitFor(() => {
         expect(screen.getByText('Review & Customize')).toBeInTheDocument();
-        const titleInput = screen.getByDisplayValue('Test IGDB Game');
-        fireEvent.input(titleInput, { target: { value: '' } });
-        
-        const addButton = screen.getByRole('button', { name: /add to collection/i });
-        fireEvent.click(addButton);
       });
+      
+      // Wait for the input to be populated with the game title
+      await waitFor(() => {
+        const titleInput = screen.getByDisplayValue('Test IGDB Game');
+        expect(titleInput).toBeInTheDocument();
+      });
+      
+      // Now test validation - clear the title and try to continue
+      const titleInput = screen.getByDisplayValue('Test IGDB Game');
+      await fireEvent.input(titleInput, { target: { value: '' } });
+      
+      const continueButton = screen.getByRole('button', { name: /continue/i });
+      await fireEvent.click(continueButton);
       
       expect(mockGamesStore.createGame).not.toHaveBeenCalled();
     });
