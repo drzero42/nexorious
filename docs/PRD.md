@@ -226,6 +226,42 @@ To create the definitive self-hosted solution for personal game collection manag
   - Admin can manage platform-storefront associations through simple interface
   - Storefront filtering works seamlessly with existing default storefront selection
 
+#### 1.3.7 Platform and Storefront Official Logos
+**Priority**: P2 (Medium)
+- **User Story**: As a user, I want platform and storefront badges to use official logos so I can quickly recognize them with familiar branding
+- **Requirements**:
+  - Replace placeholder text/icons with official platform and storefront logos
+  - All logos must be used legally with proper attribution and compliance
+  - Support high-resolution displays (2x assets for retina displays)
+  - Consistent visual styling and sizing across all platforms and storefronts
+  - Fallback to text-based badges when logos are unavailable
+- **Legal and Attribution Requirements**:
+  - All logos must be sourced legally (official press kits, public APIs, or permissive licenses)
+  - Proper attribution must be included in README.md for all used logos
+  - Compliance with each platform/storefront's brand guidelines and usage policies
+  - Documentation of logo sources and permissions for audit purposes
+- **Technical Implementation**:
+  - Store logo files in organized directory structure under `frontend/static/logos/`
+  - Use optimized formats (SVG preferred, PNG for raster graphics)
+  - Implement responsive logo sizing for different screen sizes
+  - Create logo management system in admin interface for future updates
+  - Support both dark and light theme variants where available
+- **Logo Sources and Attribution**:
+  - Steam: Valve Corporation press kit/brand guidelines
+  - Epic Games Store: Epic Games press resources  
+  - PlayStation: Sony Interactive Entertainment press assets
+  - Xbox: Microsoft press resources
+  - Nintendo: Nintendo press materials
+  - All other platforms and storefronts: respective official sources
+- **Acceptance Criteria**:
+  - All platform and storefront badges display official logos instead of text
+  - Logos are visually consistent in size and styling
+  - High-resolution displays show crisp, clear logos
+  - Attribution is properly documented in README.md
+  - Logo usage complies with all brand guidelines
+  - Admin interface allows for logo updates and management
+  - Fallback system works when logos fail to load
+
 #### 1.4 Progress Tracking
 **Priority**: P0 (Critical)
 - **User Story**: As a user, I want to track my progress through games so I can see what I've completed
