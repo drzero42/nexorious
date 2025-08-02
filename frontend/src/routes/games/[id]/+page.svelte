@@ -55,15 +55,17 @@
   let availableStorefronts: Storefront[] = [];
   let newPlatformData: {
     platform_id: string;
-    storefront_id: string;
     store_url: string;
     store_game_id: string;
   } = {
     platform_id: '',
-    storefront_id: '',
     store_url: '',
     store_game_id: ''
   };
+  
+  // Multi-select storefront management
+  let selectedStorefrontsForPlatform = new Map<string, Set<string>>();
+  let showOtherStorefronts = new Map<string, boolean>();
   let isAddingPlatform = false;
   let isLoadingPlatforms = false;
   let isRemovingPlatform = false;
@@ -92,6 +94,57 @@
   // IGDB platform data and filtering state
   let igdbPlatformNames: string[] = [];
   let showOtherPlatforms = false;
+  
+  // Storefront management functions
+  function isStorefrontSelectedForPlatform(platformId: string, storefrontId: string): boolean {
+    const storefronts = selectedStorefrontsForPlatform.get(platformId);
+    return storefronts ? storefronts.has(storefrontId) : false;
+  }
+
+  function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
+    let storefronts = selectedStorefrontsForPlatform.get(platformId) || new Set<string>();
+    
+    if (storefronts.has(storefrontId)) {
+      storefronts.delete(storefrontId);
+    } else {
+      storefronts.add(storefrontId);
+    }
+    
+    selectedStorefrontsForPlatform.set(platformId, storefronts);
+    selectedStorefrontsForPlatform = new Map(selectedStorefrontsForPlatform); // Trigger reactivity
+  }
+
+  function getPrimaryStorefrontsForPlatform(platformId: string): Storefront[] {
+    const platform = availablePlatforms.find(p => p.id === platformId);
+    if (!platform) return [];
+    
+    // Get associated storefront IDs for this platform
+    const associatedStorefrontIds = new Set(platform.storefronts?.map((s: any) => s.id) || []);
+    
+    // Return active storefronts that ARE associated with this platform
+    return availableStorefronts.filter(storefront => 
+      associatedStorefrontIds.has(storefront.id)
+    );
+  }
+
+  function getOtherStorefrontsForPlatform(platformId: string): Storefront[] {
+    const platform = availablePlatforms.find(p => p.id === platformId);
+    if (!platform) return availableStorefronts; // If platform not found, show all storefronts
+    
+    // Get associated storefront IDs for this platform
+    const associatedStorefrontIds = new Set(platform.storefronts?.map((s: any) => s.id) || []);
+    
+    // Return active storefronts that are NOT associated with this platform
+    return availableStorefronts.filter(storefront => 
+      !associatedStorefrontIds.has(storefront.id)
+    );
+  }
+
+  function toggleOtherStorefronts(platformId: string) {
+    const current = showOtherStorefronts.get(platformId) || false;
+    showOtherStorefronts.set(platformId, !current);
+    showOtherStorefronts = new Map(showOtherStorefronts); // Trigger reactivity
+  }
 
   // Reactive statements for filtered platforms
   $: igdbPlatforms = getIGDBPlatforms(availablePlatforms, igdbPlatformNames);
@@ -176,33 +229,50 @@
       console.log('Starting platform addition...');
       isAddingPlatform = true;
       
-      // Create the platform data for the API call
-      const platformData: UserGamePlatformCreateRequest = {
-        platform_id: newPlatformData.platform_id
-      };
-
-      // Only include storefront_id if it has a value
-      if (newPlatformData.storefront_id && newPlatformData.storefront_id.trim()) {
-        platformData.storefront_id = newPlatformData.storefront_id;
-      }
-
-      // Only include optional fields if they have values
-      if (newPlatformData.store_url.trim()) {
-        platformData.store_url = newPlatformData.store_url.trim();
-      }
-      if (newPlatformData.store_game_id.trim()) {
-        platformData.store_game_id = newPlatformData.store_game_id.trim();
-      }
-
-      console.log('Sending platform data to API:', platformData);
-
+      const selectedStorefronts = selectedStorefrontsForPlatform.get(newPlatformData.platform_id) || new Set<string>();
+      const platformName = availablePlatforms.find(p => p.id === newPlatformData.platform_id)?.display_name || 'Platform';
+      
       // Check if adding platform to no-longer-owned game
       const wasNoLongerOwned = game.ownership_status === 'no_longer_owned';
 
-      // Call the API to add the platform
-      await userGames.addPlatformToUserGame(game.id, platformData);
+      // If no storefronts selected, add platform without storefront
+      if (selectedStorefronts.size === 0) {
+        const platformData: UserGamePlatformCreateRequest = {
+          platform_id: newPlatformData.platform_id
+        };
+
+        // Only include optional fields if they have values
+        if (newPlatformData.store_url.trim()) {
+          platformData.store_url = newPlatformData.store_url.trim();
+        }
+        if (newPlatformData.store_game_id.trim()) {
+          platformData.store_game_id = newPlatformData.store_game_id.trim();
+        }
+
+        console.log('Sending platform data to API (no storefront):', platformData);
+        await userGames.addPlatformToUserGame(game.id, platformData);
+      } else {
+        // Add platform-storefront combinations for each selected storefront
+        for (const storefrontId of selectedStorefronts) {
+          const platformData: UserGamePlatformCreateRequest = {
+            platform_id: newPlatformData.platform_id,
+            storefront_id: storefrontId
+          };
+
+          // Only include optional fields if they have values
+          if (newPlatformData.store_url.trim()) {
+            platformData.store_url = newPlatformData.store_url.trim();
+          }
+          if (newPlatformData.store_game_id.trim()) {
+            platformData.store_game_id = newPlatformData.store_game_id.trim();
+          }
+
+          console.log('Sending platform data to API:', platformData);
+          await userGames.addPlatformToUserGame(game.id, platformData);
+        }
+      }
       
-      console.log('API call successful, reloading game data...');
+      console.log('API calls successful, reloading game data...');
       
       // Immediately update dropdown if adding to no-longer-owned game
       if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
@@ -212,17 +282,25 @@
       // Reload the game to get updated platform data
       await loadGame();
       
+      // Clear selected storefronts for the added platform (before resetting platform_id)
+      selectedStorefrontsForPlatform.delete(newPlatformData.platform_id);
+      selectedStorefrontsForPlatform = new Map(selectedStorefrontsForPlatform);
+      
       // Reset form data
       newPlatformData = {
         platform_id: '',
-        storefront_id: '',
         store_url: '',
         store_game_id: ''
       };
 
-      console.log('Platform added successfully');
+      console.log('Platform(s) added successfully');
       // Show success message
-      notifications.showSuccess('Platform added successfully');
+      const storefrontCount = selectedStorefronts.size;
+      if (storefrontCount > 1) {
+        notifications.showSuccess(`${platformName} added with ${storefrontCount} storefronts successfully`);
+      } else {
+        notifications.showSuccess(`${platformName} added successfully`);
+      }
       
     } catch (error) {
       console.error('Failed to add platform:', error);
@@ -1106,15 +1184,19 @@
                                   value={platform.id}
                                   bind:group={newPlatformData.platform_id}
                                   on:change={() => {
-                                    // Reset storefront when platform changes
-                                    newPlatformData.storefront_id = '';
+                                    // Reset storefront selections when platform changes
+                                    selectedStorefrontsForPlatform.delete(newPlatformData.platform_id);
                                     newPlatformData.store_url = '';
                                     newPlatformData.store_game_id = '';
                                     
                                     // Auto-select default storefront if available
                                     if (platform.default_storefront_id) {
-                                      newPlatformData.storefront_id = platform.default_storefront_id;
+                                      const storefronts = new Set<string>();
+                                      storefronts.add(platform.default_storefront_id);
+                                      selectedStorefrontsForPlatform.set(platform.id, storefronts);
                                     }
+                                    
+                                    selectedStorefrontsForPlatform = new Map(selectedStorefrontsForPlatform);
                                   }}
                                   class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
                                 />
@@ -1159,15 +1241,19 @@
                                     value={platform.id}
                                     bind:group={newPlatformData.platform_id}
                                     on:change={() => {
-                                      // Reset storefront when platform changes
-                                      newPlatformData.storefront_id = '';
+                                      // Reset storefront selections when platform changes
+                                      selectedStorefrontsForPlatform.delete(newPlatformData.platform_id);
                                       newPlatformData.store_url = '';
                                       newPlatformData.store_game_id = '';
                                       
                                       // Auto-select default storefront if available
                                       if (platform.default_storefront_id) {
-                                        newPlatformData.storefront_id = platform.default_storefront_id;
+                                        const storefronts = new Set<string>();
+                                        storefronts.add(platform.default_storefront_id);
+                                        selectedStorefrontsForPlatform.set(platform.id, storefronts);
                                       }
+                                      
+                                      selectedStorefrontsForPlatform = new Map(selectedStorefrontsForPlatform);
                                     }}
                                     class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
                                   />
@@ -1195,15 +1281,19 @@
                                 value={platform.id}
                                 bind:group={newPlatformData.platform_id}
                                 on:change={() => {
-                                  // Reset storefront when platform changes
-                                  newPlatformData.storefront_id = '';
+                                  // Reset storefront selections when platform changes
+                                  selectedStorefrontsForPlatform.delete(newPlatformData.platform_id);
                                   newPlatformData.store_url = '';
                                   newPlatformData.store_game_id = '';
                                   
                                   // Auto-select default storefront if available
                                   if (platform.default_storefront_id) {
-                                    newPlatformData.storefront_id = platform.default_storefront_id;
+                                    const storefronts = new Set<string>();
+                                    storefronts.add(platform.default_storefront_id);
+                                    selectedStorefrontsForPlatform.set(platform.id, storefronts);
                                   }
+                                  
+                                  selectedStorefrontsForPlatform = new Map(selectedStorefrontsForPlatform);
                                 }}
                                 class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
                               />
@@ -1220,20 +1310,85 @@
                     </div>
 
                     <!-- Storefront Selection -->
-                    <div>
-                      <label for="new_storefront" class="form-label">Storefront</label>
-                      <select
-                        id="new_storefront"
-                        bind:value={newPlatformData.storefront_id}
-                        class="form-input"
-                        disabled={!newPlatformData.platform_id}
-                      >
-                        <option value="">Select a storefront...</option>
-                        {#each availableStorefronts as storefront}
-                          <option value={storefront.id}>{storefront.display_name}</option>
-                        {/each}
-                      </select>
-                    </div>
+                    {#if newPlatformData.platform_id}
+                      <fieldset>
+                        <legend class="block text-sm font-medium text-gray-700 mb-2">
+                          Storefronts (optional)
+                        </legend>
+                        <div class="space-y-3 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
+                          <!-- Primary storefronts (associated with platform) -->
+                          {#if getPrimaryStorefrontsForPlatform(newPlatformData.platform_id).length > 0}
+                            <div>
+                              <div class="flex items-center mb-2">
+                                <svg class="h-3 w-3 text-primary-500 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.236 4.53L8.107 10.5a.75.75 0 00-1.214 1.029l2.5 3.5a.75.75 0 001.214 0l4-5.5z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-xs font-medium text-primary-700">Recommended</span>
+                              </div>
+                              <div class="space-y-2 bg-primary-50 border border-primary-200 rounded-md p-2">
+                                {#each getPrimaryStorefrontsForPlatform(newPlatformData.platform_id) as storefront (storefront.id)}
+                                  <label class="flex items-center cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isStorefrontSelectedForPlatform(newPlatformData.platform_id, storefront.id)}
+                                      on:change={() => toggleStorefrontForPlatform(newPlatformData.platform_id, storefront.id)}
+                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                    />
+                                    <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
+                                  </label>
+                                {/each}
+                              </div>
+                            </div>
+                          {/if}
+                          
+                          <!-- Other storefronts (collapsed by default) -->
+                          {#if getOtherStorefrontsForPlatform(newPlatformData.platform_id).length > 0}
+                            <div class="{getPrimaryStorefrontsForPlatform(newPlatformData.platform_id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
+                              <button
+                                type="button"
+                                on:click={() => toggleOtherStorefronts(newPlatformData.platform_id)}
+                                class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
+                              >
+                                <span class="flex items-center">
+                                  <svg class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
+                                  </svg>
+                                  Other storefronts ({getOtherStorefrontsForPlatform(newPlatformData.platform_id).length})
+                                </span>
+                                <svg class="h-3 w-3 text-gray-400 transition-transform duration-200 {showOtherStorefronts.get(newPlatformData.platform_id) ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                              
+                              {#if showOtherStorefronts.get(newPlatformData.platform_id)}
+                                <div class="mt-2 space-y-2 bg-gray-50 border border-gray-200 rounded-md p-2">
+                                  {#each getOtherStorefrontsForPlatform(newPlatformData.platform_id) as storefront (storefront.id)}
+                                    <label class="flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={isStorefrontSelectedForPlatform(newPlatformData.platform_id, storefront.id)}
+                                        on:change={() => toggleStorefrontForPlatform(newPlatformData.platform_id, storefront.id)}
+                                        class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                      />
+                                      <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
+                                    </label>
+                                  {/each}
+                                </div>
+                              {/if}
+                            </div>
+                          {/if}
+                          
+                          {#if getPrimaryStorefrontsForPlatform(newPlatformData.platform_id).length === 0 && getOtherStorefrontsForPlatform(newPlatformData.platform_id).length === 0}
+                            <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                          {/if}
+                        </div>
+                      </fieldset>
+                    {:else}
+                      <div>
+                        <span class="block text-sm font-medium text-gray-500 mb-2">Storefronts</span>
+                        <p class="text-sm text-gray-400 italic">Select a platform first to see available storefronts</p>
+                      </div>
+                    {/if}
                     
                     <!-- Additional fields in a grid layout -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
