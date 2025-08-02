@@ -110,7 +110,7 @@ export const mockIGDBCandidates = [
     release_date: '2024-01-01',
     cover_art_url: 'https://example.com/igdb-cover.jpg',
     description: 'A test game from IGDB',
-    platforms: ['PC', 'PlayStation 5'],
+    platforms: ['PC (Windows)', 'PlayStation 5'], // Updated to match mock platform display_names
     howlongtobeat_main: 12,  // Main story completion time in hours
     howlongtobeat_extra: 20,  // Main + extras completion time in hours
     howlongtobeat_completionist: 35  // Completionist time in hours
@@ -141,36 +141,160 @@ export const mockGamesStore = {
   clearError: vi.fn()
 };
 
-// Mock platforms store with writable store pattern
+// Mock storefronts (first, since platforms reference them)
+export const mockStorefronts = [
+  { 
+    id: 'steam', 
+    name: 'steam', 
+    display_name: 'Steam', 
+    icon_url: 'https://example.com/steam-icon.png',
+    base_url: 'https://store.steampowered.com',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'epic-games-store', 
+    name: 'epic-games-store', 
+    display_name: 'Epic Games Store', 
+    icon_url: 'https://example.com/epic-icon.png',
+    base_url: 'https://store.epicgames.com',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'playstation-store', 
+    name: 'playstation-store', 
+    display_name: 'PlayStation Store', 
+    icon_url: 'https://example.com/ps-icon.png',
+    base_url: 'https://store.playstation.com',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'nintendo-eshop', 
+    name: 'nintendo-eshop', 
+    display_name: 'Nintendo eShop', 
+    icon_url: 'https://example.com/nintendo-icon.png',
+    base_url: 'https://www.nintendo.com/store',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'physical', 
+    name: 'physical', 
+    display_name: 'Physical', 
+    icon_url: 'https://example.com/physical-icon.png',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  }
+];
+
+// Mock platforms with realistic default storefront relationships
+export const mockPlatforms = [
+  { 
+    id: 'pc-windows', 
+    name: 'pc-windows', 
+    display_name: 'PC (Windows)', 
+    icon_url: 'https://example.com/pc-icon.png',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    default_storefront_id: 'steam', // PC defaults to Steam
+    storefronts: [
+      mockStorefronts.find(s => s.id === 'steam'),
+      mockStorefronts.find(s => s.id === 'epic-games-store'),
+      mockStorefronts.find(s => s.id === 'physical')
+    ].filter(Boolean),
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'playstation-5', 
+    name: 'playstation-5', 
+    display_name: 'PlayStation 5', 
+    icon_url: 'https://example.com/ps5-icon.png',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    default_storefront_id: 'playstation-store', // PS5 defaults to PlayStation Store
+    storefronts: [
+      mockStorefronts.find(s => s.id === 'playstation-store'),
+      mockStorefronts.find(s => s.id === 'physical')
+    ].filter(Boolean),
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'nintendo-switch', 
+    name: 'nintendo-switch', 
+    display_name: 'Nintendo Switch', 
+    icon_url: 'https://example.com/switch-icon.png',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    default_storefront_id: 'nintendo-eshop', // Switch defaults to Nintendo eShop
+    storefronts: [
+      mockStorefronts.find(s => s.id === 'nintendo-eshop'),
+      mockStorefronts.find(s => s.id === 'physical')
+    ].filter(Boolean),
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  },
+  { 
+    id: 'mobile-android', 
+    name: 'mobile-android', 
+    display_name: 'Android', 
+    icon_url: 'https://example.com/android-icon.png',
+    is_active: true, 
+    source: 'official', 
+    version_added: '1.0.0',
+    default_storefront_id: null, // No default storefront for Android (to test platforms without defaults)
+    storefronts: [],
+    created_at: '2024-01-01T00:00:00Z', 
+    updated_at: '2024-01-01T00:00:00Z' 
+  }
+];
+
+// Mock platforms store with proper Svelte store pattern
 export const mockPlatformsStore = {
   subscribe: vi.fn((callback) => {
-    // Call the callback immediately with the mock state
-    callback({
-      platforms: [
-        { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-        { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-      ],
-      storefronts: [
-        { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-        { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-      ],
+    // Store the callback for later triggering
+    const storeState = {
+      platforms: mockPlatforms,
+      storefronts: mockStorefronts,
       isLoading: false,
       error: null
-    });
+    };
+    
+    // Call callback immediately
+    callback(storeState);
+    
+    // Also call it after a microtask to ensure reactivity
+    Promise.resolve().then(() => callback(storeState));
+    
     // Return an unsubscribe function
     return () => {};
   }),
-  fetchPlatforms: vi.fn().mockResolvedValue([]),
-  fetchStorefronts: vi.fn().mockResolvedValue([]),
+  fetchPlatforms: vi.fn().mockResolvedValue(mockPlatforms),
+  fetchStorefronts: vi.fn().mockResolvedValue(mockStorefronts),
   fetchAll: vi.fn().mockResolvedValue({
-    platforms: [
-      { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-      { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-    ],
-    storefronts: [
-      { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-      { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-    ]
+    platforms: mockPlatforms,
+    storefronts: mockStorefronts
   }),
   createPlatform: vi.fn(),
   updatePlatform: vi.fn(),
@@ -179,14 +303,8 @@ export const mockPlatformsStore = {
   updateStorefront: vi.fn(),
   deleteStorefront: vi.fn(),
   fetchActivePlatformsAndStorefronts: vi.fn().mockResolvedValue({
-    platforms: [
-      { id: 'pc', name: 'PC', display_name: 'PC', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-      { id: 'ps5', name: 'PlayStation 5', display_name: 'PlayStation 5', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-    ],
-    storefronts: [
-      { id: 'steam', name: 'Steam', display_name: 'Steam', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
-      { id: 'epic', name: 'Epic Games Store', display_name: 'Epic Games Store', is_active: true, source: 'official', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }
-    ]
+    platforms: mockPlatforms,
+    storefronts: mockStorefronts
   }),
   clearError: vi.fn()
 };

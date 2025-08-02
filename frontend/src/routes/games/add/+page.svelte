@@ -89,7 +89,15 @@
       platformStoreUrls.delete(platformId);
     } else {
       selectedPlatforms.add(platformId);
-      platformStorefronts.set(platformId, new Set<string>());
+      
+      // Create storefronts set and auto-select default if available
+      const storefronts = new Set<string>();
+      const platform = $platforms.platforms.find(p => p.id === platformId);
+      if (platform?.default_storefront_id) {
+        storefronts.add(platform.default_storefront_id);
+      }
+      
+      platformStorefronts.set(platformId, storefronts);
     }
     selectedPlatforms = new Set(selectedPlatforms); // Trigger reactivity
     platformStorefronts = new Map(platformStorefronts);

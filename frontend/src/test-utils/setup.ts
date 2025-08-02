@@ -17,7 +17,11 @@ console.error = vi.fn((message, ...args) => {
 			message.includes('Collection add failed') ||
 			message.includes('Game creation failed') ||
 			message.includes('IGDB import failed') ||
-			message.includes('Network timeout occurred')
+			message.includes('Network timeout occurred') ||
+			message.includes('Failed to create game') ||
+			message.includes('Failed to add game to collection') ||
+			message.includes('Failed to update progress') ||
+			message.includes('Failed to update game details')
 		)
 	) {
 		return; // Suppress these expected errors in tests
