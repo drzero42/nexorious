@@ -471,7 +471,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update IGDB service tests to verify time-to-beat is NOT fetched during search operations
 - [x] Update API endpoint tests to ensure search results work without time-to-beat data
 - [x] Verify import flow tests still fetch and validate time-to-beat data
-- [ ] Update frontend component tests to remove time-to-beat expectations from search results
+- [x] Update frontend component tests to remove time-to-beat expectations from search results
 - [ ] Add performance tests to measure search response time improvements
 - [ ] Create integration tests to verify complete user workflow from search to import
 
