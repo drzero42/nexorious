@@ -11,6 +11,17 @@ export interface AdminUser {
   updatedAt: string;
 }
 
+export interface UserDeletionImpact {
+  user_id: string;
+  username: string;
+  total_games: number;
+  total_tags: number;
+  total_wishlist_items: number;
+  total_import_jobs: number;
+  total_sessions: number;
+  warning: string;
+}
+
 export interface SystemStatistics {
   totalUsers: number;
   totalAdmins: number;
@@ -240,6 +251,29 @@ function createAdminStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to reset password';
         update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        throw error;
+      }
+    },
+
+    getUserDeletionImpact: async (userId: string): Promise<UserDeletionImpact> => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/admin/users/${userId}/deletion-impact`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to get deletion impact');
+        }
+
+        return await response.json();
+      } catch (error) {
         throw error;
       }
     },
