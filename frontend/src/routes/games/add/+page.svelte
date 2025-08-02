@@ -68,17 +68,12 @@
     );
   }
 
-  function getOwnedPlatformDetailsForGame(igdbId: string): any[] {
+  function getOwnedPlatformDetailsForGame(igdbId: string): UserGamePlatform[] {
     const userGame = userGames.value.userGames.find((ug: any) => ug.game.igdb_id === igdbId);
     if (!userGame || !userGame.platforms) return [];
     
-    return userGame.platforms.map((userPlatform: UserGamePlatform) => ({
-      id: userPlatform.platform.id,
-      display_name: userPlatform.platform.display_name,
-      name: userPlatform.platform.name,
-      icon_url: userPlatform.platform.icon_url,
-      storefronts: userPlatform.storefront ? [userPlatform.storefront] : []
-    }));
+    // Return the actual UserGamePlatform objects, not flattened objects
+    return userGame.platforms;
   }
 
   // Platform management functions
