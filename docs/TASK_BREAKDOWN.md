@@ -175,7 +175,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Display seed data loading status and results in admin interface
 - [x] Platform and storefront management interface (ADMIN-ONLY CRUD operations for platforms and storefronts)
 - [x] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
-- [ ] Admin interface for managing platform-storefront associations using simple checkboxes/buttons
+- [x] Admin interface for managing platform-storefront associations using simple checkboxes/buttons
 - [ ] User deletion with data handling options
 - [ ] Admin-only navigation indicators with clear visual distinction
 - [ ] System configuration management interface
