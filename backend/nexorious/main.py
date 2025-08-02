@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 import logging
 import os
 from .core.config import settings
-from .core.database import create_db_and_tables
+from .core.database import run_alembic_migrations
 from .api.auth import router as auth_router
 from .api.games import router as games_router
 from .api.platforms import router as platforms_router
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     """Lifespan events for FastAPI app"""
     # Startup
     logger.info("Starting up Nexorious Game Collection Management Service")
-    create_db_and_tables()
+    run_alembic_migrations()
     logger.info("Database initialized")
     yield
     # Shutdown
