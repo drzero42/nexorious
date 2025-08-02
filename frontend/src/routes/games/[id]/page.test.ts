@@ -198,9 +198,17 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
       
-      const verifiedBadge = screen.getByText('Verified');
-      expect(verifiedBadge).toBeInTheDocument();
-      expect(verifiedBadge.closest('.bg-green-100')).toBeInTheDocument();
+      // Look for verification badges by their aria-label - there are multiple on the page
+      const verifiedBadges = screen.getAllByLabelText('Verified from IGDB database - metadata is official and up-to-date');
+      expect(verifiedBadges.length).toBeGreaterThan(0);
+      
+      // Check that at least one badge has the actual blue gradient classes used by the component
+      const hasCorrectClasses = verifiedBadges.some(badge => 
+        badge.classList.contains('bg-gradient-to-r') && 
+        badge.classList.contains('from-blue-500') && 
+        badge.classList.contains('to-blue-600')
+      );
+      expect(hasCorrectClasses).toBe(true);
     });
 
     it('should not display rating section when no rating or verification', async () => {
@@ -387,7 +395,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       // Verify specific content from mockGameMetadata
       expect(screen.getByText('A test game description')).toBeInTheDocument();
       expect(screen.getByText('4.5/10')).toBeInTheDocument(); // formatIgdbRating(45) = 4.5
-      expect(screen.getByText('Verified')).toBeInTheDocument();
+      // Check for verification badge by aria-label - there are multiple on the page
+      const verifiedBadges = screen.getAllByLabelText('Verified from IGDB database - metadata is official and up-to-date');
+      expect(verifiedBadges.length).toBeGreaterThan(0);
       
       // Check for time values (these appear in both How Long to Beat and GameProgressCard)
       const time18Elements = screen.getAllByText('18h');
