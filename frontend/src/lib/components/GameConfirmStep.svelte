@@ -135,9 +135,6 @@
                 
                 <div class="flex flex-wrap gap-x-4 text-sm text-gray-600 mb-2">
                   <span>Released: {game.release_date ? new Date(game.release_date).getFullYear() : 'Unknown'}</span>
-                  {#if game.howlongtobeat_main}
-                    <span>• {game.howlongtobeat_main}h to beat</span>
-                  {/if}
                 </div>
                 
                 {#if game.description}

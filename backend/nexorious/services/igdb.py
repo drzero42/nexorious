@@ -263,21 +263,15 @@ class IGDBService:
                 logger.debug(f"Raw response (first 500 chars): {response[:500]}")
                 raise IGDBError(f"Invalid JSON response from IGDB: {e}")
             
-            # Convert to GameMetadata objects and fetch time-to-beat data
+            # Convert to GameMetadata objects (without time-to-beat data for performance)
             games = []
             for i, game_data in enumerate(games_data):
                 logger.debug(f"Processing game {i+1}/{len(games_data)}: {game_data.get('name', 'Unknown')}")
                 
                 metadata = self._parse_game_data(game_data)
                 if metadata:
-                    # Fetch time-to-beat data for each game
-                    logger.debug(f"Fetching time-to-beat data for game {metadata.igdb_id}")
-                    time_to_beat_data = await self._get_time_to_beat_data(metadata.igdb_id)
-                    if time_to_beat_data:
-                        metadata.hastily = time_to_beat_data.get("hastily")
-                        metadata.normally = time_to_beat_data.get("normally")
-                        metadata.completely = time_to_beat_data.get("completely")
-                        logger.debug(f"Added time-to-beat data for {metadata.title}")
+                    # Note: Time-to-beat data is not fetched during search for performance reasons
+                    # It will be fetched later during actual game import via get_game_by_id()
                     games.append(metadata)
                 else:
                     logger.debug(f"Failed to parse game data for item {i+1}")

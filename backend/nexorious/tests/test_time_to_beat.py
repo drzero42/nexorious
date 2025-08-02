@@ -231,8 +231,8 @@ class TestIGDBService:
         assert result.completely == 30
     
     @pytest.mark.asyncio
-    async def test_search_games_includes_time_to_beat(self, igdb_service):
-        """Test that search_games includes time-to-beat data."""
+    async def test_search_games_excludes_time_to_beat(self, igdb_service):
+        """Test that search_games excludes time-to-beat data for performance."""
         mock_wrapper = Mock()
         
         # Mock game data response
@@ -243,22 +243,19 @@ class TestIGDBService:
         }]
         mock_wrapper.api_request.return_value = json.dumps(games_data).encode('utf-8')
         
-        # Mock time-to-beat data (these are the converted hour values returned by the service)
-        time_data = {
-            "hastily": 8,
-            "normally": 15,
-            "completely": 25
-        }
-        
         with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper), \
-             patch.object(igdb_service, '_get_time_to_beat_data', return_value=time_data):
+             patch.object(igdb_service, '_get_time_to_beat_data') as mock_time_fetch:
             
             results = await igdb_service.search_games("test")
-        
-        assert len(results) == 1
-        assert results[0].hastily == 8
-        assert results[0].normally == 15
-        assert results[0].completely == 25
+            
+            assert len(results) == 1
+            # Time-to-beat data should be None for search results (performance optimization)
+            assert results[0].hastily is None
+            assert results[0].normally is None
+            assert results[0].completely is None
+            
+            # Verify _get_time_to_beat_data was not called during search
+            mock_time_fetch.assert_not_called()
     
     @pytest.mark.asyncio
     async def test_populate_missing_metadata_includes_time_to_beat(self, igdb_service):
