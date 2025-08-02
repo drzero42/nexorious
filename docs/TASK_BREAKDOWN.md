@@ -140,11 +140,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB platform filtering during game editing (show IGDB platforms first)
 - [x] "Others" expandable section for additional platforms in game editing interface
 - [x] Multi-select storefront interface per platform during game editing
-- [ ] Storefront filtering logic in game editing: organize storefronts into primary (associated) and "Other" sections
-- [ ] Implement "Other" collapsible section for non-associated storefronts in game editing interface
-- [ ] Confirmation dialogs for removing platform/storefront ownership
-- [ ] Automatic ownership status updates when platforms are added/removed with visual feedback
-- [ ] Visual indicators showing current ownership status during editing and automatic status changes
+- [x] Storefront filtering logic in game editing: organize storefronts into primary (associated) and "Other" sections
+- [x] Implement "Other" collapsible section for non-associated storefronts in game editing interface
+- [x] Confirmation dialogs for removing platform/storefront ownership
+- [x] Automatic ownership status updates when platforms are added/removed with visual feedback
+- [x] Visual indicators showing current ownership status during editing and automatic status changes
 - [ ] Bulk editing interface for multiple games
 - [ ] Real-time updates to collection view after edits (changes reflected immediately)
 - [ ] Error handling and validation feedback
