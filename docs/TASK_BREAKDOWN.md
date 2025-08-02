@@ -139,7 +139,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove platform associations from existing games
 - [x] IGDB platform filtering during game editing (show IGDB platforms first)
 - [x] "Others" expandable section for additional platforms in game editing interface
-- [ ] Add/remove storefront associations per platform with visual feedback
 - [ ] Storefront filtering logic in game editing: organize storefronts into primary (associated) and "Other" sections
 - [ ] Implement "Other" collapsible section for non-associated storefronts in game editing interface
 - [ ] Confirmation dialogs for removing platform/storefront ownership
