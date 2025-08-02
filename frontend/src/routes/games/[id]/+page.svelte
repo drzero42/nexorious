@@ -13,10 +13,12 @@
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
+  import { auth } from '$lib/stores/auth.svelte';
 
   let game: UserGame | null = null;
   let isLoading = true;
   let isEditing = false;
+  let isUpdatingFromIGDB = false;
   let editData: {
     // Personal data
     personal_rating?: number | undefined;
@@ -463,6 +465,45 @@
     }
   }
 
+  async function updateFromIGDB() {
+    if (!game?.game.igdb_id) {
+      notifications.showError('This game does not have an IGDB ID and cannot be updated.');
+      return;
+    }
+
+    try {
+      isUpdatingFromIGDB = true;
+      
+      // Call the games store refresh metadata function
+      const result = await games.refreshMetadata(game.game.id);
+      
+      // Reload the game to get updated data
+      await loadGame();
+      
+      // Show success message with updated fields info
+      if (result && result.updated_fields && result.updated_fields.length > 0) {
+        const fieldList = result.updated_fields.join(', ');
+        notifications.showSuccess(`Game updated from IGDB! Updated fields: ${fieldList}`);
+      } else {
+        notifications.showSuccess('Game checked against IGDB - no updates needed.');
+      }
+      
+    } catch (error) {
+      console.error('Failed to update from IGDB:', error);
+      notifications.showError('Failed to update game from IGDB. Please try again.');
+    } finally {
+      isUpdatingFromIGDB = false;
+    }
+  }
+
+  // Helper function to check if user can update the game
+  function canUpdateFromIGDB() {
+    const currentUser = auth.value;
+    return game?.game.igdb_id && 
+           game.game.is_verified && 
+           (currentUser.user?.isAdmin || !game.game.is_verified);
+  }
+
 
   function getStatusLabel(status: string) {
     const labels: Record<string, string> = {
@@ -776,6 +817,27 @@
                     </div>
                   {/if}
                   <IGDBVerificationBadge isVerified={game.game.is_verified} size="md" />
+                  {#if canUpdateFromIGDB()}
+                    <button
+                      on:click={updateFromIGDB}
+                      disabled={isUpdatingFromIGDB}
+                      class="inline-flex items-center gap-x-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Update game metadata from IGDB"
+                      aria-label="Update {game.game.title} metadata from IGDB"
+                    >
+                      {#if isUpdatingFromIGDB}
+                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Updating...
+                      {:else}
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Update from IGDB
+                      {/if}
+                    </button>
+                  {/if}
                 </div>
               </div>
             {/if}

@@ -753,35 +753,51 @@ async def refresh_game_metadata(
 ):
     """Refresh game metadata from IGDB."""
     
+    # Entry logging
+    logger.info(f"Metadata refresh request for game {game_id} from user {current_user.username} ({current_user.id})")
+    logger.debug(f"Refresh request details: fields={refresh_request.fields}, force={refresh_request.force}")
+    
     game = session.get(Game, game_id)
     if not game:
+        logger.warning(f"Metadata refresh failed: Game {game_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Game not found"
         )
     
+    # Log current game state
+    logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}, is_verified={game.is_verified}")
+    
     if not game.igdb_id:
+        logger.warning(f"Metadata refresh failed: Game '{game.title}' ({game_id}) has no IGDB ID")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Game does not have IGDB ID"
         )
     
     # Check permissions - only admin or unverified games can be refreshed
+    logger.debug(f"Permission check: user_is_admin={current_user.is_admin}, game_is_verified={game.is_verified}")
     if not current_user.is_admin and game.is_verified:
+        logger.warning(f"Metadata refresh denied: Non-admin user {current_user.username} cannot refresh verified game '{game.title}'")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot refresh metadata for verified games. Only administrators can refresh verified games."
         )
     
     try:
+        logger.debug(f"Calling IGDB service to refresh metadata for IGDB ID {game.igdb_id}")
         fresh_metadata = await igdb_service.refresh_game_metadata(game.igdb_id)
         if not fresh_metadata:
+            logger.error(f"Failed to retrieve fresh metadata from IGDB for game '{game.title}' (IGDB ID: {game.igdb_id})")
             return MetadataRefreshResponse(
                 success=False,
                 updated_fields=[],
                 errors=["Failed to retrieve fresh metadata from IGDB"],
                 game=GameResponse.model_validate(game)
             )
+        
+        logger.debug(f"Successfully retrieved fresh metadata from IGDB: title='{fresh_metadata.title}', "
+                    f"developer='{fresh_metadata.developer}', publisher='{fresh_metadata.publisher}'")
         
         # Update game with fresh metadata
         updated_fields = []
@@ -793,35 +809,70 @@ async def refresh_game_metadata(
             'igdb_slug', 'howlongtobeat_main', 'howlongtobeat_extra', 'howlongtobeat_completionist'
         ]
         
+        logger.debug(f"Fields to refresh: {fields_to_refresh}")
+        logger.debug(f"Refresh mode: {'force' if refresh_request.force else 'only_missing'}")
+        
         for field in fields_to_refresh:
             # Handle time-to-beat field mapping
             if field == 'howlongtobeat_main':
                 fresh_value = getattr(fresh_metadata, 'hastily', None)
                 current_value = getattr(game, field, None)
+                logger.debug(f"Field '{field}': current={current_value}, fresh={fresh_value} (mapped from hastily)")
             elif field == 'howlongtobeat_extra':
                 fresh_value = getattr(fresh_metadata, 'normally', None)
                 current_value = getattr(game, field, None)
+                logger.debug(f"Field '{field}': current={current_value}, fresh={fresh_value} (mapped from normally)")
             elif field == 'howlongtobeat_completionist':
                 fresh_value = getattr(fresh_metadata, 'completely', None)
                 current_value = getattr(game, field, None)
+                logger.debug(f"Field '{field}': current={current_value}, fresh={fresh_value} (mapped from completely)")
             elif hasattr(fresh_metadata, field):
                 fresh_value = getattr(fresh_metadata, field)
                 current_value = getattr(game, field, None)
+                logger.debug(f"Field '{field}': current='{current_value}', fresh='{fresh_value}'")
             else:
+                logger.debug(f"Field '{field}': not available in fresh metadata, skipping")
                 continue
             
-            if fresh_value and (refresh_request.force or not current_value):
+            # Determine if field should be updated
+            should_update = fresh_value and (refresh_request.force or not current_value)
+            update_reason = ""
+            
+            if not fresh_value:
+                update_reason = "no_fresh_value"
+            elif refresh_request.force:
+                update_reason = "force_update"
+            elif not current_value:
+                update_reason = "missing_current_value"
+            else:
+                update_reason = "current_exists_no_force"
+            
+            logger.debug(f"Field '{field}' update decision: should_update={should_update}, reason={update_reason}")
+            
+            if should_update:
+                old_value = current_value
                 if field == 'release_date':
-                    setattr(game, field, parse_date_string(fresh_value))
+                    parsed_date = parse_date_string(fresh_value)
+                    setattr(game, field, parsed_date)
+                    logger.debug(f"Updated '{field}': '{old_value}' -> '{parsed_date}' (parsed from '{fresh_value}')")
                 elif field == 'rating_average':
                     setattr(game, field, fresh_value)
+                    logger.debug(f"Updated '{field}': {old_value} -> {fresh_value}")
                 else:
                     setattr(game, field, fresh_value)
+                    logger.debug(f"Updated '{field}': '{old_value}' -> '{fresh_value}'")
                 updated_fields.append(field)
         
         game.updated_at = datetime.now(timezone.utc)
         session.commit()
         session.refresh(game)
+        
+        # Log final result
+        if updated_fields:
+            logger.info(f"Metadata refresh completed for game '{game.title}' ({game_id}): "
+                       f"updated {len(updated_fields)} fields: {updated_fields}")
+        else:
+            logger.info(f"Metadata refresh completed for game '{game.title}' ({game_id}): no fields updated")
         
         return MetadataRefreshResponse(
             success=True,
@@ -831,6 +882,7 @@ async def refresh_game_metadata(
         )
         
     except Exception as e:
+        logger.error(f"Metadata refresh failed for game '{game.title}' ({game_id}): {str(e)}", exc_info=True)
         return MetadataRefreshResponse(
             success=False,
             updated_fields=[],

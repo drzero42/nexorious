@@ -337,6 +337,8 @@ class IGDBService:
     
     async def get_game_by_id(self, igdb_id: str) -> Optional[GameMetadata]:
         """Get game metadata by IGDB ID."""
+        logger.debug(f"Fetching game metadata from IGDB for ID {igdb_id}")
+        
         try:
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name, 
@@ -345,28 +347,46 @@ class IGDBService:
                 where id = {igdb_id};
             '''
             
+            logger.debug(f"IGDB query for game {igdb_id}: {igdb_query.strip()}")
+            
             response = await self._rate_limited_api_request('games', igdb_query)
+            logger.debug(f"IGDB API response size for game {igdb_id}: {len(response)} bytes")
             
             games_data = json.loads(response.decode('utf-8'))
+            logger.debug(f"IGDB returned {len(games_data)} game(s) for ID {igdb_id}")
             
             if not games_data:
+                logger.warning(f"No game data returned from IGDB for ID {igdb_id}")
                 return None
             
             # Get basic game data
+            logger.debug(f"Parsing game data for IGDB ID {igdb_id}")
             game_metadata = self._parse_game_data(games_data[0])
             
-            # Fetch time-to-beat data if available
             if game_metadata:
+                logger.debug(f"Successfully parsed basic metadata for IGDB ID {igdb_id}: "
+                           f"title='{game_metadata.title}', genre='{game_metadata.genre}', "
+                           f"developer='{game_metadata.developer}', publisher='{game_metadata.publisher}'")
+                
+                # Fetch time-to-beat data if available
+                logger.debug(f"Fetching time-to-beat data for IGDB ID {igdb_id}")
                 time_to_beat_data = await self._get_time_to_beat_data(igdb_id)
                 if time_to_beat_data:
                     game_metadata.hastily = time_to_beat_data.get("hastily")
                     game_metadata.normally = time_to_beat_data.get("normally")
                     game_metadata.completely = time_to_beat_data.get("completely")
+                    logger.debug(f"Added time-to-beat data for IGDB ID {igdb_id}: "
+                               f"hastily={game_metadata.hastily}h, normally={game_metadata.normally}h, "
+                               f"completely={game_metadata.completely}h")
+                else:
+                    logger.debug(f"No time-to-beat data available for IGDB ID {igdb_id}")
+            else:
+                logger.error(f"Failed to parse game data for IGDB ID {igdb_id}")
             
             return game_metadata
             
         except Exception as e:
-            logger.error(f"Error fetching game by ID {igdb_id}: {e}")
+            logger.error(f"Error fetching game by ID {igdb_id}: {e}", exc_info=True)
             raise IGDBError(f"Failed to fetch game: {e}")
     
     async def _get_time_to_beat_data(self, igdb_id: str) -> Optional[Dict[str, Any]]:
@@ -375,32 +395,46 @@ class IGDBService:
         IGDB returns time-to-beat data in seconds, but we store and display it in hours.
         This method converts the seconds to hours before returning.
         """
+        logger.debug(f"Fetching time-to-beat data from IGDB for game ID {igdb_id}")
+        
         try:
             time_query = f'''
                 fields hastily, normally, completely;
                 where game_id = {igdb_id};
             '''
             
+            logger.debug(f"IGDB time-to-beat query for game {igdb_id}: {time_query.strip()}")
+            
             response = await self._rate_limited_api_request('game_time_to_beats', time_query)
+            logger.debug(f"IGDB time-to-beat response size for game {igdb_id}: {len(response)} bytes")
             
             time_data = json.loads(response.decode('utf-8'))
+            logger.debug(f"IGDB returned {len(time_data)} time-to-beat record(s) for game ID {igdb_id}")
             
             if time_data:
                 raw_data = time_data[0]
+                logger.debug(f"Raw time-to-beat data for game {igdb_id}: {raw_data}")
+                
                 # Convert from seconds to hours (IGDB returns seconds, we store hours)
                 converted_data = {}
                 for field in ['hastily', 'normally', 'completely']:
                     if field in raw_data and raw_data[field] is not None:
                         # Convert seconds to hours, round to nearest integer
-                        converted_data[field] = round(raw_data[field] / 3600)
+                        hours = round(raw_data[field] / 3600)
+                        converted_data[field] = hours
+                        logger.debug(f"Converted {field} for game {igdb_id}: {raw_data[field]}s -> {hours}h")
                     else:
                         converted_data[field] = None
-                        
+                        logger.debug(f"No {field} data for game {igdb_id}")
+                
+                logger.debug(f"Final time-to-beat data for game {igdb_id}: {converted_data}")
                 return converted_data
-            return None
+            else:
+                logger.debug(f"No time-to-beat data available for game {igdb_id}")
+                return None
             
         except Exception as e:
-            logger.error(f"Error fetching time-to-beat data for game {igdb_id}: {e}")
+            logger.error(f"Error fetching time-to-beat data for game {igdb_id}: {e}", exc_info=True)
             return None
     
     def _parse_game_data(self, game_data: Dict[str, Any]) -> Optional[GameMetadata]:
@@ -532,12 +566,22 @@ class IGDBService:
     async def refresh_game_metadata(self, igdb_id: str) -> Optional[GameMetadata]:
         """Refresh game metadata from IGDB by ID."""
         if not igdb_id:
+            logger.warning("Attempted to refresh metadata with empty IGDB ID")
             return None
         
+        logger.debug(f"Starting metadata refresh for IGDB ID {igdb_id}")
+        
         try:
-            return await self.get_game_by_id(igdb_id)
+            metadata = await self.get_game_by_id(igdb_id)
+            if metadata:
+                logger.debug(f"Successfully refreshed metadata for IGDB ID {igdb_id}: "
+                           f"title='{metadata.title}', developer='{metadata.developer}', "
+                           f"publisher='{metadata.publisher}', genre='{metadata.genre}'")
+            else:
+                logger.warning(f"No metadata returned for IGDB ID {igdb_id}")
+            return metadata
         except Exception as e:
-            logger.error(f"Failed to refresh metadata for IGDB ID {igdb_id}: {e}")
+            logger.error(f"Failed to refresh metadata for IGDB ID {igdb_id}: {e}", exc_info=True)
             return None
     
     async def populate_missing_metadata(self, current_metadata: GameMetadata, igdb_id: str) -> Optional[GameMetadata]:
