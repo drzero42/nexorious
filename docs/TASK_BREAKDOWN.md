@@ -457,7 +457,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Verify `get_game_by_id()` method still fetches time-to-beat data for actual game imports
 - [x] Update `IGDBGameCandidate` schema in `backend/nexorious/api/schemas/game.py` to make time-to-beat fields optional/nullable
 - [x] Verify `search_igdb` endpoint in `backend/nexorious/api/games.py` works without time-to-beat data
-- [ ] Ensure `import_from_igdb` endpoint still fetches complete time-to-beat data during game import
+- [x] Ensure `import_from_igdb` endpoint still fetches complete time-to-beat data during game import
 - [ ] Update API documentation to reflect time-to-beat data availability changes
 
 #### 7.2.2 Frontend Optimization Tasks
@@ -470,7 +470,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 7.2.3 Testing Tasks
 - [x] Update IGDB service tests to verify time-to-beat is NOT fetched during search operations
 - [x] Update API endpoint tests to ensure search results work without time-to-beat data
-- [ ] Verify import flow tests still fetch and validate time-to-beat data
+- [x] Verify import flow tests still fetch and validate time-to-beat data
 - [ ] Update frontend component tests to remove time-to-beat expectations from search results
 - [ ] Add performance tests to measure search response time improvements
 - [ ] Create integration tests to verify complete user workflow from search to import
