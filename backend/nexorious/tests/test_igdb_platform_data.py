@@ -7,7 +7,7 @@ import json
 from unittest.mock import AsyncMock
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
-from sqlalchemy.pool import StaticPool
+from sqlmodel.pool import StaticPool
 
 from nexorious.main import app
 from nexorious.core.database import get_session

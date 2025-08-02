@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
-from sqlalchemy.pool import StaticPool
+from sqlmodel.pool import StaticPool
 import os
 import tempfile
 import shutil
