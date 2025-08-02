@@ -13,6 +13,7 @@
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import type { Game } from '$lib/stores/games.svelte';
+  import type { Platform, Storefront } from '$lib/stores/platforms.svelte';
 
   let game: UserGame | null = null;
   let isLoading = true;
@@ -49,81 +50,22 @@
     estimated_playtime_hours: undefined
   };
 
+  // Platform management variables
+  let availablePlatforms: Platform[] = [];
+  let availableStorefronts: Storefront[] = [];
+  
   // PlatformSelector component data model
   let selectedPlatforms = new Set<string>();
   let platformStorefronts = new Map<string, Set<string>>();
   let platformStoreUrls = new Map<string, string>();
   let isAddingPlatform = false;
+  let isLoadingPlatforms = false;
   let isRemovingPlatform = false;
   let platformToRemove: { platformAssociationId: string; platformName: string; storefrontName: string } | null = null;
 
   // IGDB platform data state  
   let igdbPlatformNames: string[] = [];
 
-  // Platform management functions (copied from Add Game page for full functionality)
-  function togglePlatform(platformId: string) {
-    console.log('togglePlatform called with:', platformId, 'current selected:', selectedPlatforms);
-    
-    if (selectedPlatforms.has(platformId)) {
-      console.log('Removing platform:', platformId);
-      selectedPlatforms.delete(platformId);
-      platformStorefronts.delete(platformId);
-      platformStoreUrls.delete(platformId);
-    } else {
-      console.log('Adding platform:', platformId);
-      selectedPlatforms.add(platformId);
-      
-      // Create storefronts set and auto-select default if available
-      const storefronts = new Set<string>();
-      const platform = $platforms.platforms.find(p => p.id === platformId);
-      console.log('Found platform for auto-selection:', platform);
-      
-      if (platform?.default_storefront_id) {
-        console.log('Auto-selecting default storefront:', platform.default_storefront_id);
-        storefronts.add(platform.default_storefront_id);
-      }
-      
-      platformStorefronts.set(platformId, storefronts);
-    }
-    
-    // Trigger reactivity
-    selectedPlatforms = new Set(selectedPlatforms);
-    platformStorefronts = new Map(platformStorefronts);
-    platformStoreUrls = new Map(platformStoreUrls);
-    
-    console.log('Platform toggle complete. Selected platforms:', selectedPlatforms, 'storefronts:', platformStorefronts);
-  }
-
-  function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
-    console.log('toggleStorefrontForPlatform called:', { platformId, storefrontId });
-    
-    const storefronts = platformStorefronts.get(platformId) || new Set<string>();
-    if (storefronts.has(storefrontId)) {
-      console.log('Removing storefront:', storefrontId);
-      storefronts.delete(storefrontId);
-    } else {
-      console.log('Adding storefront:', storefrontId);
-      storefronts.add(storefrontId);
-    }
-    
-    platformStorefronts.set(platformId, storefronts);
-    platformStorefronts = new Map(platformStorefronts); // Trigger reactivity
-    
-    console.log('Updated storefronts for platform', platformId, ':', storefronts);
-  }
-
-  function setStoreUrlForPlatform(platformId: string, url: string) {
-    console.log('setStoreUrlForPlatform called:', { platformId, url });
-    
-    if (url.trim()) {
-      platformStoreUrls.set(platformId, url);
-    } else {
-      platformStoreUrls.delete(platformId);
-    }
-    platformStoreUrls = new Map(platformStoreUrls); // Trigger reactivity
-    
-    console.log('Updated store URLs:', platformStoreUrls);
-  }
 
   $: gameId = $page.params.id!;
 
@@ -179,12 +121,15 @@
   }
 
   async function loadPlatforms() {
-    // The PlatformSelector component handles platform loading internally
-    // through the platforms store, so we just need to ensure platforms are loaded
     try {
-      await platforms.fetchAll();
+      isLoadingPlatforms = true;
+      const data = await platforms.fetchActivePlatformsAndStorefronts();
+      availablePlatforms = data.platforms;
+      availableStorefronts = data.storefronts;
     } catch (error) {
       console.error('Failed to load platforms:', error);
+    } finally {
+      isLoadingPlatforms = false;
     }
   }
 
@@ -340,20 +285,20 @@
     }
   }
 
-  // PlatformSelector event handlers (fixed to actually handle the events!)
+  // PlatformSelector event handlers  
   function handlePlatformToggle(event: CustomEvent<{ platformId: string }>) {
-    console.log('handlePlatformToggle event received:', event.detail);
-    togglePlatform(event.detail.platformId);
+    // The PlatformSelector component handles the platform toggling logic internally
+    // We don't need to do anything here as the component uses bind: directives
   }
 
   function handleStorefrontToggle(event: CustomEvent<{ platformId: string; storefrontId: string }>) {
-    console.log('handleStorefrontToggle event received:', event.detail);
-    toggleStorefrontForPlatform(event.detail.platformId, event.detail.storefrontId);
+    // The PlatformSelector component handles the storefront toggling logic internally
+    // We don't need to do anything here as the component uses bind: directives
   }
 
   function handleStoreUrlChange(event: CustomEvent<{ platformId: string; url: string }>) {
-    console.log('handleStoreUrlChange event received:', event.detail);
-    setStoreUrlForPlatform(event.detail.platformId, event.detail.url);
+    // The PlatformSelector component handles the store URL changes internally
+    // We don't need to do anything here as the component uses bind: directives
   }
 
   function resetEditData() {
@@ -1178,6 +1123,145 @@
                     {/if}
                   </button>
                 </div>
+
+                              <!-- Platform Details (shown when selected) -->
+                              {#if newPlatformData.platform_id === platform.id}
+                                <div class="px-4 pb-4 bg-gray-50 border-t border-gray-200">
+                                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                                    <!-- Storefront Selection -->
+                                    <fieldset>
+                                      <legend class="block text-xs font-medium text-gray-700 mb-2">
+                                        Storefronts (optional)
+                                      </legend>
+                                      <div class="space-y-3 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
+                                        <!-- Primary storefronts (associated with platform) -->
+                                        {#if getPrimaryStorefrontsForPlatform(platform.id).length > 0}
+                                          <div>
+                                            <div class="flex items-center mb-2">
+                                              <svg class="h-3 w-3 text-primary-500 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.236 4.53L8.107 10.5a.75.75 0 00-1.214 1.029l2.5 3.5a.75.75 0 001.214 0l4-5.5z" clip-rule="evenodd" />
+                                              </svg>
+                                              <span class="text-xs font-medium text-primary-700">Recommended</span>
+                                            </div>
+                                            <div class="space-y-2 bg-primary-50 border border-primary-200 rounded-md p-2">
+                                              {#each getPrimaryStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
+                                                <label class="flex items-center cursor-pointer">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                                    on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                                    class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                  />
+                                                  <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
+                                                </label>
+                                              {/each}
+                                            </div>
+                                          </div>
+                                        {/if}
+                                        
+                                        <!-- Other storefronts (collapsed by default) -->
+                                        {#if getOtherStorefrontsForPlatform(platform.id).length > 0}
+                                          <div class="{getPrimaryStorefrontsForPlatform(platform.id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
+                                            <button
+                                              type="button"
+                                              on:click={() => toggleOtherStorefronts(platform.id)}
+                                              class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
+                                            >
+                                              <span class="flex items-center">
+                                                <svg class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
+                                                </svg>
+                                                Other storefronts ({getOtherStorefrontsForPlatform(platform.id).length})
+                                              </span>
+                                              <svg class="h-3 w-3 text-gray-400 transition-transform duration-200 {showOtherStorefronts.get(platform.id) ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                              </svg>
+                                            </button>
+                                            
+                                            {#if showOtherStorefronts.get(platform.id)}
+                                              <div class="mt-2 space-y-2 bg-gray-50 border border-gray-200 rounded-md p-2">
+                                                {#each getOtherStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
+                                                  <label class="flex items-center cursor-pointer">
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                                      on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                    <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
+                                                  </label>
+                                                {/each}
+                                              </div>
+                                            {/if}
+                                          </div>
+                                        {/if}
+                                        
+                                        {#if getPrimaryStorefrontsForPlatform(platform.id).length === 0 && getOtherStorefrontsForPlatform(platform.id).length === 0}
+                                          <p class="text-xs text-gray-500 italic">No storefronts available</p>
+                                        {/if}
+                                      </div>
+                                    </fieldset>
+
+                                    <!-- Store URL -->
+                                    <div>
+                                      <label for="store-url-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                        Store URL (optional)
+                                      </label>
+                                      <input
+                                        id="store-url-{platform.id}"
+                                        type="url"
+                                        bind:value={newPlatformData.store_url}
+                                        placeholder="https://store.example.com/game"
+                                        class="form-input text-sm py-1.5"
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <!-- Store Game ID - Full width below the grid -->
+                                  <div class="mt-3">
+                                    <label for="store-game-id-{platform.id}" class="block text-xs font-medium text-gray-700 mb-1">
+                                      Store Game ID (optional)
+                                    </label>
+                                    <input
+                                      id="store-game-id-{platform.id}"
+                                      type="text"
+                                      bind:value={newPlatformData.store_game_id}
+                                      placeholder="Game ID in the store"
+                                      class="form-input text-sm py-1.5"
+                                    />
+                                  </div>
+                                </div>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+
+                  </div>
+
+                  <!-- Add Platform Button -->
+                  <div class="mt-4">
+                    <button
+                      type="button"
+                      on:click={addPlatform}
+                      disabled={!newPlatformData.platform_id || isAddingPlatform}
+                      class="btn-secondary inline-flex items-center gap-x-2"
+                    >
+                      {#if isAddingPlatform}
+                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Adding...
+                      {:else}
+                        <svg class="-ml-0.5 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
+                        Add Platform
+                      {/if}
+                    </button>
+                  </div>
+                {/if}
               </div>
             </div>
 

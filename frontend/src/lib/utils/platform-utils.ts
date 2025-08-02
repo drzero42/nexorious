@@ -22,6 +22,12 @@ export function groupPlatformsByPlatform(platforms: UserGamePlatform[]): Grouped
   const platformMap = new Map<string, GroupedPlatform>();
 
   for (const userGamePlatform of platforms) {
+    // Defensive check: ensure platform exists and has required properties
+    if (!userGamePlatform.platform || !userGamePlatform.platform.id) {
+      console.warn('groupPlatformsByPlatform: Skipping invalid UserGamePlatform with missing platform data:', userGamePlatform);
+      continue;
+    }
+    
     const platformId = userGamePlatform.platform.id;
     
     if (!platformMap.has(platformId)) {

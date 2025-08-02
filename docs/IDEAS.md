@@ -22,3 +22,6 @@ When starting the backend, it should automatically run the database migrations.
 
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
+
+## Remove time to beat from IGDB search list
+When searching for games to add, time to beat is also shown. This requires extra API calls to IGDB for each game in the list. We don't need that information on the list. That information can be fetched when adding the game to the database.
