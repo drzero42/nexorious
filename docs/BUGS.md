@@ -3,3 +3,6 @@
 ## Hoverbox / tooltip for platform badges appear in weird places.
 The hoverbox does not appear where the platform badge that you hover on actually is.
 Suggested solution: Change the hoverbox to something simpler. Make the platform badge clickable to expand and show more info, rather than have it be a hoverbox/tooltip.
+
+## Platforms under "Other" don't have filtered storefronts
+On the edit game page and adding a platform, platforms under "Other" don't have the storefront filtering to hide non-associated storefronts under another "Other". Instead all storefronts are listed directly under the platform.
