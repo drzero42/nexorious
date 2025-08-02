@@ -177,7 +177,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Admin interface for setting default storefronts per platform (ADMIN-ONLY)
 - [x] Admin interface for managing platform-storefront associations using simple checkboxes/buttons
 - [x] User deletion with data handling options
-- [ ] Admin-only navigation indicators with clear visual distinction
 - [ ] System configuration management interface
 - [ ] Import/export job monitoring interface
 - [ ] Database maintenance tools interface
