@@ -14,9 +14,6 @@ During import of Darkadia games with non-interactive strategies, all games that 
 ## Platforms and storefront icons based on the real logos
 Platforms and storefronts all have logos. These should be used in the platform badges.
 
-## Database migrations automatically run at startup
-When starting the backend, it should automatically run the database migrations.
-
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
 

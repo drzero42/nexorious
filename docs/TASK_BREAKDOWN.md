@@ -380,6 +380,15 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Persistent volume claims
 - [ ] ConfigMap and Secret management
 
+### 5.2.1 Automatic Database Migration Implementation
+- [ ] Create `run_alembic_migrations()` function in `core/database.py`
+- [ ] Replace `create_db_and_tables()` call with `run_alembic_migrations()` in `main.py` startup
+- [ ] Add comprehensive error handling and logging for migration process
+- [ ] Test automatic migrations on both PostgreSQL and SQLite
+- [ ] Add migration testing to CI/CD pipeline
+- [ ] Update deployment documentation to reflect automatic migration behavior
+- [ ] Create rollback procedure documentation for failed migrations
+
 ### 5.3 Database Management
 - [ ] Automated migration system
 - [ ] Backup and restore procedures

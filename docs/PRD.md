@@ -527,6 +527,25 @@ To create the definitive self-hosted solution for personal game collection manag
   - Backup tools preserve all user data
   - Restore process is reliable and documented
 
+#### 5.2.1 Automatic Database Migrations
+**Priority**: P0 (Critical)
+- **User Story**: As a user deploying the application, I want database migrations to run automatically at startup so I don't need to manually execute migration commands
+- **Requirements**:
+  - Backend automatically runs pending Alembic migrations during application startup
+  - Migration process is logged with clear status messages
+  - Application startup fails gracefully if migrations fail
+  - Migration process works for both PostgreSQL and SQLite databases
+  - No manual intervention required for database schema updates
+- **Implementation Details**:
+  - Replace `create_db_and_tables()` with `run_alembic_migrations()` in startup lifespan
+  - Use Alembic's programmatic API to execute migrations
+  - Maintain backward compatibility with existing deployments
+- **Acceptance Criteria**:
+  - Fresh deployments automatically create database schema via migrations
+  - Existing deployments automatically apply new migrations on startup
+  - Migration failures prevent application startup with clear error messages
+  - No manual migration commands required for normal deployment workflow
+
 #### 5.3 Kubernetes Support
 **Priority**: P0 (Critical)
 - **User Story**: As a DevOps engineer, I want to deploy on Kubernetes so I can scale and manage the service in my cluster
