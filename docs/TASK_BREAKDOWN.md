@@ -333,7 +333,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Batch processing for large imports
 
 ### 2.4 IGDB Game Data Update System
-- [ ] Backend: Modify IGDB import process to automatically mark games as verified when imported from IGDB
+- [x] Backend: Modify IGDB import process to automatically mark games as verified when imported from IGDB
 - [ ] Backend: Update API permission system to restrict IGDB game metadata editing to admin users only
 - [ ] Backend: Create admin-only bulk IGDB refresh endpoint with filtering capabilities
 - [ ] Frontend: Add visual indicators (badges/icons) for IGDB-verified games in collection views
