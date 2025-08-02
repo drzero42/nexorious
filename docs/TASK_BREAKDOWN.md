@@ -475,7 +475,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Create integration tests to verify complete user workflow from search to import
 
 #### 7.2.4 Documentation Tasks
-- [ ] Update API documentation for search endpoints to reflect time-to-beat data changes
+- [x] Update API documentation for search endpoints to reflect time-to-beat data changes
 - [ ] Document performance improvements and expected response time gains
 - [ ] Update user documentation if necessary to explain time-to-beat data availability
 - [ ] Add troubleshooting guide for any related performance issues

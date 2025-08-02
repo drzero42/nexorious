@@ -113,17 +113,21 @@ class IGDBSearchRequest(BaseModel):
 
 
 class IGDBGameCandidate(BaseModel):
-    """Schema for IGDB game search candidate."""
-    igdb_id: str
-    igdb_slug: Optional[str]
-    title: str
-    release_date: Optional[date]
-    cover_art_url: Optional[str]
-    description: Optional[str]
-    platforms: List[str]
-    howlongtobeat_main: Optional[int] = Field(None, description="Main story hours (null in search results for performance, populated during import)")
-    howlongtobeat_extra: Optional[int] = Field(None, description="Main + extras hours (null in search results for performance, populated during import)")
-    howlongtobeat_completionist: Optional[int] = Field(None, description="Completionist hours (null in search results for performance, populated during import)")
+    """Schema for IGDB game search candidate.
+    
+    Note: Time-to-beat fields are null in search responses for performance optimization.
+    Complete metadata including time-to-beat data is fetched during game import.
+    """
+    igdb_id: str = Field(..., description="IGDB unique identifier for the game")
+    igdb_slug: Optional[str] = Field(None, description="IGDB URL slug for generating game links")
+    title: str = Field(..., description="Game title from IGDB")
+    release_date: Optional[date] = Field(None, description="Game release date")
+    cover_art_url: Optional[str] = Field(None, description="URL to game cover art image")
+    description: Optional[str] = Field(None, description="Game description/summary")
+    platforms: List[str] = Field(default_factory=list, description="List of platform names where the game is available")
+    howlongtobeat_main: Optional[int] = Field(None, description="Main story completion time in hours (null in search results, populated during import for performance)")
+    howlongtobeat_extra: Optional[int] = Field(None, description="Main story + extras completion time in hours (null in search results, populated during import for performance)")
+    howlongtobeat_completionist: Optional[int] = Field(None, description="Completionist time in hours (null in search results, populated during import for performance)")
 
 
 class IGDBSearchResponse(BaseModel):
