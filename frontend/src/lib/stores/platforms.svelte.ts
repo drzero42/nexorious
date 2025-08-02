@@ -449,6 +449,68 @@ function createPlatformsStore() {
       }
     },
 
+    // Get platform-storefront associations (admin only)
+    getPlatformStorefronts: async (platformId: string) => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts`);
+        const data = await response.json();
+        return data.storefronts;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch platform storefronts';
+        update(state => ({ ...state, error: errorMessage }));
+        throw error;
+      }
+    },
+
+    // Create platform-storefront association (admin only)
+    createPlatformStorefrontAssociation: async (platformId: string, storefrontId: string) => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`, {
+          method: 'POST',
+        });
+        
+        const result = await response.json();
+        
+        // Note: Platform data will refresh automatically on next load
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create platform-storefront association';
+        update(state => ({ ...state, error: errorMessage }));
+        throw error;
+      }
+    },
+
+    // Remove platform-storefront association (admin only)
+    deletePlatformStorefrontAssociation: async (platformId: string, storefrontId: string) => {
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`, {
+          method: 'DELETE',
+        });
+        
+        const result = await response.json();
+        
+        // Note: Platform data will refresh automatically on next load
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to remove platform-storefront association';
+        update(state => ({ ...state, error: errorMessage }));
+        throw error;
+      }
+    },
 
     // Clear error
     clearError: () => {

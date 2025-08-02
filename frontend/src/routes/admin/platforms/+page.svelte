@@ -6,9 +6,13 @@
   import type { Platform, Storefront, PlatformCreateRequest, StorefrontCreateRequest, PlatformUpdateRequest, StorefrontUpdateRequest } from '$lib/stores/platforms.svelte';
 
   let isLoading = true;
-  let activeTab: 'platforms' | 'storefronts' = 'platforms';
+  let activeTab: 'platforms' | 'storefronts' | 'associations' = 'platforms';
   let searchQuery = '';
   let statusFilter: 'all' | 'active' | 'inactive' = 'all';
+  
+  // Association management state
+  let associationsLoading = false;
+  let platformAssociations: Map<string, Set<string>> = new Map();
   
   // Platform form state
   let showCreatePlatformForm = false;
@@ -245,6 +249,63 @@
     });
   }
 
+  // Load platform-storefront associations
+  async function loadAssociations() {
+    associationsLoading = true;
+    
+    try {
+      // Clear existing associations
+      platformAssociations.clear();
+      
+      // Load associations for each platform
+      for (const platform of filteredPlatforms) {
+        const storefronts = await platforms.getPlatformStorefronts(platform.id);
+        const storefrontIds = new Set<string>(storefronts.map((s: Storefront) => s.id));
+        platformAssociations.set(platform.id, storefrontIds);
+      }
+      
+      // Trigger reactivity
+      platformAssociations = new Map(platformAssociations);
+    } catch (err) {
+      console.error('Failed to load associations:', err);
+    } finally {
+      associationsLoading = false;
+    }
+  }
+
+  // Handle association checkbox change
+  async function handleAssociationChange(platformId: string, storefrontId: string, isChecked: boolean) {
+    try {
+      if (isChecked) {
+        await platforms.createPlatformStorefrontAssociation(platformId, storefrontId);
+        
+        // Update local state
+        const associations = platformAssociations.get(platformId) || new Set();
+        associations.add(storefrontId);
+        platformAssociations.set(platformId, associations);
+      } else {
+        await platforms.deletePlatformStorefrontAssociation(platformId, storefrontId);
+        
+        // Update local state
+        const associations = platformAssociations.get(platformId) || new Set();
+        associations.delete(storefrontId);
+        platformAssociations.set(platformId, associations);
+      }
+      
+      // Trigger reactivity
+      platformAssociations = new Map(platformAssociations);
+    } catch (err) {
+      console.error('Failed to update association:', err);
+      // Reload associations to ensure UI is in sync
+      await loadAssociations();
+    }
+  }
+
+  // Check if platform has storefront association
+  function hasAssociation(platformId: string, storefrontId: string): boolean {
+    return platformAssociations.get(platformId)?.has(storefrontId) || false;
+  }
+
 </script>
 
 <RouteGuard requireAdmin={true}>
@@ -281,6 +342,17 @@
         >
           <span class="mr-2">🏪</span>
           Storefronts
+        </button>
+        <button
+          on:click={() => { activeTab = 'associations'; loadAssociations(); }}
+          class={`py-2 px-1 border-b-2 font-medium text-sm ${
+            activeTab === 'associations'
+              ? 'border-primary-500 text-primary-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          }`}
+        >
+          <span class="mr-2">🔗</span>
+          Associations
         </button>
       </nav>
     </div>
@@ -333,15 +405,17 @@
               <option value="inactive">Inactive Only</option>
             </select>
           </div>
-          <div>
-            <button
-              on:click={() => activeTab === 'platforms' ? (showCreatePlatformForm = true) : (showCreateStorefrontForm = true)}
-              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              <span class="mr-2">+</span>
-              Add {activeTab === 'platforms' ? 'Platform' : 'Storefront'}
-            </button>
-          </div>
+          {#if activeTab !== 'associations'}
+            <div>
+              <button
+                on:click={() => activeTab === 'platforms' ? (showCreatePlatformForm = true) : (showCreateStorefrontForm = true)}
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                <span class="mr-2">+</span>
+                Add {activeTab === 'platforms' ? 'Platform' : 'Storefront'}
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -505,6 +579,91 @@
                     {/each}
                   </tbody>
                 </table>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {:else if activeTab === 'associations'}
+        <!-- Platform-Storefront Associations Management -->
+        <div class="bg-white shadow rounded-lg">
+          <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="text-lg leading-6 font-medium text-gray-900">Platform-Storefront Associations</h3>
+              <button
+                on:click={loadAssociations}
+                disabled={associationsLoading}
+                class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+              >
+                {#if associationsLoading}
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                {/if}
+                Refresh
+              </button>
+            </div>
+            
+            {#if associationsLoading}
+              <div class="flex justify-center py-12">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" role="status" aria-label="Loading"></div>
+              </div>
+            {:else if filteredPlatforms.length === 0 || filteredStorefronts.length === 0}
+              <div class="text-center py-12">
+                <div class="text-gray-400 text-lg mb-2">🔗</div>
+                <p class="text-gray-500">No platforms or storefronts available</p>
+              </div>
+            {:else}
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-300">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50">
+                        Platform
+                      </th>
+                      {#each filteredStorefronts as storefront}
+                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                          <div class="flex flex-col items-center">
+                            <span class="mb-1">{storefront.display_name}</span>
+                            <span class={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              storefront.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {storefront.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        </th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    {#each filteredPlatforms as platform}
+                      <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
+                          <div class="flex flex-col">
+                            <span>{platform.display_name}</span>
+                            <span class={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${
+                              platform.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {platform.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        </td>
+                        {#each filteredStorefronts as storefront}
+                          <td class="px-3 py-4 whitespace-nowrap text-center">
+                            <input
+                              type="checkbox"
+                              checked={hasAssociation(platform.id, storefront.id)}
+                              on:change={(e) => handleAssociationChange(platform.id, storefront.id, e.currentTarget.checked)}
+                              class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
+                              disabled={!platform.is_active || !storefront.is_active}
+                            />
+                          </td>
+                        {/each}
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              
+              <div class="mt-4 text-sm text-gray-500">
+                <p><strong>Note:</strong> Checkboxes are disabled for inactive platforms or storefronts. Only active items can have associations.</p>
               </div>
             {/if}
           </div>
