@@ -472,7 +472,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update API endpoint tests to ensure search results work without time-to-beat data
 - [x] Verify import flow tests still fetch and validate time-to-beat data
 - [x] Update frontend component tests to remove time-to-beat expectations from search results
-- [ ] Add performance tests to measure search response time improvements
 - [ ] Create integration tests to verify complete user workflow from search to import
 
 #### 7.2.4 Documentation Tasks
