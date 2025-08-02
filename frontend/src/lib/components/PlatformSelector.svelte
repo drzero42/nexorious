@@ -172,31 +172,43 @@
                         <legend class="block text-xs font-medium text-gray-700 mb-2">
                           Storefronts (optional)
                         </legend>
-                        <div class="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
+                        <div class="space-y-3 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2 bg-white">
                           <!-- Primary storefronts (associated with platform) -->
-                          {#each getPrimaryStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
-                            <label class="flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
-                                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                              />
-                              <span class="ml-2 text-sm text-gray-700">{storefront.display_name}</span>
-                            </label>
-                          {/each}
+                          {#if getPrimaryStorefrontsForPlatform(platform.id).length > 0}
+                            <div>
+                              <div class="flex items-center mb-2">
+                                <svg class="h-3 w-3 text-primary-500 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.236 4.53L8.107 10.5a.75.75 0 00-1.214 1.029l2.5 3.5a.75.75 0 001.214 0l4-5.5z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-xs font-medium text-primary-700">Recommended</span>
+                              </div>
+                              <div class="space-y-2 bg-primary-50 border border-primary-200 rounded-md p-2">
+                                {#each getPrimaryStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
+                                  <label class="flex items-center cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
+                                      on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                    />
+                                    <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
+                                  </label>
+                                {/each}
+                              </div>
+                            </div>
+                          {/if}
                           
                           <!-- Other storefronts (collapsed by default) -->
                           {#if getOtherStorefrontsForPlatform(platform.id).length > 0}
-                            <div class="border-t border-gray-200 pt-2 mt-2">
+                            <div class="{getPrimaryStorefrontsForPlatform(platform.id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
                               <button
                                 type="button"
                                 on:click={() => toggleOtherStorefronts(platform.id)}
-                                class="flex items-center justify-between w-full text-xs text-gray-600 hover:text-gray-800 transition-colors duration-200"
+                                class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
                               >
                                 <span class="flex items-center">
                                   <svg class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14-7l-7 7-7-7m14 14l-7-7-7 7" />
                                   </svg>
                                   Other storefronts ({getOtherStorefrontsForPlatform(platform.id).length})
                                 </span>
@@ -206,7 +218,7 @@
                               </button>
                               
                               {#if showOtherStorefronts.get(platform.id)}
-                                <div class="mt-2 space-y-2">
+                                <div class="mt-2 space-y-2 bg-gray-50 border border-gray-200 rounded-md p-2">
                                   {#each getOtherStorefrontsForPlatform(platform.id) as storefront (storefront.id)}
                                     <label class="flex items-center cursor-pointer">
                                       <input
@@ -215,7 +227,7 @@
                                         on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                         class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                       />
-                                      <span class="ml-2 text-sm text-gray-500">{storefront.display_name}</span>
+                                      <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
                                     </label>
                                   {/each}
                                 </div>
