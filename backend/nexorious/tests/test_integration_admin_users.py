@@ -418,7 +418,7 @@ class TestAdminDeleteUser:
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["message"] == "User deleted successfully"
+        assert data["message"] == "User and all associated data deleted successfully"
         
         # Refresh session to see changes made by the API
         session.expire_all()

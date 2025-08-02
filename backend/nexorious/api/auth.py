@@ -23,6 +23,10 @@ from ..core.security import (
 )
 from ..core.config import settings
 from ..models.user import User, UserSession
+from ..models.user_game import UserGame
+from ..models.tag import Tag
+from ..models.wishlist import Wishlist
+from ..models.import_job import ImportJob
 from ..api.schemas.auth import (
     UserRegisterRequest,
     UserLoginRequest,
@@ -39,7 +43,8 @@ from ..api.schemas.auth import (
     AdminUserCreateRequest,
     AdminUserUpdateRequest,
     AdminPasswordResetRequest,
-    AdminUserResponse
+    AdminUserResponse,
+    UserDeletionImpactResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -592,6 +597,46 @@ async def admin_reset_user_password(
     return SuccessResponse(message="Password reset successfully. User will need to log in again.")
 
 
+@router.get("/admin/users/{user_id}/deletion-impact", response_model=UserDeletionImpactResponse)
+async def admin_get_user_deletion_impact(
+    user_id: str,
+    current_admin: Annotated[User, Depends(get_current_admin_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Admin endpoint to preview the impact of deleting a user."""
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent admin from getting deletion impact for themselves
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    # Count user's data
+    total_games = len(session.exec(select(UserGame).where(UserGame.user_id == user_id)).all())
+    total_tags = len(session.exec(select(Tag).where(Tag.user_id == user_id)).all())
+    total_wishlist_items = len(session.exec(select(Wishlist).where(Wishlist.user_id == user_id)).all())
+    total_import_jobs = len(session.exec(select(ImportJob).where(ImportJob.user_id == user_id)).all())
+    total_sessions = len(session.exec(select(UserSession).where(UserSession.user_id == user_id)).all())
+    
+    return UserDeletionImpactResponse(
+        user_id=user.id,
+        username=user.username,
+        total_games=total_games,
+        total_tags=total_tags,
+        total_wishlist_items=total_wishlist_items,
+        total_import_jobs=total_import_jobs,
+        total_sessions=total_sessions
+    )
+
+
 @router.delete("/admin/users/{user_id}", response_model=SuccessResponse)
 async def admin_delete_user(
     user_id: str,
@@ -615,6 +660,27 @@ async def admin_delete_user(
         )
     
     # Manually delete related records first (since SQLModel doesn't handle cascade)
+    
+    # Delete user games (collection entries)
+    user_games = session.exec(select(UserGame).where(UserGame.user_id == user_id)).all()
+    for user_game in user_games:
+        session.delete(user_game)
+    
+    # Delete user tags
+    user_tags = session.exec(select(Tag).where(Tag.user_id == user_id)).all()
+    for tag in user_tags:
+        session.delete(tag)
+    
+    # Delete wishlist items
+    wishlist_items = session.exec(select(Wishlist).where(Wishlist.user_id == user_id)).all()
+    for wishlist_item in wishlist_items:
+        session.delete(wishlist_item)
+    
+    # Delete import jobs
+    import_jobs = session.exec(select(ImportJob).where(ImportJob.user_id == user_id)).all()
+    for import_job in import_jobs:
+        session.delete(import_job)
+    
     # Delete user sessions
     user_sessions = session.exec(select(UserSession).where(UserSession.user_id == user_id)).all()
     for user_session in user_sessions:
@@ -624,4 +690,4 @@ async def admin_delete_user(
     session.delete(user)
     session.commit()
     
-    return SuccessResponse(message="User deleted successfully")
+    return SuccessResponse(message="User and all associated data deleted successfully")
