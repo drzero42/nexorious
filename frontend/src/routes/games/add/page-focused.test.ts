@@ -71,8 +71,7 @@ describe('Game Addition Page - PR Focused Tests', () => {
             release_date: '2024-01-01',
             cover_art_url: 'https://example.com/cover.jpg',
             description: 'Test game description',
-            platforms: ['PC'],
-            howlongtobeat_main: 15
+            platforms: ['PC']
           }
         ],
         total: 1

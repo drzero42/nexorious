@@ -91,8 +91,7 @@ describe('Game Addition Page', () => {
           release_date: '2024-03-01',
           cover_art_url: 'https://example.com/cover2.jpg',
           description: 'Another test game',
-          platforms: ['PC'],
-          howlongtobeat_main: 16  // Realistic completion time in hours
+          platforms: ['PC']
         }
       ];
 
@@ -574,8 +573,7 @@ describe('Game Addition Page', () => {
           release_date: '2024-03-01',
           cover_art_url: 'https://example.com/cover2.jpg',
           description: 'Another test game',
-          platforms: ['PC'],
-          howlongtobeat_main: 16
+          platforms: ['PC']
         },
         {
           igdb_id: 'igdb-789',
@@ -583,8 +581,7 @@ describe('Game Addition Page', () => {
           release_date: '2023-05-15',
           cover_art_url: 'https://example.com/cover3.jpg',
           description: 'A third test game',
-          platforms: ['PlayStation 5'],
-          howlongtobeat_main: 24
+          platforms: ['PlayStation 5']
         }
       ];
 

@@ -49,10 +49,8 @@ export const mockIGDBCandidate: IGDBGameCandidate = {
   release_date: '2024-01-01',
   cover_art_url: 'https://example.com/igdb-cover.jpg',
   description: 'A test game from IGDB',
-  platforms: ['PC', 'PlayStation 5'],
-  howlongtobeat_main: 12,  // Main story completion time
-  howlongtobeat_extra: 20,  // Main + extras completion time
-  howlongtobeat_completionist: 35  // Completionist time
+  platforms: ['PC', 'PlayStation 5']
+  // Note: time-to-beat fields removed from search results for performance optimization
 };
 
 export const mockIGDBCandidates: IGDBGameCandidate[] = [
