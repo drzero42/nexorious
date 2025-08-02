@@ -14,3 +14,6 @@ During import of Darkadia games with non-interactive strategies, all games that 
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
 
+## Remove manually added games
+To simplify the system it should only be possible to add games from IGDB. Manually adding games can be a feature in the future if the need seems to be there. It should not be planned for a future version at this point.
+The IGDB verified and all of that should be ripped out again.
