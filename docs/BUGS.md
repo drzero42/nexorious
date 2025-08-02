@@ -6,3 +6,6 @@ Suggested solution: Change the hoverbox to something simpler. Make the platform 
 
 ## Looking glass in the search field
 The search field has a looking glass in the left hand side. This does not go away when you start typing, which makes it difficult to see the first couple of letters you type.
+
+## Game details page can not be reloaded
+When you click a game in your collection it takes you to the game details page. If you refresh the browser it shows a page with the text "Game not found" and "The requested game could not be found in your collection."
