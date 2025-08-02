@@ -456,7 +456,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update `search_games()` to return `GameMetadata` objects with null time-to-beat fields (hastily, normally, completely)
 - [x] Verify `get_game_by_id()` method still fetches time-to-beat data for actual game imports
 - [x] Update `IGDBGameCandidate` schema in `backend/nexorious/api/schemas/game.py` to make time-to-beat fields optional/nullable
-- [ ] Verify `search_igdb` endpoint in `backend/nexorious/api/games.py` works without time-to-beat data
+- [x] Verify `search_igdb` endpoint in `backend/nexorious/api/games.py` works without time-to-beat data
 - [ ] Ensure `import_from_igdb` endpoint still fetches complete time-to-beat data during game import
 - [ ] Update API documentation to reflect time-to-beat data availability changes
 
