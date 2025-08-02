@@ -462,7 +462,13 @@ async def search_igdb(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Search for games in IGDB database with fuzzy matching."""
+    """Search for games in IGDB database with fuzzy matching.
+    
+    Note: For performance optimization, time-to-beat data (howlongtobeat_main, 
+    howlongtobeat_extra, howlongtobeat_completionist) is not fetched during search.
+    Complete time-to-beat data will be retrieved during game import via the 
+    /games/igdb-import endpoint.
+    """
     
     logger.info(f"IGDB search request from user {current_user.username}: query='{search_data.query}', limit={search_data.limit}")
     logger.debug(f"Full search request: {search_data.model_dump()}")

@@ -458,7 +458,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update `IGDBGameCandidate` schema in `backend/nexorious/api/schemas/game.py` to make time-to-beat fields optional/nullable
 - [x] Verify `search_igdb` endpoint in `backend/nexorious/api/games.py` works without time-to-beat data
 - [x] Ensure `import_from_igdb` endpoint still fetches complete time-to-beat data during game import
-- [ ] Update API documentation to reflect time-to-beat data availability changes
+- [x] Update API documentation to reflect time-to-beat data availability changes
 
 #### 7.2.2 Frontend Optimization Tasks
 - [x] Remove time-to-beat display from search result cards in `frontend/src/lib/components/GameConfirmStep.svelte` (line 139)
