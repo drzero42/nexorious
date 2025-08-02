@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { admin, auth } from '$lib/stores';
   import { RouteGuard } from '$lib/components';
-  import type { AdminUser } from '$lib/stores/admin.svelte';
+  import type { AdminUser, UserDeletionImpact } from '$lib/stores/admin.svelte';
 
   // Get user ID from route params
   $: userId = $page.params.id;
@@ -14,7 +14,11 @@
   let isSaving = false;
   let error: string | null = null;
   let successMessage: string | null = null;
-  let showDeleteConfirmation = false;
+  let showDeleteDialog = false;
+  let deletionStep = 1; // 1: impact preview, 2: confirmation
+  let deletionImpact: UserDeletionImpact | null = null;
+  let isDeletionImpactLoading = false;
+  let usernameConfirmation = '';
   let showPasswordResetConfirmation = false;
   let newPassword = '';
 
@@ -147,8 +151,39 @@
     }
   }
 
-  async function handleDelete() {
+  async function startDeletion() {
     if (!user) return;
+
+    showDeleteDialog = true;
+    deletionStep = 1;
+    usernameConfirmation = '';
+    
+    try {
+      isDeletionImpactLoading = true;
+      deletionImpact = await admin.getUserDeletionImpact(user.id);
+    } catch (err) {
+      console.error('Failed to get deletion impact:', err);
+      error = err instanceof Error ? err.message : 'Failed to get deletion impact';
+      showDeleteDialog = false;
+    } finally {
+      isDeletionImpactLoading = false;
+    }
+  }
+
+  function goToConfirmation() {
+    deletionStep = 2;
+  }
+
+  function cancelDeletion() {
+    showDeleteDialog = false;
+    deletionStep = 1;
+    deletionImpact = null;
+    usernameConfirmation = '';
+    error = null;
+  }
+
+  async function confirmDeletion() {
+    if (!user || !deletionImpact || usernameConfirmation !== user.username) return;
 
     try {
       isSaving = true;
@@ -446,44 +481,16 @@
               <div class="border border-red-200 rounded-lg p-4">
                 <h4 class="text-sm font-medium text-red-900 mb-2">Delete User</h4>
                 <p class="text-sm text-red-600 mb-4">
-                  Permanently delete this user account. This action cannot be undone and will remove all associated data.
+                  Permanently delete this user account and all associated data. This action cannot be undone.
                 </p>
                 
-                {#if showDeleteConfirmation}
-                  <div class="space-y-3">
-                    <p class="text-sm font-medium text-red-900">
-                      Are you sure you want to delete user "{user.username}"?
-                    </p>
-                    <div class="flex space-x-3">
-                      <button
-                        on:click={handleDelete}
-                        disabled={isSaving}
-                        class="inline-flex justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {#if isSaving}
-                          Deleting...
-                        {:else}
-                          Yes, Delete User
-                        {/if}
-                      </button>
-                      <button
-                        on:click={() => { showDeleteConfirmation = false; }}
-                        disabled={isSaving}
-                        class="inline-flex justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                {:else}
-                  <button
-                    on:click={() => { showDeleteConfirmation = true; }}
-                    disabled={isSaving}
-                    class="inline-flex justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50"
-                  >
-                    Delete User
-                  </button>
-                {/if}
+                <button
+                  on:click={startDeletion}
+                  disabled={isSaving}
+                  class="inline-flex justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50"
+                >
+                  Delete User
+                </button>
               </div>
             {/if}
           </div>
@@ -509,4 +516,151 @@
       </div>
     {/if}
   </div>
+
+  <!-- Delete User Dialog -->
+  {#if showDeleteDialog}
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-50" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+            
+            {#if deletionStep === 1}
+              <!-- Step 1: Data Impact Preview -->
+              <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                <div class="sm:flex sm:items-start">
+                  <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                  </div>
+                  <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                    <h3 class="text-lg font-semibold leading-6 text-gray-900" id="modal-title">
+                      Delete User: {user?.username}
+                    </h3>
+                    
+                    {#if isDeletionImpactLoading}
+                      <div class="mt-4 flex justify-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                      </div>
+                    {:else if deletionImpact}
+                      <div class="mt-4">
+                        <p class="text-sm text-gray-500 mb-4">
+                          This action will permanently delete the following data:
+                        </p>
+                        
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+                          <div class="flex justify-between">
+                            <span class="text-sm text-gray-700">Games in collection:</span>
+                            <span class="text-sm font-medium text-red-900">{deletionImpact.total_games}</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span class="text-sm text-gray-700">User-created tags:</span>
+                            <span class="text-sm font-medium text-red-900">{deletionImpact.total_tags}</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span class="text-sm text-gray-700">Wishlist items:</span>
+                            <span class="text-sm font-medium text-red-900">{deletionImpact.total_wishlist_items}</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span class="text-sm text-gray-700">Import jobs:</span>
+                            <span class="text-sm font-medium text-red-900">{deletionImpact.total_import_jobs}</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span class="text-sm text-gray-700">Active sessions:</span>
+                            <span class="text-sm font-medium text-red-900">{deletionImpact.total_sessions}</span>
+                          </div>
+                        </div>
+                        
+                        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <p class="text-sm text-yellow-800">
+                            <strong>Warning:</strong> {deletionImpact.warning}
+                          </p>
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+              <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                <button
+                  type="button"
+                  on:click={goToConfirmation}
+                  disabled={isDeletionImpactLoading || !deletionImpact}
+                  class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50"
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  on:click={cancelDeletion}
+                  class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                >
+                  Cancel
+                </button>
+              </div>
+            
+            {:else if deletionStep === 2}
+              <!-- Step 2: Final Confirmation -->
+              <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                <div class="sm:flex sm:items-start">
+                  <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                  </div>
+                  <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                    <h3 class="text-lg font-semibold leading-6 text-gray-900">
+                      Final Confirmation
+                    </h3>
+                    
+                    <div class="mt-4">
+                      <p class="text-sm text-gray-500 mb-4">
+                        To confirm deletion, please type the username <strong>{user?.username}</strong> in the field below:
+                      </p>
+                      
+                      <input
+                        type="text"
+                        bind:value={usernameConfirmation}
+                        placeholder="Enter username to confirm"
+                        class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-red-600 sm:text-sm sm:leading-6"
+                      />
+                      
+                      <div class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p class="text-sm text-red-800">
+                          This will permanently delete all user data and cannot be undone.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                <button
+                  type="button"
+                  on:click={confirmDeletion}
+                  disabled={isSaving || usernameConfirmation !== user?.username}
+                  class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {#if isSaving}
+                    Deleting...
+                  {:else}
+                    Delete User
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  on:click={() => deletionStep = 1}
+                  disabled={isSaving}
+                  class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
+                >
+                  Back
+                </button>
+              </div>
+            {/if}
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </RouteGuard>

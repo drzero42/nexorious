@@ -113,3 +113,15 @@ class AdminUserResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserDeletionImpactResponse(BaseModel):
+    """Response schema for user deletion impact preview."""
+    user_id: str = Field(..., description="User ID")
+    username: str = Field(..., description="Username")
+    total_games: int = Field(..., description="Number of games in user's collection")
+    total_tags: int = Field(..., description="Number of user-created tags")
+    total_wishlist_items: int = Field(..., description="Number of items in user's wishlist")
+    total_import_jobs: int = Field(..., description="Number of import jobs")
+    total_sessions: int = Field(..., description="Number of active sessions")
+    warning: str = Field(default="All user data will be permanently deleted and cannot be recovered", description="Warning message")
