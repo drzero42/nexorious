@@ -372,6 +372,38 @@ To create the definitive self-hosted solution for personal game collection manag
   - IGDB links are functional using game slug while displaying game ID in frontend
   - Game slug is retrieved and stored during metadata population
 
+#### 2.4 IGDB Game Data Update System
+**Priority**: P1 (High)
+- **User Story**: As a user, I want games imported from IGDB to automatically stay up-to-date with the latest information while maintaining data integrity, and as an admin, I want to control when and how this data is refreshed across the system
+- **Backend Requirements**:
+  - Games with IGDB IDs are automatically marked as verified during import process
+  - Verified IGDB games have read-only metadata for regular users to maintain data integrity
+  - Admin-only interface for triggering IGDB data updates on individual games
+  - Batch update capabilities for multiple IGDB games with filtering options
+  - Manual refresh functionality that preserves user-added personal data (notes, ratings, progress)
+  - Permission system that distinguishes between IGDB metadata and user personal data
+  - API endpoints for bulk IGDB refresh operations (admin-only access)
+- **Frontend Requirements**:
+  - Visual indicators clearly showing IGDB-verified games in collection views
+  - Admin-only "Update from IGDB" buttons and interfaces on verified games
+  - Bulk update interface for admins to refresh multiple games simultaneously
+  - Clear visual distinction between user-editable fields and IGDB-locked metadata fields
+  - Game editing forms that disable metadata fields for verified games (non-admin users)
+  - Preservation of editability for personal data fields (notes, ratings, progress tracking)
+- **Data Protection Requirements**:
+  - IGDB metadata updates never overwrite user personal data
+  - User progress, ratings, notes, and custom tags remain fully editable
+  - Platform and storefront ownership associations remain user-controlled
+  - Clear separation between official IGDB data and user-generated content
+- **Acceptance Criteria**:
+  - IGDB games are automatically verified and protected from unauthorized metadata edits
+  - Only administrators can update IGDB game metadata through refresh operations
+  - User personal data (notes, ratings, progress) remains fully editable for all users
+  - Batch update operations work efficiently for large collections without data loss
+  - Visual indicators clearly communicate data source and editability status
+  - Permission system prevents regular users from modifying verified game metadata
+  - IGDB data updates maintain referential integrity and do not break existing user associations
+
 ### Phase 3: Discovery & Organization
 
 #### 3.1 Advanced Search & Filtering
