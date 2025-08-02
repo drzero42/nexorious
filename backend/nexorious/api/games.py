@@ -464,10 +464,15 @@ async def search_igdb(
 ):
     """Search for games in IGDB database with fuzzy matching.
     
-    Note: For performance optimization, time-to-beat data (howlongtobeat_main, 
-    howlongtobeat_extra, howlongtobeat_completionist) is not fetched during search.
-    Complete time-to-beat data will be retrieved during game import via the 
-    /games/igdb-import endpoint.
+    **Performance Optimization**: For faster search response times, this endpoint does not 
+    fetch time-to-beat data (howlongtobeat_main, howlongtobeat_extra, howlongtobeat_completionist) 
+    from the external API. These fields will be null in the response.
+    
+    **Complete Metadata**: Full game metadata including time-to-beat information is retrieved 
+    during actual game import via the POST /games/igdb-import endpoint.
+    
+    This optimization significantly reduces search latency while maintaining fast user experience 
+    for browsing game candidates before making a selection.
     """
     
     logger.info(f"IGDB search request from user {current_user.username}: query='{search_data.query}', limit={search_data.limit}")
@@ -546,7 +551,18 @@ async def import_from_igdb(
     igdb_service: IGDBService = Depends(get_igdb_service_dependency),
     download_cover_art: bool = Query(default=True, description="Automatically download cover art during import")
 ):
-    """Import a game from IGDB with accepted metadata."""
+    """Import a game from IGDB with complete metadata including time-to-beat data.
+    
+    **Complete Metadata Fetch**: Unlike the search endpoint, this import operation fetches 
+    full game metadata from IGDB including time-to-beat information (howlongtobeat_main, 
+    howlongtobeat_extra, howlongtobeat_completionist) for complete game records.
+    
+    **Cover Art Download**: Optionally downloads and stores cover art locally during import 
+    (controlled by download_cover_art parameter, defaults to True).
+    
+    Use this endpoint after selecting a game candidate from the search results to create 
+    a complete game entry in your collection.
+    """
     
     try:
         # Retrieve full game metadata from IGDB
