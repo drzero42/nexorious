@@ -9,6 +9,7 @@ export { default as ProgressBar } from './ProgressBar.svelte';
 export { default as GameProgressCard } from './GameProgressCard.svelte';
 export { default as ProgressStatistics } from './ProgressStatistics.svelte';
 export { default as PlatformBadges } from './PlatformBadges.svelte';
+export { default as IGDBVerificationBadge } from './IGDBVerificationBadge.svelte';
 export { default as Portal } from './Portal.svelte';
 
 // Game addition workflow components

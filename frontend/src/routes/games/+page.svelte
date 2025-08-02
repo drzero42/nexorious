@@ -2,7 +2,7 @@
  import { userGames, platforms, ui } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
- import { RouteGuard, Pagination, PlatformBadges } from '$lib/components';
+ import { RouteGuard, Pagination, PlatformBadges, IGDBVerificationBadge } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
  import { PlayStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest } from '$lib/stores/user-games.svelte';
@@ -710,14 +710,20 @@ async function confirmBulkDelete() {
         </span>
        </div>
 
-       <!-- Loved indicator -->
-       {#if userGame.is_loved}
-        <div class="absolute top-2 right-2">
+       <!-- Top-right indicators -->
+       <div class="absolute top-2 right-2 flex items-center space-x-1">
+        <!-- IGDB Verification Badge -->
+        {#if userGame.game.is_verified}
+         <IGDBVerificationBadge isVerified={true} size="sm" />
+        {/if}
+        
+        <!-- Loved indicator -->
+        {#if userGame.is_loved}
          <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600">
           ♥
          </span>
-        </div>
-       {/if}
+        {/if}
+       </div>
       </div>
       
       <div class="flex flex-1 flex-col justify-between p-4">
@@ -857,11 +863,18 @@ async function confirmBulkDelete() {
               </svg>
              </div>
             {/if}
-            {#if userGame.is_loved}
-             <div class="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-100 flex items-center justify-center">
-              <span class="text-xs text-red-600">♥</span>
-             </div>
-            {/if}
+            <!-- Top-right indicators for list view -->
+            <div class="absolute -top-1 -right-1 flex items-center space-x-1">
+             {#if userGame.game.is_verified}
+              <IGDBVerificationBadge isVerified={true} size="sm" />
+             {/if}
+             
+             {#if userGame.is_loved}
+              <div class="h-4 w-4 rounded-full bg-red-100 flex items-center justify-center">
+               <span class="text-xs text-red-600">♥</span>
+              </div>
+             {/if}
+            </div>
            </div>
            <div class="min-w-0 flex-1">
             <div class="text-sm font-medium text-gray-900 truncate">
