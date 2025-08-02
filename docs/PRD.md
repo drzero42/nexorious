@@ -606,6 +606,37 @@ To create the definitive self-hosted solution for personal game collection manag
   - Sync can be triggered manually or automatically
   - Error handling provides clear user feedback
 
+### Phase 7: Performance Optimization
+
+#### 7.1 IGDB Search Performance Optimization
+**Priority**: P2 (Medium)
+- **User Story**: As a user, I want faster search results when looking for games to add so I can quickly find and add games to my collection
+- **Performance Issue**: Current IGDB search fetches time-to-beat data for every search result, requiring additional API calls that slow down search responses and consume IGDB API quota unnecessarily
+- **Requirements**:
+  - Remove time-to-beat data fetching from IGDB search result display
+  - Defer time-to-beat data fetching until game is actually imported/added to database
+  - Maintain full functionality - time-to-beat data still available in game details and import confirmation
+  - Reduce IGDB API calls by 50-80% during search operations
+  - Significantly improve search response times
+  - Better utilize IGDB rate limits for core functionality
+- **Technical Approach**:
+  - Backend: Remove `_get_time_to_beat_data()` calls from `IGDBService.search_games()` method
+  - Backend: Keep time-to-beat fetching in `get_game_by_id()` for actual game imports
+  - Frontend: Remove time-to-beat display from search result cards in `GameConfirmStep.svelte`
+  - Frontend: Maintain time-to-beat display in import confirmation and game detail views
+  - Update API schemas to reflect optional time-to-beat data in search results
+- **Success Criteria**:
+  - Search results load significantly faster (target: <2 seconds vs current 5-10 seconds for 10 results)
+  - Reduced IGDB API rate limit consumption during search operations
+  - No loss of user functionality - time-to-beat data accessible when needed
+  - Time-to-beat data still displays correctly in game details and during import flow
+- **Acceptance Criteria**:
+  - IGDB search results display without time-to-beat information
+  - Search response times improve measurably
+  - Game import flow still retrieves and displays time-to-beat data
+  - No breaking changes to existing API contracts
+  - All existing functionality preserved in game detail views
+
 ## Technical Architecture
 
 ### Backend

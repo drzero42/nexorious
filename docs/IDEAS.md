@@ -12,10 +12,8 @@ Add a new view that shows all games that are not completed (/mastered/dominated)
 During import of Darkadia games with non-interactive strategies, all games that fail should be written to a new CSV file named the same as the one being imported, with an added -failed to the name. The output format should be the same as the Darkadia CSV. This will allow the user to go through all failed games and add by hand.
 
 ## Platforms and storefront icons based on the real logos
-Platforms and storefronts all have logos. These should be used in the platform badges.
+Platforms and storefronts all have official logos. These should be downloaded and used in the platform badges. We need to be sure to keep it legal, so any ownership of the logos must be attributed correctly in our README.md.
 
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
 
-## Remove time to beat from IGDB search list
-When searching for games to add, time to beat is also shown. This requires extra API calls to IGDB for each game in the list. We don't need that information on the list. That information can be fetched when adding the game to the database.

@@ -422,6 +422,40 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Performance monitoring and metrics
 - [ ] Graceful degradation when APIs are unavailable
 
+### 7.2 IGDB Search Performance Optimization
+**Priority**: P2 (Medium)
+- **Goal**: Remove time-to-beat data fetching from IGDB search results to improve search performance
+
+#### 7.2.1 Backend Optimization Tasks
+- [ ] Remove time-to-beat fetching from `IGDBService.search_games()` method in `backend/nexorious/services/igdb.py`
+- [ ] Update `search_games()` to return `GameMetadata` objects with null time-to-beat fields (hastily, normally, completely)
+- [ ] Verify `get_game_by_id()` method still fetches time-to-beat data for actual game imports
+- [ ] Update `IGDBGameCandidate` schema in `backend/nexorious/api/schemas/game.py` to make time-to-beat fields optional/nullable
+- [ ] Verify `search_igdb` endpoint in `backend/nexorious/api/games.py` works without time-to-beat data
+- [ ] Ensure `import_from_igdb` endpoint still fetches complete time-to-beat data during game import
+- [ ] Update API documentation to reflect time-to-beat data availability changes
+
+#### 7.2.2 Frontend Optimization Tasks
+- [ ] Remove time-to-beat display from search result cards in `frontend/src/lib/components/GameConfirmStep.svelte` (line 139)
+- [ ] Verify time-to-beat data still displays in `MetadataConfirmStep.svelte` during import confirmation
+- [ ] Update `IGDBGameCandidate` type definition in `frontend/src/lib/stores/games.svelte.ts` to reflect optional time-to-beat fields
+- [ ] Ensure game detail views still display time-to-beat information correctly
+- [ ] Test search results display without time-to-beat information
+
+#### 7.2.3 Testing Tasks
+- [ ] Update IGDB service tests to verify time-to-beat is NOT fetched during search operations
+- [ ] Update API endpoint tests to ensure search results work without time-to-beat data
+- [ ] Verify import flow tests still fetch and validate time-to-beat data
+- [ ] Update frontend component tests to remove time-to-beat expectations from search results
+- [ ] Add performance tests to measure search response time improvements
+- [ ] Create integration tests to verify complete user workflow from search to import
+
+#### 7.2.4 Documentation Tasks
+- [ ] Update API documentation for search endpoints to reflect time-to-beat data changes
+- [ ] Document performance improvements and expected response time gains
+- [ ] Update user documentation if necessary to explain time-to-beat data availability
+- [ ] Add troubleshooting guide for any related performance issues
+
 ## Technical Dependencies
 
 ### Critical Path Dependencies
