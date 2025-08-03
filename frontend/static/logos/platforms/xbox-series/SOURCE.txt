@@ -1,0 +1,17 @@
+Xbox Series Platform Logo
+=========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/324535/xbox-series-s
+License: CC Attribution License
+Downloaded: 2025-08-03
+
+Description: Free Xbox Series S Vector Icon in SVG format
+
+License Details:
+CC Attribution License - Free to use with attribution required. Please provide proper credit to the original source.
+
+Files:
+- xbox-series.svg: Original Xbox Series logo
+- xbox-series-icon-light.svg: Light variant (black) for light backgrounds
+- xbox-series-icon-dark.svg: Dark variant (white) for dark backgrounds

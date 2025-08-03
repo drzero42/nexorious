@@ -1,0 +1,17 @@
+Epic Games Store Logo
+====================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/443039/brand-epicgames
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Brand Epicgames Vector Icon in SVG format
+
+License Details:
+MIT License - Free to use for commercial and personal projects with attribution.
+
+Files:
+- epic-games-store.svg: Original Epic Games logo
+- epic-games-store-icon-light.svg: Light variant (black) for light backgrounds
+- epic-games-store-icon-dark.svg: Dark variant (white) for dark backgrounds

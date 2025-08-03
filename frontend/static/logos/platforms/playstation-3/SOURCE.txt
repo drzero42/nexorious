@@ -1,0 +1,17 @@
+PlayStation 3 Platform Logo
+===========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/473755/playstation3
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free PlayStation 3 Vector Icon in SVG format
+
+License Details:
+Logo License - Please check the specific terms and conditions for logo usage.
+
+Files:
+- playstation-3.svg: Original PlayStation 3 logo
+- playstation-3-icon-light.svg: Light variant (black) for light backgrounds
+- playstation-3-icon-dark.svg: Dark variant (white) for dark backgrounds

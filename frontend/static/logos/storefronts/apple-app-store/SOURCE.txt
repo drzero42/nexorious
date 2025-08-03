@@ -1,0 +1,22 @@
+Apple App Store Icon Sources
+=============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/360978/apple-square
+Download Date: 2025-08-03
+License: MIT License
+
+Downloaded Files:
+
+1. apple-app-store-icon-light.svg
+   - Source URL: https://www.svgrepo.com/download/360978/apple-square.svg
+   - Usage: Light theme (black icon on light backgrounds)
+   - Fill Color: #000000 (black)
+   - Format: SVG vector
+
+2. apple-app-store-icon-dark.svg
+   - Source URL: Same as above (modified for dark theme)
+   - Usage: Dark theme (white icon on dark backgrounds)
+   - Fill Color: #ffffff (white)
+   - Format: SVG vector
+   - Modification: Changed fill color from black to white

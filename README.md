@@ -357,6 +357,14 @@ uv run pytest   # Backend tests
 - **Testing Guide**: See `backend/scripts/tests/README.md` for testing details
 - **Issues**: Report bugs and feature requests via GitHub issues
 
+## Trademarks and Copyright
+
+All mentioned trademarks, brand names, and logos for gaming platforms and storefronts (including but not limited to PlayStation, Xbox, Nintendo, Steam, Epic Games Store, GOG, Apple App Store, Google Play Store, and others) are the property of their respective owners. These trademarks are used solely for identification and compatibility purposes.
+
+The use of these trademarks and brand names does not imply any affiliation, endorsement, or partnership with the respective companies. All rights to these trademarks remain with their original owners.
+
+The logos and icons used in this application are sourced from SVG Repo and other public repositories under various open-source licenses (MIT, CC0, Logo License, etc.). See individual SOURCE.txt files in the `frontend/static/logos/` directory for specific license information and attribution.
+
 ## License
 
 MIT License - see LICENSE file for details.

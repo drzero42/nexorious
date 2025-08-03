@@ -1,0 +1,17 @@
+PlayStation Platform Logo
+=========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/473754/playstation
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free PlayStation Vector Icon in SVG format
+
+License Details:
+Logo License - Please check the specific terms and conditions for logo usage.
+
+Files:
+- playstation.svg: Original PlayStation logo
+- playstation-icon-light.svg: Light variant (black) for light backgrounds
+- playstation-icon-dark.svg: Dark variant (white) for dark backgrounds

@@ -1,0 +1,17 @@
+Physical Media Logo
+==================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/486606/compact-disc
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Compact Disc Vector Icon in SVG format (used for physical media storefront)
+
+License Details:
+MIT License - Free to use for commercial and personal projects with attribution.
+
+Files:
+- physical.svg: Original compact disc logo
+- physical-icon-light.svg: Light variant (black) for light backgrounds
+- physical-icon-dark.svg: Dark variant (white) for dark backgrounds

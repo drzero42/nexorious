@@ -1,0 +1,34 @@
+Xbox Logo Attribution Requirements
+==================================
+
+Required Attribution:
+Xbox and the Xbox logos are trademarks of Microsoft Corporation.
+
+Legal Requirements:
+- Must follow Microsoft trademark and brand guidelines
+- Cannot alter Xbox logos in any manner (size, proportions, colors, elements, etc.)
+- Cannot animate, morph, or distort perspective or appearance
+- Must link back to https://www.xbox.com/ when used
+- Only for indicating non-commercial fan sites related to Xbox
+
+Non-Commercial Fansite Guidelines:
+- May only display Xbox logos to indicate hosting non-commercial Xbox fan site
+- Logos must link back to Xbox.com or Microsoft-hosted game sites
+- Strict restrictions on modifications and usage
+
+Commercial Usage:
+- Developer resources require authorization
+- Official press kit materials require media credentials or partner status
+- Contact Microsoft for commercial licensing
+
+Source: Microsoft and Xbox
+URL: https://www.xbox.com/en-US/legal/fansiteguidelines
+Access: Requires Microsoft partnership/authorization
+Status: Tier 3 - Partnership/Licensing Required ⚠️
+
+Resources:
+- Microsoft Trademark Guidelines: https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks
+- Xbox Fansite Guidelines: https://www.xbox.com/en-US/legal/fansiteguidelines
+- Press Resources: https://news.microsoft.com/resourcespage/
+
+Note: Contact Microsoft directly for commercial logo usage and press kit access.
