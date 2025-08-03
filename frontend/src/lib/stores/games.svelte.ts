@@ -31,7 +31,6 @@ export interface GameSearchFilters {
   developer?: string;
   publisher?: string;
   release_year?: number;
-  is_verified?: boolean;
 }
 
 export interface GameListResponse {

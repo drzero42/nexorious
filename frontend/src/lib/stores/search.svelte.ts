@@ -366,9 +366,6 @@ function createSearchStore() {
       searchStore.applyQuickFilter('games', 'developer', developer);
     },
 
-    filterByVerified: (verified: boolean) => {
-      searchStore.applyQuickFilter('games', 'is_verified', verified);
-    },
 
     // Clear all filters
     clearAllFilters: () => {

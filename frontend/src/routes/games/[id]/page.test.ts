@@ -178,7 +178,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
   });
 
-  describe('IGDB Rating and Verification Display', () => {
+  describe('IGDB Rating Display', () => {
     it('should display IGDB rating when available', async () => {
       render(GameDetailPage);
       
@@ -191,27 +191,8 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.getByText('(100 reviews)')).toBeInTheDocument();
     });
 
-    it('should display verification badge when game is verified', async () => {
-      render(GameDetailPage);
-      
-      await waitFor(() => {
-        expect(screen.getByText('Test Game')).toBeInTheDocument();
-      });
-      
-      // Look for verification badges by their aria-label - there are multiple on the page
-      const verifiedBadges = screen.getAllByLabelText('Verified from IGDB database - metadata is official and up-to-date');
-      expect(verifiedBadges.length).toBeGreaterThan(0);
-      
-      // Check that at least one badge has the actual blue gradient classes used by the component
-      const hasCorrectClasses = verifiedBadges.some(badge => 
-        badge.classList.contains('bg-gradient-to-r') && 
-        badge.classList.contains('from-blue-500') && 
-        badge.classList.contains('to-blue-600')
-      );
-      expect(hasCorrectClasses).toBe(true);
-    });
 
-    it('should not display rating section when no rating or verification', async () => {
+    it('should not display rating section when no rating', async () => {
       const baseGame = mockUserGamesStore.value.userGames[0];
       if (!baseGame) throw new Error('Base game not found in mock');
       
@@ -220,8 +201,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         game: {
           ...baseGame.game,
           rating_count: 0,
-          rating_average: undefined,
-          is_verified: false
+          rating_average: undefined
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithoutRating];
@@ -395,9 +375,6 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       // Verify specific content from mockGameMetadata
       expect(screen.getByText('A test game description')).toBeInTheDocument();
       expect(screen.getByText('4.5/10')).toBeInTheDocument(); // formatIgdbRating(45) = 4.5
-      // Check for verification badge by aria-label - there are multiple on the page
-      const verifiedBadges = screen.getAllByLabelText('Verified from IGDB database - metadata is official and up-to-date');
-      expect(verifiedBadges.length).toBeGreaterThan(0);
       
       // Check for time values (these appear in both How Long to Beat and GameProgressCard)
       const time18Elements = screen.getAllByText('18h');

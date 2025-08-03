@@ -196,7 +196,6 @@ describe('Search Store', () => {
 				'filterByRating',
 				'filterByGenre',
 				'filterByDeveloper',
-				'filterByVerified',
 				'clearAllFilters',
 				'clearError'
 			];
@@ -641,13 +640,6 @@ describe('Search Store', () => {
 			expect(applySpy).toHaveBeenCalledWith('games', 'developer', 'Test Developer');
 		});
 
-		it('should filter by verified status', async () => {
-			const applySpy = vi.spyOn(search, 'applyQuickFilter').mockImplementation(() => Promise.resolve());
-			
-			search.filterByVerified(true);
-
-			expect(applySpy).toHaveBeenCalledWith('games', 'is_verified', true);
-		});
 	});
 
 	describe('Non-browser Environment', () => {
