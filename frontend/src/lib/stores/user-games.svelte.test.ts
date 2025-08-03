@@ -40,7 +40,6 @@ describe('UserGames Store', () => {
 			cover_art_url: 'https://example.com/cover.jpg',
 			rating_count: 0,
 			game_metadata: '{}',
-			is_verified: false,
 			created_at: '2023-01-01T00:00:00Z',
 			updated_at: '2023-01-01T00:00:00Z'
 		},

@@ -197,8 +197,7 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
         howlongtobeat_extra: 35,
         howlongtobeat_completionist: 50,
         igdb_id: 'igdb-123',
-        igdb_slug: 'test-game-slug',
-        is_verified: true
+        igdb_slug: 'test-game-slug'
       };
 
       // Verify all enhanced metadata fields exist
@@ -210,7 +209,6 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
       expect(completeGame.howlongtobeat_completionist).toBeDefined();
       expect(completeGame.igdb_id).toBeDefined();
       expect(completeGame.igdb_slug).toBeDefined();
-      expect(completeGame.is_verified).toBeDefined();
     });
 
     it('should validate UserGame platform structure', () => {

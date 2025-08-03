@@ -406,8 +406,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           howlongtobeat_main: undefined,
           howlongtobeat_extra: undefined,
           howlongtobeat_completionist: undefined,
-          igdb_id: undefined,
-          is_verified: false
+          igdb_id: undefined
         },
         platforms: []
       };

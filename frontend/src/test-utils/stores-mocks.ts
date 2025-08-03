@@ -19,7 +19,6 @@ export const mockGameMetadata = {
   howlongtobeat_completionist: 45,
   igdb_id: 'igdb-123',
   igdb_slug: 'test-game-slug',
-  is_verified: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
 };
