@@ -131,7 +131,6 @@ export const mockGamesStore = {
   fetchGame: vi.fn(),
   searchIGDB: vi.fn(),
   createFromIGDB: vi.fn(),
-  createGame: vi.fn(),
   importFromIGDB: vi.fn(),
   addGame: vi.fn(),
   updateGame: vi.fn(),
@@ -427,7 +426,6 @@ export function resetStoresMocks() {
   mockGamesStore.fetchGame.mockClear();
   mockGamesStore.searchIGDB.mockClear();
   mockGamesStore.createFromIGDB.mockClear();
-  mockGamesStore.createGame.mockClear();
   mockGamesStore.importFromIGDB.mockClear();
   mockGamesStore.addGame.mockClear();
   mockGamesStore.updateGame.mockClear();
@@ -441,7 +439,6 @@ export function resetStoresMocks() {
     games: mockIGDBCandidates
   });
   mockGamesStore.createFromIGDB.mockResolvedValue(mockGameMetadata);
-  mockGamesStore.createGame.mockResolvedValue(mockGameMetadata);
   
   mockGamesStore.value = {
     games: [],

@@ -274,7 +274,7 @@
         }, 1000);
       } catch (collectionError) {
         console.error('Failed to add game to collection:', collectionError);
-        notifications.showError(`Game was imported but couldn't be added to your collection. You can try adding it manually from your games list.`);
+        notifications.showError(`Game was imported but couldn't be added to your collection. Please try again or contact support.`);
         // Brief delay before redirect
         setTimeout(() => {
           goto('/games');
@@ -282,8 +282,6 @@
       }
     } catch (error) {
       console.error('Failed to create game:', error);
-      notifications.showError('Failed to import game from IGDB. You can add it manually with custom details.');
-      
       // Import failed - notify user
       notifications.showError('Failed to import game from IGDB. Please try a different search or contact support.');
     } finally {
