@@ -273,33 +273,50 @@ async def refresh_access_token(
 @router.post("/logout", response_model=LogoutResponse)
 async def logout_user(
     refresh_data: RefreshTokenRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
     """Logout user and invalidate refresh token."""
     
+    logger.info(f"User logout initiated for user_id: {current_user.id}, username: {current_user.username}")
+    
     try:
-        # Verify refresh token
+        # Verify refresh token matches the authenticated user
         payload = verify_token(refresh_data.refresh_token, token_type="refresh")
-        user_id = payload.get("sub")
+        token_user_id = payload.get("sub")
         
-        if user_id:
-            # Remove session record
-            refresh_token_hash = hash_token(refresh_data.refresh_token)
-            session_record = session.exec(
-                select(UserSession).where(
-                    (UserSession.user_id == user_id) & 
-                    (UserSession.refresh_token_hash == refresh_token_hash)
-                )
-            ).first()
-            
-            if session_record:
-                session.delete(session_record)
-                session.commit()
+        # Ensure the refresh token belongs to the authenticated user
+        if token_user_id != current_user.id:
+            logger.warning(f"Logout attempt with mismatched refresh token. Authenticated user: {current_user.id}, token user: {token_user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid refresh token for authenticated user"
+            )
+        
+        # Remove session record using both user ID and refresh token hash
+        refresh_token_hash = hash_token(refresh_data.refresh_token)
+        session_record = session.exec(
+            select(UserSession).where(
+                (UserSession.user_id == current_user.id) & 
+                (UserSession.refresh_token_hash == refresh_token_hash)
+            )
+        ).first()
+        
+        if session_record:
+            session.delete(session_record)
+            session.commit()
+            logger.info(f"Session successfully invalidated for user_id: {current_user.id}")
+        else:
+            logger.warning(f"Session not found for logout request. User: {current_user.id}, refresh_token_hash: {refresh_token_hash[:16]}...")
     
-    except Exception:
-        # Even if token verification fails, return success for security
-        pass
+    except HTTPException:
+        # Re-raise HTTP exceptions (like mismatched refresh token)
+        raise
+    except Exception as e:
+        # Log other errors but still return success for security
+        logger.error(f"Error during logout for user_id: {current_user.id}: {str(e)}")
     
+    logger.info(f"Logout completed for user_id: {current_user.id}")
     return LogoutResponse()
 
 

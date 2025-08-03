@@ -369,6 +369,14 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Gaming activity visualization
 - [ ] Platform and genre breakdowns
 
+## Phase 3.5: Security Improvements
+**Priority: P1 (High)**
+
+### 3.5.1 Authentication Security Enhancements
+- [x] Add authentication requirement to logout endpoint for proper session invalidation and audit trails
+- [ ] Add authentication requirement to all /api/games/ endpoints to protect user-generated content and prevent data scraping
+- [ ] Add authentication requirement to all /api/platforms/ endpoints since platform information is only needed by authenticated users
+
 ## Phase 4: User Experience & Interface
 **Priority: P0-P2 (Critical-Medium)**
 
