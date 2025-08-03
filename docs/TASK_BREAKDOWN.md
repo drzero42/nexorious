@@ -24,6 +24,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Implement Platform and Storefront models
 - [x] Design Game metadata models with IGDB integration fields
 - [x] Add IGDB slug field to Game model for proper link generation
+- [ ] Add `last_updated` field to Game model for tracking when IGDB metadata was last refreshed
 - [x] Create User Game Collection models (user_games, user_game_platforms)
 - [x] Implement Tagging system models (tags, user_game_tags)
 - [x] Add Wishlist models
@@ -70,6 +71,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB platform data caching and retrieval for platform filtering
 - [x] Update IGDB service to retrieve and store game slug field from API responses
 - [x] Create database migration to add igdb_slug field to games table
+- [ ] Update IGDB service to automatically set `last_updated` field when importing or refreshing game metadata
+- [ ] Create database migration to add `last_updated` field to games table
 
 ### 1.2 Frontend Foundation
 
@@ -239,6 +242,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] External API integration tests with mocked responses (IGDB, Steam, etc.)
 - [ ] Unit tests for IGDB slug field storage and retrieval
 - [ ] Integration tests for IGDB link generation using slug
+- [ ] Unit tests for `last_updated` field automatic updates during IGDB import and refresh operations
+- [ ] Integration tests for `last_updated` field in game API endpoints
 - [ ] Performance tests for critical operations
 - [ ] Database migration tests for both PostgreSQL and SQLite
 - [ ] Admin privilege enforcement tests across all endpoints
@@ -357,7 +362,12 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Frontend: Add visual indicators (badges/icons) for IGDB-verified games in collection views
 - [x] Frontend: Implement "Update from IGDB" interface for individual games
 - [x] Frontend: Update game editing forms to show locked metadata fields vs editable personal data fields
+- [ ] Backend: Implement automatic `last_updated` field updates during IGDB metadata refresh operations
+- [ ] Frontend: Add display of `last_updated` timestamp in game detail views and admin interfaces
+- [ ] Frontend: Add filtering/sorting capabilities based on `last_updated` field for admin review of stale data
+- [ ] API: Expose `last_updated` field in game API responses for frontend consumption
 - [ ] Testing: Add comprehensive tests for IGDB verification system
+- [ ] Testing: Add tests for `last_updated` field automatic updates during IGDB operations
 - [ ] Documentation: Update API documentation for new IGDB refresh endpoints
 
 ## Phase 3: Discovery & Organization

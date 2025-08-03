@@ -62,6 +62,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
   - Game metadata storage with comprehensive fields including IGDB slug for proper link generation
+  - **IGDB Data Tracking**: Games table must include a `last_updated` field that automatically tracks when IGDB metadata was last refreshed
   - Multi-platform and multi-storefront association (multiple storefronts per platform supported)
   - Ownership tracking through storefront associations
   - Support for games with no platform associations when ownership status indicates the game is no longer owned
@@ -448,6 +449,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Requirements**:
   - All games are sourced from IGDB and have IGDB IDs
   - Admin-only interface for triggering IGDB data updates on individual games
+  - **Last Updated Tracking**: Automatically update games table `last_updated` field whenever IGDB metadata is refreshed
   - Batch update capabilities for multiple games with filtering options
   - Manual refresh functionality that preserves user-added personal data (notes, ratings, progress)
   - Clear separation between IGDB metadata and user personal data
@@ -455,6 +457,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Frontend Requirements**:
   - Admin-only "Update from IGDB" buttons and interfaces for games
   - Bulk update interface for admins to refresh multiple games simultaneously
+  - **Last Updated Display**: Show when game data was last updated from IGDB in game detail views
   - Clear visual distinction between IGDB metadata (read-only) and personal data fields (editable)
   - Game editing forms that show IGDB metadata as read-only for all users
   - Preservation of editability for personal data fields (notes, ratings, progress tracking)
@@ -466,6 +469,8 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Acceptance Criteria**:
   - All games have IGDB metadata that is read-only for regular users
   - Only administrators can update IGDB game metadata through refresh operations
+  - Games table `last_updated` field is automatically updated whenever IGDB metadata is refreshed
+  - Frontend displays when game data was last updated from IGDB
   - User personal data (notes, ratings, progress) remains fully editable for all users
   - Batch update operations work efficiently for large collections without data loss
   - IGDB data updates maintain referential integrity and do not break existing user associations
@@ -783,6 +788,7 @@ Key architectural decisions:
 - Multi-platform game ownership tracking
 - User-defined tagging and rating systems
 - IGDB integration with both ID (for display) and slug (for functional links) storage
+- **IGDB Data Freshness Tracking**: Games table includes `last_updated` field to track when IGDB metadata was last refreshed
 
 ### C. Additional Documentation
 - Deployment configurations in `/docs/deployment/`
