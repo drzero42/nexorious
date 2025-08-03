@@ -184,63 +184,120 @@ class TestAuthLogoutEndpoint:
     def test_logout_success(self, client: TestClient):
         """Test successful logout."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
         
-        # Get refresh token from login
+        # Register and login user to get both tokens and headers
+        register_response = client.post("/api/auth/register", json=user_data)
+        assert_api_success(register_response, 201)
+        
         login_data = {
             "username": user_data["username"],
             "password": user_data["password"]
         }
         login_response = client.post("/api/auth/login", json=login_data)
+        assert_api_success(login_response, 200)
+        
+        access_token = login_response.json()["access_token"]
+        refresh_token = login_response.json()["refresh_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        logout_data = {"refresh_token": refresh_token}
+        response = client.post("/api/auth/logout", json=logout_data, headers=headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["message"] == "Successfully logged out"
+    
+    def test_logout_without_auth_headers(self, client: TestClient):
+        """Test logout without authentication headers."""
+        user_data = create_test_user_data()
+        register_response = client.post("/api/auth/register", json=user_data)
+        assert_api_success(register_response, 201)
+        
+        login_data = {
+            "username": user_data["username"],
+            "password": user_data["password"]
+        }
+        login_response = client.post("/api/auth/login", json=login_data)
+        assert_api_success(login_response, 200)
         refresh_token = login_response.json()["refresh_token"]
         
+        # Try logout without authentication headers
         logout_data = {"refresh_token": refresh_token}
         response = client.post("/api/auth/logout", json=logout_data)
         
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["message"] == "Successfully logged out"
+        assert_api_error(response, 403, "Not authenticated")
     
-    def test_logout_without_token(self, client: TestClient):
-        """Test logout without refresh token."""
-        response = client.post("/api/auth/logout", json={})
+    def test_logout_without_refresh_token(self, client: TestClient):
+        """Test logout without refresh token but with auth headers."""
+        user_data = create_test_user_data()
+        headers = register_and_login_user(client, user_data)
+        
+        response = client.post("/api/auth/logout", json={}, headers=headers)
         
         assert_api_error(response, 422)
     
-    def test_logout_invalid_token(self, client: TestClient):
+    def test_logout_invalid_refresh_token(self, client: TestClient):
         """Test logout with invalid refresh token."""
-        logout_data = {"refresh_token": "invalid-token"}
-        response = client.post("/api/auth/logout", json=logout_data)
+        user_data = create_test_user_data()
+        headers = register_and_login_user(client, user_data)
         
-        # Logout always returns 200 for security reasons
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["message"] == "Successfully logged out"
+        logout_data = {"refresh_token": "invalid-token"}
+        response = client.post("/api/auth/logout", json=logout_data, headers=headers)
+        
+        # Should now return 401 for invalid refresh token (token verification fails)
+        assert_api_error(response, 401, "Could not validate credentials")
+    
+    def test_logout_mismatched_refresh_token(self, client: TestClient):
+        """Test logout with refresh token from different user."""
+        user1_data = create_test_user_data(username="user1")
+        user2_data = create_test_user_data(username="user2")
+        
+        # Create user1 and get their tokens
+        register_response1 = client.post("/api/auth/register", json=user1_data)
+        assert_api_success(register_response1, 201)
+        login_response1 = client.post("/api/auth/login", json={
+            "username": user1_data["username"],
+            "password": user1_data["password"]
+        })
+        user1_refresh_token = login_response1.json()["refresh_token"]
+        
+        # Create user2 and get their auth headers
+        user2_headers = register_and_login_user(client, user2_data)
+        
+        # Try to logout user2 with user1's refresh token
+        logout_data = {"refresh_token": user1_refresh_token}
+        response = client.post("/api/auth/logout", json=logout_data, headers=user2_headers)
+        
+        assert_api_error(response, 400, "Invalid refresh token for authenticated user")
     
     def test_logout_twice(self, client: TestClient):
         """Test logout twice with same refresh token."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
         
-        # Get refresh token from login
+        # Register and login user
+        register_response = client.post("/api/auth/register", json=user_data)
+        assert_api_success(register_response, 201)
+        
         login_data = {
             "username": user_data["username"],
             "password": user_data["password"]
         }
         login_response = client.post("/api/auth/login", json=login_data)
+        assert_api_success(login_response, 200)
+        
+        access_token = login_response.json()["access_token"]
         refresh_token = login_response.json()["refresh_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
         
         # First logout
         logout_data = {"refresh_token": refresh_token}
-        response1 = client.post("/api/auth/logout", json=logout_data)
+        response1 = client.post("/api/auth/logout", json=logout_data, headers=headers)
         assert_api_success(response1, 200)
         
-        # Second logout with same refresh token
-        response2 = client.post("/api/auth/logout", json=logout_data)
-        # Logout always returns 200 for security reasons
-        assert_api_success(response2, 200)
-        data = response2.json()
-        assert data["message"] == "Successfully logged out"
+        # Second logout with same refresh token should fail since session is invalidated
+        response2 = client.post("/api/auth/logout", json=logout_data, headers=headers)
+        # The access token is now invalid since session was deleted, should get 401
+        assert_api_error(response2, 401)
 
 
 class TestAuthMeEndpoint:
@@ -467,9 +524,9 @@ class TestAuthEndpointSecurity:
         refresh_token = login_response.json()["refresh_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
         
-        # Logout
+        # Logout with authentication headers (now required)
         logout_data = {"refresh_token": refresh_token}
-        logout_response = client.post("/api/auth/logout", json=logout_data)
+        logout_response = client.post("/api/auth/logout", json=logout_data, headers=headers)
         assert_api_success(logout_response, 200)
         
         # Try to use access token after logout
