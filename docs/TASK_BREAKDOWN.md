@@ -515,7 +515,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Goal**: Simplify the system by only allowing games from IGDB, removing manual game creation and IGDB verification concepts
 
 ### 8.1 Backend Simplification Tasks
-- [ ] Remove igdb_verified field from Game model and create database migration
+- [x] Remove igdb_verified field from Game model and create database migration
 - [ ] Remove manual game creation endpoints from API
 - [ ] Update game import flow to assume all games are IGDB-sourced
 - [ ] Remove IGDB verification logic from services
