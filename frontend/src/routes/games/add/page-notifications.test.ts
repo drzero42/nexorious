@@ -304,7 +304,7 @@ describe('Game Addition Page - Notifications Integration', () => {
       await waitFor(() => {
         expect(mockNotifications.showSuccess).toHaveBeenCalledWith(`Adding "${mockGame.title}" to your collection`);
         expect(mockNotifications.showError).toHaveBeenCalledWith(
-          'Game was imported but couldn\'t be added to your collection. You can try adding it manually from your games list.'
+          'Game was imported but couldn\'t be added to your collection. Please try again or contact support.'
         );
       });
       

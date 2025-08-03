@@ -525,7 +525,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 ### 8.2 Frontend Simplification Tasks
 - [x] Remove manual game creation interface components
 - [x] Remove IGDB verification badges/indicators from UI components
-- [ ] Update game addition flow to only show IGDB search interface
+- [x] Update game addition flow to only show IGDB search interface
 - [ ] Remove manual metadata editing capabilities (keep personal data editing: notes, ratings, progress)
 - [ ] Remove locked field indicators from game editing forms
 - [ ] Update all game forms to assume IGDB metadata is read-only
