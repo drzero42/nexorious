@@ -389,8 +389,6 @@
         progressUpdate.personal_notes = editData.personal_notes;
       }
 
-      // Note: Game metadata (title, description, etc.) is managed by IGDB and cannot be edited directly.
-      // Use "Update from IGDB" to refresh metadata.
       
       // Always update user-specific data (personal information)
       await userGames.updateUserGame(gameId, userGameUpdate);
