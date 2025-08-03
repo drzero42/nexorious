@@ -526,7 +526,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove manual game creation interface components
 - [x] Remove IGDB verification badges/indicators from UI components
 - [x] Update game addition flow to only show IGDB search interface
-- [ ] Remove manual metadata editing capabilities (keep personal data editing: notes, ratings, progress)
+- [x] Remove manual metadata editing capabilities (keep personal data editing: notes, ratings, progress)
 - [ ] Remove locked field indicators from game editing forms
 - [ ] Update all game forms to assume IGDB metadata is read-only
 - [ ] Simplify game editing interface to focus on platform/storefront management and personal data
