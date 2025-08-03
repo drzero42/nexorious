@@ -200,22 +200,6 @@ def test_game_fixture(session: Session) -> Game:
     return game
 
 
-@pytest.fixture(name="verified_game")
-def verified_game_fixture(session: Session) -> Game:
-    """Create a verified test game in the database."""
-    game = Game(
-        title="Verified Game",
-        description="A verified test game for integration testing",
-        genre="Action",
-        developer="Test Developer",
-        publisher="Test Publisher",
-        release_date=date(2023, 1, 1),
-        igdb_id="54321",
-            )
-    session.add(game)
-    session.commit()
-    session.refresh(game)
-    return game
 
 
 @pytest.fixture(name="test_user_game")
