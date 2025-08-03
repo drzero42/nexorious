@@ -58,7 +58,7 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 1.2 Game Library Management
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to add games to my collection so I can track what I own across all platforms and storefronts in a unified view, including games I've completed but no longer own
+- **User Story**: As a user, I want to add games from IGDB to my collection so I can track what I own across all platforms and storefronts in a unified view, including games I've completed but no longer own
 - **Backend Requirements**:
   - RESTful endpoints for CRUD operations on games
   - Game metadata storage with comprehensive fields including IGDB slug for proper link generation
@@ -68,8 +68,8 @@ To create the definitive self-hosted solution for personal game collection manag
   - **Automatic Ownership Status Management**: When the last platform is removed from an owned game, automatically change ownership status to "no_longer_owned"; when a platform is added to a "no_longer_owned" game, automatically change ownership status to "owned"
   - Duplicate detection and prevention at the game level (not platform level)
   - IGDB integration for game lookup and metadata retrieval with slug field storage
+  - All games must be sourced from IGDB (no manual game creation)
 - **Frontend Requirements**:
-  - Game creation and editing forms with platform/storefront management
   - Game library list and grid views showing unified game cards
   - Each game appears once with all owned platforms/storefronts displayed as indicators/badges
   - Platform and storefront indicators clearly showing all ownership locations
@@ -80,27 +80,29 @@ To create the definitive self-hosted solution for personal game collection manag
   - Game metadata acceptance/confirmation screen
   - Game editing interface for adding/removing platform and storefront ownership
   - IGDB rating display formatting: Convert IGDB ratings from integer (0-100) to decimal format (0.0-10.0) for proper user display
-- **Game Addition Flow**:
+- **Game Addition Flow** (IGDB-Only):
   1. User searches for game by title using IGDB integration
-  2. System presents game candidates with ownership status indicators
+  2. System presents IGDB game candidates with ownership status indicators
   3. User selects game and configures platforms/storefronts with automatic defaults
-  4. System adds to collection or updates existing entry to prevent duplicates
+  4. System adds IGDB game to collection or updates existing entry to prevent duplicates
 - **Acceptance Criteria**:
   - Games appear once in collection with platform/storefront indicators
   - IGDB integration provides accurate metadata and search
+  - All games must be sourced from IGDB database
   - Duplicate detection prevents redundant entries
   - Bulk operations work on unified game view
 
 #### 1.2.5 Game Editing & Platform Management
 **Priority**: P0 (Critical)
-- **User Story**: As a user, I want to edit my games and manage which platforms and storefronts I own them on so I can keep my collection accurate
+- **User Story**: As a user, I want to manage which platforms and storefronts I own games on and edit my personal data so I can keep my collection accurate
 - **Backend Requirements**:
-  - RESTful endpoints for updating game metadata and platform/storefront associations
+  - RESTful endpoints for updating platform/storefront associations and personal data
   - Platform/storefront addition and removal for existing games
   - **Automatic Ownership Status Transitions**: When platforms are added or removed, automatically update ownership status (remove last platform → "no_longer_owned", add platform to "no_longer_owned" game → "owned")
   - Validation to work with automatic ownership status transitions
+  - Personal data editing (notes, ratings, progress, tags) separate from IGDB metadata
 - **Frontend Requirements**:
-  - Game editing form with metadata modification capabilities
+  - Game editing form for personal data (notes, ratings, progress, tags)
   - Platform and storefront management interface within game editing
   - Add/remove platform associations with visual feedback
   - Add/remove storefront associations per platform
@@ -108,10 +110,11 @@ To create the definitive self-hosted solution for personal game collection manag
   - Confirmation dialogs for removing platform/storefront ownership
   - Bulk editing capabilities for multiple games
   - Visual indicators showing current ownership status during editing
+  - Clear separation between IGDB metadata (read-only) and personal data (editable)
 - **Game Editing Flow**:
   1. User selects a game from their collection
-  2. System displays game editing interface with current metadata and ownership
-  3. User can modify game metadata (title, notes, ratings, etc.)
+  2. System displays game editing interface with current personal data and ownership
+  3. User can modify personal data (notes, ratings, progress, tags)
   4. User can add new platforms/storefronts to their ownership
   5. User can remove existing platforms/storefronts from their ownership
   6. System automatically updates ownership status based on platform changes (remove last platform → "no_longer_owned", add platform to "no_longer_owned" game → "owned") and validates all changes
@@ -119,6 +122,8 @@ To create the definitive self-hosted solution for personal game collection manag
   8. Game continues to appear once in collection with updated platform/storefront indicators
 - **Acceptance Criteria**:
   - Platform/storefront ownership can be added/removed with automatic ownership status transitions
+  - Personal data (notes, ratings, progress) can be edited freely
+  - IGDB metadata (title, description, cover art) is read-only and cannot be manually edited
   - Ownership status automatically changes when last platform is removed or first platform is added
   - Bulk editing supported with immediate UI updates
 
@@ -410,21 +415,19 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 2.4 IGDB Game Data Update System
 **Priority**: P1 (High)
-- **User Story**: As a user, I want games imported from IGDB to automatically stay up-to-date with the latest information while maintaining data integrity, and as an admin, I want to control when and how this data is refreshed across the system
+- **User Story**: As a user, I want games imported from IGDB to stay up-to-date with the latest information while maintaining my personal data, and as an admin, I want to control when and how this data is refreshed across the system
 - **Backend Requirements**:
-  - Games with IGDB IDs are automatically marked as verified during import process
-  - Verified IGDB games have read-only metadata for regular users to maintain data integrity
+  - All games are sourced from IGDB and have IGDB IDs
   - Admin-only interface for triggering IGDB data updates on individual games
-  - Batch update capabilities for multiple IGDB games with filtering options
+  - Batch update capabilities for multiple games with filtering options
   - Manual refresh functionality that preserves user-added personal data (notes, ratings, progress)
-  - Permission system that distinguishes between IGDB metadata and user personal data
+  - Clear separation between IGDB metadata and user personal data
   - API endpoints for bulk IGDB refresh operations (admin-only access)
 - **Frontend Requirements**:
-  - Visual indicators clearly showing IGDB-verified games in collection views
-  - Admin-only "Update from IGDB" buttons and interfaces on verified games
+  - Admin-only "Update from IGDB" buttons and interfaces for games
   - Bulk update interface for admins to refresh multiple games simultaneously
-  - Clear visual distinction between user-editable fields and IGDB-locked metadata fields
-  - Game editing forms that disable metadata fields for verified games (non-admin users)
+  - Clear visual distinction between IGDB metadata (read-only) and personal data fields (editable)
+  - Game editing forms that show IGDB metadata as read-only for all users
   - Preservation of editability for personal data fields (notes, ratings, progress tracking)
 - **Data Protection Requirements**:
   - IGDB metadata updates never overwrite user personal data
@@ -432,12 +435,10 @@ To create the definitive self-hosted solution for personal game collection manag
   - Platform and storefront ownership associations remain user-controlled
   - Clear separation between official IGDB data and user-generated content
 - **Acceptance Criteria**:
-  - IGDB games are automatically verified and protected from unauthorized metadata edits
+  - All games have IGDB metadata that is read-only for regular users
   - Only administrators can update IGDB game metadata through refresh operations
   - User personal data (notes, ratings, progress) remains fully editable for all users
   - Batch update operations work efficiently for large collections without data loss
-  - Visual indicators clearly communicate data source and editability status
-  - Permission system prevents regular users from modifying verified game metadata
   - IGDB data updates maintain referential integrity and do not break existing user associations
 
 ### Phase 3: Discovery & Organization

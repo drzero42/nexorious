@@ -480,6 +480,42 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update API documentation for search endpoints to reflect time-to-beat data changes
 - [x] Update user documentation if necessary to explain time-to-beat data availability
 
+## Phase 8: Simplify to IGDB-Only Games (Remove Manual Game Creation)
+**Priority: P2 (Medium)**
+**Goal**: Simplify the system by only allowing games from IGDB, removing manual game creation and IGDB verification concepts
+
+### 8.1 Backend Simplification Tasks
+- [ ] Remove igdb_verified field from Game model and create database migration
+- [ ] Remove manual game creation endpoints from API
+- [ ] Update game import flow to assume all games are IGDB-sourced
+- [ ] Remove IGDB verification logic from services
+- [ ] Update API documentation to reflect IGDB-only approach
+- [ ] Remove any validation logic that depends on manual vs IGDB games distinction
+
+### 8.2 Frontend Simplification Tasks
+- [ ] Remove manual game creation interface components
+- [ ] Remove IGDB verification badges/indicators from UI components
+- [ ] Update game addition flow to only show IGDB search interface
+- [ ] Remove manual metadata editing capabilities (keep personal data editing: notes, ratings, progress)
+- [ ] Remove locked field indicators from game editing forms
+- [ ] Update all game forms to assume IGDB metadata is read-only
+- [ ] Simplify game editing interface to focus on platform/storefront management and personal data
+
+### 8.3 Testing Updates
+- [ ] Remove tests for manual game creation functionality
+- [ ] Remove tests for IGDB verification system and locked metadata fields
+- [ ] Update existing tests to assume all games are IGDB-sourced
+- [ ] Add tests to ensure manual game creation endpoints are properly removed/blocked
+- [ ] Update component tests to reflect simplified UI without verification badges
+- [ ] Verify game editing tests focus on personal data and platform management only
+
+### 8.4 Documentation Updates
+- [ ] Update API documentation to reflect IGDB-only approach and removed endpoints
+- [ ] Update user documentation to explain IGDB-only limitation and capabilities
+- [ ] Update development documentation about simplified data model
+- [ ] Remove references to manual game creation from all documentation
+- [ ] Update README and setup guides to reflect simplified game addition flow
+
 ## Technical Dependencies
 
 ### Critical Path Dependencies
