@@ -539,13 +539,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update component tests to reflect simplified UI without verification badges
 - [x] Verify game editing tests focus on personal data and platform management only
 
-### 8.4 Documentation Updates
-- [ ] Update API documentation to reflect IGDB-only approach and removed endpoints
-- [ ] Update user documentation to explain IGDB-only limitation and capabilities
-- [ ] Update development documentation about simplified data model
-- [ ] Remove references to manual game creation from all documentation
-- [ ] Update README and setup guides to reflect simplified game addition flow
-
 ## Technical Dependencies
 
 ### Critical Path Dependencies

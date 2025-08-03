@@ -1,12 +1,13 @@
 # Nexorious
 
-A self-hostable web application for managing personal video game collections with comprehensive features for tracking, organizing, and discovering games across multiple platforms and storefronts.
+A self-hostable web application for managing personal video game collections with comprehensive IGDB integration for tracking, organizing, and discovering games across multiple platforms and storefronts.
 
 ## Features
 
+- **IGDB-Only Game Database**: All games sourced from the Internet Game Database (IGDB) with comprehensive metadata, cover art, ratings, and completion time estimates
 - **Multi-Platform Game Tracking**: Support for Steam, Epic Games Store, PlayStation, Xbox, Nintendo, GOG, and physical media
-- **Automatic Metadata**: Integration with IGDB for game information, cover art, and completion time estimates
-- **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
+- **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
+- **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes for your IGDB-sourced games
 - **Bulk Operations**: Import from CSV exports (Darkadia format) with intelligent conflict resolution
 - **Admin Management**: User management, platform configuration, and system administration
 - **Modern Tech Stack**: FastAPI backend with SvelteKit frontend
@@ -249,6 +250,16 @@ uv run python scripts/import_darkadia_csv.py export.csv --username admin --passw
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 - **OpenAPI Spec**: http://localhost:8000/openapi.json
+
+### IGDB-Only System
+
+**Important**: This API exclusively supports games sourced from the Internet Game Database (IGDB). All games must have valid IGDB IDs and metadata. Manual game creation is not supported.
+
+**Key API Features**:
+- **Game Discovery**: Search IGDB database and import games with complete metadata
+- **Metadata Management**: Refresh and update game information from IGDB
+- **Authentication Required**: All game-related endpoints require authentication tokens
+- **Rich Data**: All games include cover art, ratings, genre information, and completion time estimates
 
 ## Testing
 
