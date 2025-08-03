@@ -108,6 +108,7 @@ def _rank_games_by_fuzzy_match(games: List[Game], query: str, threshold: float =
 @router.get("/", response_model=GameListResponse)
 async def list_games(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=20, ge=1, le=100, description="Items per page"),
     q: Optional[str] = Query(default=None, description="Search query"),
@@ -213,7 +214,8 @@ async def list_games(
 @router.get("/{game_id}", response_model=GameResponse)
 async def get_game(
     game_id: str,
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get a specific game by ID."""
     
@@ -370,7 +372,8 @@ async def delete_game(
 @router.get("/{game_id}/aliases", response_model=List[GameAliasResponse])
 async def get_game_aliases(
     game_id: str,
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get all aliases for a specific game."""
     
@@ -701,6 +704,7 @@ async def verify_game(
 async def get_metadata_status(
     game_id: str,
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
     """Get metadata completeness status for a game."""
