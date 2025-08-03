@@ -6,13 +6,12 @@
   import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, IGDBVerificationBadge } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
-  import type { Game } from '$lib/stores/games.svelte';
   import { auth } from '$lib/stores/auth.svelte';
 
   let game: UserGame | null = null;
@@ -128,7 +127,6 @@
   }
 
   $: gameId = $page.params.id!;
-  $: isIGDBVerified = game?.game.is_verified || false;
 
   onMount(async () => {
     // Load game details and platforms - authentication is handled by RouteGuard
@@ -414,36 +412,8 @@
         progressUpdate.personal_notes = editData.personal_notes;
       }
 
-      // Only update game metadata if the game is not IGDB-verified
-      // IGDB-verified games should use "Update from IGDB" instead
-      if (!isIGDBVerified && game?.game.id) {
-        // Game metadata update - only include defined values
-        const gameMetadataUpdate: Partial<Game> = {
-          title: editData.title
-        };
-        
-        if (editData.description !== undefined) {
-          gameMetadataUpdate.description = editData.description;
-        }
-        if (editData.genre !== undefined) {
-          gameMetadataUpdate.genre = editData.genre;
-        }
-        if (editData.developer !== undefined) {
-          gameMetadataUpdate.developer = editData.developer;
-        }
-        if (editData.publisher !== undefined) {
-          gameMetadataUpdate.publisher = editData.publisher;
-        }
-        if (editData.release_date !== undefined) {
-          gameMetadataUpdate.release_date = editData.release_date;
-        }
-        if (editData.estimated_playtime_hours !== undefined) {
-          gameMetadataUpdate.estimated_playtime_hours = editData.estimated_playtime_hours;
-        }
-        
-        // Update game metadata
-        await games.updateGame(game.game.id, gameMetadataUpdate);
-      }
+      // Note: Game metadata (title, description, etc.) is managed by IGDB and cannot be edited directly.
+      // Use "Update from IGDB" to refresh metadata.
       
       // Always update user-specific data (personal information)
       await userGames.updateUserGame(gameId, userGameUpdate);
@@ -453,12 +423,8 @@
       await loadGame();
       isEditing = false;
       
-      // Show appropriate success message
-      if (isIGDBVerified) {
-        notifications.showSuccess('Personal information updated successfully. Game metadata is protected by IGDB verification.');
-      } else {
-        notifications.showSuccess('Game information updated successfully.');
-      }
+      // Show success message
+      notifications.showSuccess('Game information updated successfully.');
     } catch (error) {
       console.error('Failed to save changes:', error);
       notifications.showError('Failed to save changes. Please try again.');
@@ -510,9 +476,7 @@
   // Helper function to check if user can update the game
   function canUpdateFromIGDB() {
     const currentUser = auth.value;
-    return game?.game.igdb_id && 
-           game.game.is_verified && 
-           (currentUser.user?.isAdmin || !game.game.is_verified);
+    return game?.game.igdb_id && currentUser.user?.isAdmin;
   }
 
 
@@ -665,7 +629,6 @@
                     <h1 class="text-3xl font-bold text-gray-900">
                       {game.game.title}
                     </h1>
-                    <IGDBVerificationBadge isVerified={game.game.is_verified} size="lg" />
                   </div>
                 </div>
                 {#if game.is_loved}
@@ -809,8 +772,8 @@
               </div>
             {/if}
 
-            <!-- IGDB Rating and Verification -->
-            {#if game.game.rating_average || game.game.is_verified}
+            <!-- IGDB Rating -->
+            {#if game.game.rating_average}
               <div>
                 <h3 class="text-lg font-medium text-gray-900">Game Rating</h3>
                 <div class="mt-2 flex items-center space-x-4">
@@ -827,7 +790,6 @@
                       {/if}
                     </div>
                   {/if}
-                  <IGDBVerificationBadge isVerified={game.game.is_verified} size="md" />
                   {#if canUpdateFromIGDB()}
                     <button
                       on:click={updateFromIGDB}
@@ -907,157 +869,141 @@
         {#if isEditing}
           <!-- Edit Form -->
           <form on:submit|preventDefault={saveChanges} class="space-y-8">
-            <!-- Game Metadata Section -->
+            <!-- Game Metadata Section (Read-only - managed by IGDB) -->
             <div>
               <div class="flex items-center justify-between mb-4">
                 <h4 class="text-lg font-medium text-gray-900">Game Information</h4>
-                {#if isIGDBVerified}
-                  <div class="flex items-center space-x-2 text-sm text-blue-600">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    <span>IGDB-verified fields are protected</span>
-                  </div>
-                {/if}
+                <div class="flex items-center space-x-2 text-sm text-blue-600">
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span>Managed by IGDB - use "Update from IGDB" to refresh</span>
+                </div>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <label for="title" class="form-label flex items-center space-x-2">
                     <span>Title</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="title"
                     type="text"
                     bind:value={editData.title}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     required
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div>
                   <label for="genre" class="form-label flex items-center space-x-2">
                     <span>Genre</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="genre"
                     type="text"
                     bind:value={editData.genre}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     placeholder="e.g., Action, RPG, Strategy"
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div>
                   <label for="developer" class="form-label flex items-center space-x-2">
                     <span>Developer</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="developer"
                     type="text"
                     bind:value={editData.developer}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     placeholder="e.g., FromSoftware"
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div>
                   <label for="publisher" class="form-label flex items-center space-x-2">
                     <span>Publisher</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="publisher"
                     type="text"
                     bind:value={editData.publisher}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     placeholder="e.g., Bandai Namco"
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div>
                   <label for="release_date" class="form-label flex items-center space-x-2">
                     <span>Release Date</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="release_date"
                     type="date"
                     bind:value={editData.release_date}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div>
                   <label for="estimated_playtime_hours" class="form-label flex items-center space-x-2">
                     <span>Estimated Playtime (hours)</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <input
                     id="estimated_playtime_hours"
                     type="number"
                     min="0"
                     bind:value={editData.estimated_playtime_hours}
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     placeholder="e.g., 40"
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   />
                 </div>
 
                 <div class="lg:col-span-2">
                   <label for="description" class="form-label flex items-center space-x-2">
                     <span>Description</span>
-                    {#if isIGDBVerified}
-                      <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    {/if}
+                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </label>
                   <textarea
                     id="description"
                     bind:value={editData.description}
                     rows="4"
-                    class="form-input {isIGDBVerified ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}"
-                    disabled={isIGDBVerified}
+                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
+                    disabled={true}
                     placeholder="Enter a description of the game..."
-                    title={isIGDBVerified ? 'This field is automatically managed by IGDB. Use "Update from IGDB" to refresh.' : ''}
+                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
                   ></textarea>
                 </div>
               </div>

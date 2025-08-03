@@ -85,20 +85,6 @@ describe('Games Store API Integration', () => {
       expect(callUrl).toBe(`${mockConfig.apiUrl}/games/igdb-import?download_cover_art=true`);
     });
 
-    it('should use config.apiUrl for game creation', async () => {
-      const { games } = await import('./games.svelte');
-      
-      await games.createGame({ 
-        title: 'New Game',
-        game_metadata: '{}'
-      });
-      
-      expect(mockFetch).toHaveBeenCalled();
-      verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
-      
-      const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games`);
-    });
 
     it('should use config.apiUrl for game updates', async () => {
       const { games } = await import('./games.svelte');
@@ -251,23 +237,6 @@ describe('Games Store API Integration', () => {
       );
     });
 
-    it('should add new game with correct data', async () => {
-      const { games } = await import('./games.svelte');
-      const newGameData = { title: 'New Game', genre: 'Action', game_metadata: '{}' };
-      
-      await games.createGame(newGameData);
-      
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games`,
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json'
-          }),
-          body: JSON.stringify(newGameData)
-        })
-      );
-    });
 
     it('should update existing game with correct data', async () => {
       const { games } = await import('./games.svelte');
