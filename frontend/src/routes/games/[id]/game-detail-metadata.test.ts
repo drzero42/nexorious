@@ -147,13 +147,12 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
     });
 
     it('should verify CSS class structure for new components', () => {
-      // Test CSS classes used in the new components
+      // Test CSS classes used in the new components (IGDB-only system)
       const expectedClasses = [
         'bg-blue-50',    // Platform badges
         'bg-green-50',   // HLTB Main + Extra
         'bg-purple-50',  // HLTB Completionist  
-        'bg-green-100',  // Verification badge
-        'text-green-800' // Verification text
+        // Note: Verification badges removed in IGDB-only system
       ];
 
       expectedClasses.forEach(className => {
