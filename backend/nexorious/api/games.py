@@ -18,8 +18,6 @@ from ..models.game import Game, GameAlias
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.game import (
-    GameCreateRequest,
-    GameUpdateRequest,
     GameResponse,
     GameSearchRequest,
     GameListResponse,
@@ -235,128 +233,10 @@ async def get_game(
     return game_response
 
 
-@router.post("/", response_model=GameResponse, status_code=status.HTTP_201_CREATED)
-async def create_game(
-    game_data: GameCreateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Create a new game."""
-    
-    # Check for duplicate title
-    existing_game = session.exec(select(Game).where(Game.title == game_data.title)).first()
-    if existing_game:
-        logger.error(
-            f"409 CONFLICT - Game creation failed due to duplicate title. "
-            f"Title: '{game_data.title}' | "
-            f"Existing game ID: {existing_game.id} | "
-            f"Existing game IGDB ID: {existing_game.igdb_id} | "
-            f"Existing game created: {existing_game.created_at} | "
-            f"Developer: {existing_game.developer} | "
-            f"Publisher: {existing_game.publisher} | "
-            f"Requested by user: {current_user.username} ({current_user.id})"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Game with title '{game_data.title}' already exists"
-        )
-    
-    # Create game
-    new_game = Game(
-        title=game_data.title,
-        description=game_data.description,
-        genre=game_data.genre,
-        developer=game_data.developer,
-        publisher=game_data.publisher,
-        release_date=game_data.release_date,
-        cover_art_url=str(game_data.cover_art_url) if game_data.cover_art_url else None,
-        estimated_playtime_hours=game_data.estimated_playtime_hours,
-        howlongtobeat_main=game_data.howlongtobeat_main,
-        howlongtobeat_extra=game_data.howlongtobeat_extra,
-        howlongtobeat_completionist=game_data.howlongtobeat_completionist,
-        igdb_id=game_data.igdb_id,
-        game_metadata=json.dumps(game_data.metadata),
-    )
-    
-    session.add(new_game)
-    session.commit()
-    session.refresh(new_game)
-    
-    return new_game
 
 
-@router.put("/{game_id}", response_model=GameResponse)
-async def update_game(
-    game_id: str,
-    game_data: GameUpdateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Update an existing game."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    
-    # Update fields
-    update_data = game_data.model_dump(exclude_unset=True)
-    
-    for field, value in update_data.items():
-        if field == "metadata":
-            setattr(game, "game_metadata", json.dumps(value))
-        elif field == "cover_art_url" and value:
-            setattr(game, field, str(value))
-        else:
-            setattr(game, field, value)
-    
-    game.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    session.refresh(game)
-    
-    return game
 
 
-@router.delete("/{game_id}", response_model=SuccessResponse)
-async def delete_game(
-    game_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_admin_user)]
-):
-    """Delete a game (admin only)."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    # Check if game is in use
-    from ..models.user_game import UserGame
-    from ..models.wishlist import Wishlist
-    
-    user_games_count = session.exec(
-        select(func.count()).where(UserGame.game_id == game_id)
-    ).one()
-    
-    wishlist_count = session.exec(
-        select(func.count()).where(Wishlist.game_id == game_id)
-    ).one()
-    
-    if user_games_count > 0 or wishlist_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete game. It is referenced by {user_games_count} user collections and {wishlist_count} wishlists."
-        )
-    
-    session.delete(game)
-    session.commit()
-    
-    return SuccessResponse(message="Game deleted successfully")
 
 
 @router.get("/{game_id}/aliases", response_model=List[GameAliasResponse])

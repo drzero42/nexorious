@@ -8,40 +8,8 @@ from datetime import date, datetime
 from .common import TimestampMixin
 
 
-class GameCreateRequest(BaseModel):
-    """Request schema for creating a new game."""
-    title: str = Field(..., max_length=500, description="Game title")
-    description: Optional[str] = Field(None, description="Game description")
-    genre: Optional[str] = Field(None, max_length=200, description="Game genre")
-    developer: Optional[str] = Field(None, max_length=200, description="Game developer")
-    publisher: Optional[str] = Field(None, max_length=200, description="Game publisher")
-    release_date: Optional[date] = Field(None, description="Game release date")
-    cover_art_url: Optional[HttpUrl] = Field(None, description="Cover art URL")
-    estimated_playtime_hours: Optional[int] = Field(None, ge=0, description="Estimated playtime in hours")
-    howlongtobeat_main: Optional[int] = Field(None, ge=0, description="Main story hours from HowLongToBeat")
-    howlongtobeat_extra: Optional[int] = Field(None, ge=0, description="Main + extras hours from HowLongToBeat")
-    howlongtobeat_completionist: Optional[int] = Field(None, ge=0, description="Completionist hours from HowLongToBeat")
-    igdb_id: Optional[str] = Field(None, max_length=50, description="IGDB identifier")
-    igdb_slug: Optional[str] = Field(None, max_length=200, description="IGDB slug for URL generation")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
 
 
-class GameUpdateRequest(BaseModel):
-    """Request schema for updating a game."""
-    title: Optional[str] = Field(None, max_length=500, description="Game title")
-    description: Optional[str] = Field(None, description="Game description")
-    genre: Optional[str] = Field(None, max_length=200, description="Game genre")
-    developer: Optional[str] = Field(None, max_length=200, description="Game developer")
-    publisher: Optional[str] = Field(None, max_length=200, description="Game publisher")
-    release_date: Optional[date] = Field(None, description="Game release date")
-    cover_art_url: Optional[HttpUrl] = Field(None, description="Cover art URL")
-    estimated_playtime_hours: Optional[int] = Field(None, ge=0, description="Estimated playtime in hours")
-    howlongtobeat_main: Optional[int] = Field(None, ge=0, description="Main story hours from HowLongToBeat")
-    howlongtobeat_extra: Optional[int] = Field(None, ge=0, description="Main + extras hours from HowLongToBeat")
-    howlongtobeat_completionist: Optional[int] = Field(None, ge=0, description="Completionist hours from HowLongToBeat")
-    igdb_id: Optional[str] = Field(None, max_length=50, description="IGDB identifier")
-    igdb_slug: Optional[str] = Field(None, max_length=200, description="IGDB slug for URL generation")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
 
 class GameResponse(BaseModel, TimestampMixin):

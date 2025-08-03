@@ -260,21 +260,52 @@ def mock_igdb_service_fixture():
         )
     ]
     
-    # Mock get_game_by_id method
-    mock_service.get_game_by_id.return_value = GameMetadata(
-        igdb_id="12345",
-        title="Test Game",
-        igdb_slug="test-game",
-        description="A test game",
-        genre="Action",
-        developer="Test Developer",
-        publisher="Test Publisher",
-        release_date="2023-01-01",
-        cover_art_url="https://example.com/cover.jpg",
-        hastily=10,
-        normally=15,
-        completely=20
-    )
+    # Mock get_game_by_id method with different data based on igdb_id
+    def mock_get_game_by_id(igdb_id: str) -> GameMetadata:
+        game_data_map = {
+            "12345": {
+                "title": "Test Game",
+                "genre": "Action",
+                "developer": "Test Developer",
+                "publisher": "Test Publisher"
+            },
+            "100": {
+                "title": "Zelda",
+                "genre": "Adventure", 
+                "developer": "Nintendo",
+                "publisher": "Nintendo"
+            },
+            "200": {
+                "title": "Elden Ring",
+                "genre": "RPG",
+                "developer": "FromSoftware", 
+                "publisher": "Bandai Namco"
+            },
+            "300": {
+                "title": "Apex Legends",
+                "genre": "Shooter",
+                "developer": "Respawn",
+                "publisher": "EA"
+            }
+        }
+        
+        data = game_data_map.get(igdb_id, game_data_map["12345"])
+        return GameMetadata(
+            igdb_id=igdb_id,
+            title=data["title"],
+            igdb_slug=data["title"].lower().replace(" ", "-"),
+            description=f"A {data['genre'].lower()} game",
+            genre=data["genre"],
+            developer=data["developer"],
+            publisher=data["publisher"],
+            release_date="2023-01-01",
+            cover_art_url="https://example.com/cover.jpg",
+            hastily=10,
+            normally=15,
+            completely=20
+        )
+    
+    mock_service.get_game_by_id.side_effect = mock_get_game_by_id
     
     # Mock refresh_game_metadata method
     mock_service.refresh_game_metadata.return_value = GameMetadata(
@@ -350,24 +381,6 @@ def create_test_user_data(
         "password": password
     }
 
-
-def create_test_game_data(
-    title: str = "Test Game",
-    description: str = "A test game",
-    genre: str = "Action",
-    developer: str = "Test Developer",
-    publisher: str = "Test Publisher",
-    release_date: str = "2023-01-01"
-) -> Dict[str, Any]:
-    """Create test game data."""
-    return {
-        "title": title,
-        "description": description,
-        "genre": genre,
-        "developer": developer,
-        "publisher": publisher,
-        "release_date": release_date
-    }
 
 
 def create_test_platform_data(
