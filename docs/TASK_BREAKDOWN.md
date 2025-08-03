@@ -535,7 +535,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove tests for manual game creation functionality
 - [x] Remove tests for IGDB verification system and locked metadata fields
 - [x] Update existing tests to assume all games are IGDB-sourced
-- [x] Add tests to ensure manual game creation endpoints are properly removed/blocked
+- [x] ~~Add tests to ensure manual game creation endpoints are properly removed/blocked~~ (Not needed - testing absence of functionality is not valuable)
 - [x] Update component tests to reflect simplified UI without verification badges
 - [x] Verify game editing tests focus on personal data and platform management only
 
