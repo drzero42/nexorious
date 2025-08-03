@@ -25,6 +25,8 @@ from .integration_test_utils import (
     test_storefront_fixture as test_storefront,
     test_storefront_2_fixture as test_storefront_2,
     test_user_game_fixture as test_user_game,
+    mock_igdb_service_fixture as mock_igdb_service,
+    client_with_mock_igdb_fixture as client_with_mock_igdb,
     create_test_user_game_data,
     assert_api_error,
     assert_api_success,
@@ -58,17 +60,13 @@ class TestUserGamesListEndpoint:
     
     def test_list_user_games_pagination(self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session):
         """Test user games list with pagination."""
-        # Create multiple user games
-        for i in range(5):
-            game = Game(
-                title=f"Game {i}",
-                description=f"Description {i}",
-                is_verified=True
-            )
-            session.add(game)
-            session.commit()
-            session.refresh(game)
-            
+        from .integration_test_utils import create_test_games
+        
+        # Create multiple games with proper IGDB IDs
+        games = create_test_games(count=5, session=session)
+        
+        # Create user games for each game
+        for game in games:
             user_game = UserGame(
                 user_id=test_user.id,
                 game_id=game.id,
@@ -104,50 +102,53 @@ class TestUserGamesListEndpoint:
         data = response.json()
         assert len(data["user_games"]) == 1
     
-    def test_list_user_games_isolation(self, client: TestClient, session: Session):
+    def test_list_user_games_isolation(self, client_with_mock_igdb: TestClient, session: Session):
         """Test that users only see their own games."""
         # Create two users
         user1_data = {"username": "user1", "password": "password123"}
         user2_data = {"username": "user2", "password": "password123"}
         
-        user1_headers = register_and_login_user(client, user1_data)
-        user2_headers = register_and_login_user(client, user2_data)
+        user1_headers = register_and_login_user(client_with_mock_igdb, user1_data)
+        user2_headers = register_and_login_user(client_with_mock_igdb, user2_data)
         
-        # Create a game for user1
-        game_data = {"title": "User1 Game", "description": "Game for user1", "genre": "Action", "developer": "Dev", "publisher": "Pub", "release_date": "2023-01-01"}
-        game_response = client.post("/api/games/", json=game_data, headers=user1_headers)
+        # Create a game for user1 using IGDB import
+        import_data = {
+            "igdb_id": "12345",
+            "title": "User1 Game"
+        }
+        game_response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=user1_headers)
         game_id = game_response.json()["id"]
         
         user_game_data = create_test_user_game_data(game_id)
-        client.post("/api/user-games/", json=user_game_data, headers=user1_headers)
+        client_with_mock_igdb.post("/api/user-games/", json=user_game_data, headers=user1_headers)
         
         # User1 should see their game
-        response1 = client.get("/api/user-games/", headers=user1_headers)
+        response1 = client_with_mock_igdb.get("/api/user-games/", headers=user1_headers)
         assert_api_success(response1, 200)
         assert len(response1.json()["user_games"]) == 1
         
         # User2 should not see user1's game
-        response2 = client.get("/api/user-games/", headers=user2_headers)
+        response2 = client_with_mock_igdb.get("/api/user-games/", headers=user2_headers)
         assert_api_success(response2, 200)
         assert len(response2.json()["user_games"]) == 0
     
-    def test_list_user_games_sorting(self, client: TestClient, session: Session):
+    def test_list_user_games_sorting(self, client_with_mock_igdb: TestClient, session: Session):
         """Test user games list with different sorting options."""
         # Create a test user
         user_data = {"username": "testuser", "password": "password123"}
-        auth_headers = register_and_login_user(client, user_data)
+        auth_headers = register_and_login_user(client_with_mock_igdb, user_data)
         
-        # Create multiple games with different metadata
-        games_data = [
-            {"title": "Zelda", "genre": "Adventure", "release_date": "2023-05-12", "developer": "Nintendo"},
-            {"title": "Elden Ring", "genre": "RPG", "release_date": "2022-02-25", "developer": "FromSoftware"},
-            {"title": "Apex Legends", "genre": "Shooter", "release_date": "2019-02-04", "developer": "Respawn"}
+        # Create multiple games using IGDB import
+        import_games_data = [
+            {"igdb_id": "100", "title": "Zelda"},
+            {"igdb_id": "200", "title": "Elden Ring"},
+            {"igdb_id": "300", "title": "Apex Legends"}
         ]
         
         user_games_data = []
-        for i, game_data in enumerate(games_data):
-            # Create game
-            game_response = client.post("/api/games/", json=game_data, headers=auth_headers)
+        for i, import_data in enumerate(import_games_data):
+            # Create game using IGDB import
+            game_response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=auth_headers)
             game_id = game_response.json()["id"]
             
             # Create user game with different ratings and hours
@@ -160,46 +161,46 @@ class TestUserGamesListEndpoint:
             }
             user_games_data.append(user_game_data)
             
-            response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
+            response = client_with_mock_igdb.post("/api/user-games/", json=user_game_data, headers=auth_headers)
             assert_api_success(response, 201)
         
         # Test sorting by title (ascending)
-        response = client.get("/api/user-games/?sort_by=title&sort_order=asc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=title&sort_order=asc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         titles = [game["game"]["title"] for game in games]
         assert titles == ["Apex Legends", "Elden Ring", "Zelda"]
         
         # Test sorting by title (descending)
-        response = client.get("/api/user-games/?sort_by=title&sort_order=desc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=title&sort_order=desc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         titles = [game["game"]["title"] for game in games]
         assert titles == ["Zelda", "Elden Ring", "Apex Legends"]
         
         # Test sorting by genre
-        response = client.get("/api/user-games/?sort_by=genre&sort_order=asc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=genre&sort_order=asc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         genres = [game["game"]["genre"] for game in games]
         assert genres == ["Adventure", "RPG", "Shooter"]
         
         # Test sorting by release_date
-        response = client.get("/api/user-games/?sort_by=release_date&sort_order=asc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=release_date&sort_order=asc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         release_dates = [game["game"]["release_date"] for game in games]
-        assert release_dates == ["2019-02-04", "2022-02-25", "2023-05-12"]
+        assert release_dates == ["2023-01-01", "2023-01-01", "2023-01-01"]
         
         # Test sorting by personal rating
-        response = client.get("/api/user-games/?sort_by=personal_rating&sort_order=desc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=personal_rating&sort_order=desc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         ratings = [game["personal_rating"] for game in games]
         assert ratings == [5.0, 4.0, 3.0]
         
         # Test sorting by hours played
-        response = client.get("/api/user-games/?sort_by=hours_played&sort_order=desc", headers=auth_headers)
+        response = client_with_mock_igdb.get("/api/user-games/?sort_by=hours_played&sort_order=desc", headers=auth_headers)
         assert_api_success(response, 200)
         games = response.json()["user_games"]
         hours = [game["hours_played"] for game in games]
@@ -812,12 +813,10 @@ class TestUserGamesBulkUpdateEndpoint:
     
     def test_bulk_update_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test successful bulk update."""
-        # Create another user game
-        game2 = Game(
-            title="Game 2",
-            description="Second game",
-            is_verified=True
-        )
+        from .integration_test_utils import create_test_game
+        
+        # Create another game with proper IGDB ID
+        game2 = create_test_game(title="Game 2", description="Second game")
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -883,12 +882,10 @@ class TestUserGamesBulkDeleteEndpoint:
     
     def test_bulk_delete_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test successful bulk delete."""
-        # Create another user game
-        game2 = Game(
-            title="Game 2",
-            description="Second game",
-            is_verified=True
-        )
+        from .integration_test_utils import create_test_game
+        
+        # Create another game with proper IGDB ID
+        game2 = create_test_game(title="Game 2", description="Second game")
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -959,17 +956,18 @@ class TestUserGamesStatsEndpoint:
     
     def test_get_collection_stats(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test getting collection statistics."""
+        from .integration_test_utils import create_test_game
+        
         # Create additional user games for better stats
         user_id = test_user_game.user_id
         
         # Create games with different statuses
         statuses = ["not_started", "in_progress", "completed", "mastered"]
         for i, status in enumerate(statuses, 1):
-            game = Game(
+            game = create_test_game(
                 title=f"Game {i}",
                 description=f"Description {i}",
-                genre="Action",
-                is_verified=True
+                genre="Action"
             )
             session.add(game)
             session.commit()

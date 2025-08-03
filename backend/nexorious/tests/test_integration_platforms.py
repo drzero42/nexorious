@@ -30,9 +30,9 @@ from .integration_test_utils import (
 class TestPlatformsListEndpoint:
     """Test GET /api/platforms/ endpoint."""
     
-    def test_list_platforms_success(self, client: TestClient, test_platform: Platform):
+    def test_list_platforms_success(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test successful platforms list retrieval."""
-        response = client.get("/api/platforms/")
+        response = client.get("/api/platforms/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -46,16 +46,16 @@ class TestPlatformsListEndpoint:
         assert "storefronts" in data["platforms"][0]
         assert data["platforms"][0]["storefronts"] == []
     
-    def test_list_platforms_empty(self, client: TestClient):
+    def test_list_platforms_empty(self, client: TestClient, auth_headers):
         """Test platforms list with no platforms."""
-        response = client.get("/api/platforms/")
+        response = client.get("/api/platforms/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["platforms"]) == 0
         assert data["total"] == 0
     
-    def test_list_platforms_active_only(self, client: TestClient, session: Session):
+    def test_list_platforms_active_only(self, client: TestClient, session: Session, auth_headers):
         """Test platforms list shows only active platforms."""
         # Create active platform
         active_platform = Platform(
@@ -74,14 +74,14 @@ class TestPlatformsListEndpoint:
         session.add(inactive_platform)
         session.commit()
         
-        response = client.get("/api/platforms/")
+        response = client.get("/api/platforms/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["platforms"]) == 1
         assert data["platforms"][0]["name"] == "active"
     
-    def test_list_platforms_pagination(self, client: TestClient, session: Session):
+    def test_list_platforms_pagination(self, client: TestClient, session: Session, auth_headers):
         """Test platforms list with pagination."""
         # Create multiple platforms
         for i in range(5):
@@ -93,14 +93,14 @@ class TestPlatformsListEndpoint:
             session.add(platform)
         session.commit()
         
-        response = client.get("/api/platforms/?page=1&per_page=2")
+        response = client.get("/api/platforms/?page=1&per_page=2", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["platforms"]) == 2
         assert data["total"] == 5
     
-    def test_list_platforms_includes_associated_storefronts(self, client: TestClient, session: Session):
+    def test_list_platforms_includes_associated_storefronts(self, client: TestClient, session: Session, auth_headers):
         """Test that platforms list includes associated storefronts for each platform."""
         # Create platforms
         platform1 = Platform(
@@ -158,7 +158,7 @@ class TestPlatformsListEndpoint:
         session.add(assoc3)
         session.commit()
         
-        response = client.get("/api/platforms/")
+        response = client.get("/api/platforms/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -189,7 +189,7 @@ class TestPlatformsListEndpoint:
         assert "is_active" in storefront
         assert storefront["is_active"] is True
     
-    def test_list_platforms_with_no_storefront_associations(self, client: TestClient, session: Session):
+    def test_list_platforms_with_no_storefront_associations(self, client: TestClient, session: Session, auth_headers):
         """Test that platforms with no storefront associations return empty storefronts list."""
         # Create platform with no associations
         platform = Platform(
@@ -200,7 +200,7 @@ class TestPlatformsListEndpoint:
         session.add(platform)
         session.commit()
         
-        response = client.get("/api/platforms/")
+        response = client.get("/api/platforms/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -215,9 +215,9 @@ class TestPlatformsListEndpoint:
 class TestPlatformsDetailEndpoint:
     """Test GET /api/platforms/{platform_id} endpoint."""
     
-    def test_get_platform_success(self, client: TestClient, test_platform: Platform):
+    def test_get_platform_success(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test successful platform retrieval."""
-        response = client.get(f"/api/platforms/{test_platform.id}")
+        response = client.get(f"/api/platforms/{test_platform.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -227,13 +227,13 @@ class TestPlatformsDetailEndpoint:
         assert data["icon_url"] == test_platform.icon_url
         assert data["is_active"] == test_platform.is_active
     
-    def test_get_platform_not_found(self, client: TestClient):
+    def test_get_platform_not_found(self, client: TestClient, auth_headers):
         """Test platform retrieval with non-existent ID."""
-        response = client.get("/api/platforms/non-existent-id")
+        response = client.get("/api/platforms/non-existent-id", headers=auth_headers)
         
         assert_api_error(response, 404, "Platform not found")
     
-    def test_get_inactive_platform(self, client: TestClient, session: Session):
+    def test_get_inactive_platform(self, client: TestClient, session: Session, auth_headers):
         """Test retrieval of inactive platform."""
         inactive_platform = Platform(
             name="inactive",
@@ -244,7 +244,7 @@ class TestPlatformsDetailEndpoint:
         session.commit()
         session.refresh(inactive_platform)
         
-        response = client.get(f"/api/platforms/{inactive_platform.id}")
+        response = client.get(f"/api/platforms/{inactive_platform.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -418,9 +418,9 @@ class TestPlatformsDeleteEndpoint:
 class TestStorefrontsListEndpoint:
     """Test GET /api/platforms/storefronts/ endpoint."""
     
-    def test_list_storefronts_success(self, client: TestClient, test_storefront: Storefront):
+    def test_list_storefronts_success(self, client: TestClient, test_storefront: Storefront, auth_headers):
         """Test successful storefronts list retrieval."""
-        response = client.get("/api/platforms/storefronts/")
+        response = client.get("/api/platforms/storefronts/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -431,16 +431,16 @@ class TestStorefrontsListEndpoint:
         assert data["storefronts"][0]["name"] == test_storefront.name
         assert data["storefronts"][0]["display_name"] == test_storefront.display_name
     
-    def test_list_storefronts_empty(self, client: TestClient):
+    def test_list_storefronts_empty(self, client: TestClient, auth_headers):
         """Test storefronts list with no storefronts."""
-        response = client.get("/api/platforms/storefronts/")
+        response = client.get("/api/platforms/storefronts/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["storefronts"]) == 0
         assert data["total"] == 0
     
-    def test_list_storefronts_active_only(self, client: TestClient, session: Session):
+    def test_list_storefronts_active_only(self, client: TestClient, session: Session, auth_headers):
         """Test storefronts list shows only active storefronts."""
         # Create active storefront
         active_storefront = Storefront(
@@ -461,14 +461,14 @@ class TestStorefrontsListEndpoint:
         session.add(inactive_storefront)
         session.commit()
         
-        response = client.get("/api/platforms/storefronts/")
+        response = client.get("/api/platforms/storefronts/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["storefronts"]) == 1
         assert data["storefronts"][0]["name"] == "active"
     
-    def test_list_storefronts_pagination(self, client: TestClient, session: Session):
+    def test_list_storefronts_pagination(self, client: TestClient, session: Session, auth_headers):
         """Test storefronts list with pagination."""
         # Create multiple storefronts
         for i in range(5):
@@ -481,7 +481,7 @@ class TestStorefrontsListEndpoint:
             session.add(storefront)
         session.commit()
         
-        response = client.get("/api/platforms/storefronts/?page=1&per_page=2")
+        response = client.get("/api/platforms/storefronts/?page=1&per_page=2", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -492,9 +492,9 @@ class TestStorefrontsListEndpoint:
 class TestStorefrontsDetailEndpoint:
     """Test GET /api/platforms/storefronts/{storefront_id} endpoint."""
     
-    def test_get_storefront_success(self, client: TestClient, test_storefront: Storefront):
+    def test_get_storefront_success(self, client: TestClient, test_storefront: Storefront, auth_headers):
         """Test successful storefront retrieval."""
-        response = client.get(f"/api/platforms/storefronts/{test_storefront.id}")
+        response = client.get(f"/api/platforms/storefronts/{test_storefront.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -505,13 +505,13 @@ class TestStorefrontsDetailEndpoint:
         assert data["base_url"] == test_storefront.base_url
         assert data["is_active"] == test_storefront.is_active
     
-    def test_get_storefront_not_found(self, client: TestClient):
+    def test_get_storefront_not_found(self, client: TestClient, auth_headers):
         """Test storefront retrieval with non-existent ID."""
-        response = client.get("/api/platforms/storefronts/non-existent-id")
+        response = client.get("/api/platforms/storefronts/non-existent-id", headers=auth_headers)
         
         assert_api_error(response, 404, "Storefront not found")
     
-    def test_get_inactive_storefront(self, client: TestClient, session: Session):
+    def test_get_inactive_storefront(self, client: TestClient, session: Session, auth_headers):
         """Test retrieval of inactive storefront."""
         inactive_storefront = Storefront(
             name="inactive",
@@ -523,7 +523,7 @@ class TestStorefrontsDetailEndpoint:
         session.commit()
         session.refresh(inactive_storefront)
         
-        response = client.get(f"/api/platforms/storefronts/{inactive_storefront.id}")
+        response = client.get(f"/api/platforms/storefronts/{inactive_storefront.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -757,23 +757,6 @@ class TestPlatformsEndpointsSecurity:
         response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}")
         assert_api_error(response, 403, "Not authenticated")
     
-    def test_public_endpoints_allow_anonymous_access(self, client: TestClient, test_platform: Platform, test_storefront: Storefront):
-        """Test that public endpoints allow anonymous access."""
-        # Test platforms list
-        response = client.get("/api/platforms/")
-        assert_api_success(response, 200)
-        
-        # Test platform detail
-        response = client.get(f"/api/platforms/{test_platform.id}")
-        assert_api_success(response, 200)
-        
-        # Test storefronts list
-        response = client.get("/api/platforms/storefronts/")
-        assert_api_success(response, 200)
-        
-        # Test storefront detail
-        response = client.get(f"/api/platforms/storefronts/{test_storefront.id}")
-        assert_api_success(response, 200)
 
 
 class TestPlatformsDataValidation:
@@ -831,14 +814,14 @@ class TestPlatformsDataValidation:
 class TestPlatformDefaultStorefrontGetEndpoint:
     """Test GET /api/platforms/{platform_id}/default-storefront endpoint."""
     
-    def test_get_platform_default_storefront_with_default(self, client: TestClient, session: Session, test_platform: Platform, test_storefront: Storefront):
+    def test_get_platform_default_storefront_with_default(self, client: TestClient, session: Session, test_platform: Platform, test_storefront: Storefront, auth_headers):
         """Test getting platform default storefront when one is set."""
         # Set the storefront as default for the platform
         test_platform.default_storefront_id = test_storefront.id
         session.commit()
         session.refresh(test_platform)
         
-        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront")
+        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -849,9 +832,9 @@ class TestPlatformDefaultStorefrontGetEndpoint:
         assert data["default_storefront"]["id"] == str(test_storefront.id)
         assert data["default_storefront"]["name"] == test_storefront.name
     
-    def test_get_platform_default_storefront_without_default(self, client: TestClient, test_platform: Platform):
+    def test_get_platform_default_storefront_without_default(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test getting platform default storefront when none is set."""
-        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront")
+        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -860,9 +843,9 @@ class TestPlatformDefaultStorefrontGetEndpoint:
         assert data["platform_display_name"] == test_platform.display_name
         assert data["default_storefront"] is None
     
-    def test_get_platform_default_storefront_not_found(self, client: TestClient):
+    def test_get_platform_default_storefront_not_found(self, client: TestClient, auth_headers):
         """Test getting default storefront for non-existent platform."""
-        response = client.get("/api/platforms/nonexistent-id/default-storefront")
+        response = client.get("/api/platforms/nonexistent-id/default-storefront", headers=auth_headers)
         
         assert_api_error(response, 404, "Platform not found")
 
@@ -946,7 +929,7 @@ class TestPlatformDefaultStorefrontUpdateEndpoint:
 class TestPlatformStorefrontsEndpoint:
     """Test GET /api/platforms/{platform_id}/storefronts endpoint."""
     
-    def test_get_platform_storefronts_success(self, client: TestClient, session: Session):
+    def test_get_platform_storefronts_success(self, client: TestClient, session: Session, auth_headers):
         """Test successful retrieval of platform storefronts."""
         # Create platform and storefronts
         platform = Platform(
@@ -977,7 +960,7 @@ class TestPlatformStorefrontsEndpoint:
         session.add(assoc2)
         session.commit()
         
-        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -991,7 +974,7 @@ class TestPlatformStorefrontsEndpoint:
         assert data["storefronts"][0]["name"] == "test-storefront-1"
         assert data["storefronts"][1]["name"] == "test-storefront-2"
     
-    def test_get_platform_storefronts_empty(self, client: TestClient, session: Session):
+    def test_get_platform_storefronts_empty(self, client: TestClient, session: Session, auth_headers):
         """Test platform with no storefront associations."""
         platform = Platform(
             name="test-platform",
@@ -1001,7 +984,7 @@ class TestPlatformStorefrontsEndpoint:
         session.add(platform)
         session.commit()
         
-        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -1009,7 +992,7 @@ class TestPlatformStorefrontsEndpoint:
         assert data["total_storefronts"] == 0
         assert len(data["storefronts"]) == 0
     
-    def test_get_platform_storefronts_active_only(self, client: TestClient, session: Session):
+    def test_get_platform_storefronts_active_only(self, client: TestClient, session: Session, auth_headers):
         """Test platform storefronts with active_only filter."""
         platform = Platform(
             name="test-platform",
@@ -1040,7 +1023,7 @@ class TestPlatformStorefrontsEndpoint:
         session.commit()
         
         # Test with active_only=true (default)
-        response = client.get(f"/api/platforms/{platform.id}/storefronts")
+        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -1049,16 +1032,16 @@ class TestPlatformStorefrontsEndpoint:
         assert data["storefronts"][0]["name"] == "active-storefront"
         
         # Test with active_only=false
-        response = client.get(f"/api/platforms/{platform.id}/storefronts?active_only=false")
+        response = client.get(f"/api/platforms/{platform.id}/storefronts?active_only=false", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total_storefronts"] == 2
         assert len(data["storefronts"]) == 2
     
-    def test_get_platform_storefronts_platform_not_found(self, client: TestClient):
+    def test_get_platform_storefronts_platform_not_found(self, client: TestClient, auth_headers):
         """Test platform storefronts for non-existent platform."""
-        response = client.get("/api/platforms/nonexistent-id/storefronts")
+        response = client.get("/api/platforms/nonexistent-id/storefronts", headers=auth_headers)
         
         assert_api_error(response, 404, "Platform not found")
 

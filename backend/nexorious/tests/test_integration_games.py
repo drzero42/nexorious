@@ -22,7 +22,6 @@ from .integration_test_utils import (
     test_game_fixture as test_game,
     mock_igdb_service_fixture as mock_igdb_service,
     client_with_mock_igdb_fixture as client_with_mock_igdb,
-    create_test_game_data,
     assert_api_error,
     assert_api_success,
     register_and_login_user
@@ -32,9 +31,9 @@ from .integration_test_utils import (
 class TestGamesListEndpoint:
     """Test GET /api/games/ endpoint."""
     
-    def test_list_games_success(self, client: TestClient, test_game: Game):
+    def test_list_games_success(self, client: TestClient, test_game: Game, auth_headers):
         """Test successful games list retrieval."""
-        response = client.get("/api/games/")
+        response = client.get("/api/games/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -46,20 +45,15 @@ class TestGamesListEndpoint:
         assert data["games"][0]["id"] == str(test_game.id)
         assert data["games"][0]["title"] == test_game.title
     
-    def test_list_games_pagination(self, client: TestClient, session: Session):
+    def test_list_games_pagination(self, client: TestClient, session: Session, auth_headers):
         """Test games list with pagination."""
-        # Create multiple games
-        for i in range(5):
-            game = Game(
-                title=f"Game {i}",
-                description=f"Description {i}",
-                is_verified=True
-            )
-            session.add(game)
-        session.commit()
+        from .integration_test_utils import create_test_games
+        
+        # Create multiple games with proper IGDB IDs
+        create_test_games(count=5, session=session)
         
         # Test pagination
-        response = client.get("/api/games/?page=1&per_page=2")
+        response = client.get("/api/games/?page=1&per_page=2", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -68,27 +62,27 @@ class TestGamesListEndpoint:
         assert data["page"] == 1
         assert data["per_page"] == 2
     
-    def test_list_games_search(self, client: TestClient, test_game: Game):
+    def test_list_games_search(self, client: TestClient, test_game: Game, auth_headers):
         """Test games list with search."""
-        response = client.get(f"/api/games/?search={test_game.title}")
+        response = client.get(f"/api/games/?search={test_game.title}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["games"]) == 1
         assert data["games"][0]["title"] == test_game.title
     
-    def test_list_games_filter_by_genre(self, client: TestClient, test_game: Game):
+    def test_list_games_filter_by_genre(self, client: TestClient, test_game: Game, auth_headers):
         """Test games list with genre filter."""
-        response = client.get(f"/api/games/?genre={test_game.genre}")
+        response = client.get(f"/api/games/?genre={test_game.genre}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["games"]) == 1
         assert data["games"][0]["genre"] == test_game.genre
     
-    def test_list_games_empty_result(self, client: TestClient):
+    def test_list_games_empty_result(self, client: TestClient, auth_headers):
         """Test games list with no games."""
-        response = client.get("/api/games/")
+        response = client.get("/api/games/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -96,67 +90,14 @@ class TestGamesListEndpoint:
         assert data["total"] == 0
 
 
-class TestGamesCreateEndpoint:
-    """Test POST /api/games/ endpoint."""
-    
-    def test_create_game_success(self, client: TestClient, auth_headers: Dict[str, str]):
-        """Test successful game creation."""
-        game_data = create_test_game_data()
-        response = client.post("/api/games/", json=game_data, headers=auth_headers)
-        
-        assert_api_success(response, 201)
-        data = response.json()
-        assert data["title"] == game_data["title"]
-        assert data["description"] == game_data["description"]
-        assert data["genre"] == game_data["genre"]
-        assert data["developer"] == game_data["developer"]
-        assert data["publisher"] == game_data["publisher"]
-        assert data["is_verified"] is False  # Default for non-admin users
-    
-    def test_create_game_admin_verified(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test game creation by admin user (auto-verified)."""
-        game_data = create_test_game_data()
-        response = client.post("/api/games/", json=game_data, headers=admin_headers)
-        
-        assert_api_success(response, 201)
-        data = response.json()
-        assert data["is_verified"] is True  # Admin users create verified games
-    
-    def test_create_game_duplicate_title(self, client: TestClient, auth_headers: Dict[str, str], test_game: Game):
-        """Test creation of game with duplicate title."""
-        game_data = create_test_game_data(title=test_game.title)
-        response = client.post("/api/games/", json=game_data, headers=auth_headers)
-        
-        assert_api_error(response, 409, "already exists")
-    
-    def test_create_game_missing_required_fields(self, client: TestClient, auth_headers: Dict[str, str]):
-        """Test game creation with missing required fields."""
-        incomplete_data = {}  # No title field
-        response = client.post("/api/games/", json=incomplete_data, headers=auth_headers)
-        
-        assert_api_error(response, 422)
-    
-    def test_create_game_without_auth(self, client: TestClient):
-        """Test game creation without authentication."""
-        game_data = create_test_game_data()
-        response = client.post("/api/games/", json=game_data)
-        
-        assert_api_error(response, 403, "Not authenticated")
-    
-    def test_create_game_invalid_date_format(self, client: TestClient, auth_headers: Dict[str, str]):
-        """Test game creation with invalid date format."""
-        game_data = create_test_game_data(release_date="invalid-date")
-        response = client.post("/api/games/", json=game_data, headers=auth_headers)
-        
-        assert_api_error(response, 422)
 
 
 class TestGamesDetailEndpoint:
     """Test GET /api/games/{game_id} endpoint."""
     
-    def test_get_game_success(self, client: TestClient, test_game: Game):
+    def test_get_game_success(self, client: TestClient, test_game: Game, auth_headers):
         """Test successful game retrieval."""
-        response = client.get(f"/api/games/{test_game.id}")
+        response = client.get(f"/api/games/{test_game.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -167,13 +108,13 @@ class TestGamesDetailEndpoint:
         assert data["developer"] == test_game.developer
         assert data["publisher"] == test_game.publisher
     
-    def test_get_game_not_found(self, client: TestClient):
+    def test_get_game_not_found(self, client: TestClient, auth_headers):
         """Test game retrieval with non-existent ID."""
-        response = client.get("/api/games/non-existent-id")
+        response = client.get("/api/games/non-existent-id", headers=auth_headers)
         
         assert_api_error(response, 404, "Game not found")
     
-    def test_get_game_with_aliases(self, client: TestClient, test_game: Game, session: Session):
+    def test_get_game_with_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
         """Test game retrieval with aliases."""
         # Add alias
         alias = GameAlias(
@@ -184,7 +125,7 @@ class TestGamesDetailEndpoint:
         session.add(alias)
         session.commit()
         
-        response = client.get(f"/api/games/{test_game.id}")
+        response = client.get(f"/api/games/{test_game.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -193,83 +134,14 @@ class TestGamesDetailEndpoint:
         assert data["aliases"][0]["alias_title"] == "Alternative Title"
 
 
-class TestGamesUpdateEndpoint:
-    """Test PUT /api/games/{game_id} endpoint."""
-    
-    def test_update_game_success(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test successful game update."""
-        update_data = {
-            "title": "Updated Title",
-            "description": "Updated description",
-            "genre": "Updated Genre"
-        }
-        response = client.put(f"/api/games/{test_game.id}", json=update_data, headers=auth_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["title"] == "Updated Title"
-        assert data["description"] == "Updated description"
-        assert data["genre"] == "Updated Genre"
-    
-    def test_update_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
-        """Test game update with non-existent ID."""
-        update_data = {"title": "Updated Title"}
-        response = client.put("/api/games/non-existent-id", json=update_data, headers=auth_headers)
-        
-        assert_api_error(response, 404, "Game not found")
-    
-    def test_update_game_without_auth(self, client: TestClient, test_game: Game):
-        """Test game update without authentication."""
-        update_data = {"title": "Updated Title"}
-        response = client.put(f"/api/games/{test_game.id}", json=update_data)
-        
-        assert_api_error(response, 403, "Not authenticated")
-    
-    def test_update_game_partial(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test partial game update."""
-        update_data = {"title": "Updated Title"}
-        response = client.put(f"/api/games/{test_game.id}", json=update_data, headers=auth_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["title"] == "Updated Title"
-        assert data["description"] == test_game.description  # Should remain unchanged
 
 
-class TestGamesDeleteEndpoint:
-    """Test DELETE /api/games/{game_id} endpoint."""
-    
-    def test_delete_game_success(self, client: TestClient, test_game: Game, admin_headers: Dict[str, str]):
-        """Test successful game deletion by admin."""
-        response = client.delete(f"/api/games/{test_game.id}", headers=admin_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["message"] == "Game deleted successfully"
-    
-    def test_delete_game_not_admin(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test game deletion by non-admin user."""
-        response = client.delete(f"/api/games/{test_game.id}", headers=auth_headers)
-        
-        assert_api_error(response, 403, "Administrative privileges required")
-    
-    def test_delete_game_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test game deletion with non-existent ID."""
-        response = client.delete("/api/games/non-existent-id", headers=admin_headers)
-        
-        assert_api_error(response, 404, "Game not found")
-    
-    def test_delete_game_without_auth(self, client: TestClient, test_game: Game):
-        """Test game deletion without authentication."""
-        response = client.delete(f"/api/games/{test_game.id}")
-        
-        assert_api_error(response, 403, "Not authenticated")
 
 
 class TestGameAliasesEndpoints:
     """Test game aliases endpoints."""
     
-    def test_get_game_aliases(self, client: TestClient, test_game: Game, session: Session):
+    def test_get_game_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
         """Test getting game aliases."""
         # Add alias
         alias = GameAlias(
@@ -280,7 +152,7 @@ class TestGameAliasesEndpoints:
         session.add(alias)
         session.commit()
         
-        response = client.get(f"/api/games/{test_game.id}/aliases")
+        response = client.get(f"/api/games/{test_game.id}/aliases", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -418,28 +290,6 @@ class TestIGDBIntegrationEndpoints:
         assert_api_error(response, 403, "Not authenticated")
 
 
-class TestGameVerificationEndpoint:
-    """Test game verification endpoint."""
-    
-    def test_verify_game_success(self, client: TestClient, test_game: Game, admin_headers: Dict[str, str]):
-        """Test successful game verification by admin."""
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=admin_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["is_verified"] is True
-    
-    def test_verify_game_not_admin(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test game verification by non-admin user."""
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=auth_headers)
-        
-        assert_api_error(response, 403, "Administrative privileges required")
-    
-    def test_verify_game_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test game verification with non-existent ID."""
-        response = client.put("/api/games/non-existent-id/verify", headers=admin_headers)
-        
-        assert_api_error(response, 404, "Game not found")
 
 
 class TestGameMetadataEndpoints:
@@ -558,37 +408,40 @@ class TestCoverArtEndpoints:
 class TestGamesEndpointsSecurity:
     """Test security aspects of games endpoints."""
     
-    def test_admin_only_endpoints_require_admin(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test that admin-only endpoints require admin access."""
-        # Test verify endpoint
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=auth_headers)
-        assert_api_error(response, 403, "Administrative privileges required")
+    def test_admin_only_endpoints_require_admin(self, client_with_mock_igdb: TestClient, test_game: Game, auth_headers: Dict[str, str]):
+        """Test that admin-only endpoints require admin access."""        
+        # Test bulk metadata endpoint
+        bulk_data = {
+            "game_ids": [str(test_game.id)],
+            "operation": "refresh"
+        }
+        response = client_with_mock_igdb.post("/api/games/metadata/bulk", json=bulk_data, headers=auth_headers)
+        assert_api_error(response, 403, "Only administrators can perform bulk metadata operations")
         
-        # Test delete endpoint
-        response = client.delete(f"/api/games/{test_game.id}", headers=auth_headers)
-        assert_api_error(response, 403, "Administrative privileges required")
+        # Test bulk cover art download endpoint
+        bulk_cover_data = {
+            "game_ids": [str(test_game.id)],
+            "skip_existing": True
+        }
+        response = client_with_mock_igdb.post("/api/games/cover-art/bulk-download", json=bulk_cover_data, headers=auth_headers)
+        assert_api_error(response, 403, "Only administrators can perform bulk cover art downloads")
     
-    def test_authenticated_endpoints_require_auth(self, client: TestClient, test_game: Game):
+    def test_authenticated_endpoints_require_auth(self, client_with_mock_igdb: TestClient, test_game: Game):
         """Test that authenticated endpoints require authentication."""
-        # Test create endpoint
-        game_data = create_test_game_data()
-        response = client.post("/api/games/", json=game_data)
+        # Test IGDB search endpoint
+        search_data = {"query": "Test Game"}
+        response = client_with_mock_igdb.post("/api/games/search/igdb", json=search_data)
         assert_api_error(response, 403, "Not authenticated")
         
-        # Test update endpoint
-        response = client.put(f"/api/games/{test_game.id}", json={"title": "Updated"})
+        # Test IGDB import endpoint
+        import_data = {
+            "igdb_id": "12345",
+            "title": "Test Game"
+        }
+        response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data)
+        assert_api_error(response, 403, "Not authenticated")
+        
+        # Test game detail endpoint
+        response = client_with_mock_igdb.get(f"/api/games/{test_game.id}")
         assert_api_error(response, 403, "Not authenticated")
     
-    def test_public_endpoints_allow_anonymous_access(self, client: TestClient, test_game: Game):
-        """Test that public endpoints allow anonymous access."""
-        # Test list endpoint
-        response = client.get("/api/games/")
-        assert_api_success(response, 200)
-        
-        # Test detail endpoint
-        response = client.get(f"/api/games/{test_game.id}")
-        assert_api_success(response, 200)
-        
-        # Test metadata status endpoint
-        response = client.get(f"/api/games/{test_game.id}/metadata/status")
-        assert_api_success(response, 200)

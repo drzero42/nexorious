@@ -18,8 +18,6 @@ from ..models.game import Game, GameAlias
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.game import (
-    GameCreateRequest,
-    GameUpdateRequest,
     GameResponse,
     GameSearchRequest,
     GameListResponse,
@@ -116,7 +114,6 @@ async def list_games(
     developer: Optional[str] = Query(default=None, description="Filter by developer"),
     publisher: Optional[str] = Query(default=None, description="Filter by publisher"),
     release_year: Optional[int] = Query(default=None, description="Filter by release year"),
-    is_verified: Optional[bool] = Query(default=None, description="Filter by verification status"),
     sort_by: Optional[str] = Query(default="title", description="Sort field"),
     sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order"),
     fuzzy_threshold: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Fuzzy matching threshold for title search (0.0-1.0)")
@@ -150,8 +147,6 @@ async def list_games(
     if release_year:
         filters.append(func.extract('year', Game.release_date) == release_year)
     
-    if is_verified is not None:
-        filters.append(Game.is_verified == is_verified)
     
     if fuzzy_search_mode:
         # For fuzzy search, we need to get all matching games first, then apply fuzzy matching
@@ -238,135 +233,10 @@ async def get_game(
     return game_response
 
 
-@router.post("/", response_model=GameResponse, status_code=status.HTTP_201_CREATED)
-async def create_game(
-    game_data: GameCreateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Create a new game."""
-    
-    # Check for duplicate title
-    existing_game = session.exec(select(Game).where(Game.title == game_data.title)).first()
-    if existing_game:
-        logger.error(
-            f"409 CONFLICT - Game creation failed due to duplicate title. "
-            f"Title: '{game_data.title}' | "
-            f"Existing game ID: {existing_game.id} | "
-            f"Existing game IGDB ID: {existing_game.igdb_id} | "
-            f"Existing game created: {existing_game.created_at} | "
-            f"Developer: {existing_game.developer} | "
-            f"Publisher: {existing_game.publisher} | "
-            f"Requested by user: {current_user.username} ({current_user.id})"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Game with title '{game_data.title}' already exists"
-        )
-    
-    # Create game
-    new_game = Game(
-        title=game_data.title,
-        description=game_data.description,
-        genre=game_data.genre,
-        developer=game_data.developer,
-        publisher=game_data.publisher,
-        release_date=game_data.release_date,
-        cover_art_url=str(game_data.cover_art_url) if game_data.cover_art_url else None,
-        estimated_playtime_hours=game_data.estimated_playtime_hours,
-        howlongtobeat_main=game_data.howlongtobeat_main,
-        howlongtobeat_extra=game_data.howlongtobeat_extra,
-        howlongtobeat_completionist=game_data.howlongtobeat_completionist,
-        igdb_id=game_data.igdb_id,
-        game_metadata=json.dumps(game_data.metadata),
-        is_verified=current_user.is_admin  # Auto-verify if created by admin
-    )
-    
-    session.add(new_game)
-    session.commit()
-    session.refresh(new_game)
-    
-    return new_game
 
 
-@router.put("/{game_id}", response_model=GameResponse)
-async def update_game(
-    game_id: str,
-    game_data: GameUpdateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Update an existing game."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    # Check permissions - only admin or unverified games can be edited
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot edit verified games. Only administrators can modify verified games."
-        )
-    
-    # Update fields
-    update_data = game_data.model_dump(exclude_unset=True)
-    
-    for field, value in update_data.items():
-        if field == "metadata":
-            setattr(game, "game_metadata", json.dumps(value))
-        elif field == "cover_art_url" and value:
-            setattr(game, field, str(value))
-        else:
-            setattr(game, field, value)
-    
-    game.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    session.refresh(game)
-    
-    return game
 
 
-@router.delete("/{game_id}", response_model=SuccessResponse)
-async def delete_game(
-    game_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_admin_user)]
-):
-    """Delete a game (admin only)."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    # Check if game is in use
-    from ..models.user_game import UserGame
-    from ..models.wishlist import Wishlist
-    
-    user_games_count = session.exec(
-        select(func.count()).where(UserGame.game_id == game_id)
-    ).one()
-    
-    wishlist_count = session.exec(
-        select(func.count()).where(Wishlist.game_id == game_id)
-    ).one()
-    
-    if user_games_count > 0 or wishlist_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete game. It is referenced by {user_games_count} user collections and {wishlist_count} wishlists."
-        )
-    
-    session.delete(game)
-    session.commit()
-    
-    return SuccessResponse(message="Game deleted successfully")
 
 
 @router.get("/{game_id}/aliases", response_model=List[GameAliasResponse])
@@ -556,6 +426,9 @@ async def import_from_igdb(
 ):
     """Import a game from IGDB with complete metadata including time-to-beat data.
     
+    **IGDB-Only System**: This system only supports games sourced from IGDB. All games must 
+    have valid IGDB IDs and metadata. Manual game creation is not supported.
+    
     **Complete Metadata Fetch**: Unlike the search endpoint, this import operation fetches 
     full game metadata from IGDB including time-to-beat information (howlongtobeat_main, 
     howlongtobeat_extra, howlongtobeat_completionist) for complete game records.
@@ -625,7 +498,6 @@ async def import_from_igdb(
             "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids) if game_metadata.igdb_platform_ids else None,
             "igdb_platform_names": json.dumps(game_metadata.platform_names) if game_metadata.platform_names else None,
             "game_metadata": "{}",
-            "is_verified": True  # Games imported from IGDB are considered verified
         }
         
         # Apply any custom overrides from the user
@@ -677,27 +549,6 @@ async def import_from_igdb(
         )
 
 
-@router.put("/{game_id}/verify", response_model=GameResponse)
-async def verify_game(
-    game_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_admin_user)]
-):
-    """Verify a game (admin only)."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    game.is_verified = True
-    game.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    session.refresh(game)
-    
-    return game
 
 
 @router.get("/{game_id}/metadata/status", response_model=MetadataStatusResponse)
@@ -755,7 +606,11 @@ async def refresh_game_metadata(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Refresh game metadata from IGDB."""
+    """Refresh game metadata from IGDB.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint updates game metadata with the latest information from IGDB.
+    """
     
     # Entry logging
     logger.info(f"Metadata refresh request for game {game_id} from user {current_user.username} ({current_user.id})")
@@ -770,23 +625,8 @@ async def refresh_game_metadata(
         )
     
     # Log current game state
-    logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}, is_verified={game.is_verified}")
+    logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}")
     
-    if not game.igdb_id:
-        logger.warning(f"Metadata refresh failed: Game '{game.title}' ({game_id}) has no IGDB ID")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
-    
-    # Check permissions - only admin or unverified games can be refreshed
-    logger.debug(f"Permission check: user_is_admin={current_user.is_admin}, game_is_verified={game.is_verified}")
-    if not current_user.is_admin and game.is_verified:
-        logger.warning(f"Metadata refresh denied: Non-admin user {current_user.username} cannot refresh verified game '{game.title}'")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot refresh metadata for verified games. Only administrators can refresh verified games."
-        )
     
     try:
         logger.debug(f"Calling IGDB service to refresh metadata for IGDB ID {game.igdb_id}")
@@ -903,26 +743,17 @@ async def populate_game_metadata(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Populate missing metadata fields for a game."""
+    """Populate missing metadata fields for a game.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint fills in any missing metadata fields using data from IGDB.
+    """
     
     game = session.get(Game, game_id)
     if not game:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Game not found"
-        )
-    
-    if not game.igdb_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
-    
-    # Check permissions - only admin or unverified games can be populated
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot populate metadata for verified games. Only administrators can modify verified games."
         )
     
     try:
@@ -1038,10 +869,6 @@ async def bulk_metadata_operation(
             game = session.get(Game, game_id)
             if not game:
                 errors.append(f"Game {game_id} not found")
-                continue
-            
-            if not game.igdb_id:
-                errors.append(f"Game {game_id} does not have IGDB ID")
                 continue
             
             result = {"game_id": game_id, "success": False, "fields": []}
@@ -1163,7 +990,11 @@ async def download_game_cover_art(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Download and store cover art locally for a game."""
+    """Download and store cover art locally for a game.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint downloads cover art from IGDB and stores it locally.
+    """
     
     game = session.get(Game, game_id)
     if not game:
@@ -1172,24 +1003,12 @@ async def download_game_cover_art(
             detail="Game not found"
         )
     
-    if not game.igdb_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
-        
     if not game.cover_art_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Game does not have cover art URL"
         )
     
-    # Check permissions - only admin or unverified games can have cover art downloaded
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot download cover art for verified games. Only administrators can modify verified games."
-        )
     
     try:
         local_url = await igdb_service.download_and_store_cover_art(game.igdb_id, game.cover_art_url)
@@ -1241,10 +1060,6 @@ async def bulk_download_cover_art(
             game = session.get(Game, game_id)
             if not game:
                 errors.append(f"Game {game_id} not found")
-                continue
-            
-            if not game.igdb_id:
-                errors.append(f"Game {game_id} does not have IGDB ID")
                 continue
             
             if not game.cover_art_url:

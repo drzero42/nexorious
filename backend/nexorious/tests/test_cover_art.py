@@ -89,8 +89,7 @@ def sample_game_data():
         "developer": "Test Studio",
         "publisher": "Test Publisher",
         "igdb_id": "123",
-        "cover_art_url": "https://example.com/cover.jpg",
-        "is_verified": False
+        "cover_art_url": "https://example.com/cover.jpg"
     }
 
 
@@ -153,47 +152,13 @@ class TestCoverArtDownload:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_igdb_service_dependency, None)
     
-    def test_download_cover_art_no_igdb_id(self, client, mock_user):
-        """Test cover art download for game without IGDB ID."""
-        sample_data = {
-            "id": "test-game-id",
-            "title": "Test Game",
-            "igdb_id": None,
-            "cover_art_url": "https://example.com/cover.jpg",
-            "is_verified": False
-        }
-        
-        try:
-            # Create a game without IGDB ID in the test database
-            from nexorious.core.database import get_session
-            session = next(app.dependency_overrides[get_session]())
-            game = Game(**sample_data)
-            session.add(game)
-            session.commit()
-            session.refresh(game)
-            
-            # Override dependencies
-            app.dependency_overrides[get_current_user] = lambda: mock_user
-            app.dependency_overrides[get_igdb_service_dependency] = lambda: create_mock_igdb_service()
-            
-            response = client.post(f"/api/games/{sample_data['id']}/cover-art/download")
-            
-            assert response.status_code == 400
-            assert "Game does not have IGDB ID" in response.json()["error"]
-            
-        finally:
-            # Clean up overrides
-            app.dependency_overrides.pop(get_current_user, None)
-            app.dependency_overrides.pop(get_igdb_service_dependency, None)
-    
     def test_download_cover_art_no_cover_url(self, client, mock_user):
         """Test cover art download for game without cover art URL."""
         sample_data = {
             "id": "test-game-id",
             "title": "Test Game",
             "igdb_id": "123",
-            "cover_art_url": None,
-            "is_verified": False
+            "cover_art_url": None
         }
         
         try:
@@ -219,40 +184,14 @@ class TestCoverArtDownload:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_igdb_service_dependency, None)
     
-    def test_download_cover_art_verified_game_permission(self, client, mock_user, sample_game_data):
-        """Test cover art download permission for verified games."""
-        try:
-            # Create a verified game in the test database
-            from nexorious.core.database import get_session
-            session = next(app.dependency_overrides[get_session]())
-            game = Game(**sample_game_data)
-            game.is_verified = True
-            session.add(game)
-            session.commit()
-            session.refresh(game)
-            
-            # Override dependencies with non-admin user
-            app.dependency_overrides[get_current_user] = lambda: mock_user
-            app.dependency_overrides[get_igdb_service_dependency] = lambda: create_mock_igdb_service()
-            
-            response = client.post(f"/api/games/{sample_game_data['id']}/cover-art/download")
-            
-            assert response.status_code == 403
-            assert "Cannot download cover art for verified games" in response.json()["error"]
-            
-        finally:
-            # Clean up overrides
-            app.dependency_overrides.pop(get_current_user, None)
-            app.dependency_overrides.pop(get_igdb_service_dependency, None)
     
-    def test_download_cover_art_admin_verified_game(self, client, mock_admin_user, sample_game_data):
-        """Test cover art download by admin for verified games."""
+    def test_download_cover_art_admin_user(self, client, mock_admin_user, sample_game_data):
+        """Test cover art download by admin user."""
         try:
-            # Create a verified game in the test database
+            # Create a game in the test database
             from nexorious.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_game_data)
-            game.is_verified = True
             session.add(game)
             session.commit()
             session.refresh(game)
@@ -279,7 +218,6 @@ class TestCoverArtDownload:
             from nexorious.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_game_data)
-            game.is_verified = False
             session.add(game)
             session.commit()
             session.refresh(game)
@@ -317,8 +255,7 @@ class TestBulkCoverArtDownload:
                     title=f"Test Game {i+1}",
                     igdb_id=str(i+1),
                     cover_art_url=f"https://example.com/cover{i+1}.jpg",
-                    is_verified=False
-                )
+                    )
                 session.add(game)
             session.commit()
             
@@ -378,7 +315,6 @@ class TestBulkCoverArtDownload:
                 title="Test Game 1",
                 igdb_id="1",
                 cover_art_url="/static/cover_art/1.jpg",  # Local URL
-                is_verified=False
             )
             session.add(game1)
             
@@ -388,7 +324,6 @@ class TestBulkCoverArtDownload:
                 title="Test Game 2",
                 igdb_id="2",
                 cover_art_url="https://example.com/cover2.jpg",  # Remote URL
-                is_verified=False
             )
             session.add(game2)
             
@@ -439,17 +374,15 @@ class TestBulkCoverArtDownload:
                 title="Test Game 1",
                 igdb_id="1",
                 cover_art_url="https://example.com/cover1.jpg",
-                is_verified=False
             )
             session.add(game1)
             
-            # Game 2 - no IGDB ID
+            # Game 2 - has IGDB ID and cover URL
             game2 = Game(
                 id="game2",
                 title="Test Game 2",
-                igdb_id=None,
+                igdb_id="2",
                 cover_art_url="https://example.com/cover2.jpg",
-                is_verified=False
             )
             session.add(game2)
             
@@ -459,7 +392,6 @@ class TestBulkCoverArtDownload:
                 title="Test Game 3",
                 igdb_id="3",
                 cover_art_url=None,
-                is_verified=False
             )
             session.add(game3)
             
@@ -477,13 +409,13 @@ class TestBulkCoverArtDownload:
             assert response.status_code == 200
             data = response.json()
             assert data["total_games"] == 3
-            assert data["successful_operations"] == 1
-            assert data["failed_operations"] == 2
+            assert data["successful_operations"] == 2  # Now games 1 and 2 should succeed
+            assert data["failed_operations"] == 1     # Only game 3 should fail (no cover URL)
             
-            # Check error messages
+            # Check error messages - only game 3 should have an error for missing cover URL
             errors = data["errors"]
-            assert any("does not have IGDB ID" in error for error in errors)
             assert any("does not have cover art URL" in error for error in errors)
+            assert len(errors) == 1  # Only one error expected
             
         finally:
             # Clean up overrides
