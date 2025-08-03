@@ -426,6 +426,9 @@ async def import_from_igdb(
 ):
     """Import a game from IGDB with complete metadata including time-to-beat data.
     
+    **IGDB-Only System**: This system only supports games sourced from IGDB. All games must 
+    have valid IGDB IDs and metadata. Manual game creation is not supported.
+    
     **Complete Metadata Fetch**: Unlike the search endpoint, this import operation fetches 
     full game metadata from IGDB including time-to-beat information (howlongtobeat_main, 
     howlongtobeat_extra, howlongtobeat_completionist) for complete game records.
@@ -603,7 +606,11 @@ async def refresh_game_metadata(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Refresh game metadata from IGDB."""
+    """Refresh game metadata from IGDB.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint updates game metadata with the latest information from IGDB.
+    """
     
     # Entry logging
     logger.info(f"Metadata refresh request for game {game_id} from user {current_user.username} ({current_user.id})")
@@ -619,13 +626,6 @@ async def refresh_game_metadata(
     
     # Log current game state
     logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}")
-    
-    if not game.igdb_id:
-        logger.warning(f"Metadata refresh failed: Game '{game.title}' ({game_id}) has no IGDB ID")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
     
     
     try:
@@ -743,7 +743,11 @@ async def populate_game_metadata(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Populate missing metadata fields for a game."""
+    """Populate missing metadata fields for a game.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint fills in any missing metadata fields using data from IGDB.
+    """
     
     game = session.get(Game, game_id)
     if not game:
@@ -751,13 +755,6 @@ async def populate_game_metadata(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Game not found"
         )
-    
-    if not game.igdb_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
-    
     
     try:
         # Create current metadata object
@@ -872,10 +869,6 @@ async def bulk_metadata_operation(
             game = session.get(Game, game_id)
             if not game:
                 errors.append(f"Game {game_id} not found")
-                continue
-            
-            if not game.igdb_id:
-                errors.append(f"Game {game_id} does not have IGDB ID")
                 continue
             
             result = {"game_id": game_id, "success": False, "fields": []}
@@ -997,7 +990,11 @@ async def download_game_cover_art(
     current_user: Annotated[User, Depends(get_current_user)],
     igdb_service: IGDBService = Depends(get_igdb_service_dependency)
 ):
-    """Download and store cover art locally for a game."""
+    """Download and store cover art locally for a game.
+    
+    **IGDB-Only System**: All games are sourced from IGDB and have valid IGDB IDs.
+    This endpoint downloads cover art from IGDB and stores it locally.
+    """
     
     game = session.get(Game, game_id)
     if not game:
@@ -1006,12 +1003,6 @@ async def download_game_cover_art(
             detail="Game not found"
         )
     
-    if not game.igdb_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Game does not have IGDB ID"
-        )
-        
     if not game.cover_art_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1069,10 +1060,6 @@ async def bulk_download_cover_art(
             game = session.get(Game, game_id)
             if not game:
                 errors.append(f"Game {game_id} not found")
-                continue
-            
-            if not game.igdb_id:
-                errors.append(f"Game {game_id} does not have IGDB ID")
                 continue
             
             if not game.cover_art_url:

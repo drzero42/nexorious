@@ -341,7 +341,8 @@ def _show_troubleshooting_guidance(structured_errors):
             console.print("  • Verify API connectivity and authentication")
             console.print("  • Check if IGDB integration is working properly")
             console.print("  • Some games may not exist in IGDB database")
-            console.print("  • Try manually searching for failed games in IGDB")
+            console.print("  • Note: This system only supports IGDB-sourced games")
+            console.print("  • Try searching for alternative game titles in IGDB")
             
         elif category == "game_update":
             console.print("  • Check if games still exist in your collection")  

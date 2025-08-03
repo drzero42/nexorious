@@ -60,16 +60,13 @@ class TestUserGamesListEndpoint:
     
     def test_list_user_games_pagination(self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session):
         """Test user games list with pagination."""
-        # Create multiple user games
-        for i in range(5):
-            game = Game(
-                title=f"Game {i}",
-                description=f"Description {i}",
-                            )
-            session.add(game)
-            session.commit()
-            session.refresh(game)
-            
+        from .integration_test_utils import create_test_games
+        
+        # Create multiple games with proper IGDB IDs
+        games = create_test_games(count=5, session=session)
+        
+        # Create user games for each game
+        for game in games:
             user_game = UserGame(
                 user_id=test_user.id,
                 game_id=game.id,
@@ -816,11 +813,10 @@ class TestUserGamesBulkUpdateEndpoint:
     
     def test_bulk_update_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test successful bulk update."""
-        # Create another user game
-        game2 = Game(
-            title="Game 2",
-            description="Second game",
-                    )
+        from .integration_test_utils import create_test_game
+        
+        # Create another game with proper IGDB ID
+        game2 = create_test_game(title="Game 2", description="Second game")
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -886,11 +882,10 @@ class TestUserGamesBulkDeleteEndpoint:
     
     def test_bulk_delete_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test successful bulk delete."""
-        # Create another user game
-        game2 = Game(
-            title="Game 2",
-            description="Second game",
-                    )
+        from .integration_test_utils import create_test_game
+        
+        # Create another game with proper IGDB ID
+        game2 = create_test_game(title="Game 2", description="Second game")
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -961,17 +956,19 @@ class TestUserGamesStatsEndpoint:
     
     def test_get_collection_stats(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session):
         """Test getting collection statistics."""
+        from .integration_test_utils import create_test_game
+        
         # Create additional user games for better stats
         user_id = test_user_game.user_id
         
         # Create games with different statuses
         statuses = ["not_started", "in_progress", "completed", "mastered"]
         for i, status in enumerate(statuses, 1):
-            game = Game(
+            game = create_test_game(
                 title=f"Game {i}",
                 description=f"Description {i}",
-                genre="Action",
-                            )
+                genre="Action"
+            )
             session.add(game)
             session.commit()
             session.refresh(game)

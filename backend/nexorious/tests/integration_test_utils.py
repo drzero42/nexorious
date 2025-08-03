@@ -397,6 +397,99 @@ def create_test_platform_data(
     }
 
 
+def create_test_game(
+    title: str = None,
+    description: str = None,
+    igdb_id: str = None,
+    **kwargs
+) -> Game:
+    """Create a test game with automatically generated IGDB ID if not provided.
+    
+    Args:
+        title: Game title (defaults to auto-generated)
+        description: Game description (defaults to auto-generated)
+        igdb_id: IGDB ID (defaults to auto-generated unique ID)
+        **kwargs: Additional fields to set on the Game object
+    
+    Returns:
+        Game object with guaranteed igdb_id field
+    """
+    import uuid
+    import time
+    
+    # Generate unique values if not provided
+    if igdb_id is None:
+        # Use timestamp + random component for uniqueness
+        igdb_id = f"test-{int(time.time() * 1000)}-{str(uuid.uuid4())[:8]}"
+    
+    if title is None:
+        title = f"Test Game {igdb_id[-8:]}"
+    
+    if description is None:
+        description = f"Test description for {title}"
+    
+    # Set default values and allow override with kwargs
+    game_data = {
+        "title": title,
+        "description": description,
+        "igdb_id": igdb_id,
+        "genre": "Action",
+        "developer": "Test Developer",
+        "publisher": "Test Publisher",
+        **kwargs
+    }
+    
+    return Game(**game_data)
+
+
+def create_test_games(
+    count: int,
+    session: Session = None,
+    commit: bool = True,
+    **kwargs
+) -> list[Game]:
+    """Create multiple test games with unique IGDB IDs.
+    
+    Args:
+        count: Number of games to create
+        session: Database session (if provided, games will be added to session)
+        commit: Whether to commit after adding to session
+        **kwargs: Additional fields to set on all Game objects
+    
+    Returns:
+        List of Game objects with guaranteed unique igdb_id fields
+    """
+    import time
+    
+    games = []
+    base_timestamp = int(time.time() * 1000)
+    
+    for i in range(count):
+        # Generate unique IGDB ID for each game
+        igdb_id = f"test-{base_timestamp + i}"
+        title = kwargs.get('title', f"Game {i}")
+        description = kwargs.get('description', f"Description {i}")
+        
+        game = create_test_game(
+            title=title,
+            description=description,
+            igdb_id=igdb_id,
+            **kwargs
+        )
+        
+        games.append(game)
+        
+        if session:
+            session.add(game)
+    
+    if session and commit:
+        session.commit()
+        for game in games:
+            session.refresh(game)
+    
+    return games
+
+
 def create_test_storefront_data(
     name: str = "test_storefront",
     display_name: str = "Test Storefront",

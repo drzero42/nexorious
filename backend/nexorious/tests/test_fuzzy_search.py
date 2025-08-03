@@ -39,16 +39,19 @@ class TestFuzzySearchAPI:
                 id=str(uuid.uuid4()),
                 title="The Witcher 3: Wild Hunt",
                 description="RPG game",
+                igdb_id="1020",
             ),
             Game(
                 id=str(uuid.uuid4()),
                 title="Witcher 2: Assassins of Kings", 
                 description="RPG game",
+                igdb_id="1037",
             ),
             Game(
                 id=str(uuid.uuid4()),
                 title="Cyberpunk 2077",
                 description="Sci-fi RPG",
+                igdb_id="1877",
             ),
         ]
         
@@ -84,7 +87,8 @@ class TestFuzzySearchAPI:
         test_game = Game(
             id=str(uuid.uuid4()),
             title="Test Game",
-            description="A test game"
+            description="A test game",
+            igdb_id="9999"
         )
         session.add(test_game)
         session.commit()
@@ -127,11 +131,13 @@ class TestFuzzySearchAPI:
                 id=str(uuid.uuid4()),
                 title="Witcher RPG",
                 genre="RPG",
+                igdb_id="8888",
             ),
             Game(
                 id=str(uuid.uuid4()),
                 title="Witcher Action",
                 genre="Action",
+                igdb_id="7777",
             ),
         ]
         

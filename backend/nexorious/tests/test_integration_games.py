@@ -47,14 +47,10 @@ class TestGamesListEndpoint:
     
     def test_list_games_pagination(self, client: TestClient, session: Session, auth_headers):
         """Test games list with pagination."""
-        # Create multiple games
-        for i in range(5):
-            game = Game(
-                title=f"Game {i}",
-                description=f"Description {i}"
-            )
-            session.add(game)
-        session.commit()
+        from .integration_test_utils import create_test_games
+        
+        # Create multiple games with proper IGDB IDs
+        create_test_games(count=5, session=session)
         
         # Test pagination
         response = client.get("/api/games/?page=1&per_page=2", headers=auth_headers)
