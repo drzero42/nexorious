@@ -529,7 +529,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove manual metadata editing capabilities (keep personal data editing: notes, ratings, progress)
 - [x] Remove locked field indicators from game editing forms
 - [x] Update all game forms to assume IGDB metadata is read-only
-- [ ] Simplify game editing interface to focus on platform/storefront management and personal data
+- [x] Simplify game editing interface to focus on platform/storefront management and personal data
 
 ### 8.3 Testing Updates
 - [ ] Remove tests for manual game creation functionality
