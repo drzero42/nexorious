@@ -19,22 +19,20 @@
   let selectedGame: IGDBGameCandidate | null = null;
   let step: 'search' | 'confirm' | 'metadata-confirm' = 'search';
 
-  // Form data for new game
+  // Form data for new game (personal data only, IGDB metadata is read-only)
   let gameData = {
-    title: '',
-    description: '',
-    genre: '',
-    developer: '',
-    publisher: '',
-    release_date: '',
-    cover_art_url: '',
-    game_metadata: '',
+    // Personal data (editable)
     personal_rating: null,
     play_status: 'not_started',
     hours_played: 0,
     personal_notes: '',
     ownership_status: 'owned',
-    is_loved: false
+    is_loved: false,
+    // IGDB metadata (read-only, populated from selected game for display only)
+    title: '',
+    description: '',
+    release_date: '',
+    cover_art_url: ''
   };
 
   // Platform association data
@@ -157,7 +155,7 @@
 
   function selectGame(game: IGDBGameCandidate) {
     selectedGame = game;
-    // Pre-populate gameData with the selected game's information
+    // Populate IGDB metadata for display only (these fields are read-only)
     gameData.title = game.title;
     gameData.description = game.description || '';
     gameData.release_date = game.release_date || '';
@@ -171,21 +169,8 @@
     addingGameId = selectedGame.igdb_id;
     
     try {
-      // Import the game from IGDB with any custom overrides from the form
-      const customOverrides: Record<string, any> = {};
-      
-      // Only include overrides if they differ from the original IGDB data
-      if (gameData.title !== selectedGame.title) {
-        customOverrides.title = gameData.title;
-      }
-      if (gameData.description !== (selectedGame.description || '')) {
-        customOverrides.description = gameData.description;
-      }
-      if (gameData.cover_art_url !== (selectedGame.cover_art_url || '')) {
-        customOverrides.cover_art_url = gameData.cover_art_url;
-      }
-      
-      const createdGame = await games.createFromIGDB(selectedGame.igdb_id, customOverrides);
+      // Import the game from IGDB without custom overrides (IGDB metadata is read-only)
+      const createdGame = await games.createFromIGDB(selectedGame.igdb_id, {});
       notifications.showSuccess(`Adding "${createdGame.title}" to your collection`);
       
       try {
