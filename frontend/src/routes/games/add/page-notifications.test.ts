@@ -250,7 +250,7 @@ describe('Game Addition Page - Notifications Integration', () => {
   });
 
   describe('Game Import Error Flow', () => {
-    it('should handle IGDB import failure and fallback to manual entry', async () => {
+    it('should handle IGDB import failure with error notification', async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
       mockUserGamesStore.value.userGames = [];
       
@@ -275,10 +275,8 @@ describe('Game Addition Page - Notifications Integration', () => {
       
       await waitFor(() => {
         expect(mockNotifications.showError).toHaveBeenCalledWith(
-          'Failed to import game from IGDB. You can add it manually with custom details.'
+          'Failed to import game from IGDB. Please try a different search or contact support.'
         );
-        // Should fallback to details step (manual entry)
-        expect(screen.getByText(/Review & Customize/i)).toBeInTheDocument();
       });
     });
 
@@ -316,90 +314,6 @@ describe('Game Addition Page - Notifications Integration', () => {
     });
   });
 
-  describe('Manual Game Creation Flow', () => {
-    beforeEach(() => {
-      mockGamesStore.createGame.mockResolvedValue(mockGame);
-      mockUserGamesStore.addGameToCollection.mockResolvedValue({
-        id: 'user-game-1',
-        game_id: mockGame.id
-      });
-    });
-
-    it('should show success notifications for manual game creation', async () => {
-      render(GameAddPage);
-      
-      // Go to manual entry
-      await fireEvent.click(screen.getByRole('button', { name: /add game manually/i }));
-      
-      // Fill out form
-      await waitFor(() => {
-        expect(screen.getByLabelText(/game title/i)).toBeInTheDocument();
-      });
-      
-      await fireEvent.input(screen.getByLabelText(/game title/i), { 
-        target: { value: 'Manual Test Game' } 
-      });
-      
-      await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
-      
-      await waitFor(() => {
-        expect(mockNotifications.showSuccess).toHaveBeenCalledWith('Game created successfully');
-        expect(mockNotifications.showSuccess).toHaveBeenCalledWith(`"${mockGame.title}" successfully added to your collection!`);
-      });
-    });
-
-    it('should handle manual game creation failure', async () => {
-      mockGamesStore.createGame.mockRejectedValue(new Error('Game creation failed'));
-      
-      render(GameAddPage);
-      
-      // Go to manual entry
-      await fireEvent.click(screen.getByRole('button', { name: /add game manually/i }));
-      
-      await waitFor(() => {
-        expect(screen.getByLabelText(/game title/i)).toBeInTheDocument();
-      });
-      
-      await fireEvent.input(screen.getByLabelText(/game title/i), { 
-        target: { value: 'Manual Test Game' } 
-      });
-      
-      await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
-      
-      await waitFor(() => {
-        expect(mockNotifications.showApiError).toHaveBeenCalledWith(
-          expect.any(Error),
-          'Failed to create game. Please check your information and try again.'
-        );
-      });
-    });
-
-    it('should handle manual game creation with collection failure', async () => {
-      mockUserGamesStore.addGameToCollection.mockRejectedValue(new Error('Collection add failed'));
-      
-      render(GameAddPage);
-      
-      // Go to manual entry and complete
-      await fireEvent.click(screen.getByRole('button', { name: /add game manually/i }));
-      
-      await waitFor(() => {
-        expect(screen.getByLabelText(/game title/i)).toBeInTheDocument();
-      });
-      
-      await fireEvent.input(screen.getByLabelText(/game title/i), { 
-        target: { value: 'Manual Test Game' } 
-      });
-      
-      await fireEvent.click(screen.getByRole('button', { name: /add to collection/i }));
-      
-      await waitFor(() => {
-        expect(mockNotifications.showSuccess).toHaveBeenCalledWith('Game created successfully');
-        expect(mockNotifications.showError).toHaveBeenCalledWith(
-          'Game was created but couldn\'t be added to your collection. You can try adding it manually from your games list.'
-        );
-      });
-    });
-  });
 
   describe('Redirect Timing', () => {
     it('should delay redirect for success to show message', async () => {

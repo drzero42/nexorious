@@ -256,32 +256,6 @@ function createGamesStore() {
       }
     },
 
-    // Create a new game manually
-    createGame: async (gameData: Omit<Game, 'id' | 'created_at' | 'updated_at' | 'rating_count' | 'is_verified'>) => {
-      state = { ...state, isLoading: true, error: null };
-
-      try {
-        const response = await apiCall(`${config.apiUrl}/games`, {
-          method: 'POST',
-          body: JSON.stringify(gameData),
-        });
-        
-        const game: Game = await response.json();
-
-        state = {
-          ...state,
-          games: [game, ...state.games],
-          currentGame: game,
-          isLoading: false
-        };
-
-        return game;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to create game';
-        state = { ...state, isLoading: false, error: errorMessage };
-        throw error;
-      }
-    },
 
     // Update an existing game
     updateGame: async (id: string, gameData: Partial<Game>) => {

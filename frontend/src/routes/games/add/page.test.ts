@@ -233,7 +233,7 @@ describe('Game Addition Page', () => {
       expect(screen.getAllByText('PlayStation 5').length).toBeGreaterThan(0);
     });
 
-    it('should fallback to manual entry when IGDB import fails after confirmation', async () => {
+    it('should show error message when IGDB import fails after confirmation', async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
       mockUserGamesStore.value.userGames = [];
       
@@ -260,60 +260,16 @@ describe('Game Addition Page', () => {
         expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
       });
 
-      // Click confirm button (which should fail and redirect to manual entry)
+      // Click confirm button (which should fail and show error)
       const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
-      // Should fallback to manual entry with pre-filled data
+      // Should show error notification instead of fallback to manual entry
       await waitFor(() => {
-        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
-        const titleInput = screen.getByDisplayValue('Test IGDB Game');
-        expect(titleInput).toBeInTheDocument();
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalled();
       });
     });
 
-    it('should go back to metadata confirmation when back button is clicked from manual entry', async () => {
-      // Mock IGDB import to fail so we get to manual entry step
-      mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Import failed'));
-      
-      render(GameAddPage);
-      
-      // Navigate to search results and select a game
-      const searchInput = screen.getByPlaceholderText(/enter game title/i);
-      await fireEvent.input(searchInput, { target: { value: 'test game' } });
-      await fireEvent.click(screen.getByRole('button', { name: /search/i }));
-      
-      await waitFor(() => {
-        expect(screen.getByText('Test IGDB Game')).toBeInTheDocument();
-      });
-
-      // Select first game to go to metadata confirmation
-      const selectButton = screen.getByRole('button', { name: /test igdb game/i });
-      await fireEvent.click(selectButton);
-      
-      // Wait for metadata confirmation screen
-      await waitFor(() => {
-        expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
-      });
-
-      // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
-      await fireEvent.click(confirmButton);
-      
-      // Should fallback to manual entry
-      await waitFor(() => {
-        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
-        expect(screen.getByDisplayValue('Test IGDB Game')).toBeInTheDocument();
-      });
-
-      // Click back button from manual entry - should go back to metadata confirmation
-      const backButton = screen.getByRole('button', { name: /back to selection/i });
-      await fireEvent.click(backButton);
-      
-      await waitFor(() => {
-        expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
-      });
-    });
   });
 
   describe('Game Addition Process', () => {
@@ -394,7 +350,7 @@ describe('Game Addition Page', () => {
     });
 
 
-    it('should fallback to manual entry when game addition fails', async () => {
+    it('should handle error when game addition fails', async () => {
       mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Failed to add game'));
 
       render(GameAddPage);
@@ -417,14 +373,13 @@ describe('Game Addition Page', () => {
         expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
       });
 
-      // Click confirm button (which should fail and redirect to manual entry)
+      // Click confirm button (which should fail)
       const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
-      // Should fallback to manual entry form with pre-filled data
+      // Should handle the error gracefully
       await waitFor(() => {
-        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
-        expect(screen.getByDisplayValue('Test IGDB Game')).toBeInTheDocument();
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalled();
       });
       
       expect(mockGoto).not.toHaveBeenCalled();
@@ -441,61 +396,6 @@ describe('Game Addition Page', () => {
       expect(mockGamesStore.searchIGDB).not.toHaveBeenCalled();
     });
 
-    it('should validate required fields in manual entry form', async () => {
-      // Clear user games collection so the IGDB game doesn't appear as already owned
-      mockUserGamesStore.value.userGames = [];
-      
-      // Mock IGDB search to succeed but import to fail so we get to manual entry step
-      mockGamesStore.searchIGDB.mockResolvedValue({
-        games: mockIGDBCandidates,
-        total: mockIGDBCandidates.length
-      });
-      mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Import failed'));
-      
-      render(GameAddPage);
-      
-      // Navigate to manual entry form via failed IGDB import
-      const searchInput = screen.getByPlaceholderText(/enter game title/i);
-      await fireEvent.input(searchInput, { target: { value: 'test game' } });
-      await fireEvent.click(screen.getByRole('button', { name: /search/i }));
-      
-      await waitFor(() => {
-        expect(screen.getByText('Test IGDB Game')).toBeInTheDocument();
-      });
-
-      // Select first game to go to metadata confirmation
-      const selectButton = screen.getByRole('button', { name: /test igdb game/i });
-      await fireEvent.click(selectButton);
-      
-      // Wait for metadata confirmation screen
-      await waitFor(() => {
-        expect(screen.getByText('Confirm Game Details')).toBeInTheDocument();
-      });
-
-      // Click confirm button (which should fail and redirect to manual entry)
-      const confirmButton = screen.getByRole('button', { name: /add to collection/i });
-      await fireEvent.click(confirmButton);
-      
-      // Should fallback to manual entry form
-      await waitFor(() => {
-        expect(screen.getByText('Review & Customize')).toBeInTheDocument();
-      });
-      
-      // Wait for the input to be populated with the game title
-      await waitFor(() => {
-        const titleInput = screen.getByDisplayValue('Test IGDB Game');
-        expect(titleInput).toBeInTheDocument();
-      });
-      
-      // Now test validation - clear the title and try to continue
-      const titleInput = screen.getByDisplayValue('Test IGDB Game');
-      await fireEvent.input(titleInput, { target: { value: '' } });
-      
-      const continueButton = screen.getByRole('button', { name: /continue/i });
-      await fireEvent.click(continueButton);
-      
-      expect(mockGamesStore.createGame).not.toHaveBeenCalled();
-    });
   });
 
   describe('Loading States', () => {

@@ -11,7 +11,6 @@
 
   const dispatch = createEventDispatcher<{
     'back': void;
-    'manual-add': void;
     'game-click': { game: IGDBGameCandidate; owned: boolean };
   }>();
 
@@ -19,9 +18,6 @@
     dispatch('back');
   }
 
-  function handleManualAdd() {
-    dispatch('manual-add');
-  }
 
   function handleGameClick(game: IGDBGameCandidate, owned: boolean) {
     dispatch('game-click', { game, owned });
@@ -46,7 +42,7 @@
             </svg>
             <h3 class="mt-4 text-lg font-medium text-gray-900">No games found</h3>
             <p class="mt-2 text-sm text-gray-500">
-              Try a different search term or add the game manually
+              Try a different search term or contact support
             </p>
           </div>
         </div>
@@ -160,7 +156,7 @@
     </div>
   </div>
 
-  <div class="flex justify-between">
+  <div class="flex justify-start">
     <button
       on:click={handleBack}
       class="btn-secondary inline-flex items-center gap-x-2"
@@ -169,15 +165,6 @@
         <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
       </svg>
       Back to Search
-    </button>
-    <button
-      on:click={handleManualAdd}
-      class="btn-secondary inline-flex items-center gap-x-2"
-    >
-      <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M13.5 4.938a7 7 0 11-9.006 1.737c.202-.257.59-.218.793.039.278.352.594.672.943.954.332.269.786-.049.773-.476a5.977 5.977 0 01.572-2.759 6.026 6.026 0 012.486-2.665c.247-.14.55-.016.677.238A6.967 6.967 0 0013.5 4.938zM14 12a4 4 0 01-4 4c-1.913 0-3.52-1.398-3.91-3.182-.093-.429.44-.643.814-.413a4.043 4.043 0 001.601.564c.303.038.531-.24.51-.544a5.975 5.975 0 011.315-4.192.447.447 0 01.431-.16A4.001 4.001 0 0114 12z" clip-rule="evenodd" />
-      </svg>
-      Add Manually
     </button>
   </div>
 </div>

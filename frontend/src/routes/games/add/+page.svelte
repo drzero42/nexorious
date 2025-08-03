@@ -17,7 +17,7 @@
   let addingGameId: string | null = null;
   let searchResults: IGDBGameCandidate[] = [];
   let selectedGame: IGDBGameCandidate | null = null;
-  let step: 'search' | 'confirm' | 'metadata-confirm' | 'details' = 'search';
+  let step: 'search' | 'confirm' | 'metadata-confirm' = 'search';
 
   // Form data for new game
   let gameData = {
@@ -284,26 +284,15 @@
       console.error('Failed to create game:', error);
       notifications.showError('Failed to import game from IGDB. You can add it manually with custom details.');
       
-      // If import fails, fall back to manual entry with current form data
-      // Ensure gameData is populated from selectedGame if available
-      if (selectedGame) {
-        // Update properties individually to ensure Svelte reactivity
-        gameData.title = selectedGame.title;
-        gameData.description = selectedGame.description || '';
-        gameData.release_date = selectedGame.release_date || '';
-        gameData.cover_art_url = selectedGame.cover_art_url || '';
-      }
-      
-      step = 'details';
+      // Import failed - notify user
+      notifications.showError('Failed to import game from IGDB. Please try a different search or contact support.');
     } finally {
       addingGameId = null;
     }
   }
 
   function goBack() {
-    if (step === 'details') {
-      step = selectedGame ? 'metadata-confirm' : 'confirm';
-    } else if (step === 'metadata-confirm') {
+    if (step === 'metadata-confirm') {
       step = 'confirm';
     } else if (step === 'confirm') {
       step = 'search';
@@ -311,143 +300,7 @@
     }
   }
 
-  function handleManualAdd() {
-    // Reset game data for manual entry
-    selectedGame = null;
-    gameData = {
-      title: '',
-      description: '',
-      genre: '',
-      developer: '',
-      publisher: '',
-      release_date: '',
-      cover_art_url: '',
-      game_metadata: '',
-      personal_rating: null,
-      play_status: 'not_started',
-      hours_played: 0,
-      personal_notes: '',
-      ownership_status: 'owned',
-      is_loved: false
-    };
-    step = 'details';
-  }
 
-  async function createManualGame() {
-    if (!gameData.title.trim()) return;
-
-    try {
-      // Create game manually with form data
-      const createdGame = await games.createGame({
-        title: gameData.title.trim(),
-        description: gameData.description || '',
-        genre: gameData.genre || '',
-        developer: gameData.developer || '',
-        publisher: gameData.publisher || '',
-        release_date: gameData.release_date || '',
-        cover_art_url: gameData.cover_art_url || '',
-        game_metadata: gameData.game_metadata || ''
-      });
-
-      notifications.showSuccess('Game created successfully');
-
-      try {
-        // Add the game to the user's collection with form values
-        const platformData: any[] = [];
-        for (const platformId of selectedPlatforms) {
-          const storefronts = platformStorefronts.get(platformId) || new Set<string>();
-          
-          if (storefronts.size === 0) {
-            // No storefronts selected for this platform
-            platformData.push({
-              platform_id: platformId,
-              storefront_id: null,
-              store_game_id: null,
-              store_url: platformStoreUrls.get(platformId) || null,
-              is_available: true
-            });
-          } else {
-            // Create an entry for each selected storefront
-            for (const storefrontId of storefronts) {
-              platformData.push({
-                platform_id: platformId,
-                storefront_id: storefrontId,
-                store_game_id: null,
-                store_url: platformStoreUrls.get(platformId) || null,
-                is_available: true
-              });
-            }
-          }
-        }
-        
-        const addRequest: any = {
-          game_id: createdGame.id,
-          ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
-          platforms: platformData.length > 0 ? platformData : undefined
-        };
-        
-        const userGame = await userGames.addGameToCollection(addRequest);
-
-        // Platform details are now included in the initial request, so no separate API calls needed
-        let partialErrors = [];
-        
-        // Update progress with personal information if any were provided
-        if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
-          try {
-            await userGames.updateProgress(userGame.id, {
-              play_status: gameData.play_status as PlayStatus || PlayStatus.NOT_STARTED,
-              hours_played: gameData.hours_played || 0,
-              personal_notes: gameData.personal_notes || ''
-            });
-          } catch (progressError) {
-            console.error('Failed to update progress, but game was added to collection:', progressError);
-            partialErrors.push('Failed to save progress information');
-          }
-        }
-        
-        // Update user game details (rating and loved status) if any were provided
-        if (gameData.personal_rating || gameData.is_loved) {
-          try {
-            const updateData: any = {
-              is_loved: gameData.is_loved || false
-            };
-            
-            // Only include personal_rating if it has a value to avoid TypeScript strict mode issues
-            if (gameData.personal_rating) {
-              updateData.personal_rating = gameData.personal_rating;
-            }
-            
-            await userGames.updateUserGame(userGame.id, updateData);
-          } catch (updateError) {
-            console.error('Failed to update game details, but game was added to collection:', updateError);
-            partialErrors.push('Failed to save rating and favorite status');
-          }
-        }
-        
-        // Show success message with any partial error warnings
-        if (partialErrors.length > 0) {
-          notifications.showWarning(`"${createdGame.title}" added to collection, but some details couldn't be saved: ${partialErrors.join(', ')}`);
-        } else {
-          notifications.showSuccess(`"${createdGame.title}" successfully added to your collection!`);
-        }
-        
-        // Brief delay to show success message before redirect
-        setTimeout(() => {
-          goto('/games');
-        }, 1000);
-      } catch (collectionError) {
-        console.error('Failed to add game to collection:', collectionError);
-        notifications.showError(`Game was created but couldn't be added to your collection. You can try adding it manually from your games list.`);
-        // Brief delay before redirect
-        setTimeout(() => {
-          goto('/games');
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Failed to create game:', error);
-      notifications.showApiError(error, 'Failed to create game. Please check your information and try again.');
-    }
-  }
 
   // Platform event handlers
   function handlePlatformToggle(event: CustomEvent<{ platformId: string }>) {
@@ -492,7 +345,7 @@
   <div class="flex items-center justify-center">
     <div class="flex items-center space-x-4">
       <div class="flex items-center">
-        <div class="{step === 'search' ? 'bg-primary-500 text-white' : step === 'confirm' || step === 'metadata-confirm' || step === 'details' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'} rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium">
+        <div class="{step === 'search' ? 'bg-primary-500 text-white' : step === 'confirm' || step === 'metadata-confirm' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'} rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium">
           1
         </div>
         <span class="ml-2 text-sm font-medium {step === 'search' ? 'text-gray-900' : 'text-gray-500'}">Search</span>
@@ -501,19 +354,10 @@
         <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
       </svg>
       <div class="flex items-center">
-        <div class="{step === 'confirm' || step === 'metadata-confirm' ? 'bg-primary-500 text-white' : step === 'details' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'} rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium">
+        <div class="{step === 'confirm' || step === 'metadata-confirm' ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'} rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium">
           2
         </div>
-        <span class="ml-2 text-sm font-medium {step === 'confirm' || step === 'metadata-confirm' ? 'text-gray-900' : 'text-gray-500'}">Select</span>
-      </div>
-      <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-      </svg>
-      <div class="flex items-center">
-        <div class="{step === 'details' || step === 'metadata-confirm' ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'} rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium">
-          3
-        </div>
-        <span class="ml-2 text-sm font-medium {step === 'details' || step === 'metadata-confirm' ? 'text-gray-900' : 'text-gray-500'}">Details</span>
+        <span class="ml-2 text-sm font-medium {step === 'confirm' || step === 'metadata-confirm' ? 'text-gray-900' : 'text-gray-500'}">Add Game</span>
       </div>
     </div>
   </div>
@@ -524,7 +368,6 @@
       bind:searchQuery
       bind:isSearching
       on:search={handleSearch}
-      on:manual-add={handleManualAdd}
     />
   {:else if step === 'confirm'}
     <GameConfirmStep
@@ -533,7 +376,6 @@
       {isGameOwned}
       {getOwnedPlatformDetailsForGame}
       on:back={goBack}
-      on:manual-add={handleManualAdd}
       on:game-click={handleGameClick}
     />
   {:else if step === 'metadata-confirm'}
@@ -545,71 +387,11 @@
       bind:platformStorefronts
       bind:platformStoreUrls
       on:back={goBack}
-      on:edit-details={() => step = 'details'}
       on:confirm={confirmGameAddition}
       on:platform-toggle={handlePlatformToggle}
       on:storefront-toggle={handleStorefrontToggle}
       on:store-url-change={handleStoreUrlChange}
     />
-  {:else if step === 'details'}
-    <!-- TODO: Extract GameDetailsStep component -->
-    <div class="card p-6">
-      <div class="text-center mb-6">
-        <h2 class="text-xl font-semibold text-gray-900">
-          {selectedGame ? 'Review & Customize' : 'Manual Entry'}
-        </h2>
-        <p class="mt-2 text-sm text-gray-600">
-          {selectedGame ? 'Review and customize the game information' : 'Enter the game information manually'}
-        </p>
-      </div>
-      
-      <div class="space-y-4">
-        <div>
-          <label for="title" class="form-label">
-            Game Title <span class="text-red-500">*</span>
-          </label>
-          <input
-            id="title"
-            type="text"
-            bind:value={gameData.title}
-            required
-            placeholder="Enter the full game title"
-            class="form-input"
-          />
-        </div>
-
-        <div>
-          <label for="description" class="form-label">
-            Description
-          </label>
-          <textarea
-            id="description"
-            bind:value={gameData.description}
-            rows="3"
-            placeholder="Game description..."
-            class="form-input resize-none"
-          ></textarea>
-        </div>
-
-        <div class="flex gap-3">
-          <button
-            type="button"
-            on:click={goBack}
-            class="btn-secondary flex-1"
-          >
-            {selectedGame ? 'Back to Selection' : 'Back to Search'}
-          </button>
-          <button
-            type="button"
-            on:click={selectedGame ? () => step = 'metadata-confirm' : createManualGame}
-            class="btn-primary flex-1"
-            disabled={!gameData.title.trim()}
-          >
-            {selectedGame ? 'Continue' : 'Add to Collection'}
-          </button>
-        </div>
-      </div>
-    </div>
   {/if}
 </div>
 </RouteGuard>
