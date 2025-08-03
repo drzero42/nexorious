@@ -127,19 +127,13 @@
             </div>
           {/if}
         
-          <!-- Editable Description -->
-          <div>
-            <label for="metadata-description" class="form-label">
-              Description
-            </label>
-            <textarea
-              id="metadata-description"
-              bind:value={gameData.description}
-              rows="3"
-              placeholder="Game description..."
-              class="form-input resize-none"
-            ></textarea>
-          </div>
+          <!-- Read-only Description -->
+          {#if gameData.description}
+            <div>
+              <h4 class="text-sm font-medium text-gray-500 mb-2">Description</h4>
+              <p class="text-sm text-gray-900 leading-relaxed">{gameData.description}</p>
+            </div>
+          {/if}
         </div>
       </div>
     </div>

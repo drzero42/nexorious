@@ -27,27 +27,12 @@
     is_loved: boolean;
     ownership_status: OwnershipStatus;
     is_physical: boolean;
-    // Game metadata
-    title: string;
-    description?: string | undefined;
-    genre?: string | undefined;
-    developer?: string | undefined;
-    publisher?: string | undefined;
-    release_date?: string | undefined;
-    estimated_playtime_hours?: number | undefined;
   } = {
     play_status: 'not_started' as PlayStatus,
     hours_played: 0,
     is_loved: false,
     ownership_status: 'owned' as OwnershipStatus,
-    is_physical: false,
-    title: '',
-    description: undefined,
-    genre: undefined,
-    developer: undefined,
-    publisher: undefined,
-    release_date: undefined,
-    estimated_playtime_hours: undefined
+    is_physical: false
   };
 
   // PlatformSelector component data model
@@ -367,15 +352,7 @@
         personal_notes: game.personal_notes || undefined,
         is_loved: game.is_loved,
         ownership_status: game.ownership_status,
-        is_physical: game.is_physical,
-        // Game metadata
-        title: game.game.title,
-        description: game.game.description || undefined,
-        genre: game.game.genre || undefined,
-        developer: game.game.developer || undefined,
-        publisher: game.game.publisher || undefined,
-        release_date: game.game.release_date || undefined,
-        estimated_playtime_hours: game.game.estimated_playtime_hours || undefined
+        is_physical: game.is_physical
       };
     }
   }
@@ -392,7 +369,7 @@
 
   async function saveChanges() {
     try {
-      // Split editData into user game update, progress update, and game metadata update
+      // Split editData into user game update and progress update
       const userGameUpdate: UserGameUpdateRequest = {
         ownership_status: editData.ownership_status,
         is_physical: editData.is_physical,
@@ -869,145 +846,6 @@
         {#if isEditing}
           <!-- Edit Form -->
           <form on:submit|preventDefault={saveChanges} class="space-y-8">
-            <!-- Game Metadata Section (Read-only - managed by IGDB) -->
-            <div>
-              <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-medium text-gray-900">Game Information</h4>
-                <div class="flex items-center space-x-2 text-sm text-blue-600">
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                  <span>Managed by IGDB - use "Update from IGDB" to refresh</span>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label for="title" class="form-label flex items-center space-x-2">
-                    <span>Title</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="title"
-                    type="text"
-                    bind:value={editData.title}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    required
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div>
-                  <label for="genre" class="form-label flex items-center space-x-2">
-                    <span>Genre</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="genre"
-                    type="text"
-                    bind:value={editData.genre}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    placeholder="e.g., Action, RPG, Strategy"
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div>
-                  <label for="developer" class="form-label flex items-center space-x-2">
-                    <span>Developer</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="developer"
-                    type="text"
-                    bind:value={editData.developer}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    placeholder="e.g., FromSoftware"
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div>
-                  <label for="publisher" class="form-label flex items-center space-x-2">
-                    <span>Publisher</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="publisher"
-                    type="text"
-                    bind:value={editData.publisher}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    placeholder="e.g., Bandai Namco"
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div>
-                  <label for="release_date" class="form-label flex items-center space-x-2">
-                    <span>Release Date</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="release_date"
-                    type="date"
-                    bind:value={editData.release_date}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div>
-                  <label for="estimated_playtime_hours" class="form-label flex items-center space-x-2">
-                    <span>Estimated Playtime (hours)</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <input
-                    id="estimated_playtime_hours"
-                    type="number"
-                    min="0"
-                    bind:value={editData.estimated_playtime_hours}
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    placeholder="e.g., 40"
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  />
-                </div>
-
-                <div class="lg:col-span-2">
-                  <label for="description" class="form-label flex items-center space-x-2">
-                    <span>Description</span>
-                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </label>
-                  <textarea
-                    id="description"
-                    bind:value={editData.description}
-                    rows="4"
-                    class="form-input bg-gray-50 text-gray-500 cursor-not-allowed"
-                    disabled={true}
-                    placeholder="Enter a description of the game..."
-                    title="This field is automatically managed by IGDB. Use 'Update from IGDB' to refresh."
-                  ></textarea>
-                </div>
-              </div>
-            </div>
 
             <!-- Personal Information Section -->
             <div class="pt-6 border-t border-gray-200">
