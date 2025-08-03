@@ -75,6 +75,11 @@ cover_art_path = os.path.join(settings.storage_path, "cover_art")
 os.makedirs(cover_art_path, exist_ok=True)
 app.mount("/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art")
 
+# Mount static files for logos
+logos_path = "static/logos"
+os.makedirs(logos_path, exist_ok=True)
+app.mount("/static/logos", StaticFiles(directory=logos_path), name="logos")
+
 
 @app.get("/")
 async def root():

@@ -13,5 +13,5 @@ MIT License - Free to use for personal and commercial projects with no attributi
 
 Files:
 - ea-app.svg: Original EA App (Origin) logo
-- ea-app-icon-light.svg: Light variant (black) for light backgrounds
-- ea-app-icon-dark.svg: Dark variant (white) for dark backgrounds
+- origin-ea-app-icon-light.svg: Light variant (black) for light backgrounds
+- origin-ea-app-icon-dark.svg: Dark variant (white) for dark backgrounds
