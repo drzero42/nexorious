@@ -13,7 +13,3 @@ During import of Darkadia games with non-interactive strategies, all games that 
 
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
-
-## Games can not be deleted
-Instead of having a backend endpoint that deletes a game, games in the `games` table should only be deletable by removing all user_games associations. That means that if a user deletes a game in the frontend, it should delete the user_games entry. When a user_games entry is deleted, the backend should check if that was the last reference that the related games entry had and then delete the games entry if that was the case.
-The point is that the user should not need to care if a game exists in the database or not, only if a game is in their collection.
