@@ -151,6 +151,26 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Save/cancel functionality with unsaved changes warnings
 - [ ] Game continues to appear once in collection with updated platform/storefront indicators
 
+#### 1.2.6 Automatic Game Cleanup Implementation
+**Priority**: P1 (High)
+- [ ] Create game cleanup service in `backend/nexorious/services/game_cleanup.py`
+- [ ] Implement `cleanup_unreferenced_game(game_id)` function with reference counting
+- [ ] Add automatic game cleanup to UserGame deletion endpoint in `user_games.py`
+- [ ] Add automatic game cleanup to bulk UserGame deletion endpoint
+- [ ] Add automatic game cleanup to wishlist deletion endpoints (if they exist)
+- [ ] Ensure proper cascade deletion of GameAlias records when Game is deleted
+- [ ] Add database transaction handling for atomic cleanup operations
+- [ ] Add comprehensive logging for cleanup operations for audit trails
+- [ ] Update or deprecate admin-only game deletion endpoint with warnings about automatic cleanup
+- [ ] Create unit tests for game cleanup service logic
+- [ ] Create integration tests for UserGame deletion triggering game cleanup  
+- [ ] Create tests for multiple users scenario (preserve game until last user removes it)
+- [ ] Create tests for bulk operations triggering appropriate cleanup
+- [ ] Create tests for concurrent deletion scenarios to verify transaction safety
+- [ ] Add performance tests to ensure cleanup operations don't impact user experience
+- [ ] Update API documentation to reflect automatic cleanup behavior
+- [ ] Update admin documentation about reduced need for manual game deletion
+
 #### 1.2.6 Progress Tracking Interface
 - [x] Play status dropdown with completion levels
 - [x] Time tracking input forms

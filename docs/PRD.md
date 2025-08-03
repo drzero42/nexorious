@@ -127,6 +127,35 @@ To create the definitive self-hosted solution for personal game collection manag
   - Ownership status automatically changes when last platform is removed or first platform is added
   - Bulk editing supported with immediate UI updates
 
+#### 1.2.6 Automatic Game Cleanup
+**Priority**: P1 (High)
+- **User Story**: As a user, when I remove a game from my collection, I want the system to automatically clean up unreferenced game data so the database stays optimized without me needing to worry about whether other users still have the game
+- **Backend Requirements**:
+  - Games in the `games` table are automatically deleted when the last `user_games` association is removed
+  - Games are automatically deleted when the last `wishlist` entry referencing them is removed
+  - Automatic cleanup checks occur after any UserGame or Wishlist deletion operation
+  - GameAlias records are automatically cleaned up when their parent Game is deleted
+  - Admin-only direct game deletion endpoints remain available for emergency cleanup scenarios
+  - All cleanup operations are performed within database transactions to ensure data consistency
+- **Frontend Requirements**:
+  - No changes needed - users continue to "remove games from collection" as they do now
+  - Game deletion in the UI represents removing from user's collection, not system-wide deletion
+  - Admin interface may show warnings that direct game deletion is rarely needed due to automatic cleanup
+- **User Experience**:
+  - Users only interact with their personal collection - they don't need to understand global game data management
+  - Removing a game from collection appears instant to the user
+  - System automatically handles database optimization in the background
+- **Data Protection Requirements**:
+  - Games are only deleted when NO user references exist (no user_games, no wishlist entries)
+  - Cleanup operations are atomic to prevent data corruption during concurrent access
+  - All associated data (aliases, metadata) is properly cleaned up when games are removed
+- **Acceptance Criteria**:
+  - When a user removes the last reference to a game, the game record is automatically deleted from the database
+  - Games with any remaining user references (collections or wishlists) are preserved
+  - No manual database maintenance required for game cleanup
+  - Admin direct deletion endpoints remain functional for emergency scenarios
+  - All cleanup operations maintain data integrity and referential consistency
+
 #### 1.3 Platform & Storefront Tracking (Admin-Only Management)
 **Priority**: P0 (Critical)
 - **User Story**: As an administrator, I want to manage the available platforms and storefronts in the system so that users can accurately track their game ownership, while as a user, I want to associate my games with existing platforms and storefronts so I know where to find them
