@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from ..core.database import get_session
-from ..core.security import get_current_admin_user
+from ..core.security import get_current_admin_user, get_current_user
 from ..models.user import User
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..api.schemas.platform import (
@@ -39,6 +39,7 @@ router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
 @router.get("/", response_model=PlatformListResponse)
 async def list_platforms(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
     active_only: bool = Query(default=True, description="Show only active platforms"),
     source: Optional[str] = Query(default=None, description="Filter by source: 'official' or 'custom'"),
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -97,7 +98,8 @@ async def list_platforms(
 @router.get("/{platform_id}", response_model=PlatformResponse)
 async def get_platform(
     platform_id: str,
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get a specific platform by ID."""
     
@@ -115,6 +117,7 @@ async def get_platform(
 async def get_platform_storefronts(
     platform_id: str,
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
     active_only: bool = Query(default=True, description="Show only active storefronts")
 ):
     """Get all storefronts associated with a specific platform."""
@@ -420,7 +423,8 @@ async def delete_platform(
 @router.get("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
 async def get_platform_default_storefront(
     platform_id: str,
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get the default storefront for a specific platform."""
     
@@ -499,6 +503,7 @@ async def update_platform_default_storefront(
 @router.get("/storefronts/", response_model=StorefrontListResponse)
 async def list_storefronts(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
     active_only: bool = Query(default=True, description="Show only active storefronts"),
     source: Optional[str] = Query(default=None, description="Filter by source: 'official' or 'custom'"),
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -538,7 +543,8 @@ async def list_storefronts(
 @router.get("/storefronts/{storefront_id}", response_model=StorefrontResponse)
 async def get_storefront(
     storefront_id: str,
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get a specific storefront by ID."""
     
