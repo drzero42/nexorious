@@ -32,9 +32,9 @@ from .integration_test_utils import (
 class TestGamesListEndpoint:
     """Test GET /api/games/ endpoint."""
     
-    def test_list_games_success(self, client: TestClient, test_game: Game):
+    def test_list_games_success(self, client: TestClient, test_game: Game, auth_headers):
         """Test successful games list retrieval."""
-        response = client.get("/api/games/")
+        response = client.get("/api/games/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -46,20 +46,19 @@ class TestGamesListEndpoint:
         assert data["games"][0]["id"] == str(test_game.id)
         assert data["games"][0]["title"] == test_game.title
     
-    def test_list_games_pagination(self, client: TestClient, session: Session):
+    def test_list_games_pagination(self, client: TestClient, session: Session, auth_headers):
         """Test games list with pagination."""
         # Create multiple games
         for i in range(5):
             game = Game(
                 title=f"Game {i}",
-                description=f"Description {i}",
-                is_verified=True
+                description=f"Description {i}"
             )
             session.add(game)
         session.commit()
         
         # Test pagination
-        response = client.get("/api/games/?page=1&per_page=2")
+        response = client.get("/api/games/?page=1&per_page=2", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -68,27 +67,27 @@ class TestGamesListEndpoint:
         assert data["page"] == 1
         assert data["per_page"] == 2
     
-    def test_list_games_search(self, client: TestClient, test_game: Game):
+    def test_list_games_search(self, client: TestClient, test_game: Game, auth_headers):
         """Test games list with search."""
-        response = client.get(f"/api/games/?search={test_game.title}")
+        response = client.get(f"/api/games/?search={test_game.title}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["games"]) == 1
         assert data["games"][0]["title"] == test_game.title
     
-    def test_list_games_filter_by_genre(self, client: TestClient, test_game: Game):
+    def test_list_games_filter_by_genre(self, client: TestClient, test_game: Game, auth_headers):
         """Test games list with genre filter."""
-        response = client.get(f"/api/games/?genre={test_game.genre}")
+        response = client.get(f"/api/games/?genre={test_game.genre}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert len(data["games"]) == 1
         assert data["games"][0]["genre"] == test_game.genre
     
-    def test_list_games_empty_result(self, client: TestClient):
+    def test_list_games_empty_result(self, client: TestClient, auth_headers):
         """Test games list with no games."""
-        response = client.get("/api/games/")
+        response = client.get("/api/games/", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -111,16 +110,15 @@ class TestGamesCreateEndpoint:
         assert data["genre"] == game_data["genre"]
         assert data["developer"] == game_data["developer"]
         assert data["publisher"] == game_data["publisher"]
-        assert data["is_verified"] is False  # Default for non-admin users
     
-    def test_create_game_admin_verified(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test game creation by admin user (auto-verified)."""
+    def test_create_game_admin_success(self, client: TestClient, admin_headers: Dict[str, str]):
+        """Test game creation by admin user."""
         game_data = create_test_game_data()
         response = client.post("/api/games/", json=game_data, headers=admin_headers)
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["is_verified"] is True  # Admin users create verified games
+        assert data["title"] == game_data["title"]
     
     def test_create_game_duplicate_title(self, client: TestClient, auth_headers: Dict[str, str], test_game: Game):
         """Test creation of game with duplicate title."""
@@ -154,9 +152,9 @@ class TestGamesCreateEndpoint:
 class TestGamesDetailEndpoint:
     """Test GET /api/games/{game_id} endpoint."""
     
-    def test_get_game_success(self, client: TestClient, test_game: Game):
+    def test_get_game_success(self, client: TestClient, test_game: Game, auth_headers):
         """Test successful game retrieval."""
-        response = client.get(f"/api/games/{test_game.id}")
+        response = client.get(f"/api/games/{test_game.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -167,13 +165,13 @@ class TestGamesDetailEndpoint:
         assert data["developer"] == test_game.developer
         assert data["publisher"] == test_game.publisher
     
-    def test_get_game_not_found(self, client: TestClient):
+    def test_get_game_not_found(self, client: TestClient, auth_headers):
         """Test game retrieval with non-existent ID."""
-        response = client.get("/api/games/non-existent-id")
+        response = client.get("/api/games/non-existent-id", headers=auth_headers)
         
         assert_api_error(response, 404, "Game not found")
     
-    def test_get_game_with_aliases(self, client: TestClient, test_game: Game, session: Session):
+    def test_get_game_with_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
         """Test game retrieval with aliases."""
         # Add alias
         alias = GameAlias(
@@ -184,7 +182,7 @@ class TestGamesDetailEndpoint:
         session.add(alias)
         session.commit()
         
-        response = client.get(f"/api/games/{test_game.id}")
+        response = client.get(f"/api/games/{test_game.id}", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -269,7 +267,7 @@ class TestGamesDeleteEndpoint:
 class TestGameAliasesEndpoints:
     """Test game aliases endpoints."""
     
-    def test_get_game_aliases(self, client: TestClient, test_game: Game, session: Session):
+    def test_get_game_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
         """Test getting game aliases."""
         # Add alias
         alias = GameAlias(
@@ -280,7 +278,7 @@ class TestGameAliasesEndpoints:
         session.add(alias)
         session.commit()
         
-        response = client.get(f"/api/games/{test_game.id}/aliases")
+        response = client.get(f"/api/games/{test_game.id}/aliases", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -418,28 +416,6 @@ class TestIGDBIntegrationEndpoints:
         assert_api_error(response, 403, "Not authenticated")
 
 
-class TestGameVerificationEndpoint:
-    """Test game verification endpoint."""
-    
-    def test_verify_game_success(self, client: TestClient, test_game: Game, admin_headers: Dict[str, str]):
-        """Test successful game verification by admin."""
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=admin_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["is_verified"] is True
-    
-    def test_verify_game_not_admin(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test game verification by non-admin user."""
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=auth_headers)
-        
-        assert_api_error(response, 403, "Administrative privileges required")
-    
-    def test_verify_game_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test game verification with non-existent ID."""
-        response = client.put("/api/games/non-existent-id/verify", headers=admin_headers)
-        
-        assert_api_error(response, 404, "Game not found")
 
 
 class TestGameMetadataEndpoints:
@@ -559,11 +535,7 @@ class TestGamesEndpointsSecurity:
     """Test security aspects of games endpoints."""
     
     def test_admin_only_endpoints_require_admin(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test that admin-only endpoints require admin access."""
-        # Test verify endpoint
-        response = client.put(f"/api/games/{test_game.id}/verify", headers=auth_headers)
-        assert_api_error(response, 403, "Administrative privileges required")
-        
+        """Test that admin-only endpoints require admin access."""        
         # Test delete endpoint
         response = client.delete(f"/api/games/{test_game.id}", headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
@@ -579,16 +551,3 @@ class TestGamesEndpointsSecurity:
         response = client.put(f"/api/games/{test_game.id}", json={"title": "Updated"})
         assert_api_error(response, 403, "Not authenticated")
     
-    def test_public_endpoints_allow_anonymous_access(self, client: TestClient, test_game: Game):
-        """Test that public endpoints allow anonymous access."""
-        # Test list endpoint
-        response = client.get("/api/games/")
-        assert_api_success(response, 200)
-        
-        # Test detail endpoint
-        response = client.get(f"/api/games/{test_game.id}")
-        assert_api_success(response, 200)
-        
-        # Test metadata status endpoint
-        response = client.get(f"/api/games/{test_game.id}/metadata/status")
-        assert_api_success(response, 200)

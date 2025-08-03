@@ -37,7 +37,6 @@ class Game(SQLModel, table=True):
     igdb_slug: Optional[str] = Field(default=None, index=True, max_length=200)
     igdb_platform_ids: Optional[str] = Field(default=None, description="JSON array of IGDB platform IDs")
     igdb_platform_names: Optional[str] = Field(default=None, description="JSON array of IGDB platform names for frontend filtering")
-    is_verified: bool = Field(default=False)
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

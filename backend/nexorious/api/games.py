@@ -116,7 +116,6 @@ async def list_games(
     developer: Optional[str] = Query(default=None, description="Filter by developer"),
     publisher: Optional[str] = Query(default=None, description="Filter by publisher"),
     release_year: Optional[int] = Query(default=None, description="Filter by release year"),
-    is_verified: Optional[bool] = Query(default=None, description="Filter by verification status"),
     sort_by: Optional[str] = Query(default="title", description="Sort field"),
     sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order"),
     fuzzy_threshold: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Fuzzy matching threshold for title search (0.0-1.0)")
@@ -150,8 +149,6 @@ async def list_games(
     if release_year:
         filters.append(func.extract('year', Game.release_date) == release_year)
     
-    if is_verified is not None:
-        filters.append(Game.is_verified == is_verified)
     
     if fuzzy_search_mode:
         # For fuzzy search, we need to get all matching games first, then apply fuzzy matching
@@ -279,7 +276,6 @@ async def create_game(
         howlongtobeat_completionist=game_data.howlongtobeat_completionist,
         igdb_id=game_data.igdb_id,
         game_metadata=json.dumps(game_data.metadata),
-        is_verified=current_user.is_admin  # Auto-verify if created by admin
     )
     
     session.add(new_game)
@@ -305,12 +301,6 @@ async def update_game(
             detail="Game not found"
         )
     
-    # Check permissions - only admin or unverified games can be edited
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot edit verified games. Only administrators can modify verified games."
-        )
     
     # Update fields
     update_data = game_data.model_dump(exclude_unset=True)
@@ -625,7 +615,6 @@ async def import_from_igdb(
             "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids) if game_metadata.igdb_platform_ids else None,
             "igdb_platform_names": json.dumps(game_metadata.platform_names) if game_metadata.platform_names else None,
             "game_metadata": "{}",
-            "is_verified": True  # Games imported from IGDB are considered verified
         }
         
         # Apply any custom overrides from the user
@@ -677,27 +666,6 @@ async def import_from_igdb(
         )
 
 
-@router.put("/{game_id}/verify", response_model=GameResponse)
-async def verify_game(
-    game_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_admin_user)]
-):
-    """Verify a game (admin only)."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    game.is_verified = True
-    game.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    session.refresh(game)
-    
-    return game
 
 
 @router.get("/{game_id}/metadata/status", response_model=MetadataStatusResponse)
@@ -770,7 +738,7 @@ async def refresh_game_metadata(
         )
     
     # Log current game state
-    logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}, is_verified={game.is_verified}")
+    logger.debug(f"Current game state: title='{game.title}', igdb_id={game.igdb_id}")
     
     if not game.igdb_id:
         logger.warning(f"Metadata refresh failed: Game '{game.title}' ({game_id}) has no IGDB ID")
@@ -779,14 +747,6 @@ async def refresh_game_metadata(
             detail="Game does not have IGDB ID"
         )
     
-    # Check permissions - only admin or unverified games can be refreshed
-    logger.debug(f"Permission check: user_is_admin={current_user.is_admin}, game_is_verified={game.is_verified}")
-    if not current_user.is_admin and game.is_verified:
-        logger.warning(f"Metadata refresh denied: Non-admin user {current_user.username} cannot refresh verified game '{game.title}'")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot refresh metadata for verified games. Only administrators can refresh verified games."
-        )
     
     try:
         logger.debug(f"Calling IGDB service to refresh metadata for IGDB ID {game.igdb_id}")
@@ -918,12 +878,6 @@ async def populate_game_metadata(
             detail="Game does not have IGDB ID"
         )
     
-    # Check permissions - only admin or unverified games can be populated
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot populate metadata for verified games. Only administrators can modify verified games."
-        )
     
     try:
         # Create current metadata object
@@ -1184,12 +1138,6 @@ async def download_game_cover_art(
             detail="Game does not have cover art URL"
         )
     
-    # Check permissions - only admin or unverified games can have cover art downloaded
-    if not current_user.is_admin and game.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot download cover art for verified games. Only administrators can modify verified games."
-        )
     
     try:
         local_url = await igdb_service.download_and_store_cover_art(game.igdb_id, game.cover_art_url)

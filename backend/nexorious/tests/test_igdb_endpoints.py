@@ -258,7 +258,6 @@ class TestIGDBImportEndpoint:
             data = response.json()
             assert data["title"] == "Test Game"
             assert data["igdb_id"] == "123"
-            assert data["is_verified"] is True
             
         finally:
             # Clean up overrides

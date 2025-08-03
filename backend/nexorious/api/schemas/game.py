@@ -65,7 +65,6 @@ class GameResponse(BaseModel, TimestampMixin):
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
     igdb_platform_names: Optional[str]
-    is_verified: bool
     aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
 
     model_config = ConfigDict(from_attributes=True)
@@ -78,7 +77,6 @@ class GameSearchRequest(BaseModel):
     developer: Optional[str] = Field(None, description="Filter by developer")
     publisher: Optional[str] = Field(None, description="Filter by publisher")
     release_year: Optional[int] = Field(None, description="Filter by release year")
-    is_verified: Optional[bool] = Field(None, description="Filter by verification status")
 
 
 class GameListResponse(BaseModel):

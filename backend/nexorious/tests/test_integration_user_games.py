@@ -63,8 +63,7 @@ class TestUserGamesListEndpoint:
             game = Game(
                 title=f"Game {i}",
                 description=f"Description {i}",
-                is_verified=True
-            )
+                            )
             session.add(game)
             session.commit()
             session.refresh(game)
@@ -816,8 +815,7 @@ class TestUserGamesBulkUpdateEndpoint:
         game2 = Game(
             title="Game 2",
             description="Second game",
-            is_verified=True
-        )
+                    )
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -887,8 +885,7 @@ class TestUserGamesBulkDeleteEndpoint:
         game2 = Game(
             title="Game 2",
             description="Second game",
-            is_verified=True
-        )
+                    )
         session.add(game2)
         session.commit()
         session.refresh(game2)
@@ -969,8 +966,7 @@ class TestUserGamesStatsEndpoint:
                 title=f"Game {i}",
                 description=f"Description {i}",
                 genre="Action",
-                is_verified=True
-            )
+                            )
             session.add(game)
             session.commit()
             session.refresh(game)

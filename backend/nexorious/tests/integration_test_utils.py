@@ -192,7 +192,7 @@ def test_game_fixture(session: Session) -> Game:
         release_date=date(2023, 1, 1),
         cover_art_url="https://example.com/cover.jpg",
         igdb_id="12345",
-        is_verified=False  # Make it unverified so regular users can update it
+          # Make it unverified so regular users can update it
     )
     session.add(game)
     session.commit()
@@ -211,8 +211,7 @@ def verified_game_fixture(session: Session) -> Game:
         publisher="Test Publisher",
         release_date=date(2023, 1, 1),
         igdb_id="54321",
-        is_verified=True
-    )
+            )
     session.add(game)
     session.commit()
     session.refresh(game)
