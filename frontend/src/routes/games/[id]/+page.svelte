@@ -26,13 +26,11 @@
     personal_notes?: string | undefined;
     is_loved: boolean;
     ownership_status: OwnershipStatus;
-    is_physical: boolean;
   } = {
     play_status: 'not_started' as PlayStatus,
     hours_played: 0,
     is_loved: false,
-    ownership_status: 'owned' as OwnershipStatus,
-    is_physical: false
+    ownership_status: 'owned' as OwnershipStatus
   };
 
   // PlatformSelector component data model
@@ -351,8 +349,7 @@
         hours_played: game.hours_played,
         personal_notes: game.personal_notes || undefined,
         is_loved: game.is_loved,
-        ownership_status: game.ownership_status,
-        is_physical: game.is_physical
+        ownership_status: game.ownership_status
       };
     }
   }
@@ -372,7 +369,6 @@
       // Split editData into user game update and progress update
       const userGameUpdate: UserGameUpdateRequest = {
         ownership_status: editData.ownership_status,
-        is_physical: editData.is_physical,
         is_loved: editData.is_loved
       };
       
@@ -389,8 +385,6 @@
         progressUpdate.personal_notes = editData.personal_notes;
       }
 
-      // Note: Game metadata (title, description, etc.) is managed by IGDB and cannot be edited directly.
-      // Use "Update from IGDB" to refresh metadata.
       
       // Always update user-specific data (personal information)
       await userGames.updateUserGame(gameId, userGameUpdate);
@@ -914,16 +908,7 @@
               </div>
 
               <div class="mt-6 space-y-4">
-                <div class="flex items-center space-x-6">
-                  <label class="inline-flex items-center">
-                    <input
-                      type="checkbox"
-                      bind:checked={editData.is_physical}
-                      class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                    />
-                    <span class="ml-2 text-sm text-gray-700">Physical copy</span>
-                  </label>
-
+                <div class="flex items-center">
                   <label class="inline-flex items-center">
                     <input
                       type="checkbox"
@@ -1131,11 +1116,6 @@
                 <dt class="text-sm font-medium text-gray-500">Ownership</dt>
                 <dd class="mt-1 text-sm text-gray-900">
                   {formatOwnershipStatus(game.ownership_status)}
-                  {#if game.is_physical}
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 ml-2">
-                      Physical
-                    </span>
-                  {/if}
                 </dd>
               </div>
 
