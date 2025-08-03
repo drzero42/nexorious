@@ -445,3 +445,45 @@ class TestGamesEndpointsSecurity:
         response = client_with_mock_igdb.get(f"/api/games/{test_game.id}")
         assert_api_error(response, 403, "Not authenticated")
     
+    def test_manual_game_creation_endpoints_blocked(self, client: TestClient, auth_headers: Dict[str, str]):
+        """Test that manual game creation endpoints are properly removed/blocked (IGDB-only system)."""
+        # Test POST /api/games/ for manual game creation - should return 404 or 405
+        game_data = {
+            "title": "Test Manual Game",
+            "description": "A manually created game",
+            "genre": "Action"
+        }
+        response = client.post("/api/games/", json=game_data, headers=auth_headers)
+        # Should return 404 (Not Found) or 405 (Method Not Allowed) since endpoint was removed
+        assert response.status_code in [404, 405], f"Expected 404 or 405, got {response.status_code}"
+        
+        # Test PUT /api/games/{game_id} for manual game updates - should return 404 or 405
+        update_data = {
+            "title": "Updated Manual Game",
+            "description": "An updated manually created game"
+        }
+        response = client.put("/api/games/test-game-id", json=update_data, headers=auth_headers)
+        # Should return 404 (Not Found) or 405 (Method Not Allowed) since endpoint was removed
+        assert response.status_code in [404, 405], f"Expected 404 or 405, got {response.status_code}"
+    
+    def test_manual_game_creation_endpoints_blocked_without_auth(self, client: TestClient):
+        """Test that manual game creation endpoints are blocked even without authentication."""
+        # Test POST /api/games/ without authentication
+        game_data = {
+            "title": "Test Manual Game",
+            "description": "A manually created game",
+            "genre": "Action"
+        }
+        response = client.post("/api/games/", json=game_data)
+        # Should return 404 or 405 (endpoint removed) before even checking authentication
+        assert response.status_code in [404, 405], f"Expected 404 or 405, got {response.status_code}"
+        
+        # Test PUT /api/games/{game_id} without authentication
+        update_data = {
+            "title": "Updated Manual Game",
+            "description": "An updated manually created game"
+        }
+        response = client.put("/api/games/test-game-id", json=update_data)
+        # Should return 404 or 405 (endpoint removed) before even checking authentication
+        assert response.status_code in [404, 405], f"Expected 404 or 405, got {response.status_code}"
+    

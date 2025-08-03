@@ -337,7 +337,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           ...baseGame.game,
           developer: undefined,
           estimated_playtime_hours: undefined,
-          igdb_id: undefined
+          igdb_id: 'igdb-test-456'
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithMissingFields];
@@ -350,7 +350,8 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       
       expect(screen.queryByText('Developer')).not.toBeInTheDocument();
       expect(screen.queryByText('Estimated Playtime')).not.toBeInTheDocument();
-      expect(screen.queryByText('IGDB ID')).not.toBeInTheDocument();
+      // IGDB ID should always be present since all games are IGDB-sourced
+      expect(screen.getByText('IGDB ID')).toBeInTheDocument();
       
       // Other fields should still be present
       expect(screen.getByText('Publisher')).toBeInTheDocument();
@@ -406,7 +407,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           howlongtobeat_main: undefined,
           howlongtobeat_extra: undefined,
           howlongtobeat_completionist: undefined,
-          igdb_id: undefined
+          igdb_id: 'igdb-minimal-789'
         },
         platforms: []
       };
@@ -428,7 +429,8 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.queryByText('Description')).not.toBeInTheDocument();
       expect(screen.queryByText('Developer')).not.toBeInTheDocument();
       expect(screen.queryByText('Estimated Playtime')).not.toBeInTheDocument();
-      expect(screen.queryByText('IGDB ID')).not.toBeInTheDocument();
+      // IGDB ID should always be present since all games are IGDB-sourced
+      expect(screen.getByText('IGDB ID')).toBeInTheDocument();
       
       // Personal information section should still be available
       expect(screen.getByText('Your Information')).toBeInTheDocument();

@@ -105,21 +105,21 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
     });
 
     it('should handle missing metadata gracefully', () => {
-      // Test null/undefined handling for optional fields
+      // Test null/undefined handling for optional fields (all games are IGDB-sourced)
       const gameWithMissingFields = {
         title: 'Test Game',
         developer: null,
         estimated_playtime_hours: null,
-        igdb_id: null,
+        igdb_id: 'igdb-test-123',
         rating_average: null,
         howlongtobeat_main: null,
         platforms: []
       };
 
-      // These should not cause errors
+      // These should not cause errors (all games are IGDB-sourced, so igdb_id is always present)
       expect(gameWithMissingFields.developer).toBeNull();
       expect(gameWithMissingFields.estimated_playtime_hours).toBeNull();
-      expect(gameWithMissingFields.igdb_id).toBeNull();
+      expect(gameWithMissingFields.igdb_id).toBe('igdb-test-123');
       expect(gameWithMissingFields.rating_average).toBeNull();
       expect(gameWithMissingFields.howlongtobeat_main).toBeNull();
       expect(Array.isArray(gameWithMissingFields.platforms)).toBe(true);
