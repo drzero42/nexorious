@@ -20,7 +20,6 @@ export interface Game {
   igdb_id?: string;
   igdb_slug?: string;
   igdb_platform_names?: string;
-  is_verified: boolean;
   created_at: string;
   updated_at: string;
 }

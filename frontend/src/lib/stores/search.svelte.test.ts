@@ -68,7 +68,6 @@ vi.mock('./games.svelte', () => ({
 					cover_art_url: 'https://example.com/cover.jpg',
 					rating_count: 100,
 					game_metadata: '{}',
-					is_verified: true,
 					created_at: '2023-01-01T00:00:00Z',
 					updated_at: '2023-01-01T00:00:00Z'
 				}
@@ -95,7 +94,6 @@ vi.mock('./user-games.svelte', () => ({
 						cover_art_url: 'https://example.com/user-cover.jpg',
 						rating_count: 50,
 						game_metadata: '{}',
-						is_verified: true,
 						created_at: '2023-02-01T00:00:00Z',
 						updated_at: '2023-02-01T00:00:00Z'
 					},

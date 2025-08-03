@@ -105,21 +105,21 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
     });
 
     it('should handle missing metadata gracefully', () => {
-      // Test null/undefined handling for optional fields
+      // Test null/undefined handling for optional fields (all games are IGDB-sourced)
       const gameWithMissingFields = {
         title: 'Test Game',
         developer: null,
         estimated_playtime_hours: null,
-        igdb_id: null,
+        igdb_id: 'igdb-test-123',
         rating_average: null,
         howlongtobeat_main: null,
         platforms: []
       };
 
-      // These should not cause errors
+      // These should not cause errors (all games are IGDB-sourced, so igdb_id is always present)
       expect(gameWithMissingFields.developer).toBeNull();
       expect(gameWithMissingFields.estimated_playtime_hours).toBeNull();
-      expect(gameWithMissingFields.igdb_id).toBeNull();
+      expect(gameWithMissingFields.igdb_id).toBe('igdb-test-123');
       expect(gameWithMissingFields.rating_average).toBeNull();
       expect(gameWithMissingFields.howlongtobeat_main).toBeNull();
       expect(Array.isArray(gameWithMissingFields.platforms)).toBe(true);
@@ -147,13 +147,12 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
     });
 
     it('should verify CSS class structure for new components', () => {
-      // Test CSS classes used in the new components
+      // Test CSS classes used in the new components (IGDB-only system)
       const expectedClasses = [
         'bg-blue-50',    // Platform badges
         'bg-green-50',   // HLTB Main + Extra
         'bg-purple-50',  // HLTB Completionist  
-        'bg-green-100',  // Verification badge
-        'text-green-800' // Verification text
+        // Note: Verification badges removed in IGDB-only system
       ];
 
       expectedClasses.forEach(className => {
@@ -197,8 +196,7 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
         howlongtobeat_extra: 35,
         howlongtobeat_completionist: 50,
         igdb_id: 'igdb-123',
-        igdb_slug: 'test-game-slug',
-        is_verified: true
+        igdb_slug: 'test-game-slug'
       };
 
       // Verify all enhanced metadata fields exist
@@ -210,7 +208,6 @@ describe('Game Detail Page - Enhanced Metadata Features', () => {
       expect(completeGame.howlongtobeat_completionist).toBeDefined();
       expect(completeGame.igdb_id).toBeDefined();
       expect(completeGame.igdb_slug).toBeDefined();
-      expect(completeGame.is_verified).toBeDefined();
     });
 
     it('should validate UserGame platform structure', () => {

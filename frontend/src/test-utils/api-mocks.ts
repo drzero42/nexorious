@@ -20,7 +20,6 @@ export const mockGame: Game = {
   howlongtobeat_completionist: 45,  // Realistic completionist time
   igdb_id: 'igdb-123',
   igdb_slug: 'test-game-slug',
-  is_verified: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
 };

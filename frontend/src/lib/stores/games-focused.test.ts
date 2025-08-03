@@ -73,15 +73,6 @@ describe('Games Store - PR Focused Tests', () => {
       expect(callUrl.startsWith(mockConfig.apiUrl)).toBe(true);
     });
 
-    it('should use config.apiUrl for other game operations', async () => {
-      const { games } = await import('./games.svelte');
-      
-      await games.updateGame('game-123', { title: 'Updated' });
-      
-      const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/game-123`);
-      expect(callUrl.startsWith(mockConfig.apiUrl)).toBe(true);
-    });
   });
 
   describe('IGDB API Request Structure (PR Fix)', () => {

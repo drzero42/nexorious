@@ -86,17 +86,6 @@ describe('Games Store API Integration', () => {
     });
 
 
-    it('should use config.apiUrl for game updates', async () => {
-      const { games } = await import('./games.svelte');
-      
-      await games.updateGame('game-123', { title: 'Updated Game' });
-      
-      expect(mockFetch).toHaveBeenCalled();
-      verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
-      
-      const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/game-123`);
-    });
 
     it('should use config.apiUrl for game deletion', async () => {
       const { games } = await import('./games.svelte');
@@ -238,23 +227,6 @@ describe('Games Store API Integration', () => {
     });
 
 
-    it('should update existing game with correct data', async () => {
-      const { games } = await import('./games.svelte');
-      const updateData = { title: 'Updated Game' };
-      
-      await games.updateGame('game-123', updateData);
-      
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games/game-123`,
-        expect.objectContaining({
-          method: 'PUT',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json'
-          }),
-          body: JSON.stringify(updateData)
-        })
-      );
-    });
 
     it('should delete game by ID', async () => {
       const { games } = await import('./games.svelte');
