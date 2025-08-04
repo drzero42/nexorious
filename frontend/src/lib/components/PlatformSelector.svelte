@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
+  import { buildIconUrl, getPlatformFallbackIcon } from '$lib/utils/icon-utils';
 
   export let selectedPlatforms: Set<string>;
   export let platformStorefronts: Map<string, Set<string>>;
@@ -151,8 +152,24 @@
                     class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                   />
                   <div class="ml-3 flex items-center gap-2 flex-1">
-                    {#if platform.icon_url}
-                      <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                    {#if buildIconUrl(platform.icon_url)}
+                      <img 
+                        src={buildIconUrl(platform.icon_url)} 
+                        alt={platform.display_name} 
+                        class="w-6 h-6 object-contain"
+                        loading="lazy"
+                        on:error={(e) => {
+                          const img = e.target as HTMLImageElement;
+                          const fallback = img.nextElementSibling as HTMLElement;
+                          if (img && fallback) {
+                            img.style.display = 'none';
+                            fallback.style.display = 'inline';
+                          }
+                        }}
+                      />
+                      <span class="text-lg hidden" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
+                    {:else}
+                      <span class="text-lg" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
                     {/if}
                     <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
                   </div>
@@ -297,8 +314,24 @@
                       class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                     />
                     <div class="ml-3 flex items-center gap-2 flex-1">
-                      {#if platform.icon_url}
-                        <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                      {#if buildIconUrl(platform.icon_url)}
+                        <img 
+                          src={buildIconUrl(platform.icon_url)} 
+                          alt={platform.display_name} 
+                          class="w-6 h-6 object-contain"
+                          loading="lazy"
+                          on:error={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            const fallback = img.nextElementSibling as HTMLElement;
+                            if (img && fallback) {
+                              img.style.display = 'none';
+                              fallback.style.display = 'inline';
+                            }
+                          }}
+                        />
+                        <span class="text-lg hidden" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
+                      {:else}
+                        <span class="text-lg" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
                       {/if}
                       <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
                     </div>
@@ -425,8 +458,24 @@
                 class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
               />
               <div class="ml-3 flex items-center gap-2 flex-1">
-                {#if platform.icon_url}
-                  <img src={platform.icon_url} alt={platform.display_name} class="w-6 h-6 object-contain" />
+                {#if buildIconUrl(platform.icon_url)}
+                  <img 
+                    src={buildIconUrl(platform.icon_url)} 
+                    alt={platform.display_name} 
+                    class="w-6 h-6 object-contain"
+                    loading="lazy"
+                    on:error={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const fallback = img.nextElementSibling as HTMLElement;
+                      if (img && fallback) {
+                        img.style.display = 'none';
+                        fallback.style.display = 'inline';
+                      }
+                    }}
+                  />
+                  <span class="text-lg hidden" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
+                {:else}
+                  <span class="text-lg" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
                 {/if}
                 <span class="text-sm font-medium text-gray-900">{platform.display_name}</span>
               </div>
