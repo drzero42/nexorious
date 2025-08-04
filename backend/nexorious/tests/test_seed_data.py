@@ -1,6 +1,6 @@
 """
 Tests for seed data fixtures and seeding functionality.
-Tests all seed data functions including platforms, storefronts, and their default mappings.
+Tests all seed data functions including platforms, storefronts, and platform-storefront associations.
 """
 
 import pytest
@@ -15,13 +15,11 @@ from ..models.user import User
 from ..seed_data.seeder import (
     seed_platforms,
     seed_storefronts, 
-    seed_default_platform_storefront_mappings,
     seed_all_official_data,
     get_seeding_conflicts
 )
 from ..seed_data.platforms import OFFICIAL_PLATFORMS
 from ..seed_data.storefronts import OFFICIAL_STOREFRONTS
-from ..seed_data.default_mappings import DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
 from ..seed_data.platform_storefront_associations import PLATFORM_STOREFRONT_ASSOCIATIONS
 from .integration_test_utils import (
     session_fixture as session,
@@ -73,48 +71,6 @@ def get_admin_headers(client: TestClient, session: Session, username: str = "adm
     return {"Authorization": f"Bearer {token}"}
 
 
-class TestDefaultMappingsFixture:
-    """Test DEFAULT_PLATFORM_STOREFRONT_MAPPINGS fixture data."""
-    
-    def test_mappings_structure(self):
-        """Test that mappings have correct structure."""
-        assert isinstance(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS, list)
-        assert len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS) == 11  # As specified in PRD
-        
-        for mapping in DEFAULT_PLATFORM_STOREFRONT_MAPPINGS:
-            assert isinstance(mapping, dict)
-            assert "platform_name" in mapping
-            assert "storefront_name" in mapping
-            assert isinstance(mapping["platform_name"], str)
-            assert isinstance(mapping["storefront_name"], str)
-    
-    def test_expected_mappings_present(self):
-        """Test that all expected mappings from PRD are present."""
-        expected_mappings = {
-            "pc-windows": "steam",
-            "playstation-5": "playstation-store",
-            "playstation-4": "playstation-store", 
-            "playstation-3": "playstation-store",
-            "xbox-series": "microsoft-store",
-            "xbox-one": "microsoft-store",
-            "xbox-360": "microsoft-store",
-            "nintendo-switch": "nintendo-eshop",
-            "nintendo-wii": "nintendo-eshop",
-            "ios": "apple-app-store",
-            "android": "google-play-store"
-        }
-        
-        mapping_dict = {
-            m["platform_name"]: m["storefront_name"] 
-            for m in DEFAULT_PLATFORM_STOREFRONT_MAPPINGS
-        }
-        
-        assert mapping_dict == expected_mappings
-    
-    def test_no_duplicate_platforms(self):
-        """Test that each platform only appears once in mappings."""
-        platform_names = [m["platform_name"] for m in DEFAULT_PLATFORM_STOREFRONT_MAPPINGS]
-        assert len(platform_names) == len(set(platform_names))
 
 
 class TestSeedPlatforms:
@@ -255,107 +211,6 @@ class TestSeedStorefronts:
         assert storefront.base_url == "https://custom.steamstore.com"  # Custom URL preserved
 
 
-class TestSeedDefaultMappings:
-    """Test seed_default_platform_storefront_mappings() function."""
-    
-    def test_seed_mappings_success(self, session: Session):
-        """Test successful creation of default platform-storefront mappings."""
-        # First seed platforms and storefronts
-        seed_platforms(session, "1.0.0")
-        seed_storefronts(session, "1.0.0")
-        
-        # Seed mappings
-        count = seed_default_platform_storefront_mappings(session)
-        
-        # Should have created all mappings
-        assert count == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
-        
-        # Verify mappings were created correctly
-        for mapping in DEFAULT_PLATFORM_STOREFRONT_MAPPINGS:
-            platform = session.exec(
-                select(Platform).where(Platform.name == mapping["platform_name"])
-            ).first()
-            assert platform is not None
-            assert platform.default_storefront_id is not None
-            
-            storefront = session.exec(
-                select(Storefront).where(Storefront.id == platform.default_storefront_id)
-            ).first()
-            assert storefront is not None
-            assert storefront.name == mapping["storefront_name"]
-    
-    def test_seed_mappings_idempotent(self, session: Session):
-        """Test that seeding mappings multiple times doesn't change anything."""
-        # Setup
-        seed_platforms(session, "1.0.0")
-        seed_storefronts(session, "1.0.0")
-        
-        # First seed
-        count1 = seed_default_platform_storefront_mappings(session)
-        assert count1 == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
-        
-        # Second seed
-        count2 = seed_default_platform_storefront_mappings(session)
-        assert count2 == 0  # No new mappings should be created
-        
-        # Verify mappings are still correct
-        for mapping in DEFAULT_PLATFORM_STOREFRONT_MAPPINGS:
-            platform = session.exec(
-                select(Platform).where(Platform.name == mapping["platform_name"])
-            ).first()
-            assert platform.default_storefront_id is not None
-    
-    def test_seed_mappings_missing_platform(self, session: Session, caplog):
-        """Test handling of missing platforms during mapping."""
-        # Only seed storefronts, not platforms
-        seed_storefronts(session, "1.0.0")
-        
-        with caplog.at_level(logging.WARNING):
-            count = seed_default_platform_storefront_mappings(session)
-        
-        # Should have created 0 mappings
-        assert count == 0
-        
-        # Should have logged warnings for missing platforms
-        assert "not found for default mapping" in caplog.text
-    
-    def test_seed_mappings_missing_storefront(self, session: Session, caplog):
-        """Test handling of missing storefronts during mapping."""
-        # Only seed platforms, not storefronts
-        seed_platforms(session, "1.0.0")
-        
-        with caplog.at_level(logging.WARNING):
-            count = seed_default_platform_storefront_mappings(session)
-        
-        # Should have created 0 mappings
-        assert count == 0
-        
-        # Should have logged warnings for missing storefronts
-        assert "not found for default mapping" in caplog.text
-    
-    def test_seed_mappings_preserves_existing(self, session: Session):
-        """Test that existing default storefronts are not overwritten."""
-        # Setup
-        seed_platforms(session, "1.0.0")
-        seed_storefronts(session, "1.0.0")
-        
-        # Manually set a different default storefront for one platform
-        platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
-        gog_storefront = session.exec(select(Storefront).where(Storefront.name == "gog")).first()
-        platform.default_storefront_id = gog_storefront.id
-        session.add(platform)
-        session.commit()
-        
-        # Seed mappings
-        count = seed_default_platform_storefront_mappings(session)
-        
-        # Should have created all mappings except the one we manually set
-        assert count == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS) - 1
-        
-        # Verify the manually set mapping was preserved
-        session.refresh(platform)
-        assert platform.default_storefront_id == gog_storefront.id
-
 
 class TestSeedAllOfficialData:
     """Test seed_all_official_data() function."""
@@ -368,19 +223,16 @@ class TestSeedAllOfficialData:
         assert isinstance(result, dict)
         assert "platforms" in result
         assert "storefronts" in result
-        assert "mappings" in result
         assert "associations" in result
         assert "total" in result
         
         # Verify counts
         assert result["platforms"] == len(OFFICIAL_PLATFORMS)
         assert result["storefronts"] == len(OFFICIAL_STOREFRONTS)
-        assert result["mappings"] == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
         assert result["associations"] == len(PLATFORM_STOREFRONT_ASSOCIATIONS)
         assert result["total"] == (
             len(OFFICIAL_PLATFORMS) + 
             len(OFFICIAL_STOREFRONTS) + 
-            len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS) +
             len(PLATFORM_STOREFRONT_ASSOCIATIONS)
         )
         
@@ -391,9 +243,10 @@ class TestSeedAllOfficialData:
         assert len(platforms) == len(OFFICIAL_PLATFORMS)
         assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
         
-        # Verify mappings were created
+        # Verify default storefronts were set for platforms that have them defined
         platforms_with_defaults = [p for p in platforms if p.default_storefront_id is not None]
-        assert len(platforms_with_defaults) == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        platforms_with_default_names = [p for p in OFFICIAL_PLATFORMS if "default_storefront_name" in p]
+        assert len(platforms_with_defaults) == len(platforms_with_default_names)
     
     def test_seed_all_data_idempotent(self, session: Session):
         """Test that complete seeding process is idempotent."""
@@ -406,7 +259,6 @@ class TestSeedAllOfficialData:
         # Second seed should have created nothing new
         assert result2["platforms"] == 0
         assert result2["storefronts"] == 0
-        assert result2["mappings"] == 0
         assert result2["total"] == 0
         
         # Verify data integrity
@@ -418,16 +270,16 @@ class TestSeedAllOfficialData:
     
     def test_seed_all_data_partial_existing(self, session: Session):
         """Test seeding when some data already exists."""
-        # Pre-seed only platforms
-        seed_platforms(session, "1.0.0")
+        # Pre-seed only platforms (without storefronts, they can't set defaults)
+        seed_platforms(session, "1.0.0", set_defaults=False)
         
         # Seed all data
         result = seed_all_official_data(session, "1.0.0")
         
-        # Should have seeded storefronts and mappings, but not platforms
-        assert result["platforms"] == 0
+        # Should have seeded storefronts, updated platforms with defaults, and associations
+        assert result["platforms"] == len(OFFICIAL_PLATFORMS)  # Platforms updated with defaults
         assert result["storefronts"] == len(OFFICIAL_STOREFRONTS)
-        assert result["mappings"] == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        assert result["associations"] == len(PLATFORM_STOREFRONT_ASSOCIATIONS)
 
 
 class TestGetSeededConflicts:
@@ -493,7 +345,6 @@ class TestSeedDataEdgeCases:
         # Should be idempotent regardless of version
         assert result2["platforms"] == 0
         assert result2["storefronts"] == 0
-        assert result2["mappings"] == 0
         
         # All platforms should still have version 1.0.0 (first seed)
         platforms = session.exec(select(Platform)).all()
@@ -515,7 +366,7 @@ class TestSeedDataEdgeCases:
         assert any("Starting seeding" in call for call in info_calls)
         assert any("Seeded" in call and "platforms" in call for call in info_calls)
         assert any("Seeded" in call and "storefronts" in call for call in info_calls)
-        assert any("Created" in call and "mappings" in call for call in info_calls)
+        assert any("Created" in call and "associations" in call for call in info_calls)
         assert any("Completed seeding" in call for call in info_calls)
 
 
@@ -554,7 +405,7 @@ class TestSeedDataAPI:
         # Verify counts
         assert data["platforms_added"] == len(OFFICIAL_PLATFORMS)
         assert data["storefronts_added"] == len(OFFICIAL_STOREFRONTS)
-        assert data["mappings_created"] == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        assert data["mappings_created"] == 0  # No longer creating separate mappings
         assert data["total_changes"] > 0
         assert "Successfully loaded seed data" in data["message"]
     
@@ -618,9 +469,10 @@ class TestSeedDataAPI:
         assert len(platforms) == len(OFFICIAL_PLATFORMS)
         assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
         
-        # Verify default mappings were created
+        # Verify default storefronts were set for platforms that have them defined
         platforms_with_defaults = [p for p in platforms if p.default_storefront_id is not None]
-        assert len(platforms_with_defaults) == len(DEFAULT_PLATFORM_STOREFRONT_MAPPINGS)
+        platforms_with_default_names = [p for p in OFFICIAL_PLATFORMS if "default_storefront_name" in p]
+        assert len(platforms_with_defaults) == len(platforms_with_default_names)
     
     def test_seed_endpoint_with_existing_custom_data(self, client: TestClient, session: Session):
         """Test seed endpoint preserves existing custom data."""

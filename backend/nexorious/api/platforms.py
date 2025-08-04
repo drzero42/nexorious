@@ -772,14 +772,14 @@ async def seed_platforms_and_storefronts(
     
     # Create response message
     if result["total"] == 0:
-        message = "No changes made. All official platforms, storefronts, and mappings are already up to date."
+        message = "No changes made. All official platforms, storefronts, and associations are already up to date."
     else:
-        message = f"Successfully loaded seed data: {result['platforms']} platforms, {result['storefronts']} storefronts, {result['mappings']} default mappings."
+        message = f"Successfully loaded seed data: {result['platforms']} platforms, {result['storefronts']} storefronts, {result['associations']} associations."
     
     return SeedDataResponse(
         platforms_added=result["platforms"],
         storefronts_added=result["storefronts"],
-        mappings_created=result["mappings"],
+        mappings_created=0,  # No longer creating separate mappings
         total_changes=result["total"],
         message=message
     )
