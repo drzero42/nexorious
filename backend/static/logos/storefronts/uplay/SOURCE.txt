@@ -1,0 +1,17 @@
+UPlay Storefront Logo
+====================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/443519/brand-uplay
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free UPlay Brand SVG Vector Icon
+
+License Details:
+MIT License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- uplay.svg: Original UPlay logo
+- uplay-icon-light.svg: Light variant (black) for light backgrounds
+- uplay-icon-dark.svg: Dark variant (white) for dark backgrounds

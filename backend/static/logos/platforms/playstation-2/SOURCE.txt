@@ -1,0 +1,17 @@
+PlayStation 2 Platform Logo
+===========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/473753/playstation2
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free PlayStation 2 Vector Icon in SVG format
+
+License Details:
+Logo License - Please check the specific terms and conditions for logo usage.
+
+Files:
+- playstation-2.svg: Original PlayStation 2 logo
+- playstation-2-icon-light.svg: Light variant (black) for light backgrounds
+- playstation-2-icon-dark.svg: Dark variant (white) for dark backgrounds

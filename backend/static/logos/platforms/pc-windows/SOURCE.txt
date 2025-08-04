@@ -1,0 +1,17 @@
+PC (Windows) Logo
+=================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/513083/windows-174
+License: PD License (Public Domain)
+Downloaded: 2025-08-03
+
+Description: Free Windows Vector Icon in SVG format
+
+License Details:
+PD License - Public Domain, free to use for any purpose without restrictions.
+
+Files:
+- pc-windows.svg: Original Windows logo
+- pc-windows-icon-light.svg: Light variant (black) for light backgrounds
+- pc-windows-icon-dark.svg: Dark variant (white) for dark backgrounds

@@ -1,0 +1,27 @@
+Itch.io Icon Sources
+====================
+
+Source: Itch.io Press Kit
+URL: https://itch.io/press-kit
+GitHub Repository: https://github.com/itchio/press-kit
+Download Date: 2025-08-03
+License: Free for commercial and personal use
+
+Downloaded Files:
+
+1. itch-io-icon-light.svg
+   - Original: itchio-logo-textless-black.svg
+   - Usage: Light theme (black icon on light backgrounds)
+   - Format: SVG vector
+   - Size: 2,351 bytes
+
+2. itch-io-icon-dark.svg
+   - Original: itchio-logo-textless-white.svg
+   - Usage: Dark theme (white icon on dark backgrounds)
+   - Format: SVG vector
+   - Size: 2,368 bytes
+
+Icon Details:
+- Design: Itch.io logo without text (icon only)
+- Style: Compact design perfect for platform badges
+- Content: Distinctive Itch.io symbol
