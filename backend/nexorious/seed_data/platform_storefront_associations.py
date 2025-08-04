@@ -61,4 +61,18 @@ PLATFORM_STOREFRONT_ASSOCIATIONS: List[Dict[str, str]] = [
     {"platform_name": "pc-linux", "storefront_name": "steam"},
     {"platform_name": "pc-linux", "storefront_name": "gog"},
     {"platform_name": "pc-linux", "storefront_name": "humble-bundle"},
+    
+    # PlayStation 2 associations
+    {"platform_name": "playstation-2", "storefront_name": "physical"},
+    
+    # PlayStation associations
+    {"platform_name": "playstation", "storefront_name": "physical"},
+    
+    # Nintendo Wii U associations
+    {"platform_name": "nintendo-wii-u", "storefront_name": "nintendo-eshop"},
+    {"platform_name": "nintendo-wii-u", "storefront_name": "physical"},
+    
+    # Nintendo Switch 2 associations
+    {"platform_name": "nintendo-switch-2", "storefront_name": "nintendo-eshop"},
+    {"platform_name": "nintendo-switch-2", "storefront_name": "physical"},
 ]
