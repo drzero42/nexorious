@@ -122,16 +122,8 @@
   async function loadGame() {
     try {
       isLoading = true;
-      // In a real app, this would fetch the specific game
-      // For now, find it in the loaded games
-      const games = userGames.value.userGames;
-      game = games.find(g => g.id === gameId) || null;
-      
-      if (!game) {
-        // Try to fetch from API
-        await userGames.fetchUserGames();
-        game = userGames.value.userGames.find(g => g.id === gameId) || null;
-      }
+      // Fetch the specific game by ID using the dedicated API method
+      game = await userGames.getUserGame(gameId);
       
       if (game) {
         resetEditData();
@@ -140,6 +132,8 @@
       }
     } catch (error) {
       console.error('Failed to load game:', error);
+      // Set game to null on error so "Game not found" message shows
+      game = null;
     } finally {
       isLoading = false;
     }
