@@ -185,6 +185,47 @@
       </div>
     </div>
 
+    <!-- Settings Navigation -->
+    <div class="card">
+      <div class="border-b border-gray-200 pb-4 mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">Account Settings</h2>
+        <p class="mt-1 text-sm text-gray-500">Configure your account and integrations</p>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Profile Settings -->
+        <div class="p-4 bg-gray-50 rounded-lg">
+          <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
+              <span class="text-2xl">👤</span>
+            </div>
+            <div class="flex-1">
+              <h3 class="text-sm font-medium text-gray-900">Account Details</h3>
+              <p class="text-sm text-gray-500">Update your username and password</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Steam Integration -->
+        <a href="/settings/steam" class="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+          <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
+              <span class="text-2xl">🎮</span>
+            </div>
+            <div class="flex-1">
+              <h3 class="text-sm font-medium text-gray-900">Steam Integration</h3>
+              <p class="text-sm text-gray-500">Configure Steam Web API for library import</p>
+            </div>
+            <div class="flex-shrink-0">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        </a>
+      </div>
+    </div>
+
     <!-- Main Content Card -->
     <div class="card max-w-2xl">
       <!-- Account Information Section -->

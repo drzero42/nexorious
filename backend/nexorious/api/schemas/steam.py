@@ -33,8 +33,8 @@ class SteamConfigRequest(BaseModel):
         if len(v) != 17:
             raise ValueError('Steam ID must be exactly 17 digits')
         
-        if not v.startswith('765611979'):
-            raise ValueError('Steam ID must be a valid 64-bit Steam ID starting with 765611979')
+        if not v.startswith('7656119'):
+            raise ValueError('Steam ID must be a valid 64-bit Steam ID starting with 7656119')
         
         return v
 
@@ -74,8 +74,8 @@ class SteamVerificationRequest(BaseModel):
         if len(v) != 17:
             raise ValueError('Steam ID must be exactly 17 digits')
         
-        if not v.startswith('765611979'):
-            raise ValueError('Steam ID must be a valid 64-bit Steam ID starting with 765611979')
+        if not v.startswith('7656119'):
+            raise ValueError('Steam ID must be a valid 64-bit Steam ID starting with 7656119')
         
         return v
 
