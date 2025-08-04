@@ -333,8 +333,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update main project documentation with CSV import testing section
 
 ### 2.2 Steam API Integration
-- [ ] Steam Web API authentication
-- [ ] Library import functionality
+- [x] Steam Web API authentication
+- [x] Library import functionality
 
 ### 2.3 Enhanced IGDB Integration
 - [ ] Improved metadata population
