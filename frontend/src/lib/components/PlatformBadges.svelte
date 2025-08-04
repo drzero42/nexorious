@@ -278,7 +278,7 @@
       <div class="space-y-3 max-h-64 overflow-y-auto">
        {#each hiddenPlatforms as group}
         {@const platformStyle = getPlatformStyle(group.platform.display_name)}
-        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-md">
+        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-md w-full">
          <span class="text-lg flex-shrink-0 mt-0.5" role="img" aria-hidden="true">{platformStyle.icon}</span>
          <div class="flex-1 min-w-0">
           <div class="font-bold text-gray-900 text-sm mb-2">{group.platform.display_name}</div>
@@ -291,7 +291,7 @@
                 <span class="text-sm" role="img" aria-hidden="true">
                  {getStorefrontIcon(storefront.storefront?.display_name || '')}
                 </span>
-                <span class="text-gray-800 font-bold">
+                <span class="text-gray-800 font-bold text-sm">
                  {storefront.storefront?.display_name || 'Unknown Store'}
                 </span>
                </div>
@@ -332,7 +332,7 @@
          <div class="space-y-3">
           <div class="grid gap-3 sm:grid-cols-2">
            {#each group.storefronts as storefront}
-            <div class="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-md">
+            <div class="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-md w-full">
              <div class="flex items-center gap-3 flex-1 min-w-0">
               <span class="text-lg" role="img" aria-hidden="true">
                {getStorefrontIcon(storefront.storefront?.display_name || '')}
