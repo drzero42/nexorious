@@ -1,5 +1,7 @@
 # Known issues
 
-## Hoverbox / tooltip for platform badges appear in weird places.
-The hoverbox does not appear where the platform badge that you hover on actually is.
-Suggested solution: Change the hoverbox to something simpler. Make the platform badge clickable to expand and show more info, rather than have it be a hoverbox/tooltip.
+## Expanded platform badges are too big
+When expanding a platform badge, the text for the name of the platform takes up a lot of space. Since the name of the platform is already shown in the collapsed badge, we don't need it to show again in the expanded box. The box should only show the storefronts. These should have the same text size as the platform name in the collapsed platform badge and should not be abbreviated with ... 
+
+## Platforms for badges are hardcoded in the frontend
+The code for the frontend contains a list of platforms with their styling. This means that all platforms must both be hardcoded in the frontend and be in the backend. This is very bad architecture. Instead the styling information (color) for a platform should be in the backend data (add to seed data) and that data along with icons should be provided by the backend to the frontend.
