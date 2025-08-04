@@ -35,6 +35,45 @@ export interface VanityUrlResolveResult {
   error_message?: string;
 }
 
+export interface SteamLibraryGame {
+  appid: number;
+  name: string;
+  img_icon_url?: string;
+}
+
+export interface SteamLibraryResponse {
+  total_games: number;
+  games: SteamLibraryGame[];
+  steam_user_info: SteamUserInfo;
+}
+
+export interface SteamLibraryImportRequest {
+  fuzzy_threshold: number;
+  merge_strategy: string;
+}
+
+export interface SteamGameImportResult {
+  steam_appid: number;
+  steam_name: string;
+  status: string;
+  reason?: string;
+  matched_game_id?: string;
+  matched_game_title?: string;
+  detected_platforms: string[];
+  match_score?: number;
+}
+
+export interface SteamLibraryImportResponse {
+  total_games: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  no_match_count: number;
+  platform_breakdown: Record<string, number>;
+  results: SteamGameImportResult[];
+  import_summary: string;
+}
+
 export interface SteamState {
   config: SteamConfig | null;
   isLoading: boolean;
@@ -42,6 +81,12 @@ export interface SteamState {
   isResolvingVanity: boolean;
   error: string | null;
   verificationResult: SteamVerificationResult | null;
+  // Library import state
+  library: SteamLibraryResponse | null;
+  isLoadingLibrary: boolean;
+  isImporting: boolean;
+  importResults: SteamLibraryImportResponse | null;
+  libraryError: string | null;
 }
 
 const initialState: SteamState = {
@@ -50,7 +95,13 @@ const initialState: SteamState = {
   isVerifying: false,
   isResolvingVanity: false,
   error: null,
-  verificationResult: null
+  verificationResult: null,
+  // Library import state
+  library: null,
+  isLoadingLibrary: false,
+  isImporting: false,
+  importResults: null,
+  libraryError: null
 };
 
 function createSteamStore() {
@@ -277,6 +328,98 @@ function createSteamStore() {
     // Clear error
     clearError() {
       state = { ...state, error: null };
+    },
+
+    // Get Steam library
+    async getLibrary(): Promise<SteamLibraryResponse> {
+      state = { ...state, isLoadingLibrary: true, libraryError: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam/library`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getLibrary();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to fetch Steam library');
+        }
+
+        const libraryData = await response.json();
+        
+        state = {
+          ...state,
+          library: libraryData,
+          isLoadingLibrary: false,
+          libraryError: null
+        };
+
+        return libraryData;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch Steam library';
+        state = { ...state, isLoadingLibrary: false, libraryError: errorMessage };
+        throw error;
+      }
+    },
+
+    // Import Steam library
+    async importLibrary(importConfig: SteamLibraryImportRequest): Promise<SteamLibraryImportResponse> {
+      state = { ...state, isImporting: true, libraryError: null, importResults: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam/import-library`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify(importConfig)
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.importLibrary(importConfig);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to import Steam library');
+        }
+
+        const importResults = await response.json();
+        
+        state = {
+          ...state,
+          importResults,
+          isImporting: false,
+          libraryError: null
+        };
+
+        return importResults;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to import Steam library';
+        state = { ...state, isImporting: false, libraryError: errorMessage };
+        throw error;
+      }
+    },
+
+    // Clear library data
+    clearLibrary() {
+      state = { 
+        ...state, 
+        library: null, 
+        importResults: null, 
+        libraryError: null 
+      };
+    },
+
+    // Clear library errors
+    clearLibraryError() {
+      state = { ...state, libraryError: null };
     }
   };
 

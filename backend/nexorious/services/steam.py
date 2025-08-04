@@ -65,14 +65,7 @@ class SteamGame:
     """Steam game information from Steam Web API."""
     appid: int
     name: str
-    playtime_forever: int  # in minutes
-    playtime_windows_forever: int = 0
-    playtime_mac_forever: int = 0
-    playtime_linux_forever: int = 0
-    rtime_last_played: Optional[int] = None
-    playtime_disconnected: int = 0
     img_icon_url: Optional[str] = None
-    has_community_visible_stats: Optional[bool] = None
 
 
 class SteamAPIError(Exception):
@@ -204,14 +197,7 @@ class SteamService:
                 game = SteamGame(
                     appid=game_data["appid"],
                     name=game_data.get("name", ""),
-                    playtime_forever=game_data.get("playtime_forever", 0),
-                    playtime_windows_forever=game_data.get("playtime_windows_forever", 0),
-                    playtime_mac_forever=game_data.get("playtime_mac_forever", 0),
-                    playtime_linux_forever=game_data.get("playtime_linux_forever", 0),
-                    rtime_last_played=game_data.get("rtime_last_played"),
-                    playtime_disconnected=game_data.get("playtime_disconnected", 0),
-                    img_icon_url=game_data.get("img_icon_url"),
-                    has_community_visible_stats=game_data.get("has_community_visible_stats")
+                    img_icon_url=game_data.get("img_icon_url")
                 )
                 games.append(game)
             
@@ -237,12 +223,6 @@ class SteamService:
                 game = SteamGame(
                     appid=game_data["appid"],
                     name=game_data.get("name", ""),
-                    playtime_forever=game_data.get("playtime_forever", 0),
-                    playtime_windows_forever=game_data.get("playtime_windows_forever", 0),
-                    playtime_mac_forever=game_data.get("playtime_mac_forever", 0),
-                    playtime_linux_forever=game_data.get("playtime_linux_forever", 0),
-                    rtime_last_played=game_data.get("rtime_last_played"),
-                    playtime_disconnected=game_data.get("playtime_disconnected", 0),
                     img_icon_url=game_data.get("img_icon_url")
                 )
                 games.append(game)
