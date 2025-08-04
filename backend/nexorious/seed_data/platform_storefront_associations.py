@@ -56,4 +56,9 @@ PLATFORM_STOREFRONT_ASSOCIATIONS: List[Dict[str, str]] = [
     # Android associations
     {"platform_name": "android", "storefront_name": "google-play-store"},
     {"platform_name": "android", "storefront_name": "epic-games-store"},
+    
+    # PC (Linux) associations
+    {"platform_name": "pc-linux", "storefront_name": "steam"},
+    {"platform_name": "pc-linux", "storefront_name": "gog"},
+    {"platform_name": "pc-linux", "storefront_name": "humble-bundle"},
 ]
