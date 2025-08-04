@@ -740,7 +740,6 @@ async function confirmBulkDelete() {
             platforms={userGame.platforms} 
             compact={true} 
             maxVisible={3} 
-            showDetailedTooltips={true}
             showStoreLinks={false}
           />
          </div>
@@ -893,7 +892,6 @@ async function confirmBulkDelete() {
               platforms={userGame.platforms} 
               compact={true} 
               maxVisible={2}
-              showDetailedTooltips={true}
               showStoreLinks={false}
             />
            </div>

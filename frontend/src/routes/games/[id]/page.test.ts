@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import { 
   setupFetchMock, 
   resetFetchMock,
@@ -110,17 +110,26 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       };
       (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
       
+      // Also mock getUserGame to return the game with platforms
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithPlatforms);
+      
       render(GameDetailPage);
       
-      // Wait for the component to finish loading
+      // Wait for the component to finish loading and check that PC platform badge is visible
+      await waitFor(() => {
+        expect(screen.getByText('PC')).toBeInTheDocument();
+      });
+      
+      // Click the PC platform badge to expand its details
+      const pcBadge = screen.getByRole('button', { name: /PC.*Click to expand details/i });
+      await fireEvent.click(pcBadge);
+      
+      // Now the "Available On" text should be visible in the expanded view
       await waitFor(() => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
       
-      // Check for platform names - now displayed in grouped format
-      expect(screen.getByText('PC')).toBeInTheDocument();
-      
-      // Steam now appears in multiple places (PlatformBadges + store links), so use getAllByText
+      // Steam should be visible in the expanded content
       const steamElements = screen.getAllByText('Steam');
       expect(steamElements.length).toBeGreaterThan(0);
     });
@@ -164,13 +173,26 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       };
       (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
       
+      // Also mock getUserGame to return the game with platforms
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithPlatforms);
+      
       render(GameDetailPage);
       
+      // Wait for PC platform badge to be visible and click it to expand
+      await waitFor(() => {
+        expect(screen.getByText('PC')).toBeInTheDocument();
+      });
+      
+      const pcBadge = screen.getByRole('button', { name: /PC.*Click to expand details/i });
+      await fireEvent.click(pcBadge);
+      
+      // Now check for the expanded content with "Available On"
       await waitFor(() => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
       
-      const steamLink = screen.getByLabelText('View PC on Steam');
+      // The store link should now be visible with the correct aria-label
+      const steamLink = screen.getByLabelText('Open Steam store page');
       expect(steamLink).toBeInTheDocument();
       expect(steamLink).toHaveAttribute('href', 'https://store.steampowered.com/app/12345/test-game/');
       expect(steamLink).toHaveAttribute('target', '_blank');
@@ -205,6 +227,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithoutRating];
+      
+      // Also mock getUserGame to return the game without rating
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutRating);
       
       render(GameDetailPage);
       
@@ -266,6 +291,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       };
       (mockUserGamesStore.value as any).userGames = [gameWithoutTimes];
       
+      // Also mock getUserGame to return the game without HLTB times
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutTimes);
+      
       render(GameDetailPage);
       
       await waitFor(() => {
@@ -313,6 +341,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       };
       (mockUserGamesStore.value as any).userGames = [gameWithoutSlug];
       
+      // Also mock getUserGame to return the game without slug
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutSlug);
+      
       render(GameDetailPage);
       
       await waitFor(() => {
@@ -341,6 +372,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithMissingFields];
+      
+      // Also mock getUserGame to return the game with missing fields
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithMissingFields);
       
       render(GameDetailPage);
       
@@ -413,6 +447,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       };
       (mockUserGamesStore.value as any).userGames = [minimalGame];
       
+      // Also mock getUserGame to return the minimal game
+      mockUserGamesStore.getUserGame.mockResolvedValue(minimalGame);
+      
       render(GameDetailPage);
       
       await waitFor(() => {
@@ -450,6 +487,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithDecimalRating];
+      
+      // Also mock getUserGame to return the game with decimal rating
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithDecimalRating);
       
       render(GameDetailPage);
       

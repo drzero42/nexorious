@@ -668,7 +668,7 @@
                       compact={false} 
                       maxVisible={10} 
                       showDetails={true}
-                      enableHover={true}
+                      showStoreLinks={true}
                     />
                   </div>
                   
@@ -945,7 +945,7 @@
                       compact={false} 
                       maxVisible={10} 
                       showDetails={true}
-                      enableHover={false}
+                      showStoreLinks={true}
                     />
                   </div>
                   

@@ -92,8 +92,6 @@
                               platforms={ownedPlatformDetails} 
                               compact={true}
                               maxVisible={2}
-                              showDetailedTooltips={true}
-                              enableHover={true}
                             />
                           </div>
                         {/if}

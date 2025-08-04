@@ -91,6 +91,7 @@ export const mockUserGamesStore = {
   },
   fetchUserGames: vi.fn(),
   loadUserGames: vi.fn(),
+  getUserGame: vi.fn(),
   addUserGame: vi.fn(),
   addGameToCollection: vi.fn(),
   updateUserGame: vi.fn(),
@@ -389,6 +390,7 @@ export function resetStoresMocks() {
   // Reset user games store
   mockUserGamesStore.fetchUserGames.mockClear();
   mockUserGamesStore.loadUserGames.mockClear();
+  mockUserGamesStore.getUserGame.mockClear();
   mockUserGamesStore.addUserGame.mockClear();
   mockUserGamesStore.addGameToCollection.mockClear();
   mockUserGamesStore.updateUserGame.mockClear();
@@ -398,6 +400,10 @@ export function resetStoresMocks() {
   mockUserGamesStore.clearError.mockClear();
   
   // Reset to resolved promises by default
+  mockUserGamesStore.getUserGame.mockImplementation((gameId: string) => {
+    const game = mockUserGames.find(g => g.id === gameId);
+    return Promise.resolve(game || null);
+  });
   mockUserGamesStore.addGameToCollection.mockResolvedValue({
     id: 'user-game-1',
     game_id: 'game-1'
