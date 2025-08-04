@@ -323,7 +323,7 @@ async def create_platform(
     new_platform = Platform(
         name=platform_data.name,
         display_name=platform_data.display_name,
-        icon_url=str(platform_data.icon_url) if platform_data.icon_url else None,
+        icon_url=platform_data.icon_url,
         is_active=platform_data.is_active if platform_data.is_active is not None else True,
         default_storefront_id=platform_data.default_storefront_id
     )
@@ -374,10 +374,7 @@ async def update_platform(
         platform.source = "custom"
     
     for field, value in update_data.items():
-        if field == "icon_url" and value:
-            setattr(platform, field, str(value))
-        else:
-            setattr(platform, field, value)
+        setattr(platform, field, value)
     
     platform.updated_at = datetime.now(timezone.utc)
     session.commit()
@@ -580,7 +577,7 @@ async def create_storefront(
     new_storefront = Storefront(
         name=storefront_data.name,
         display_name=storefront_data.display_name,
-        icon_url=str(storefront_data.icon_url) if storefront_data.icon_url else None,
+        icon_url=storefront_data.icon_url,
         base_url=str(storefront_data.base_url) if storefront_data.base_url else None,
         is_active=storefront_data.is_active if storefront_data.is_active is not None else True
     )
@@ -616,7 +613,7 @@ async def update_storefront(
         storefront.source = "custom"
     
     for field, value in update_data.items():
-        if field in ["icon_url", "base_url"] and value:
+        if field == "base_url" and value:
             setattr(storefront, field, str(value))
         else:
             setattr(storefront, field, value)

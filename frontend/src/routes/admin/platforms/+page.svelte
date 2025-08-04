@@ -713,10 +713,10 @@
               <label for="platform-icon-url" class="block text-sm font-medium text-gray-700">Icon URL (Optional)</label>
               <input
                 id="platform-icon-url"
-                type="url"
+                type="text"
                 bind:value={platformForm.icon_url}
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                placeholder="https://example.com/icon.png"
+                placeholder="/static/logos/platforms/example/icon.svg or https://example.com/icon.png"
               />
             </div>
             
@@ -808,10 +808,10 @@
               <label for="storefront-icon-url" class="block text-sm font-medium text-gray-700">Icon URL (Optional)</label>
               <input
                 id="storefront-icon-url"
-                type="url"
+                type="text"
                 bind:value={storefrontForm.icon_url}
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                placeholder="https://example.com/icon.png"
+                placeholder="/static/logos/storefronts/example/icon.svg or https://example.com/icon.png"
               />
             </div>
             

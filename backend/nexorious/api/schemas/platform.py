@@ -2,7 +2,7 @@
 Platform and storefront-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict, field_validator
 from typing import Optional, List
 from .common import TimestampMixin
 
@@ -11,17 +11,61 @@ class PlatformCreateRequest(BaseModel):
     """Request schema for creating a platform."""
     name: str = Field(..., min_length=1, max_length=100, description="Platform name (unique identifier)")
     display_name: str = Field(..., min_length=1, max_length=100, description="Display name for platform")
-    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
+    icon_url: Optional[str] = Field(None, description="Platform icon URL (full URL or relative path starting with /static/)")
     is_active: Optional[bool] = Field(True, description="Whether platform is active")
     default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
+    
+    @field_validator('icon_url')
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate icon URL - accept full URLs or relative paths starting with /static/."""
+        if v is None or v.strip() == "":
+            return None
+        
+        v = v.strip()
+        
+        # Accept relative paths starting with /static/
+        if v.startswith('/static/'):
+            return v
+        
+        # Accept full URLs - validate as HttpUrl
+        try:
+            HttpUrl(v)
+            return v
+        except Exception:
+            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
+        
+        return v
 
 
 class PlatformUpdateRequest(BaseModel):
     """Request schema for updating a platform."""
     display_name: Optional[str] = Field(None, max_length=100, description="Display name for platform")
-    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
+    icon_url: Optional[str] = Field(None, description="Platform icon URL (full URL or relative path starting with /static/)")
     is_active: Optional[bool] = Field(None, description="Whether platform is active")
     default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
+    
+    @field_validator('icon_url')
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate icon URL - accept full URLs or relative paths starting with /static/."""
+        if v is None or v.strip() == "":
+            return None
+        
+        v = v.strip()
+        
+        # Accept relative paths starting with /static/
+        if v.startswith('/static/'):
+            return v
+        
+        # Accept full URLs - validate as HttpUrl
+        try:
+            HttpUrl(v)
+            return v
+        except Exception:
+            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
+        
+        return v
 
 
 class PlatformResponse(BaseModel, TimestampMixin):
@@ -43,17 +87,61 @@ class StorefrontCreateRequest(BaseModel):
     """Request schema for creating a storefront."""
     name: str = Field(..., min_length=1, max_length=100, description="Storefront name (unique identifier)")
     display_name: str = Field(..., min_length=1, max_length=100, description="Display name for storefront")
-    icon_url: Optional[HttpUrl] = Field(None, description="Storefront icon URL")
+    icon_url: Optional[str] = Field(None, description="Storefront icon URL (full URL or relative path starting with /static/)")
     base_url: Optional[HttpUrl] = Field(None, description="Base URL for storefront")
     is_active: Optional[bool] = Field(True, description="Whether storefront is active")
+    
+    @field_validator('icon_url')
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate icon URL - accept full URLs or relative paths starting with /static/."""
+        if v is None or v.strip() == "":
+            return None
+        
+        v = v.strip()
+        
+        # Accept relative paths starting with /static/
+        if v.startswith('/static/'):
+            return v
+        
+        # Accept full URLs - validate as HttpUrl
+        try:
+            HttpUrl(v)
+            return v
+        except Exception:
+            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
+        
+        return v
 
 
 class StorefrontUpdateRequest(BaseModel):
     """Request schema for updating a storefront."""
     display_name: Optional[str] = Field(None, max_length=100, description="Display name for storefront")
-    icon_url: Optional[HttpUrl] = Field(None, description="Storefront icon URL")
+    icon_url: Optional[str] = Field(None, description="Storefront icon URL (full URL or relative path starting with /static/)")
     base_url: Optional[HttpUrl] = Field(None, description="Base URL for storefront")
     is_active: Optional[bool] = Field(None, description="Whether storefront is active")
+    
+    @field_validator('icon_url')
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate icon URL - accept full URLs or relative paths starting with /static/."""
+        if v is None or v.strip() == "":
+            return None
+        
+        v = v.strip()
+        
+        # Accept relative paths starting with /static/
+        if v.startswith('/static/'):
+            return v
+        
+        # Accept full URLs - validate as HttpUrl
+        try:
+            HttpUrl(v)
+            return v
+        except Exception:
+            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
+        
+        return v
 
 
 class StorefrontResponse(BaseModel, TimestampMixin):
