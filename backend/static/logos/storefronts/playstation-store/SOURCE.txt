@@ -1,17 +1,13 @@
 PlayStation Store Storefront Logo
 =================================
 
-Source: SVG Repo
-URL: https://www.svgrepo.com/svg/331538/playstation
-License: CC0 License
-Downloaded: 2025-08-03
+Source: Brandlogos.net
+Original File: playstation-store-logo-brandlogos.net_trj4r2512.svg
+URL: https://brandlogos.net/
+Downloaded: 2025-08-04
 
-Description: Free PlayStation SVG Vector Icon
-
-License Details:
-CC0 License - Free to use for personal and commercial projects with no attribution required. Public domain.
+Description: PlayStation Store logo from Brandlogos.net
 
 Files:
-- playstation-store.svg: Original PlayStation Store logo
-- playstation-store-icon-light.svg: Light variant (black) for light backgrounds
-- playstation-store-icon-dark.svg: Dark variant (white) for dark backgrounds
+- playstation-store-icon-light.svg: Light variant for light backgrounds
+- playstation-store-icon-dark.svg: Dark variant for dark backgrounds
