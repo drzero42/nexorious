@@ -245,6 +245,163 @@ uv run python scripts/import_darkadia_csv.py export.csv --username admin --passw
 - **Progress Tracking**: Detailed reporting
 - **Error Recovery**: Robust error handling
 
+### Steam Library Import
+
+Import your Steam game library directly into Nexorious with intelligent platform detection and automatic game matching.
+
+#### Prerequisites
+
+1. **Steam Web API Key**: Obtain from [Valve Developer Portal](https://steamcommunity.com/dev/apikey)
+   - Register with your Steam account
+   - Provide a domain name (can be localhost for personal use)
+   - Copy the generated 32-character API key
+
+2. **Steam ID**: Your 17-digit Steam ID (e.g., `76561197960435530`)
+   - Find via [SteamID.io](https://steamid.io/) or similar services
+   - Enter your Steam profile URL or custom URL
+
+3. **Steam Profile Settings**: Ensure your game library is visible
+   - Steam → Profile → Edit Profile → Privacy Settings
+   - Game details: Set to "Public" or "Friends Only"
+
+#### Setup Process
+
+1. **Configure Steam Integration** (via API or future frontend):
+   ```bash
+   # Example API call to configure Steam settings
+   POST /api/steam/config
+   {
+     "web_api_key": "ABCDEF1234567890ABCDEF1234567890",
+     "steam_id": "76561197960435530"
+   }
+   ```
+
+2. **Verify Configuration**:
+   ```bash
+   # Test your Steam configuration
+   POST /api/steam/verify
+   {
+     "web_api_key": "ABCDEF1234567890ABCDEF1234567890",
+     "steam_id": "76561197960435530"
+   }
+   ```
+
+#### Import Your Library
+
+```bash
+# Import Steam library with default settings
+POST /api/steam/import-library
+{
+  "fuzzy_threshold": 0.8,
+  "merge_strategy": "skip",
+  "platform_fallback": "pc-windows"
+}
+```
+
+**Import Options**:
+- `fuzzy_threshold` (0.0-1.0): Game name matching sensitivity (0.8 recommended)
+- `merge_strategy`: 
+  - `"skip"`: Skip games already in your collection
+  - `"add_platforms"`: Add missing platforms to existing games
+- `platform_fallback`: Default platform when Steam provides no platform data
+
+#### What Gets Imported
+
+✅ **Imported Data**:
+- Game names and metadata (matched with IGDB database)
+- Platform detection (Windows/Mac/Linux based on Steam playtime data)
+- Steam storefront assignment (always "steam")
+- Ownership status (set to "owned")
+
+❌ **Not Imported**:
+- Playtime hours (Steam data is unreliable)
+- Play status (completion status)
+- Personal ratings or notes
+- Achievement data
+
+#### Platform Detection
+
+Nexorious intelligently detects which platforms you've used for each game:
+
+- **Windows**: Games with `playtime_windows_forever > 0`
+- **Mac**: Games with `playtime_mac_forever > 0` 
+- **Linux**: Games with `playtime_linux_forever > 0`
+- **Multi-Platform**: Games can be assigned to multiple platforms
+- **Default Fallback**: Games with no platform data default to Windows
+
+#### Import Results
+
+Example import response:
+```json
+{
+  "total_games": 150,
+  "imported_count": 120,
+  "skipped_count": 10,
+  "failed_count": 5,
+  "no_match_count": 15,
+  "platform_breakdown": {
+    "pc-windows": 140,
+    "pc-linux": 25,
+    "pc-mac": 8
+  },
+  "import_summary": "Imported 120 games, skipped 10, failed 5, no match 15 out of 150 Steam games"
+}
+```
+
+**Result Categories**:
+- **Imported**: Successfully added to your collection
+- **Skipped**: Already in collection (with skip strategy)
+- **Failed**: Import errors (network, database issues)
+- **No Match**: Steam game name couldn't be matched with IGDB database
+
+#### Troubleshooting
+
+**Common Issues**:
+
+1. **"No matching game found"**: 
+   - Steam game names don't always match IGDB exactly
+   - Lower `fuzzy_threshold` to 0.6-0.7 for more matches
+   - Some Steam games aren't in IGDB database
+
+2. **"Steam profile not found or is private"**:
+   - Check Steam privacy settings
+   - Ensure game library is set to Public or Friends Only
+   - Verify correct Steam ID format
+
+3. **"Invalid Steam Web API key"**:
+   - Regenerate API key from Valve Developer Portal
+   - Ensure 32-character alphanumeric format
+   - Check for extra spaces or characters
+
+4. **Import appears incomplete**:
+   - Check `no_match_count` - these games couldn't be matched
+   - Review `failed_count` - these had import errors
+   - Re-run import safely (it's idempotent)
+
+**Re-running Imports**:
+- Safe to run multiple times
+- Use `"add_platforms"` strategy to add missing platforms
+- Previously imported games won't be duplicated
+
+#### API Endpoints Reference
+
+- **Configuration**: 
+  - `GET /api/steam/config` - View current configuration
+  - `PUT /api/steam/config` - Set Steam API key and Steam ID
+  - `DELETE /api/steam/config` - Remove configuration
+
+- **Verification**:
+  - `POST /api/steam/verify` - Test Steam credentials without saving
+
+- **Library Operations**:
+  - `GET /api/steam/library` - View Steam library (raw data)
+  - `POST /api/steam/import-library` - Import library into collection
+
+- **Utilities**:
+  - `POST /api/steam/resolve-vanity` - Convert custom URL to Steam ID
+
+For complete API documentation, see [Swagger UI](http://localhost:8000/docs) after starting the backend.
+
 ## API Documentation
 
 - **Swagger UI**: http://localhost:8000/docs

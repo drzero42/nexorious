@@ -333,8 +333,43 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update main project documentation with CSV import testing section
 
 ### 2.2 Steam API Integration
-- [ ] Steam Web API authentication
-- [ ] Library import functionality
+- [x] Steam Web API authentication
+- [x] Library import functionality
+
+#### 2.2.3 Steam Configuration Interface
+**Priority**: P1 (High)
+- [ ] Create Steam settings page/component for user Steam configuration
+- [ ] Add Steam API key input form with validation and masking
+- [ ] Add Steam ID input with format validation and vanity URL resolution
+- [ ] Implement Steam configuration verification UI with real-time feedback
+- [ ] Add Steam profile display (persona name, avatar, profile link)
+- [ ] Create Steam configuration management (view, edit, delete)
+
+#### 2.2.4 Steam Library Import Interface  
+**Priority**: P1 (High)
+- [ ] Create Steam library import page/component
+- [ ] Add import configuration form (fuzzy threshold, merge strategy, platform fallback)
+- [ ] Implement Steam library preview (show games before import)
+- [ ] Add import progress indicator and real-time status updates
+- [ ] Create import results display with detailed statistics and game lists
+- [ ] Add import history and re-import functionality
+- [ ] Implement error handling and user-friendly error messages
+
+#### 2.2.5 Steam Integration in Existing UI
+**Priority**: P1 (High)
+- [ ] Add Steam platform/storefront badges to game cards and detail views
+- [ ] Update platform selection components to include Steam-specific logic
+- [ ] Add Steam import option to main game addition flows
+- [ ] Update user profile/settings to include Steam configuration section
+- [ ] Add Steam import status/statistics to dashboard or admin interface
+
+#### 2.2.6 Steam Frontend Testing
+**Priority**: P1 (High)
+- [ ] Unit tests for Steam configuration components
+- [ ] Integration tests for Steam import workflow
+- [ ] Component tests for Steam-specific UI elements
+- [ ] End-to-end tests for complete Steam integration user journey
+- [ ] Error handling and validation tests for Steam forms
 
 ### 2.3 Enhanced IGDB Integration
 - [ ] Improved metadata population
