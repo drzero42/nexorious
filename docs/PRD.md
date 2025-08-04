@@ -415,12 +415,9 @@ To create the definitive self-hosted solution for personal game collection manag
 - **User Story**: As a user, I want to automatically import my Steam library so I don't have to manually add each game
 - **Requirements**:
   - Steam Web API integration for library import
-  - Automatic playtime import where available
-  - Achievement data integration
-  - Periodic sync to catch new purchases
+  - Button to sync and catch new purchases
 - **Acceptance Criteria**:
   - Steam library import works with API key
-  - Playtime data is accurately imported
   - Users can trigger manual sync
   - Import respects Steam privacy settings
 

@@ -335,10 +335,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 ### 2.2 Steam API Integration
 - [ ] Steam Web API authentication
 - [ ] Library import functionality
-- [ ] Playtime data synchronization
-- [ ] Achievement data integration
-- [ ] Periodic sync scheduling
-- [ ] Privacy settings handling
 
 ### 2.3 Enhanced IGDB Integration
 - [ ] Improved metadata population
