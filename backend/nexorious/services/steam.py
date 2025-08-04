@@ -257,9 +257,9 @@ class SteamService:
     def validate_steam_id(self, steam_id: str) -> bool:
         """Validate Steam ID format (64-bit Steam ID)."""
         try:
-            # Steam ID should be a 17-digit number starting with 765611979
+            # Steam ID should be a 17-digit number starting with 7656119
             steam_id_int = int(steam_id)
-            return len(steam_id) == 17 and steam_id.startswith("765611979")
+            return len(steam_id) == 17 and steam_id.startswith("7656119")
         except ValueError:
             return False
     

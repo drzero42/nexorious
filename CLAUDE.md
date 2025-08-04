@@ -211,12 +211,15 @@ These rules must always be adhered to during development.
 
 ### Frontend Development Rules
 - For Svelte Typescript tests, the filename is not allowed to start with `+`
-- Whenever you have created any Svelte code, run `npm run check` and fix any errors found
-- Run `npm run test` after making frontend changes to ensure tests pass
+- **MANDATORY**: Run `npm run check` after ANY frontend code changes and fix all errors
+- **MANDATORY**: Run `npm run test` after ANY frontend changes and ensure 100% pass rate
+- **CRITICAL**: All 778 frontend tests must pass - zero failures accepted
 
 ### Backend Development Rules  
 - Run database migrations with `uv run alembic upgrade head` after pulling changes
-- Run `uv run pytest --cov=nexorious --cov-report=term-missing` to verify test coverage meets >80% requirement
+- **MANDATORY**: Run `uv run pytest` after ANY backend code changes and ensure 100% pass rate
+- **MANDATORY**: Run `uv run pytest --cov=nexorious --cov-report=term-missing` to verify test coverage meets >80% requirement
+- **CRITICAL**: All backend tests must pass - zero failures accepted
 - Always test API endpoints manually using Swagger UI at http://localhost:8000/docs
 
 ### Quality Assurance
@@ -224,6 +227,34 @@ These rules must always be adhered to during development.
 - Frontend code coverage must maintain >70%
 - All tests must pass before committing changes
 - Use type checking tools (`npm run check` for frontend, mypy via pytest for backend)
+
+### Test Execution Requirements
+**CRITICAL**: All tests must pass at all times. After ANY code changes, you MUST:
+
+#### Frontend Testing (Required After Any Frontend Changes)
+```bash
+# Run TypeScript checking (must pass)
+npm run check
+
+# Run all tests (must pass 100%)
+npm run test
+
+# If any tests fail, fix them immediately before proceeding
+```
+
+#### Backend Testing (Required After Any Backend Changes)  
+```bash
+# Run all tests with coverage (must pass 100%)
+uv run pytest --cov=nexorious --cov-report=term-missing
+
+# If any tests fail, fix them immediately before proceeding
+```
+
+#### Test Failure Policy
+- **Zero tolerance for failing tests** - All tests must pass before any commit
+- **Immediate fix required** - If code changes break tests, fix tests in the same session
+- **No exceptions** - Tests failing due to "intentional errors" in stderr are acceptable only if the test itself passes
+- **Full suite validation** - Always run the complete test suite, not just individual tests
 
 ## Project Architecture
 
@@ -261,6 +292,8 @@ These rules must always be adhered to during development.
 ### Development Workflow
 1. **Planning**: Tasks defined in `docs/TASK_BREAKDOWN.md`
 2. **Development**: Feature branches with descriptive names
-3. **Testing**: Automated testing with coverage requirements
-4. **Quality Assurance**: Type checking and linting
+3. **Testing**: **MANDATORY** - All tests must pass after every code change
+   - Frontend: Run `npm run check` + `npm run test` (100% pass rate required)
+   - Backend: Run `pytest` + coverage validation (100% pass rate required)
+4. **Quality Assurance**: Type checking and linting with zero tolerance for failures
 5. **Documentation**: Comprehensive API documentation via OpenAPI/Swagger

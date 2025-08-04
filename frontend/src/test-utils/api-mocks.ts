@@ -326,6 +326,7 @@ export function verifyAPIUrlUsage(fetchMock: any, expectedBaseUrl: string) {
 // Mock config for testing
 export const mockConfig = {
   apiUrl: 'http://test-api:8000/api',
+  staticUrl: 'http://test-static:8000',
   appName: 'Test Nexorious',
   appVersion: '1.0.0-test',
   environment: 'test' as const,

@@ -71,3 +71,13 @@ export type {
   AdminState 
 } from './admin.svelte';
 
+// Steam store
+export { steam } from './steam.svelte';
+export type { 
+  SteamUserInfo,
+  SteamConfig,
+  SteamVerificationResult,
+  VanityUrlResolveResult,
+  SteamState
+} from './steam.svelte';
+

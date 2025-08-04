@@ -327,8 +327,19 @@ export const mockSearchStore = {
 // Mock UI store
 export const mockUIStore = {
   value: {
-    sidebarOpen: false,
-    mobileMenuOpen: false
+    notifications: [],
+    modals: [],
+    isLoading: false,
+    loadingMessage: undefined,
+    sidebar: {
+      isOpen: false,
+      isPinned: false
+    },
+    preferences: {
+      density: 'comfortable' as const,
+      animations: true,
+      pageSize: 20
+    }
   },
   toggleSidebar: vi.fn(),
   toggleMobileMenu: vi.fn(),
@@ -338,7 +349,58 @@ export const mockUIStore = {
   showInfo: vi.fn(),
   addNotification: vi.fn(),
   removeNotification: vi.fn(),
-  clearNotifications: vi.fn()
+  clearNotifications: vi.fn(),
+  openModal: vi.fn(),
+  closeModal: vi.fn(),
+  setLoading: vi.fn(),
+  updatePreferences: vi.fn()
+};
+
+// Mock Steam store
+export const mockSteamStore = {
+  value: {
+    config: null,
+    isLoading: false,
+    isVerifying: false,
+    isResolvingVanity: false,
+    error: null,
+    verificationResult: null
+  },
+  reset: vi.fn(),
+  getConfig: vi.fn().mockResolvedValue({
+    has_api_key: false,
+    api_key_masked: null,
+    steam_id: null,
+    is_verified: false,
+    configured_at: null
+  }),
+  setConfig: vi.fn().mockResolvedValue({
+    has_api_key: true,
+    api_key_masked: 'ABCD1234****5678',
+    steam_id: '76561198123456789',
+    is_verified: true,
+    configured_at: new Date()
+  }),
+  deleteConfig: vi.fn().mockResolvedValue(true),
+  verify: vi.fn().mockResolvedValue({
+    is_valid: true,
+    error_message: null,
+    steam_user_info: {
+      steam_id: '76561198123456789',
+      persona_name: 'TestUser',
+      profile_url: 'https://steamcommunity.com/profiles/76561198123456789',
+      avatar: 'https://example.com/avatar.jpg',
+      avatar_medium: 'https://example.com/avatar_medium.jpg',
+      avatar_full: 'https://example.com/avatar_full.jpg'
+    }
+  }),
+  resolveVanityUrl: vi.fn().mockResolvedValue({
+    success: true,
+    steam_id: '76561198123456789',
+    error_message: null
+  }),
+  clearVerification: vi.fn(),
+  clearError: vi.fn()
 };
 
 // Mock auth store (importing from auth mocks)
@@ -351,7 +413,8 @@ vi.mock('$lib/stores', () => ({
   games: mockGamesStore,
   platforms: mockPlatformsStore,
   search: mockSearchStore,
-  ui: mockUIStore
+  ui: mockUIStore,
+  steam: mockSteamStore
 }));
 
 // Mock platforms store specifically
@@ -383,6 +446,11 @@ vi.mock('$lib/stores/user-games.svelte', () => ({
 // Mock ui store specifically
 vi.mock('$lib/stores/ui.svelte', () => ({
   ui: mockUIStore
+}));
+
+// Mock steam store specifically
+vi.mock('$lib/stores/steam.svelte', () => ({
+  steam: mockSteamStore
 }));
 
 // Reset functions for test cleanup
@@ -483,4 +551,78 @@ export function resetStoresMocks() {
   mockUIStore.addNotification.mockClear();
   mockUIStore.removeNotification.mockClear();
   mockUIStore.clearNotifications.mockClear();
+  mockUIStore.openModal.mockClear();
+  mockUIStore.closeModal.mockClear();
+  mockUIStore.setLoading.mockClear();
+  mockUIStore.updatePreferences.mockClear();
+
+  // Reset UI store value to default state
+  mockUIStore.value = {
+    notifications: [],
+    modals: [],
+    isLoading: false,
+    loadingMessage: undefined,
+    sidebar: {
+      isOpen: false,
+      isPinned: false
+    },
+    preferences: {
+      density: 'comfortable' as const,
+      animations: true,
+      pageSize: 20
+    }
+  };
+
+  // Reset steam store
+  mockSteamStore.reset.mockClear();
+  mockSteamStore.getConfig.mockClear();
+  mockSteamStore.setConfig.mockClear();
+  mockSteamStore.deleteConfig.mockClear();
+  mockSteamStore.verify.mockClear();
+  mockSteamStore.resolveVanityUrl.mockClear();
+  mockSteamStore.clearVerification.mockClear();
+  mockSteamStore.clearError.mockClear();
+
+  // Reset to resolved promises by default
+  mockSteamStore.getConfig.mockResolvedValue({
+    has_api_key: false,
+    api_key_masked: null,
+    steam_id: null,
+    is_verified: false,
+    configured_at: null
+  });
+  mockSteamStore.setConfig.mockResolvedValue({
+    has_api_key: true,
+    api_key_masked: 'ABCD1234****5678',
+    steam_id: '76561198123456789',
+    is_verified: true,
+    configured_at: new Date()
+  });
+  mockSteamStore.deleteConfig.mockResolvedValue(true);
+  mockSteamStore.verify.mockResolvedValue({
+    is_valid: true,
+    error_message: null,
+    steam_user_info: {
+      steam_id: '76561198123456789',
+      persona_name: 'TestUser',
+      profile_url: 'https://steamcommunity.com/profiles/76561198123456789',
+      avatar: 'https://example.com/avatar.jpg',
+      avatar_medium: 'https://example.com/avatar_medium.jpg',
+      avatar_full: 'https://example.com/avatar_full.jpg'
+    }
+  });
+  mockSteamStore.resolveVanityUrl.mockResolvedValue({
+    success: true,
+    steam_id: '76561198123456789',
+    error_message: null
+  });
+
+  mockSteamStore.value = {
+    config: null,
+    isLoading: false,
+    isVerifying: false,
+    isResolvingVanity: false,
+    error: null,
+    verificationResult: null
+  };
 }
