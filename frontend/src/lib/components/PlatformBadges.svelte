@@ -281,10 +281,9 @@
         <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-md">
          <span class="text-lg flex-shrink-0 mt-0.5" role="img" aria-hidden="true">{platformStyle.icon}</span>
          <div class="flex-1 min-w-0">
-          <div class="font-medium text-gray-900 text-base mb-2">{group.platform.display_name}</div>
+          <div class="font-bold text-gray-900 text-sm mb-2">{group.platform.display_name}</div>
           {#if group.storefronts.length > 0}
            <div class="space-y-2">
-            <h5 class="text-xs font-medium text-gray-700 uppercase tracking-wide">Available On:</h5>
             <div class="space-y-1.5">
              {#each group.storefronts as storefront}
               <div class="flex items-center justify-between gap-2 text-sm">
@@ -292,7 +291,7 @@
                 <span class="text-sm" role="img" aria-hidden="true">
                  {getStorefrontIcon(storefront.storefront?.display_name || '')}
                 </span>
-                <span class="text-gray-800 truncate">
+                <span class="text-gray-800 font-bold">
                  {storefront.storefront?.display_name || 'Unknown Store'}
                 </span>
                </div>
@@ -327,20 +326,10 @@
      <!-- Single Platform Details -->
      {#each visiblePlatforms as group (group.platform.id)}
       {#if expandedPlatform === `platform-${group.platform.id}`}
-       {@const platformStyle = getPlatformStyle(group.platform.display_name)}
        <div class="space-y-4">
-        <!-- Platform Header -->
-        <div class="flex items-center gap-3 pb-3 border-b border-gray-200">
-         <span class="text-2xl" role="img" aria-hidden="true">{platformStyle.icon}</span>
-         <h4 class="font-semibold text-gray-900 text-xl">
-          {group.platform.display_name}
-         </h4>
-        </div>
-        
         <!-- Storefronts List -->
         {#if group.storefronts.length > 0}
          <div class="space-y-3">
-          <h5 class="text-sm font-medium text-gray-700 uppercase tracking-wide">Available On:</h5>
           <div class="grid gap-3 sm:grid-cols-2">
            {#each group.storefronts as storefront}
             <div class="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-md">
@@ -348,7 +337,7 @@
               <span class="text-lg" role="img" aria-hidden="true">
                {getStorefrontIcon(storefront.storefront?.display_name || '')}
               </span>
-              <span class="text-gray-800 font-medium truncate">
+              <span class="text-gray-800 font-bold text-sm">
                {storefront.storefront?.display_name || 'Unknown Store'}
               </span>
              </div>
@@ -372,7 +361,7 @@
           </div>
          </div>
         {:else}
-         <div class="text-base text-gray-500 italic bg-gray-50 p-4 rounded-md">
+         <div class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-md">
           No specific storefront information available
          </div>
         {/if}
