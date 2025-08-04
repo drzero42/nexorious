@@ -1,6 +1,7 @@
 <script lang="ts">
  import type { UserGamePlatform } from '$lib/stores/user-games.svelte';
  import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
+ import { buildIconUrl, getPlatformFallbackIcon, getStorefrontFallbackIcon } from '$lib/utils/icon-utils';
 
  export let platforms: UserGamePlatform[] = [];
  export let compact: boolean = false;
@@ -15,85 +16,13 @@
  $: visiblePlatforms = groupedPlatforms.slice(0, maxVisible);
  $: hiddenCount = Math.max(0, groupedPlatforms.length - maxVisible);
 
- // Enhanced platform-specific styling with better visual design
- function getPlatformStyle(platformName: string): { bg: string, border: string, text: string, icon: string } {
-  const name = platformName.toLowerCase();
-  
-  if (name.includes('playstation')) {
-    return {
-      bg: 'bg-gradient-to-r from-blue-600 to-blue-700',
-      border: 'border-blue-800',
-      text: 'text-white',
-      icon: '🎮'
-    };
-  }
-  if (name.includes('xbox')) {
-    return {
-      bg: 'bg-gradient-to-r from-green-600 to-green-700', 
-      border: 'border-green-800',
-      text: 'text-white',
-      icon: '🎮'
-    };
-  }
-  if (name.includes('nintendo') || name.includes('switch')) {
-    return {
-      bg: 'bg-gradient-to-r from-red-600 to-red-700',
-      border: 'border-red-800', 
-      text: 'text-white',
-      icon: '🎮'
-    };
-  }
-  if (name.includes('pc') || name.includes('windows')) {
-    return {
-      bg: 'bg-gradient-to-r from-gray-700 to-gray-800',
-      border: 'border-gray-900',
-      text: 'text-white',
-      icon: '💻'
-    };
-  }
-  if (name.includes('ios')) {
-    return {
-      bg: 'bg-gradient-to-r from-gray-800 to-gray-900',
-      border: 'border-black',
-      text: 'text-white',
-      icon: '📱'
-    };
-  }
-  if (name.includes('android')) {
-    return {
-      bg: 'bg-gradient-to-r from-green-700 to-green-800',
-      border: 'border-green-900',
-      text: 'text-white',
-      icon: '📱'
-    };
-  }
-  
-  // Default style
-  return {
-    bg: 'bg-gradient-to-r from-indigo-600 to-indigo-700',
-    border: 'border-indigo-800',
-    text: 'text-white',
-    icon: '🎯'
-  };
- }
+ // Unified styling for all platform badges - no platform-specific colors
+ const unifiedBadgeStyle = {
+  bg: 'bg-gradient-to-r from-slate-600 to-slate-700',
+  border: 'border-slate-800',
+  text: 'text-white'
+ };
 
- // Get storefront-specific styling and icons
- function getStorefrontIcon(storefrontName: string): string {
-  const name = storefrontName?.toLowerCase() || '';
-  if (name.includes('steam')) return '🔥';
-  if (name.includes('epic')) return '🎮';
-  if (name.includes('gog')) return '🏪';
-  if (name.includes('playstation')) return '🎮';
-  if (name.includes('microsoft') || name.includes('xbox')) return '🎮';
-  if (name.includes('nintendo')) return '🎮';
-  if (name.includes('app store') || name.includes('apple')) return '📱';
-  if (name.includes('google play')) return '🤖';
-  if (name.includes('physical')) return '📦';
-  if (name.includes('humble')) return '🎁';
-  if (name.includes('itch')) return '🕹️';
-  if (name.includes('origin') || name.includes('ea')) return '🎮';
-  return '🏪'; // Default store icon
- }
 
  // Generate accessible label for platform badges
  function generateAccessibleLabel(group: any): string {
@@ -135,12 +64,12 @@
   <!-- Platform Badges Row -->
   <div class="flex flex-wrap {compact ? 'gap-1.5' : 'gap-2 sm:gap-2.5'}">
    {#each visiblePlatforms as group (group.platform.id)}
-    {@const platformStyle = getPlatformStyle(group.platform.display_name)}
+    {@const platformIconUrl = buildIconUrl(group.platform.icon_url)}
     {@const groupId = `platform-${group.platform.id}`}
     {@const isExpanded = expandedPlatform === groupId}
     <div 
          class="relative inline-flex items-center rounded-lg transition-all duration-200 border-2 shadow-lg
-                {platformStyle.bg} {platformStyle.border} {platformStyle.text}
+                {unifiedBadgeStyle.bg} {unifiedBadgeStyle.border} {unifiedBadgeStyle.text}
                 {compact 
                   ? 'px-2.5 py-1.5 min-h-[32px]' 
                   : 'px-3 py-2 min-h-[44px] sm:px-4 sm:py-2.5 sm:min-h-[40px]'}
@@ -157,9 +86,29 @@
      
      <!-- Platform Icon and Name -->
      <div class="flex items-center {compact ? 'gap-1.5' : 'gap-2'}">
-      <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}" role="img" aria-hidden="true">
-       {platformStyle.icon}
-      </span>
+      {#if platformIconUrl}
+       <img 
+        src="{platformIconUrl}" 
+        alt="{group.platform.display_name} icon" 
+        class="{compact ? 'w-4 h-4' : 'w-5 h-5'} flex-shrink-0"
+        loading="lazy"
+        on:error={(e) => {
+         const img = e.target as HTMLImageElement;
+         const fallback = img.nextElementSibling as HTMLElement;
+         if (img && fallback) {
+          img.style.display = 'none';
+          fallback.style.display = 'inline';
+         }
+        }}
+       />
+       <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} hidden" role="img" aria-hidden="true">
+        {getPlatformFallbackIcon()}
+       </span>
+      {:else}
+       <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}" role="img" aria-hidden="true">
+        {getPlatformFallbackIcon()}
+       </span>
+      {/if}
       <span class="font-bold {compact ? 'text-xs' : 'text-sm'} tracking-wide {compact ? '' : 'truncate max-w-[80px] sm:max-w-none'}">
        {group.platform.display_name}
       </span>
@@ -171,9 +120,29 @@
       <div class="flex items-center flex-wrap {compact ? 'gap-1' : 'gap-1.5'}">
        {#each group.storefronts as storefront, index (storefront.id)}
         <div class="inline-flex items-center {compact ? 'gap-1' : 'gap-1.5'}">
-         <span class="{compact ? 'text-xs' : 'text-sm'}" role="img" aria-hidden="true">
-          {getStorefrontIcon(storefront.storefront?.display_name || '')}
-         </span>
+         {#if buildIconUrl(storefront.storefront?.icon_url)}
+          <img 
+           src="{buildIconUrl(storefront.storefront?.icon_url)}" 
+           alt="{storefront.storefront?.display_name} icon" 
+           class="{compact ? 'w-3 h-3' : 'w-4 h-4'} flex-shrink-0"
+           loading="lazy"
+           on:error={(e) => {
+            const img = e.target as HTMLImageElement;
+            const fallback = img.nextElementSibling as HTMLElement;
+            if (img && fallback) {
+             img.style.display = 'none';
+             fallback.style.display = 'inline';
+            }
+           }}
+          />
+          <span class="{compact ? 'text-xs' : 'text-sm'} hidden" role="img" aria-hidden="true">
+           {getStorefrontFallbackIcon()}
+          </span>
+         {:else}
+          <span class="{compact ? 'text-xs' : 'text-sm'}" role="img" aria-hidden="true">
+           {getStorefrontFallbackIcon()}
+          </span>
+         {/if}
          <span class="font-medium {compact ? 'text-xs' : 'text-sm'} 
                       bg-white bg-opacity-20 px-2 py-0.5 rounded-md
                       {compact ? 'px-1.5 py-0.5' : 'px-2 py-1'}" 
@@ -200,7 +169,29 @@
         {#each group.storefronts.slice(0, 3) as storefront}
          <span class="inline-flex items-center justify-center w-5 h-5 bg-white bg-opacity-30 rounded-full text-xs" 
                title="{storefront.storefront?.display_name}">
-          {getStorefrontIcon(storefront.storefront?.display_name || '')}
+          {#if buildIconUrl(storefront.storefront?.icon_url)}
+           <img 
+            src="{buildIconUrl(storefront.storefront?.icon_url)}" 
+            alt="{storefront.storefront?.display_name} icon" 
+            class="w-3 h-3 flex-shrink-0"
+            loading="lazy"
+            on:error={(e) => {
+             const img = e.target as HTMLImageElement;
+             const fallback = img.nextElementSibling as HTMLElement;
+             if (img && fallback) {
+              img.style.display = 'none';
+              fallback.style.display = 'inline';
+             }
+            }}
+           />
+           <span class="text-xs hidden" role="img" aria-hidden="true">
+            {getStorefrontFallbackIcon()}
+           </span>
+          {:else}
+           <span class="text-xs" role="img" aria-hidden="true">
+            {getStorefrontFallbackIcon()}
+           </span>
+          {/if}
          </span>
         {/each}
         {#if group.storefronts.length > 3}
@@ -277,9 +268,27 @@
       
       <div class="space-y-3 max-h-64 overflow-y-auto">
        {#each hiddenPlatforms as group}
-        {@const platformStyle = getPlatformStyle(group.platform.display_name)}
+        {@const platformIconUrl = buildIconUrl(group.platform.icon_url)}
         <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-md w-full">
-         <span class="text-lg flex-shrink-0 mt-0.5" role="img" aria-hidden="true">{platformStyle.icon}</span>
+         {#if platformIconUrl}
+          <img 
+           src="{platformIconUrl}" 
+           alt="{group.platform.display_name} icon" 
+           class="w-6 h-6 flex-shrink-0 mt-0.5"
+           loading="lazy"
+           on:error={(e) => {
+            const img = e.target as HTMLImageElement;
+            const fallback = img.nextElementSibling as HTMLElement;
+            if (img && fallback) {
+             img.style.display = 'none';
+             fallback.style.display = 'inline';
+            }
+           }}
+          />
+          <span class="text-lg flex-shrink-0 mt-0.5 hidden" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
+         {:else}
+          <span class="text-lg flex-shrink-0 mt-0.5" role="img" aria-hidden="true">{getPlatformFallbackIcon()}</span>
+         {/if}
          <div class="flex-1 min-w-0">
           <div class="font-bold text-gray-900 text-sm mb-2">{group.platform.display_name}</div>
           {#if group.storefronts.length > 0}
@@ -288,9 +297,29 @@
              {#each group.storefronts as storefront}
               <div class="flex items-center justify-between gap-2 text-sm">
                <div class="flex items-center gap-2 flex-1 min-w-0">
-                <span class="text-sm" role="img" aria-hidden="true">
-                 {getStorefrontIcon(storefront.storefront?.display_name || '')}
-                </span>
+                {#if buildIconUrl(storefront.storefront?.icon_url)}
+                 <img 
+                  src="{buildIconUrl(storefront.storefront?.icon_url)}" 
+                  alt="{storefront.storefront?.display_name} icon" 
+                  class="w-4 h-4 flex-shrink-0"
+                  loading="lazy"
+                  on:error={(e) => {
+                   const img = e.target as HTMLImageElement;
+                   const fallback = img.nextElementSibling as HTMLElement;
+                   if (img && fallback) {
+                    img.style.display = 'none';
+                    fallback.style.display = 'inline';
+                   }
+                  }}
+                 />
+                 <span class="text-sm hidden" role="img" aria-hidden="true">
+                  {getStorefrontFallbackIcon()}
+                 </span>
+                {:else}
+                 <span class="text-sm" role="img" aria-hidden="true">
+                  {getStorefrontFallbackIcon()}
+                 </span>
+                {/if}
                 <span class="text-gray-800 font-bold text-sm">
                  {storefront.storefront?.display_name || 'Unknown Store'}
                 </span>
@@ -334,9 +363,29 @@
            {#each group.storefronts as storefront}
             <div class="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-md w-full">
              <div class="flex items-center gap-3 flex-1 min-w-0">
-              <span class="text-lg" role="img" aria-hidden="true">
-               {getStorefrontIcon(storefront.storefront?.display_name || '')}
-              </span>
+              {#if buildIconUrl(storefront.storefront?.icon_url)}
+               <img 
+                src="{buildIconUrl(storefront.storefront?.icon_url)}" 
+                alt="{storefront.storefront?.display_name} icon" 
+                class="w-5 h-5 flex-shrink-0"
+                loading="lazy"
+                on:error={(e) => {
+                 const img = e.target as HTMLImageElement;
+                 const fallback = img.nextElementSibling as HTMLElement;
+                 if (img && fallback) {
+                  img.style.display = 'none';
+                  fallback.style.display = 'inline';
+                 }
+                }}
+               />
+               <span class="text-lg hidden" role="img" aria-hidden="true">
+                {getStorefrontFallbackIcon()}
+               </span>
+              {:else}
+               <span class="text-lg" role="img" aria-hidden="true">
+                {getStorefrontFallbackIcon()}
+               </span>
+              {/if}
               <span class="text-gray-800 font-bold text-sm">
                {storefront.storefront?.display_name || 'Unknown Store'}
               </span>
