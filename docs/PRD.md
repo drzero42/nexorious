@@ -412,14 +412,72 @@ To create the definitive self-hosted solution for personal game collection manag
 
 #### 2.2 Steam API Integration
 **Priority**: P1 (High)
-- **User Story**: As a user, I want to automatically import my Steam library so I don't have to manually add each game
+- **User Story**: As a user, I want to automatically import my Steam library through a background process that allows me to review uncertain matches, so I can accurately add games to my collection without manual entry while maintaining control over what gets imported
+
+##### 2.2.1 Background Processing Architecture
+- **Background Processing**: Use FastAPI Background Tasks for import processing instead of synchronous operations
+- **Database State Management**: Store import job state in database rather than using dedicated queues to keep architecture simple
+- **User Interaction Workflow**: Multi-step process allows user review of uncertain matches before final import
+- **Resumable Process**: Users can pause and return to complete uncertain match reviews at their own pace
+
+##### 2.2.2 Steam AppID Integration Strategy
+- **Steam AppID Storage**: Add `steam_appid` field to Game model to enable efficient future matching
+- **Primary Matching Key**: Steam AppID becomes the definitive identifier for games imported from Steam
+- **Future Import Efficiency**: Subsequent imports use Steam AppID for instant matching, reducing user interaction needed
+
+##### 2.2.3 Strict Matching Strategy
+- **Database-First Matching**: Check existing games in database before attempting any external API calls
+- **No Fuzzy Matching by Default**: Use strict matching to prevent false positives and ensure accuracy
+- **Matching Priority Order**:
+  1. **Steam AppID Match**: Check existing games for matching `steam_appid` → automatic match
+  2. **Exact Title Match**: Check existing games for exact case-insensitive title match → automatic match
+  3. **No Match Found**: Flag for user review (no automatic assumptions)
+- **User Review Required**: Any uncertainties require explicit user decision - no fuzzy matching assumptions
+
+##### 2.2.4 Import Job State Management
+- **Import Job States**: 
+  - `pending` → User initiates import
+  - `processing` → Background task pulls Steam library and performs strict matching
+  - `awaiting_review` → Some games need user decisions
+  - `finalizing` → User completed reviews, executing final import
+  - `completed` → Import finished with results summary
+- **Individual Game Status Tracking**: Each Steam game has status (`matched`, `awaiting_user`, `skipped`, `failed`)
+- **Steam Game Data Storage**: Complete Steam library stored in import job as JSON with individual IGDB IDs and statuses
+- **State Persistence**: All state stored in database to survive server restarts and allow resumable imports
+
+##### 2.2.5 User Experience Requirements
+- **Real-Time Progress Dashboard**: Show counts of matched, awaiting review, and skipped games with progress indicators
+- **Focused Review Interface**: Users only review games that couldn't be matched automatically
+- **IGDB Search Integration**: For uncertain matches, provide IGDB search interface for manual match selection
+- **Granular Control**: User can skip games they don't want rather than being forced to match everything
+- **Final Import Confirmation**: Clear summary before executing final import with user approval
+
+##### 2.2.6 Merge Strategy Implementation
+- **Strategy Configuration**: User selects how to handle games already in their collection
+  - Skip existing games (don't add duplicate platforms)
+  - Add platforms to existing games (merge Steam ownership with existing entries)
+- **Automatic Ownership Management**: When games are matched to existing entries, automatically add Steam platform and storefront associations
+
 - **Requirements**:
-  - Steam Web API integration for library import
-  - Button to sync and catch new purchases
+  - Steam Web API integration for library import with rate limiting and error handling
+  - Background processing using FastAPI Background Tasks for non-blocking operations
+  - Database state storage for import jobs with complete Steam game lists and individual statuses
+  - Strict matching algorithm prioritizing Steam AppID and exact title matches
+  - User interface for reviewing and resolving uncertain matches through IGDB search
+  - Import job management with resumable workflow and progress tracking
+  - Steam AppID storage on Game model for efficient future imports
+  - Manual sync capability for catching new purchases after initial import
+
 - **Acceptance Criteria**:
-  - Steam library import works with API key
-  - Users can trigger manual sync
-  - Import respects Steam privacy settings
+  - Steam library import works with user's API key and respects privacy settings
+  - Background processing allows users to initiate import and review progress asynchronously
+  - Strict matching automatically resolves obvious games without user intervention
+  - User review interface only shows games requiring decisions, with IGDB search capability
+  - Import jobs persist state in database and can be resumed after interruption
+  - Games imported from Steam include Steam AppID for future matching efficiency
+  - Final import execution adds games to user's collection with proper platform/storefront associations
+  - Subsequent imports are significantly faster due to Steam AppID matching
+  - Users can skip uncertain games rather than being forced to make difficult match decisions
 
 #### 2.3 IGDB Metadata Integration
 **Priority**: P1 (High)
