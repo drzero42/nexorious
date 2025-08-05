@@ -360,8 +360,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Create database migration to add `steam_appid` field to `games` table (INTEGER, nullable, for matching optimization)
 - [ ] Update Game model to include optional `steam_appid` field for efficient Steam AppID-based matching
 - [ ] Add database indexes on `steam_appid` field for fast lookup during two-phase matching process
-- [ ] Ensure existing games can be updated with Steam AppIDs during IGDB imports
-- [ ] Test migration on both PostgreSQL and SQLite databases
 
 ##### 2.2.0.4 Cleanup Validation
 - [x] Verify Steam configuration endpoints still work after cleanup
