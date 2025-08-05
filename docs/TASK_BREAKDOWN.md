@@ -357,9 +357,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Clean up any Steam import-related components that won't be used in new system
 
 ##### 2.2.0.3 Database Schema Preparation
-- [ ] Create database migration to add `steam_appid` field to `games` table (INTEGER, nullable, for matching optimization)
-- [ ] Update Game model to include optional `steam_appid` field for efficient Steam AppID-based matching
-- [ ] Add database indexes on `steam_appid` field for fast lookup during two-phase matching process
+- [x] Create database migration to add `steam_appid` field to `games` table (INTEGER, nullable, for matching optimization)
+- [x] Update Game model to include optional `steam_appid` field for efficient Steam AppID-based matching
+- [x] Add database indexes on `steam_appid` field for fast lookup during two-phase matching process
 
 ##### 2.2.0.4 Cleanup Validation
 - [x] Verify Steam configuration endpoints still work after cleanup
