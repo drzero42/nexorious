@@ -5,7 +5,7 @@ Steam import API endpoints for managing background Steam library import jobs.
 import json
 import logging
 from typing import Annotated, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from sqlmodel import Session, select, and_
 from datetime import datetime, timezone
 
@@ -15,6 +15,7 @@ from ..models.user import User
 from ..models.steam_import import SteamImportJob, SteamImportGame, SteamImportJobStatus, SteamImportGameStatus
 from ..services.steam_import import SteamImportService, SteamImportProcessingError, create_steam_import_service
 from ..services.igdb import IGDBService
+from ..services.websocket_manager import get_websocket_manager, WebSocketConnectionManager
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.steam import (
     SteamImportJobCreateRequest,
@@ -441,3 +442,90 @@ async def cancel_import_job(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel job: {str(e)}"
         )
+
+
+@router.websocket("/ws/{job_id}")
+async def websocket_steam_import(
+    websocket: WebSocket,
+    job_id: str,
+    token: str = Query(..., description="JWT access token for authentication"),
+    session: Annotated[Session, Depends(get_session)] = None,
+    ws_manager: WebSocketConnectionManager = Depends(get_websocket_manager)
+):
+    """
+    WebSocket endpoint for real-time Steam import updates.
+    
+    This endpoint provides real-time communication for Steam import jobs including:
+    - Import status changes and phase transitions
+    - Real-time progress updates (game count and percentage)
+    - Individual game matching results
+    - Games flagged for manual review
+    - Import completion and error notifications
+    
+    Authentication is performed via JWT token in query parameter.
+    Connection is automatically closed if authentication fails or job access is denied.
+    """
+    connection = None
+    
+    try:
+        # Authenticate and establish connection
+        connection = await ws_manager.authenticate_and_connect(
+            websocket=websocket,
+            job_id=job_id,
+            token=token,
+            session=session
+        )
+        
+        if not connection:
+            # Authentication failed - connection already closed by manager
+            return
+        
+        logger.info(f"WebSocket connection established for job {job_id}, user {connection.user_id}")
+        
+        # Keep connection alive and handle client messages
+        try:
+            while True:
+                # Wait for messages from client (mainly for heartbeat/ping responses)
+                message = await websocket.receive_text()
+                
+                try:
+                    # Parse client message
+                    client_data = json.loads(message)
+                    
+                    # Handle client heartbeat responses
+                    if client_data.get("type") == "heartbeat_response":
+                        logger.debug(f"Received heartbeat response from job {job_id}")
+                        connection.last_heartbeat = datetime.now(timezone.utc)
+                    
+                    # Handle other client messages if needed
+                    elif client_data.get("type") == "ping":
+                        # Send pong response
+                        pong_message = {
+                            "type": "pong",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                        await websocket.send_text(json.dumps(pong_message))
+                        
+                except json.JSONDecodeError:
+                    # Invalid JSON from client - log but don't disconnect
+                    logger.warning(f"Invalid JSON received from WebSocket client for job {job_id}")
+                except Exception as e:
+                    logger.error(f"Error processing client message for job {job_id}: {str(e)}")
+                
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket client disconnected for job {job_id}")
+        except Exception as e:
+            logger.error(f"Unexpected error in WebSocket connection for job {job_id}: {str(e)}")
+            
+    except Exception as e:
+        logger.error(f"Error in WebSocket endpoint for job {job_id}: {str(e)}")
+        try:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Server error")
+        except Exception:
+            pass  # Connection might already be closed
+    
+    finally:
+        # Clean up connection
+        if connection:
+            await ws_manager.disconnect(connection)
+            logger.info(f"WebSocket connection cleaned up for job {job_id}, user {connection.user_id}")
