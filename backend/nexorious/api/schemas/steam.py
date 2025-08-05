@@ -3,8 +3,9 @@ Steam Web API configuration schemas for API requests and responses.
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from datetime import datetime
+from ...models.steam_import import SteamImportJobStatus, SteamImportGameStatus
 
 
 class SteamConfigRequest(BaseModel):
@@ -146,5 +147,73 @@ class VanityUrlResolveResponse(BaseModel):
     success: bool = Field(..., description="Whether the vanity URL was successfully resolved")
     steam_id: Optional[str] = Field(None, description="Resolved Steam ID if successful")
     error_message: Optional[str] = Field(None, description="Error message if resolution failed")
+
+
+# Steam Import Schemas
+
+class SteamImportJobCreateRequest(BaseModel):
+    """Request schema for creating a Steam import job."""
+    pass  # No additional parameters needed - uses user's Steam config
+
+
+class SteamImportJobResponse(BaseModel):
+    """Response schema for Steam import job creation."""
+    id: str = Field(..., description="Import job ID")
+    status: SteamImportJobStatus = Field(..., description="Current job status")
+    total_games: int = Field(default=0, description="Total number of games in Steam library")
+    processed_games: int = Field(default=0, description="Number of games processed so far")
+    matched_games: int = Field(default=0, description="Number of games automatically matched")
+    awaiting_review_games: int = Field(default=0, description="Number of games awaiting user review")
+    skipped_games: int = Field(default=0, description="Number of games skipped by user")
+    imported_games: int = Field(default=0, description="Number of new games imported")
+    platform_added_games: int = Field(default=0, description="Number of games where Steam platform was added")
+    error_message: Optional[str] = Field(None, description="Error message if job failed")
+    created_at: datetime = Field(..., description="Job creation timestamp")
+    updated_at: datetime = Field(..., description="Job last update timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Job completion timestamp")
+
+
+class SteamImportGameResponse(BaseModel):
+    """Response schema for individual Steam import game."""
+    id: str = Field(..., description="Import game record ID")
+    steam_appid: int = Field(..., description="Steam App ID")
+    steam_name: str = Field(..., description="Game name from Steam")
+    status: SteamImportGameStatus = Field(..., description="Current game status")
+    matched_game_id: Optional[str] = Field(None, description="ID of matched game in database")
+    user_decision: Optional[Dict[str, Any]] = Field(None, description="User's matching decision")
+    error_message: Optional[str] = Field(None, description="Error message if import failed")
+    created_at: datetime = Field(..., description="Record creation timestamp")
+    updated_at: datetime = Field(..., description="Record last update timestamp")
+
+
+class SteamImportJobStatusResponse(BaseModel):
+    """Response schema for Steam import job status with detailed game information."""
+    id: str = Field(..., description="Import job ID")
+    status: SteamImportJobStatus = Field(..., description="Current job status")
+    total_games: int = Field(default=0, description="Total number of games in Steam library")
+    processed_games: int = Field(default=0, description="Number of games processed so far")
+    matched_games: int = Field(default=0, description="Number of games automatically matched")
+    awaiting_review_games: int = Field(default=0, description="Number of games awaiting user review")
+    skipped_games: int = Field(default=0, description="Number of games skipped by user")
+    imported_games: int = Field(default=0, description="Number of new games imported")
+    platform_added_games: int = Field(default=0, description="Number of games where Steam platform was added")
+    error_message: Optional[str] = Field(None, description="Error message if job failed")
+    created_at: datetime = Field(..., description="Job creation timestamp")
+    updated_at: datetime = Field(..., description="Job last update timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Job completion timestamp")
+    games: List[SteamImportGameResponse] = Field(default=[], description="Individual game statuses")
+
+
+class SteamImportUserDecisionRequest(BaseModel):
+    """Request schema for submitting user decisions on games awaiting review."""
+    decisions: Dict[str, Dict[str, Any]] = Field(
+        ..., 
+        description="Map of steam_appid (as string) to user decision. Decision format: {'action': 'import'|'skip', 'igdb_id': 'optional_igdb_id', 'notes': 'optional_notes'}"
+    )
+
+
+class SteamImportConfirmRequest(BaseModel):
+    """Request schema for confirming final import execution."""
+    pass  # No additional parameters needed - all decisions already submitted
 
 

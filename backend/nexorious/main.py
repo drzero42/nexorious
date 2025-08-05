@@ -12,6 +12,7 @@ from .api.games import router as games_router
 from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
 from .api.steam_config import router as steam_router
+from .api.steam_import import router as steam_import_router
 
 # Configure logging
 def get_log_level(level_str: str) -> int:
@@ -71,6 +72,7 @@ app.include_router(games_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
 app.include_router(steam_router, prefix="/api")
+app.include_router(steam_import_router, prefix="/api")
 
 # Mount static files for cover art
 cover_art_path = os.path.join(settings.storage_path, "cover_art")
