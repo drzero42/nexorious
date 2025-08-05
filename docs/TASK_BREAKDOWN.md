@@ -383,7 +383,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.2 Background Processing System (Backend)
 **Priority**: P0 (Critical)
-- [ ] Set up background task system (Celery or FastAPI BackgroundTasks)
+- [ ] Set up background task system (FastAPI BackgroundTasks)
 - [ ] Create Steam library retrieval service using Steam Web API
 - [ ] Implement two-phase automatic matching process:
   - Phase 1: Check existing games in database for matching Steam AppID
