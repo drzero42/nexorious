@@ -4,18 +4,13 @@ Steam Web API configuration endpoints for user Steam settings management.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import Annotated, List
+from typing import Annotated
 import json
 import logging
 from datetime import datetime, timezone
-from rapidfuzz import fuzz
-
 from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
-from ..models.game import Game
-from ..models.platform import Platform, Storefront
-from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus
 from ..services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
 from ..api.schemas.steam import (
     SteamConfigRequest,
@@ -26,10 +21,7 @@ from ..api.schemas.steam import (
     VanityUrlResolveResponse,
     SteamUserInfoResponse,
     SteamLibraryResponse,
-    SteamGameResponse,
-    SteamLibraryImportRequest,
-    SteamLibraryImportResponse,
-    SteamGameImportResult
+    SteamGameResponse
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -388,245 +380,5 @@ async def get_steam_library(
 
 
 
-def _find_best_game_match(steam_game_name: str, all_games: List[Game], fuzzy_threshold: float) -> tuple[Game | None, float]:
-    """Find the best matching game using fuzzy string matching."""
-    if not all_games:
-        return None, 0.0
-    
-    best_match = None
-    best_score = 0.0
-    
-    steam_name_lower = steam_game_name.lower().strip()
-    
-    for game in all_games:
-        # Try exact match first
-        if game.title.lower().strip() == steam_name_lower:
-            return game, 1.0
-        
-        # Calculate fuzzy match scores
-        ratio_score = fuzz.ratio(steam_name_lower, game.title.lower().strip()) / 100.0
-        partial_score = fuzz.partial_ratio(steam_name_lower, game.title.lower().strip()) / 100.0
-        token_sort_score = fuzz.token_sort_ratio(steam_name_lower, game.title.lower().strip()) / 100.0
-        
-        # Use the highest score
-        max_score = max(ratio_score, partial_score, token_sort_score)
-        
-        if max_score > best_score:
-            best_score = max_score
-            best_match = game
-    
-    # Only return match if it meets the threshold
-    if best_score >= fuzzy_threshold:
-        return best_match, best_score
-    
-    return None, best_score
 
 
-@router.post("/import-library", response_model=SteamLibraryImportResponse)
-async def import_steam_library(
-    import_request: SteamLibraryImportRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """Import user's Steam library into their game collection."""
-    
-    steam_config = _get_user_steam_config(current_user)
-    
-    if not steam_config.get("web_api_key"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please configure your Steam Web API key first"
-        )
-    
-    if not steam_config.get("steam_id"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please configure your Steam ID first"
-        )
-    
-    try:
-        steam_service = create_steam_service(steam_config["web_api_key"])
-        
-        # Get Steam library
-        steam_games = await steam_service.get_owned_games(steam_config["steam_id"])
-        logger.info(f"Retrieved {len(steam_games)} games from Steam for user {current_user.id}")
-        
-        # Get all games from database for fuzzy matching
-        all_games = session.exec(select(Game)).all()
-        logger.info(f"Loaded {len(all_games)} games from database for matching")
-        
-        # Get Steam storefront
-        steam_storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
-        if not steam_storefront:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Steam storefront not found in database. Please run seed data."
-            )
-        
-        # Initialize counters and results
-        imported_count = 0
-        skipped_count = 0
-        failed_count = 0
-        no_match_count = 0
-        platform_breakdown = {}
-        results = []
-        
-        for steam_game in steam_games:
-            try:
-                # All Steam games are imported as PC (Windows)
-                detected_platforms = ["pc-windows"]
-                
-                # Update platform breakdown
-                for platform_name in detected_platforms:
-                    platform_breakdown[platform_name] = platform_breakdown.get(platform_name, 0) + 1
-                
-                # Find matching game in database
-                matched_game, match_score = _find_best_game_match(
-                    steam_game.name, all_games, import_request.fuzzy_threshold
-                )
-                
-                if not matched_game:
-                    # No match found
-                    no_match_count += 1
-                    results.append(SteamGameImportResult(
-                        steam_appid=steam_game.appid,
-                        steam_name=steam_game.name,
-                        status="no_match",
-                        reason="No matching game found in IGDB database",
-                        detected_platforms=detected_platforms,
-                        match_score=match_score
-                    ))
-                    continue
-                
-                # Check if user already has this game
-                existing_user_game = session.exec(
-                    select(UserGame).where(
-                        UserGame.user_id == current_user.id,
-                        UserGame.game_id == matched_game.id
-                    )
-                ).first()
-                
-                if existing_user_game and import_request.merge_strategy == "skip":
-                    # Game already exists and we're skipping
-                    skipped_count += 1
-                    results.append(SteamGameImportResult(
-                        steam_appid=steam_game.appid,
-                        steam_name=steam_game.name,
-                        status="skipped",
-                        reason="Game already in collection (merge_strategy=skip)",
-                        matched_game_id=matched_game.id,
-                        matched_game_title=matched_game.title,
-                        detected_platforms=detected_platforms,
-                        match_score=match_score
-                    ))
-                    continue
-                
-                # Add game to collection or add missing platforms
-                if not existing_user_game:
-                    # Create new user game
-                    new_user_game = UserGame(
-                        user_id=current_user.id,
-                        game_id=matched_game.id,
-                        ownership_status=OwnershipStatus.OWNED
-                    )
-                    session.add(new_user_game)
-                    session.flush()  # Get the ID
-                    target_user_game = new_user_game
-                else:
-                    # Use existing user game
-                    target_user_game = existing_user_game
-                
-                # Add platform associations
-                platforms_added = []
-                for platform_name in detected_platforms:
-                    # Find platform in database
-                    platform = session.exec(select(Platform).where(Platform.name == platform_name)).first()
-                    if not platform:
-                        logger.warning(f"Platform '{platform_name}' not found in database, skipping")
-                        continue
-                    
-                    # Check if platform association already exists
-                    existing_platform = session.exec(
-                        select(UserGamePlatform).where(
-                            UserGamePlatform.user_game_id == target_user_game.id,
-                            UserGamePlatform.platform_id == platform.id,
-                            UserGamePlatform.storefront_id == steam_storefront.id
-                        )
-                    ).first()
-                    
-                    if not existing_platform:
-                        # Add platform association
-                        user_game_platform = UserGamePlatform(
-                            user_game_id=target_user_game.id,
-                            platform_id=platform.id,
-                            storefront_id=steam_storefront.id
-                        )
-                        session.add(user_game_platform)
-                        platforms_added.append(platform_name)
-                
-                if platforms_added or not existing_user_game:
-                    imported_count += 1
-                    status_msg = "imported" if not existing_user_game else "platforms_added"
-                    reason_msg = f"Added platforms: {', '.join(platforms_added)}" if existing_user_game else "Game imported successfully"
-                else:
-                    skipped_count += 1
-                    status_msg = "skipped"
-                    reason_msg = "All platforms already exist in collection"
-                
-                results.append(SteamGameImportResult(
-                    steam_appid=steam_game.appid,
-                    steam_name=steam_game.name,
-                    status=status_msg,
-                    reason=reason_msg,
-                    matched_game_id=matched_game.id,
-                    matched_game_title=matched_game.title,
-                    detected_platforms=detected_platforms,
-                    match_score=match_score
-                ))
-                
-            except Exception as e:
-                failed_count += 1
-                logger.error(f"Failed to import Steam game '{steam_game.name}' (AppID: {steam_game.appid}): {str(e)}")
-                results.append(SteamGameImportResult(
-                    steam_appid=steam_game.appid,
-                    steam_name=steam_game.name,
-                    status="failed",
-                    reason=f"Import error: {str(e)}",
-                    detected_platforms=detected_platforms if 'detected_platforms' in locals() else []
-                ))
-        
-        # Commit all changes
-        session.commit()
-        
-        # Generate summary
-        summary = f"Imported {imported_count} games, skipped {skipped_count}, failed {failed_count}, no match {no_match_count} out of {len(steam_games)} Steam games"
-        
-        logger.info(f"Steam library import completed for user {current_user.id}: {summary}")
-        
-        return SteamLibraryImportResponse(
-            total_games=len(steam_games),
-            imported_count=imported_count,
-            skipped_count=skipped_count,
-            failed_count=failed_count,
-            no_match_count=no_match_count,
-            platform_breakdown=platform_breakdown,
-            results=results,
-            import_summary=summary
-        )
-        
-    except SteamAuthenticationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Steam authentication failed: {str(e)}"
-        )
-    except SteamAPIError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Steam API error: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Error importing Steam library for user {current_user.id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to import Steam library"
-        )

@@ -38,6 +38,9 @@ class Game(SQLModel, table=True):
     igdb_platform_ids: Optional[str] = Field(default=None, description="JSON array of IGDB platform IDs")
     igdb_platform_names: Optional[str] = Field(default=None, description="JSON array of IGDB platform names for frontend filtering")
     
+    # Steam integration - for matching optimization during Steam import
+    steam_appid: Optional[int] = Field(default=None, index=True, description="Steam AppID for efficient matching during Steam library import")
+    
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
