@@ -348,13 +348,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Remove import-related error handling and response models that won't be used in background processing system
 
 ##### 2.2.0.2 Frontend Cleanup Tasks  
-- [ ] Remove `/settings/steam/import/+page.svelte` (current direct import interface)
-- [ ] Update Steam store (`lib/stores/steam.svelte.ts`) to remove direct import methods while keeping configuration methods
-- [ ] Remove `SteamLibraryImportRequest` and related import interfaces from store types
-- [ ] Update navigation/routing to remove references to import page
-- [ ] Remove tests for direct import UI components and workflows
-- [ ] Update Steam configuration page (`/settings/steam/+page.svelte`) to remove import functionality temporarily
-- [ ] Clean up any Steam import-related components that won't be used in new system
+- [x] Remove `/settings/steam/import/+page.svelte` (current direct import interface)
+- [x] Update Steam store (`lib/stores/steam.svelte.ts`) to remove direct import methods while keeping configuration methods
+- [x] Remove `SteamLibraryImportRequest` and related import interfaces from store types
+- [x] Update navigation/routing to remove references to import page
+- [x] Remove tests for direct import UI components and workflows
+- [x] Update Steam configuration page (`/settings/steam/+page.svelte`) to remove import functionality temporarily
+- [x] Clean up any Steam import-related components that won't be used in new system
 
 ##### 2.2.0.3 Database Schema Preparation
 - [ ] Create database migration to add `steam_appid` field to `games` table (INTEGER, nullable, for matching optimization)
@@ -369,7 +369,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Confirm Steam API service methods for authentication and library retrieval are preserved
 - [x] Test that all existing Steam configuration tests pass after cleanup
 - [ ] Validate that frontend Steam configuration UI works without import functionality
-- [ ] Document which Steam functionality is temporarily disabled pending new implementation
 
 - [x] Steam Web API authentication
 - [x] Library import functionality (TO BE REPLACED - see cleanup tasks above)
