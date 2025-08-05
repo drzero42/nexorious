@@ -342,14 +342,7 @@ async def get_steam_library(
             SteamGameResponse(
                 appid=game.appid,
                 name=game.name,
-                playtime_forever=game.playtime_forever,
-                playtime_windows_forever=game.playtime_windows_forever,
-                playtime_mac_forever=game.playtime_mac_forever,
-                playtime_linux_forever=game.playtime_linux_forever,
-                rtime_last_played=game.rtime_last_played,
-                playtime_disconnected=game.playtime_disconnected,
-                img_icon_url=game.img_icon_url,
-                has_community_visible_stats=game.has_community_visible_stats
+                img_icon_url=game.img_icon_url
             )
             for game in games
         ]
@@ -393,25 +386,6 @@ async def get_steam_library(
         )
 
 
-def _detect_platforms_from_steam_game(steam_game, platform_fallback: str = "pc-windows") -> List[str]:
-    """Detect platforms based on Steam game playtime data."""
-    detected_platforms = []
-    
-    # Check each platform based on playtime data
-    if steam_game.playtime_windows_forever > 0:
-        detected_platforms.append("pc-windows")
-    
-    if steam_game.playtime_mac_forever > 0:
-        detected_platforms.append("pc-mac")  # Assuming this exists in seed data
-    
-    if steam_game.playtime_linux_forever > 0:
-        detected_platforms.append("pc-linux")
-    
-    # If no platform-specific playtime, use fallback (most likely Windows)
-    if not detected_platforms:
-        detected_platforms.append(platform_fallback)
-    
-    return detected_platforms
 
 
 def _find_best_game_match(steam_game_name: str, all_games: List[Game], fuzzy_threshold: float) -> tuple[Game | None, float]:
@@ -499,10 +473,8 @@ async def import_steam_library(
         
         for steam_game in steam_games:
             try:
-                # Detect platforms for this game
-                detected_platforms = _detect_platforms_from_steam_game(
-                    steam_game, import_request.platform_fallback
-                )
+                # All Steam games are imported as PC (Windows)
+                detected_platforms = ["pc-windows"]
                 
                 # Update platform breakdown
                 for platform_name in detected_platforms:

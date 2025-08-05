@@ -36,35 +36,19 @@ def sample_steam_games():
     return [
         SteamGame(
             appid=440,
-            name="Team Fortress 2",
-            playtime_forever=1200,
-            playtime_windows_forever=1200,
-            playtime_mac_forever=0,
-            playtime_linux_forever=0
+            name="Team Fortress 2"
         ),
         SteamGame(
             appid=570,
-            name="Dota 2",
-            playtime_forever=5000,
-            playtime_windows_forever=3000,
-            playtime_mac_forever=0,
-            playtime_linux_forever=2000
+            name="Dota 2"
         ),
         SteamGame(
             appid=730,
-            name="Counter-Strike: Global Offensive",
-            playtime_forever=800,
-            playtime_windows_forever=0,
-            playtime_mac_forever=0,
-            playtime_linux_forever=0  # No platform-specific playtime
+            name="Counter-Strike: Global Offensive"
         ),
         SteamGame(
             appid=945360,
-            name="Among Us",
-            playtime_forever=150,
-            playtime_windows_forever=100,
-            playtime_mac_forever=50,
-            playtime_linux_forever=0
+            name="Among Us"
         )
     ]
 
@@ -167,8 +151,7 @@ class TestSteamLibraryImport:
         
         import_request = {
             "fuzzy_threshold": 0.8,
-            "merge_strategy": "skip",
-            "platform_fallback": "pc-windows"
+            "merge_strategy": "skip"
         }
         
         response = client.post("/api/steam/import-library", json=import_request, headers=auth_headers)
@@ -184,19 +167,18 @@ class TestSteamLibraryImport:
         assert "results" in data
         assert len(data["results"]) == 4
         
-        # Verify platform detection
-        assert data["platform_breakdown"]["pc-windows"] >= 3  # At least 3 games on Windows
-        assert data["platform_breakdown"]["pc-linux"] == 1   # Only Dota 2 on Linux
+        # Verify platform detection - all Steam games get PC (Windows)
+        assert data["platform_breakdown"]["pc-windows"] == 4  # All 4 games on Windows
         
         # Verify games were added to user's collection
         user_games = session.exec(select(UserGame).where(UserGame.user_id == test_user.id)).all()
         assert len(user_games) == 3
         
-        # Verify platform associations
+        # Verify platform associations - each game gets PC (Windows)
         platform_associations = session.exec(
             select(UserGamePlatform).join(UserGame).where(UserGame.user_id == test_user.id)
         ).all()
-        assert len(platform_associations) >= 4  # TF2(1) + Dota2(2) + CS:GO(1)
+        assert len(platform_associations) == 3  # One association per imported game
     
     def test_import_library_no_steam_config(self, client: TestClient, auth_headers):
         """Test import without Steam configuration."""
@@ -329,89 +311,17 @@ class TestSteamLibraryImport:
         assert_api_success(response)
         data = response.json()
         
-        # Should add Linux platform to existing Dota 2
+        # Should skip existing Dota 2 since it already has PC (Windows) platform
         dota_result = next(r for r in data["results"] if r["steam_appid"] == 570)
-        assert dota_result["status"] == "platforms_added"
-        assert "pc-linux" in dota_result["detected_platforms"]
+        assert dota_result["status"] == "skipped"
+        assert "pc-windows" in dota_result["detected_platforms"]
         
-        # Verify Linux platform was added
-        linux_platform = next(p for p in platforms if p.name == "pc-linux")
-        linux_association = session.exec(select(UserGamePlatform).where(
-            UserGamePlatform.user_game_id == user_game.id,
-            UserGamePlatform.platform_id == linux_platform.id
-        )).first()
-        assert linux_association is not None
+        # Verify no additional platform associations were added
+        platform_associations = session.exec(select(UserGamePlatform).where(
+            UserGamePlatform.user_game_id == user_game.id
+        )).all()
+        assert len(platform_associations) == 1  # Only the original Windows platform
 
-
-class TestPlatformDetection:
-    """Test platform detection logic from Steam data."""
-    
-    def test_detect_platforms_windows_only(self):
-        """Test platform detection for Windows-only game."""
-        from nexorious.api.steam_config import _detect_platforms_from_steam_game
-        
-        steam_game = SteamGame(
-            appid=440,
-            name="Team Fortress 2",
-            playtime_forever=1200,
-            playtime_windows_forever=1200,
-            playtime_mac_forever=0,
-            playtime_linux_forever=0
-        )
-        
-        platforms = _detect_platforms_from_steam_game(steam_game)
-        assert platforms == ["pc-windows"]
-    
-    def test_detect_platforms_multi_platform(self):
-        """Test platform detection for multi-platform game."""
-        from nexorious.api.steam_config import _detect_platforms_from_steam_game
-        
-        steam_game = SteamGame(
-            appid=570,
-            name="Dota 2",
-            playtime_forever=5000,
-            playtime_windows_forever=3000,
-            playtime_mac_forever=0,
-            playtime_linux_forever=2000
-        )
-        
-        platforms = _detect_platforms_from_steam_game(steam_game)
-        assert "pc-windows" in platforms
-        assert "pc-linux" in platforms
-        assert "pc-mac" not in platforms
-        assert len(platforms) == 2
-    
-    def test_detect_platforms_no_specific_playtime(self):
-        """Test platform detection when no platform-specific playtime data."""
-        from nexorious.api.steam_config import _detect_platforms_from_steam_game
-        
-        steam_game = SteamGame(
-            appid=730,
-            name="CS:GO",
-            playtime_forever=800,
-            playtime_windows_forever=0,
-            playtime_mac_forever=0,
-            playtime_linux_forever=0
-        )
-        
-        platforms = _detect_platforms_from_steam_game(steam_game)
-        assert platforms == ["pc-windows"]  # Default fallback
-    
-    def test_detect_platforms_custom_fallback(self):
-        """Test platform detection with custom fallback."""
-        from nexorious.api.steam_config import _detect_platforms_from_steam_game
-        
-        steam_game = SteamGame(
-            appid=730,
-            name="CS:GO",
-            playtime_forever=800,
-            playtime_windows_forever=0,
-            playtime_mac_forever=0,
-            playtime_linux_forever=0
-        )
-        
-        platforms = _detect_platforms_from_steam_game(steam_game, "pc-linux")
-        assert platforms == ["pc-linux"]
 
 
 class TestGameMatching:

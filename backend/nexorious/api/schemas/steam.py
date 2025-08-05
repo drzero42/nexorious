@@ -105,14 +105,7 @@ class SteamGameResponse(BaseModel):
     """Response schema for Steam game information."""
     appid: int = Field(..., description="Steam App ID")
     name: str = Field(..., description="Game name")
-    playtime_forever: int = Field(..., description="Total playtime in minutes")
-    playtime_windows_forever: int = Field(0, description="Windows playtime in minutes")
-    playtime_mac_forever: int = Field(0, description="Mac playtime in minutes")
-    playtime_linux_forever: int = Field(0, description="Linux playtime in minutes")
-    rtime_last_played: Optional[int] = Field(None, description="Last played timestamp")
-    playtime_disconnected: int = Field(0, description="Offline playtime in minutes")
     img_icon_url: Optional[str] = Field(None, description="Game icon URL")
-    has_community_visible_stats: Optional[bool] = Field(None, description="Whether game has visible community stats")
 
 
 class SteamLibraryResponse(BaseModel):
@@ -159,7 +152,6 @@ class SteamLibraryImportRequest(BaseModel):
     """Request schema for Steam library import."""
     fuzzy_threshold: float = Field(default=0.8, ge=0.0, le=1.0, description="Fuzzy matching threshold for game name matching (0.0-1.0)")
     merge_strategy: str = Field(default="skip", pattern="^(skip|add_platforms)$", description="How to handle games already in collection")
-    platform_fallback: str = Field(default="pc-windows", description="Default platform when no Steam platform data available")
 
 
 class SteamGameImportResult(BaseModel):

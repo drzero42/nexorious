@@ -347,7 +347,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.4 Steam Library Import Interface  
 **Priority**: P1 (High)
-- [ ] Create Steam library import page/component
+- [x] Create Steam library import page/component
 - [ ] Add import configuration form (fuzzy threshold, merge strategy, platform fallback)
 - [ ] Implement Steam library preview (show games before import)
 - [ ] Add import progress indicator and real-time status updates

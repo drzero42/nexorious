@@ -195,19 +195,11 @@ class TestSteamService:
                     {
                         "appid": 730,
                         "name": "Counter-Strike: Global Offensive",
-                        "playtime_forever": 12345,
-                        "playtime_windows_forever": 12000,
-                        "playtime_mac_forever": 345,
-                        "playtime_linux_forever": 0,
-                        "rtime_last_played": 1234567890,
-                        "playtime_disconnected": 0,
-                        "img_icon_url": "icon_url",
-                        "has_community_visible_stats": True
+                        "img_icon_url": "icon_url"
                     },
                     {
                         "appid": 440,
-                        "name": "Team Fortress 2",
-                        "playtime_forever": 5000
+                        "name": "Team Fortress 2"
                     }
                 ]
             }
@@ -222,7 +214,7 @@ class TestSteamService:
             assert isinstance(result[0], SteamGame)
             assert result[0].appid == 730
             assert result[0].name == "Counter-Strike: Global Offensive"
-            assert result[0].playtime_forever == 12345
+            assert result[0].img_icon_url == "icon_url"
             assert result[1].appid == 440
             assert result[1].name == "Team Fortress 2"
 
@@ -234,9 +226,7 @@ class TestSteamService:
                 "games": [
                     {
                         "appid": 730,
-                        "name": "Counter-Strike: Global Offensive",
-                        "playtime_forever": 12345,
-                        "rtime_last_played": 1234567890
+                        "name": "Counter-Strike: Global Offensive"
                     }
                 ]
             }
@@ -352,13 +342,12 @@ class TestSteamDataClasses:
         game = SteamGame(
             appid=730,
             name="Counter-Strike: Global Offensive",
-            playtime_forever=12345
+            img_icon_url="icon_url"
         )
         
         assert game.appid == 730
         assert game.name == "Counter-Strike: Global Offensive"
-        assert game.playtime_forever == 12345
-        assert game.playtime_windows_forever == 0  # Default value
+        assert game.img_icon_url == "icon_url"
 
 
 class TestSteamExceptions:
