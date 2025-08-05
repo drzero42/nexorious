@@ -373,13 +373,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.1 Steam Import Job Management (Backend)
 **Priority**: P0 (Critical)
-- [ ] Create Steam import job model (`SteamImportJob`) with comprehensive status tracking
-- [ ] Add database schema for import jobs (job_id, user_id, status, created_at, updated_at, error_message)
-- [ ] Create individual Steam game status model (`SteamImportGame`) within import jobs
-- [ ] Add game status tracking (matched, awaiting_user, skipped, imported, platform_added, already_owned, import_failed)
-- [ ] Implement job status transitions (pending → processing → awaiting_review → finalizing → completed/failed)
-- [ ] Create database migration for Steam import job tables
-- [ ] Add indexes for performance on job and game status queries
+- [x] Create Steam import job model (`SteamImportJob`) with comprehensive status tracking
+- [x] Add database schema for import jobs (job_id, user_id, status, created_at, updated_at, error_message)
+- [x] Create individual Steam game status model (`SteamImportGame`) within import jobs
+- [x] Add game status tracking (matched, awaiting_user, skipped, imported, platform_added, already_owned, import_failed)
+- [x] Implement job status transitions (pending → processing → awaiting_review → finalizing → completed/failed)
+- [x] Create database migration for Steam import job tables
+- [x] Add indexes for performance on job and game status queries
 
 #### 2.2.2 Background Processing System (Backend)
 **Priority**: P0 (Critical)

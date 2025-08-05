@@ -11,6 +11,7 @@ from .user_game import UserGame, UserGamePlatform
 from .tag import Tag, UserGameTag
 from .wishlist import Wishlist
 from .import_job import ImportJob
+from .steam_import import SteamImportJob, SteamImportGame
 
 __all__ = [
     "User",
@@ -26,4 +27,6 @@ __all__ = [
     "UserGameTag",
     "Wishlist",
     "ImportJob",
+    "SteamImportJob",
+    "SteamImportGame",
 ]
