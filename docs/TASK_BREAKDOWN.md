@@ -366,7 +366,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Ensure Steam library preview functionality (`GET /api/steam/library`) remains functional
 - [x] Confirm Steam API service methods for authentication and library retrieval are preserved
 - [x] Test that all existing Steam configuration tests pass after cleanup
-- [ ] Validate that frontend Steam configuration UI works without import functionality
+- [x] Validate that frontend Steam configuration UI works without import functionality
 
 - [x] Steam Web API authentication
 - [x] Library import functionality (TO BE REPLACED - see cleanup tasks above)
