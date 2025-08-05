@@ -20,6 +20,11 @@
   // State for vanity URL resolution
   let showVanityResolver = false;
 
+  // State for Steam import functionality
+  let isStartingImport = false;
+  let isPreviewingLibrary = false;
+  let libraryPreview: any = null;
+
   onMount(async () => {
     try {
       await steam.getConfig();
@@ -143,6 +148,29 @@
   function clearVerification() {
     steam.clearVerification();
     formError = '';
+  }
+
+  async function handleStartImport() {
+    isStartingImport = true;
+    try {
+      await steam.startImport();
+      // Navigation is handled in the steam store
+    } catch (error) {
+      // Error handling is done in the steam store
+    } finally {
+      isStartingImport = false;
+    }
+  }
+
+  async function handlePreviewLibrary() {
+    isPreviewingLibrary = true;
+    try {
+      libraryPreview = await steam.getLibraryPreview();
+    } catch (error) {
+      ui.showError(error instanceof Error ? error.message : 'Failed to preview library');
+    } finally {
+      isPreviewingLibrary = false;
+    }
   }
 
   // Get current config for display
@@ -472,6 +500,129 @@
         {/if}
       </div>
     </div>
+
+    <!-- Steam Import Section -->
+    {#if hasConfig && currentConfig?.is_verified}
+      <div class="card">
+        <div class="border-b border-gray-200 pb-4 mb-6">
+          <h2 class="text-lg font-semibold text-gray-900">Steam Library Import</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Import your Steam library to automatically add games to your collection
+          </p>
+        </div>
+
+        <div class="space-y-4">
+          <!-- Import Status/Info -->
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex items-center">
+              <svg class="h-6 w-6 text-blue-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h3 class="text-sm font-medium text-blue-800">How Steam Import Works</h3>
+                <div class="text-sm text-blue-700 mt-1 space-y-1">
+                  <p>• We'll retrieve your Steam library and automatically match games to our database</p>
+                  <p>• You'll review any games that couldn't be automatically matched</p>
+                  <p>• New games will be imported with full metadata and cover art</p>
+                  <p>• Existing games will have Steam platform added to them</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Import Actions -->
+          <div class="flex flex-col sm:flex-row gap-4">
+            <button
+              on:click={handleStartImport}
+              disabled={isStartingImport}
+              class="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {#if isStartingImport}
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Starting Import...
+              {:else}
+                <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Start Steam Import
+              {/if}
+            </button>
+
+            <button
+              on:click={handlePreviewLibrary}
+              disabled={isPreviewingLibrary}
+              class="flex-1 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {#if isPreviewingLibrary}
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading Preview...
+              {:else}
+                <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Preview Library
+              {/if}
+            </button>
+          </div>
+
+          <!-- Library Preview -->
+          {#if libraryPreview}
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-medium text-gray-900">
+                  Steam Library Preview
+                </h4>
+                <span class="text-sm text-gray-600">
+                  {libraryPreview.total_games} games found
+                </span>
+              </div>
+              
+              <div class="text-sm text-gray-600 mb-3">
+                <p><strong>Profile:</strong> {libraryPreview.steam_user_info.persona_name}</p>
+                <p><strong>Steam ID:</strong> {libraryPreview.steam_user_info.steam_id}</p>
+              </div>
+
+              {#if libraryPreview.games && libraryPreview.games.length > 0}
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                  <div class="text-xs font-medium text-gray-700 mb-2">Sample Games:</div>
+                  {#each libraryPreview.games.slice(0, 10) as game}
+                    <div class="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                      {game.name} (ID: {game.appid})
+                    </div>
+                  {/each}
+                  {#if libraryPreview.games.length > 10}
+                    <div class="text-xs text-gray-500 text-center">
+                      +{libraryPreview.games.length - 10} more games
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {:else if hasConfig && !currentConfig?.is_verified}
+      <div class="card bg-yellow-50 border-yellow-200">
+        <div class="flex items-center">
+          <svg class="h-6 w-6 text-yellow-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <div>
+            <h3 class="text-sm font-medium text-yellow-800">Steam Configuration Required</h3>
+            <p class="text-sm text-yellow-700 mt-1">
+              Please verify your Steam configuration before importing your library.
+            </p>
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- Help Information -->
     <div class="card max-w-2xl">

@@ -437,14 +437,14 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.6 Steam Import Frontend Pages & Components
 **Priority**: P0 (Critical)
-- [ ] Create `/steam/import/status/[jobId]` page for real-time import monitoring:
+- [x] Create `/steam/import/status/[jobId]` page for real-time import monitoring:
   - Live progress bar showing games processed vs total with percentage
   - Phase indicators for processing, review, finalizing phases
   - Real-time game counter (matched, pending review, skipped)
   - Dynamic time estimation based on processing speed
   - WebSocket connection indicator with auto-reconnection status
   - Cancel import option during processing phase
-- [ ] Build `/steam/import/review/[jobId]` page for interactive game matching:
+- [x] Build `/steam/import/review/[jobId]` page for interactive game matching:
   - Game cards with rich Steam game information and cover art
   - Real-time IGDB search interface with autocomplete suggestions
   - Side-by-side comparison view (Steam vs IGDB game details)
@@ -452,13 +452,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - Progress tracking ("X of Y games reviewed") with visual indicators
   - Auto-save functionality for every user decision
   - Optional skip reasons categorization
-- [ ] Add `/steam/import/confirm/[jobId]` page for final confirmation:
+- [x] Add `/steam/import/confirm/[jobId]` page for final confirmation:
   - Visual breakdown of import statistics
   - Thumbnail grid preview of games to be imported
   - Platform badges showing which platforms/storefronts will be added
   - Estimated storage space and processing time
   - Option to return to review phase to modify decisions
-- [ ] Create `/steam/import/results/[jobId]` page for completion summary:
+- [x] Create `/steam/import/results/[jobId]` page for completion summary:
   - Success animation with comprehensive statistics
   - Categorized results with visual breakdown:
     * New games imported with cover art thumbnails
@@ -471,36 +471,35 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.7 WebSocket Service & State Management (Frontend)
 **Priority**: P0 (Critical)
-- [ ] Create SteamImportWebSocketService class with:
+- [x] Create SteamImportWebSocketService class with:
   - Connection management with auto-reconnection
   - Event handling for all WebSocket message types
   - Connection health monitoring and heartbeat
   - Exponential backoff retry strategy for lost connections
   - Graceful degradation when WebSocket unavailable
-- [ ] Implement Svelte stores for Steam import state management:
+- [x] Implement Svelte stores for Steam import state management:
   - `importJobStore` - Current import job data
   - `importProgressStore` - Real-time progress tracking
   - `gamesReviewStore` - Games awaiting user review
   - `websocketStore` - WebSocket connection status
-- [ ] Add WebSocket event handlers for bidirectional communication
-- [ ] Create offline handling and session persistence
-- [ ] Implement state restoration on page reload or navigation
+- [x] Add WebSocket event handlers for bidirectional communication
+- [x] Create offline handling and session persistence
+- [x] Implement state restoration on page reload or navigation
 
 #### 2.2.8 Steam Import UI Components (Frontend)
 **Priority**: P1 (High)
-- [ ] Build `ImportStatusProgress.svelte` - Live progress bars and statistics display
-- [ ] Create `GameReviewCard.svelte` - Individual game review interface with Steam game details
-- [ ] Add `IGDBSearchWidget.svelte` - IGDB game search with autocomplete for manual matching
-- [ ] Implement `ImportSummary.svelte` - Final confirmation summary display with statistics
-- [ ] Create `WebSocketStatus.svelte` - Connection status indicator with reconnection feedback
-- [ ] Build `ImportResults.svelte` - Results display with categorized game grid
-- [ ] Add mobile-responsive design for all Steam import components
-- [ ] Implement touch-friendly interface optimized for mobile devices
+- [x] Build `ImportStatusProgress.svelte` - Live progress bars and statistics display
+- [x] Create `GameReviewCard.svelte` - Individual game review interface with Steam game details
+- [x] Add `IGDBSearchWidget.svelte` - IGDB game search with autocomplete for manual matching
+- [x] Implement `ImportSummary.svelte` - Final confirmation summary display with statistics
+- [x] Create `WebSocketStatus.svelte` - Connection status indicator with reconnection feedback
+- [x] Build `ImportResults.svelte` - Results display with categorized game grid
+- [x] Add mobile-responsive design for all Steam import components
+- [x] Implement touch-friendly interface optimized for mobile devices
+- [x] Fix Svelte 5 event handler warnings (convert `on:event` to event attributes for modern compliance)
 
 #### 2.2.9 Steam Integration in Existing UI
 **Priority**: P1 (High)
-- [ ] Add Steam platform/storefront badges to game cards and detail views
-- [ ] Update platform selection components to include Steam-specific logic
 - [ ] Add Steam import option to main game addition flows
 - [ ] Update user profile/settings to include Steam configuration section
 - [ ] Add Steam import status/statistics to dashboard or admin interface

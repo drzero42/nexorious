@@ -1,5 +1,7 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
+import { goto } from '$app/navigation';
+import { ui } from './ui.svelte';
 
 // Steam API interfaces based on backend schemas
 export interface SteamUserInfo {
@@ -278,6 +280,80 @@ function createSteamStore() {
     // Clear error
     clearError() {
       state = { ...state, error: null };
+    },
+
+    // Steam Import Job Management
+    async startImport(): Promise<string> {
+      // Validate Steam configuration first
+      if (!state.config?.has_api_key || !state.config?.is_verified) {
+        throw new Error('Steam configuration is not complete or verified');
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam/import`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.startImport();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to start Steam import');
+        }
+
+        const job = await response.json();
+        
+        // Show success message and navigate to status page
+        ui.showSuccess('Steam import started! You\'ll be redirected to monitor progress.');
+        
+        // Navigate to import status page
+        setTimeout(() => {
+          goto(`/steam/import/status/${job.id}`);
+        }, 1500);
+
+        return job.id;
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to start Steam import';
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    async getLibraryPreview(): Promise<any> {
+      // Validate Steam configuration first
+      if (!state.config?.has_api_key || !state.config?.steam_id) {
+        throw new Error('Steam configuration is incomplete');
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam/library`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getLibraryPreview();
+          }
+          throw new Error('Failed to fetch Steam library');
+        }
+
+        return await response.json();
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get library preview';
+        throw new Error(errorMessage);
+      }
     },
 
   };
