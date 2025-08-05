@@ -148,31 +148,3 @@ class VanityUrlResolveResponse(BaseModel):
     error_message: Optional[str] = Field(None, description="Error message if resolution failed")
 
 
-class SteamLibraryImportRequest(BaseModel):
-    """Request schema for Steam library import."""
-    fuzzy_threshold: float = Field(default=0.8, ge=0.0, le=1.0, description="Fuzzy matching threshold for game name matching (0.0-1.0)")
-    merge_strategy: str = Field(default="skip", pattern="^(skip|add_platforms)$", description="How to handle games already in collection")
-
-
-class SteamGameImportResult(BaseModel):
-    """Result schema for individual Steam game import."""
-    steam_appid: int = Field(..., description="Steam App ID")
-    steam_name: str = Field(..., description="Game name from Steam")
-    status: str = Field(..., description="Import status: 'imported', 'skipped', 'failed', 'no_match'")
-    reason: Optional[str] = Field(None, description="Reason for skip/failure")
-    matched_game_id: Optional[str] = Field(None, description="ID of matched game in database")
-    matched_game_title: Optional[str] = Field(None, description="Title of matched game")
-    detected_platforms: list[str] = Field(default_factory=list, description="Platforms detected from Steam data")
-    match_score: Optional[float] = Field(None, description="Fuzzy match score if applicable")
-
-
-class SteamLibraryImportResponse(BaseModel):
-    """Response schema for Steam library import operation."""
-    total_games: int = Field(..., description="Total games in Steam library")
-    imported_count: int = Field(..., description="Number of games successfully imported")
-    skipped_count: int = Field(..., description="Number of games skipped (already in collection)")
-    failed_count: int = Field(..., description="Number of games that failed to import")
-    no_match_count: int = Field(..., description="Number of games with no IGDB match found")
-    platform_breakdown: dict[str, int] = Field(default_factory=dict, description="Count of games per detected platform")
-    results: list[SteamGameImportResult] = Field(..., description="Detailed results for each game")
-    import_summary: str = Field(..., description="Human-readable summary of import results")

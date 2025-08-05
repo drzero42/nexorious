@@ -338,14 +338,14 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Priority**: P0 (Critical) - **MUST BE COMPLETED BEFORE NEW STEAM IMPLEMENTATION**
 
 ##### 2.2.0.1 Backend Cleanup Tasks
-- [ ] Remove direct Steam library import endpoint (`POST /api/steam/import-library`) from `steam_config.py` (lines 425-632)
-- [ ] Remove `SteamLibraryImportRequest`, `SteamLibraryImportResponse`, and `SteamGameImportResult` schemas from `api/schemas/steam.py`
-- [ ] Remove `_find_best_game_match()` function from `steam_config.py` (will be replaced by two-phase matching system)
-- [ ] Keep Steam configuration endpoints (`/config`, `/verify`, `/resolve-vanity`, `/library`) - these will be used by new system
-- [ ] Update Steam service in `services/steam.py` to remove any direct import logic while preserving API communication methods
-- [ ] Remove or update tests for direct import functionality in `test_steam_library_import.py`
-- [ ] Update remaining Steam tests to focus on configuration and API communication only
-- [ ] Remove import-related error handling and response models that won't be used in background processing system
+- [x] Remove direct Steam library import endpoint (`POST /api/steam/import-library`) from `steam_config.py` (lines 425-632)
+- [x] Remove `SteamLibraryImportRequest`, `SteamLibraryImportResponse`, and `SteamGameImportResult` schemas from `api/schemas/steam.py`
+- [x] Remove `_find_best_game_match()` function from `steam_config.py` (will be replaced by two-phase matching system)
+- [x] Keep Steam configuration endpoints (`/config`, `/verify`, `/resolve-vanity`, `/library`) - these will be used by new system
+- [x] Update Steam service in `services/steam.py` to remove any direct import logic while preserving API communication methods
+- [x] Remove or update tests for direct import functionality in `test_steam_library_import.py`
+- [x] Update remaining Steam tests to focus on configuration and API communication only
+- [x] Remove import-related error handling and response models that won't be used in background processing system
 
 ##### 2.2.0.2 Frontend Cleanup Tasks  
 - [ ] Remove `/settings/steam/import/+page.svelte` (current direct import interface)
@@ -364,10 +364,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Test migration on both PostgreSQL and SQLite databases
 
 ##### 2.2.0.4 Cleanup Validation
-- [ ] Verify Steam configuration endpoints still work after cleanup
-- [ ] Ensure Steam library preview functionality (`GET /api/steam/library`) remains functional
-- [ ] Confirm Steam API service methods for authentication and library retrieval are preserved
-- [ ] Test that all existing Steam configuration tests pass after cleanup
+- [x] Verify Steam configuration endpoints still work after cleanup
+- [x] Ensure Steam library preview functionality (`GET /api/steam/library`) remains functional
+- [x] Confirm Steam API service methods for authentication and library retrieval are preserved
+- [x] Test that all existing Steam configuration tests pass after cleanup
 - [ ] Validate that frontend Steam configuration UI works without import functionality
 - [ ] Document which Steam functionality is temporarily disabled pending new implementation
 
