@@ -333,10 +333,104 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Update main project documentation with CSV import testing section
 
 ### 2.2 Steam API Integration
-- [x] Steam Web API authentication
-- [x] Library import functionality
 
-#### 2.2.3 Steam Configuration Interface
+#### 2.2.0 Current Steam Implementation Cleanup
+**Priority**: P0 (Critical) - **MUST BE COMPLETED BEFORE NEW STEAM IMPLEMENTATION**
+
+##### 2.2.0.1 Backend Cleanup Tasks
+- [ ] Remove direct Steam library import endpoint (`POST /api/steam/import-library`) from `steam_config.py` (lines 425-632)
+- [ ] Remove `SteamLibraryImportRequest`, `SteamLibraryImportResponse`, and `SteamGameImportResult` schemas from `api/schemas/steam.py`
+- [ ] Remove `_find_best_game_match()` function from `steam_config.py` (will be replaced by two-phase matching system)
+- [ ] Keep Steam configuration endpoints (`/config`, `/verify`, `/resolve-vanity`, `/library`) - these will be used by new system
+- [ ] Update Steam service in `services/steam.py` to remove any direct import logic while preserving API communication methods
+- [ ] Remove or update tests for direct import functionality in `test_steam_library_import.py`
+- [ ] Update remaining Steam tests to focus on configuration and API communication only
+- [ ] Remove import-related error handling and response models that won't be used in background processing system
+
+##### 2.2.0.2 Frontend Cleanup Tasks  
+- [ ] Remove `/settings/steam/import/+page.svelte` (current direct import interface)
+- [ ] Update Steam store (`lib/stores/steam.svelte.ts`) to remove direct import methods while keeping configuration methods
+- [ ] Remove `SteamLibraryImportRequest` and related import interfaces from store types
+- [ ] Update navigation/routing to remove references to import page
+- [ ] Remove tests for direct import UI components and workflows
+- [ ] Update Steam configuration page (`/settings/steam/+page.svelte`) to remove import functionality temporarily
+- [ ] Clean up any Steam import-related components that won't be used in new system
+
+##### 2.2.0.3 Database Schema Preparation
+- [ ] Create database migration to add `steam_appid` field to `games` table (INTEGER, nullable, for matching optimization)
+- [ ] Update Game model to include optional `steam_appid` field for efficient Steam AppID-based matching
+- [ ] Add database indexes on `steam_appid` field for fast lookup during two-phase matching process
+- [ ] Ensure existing games can be updated with Steam AppIDs during IGDB imports
+- [ ] Test migration on both PostgreSQL and SQLite databases
+
+##### 2.2.0.4 Cleanup Validation
+- [ ] Verify Steam configuration endpoints still work after cleanup
+- [ ] Ensure Steam library preview functionality (`GET /api/steam/library`) remains functional
+- [ ] Confirm Steam API service methods for authentication and library retrieval are preserved
+- [ ] Test that all existing Steam configuration tests pass after cleanup
+- [ ] Validate that frontend Steam configuration UI works without import functionality
+- [ ] Document which Steam functionality is temporarily disabled pending new implementation
+
+- [x] Steam Web API authentication
+- [x] Library import functionality (TO BE REPLACED - see cleanup tasks above)
+
+#### 2.2.1 Steam Import Job Management (Backend)
+**Priority**: P0 (Critical)
+- [ ] Create Steam import job model (`SteamImportJob`) with comprehensive status tracking
+- [ ] Add database schema for import jobs (job_id, user_id, status, created_at, updated_at, error_message)
+- [ ] Create individual Steam game status model (`SteamImportGame`) within import jobs
+- [ ] Add game status tracking (matched, awaiting_user, skipped, imported, platform_added, already_owned, import_failed)
+- [ ] Implement job status transitions (pending → processing → awaiting_review → finalizing → completed/failed)
+- [ ] Create database migration for Steam import job tables
+- [ ] Add indexes for performance on job and game status queries
+
+#### 2.2.2 Background Processing System (Backend)
+**Priority**: P0 (Critical)
+- [ ] Set up background task system (Celery or FastAPI BackgroundTasks)
+- [ ] Create Steam library retrieval service using Steam Web API
+- [ ] Implement two-phase automatic matching process:
+  - Phase 1: Check existing games in database for matching Steam AppID
+  - Phase 2: If no database match, search IGDB for exact title matches
+- [ ] Add game flagging system for manual review (no automatic match found)
+- [ ] Create intelligent duplicate prevention logic during final import
+- [ ] Implement comprehensive error handling and retry logic for Steam API failures
+- [ ] Add progress tracking with game count and percentage completion
+- [ ] Create Steam AppID storage system for future import optimization
+
+#### 2.2.3 WebSocket Infrastructure (Backend)
+**Priority**: P0 (Critical)
+- [ ] Set up WebSocket support in FastAPI backend
+- [ ] Implement WebSocket connection management with authentication
+- [ ] Create WebSocket event system for real-time updates
+- [ ] Add WebSocket event types:
+  - `import_status_change`: Phase transitions and job status updates
+  - `import_progress`: Real-time progress with game count and percentage
+  - `game_matched`: Individual game matching results with game details
+  - `game_needs_review`: Games flagged for manual review
+  - `game_imported`: New game successfully added to collection
+  - `platform_added`: Steam platform/storefront added to existing game
+  - `game_skipped`: Game already exists with Steam platform (no action)
+  - `import_complete`: Final completion with comprehensive statistics
+  - `import_error`: Error events with retry options and details
+- [ ] Add connection auto-reconnection with exponential backoff strategy
+- [ ] Implement state synchronization on reconnection
+- [ ] Create session persistence for import state across browser sessions
+
+#### 2.2.4 Steam Import API Endpoints (Backend)
+**Priority**: P0 (Critical)
+- [ ] Create Steam import job CRUD endpoints:
+  - `POST /api/steam/import` - Create new import job
+  - `GET /api/steam/import/{job_id}` - Get import job status and progress
+  - `PUT /api/steam/import/{job_id}/decision` - Submit user decisions for review games
+  - `POST /api/steam/import/{job_id}/confirm` - Confirm final import execution
+  - `DELETE /api/steam/import/{job_id}` - Cancel import job
+- [ ] Add WebSocket endpoint `/ws/steam/import/{job_id}` for real-time updates
+- [ ] Implement user decision tracking for manual review games
+- [ ] Create final import execution endpoint with duplicate prevention
+- [ ] Add comprehensive API documentation for Steam import endpoints
+- [ ] Implement proper authentication and authorization for all Steam import endpoints
+
+#### 2.2.5 Steam Configuration Interface (Frontend)
 **Priority**: P1 (High)
 - [x] Create Steam settings page/component for user Steam configuration
 - [x] Add Steam API key input form with validation and masking
@@ -345,31 +439,111 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Add Steam profile display (persona name, avatar, profile link)
 - [ ] Create Steam configuration management (view, edit, delete)
 
-#### 2.2.4 Steam Library Import Interface  
-**Priority**: P1 (High)
-- [x] Create Steam library import page/component
-- [ ] Add import configuration form (fuzzy threshold, merge strategy, platform fallback)
-- [ ] Implement Steam library preview (show games before import)
-- [ ] Add import progress indicator and real-time status updates
-- [ ] Create import results display with detailed statistics and game lists
-- [ ] Add import history and re-import functionality
-- [ ] Implement error handling and user-friendly error messages
+#### 2.2.6 Steam Import Frontend Pages & Components
+**Priority**: P0 (Critical)
+- [ ] Create `/steam/import/status/[jobId]` page for real-time import monitoring:
+  - Live progress bar showing games processed vs total with percentage
+  - Phase indicators for processing, review, finalizing phases
+  - Real-time game counter (matched, pending review, skipped)
+  - Dynamic time estimation based on processing speed
+  - WebSocket connection indicator with auto-reconnection status
+  - Cancel import option during processing phase
+- [ ] Build `/steam/import/review/[jobId]` page for interactive game matching:
+  - Game cards with rich Steam game information and cover art
+  - Real-time IGDB search interface with autocomplete suggestions
+  - Side-by-side comparison view (Steam vs IGDB game details)
+  - Batch actions for marking similar games (sequels, DLC)
+  - Progress tracking ("X of Y games reviewed") with visual indicators
+  - Auto-save functionality for every user decision
+  - Optional skip reasons categorization
+- [ ] Add `/steam/import/confirm/[jobId]` page for final confirmation:
+  - Visual breakdown of import statistics
+  - Thumbnail grid preview of games to be imported
+  - Platform badges showing which platforms/storefronts will be added
+  - Estimated storage space and processing time
+  - Option to return to review phase to modify decisions
+- [ ] Create `/steam/import/results/[jobId]` page for completion summary:
+  - Success animation with comprehensive statistics
+  - Categorized results with visual breakdown:
+    * New games imported with cover art thumbnails
+    * Platform additions to existing games with before/after indicators
+    * Games already owned (skipped) with confirmation badges
+    * Games skipped during review with reason indicators
+  - Collection impact showing before/after library size and platform distribution
+  - Quick action links to view new games, updated entries, or organize collection
+  - Share option for import results or library growth statistics
 
-#### 2.2.5 Steam Integration in Existing UI
+#### 2.2.7 WebSocket Service & State Management (Frontend)
+**Priority**: P0 (Critical)
+- [ ] Create SteamImportWebSocketService class with:
+  - Connection management with auto-reconnection
+  - Event handling for all WebSocket message types
+  - Connection health monitoring and heartbeat
+  - Exponential backoff retry strategy for lost connections
+  - Graceful degradation when WebSocket unavailable
+- [ ] Implement Svelte stores for Steam import state management:
+  - `importJobStore` - Current import job data
+  - `importProgressStore` - Real-time progress tracking
+  - `gamesReviewStore` - Games awaiting user review
+  - `websocketStore` - WebSocket connection status
+- [ ] Add WebSocket event handlers for bidirectional communication
+- [ ] Create offline handling and session persistence
+- [ ] Implement state restoration on page reload or navigation
+
+#### 2.2.8 Steam Import UI Components (Frontend)
+**Priority**: P1 (High)
+- [ ] Build `ImportStatusProgress.svelte` - Live progress bars and statistics display
+- [ ] Create `GameReviewCard.svelte` - Individual game review interface with Steam game details
+- [ ] Add `IGDBSearchWidget.svelte` - IGDB game search with autocomplete for manual matching
+- [ ] Implement `ImportSummary.svelte` - Final confirmation summary display with statistics
+- [ ] Create `WebSocketStatus.svelte` - Connection status indicator with reconnection feedback
+- [ ] Build `ImportResults.svelte` - Results display with categorized game grid
+- [ ] Add mobile-responsive design for all Steam import components
+- [ ] Implement touch-friendly interface optimized for mobile devices
+
+#### 2.2.9 Steam Integration in Existing UI
 **Priority**: P1 (High)
 - [ ] Add Steam platform/storefront badges to game cards and detail views
 - [ ] Update platform selection components to include Steam-specific logic
 - [ ] Add Steam import option to main game addition flows
 - [ ] Update user profile/settings to include Steam configuration section
 - [ ] Add Steam import status/statistics to dashboard or admin interface
+- [ ] Create Steam import history and re-import functionality
 
-#### 2.2.6 Steam Frontend Testing
+#### 2.2.10 Error Handling & UX (Frontend)
 **Priority**: P1 (High)
-- [ ] Unit tests for Steam configuration components
-- [ ] Integration tests for Steam import workflow
-- [ ] Component tests for Steam-specific UI elements
+- [ ] Implement connection loss handling - show reconnecting spinner with auto-retry
+- [ ] Add API error display with user-friendly messages and retry buttons
+- [ ] Create session timeout handling - prompt re-authentication while preserving import state
+- [ ] Add browser refresh handling - restore import state and WebSocket connection on page reload
+- [ ] Implement comprehensive error recovery with retry options and clear messaging
+- [ ] Add loading states and skeleton screens for all import phases
+
+#### 2.2.11 Steam Import Testing (Backend)
+**Priority**: P1 (High)
+- [ ] Unit tests for Steam import job model and state management
+- [ ] Unit tests for two-phase matching logic (database lookup → IGDB search)
+- [ ] Integration tests for Steam Web API integration with error handling
+- [ ] WebSocket integration tests for real-time communication
+- [ ] Background task tests for import processing workflow
+- [ ] API endpoint tests for all Steam import endpoints
+- [ ] Database tests for import job and game status tracking
+- [ ] Performance tests for large Steam library processing
+- [ ] Error scenario testing (network failures, API rate limits, Steam API errors)
+- [ ] Concurrent import tests to verify transaction safety
+
+#### 2.2.12 Steam Import Testing (Frontend)
+**Priority**: P1 (High)
+- [ ] Unit tests for Steam import WebSocket service
+- [ ] Component tests for all Steam import UI components
+- [ ] Integration tests for complete Steam import workflow
+- [ ] State management tests for Svelte stores
+- [ ] WebSocket connection and reconnection tests
+- [ ] Error handling and recovery tests
+- [ ] Mobile responsiveness tests for Steam import interfaces
 - [ ] End-to-end tests for complete Steam integration user journey
-- [ ] Error handling and validation tests for Steam forms
+- [ ] Performance tests for real-time updates and large game lists
+- [ ] Accessibility tests for Steam import interfaces (WCAG compliance)
 
 ### 2.3 Enhanced IGDB Integration
 - [ ] Improved metadata population
@@ -567,6 +741,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 2. **Authentication System** → All User-Facing Features
 3. **IGDB Integration** → Game Addition Flow
 4. **Testing Infrastructure** → All Development Phases
+5. **Steam Implementation Cleanup (2.2.0)** → New Steam Background Processing System (2.2.1+)
 
 ### External Dependencies
 - IGDB API access and rate limits
@@ -596,6 +771,11 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - Admin-created users can login with username successfully on first attempt
 - Users can add their first game within 2 minutes
 - CSV import works on first try for standard formats
+- **Steam import completes successfully with real-time progress updates**
+- **Steam library matching achieves >90% automatic matching rate (database + IGDB)**
+- **Steam import WebSocket connections remain stable throughout entire import process**
+- **Steam import review interface allows efficient manual matching of remaining games**
+- **Steam import results show clear categorization of import outcomes**
 - Core features are discoverable without documentation
 - Interface works seamlessly on desktop and mobile
 - Admin interface provides clear user management capabilities
@@ -606,10 +786,16 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - **API Rate Limits**: Implement caching and request queuing
 - **Database Migrations**: Comprehensive testing and rollback procedures
 - **Platform API Changes**: Abstraction layers and monitoring
+- **Steam API Availability**: Graceful degradation and retry logic for Steam Web API outages
+- **WebSocket Connection Failures**: Auto-reconnection with exponential backoff and state persistence
+- **Large Steam Libraries**: Performance optimization and progress chunking for users with 1000+ games
+- **Background Task Failures**: Robust error handling and resume capability for interrupted imports
+- **Concurrent Import Jobs**: Resource management and queuing to prevent system overload
 
 ### Timeline Risks
 - **Scope Creep**: Strict phase boundaries and MVP focus
 - **External Dependencies**: Fallback plans and graceful degradation
 - **Testing Delays**: Parallel development and testing approach
+- **Steam Implementation Conflicts**: Current Steam import must be fully removed before new background processing system to prevent conflicts and ensure clean implementation
 
 This breakdown provides a comprehensive roadmap for developing the Game Collection Management Service while maintaining focus on delivering a working MVP in Phase 1, then incrementally adding features in subsequent phases.
