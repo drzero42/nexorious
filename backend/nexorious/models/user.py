@@ -41,6 +41,7 @@ class User(SQLModel, table=True):
     tags: List["Tag"] = Relationship(back_populates="user")
     wishlists: List["Wishlist"] = Relationship(back_populates="user")
     import_jobs: List["ImportJob"] = Relationship(back_populates="user")
+    steam_import_jobs: List["SteamImportJob"] = Relationship(back_populates="user")
 
 
 class UserSession(SQLModel, table=True):
@@ -67,3 +68,4 @@ from .user_game import UserGame
 from .tag import Tag
 from .wishlist import Wishlist
 from .import_job import ImportJob
+from .steam_import import SteamImportJob
