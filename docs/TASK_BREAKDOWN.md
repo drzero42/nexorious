@@ -433,7 +433,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Add Steam API key input form with validation and masking
 - [x] Add Steam ID input with format validation and vanity URL resolution
 - [x] Implement Steam configuration verification UI with real-time feedback
-- [ ] Add Steam profile display (persona name, avatar, profile link)
 - [ ] Create Steam configuration management (view, edit, delete)
 
 #### 2.2.6 Steam Import Frontend Pages & Components
