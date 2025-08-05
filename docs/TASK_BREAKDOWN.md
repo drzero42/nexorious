@@ -396,10 +396,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.3 WebSocket Infrastructure (Backend)
 **Priority**: P0 (Critical)
-- [ ] Set up WebSocket support in FastAPI backend
-- [ ] Implement WebSocket connection management with authentication
-- [ ] Create WebSocket event system for real-time updates
-- [ ] Add WebSocket event types:
+- [x] Set up WebSocket support in FastAPI backend
+- [x] Implement WebSocket connection management with authentication
+- [x] Create WebSocket event system for real-time updates
+- [x] Add WebSocket event types:
   - `import_status_change`: Phase transitions and job status updates
   - `import_progress`: Real-time progress with game count and percentage
   - `game_matched`: Individual game matching results with game details
@@ -409,9 +409,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - `game_skipped`: Game already exists with Steam platform (no action)
   - `import_complete`: Final completion with comprehensive statistics
   - `import_error`: Error events with retry options and details
-- [ ] Add connection auto-reconnection with exponential backoff strategy
-- [ ] Implement state synchronization on reconnection
-- [ ] Create session persistence for import state across browser sessions
+- [x] Add connection auto-reconnection with exponential backoff strategy
+- [x] Implement state synchronization on reconnection
+- [x] Create session persistence for import state across browser sessions
 
 #### 2.2.4 Steam Import API Endpoints (Backend)
 **Priority**: P0 (Critical)
