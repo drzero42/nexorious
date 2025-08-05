@@ -421,7 +421,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - `PUT /api/steam/import/{job_id}/decision` - Submit user decisions for review games
   - `POST /api/steam/import/{job_id}/confirm` - Confirm final import execution
   - `DELETE /api/steam/import/{job_id}` - Cancel import job
-- [ ] Add WebSocket endpoint `/ws/steam/import/{job_id}` for real-time updates
+- [x] Add WebSocket endpoint `/ws/steam/import/{job_id}` for real-time updates
 - [x] Implement user decision tracking for manual review games
 - [x] Create final import execution endpoint with duplicate prevention
 - [x] Add comprehensive API documentation for Steam import endpoints
