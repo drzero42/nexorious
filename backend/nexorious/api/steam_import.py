@@ -131,6 +131,7 @@ async def create_import_job(
         
         # Start background processing
         steam_import_service = create_steam_import_service(session, igdb_service)
+        logger.debug(f"Adding background task for Steam import job {import_job.id}")
         background_tasks.add_task(
             steam_import_service.start_import_job,
             import_job.id,
@@ -139,6 +140,7 @@ async def create_import_job(
         )
         
         logger.info(f"Started background processing for import job {import_job.id}")
+        logger.debug(f"Background task queued successfully for job {import_job.id}")
         
         return SteamImportJobResponse(
             id=import_job.id,
@@ -478,9 +480,11 @@ async def websocket_steam_import(
         
         if not connection:
             # Authentication failed - connection already closed by manager
+            logger.debug(f"WebSocket authentication failed for job {job_id}")
             return
         
         logger.info(f"WebSocket connection established for job {job_id}, user {connection.user_id}")
+        logger.debug(f"WebSocket endpoint processing started for job {job_id}")
         
         # Keep connection alive and handle client messages
         try:
@@ -514,11 +518,13 @@ async def websocket_steam_import(
                 
         except WebSocketDisconnect:
             logger.info(f"WebSocket client disconnected for job {job_id}")
+            logger.debug(f"WebSocket connection closed normally for job {job_id}")
         except Exception as e:
             logger.error(f"Unexpected error in WebSocket connection for job {job_id}: {str(e)}")
             
     except Exception as e:
         logger.error(f"Error in WebSocket endpoint for job {job_id}: {str(e)}")
+        logger.debug(f"WebSocket endpoint error for job {job_id}: {str(e)}")
         try:
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Server error")
         except Exception:

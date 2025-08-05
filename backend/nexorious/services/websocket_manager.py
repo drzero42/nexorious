@@ -63,6 +63,7 @@ class WebSocketConnection:
         """Send a message to this connection."""
         try:
             await self.websocket.send_text(message.model_dump_json())
+            logger.debug(f"Message sent to connection {self.user_id}/{self.job_id}: {message.event_type}")
             return True
         except Exception as e:
             logger.error(f"Error sending message to connection {self.user_id}/{self.job_id}: {str(e)}")
@@ -150,6 +151,7 @@ class WebSocketConnectionManager:
             
             # Accept WebSocket connection
             await websocket.accept()
+            logger.debug(f"WebSocket connection accepted for job {job_id}, user {user_id}")
             
             # Create connection object
             connection = WebSocketConnection(websocket, user_id, job_id)
@@ -206,6 +208,8 @@ class WebSocketConnectionManager:
             logger.debug(f"No active connections for job {job_id}")
             return
         
+        logger.debug(f"Sending {event_type} event to {len(self.connections[job_id])} connections for job {job_id}")
+        
         message = WebSocketMessage(
             event_type=event_type,
             job_id=job_id,
@@ -224,7 +228,11 @@ class WebSocketConnectionManager:
         for connection in disconnected_connections:
             await self.disconnect(connection)
         
-        logger.debug(f"Sent {event_type} event to {len(self.connections.get(job_id, []))} connections for job {job_id}")
+        success_count = len(self.connections.get(job_id, []))
+        if disconnected_connections:
+            logger.debug(f"Sent {event_type} event to {success_count} connections for job {job_id} ({len(disconnected_connections)} failed)")
+        else:
+            logger.debug(f"Sent {event_type} event to {success_count} connections for job {job_id}")
     
     async def send_to_user(self, user_id: str, event_type: WebSocketEventType, job_id: str, data: Dict[str, Any]):
         """Send a message to all connections for a specific user."""

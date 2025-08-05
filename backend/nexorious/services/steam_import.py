@@ -60,7 +60,9 @@ class SteamImportService:
             
             # Phase 1: Retrieve Steam library
             logger.info(f"Phase 1: Retrieving Steam library for user {steam_id}")
+            logger.debug(f"Starting Steam library retrieval for job {job_id}")
             steam_games = await self._retrieve_steam_library(steam_service, steam_id)
+            logger.debug(f"Steam library retrieval completed for job {job_id}: {len(steam_games) if steam_games else 0} games found")
             
             if not steam_games:
                 await self._fail_job(job, "No games found in Steam library")
@@ -80,10 +82,14 @@ class SteamImportService:
             
             # Phase 2: Two-phase matching process
             logger.info(f"Phase 2: Starting two-phase matching for {len(steam_games)} games")
+            logger.debug(f"Beginning two-phase matching process for job {job_id}")
             await self._process_steam_games(job, steam_games)
+            logger.debug(f"Two-phase matching completed for job {job_id}")
             
             # Phase 3: Determine next status based on results
+            logger.debug(f"Determining next job status for job {job_id}")
             await self._determine_next_job_status(job)
+            logger.debug(f"Job status determination completed for job {job_id}: {job.status}")
             
             logger.info(f"Steam import job {job_id} processing completed successfully")
             
@@ -552,6 +558,7 @@ class SteamImportService:
     
     async def _emit_status_change(self, job: SteamImportJob) -> None:
         """Emit status change event via WebSocket."""
+        logger.debug(f"Emitting status change event for job {job.id}: {job.status}")
         try:
             await self.ws_manager.send_to_job(
                 job_id=job.id,
@@ -568,11 +575,13 @@ class SteamImportService:
                     "error_message": job.error_message
                 }
             )
+            logger.debug(f"Status change event sent successfully for job {job.id}")
         except Exception as e:
             logger.error(f"Error emitting status change event for job {job.id}: {str(e)}")
     
     async def _emit_progress_update(self, job: SteamImportJob) -> None:
         """Emit progress update event via WebSocket."""
+        logger.debug(f"Emitting progress update for job {job.id}: {job.processed_games}/{job.total_games}")
         try:
             progress_percentage = 0
             if job.total_games > 0:
