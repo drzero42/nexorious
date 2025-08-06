@@ -426,8 +426,23 @@ async def submit_user_decisions(
                 detail="Access denied to this import job"
             )
         
-        # Verify job status
-        if job.status != SteamImportJobStatus.AWAITING_REVIEW:
+        # Verify job status - with workaround for stuck jobs
+        if job.status == SteamImportJobStatus.AWAITING_REVIEW:
+            pass  # Status is correct
+        elif job.status == SteamImportJobStatus.PROCESSING and job.awaiting_review_games > 0:
+            # WORKAROUND: Job is stuck in PROCESSING but has games awaiting review
+            logger.warning(f"WORKAROUND - Job {job_id} is stuck in PROCESSING status but has {job.awaiting_review_games} games awaiting review")
+            logger.warning(f"Applying workaround - transitioning job to AWAITING_REVIEW")
+            
+            # Update the job status to AWAITING_REVIEW
+            job.status = SteamImportJobStatus.AWAITING_REVIEW
+            job.updated_at = datetime.now(timezone.utc)
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+            
+            logger.info(f"Workaround applied - job {job_id} transitioned from PROCESSING to AWAITING_REVIEW")
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Job {job_id} is not awaiting review (current status: {job.status})"
@@ -538,60 +553,42 @@ async def cancel_import_job(
     This endpoint allows users to cancel import jobs that are in progress.
     Cancellation is only allowed for jobs that are not yet completed or failed.
     """
-    logger.info(f"🔧 DEBUG: DELETE /steam/import/{job_id} endpoint called")
-    logger.info(f"🔧 DEBUG: User requesting cancellation: {current_user.username} (ID: {current_user.id})")
     logger.info(f"Cancelling import job {job_id}")
     
     try:
         # Get the import job
-        logger.debug(f"🔧 DEBUG: Fetching job {job_id} from database")
         job = session.get(SteamImportJob, job_id)
         if not job:
-            logger.warning(f"🔧 DEBUG: Job {job_id} not found in database")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Import job {job_id} not found"
             )
         
-        logger.debug(f"🔧 DEBUG: Job found - Status: {job.status}, User ID: {job.user_id}")
-        
         # Verify ownership
         if job.user_id != current_user.id:
-            logger.warning(f"🔧 DEBUG: Access denied - Job belongs to user {job.user_id}, request from user {current_user.id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this import job"
             )
         
-        logger.debug(f"🔧 DEBUG: User ownership verified, proceeding with cancellation")
-        
         # Cancel the job using the import service
-        logger.debug(f"🔧 DEBUG: Creating steam import service")
         steam_import_service = create_steam_import_service(session, igdb_service)
-        
-        logger.debug(f"🔧 DEBUG: Calling steam_import_service.cancel_import_job")
         await steam_import_service.cancel_import_job(job_id)
         
-        logger.info(f"🔧 DEBUG: Service call completed successfully")
         logger.info(f"Import job {job_id} cancelled successfully")
         
-        response = SuccessResponse(message="Import job cancelled successfully")
-        logger.debug(f"🔧 DEBUG: Returning success response: {response}")
-        return response
+        return SuccessResponse(message="Import job cancelled successfully")
         
-    except HTTPException as http_exc:
-        logger.error(f"🔧 DEBUG: HTTPException occurred: {http_exc.status_code} - {http_exc.detail}")
+    except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
     except SteamImportProcessingError as e:
-        logger.error(f"🔧 DEBUG: Steam import processing error: {str(e)}")
         logger.error(f"Steam import processing error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"🔧 DEBUG: Unexpected error in cancel endpoint: {str(e)}", exc_info=True)
         logger.error(f"Error cancelling job {job_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -1,5 +1,7 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
+import { page } from '$app/stores';
+import { browser } from '$app/environment';
 
 // Types based on backend schemas
 export interface SteamImportJobResponse {
@@ -47,6 +49,10 @@ export interface SteamImportState {
   pollingInterval: NodeJS.Timeout | null;
   lastUpdated: Date | null;
   
+  // Route monitoring
+  routeUnsubscriber: (() => void) | null;
+  isInSteamImportSection: boolean;
+  
   // UI state
   isLoading: boolean;
   error: string | null;
@@ -58,6 +64,8 @@ const initialState: SteamImportState = {
   isPolling: false,
   pollingInterval: null,
   lastUpdated: null,
+  routeUnsubscriber: null,
+  isInSteamImportSection: false,
   isLoading: false,
   error: null
 };
@@ -71,9 +79,55 @@ function createSteamImportStore() {
     },
 
     reset() {
-      // Clean up polling
+      // Clean up polling and route monitoring
       this.stopPolling();
+      this.stopRouteMonitoring();
       state = { ...initialState };
+    },
+
+    // Route monitoring for automatic cleanup
+    isRouteInSteamImportSection(routePath: string): boolean {
+      return routePath.startsWith('/steam/import');
+    },
+
+    startRouteMonitoring(): void {
+      if (!browser || state.routeUnsubscriber) {
+        return; // Already monitoring or not in browser
+      }
+      
+      const unsubscriber = page.subscribe((pageData) => {
+        const currentPath = pageData.url?.pathname || '';
+        const isInSteamImportSection = this.isRouteInSteamImportSection(currentPath);
+        
+        // Update state
+        const wasInSteamImportSection = state.isInSteamImportSection;
+        state = { ...state, isInSteamImportSection };
+        
+        // Stop polling if we've left the Steam import section
+        if (wasInSteamImportSection && !isInSteamImportSection && state.isPolling) {
+          this.stopPolling();
+          // Also stop route monitoring since we're no longer in Steam import
+          this.stopRouteMonitoring();
+        }
+      });
+      
+      state = { ...state, routeUnsubscriber: unsubscriber };
+      
+      // Set initial state
+      if (browser && typeof window !== 'undefined') {
+        const currentPath = window.location.pathname;
+        state = { 
+          ...state, 
+          isInSteamImportSection: this.isRouteInSteamImportSection(currentPath) 
+        };
+      }
+    },
+
+    stopRouteMonitoring(): void {
+      if (state.routeUnsubscriber) {
+        state.routeUnsubscriber();
+        state = { ...state, routeUnsubscriber: null, isInSteamImportSection: false };
+      }
     },
 
     // Polling management
@@ -87,6 +141,9 @@ function createSteamImportStore() {
         // Clean up existing polling
         this.stopPolling();
 
+        // Start route monitoring to automatically stop polling when leaving Steam import section
+        this.startRouteMonitoring();
+        
         // Start polling every 3 seconds
         const pollingInterval = setInterval(async () => {
           try {
@@ -104,6 +161,7 @@ function createSteamImportStore() {
           pollingInterval,
           lastUpdated: new Date()
         };
+
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to start polling';
@@ -142,6 +200,7 @@ function createSteamImportStore() {
     // Legacy method for backward compatibility
     disconnect(): void {
       this.stopPolling();
+      this.stopRouteMonitoring();
     },
 
     // Job management methods
@@ -279,10 +338,18 @@ function createSteamImportStore() {
           }
           
           let errorData;
+          let rawErrorText;
           try {
-            errorData = await response.json();
+            rawErrorText = await response.text();
+            
+            // Try to parse as JSON
+            if (rawErrorText.trim().startsWith('{')) {
+              errorData = JSON.parse(rawErrorText);
+            } else {
+              errorData = { detail: rawErrorText };
+            }
           } catch (jsonError) {
-            errorData = {};
+            errorData = { detail: rawErrorText || 'Unknown error' };
           }
           
           const errorMessage = errorData.detail || `Failed to submit decisions (${response.status}: ${response.statusText})`;

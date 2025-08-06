@@ -32,40 +32,43 @@
     // Keep WebSocket connection for navigation between pages
   });
 
-  // Handle job status changes
-  $: {
+  // Handle job status changes - Svelte 5 effect
+  $effect(() => {
     const job = steamImport.value.currentJob;
-    if (job && job.status === 'finalizing') {
-      goto(`/steam/import/confirm/${jobId}`);
-    } else if (job && job.status === 'completed') {
-      goto(`/steam/import/results/${jobId}`);
-    } else if (job && job.status === 'failed') {
-      error = job.error_message || 'Import job failed';
+    
+    if (job) {
+      if (job.status === 'finalizing') {
+        goto(`/steam/import/confirm/${jobId}`);
+      } else if (job.status === 'completed') {
+        goto(`/steam/import/results/${jobId}`);
+      } else if (job.status === 'failed') {
+        error = job.error_message || 'Import job failed';
+      }
     }
-  }
+  });
 
-  // Get games awaiting review
-  $: awaitingReviewGames = steamImport.value.currentJob?.games?.filter(
+  // Get games awaiting review - Svelte 5 derived
+  const awaitingReviewGames = $derived(steamImport.value.currentJob?.games?.filter(
     game => game.status === 'awaiting_user'
-  ) || [];
+  ) || []);
 
-  $: reviewedGames = steamImport.value.userDecisions;
-  $: totalReviewGames = awaitingReviewGames.length;
-  $: completedReviews = Object.keys(reviewedGames).length;
-  $: allReviewsComplete = completedReviews === totalReviewGames && totalReviewGames > 0;
+  const reviewedGames = $derived(steamImport.value.userDecisions);
+  const totalReviewGames = $derived(awaitingReviewGames.length);
+  const completedReviews = $derived(Object.keys(reviewedGames).length);
+  const allReviewsComplete = $derived(completedReviews === totalReviewGames && totalReviewGames > 0);
 
   // Auto-submit when all reviews are complete (optional, can be disabled for explicit user control)
   let autoSubmitEnabled = false; // Set to true to enable auto-submission
   let hasAutoSubmitted = false;
 
-  $: {
+  $effect(() => {
     if (autoSubmitEnabled && allReviewsComplete && !isSubmitting && !hasAutoSubmitted) {
       hasAutoSubmitted = true;
       handleSubmitDecisions();
     } else if (!allReviewsComplete) {
       hasAutoSubmitted = false;
     }
-  }
+  });
 
   async function handleSubmitDecisions() {
     if (!allReviewsComplete) {
@@ -87,95 +90,78 @@
   }
 
   async function handleCancelImport() {
-    console.log('🔧 DEBUG: Cancel Import button clicked in Review page');
-    console.log('🔧 DEBUG: Current job:', steamImport.value.currentJob);
-    
     const confirmResult = confirm('Are you sure you want to cancel the Steam import? This action cannot be undone.');
-    console.log('🔧 DEBUG: User confirmation result:', confirmResult);
     
     if (!confirmResult) {
-      console.log('🔧 DEBUG: User cancelled the confirmation dialog');
       return;
     }
 
     isCancellingImport = true;
-    console.log('🔧 DEBUG: Starting cancellation process for job:', jobId);
     
     try {
-      console.log('🔧 DEBUG: Calling steamImport.cancelJob from review page');
       await steamImport.cancelJob(jobId);
-      console.log('🔧 DEBUG: Cancel job call completed successfully');
-      
       ui.showSuccess('Steam import cancelled successfully');
-      console.log('🔧 DEBUG: Success message shown, navigating to steam settings');
       
       // Navigate back to steam settings
       goto('/settings/steam');
       
     } catch (error) {
-      console.error('🔧 DEBUG: Error during import cancellation:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to cancel import';
       ui.showError(`Failed to cancel import: ${errorMessage}`);
     } finally {
       isCancellingImport = false;
-      console.log('🔧 DEBUG: isCancellingImport set to false');
     }
   }
 
   async function handleSkipAll() {
     if (confirm('Are you sure you want to skip all remaining games? They will not be imported.')) {
-      console.log('🔧 DEBUG: Skip All started');
-      console.log('🔧 DEBUG: Current reviewedGames:', reviewedGames);
-      console.log('🔧 DEBUG: Current awaitingReviewGames:', awaitingReviewGames);
-      console.log('🔧 DEBUG: Store userDecisions before:', steamImport.value.userDecisions);
-      
       isSubmitting = true;
       try {
         // Skip all remaining games
-        awaitingReviewGames.forEach((game, index) => {
+        awaitingReviewGames.forEach((game) => {
           const steamAppIdStr = game.steam_appid.toString();
-          console.log(`🔧 DEBUG: Processing game ${index + 1}/${awaitingReviewGames.length}: ${game.steam_name} (${steamAppIdStr})`);
           
           if (!reviewedGames[steamAppIdStr]) {
-            console.log(`🔧 DEBUG: Setting skip decision for ${steamAppIdStr}`);
-            steamImport.setUserDecision(steamAppIdStr, {
-              action: 'skip',
+            const decision = {
+              action: 'skip' as const,
               notes: 'Skipped via skip all'
-            });
-          } else {
-            console.log(`🔧 DEBUG: Game ${steamAppIdStr} already has decision:`, reviewedGames[steamAppIdStr]);
+            };
+            
+            steamImport.setUserDecision(steamAppIdStr, decision);
           }
         });
         
-        console.log('🔧 DEBUG: Store userDecisions after forEach:', steamImport.value.userDecisions);
-        console.log('🔧 DEBUG: Object.keys(userDecisions).length:', Object.keys(steamImport.value.userDecisions).length);
+        // Wait a tick to ensure all state updates are processed
+        await new Promise(resolve => setTimeout(resolve, 0));
         
         // Auto-submit the skip decisions
-        console.log('🔧 DEBUG: About to submit decisions:', steamImport.value.userDecisions);
-        console.log('🔧 DEBUG: JobId:', jobId);
-        console.log('🔧 DEBUG: Current job status:', steamImport.value.currentJob?.status);
-        console.log('🔧 DEBUG: Current job details:', steamImport.value.currentJob);
+        const decisionsToSubmit = steamImport.value.userDecisions;
         
-        await steamImport.submitUserDecisions(jobId, steamImport.value.userDecisions);
+        // Validate decisions object
+        if (Object.keys(decisionsToSubmit).length === 0) {
+          throw new Error('No decisions were set - this indicates a state synchronization issue');
+        }
         
-        console.log('🔧 DEBUG: Submission successful!');
+        await steamImport.submitUserDecisions(jobId, decisionsToSubmit);
+        
+        // Immediately check job status after submission
+        try {
+          await steamImport.fetchJobStatus(jobId);
+        } catch (statusError) {
+          console.error('Failed to fetch status after Skip All:', statusError);
+        }
+        
         ui.showSuccess('All remaining games skipped successfully');
         // Job status will change and trigger navigation via reactive statement
       } catch (err) {
-        console.error('🔧 DEBUG: Skip All error details:', err);
-        console.error('🔧 DEBUG: Error stack:', err instanceof Error ? err.stack : 'No stack');
-        console.error('🔧 DEBUG: Error message:', err instanceof Error ? err.message : String(err));
-        
         error = err instanceof Error ? err.message : 'Failed to skip games';
         ui.showError(error);
       } finally {
         isSubmitting = false;
-        console.log('🔧 DEBUG: Skip All completed, isSubmitting set to false');
       }
-    } else {
-      console.log('🔧 DEBUG: Skip All cancelled by user');
     }
   }
+
 </script>
 
 <svelte:head>

@@ -86,9 +86,7 @@ class SteamImportService:
             logger.debug(f"Two-phase matching completed for job {job_id}")
             
             # Phase 3: Determine next status based on results
-            logger.debug(f"Determining next job status for job {job_id}")
             await self._determine_next_job_status(job)
-            logger.debug(f"Job status determination completed for job {job_id}: {job.status}")
             
             logger.info(f"Steam import job {job_id} processing completed successfully")
             
@@ -318,11 +316,15 @@ class SteamImportService:
                 )
             ).all()
             
+            decisions_processed = 0
+            decisions_skipped = 0
+            
             for game in awaiting_games:
                 steam_appid_str = str(game.steam_appid)
                 
                 if steam_appid_str in decisions:
                     decision = decisions[steam_appid_str]
+                    
                     game.user_decision = json.dumps(decision)
                     
                     if decision.get("action") == "import":
@@ -334,12 +336,18 @@ class SteamImportService:
                                 game.matched_game_id = existing_game.id
                         job.matched_games += 1
                         job.awaiting_review_games -= 1
+                        decisions_processed += 1
                     elif decision.get("action") == "skip":
                         game.status = SteamImportGameStatus.SKIPPED
                         job.skipped_games += 1
                         job.awaiting_review_games -= 1
+                        decisions_processed += 1
                         
                         # Game skipping tracked in database, polled by frontend
+                    else:
+                        logger.warning(f"Unknown action for {steam_appid_str}: {decision.get('action')}")
+                else:
+                    decisions_skipped += 1
             
             # Save changes and update job status
             await self._save_job_changes(job)
@@ -488,40 +496,26 @@ class SteamImportService:
     
     async def cancel_import_job(self, job_id: str) -> None:
         """Cancel an import job."""
-        logger.info(f"🔧 DEBUG: SteamImportService.cancel_import_job called with job_id: {job_id}")
         logger.info(f"Cancelling import job {job_id}")
         
         try:
-            logger.debug(f"🔧 DEBUG: Fetching job {job_id} from database in service")
             job = self.session.get(SteamImportJob, job_id)
             if not job:
-                logger.error(f"🔧 DEBUG: Job {job_id} not found in service method")
                 raise SteamImportProcessingError(f"Import job {job_id} not found")
             
-            logger.debug(f"🔧 DEBUG: Job found in service - Status: {job.status}, User ID: {job.user_id}")
-            
             if job.status in [SteamImportJobStatus.COMPLETED, SteamImportJobStatus.FAILED]:
-                logger.warning(f"🔧 DEBUG: Cannot cancel job {job_id} with status {job.status}")
                 raise SteamImportProcessingError(f"Cannot cancel job {job_id} with status {job.status}")
             
-            logger.debug(f"🔧 DEBUG: Job status is valid for cancellation, updating to FAILED")
             await self._update_job_status(job, SteamImportJobStatus.FAILED)
-            
-            logger.debug(f"🔧 DEBUG: Setting error message to 'Job cancelled by user'")
             job.error_message = "Job cancelled by user"
-            
-            logger.debug(f"🔧 DEBUG: Saving job changes to database")
             await self._save_job_changes(job)
             
-            logger.info(f"🔧 DEBUG: Job {job_id} successfully cancelled in service")
             logger.info(f"Import job {job_id} cancelled successfully")
             
         except SteamImportProcessingError:
-            logger.error(f"🔧 DEBUG: SteamImportProcessingError in cancel_import_job")
             # Re-raise processing errors as-is
             raise
         except Exception as e:
-            logger.error(f"🔧 DEBUG: Unexpected error in service cancel_import_job: {str(e)}", exc_info=True)
             logger.error(f"Error cancelling job {job_id}: {str(e)}")
             raise
     
@@ -531,6 +525,9 @@ class SteamImportService:
         """Update job status and timestamp."""
         job.status = status
         job.updated_at = datetime.now(timezone.utc)
+        
+        await self._save_job_changes(job)
+        
         logger.debug(f"Updated job {job.id} status to {status}")
     
     async def _save_job_changes(self, job: SteamImportJob) -> None:
