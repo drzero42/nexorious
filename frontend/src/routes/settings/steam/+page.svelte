@@ -5,25 +5,25 @@
   import type { SteamUserInfo } from '$lib/stores';
 
   // Form state
-  let webApiKey = '';
-  let steamId = '';
-  let vanityUrl = '';
-  let showApiKey = false;
-  let isSubmitting = false;
-  let isDeleting = false;
+  let webApiKey = $state('');
+  let steamId = $state('');
+  let vanityUrl = $state('');
+  let showApiKey = $state(false);
+  let isSubmitting = $state(false);
+  let isDeleting = $state(false);
 
   // Validation state
-  let apiKeyError = '';
-  let steamIdError = '';
-  let formError = '';
+  let apiKeyError = $state('');
+  let steamIdError = $state('');
+  let formError = $state('');
 
   // State for vanity URL resolution
-  let showVanityResolver = false;
+  let showVanityResolver = $state(false);
 
   // State for Steam import functionality
-  let isStartingImport = false;
-  let isPreviewingLibrary = false;
-  let libraryPreview: any = null;
+  let isStartingImport = $state(false);
+  let isPreviewingLibrary = $state(false);
+  let libraryPreview: any = $state(null);
 
   onMount(async () => {
     try {
@@ -38,9 +38,9 @@
     }
   });
 
-  // Reactive validation
-  $: validateApiKey(webApiKey);
-  $: validateSteamId(steamId);
+  // Reactive validation using Svelte 5 $effect
+  $effect(() => validateApiKey(webApiKey));
+  $effect(() => validateSteamId(steamId));
 
   function validateApiKey(key: string) {
     apiKeyError = '';
@@ -173,11 +173,12 @@
     }
   }
 
-  // Get current config for display
-  $: currentConfig = steam.value.config;
-  $: hasConfig = currentConfig?.has_api_key;
-  $: verificationResult = steam.value.verificationResult;
-  $: steamUserInfo = verificationResult?.steam_user_info as SteamUserInfo | undefined;
+  // Get current config for display using Svelte 5 $derived for proper reactivity
+  const currentConfig = $derived(steam.value.config);
+  const hasConfig = $derived(currentConfig?.has_api_key);
+  const verificationResult = $derived(steam.value.verificationResult);
+  const steamUserInfo = $derived(verificationResult?.steam_user_info as SteamUserInfo | undefined);
+
 </script>
 
 <svelte:head>
@@ -254,7 +255,7 @@
 
           <div class="pt-4 flex space-x-3">
             <button
-              on:click={handleDelete}
+              onclick={handleDelete}
               disabled={isDeleting}
               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -302,7 +303,7 @@
           />
           <button
             type="button"
-            on:click={() => showApiKey = !showApiKey}
+            onclick={() => showApiKey = !showApiKey}
             class="absolute inset-y-0 right-0 flex items-center pr-3"
             aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
           >
@@ -329,7 +330,7 @@
           <label for="steamId" class="form-label">Steam ID (Optional)</label>
           <button
             type="button"
-            on:click={() => showVanityResolver = !showVanityResolver}
+            onclick={() => showVanityResolver = !showVanityResolver}
             class="text-sm text-primary-600 hover:text-primary-500"
           >
             {showVanityResolver ? 'Hide' : 'Resolve from vanity URL'}
@@ -347,7 +348,7 @@
               />
               <button
                 type="button"
-                on:click={handleResolveVanity}
+                onclick={handleResolveVanity}
                 disabled={steam.value.isResolvingVanity || !vanityUrl.trim()}
                 class="btn-secondary text-sm disabled:opacity-50"
               >
@@ -397,7 +398,7 @@
             </div>
             <button
               type="button"
-              on:click={handleVerify}
+              onclick={handleVerify}
               disabled={steam.value.isVerifying}
               class="btn-primary text-sm disabled:opacity-50"
             >
@@ -474,7 +475,7 @@
       <!-- Action Buttons -->
       <div class="flex space-x-3">
         <button
-          on:click={handleSave}
+          onclick={handleSave}
           disabled={!webApiKey || !!apiKeyError || (steamId && !!steamIdError) || isSubmitting}
           class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -492,7 +493,7 @@
         {#if verificationResult}
           <button
             type="button"
-            on:click={clearVerification}
+            onclick={clearVerification}
             class="btn-secondary"
           >
             Clear Verification
@@ -533,7 +534,7 @@
           <!-- Import Actions -->
           <div class="flex flex-col sm:flex-row gap-4">
             <button
-              on:click={handleStartImport}
+              onclick={handleStartImport}
               disabled={isStartingImport}
               class="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -552,7 +553,7 @@
             </button>
 
             <button
-              on:click={handlePreviewLibrary}
+              onclick={handlePreviewLibrary}
               disabled={isPreviewingLibrary}
               class="flex-1 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
             >
