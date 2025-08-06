@@ -28,7 +28,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-# Add the parent directory to the path so we can import nexorious modules
+# Add the parent directory to the path so we can import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.darkadia.parser import DarkadiaCSVParser

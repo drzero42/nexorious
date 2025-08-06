@@ -5,7 +5,7 @@ API dependencies for dependency injection.
 from typing import Generator
 from functools import lru_cache
 
-from nexorious.services.igdb import IGDBService
+from app.services.igdb import IGDBService
 
 
 @lru_cache()

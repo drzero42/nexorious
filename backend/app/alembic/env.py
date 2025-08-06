@@ -10,11 +10,11 @@ from alembic import context
 # Add the backend directory to the Python path so we can import our models
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from nexorious.core.config import settings
+from app.core.config import settings
 from sqlmodel import SQLModel
 
 # Import all models to ensure they are registered with SQLModel
-from nexorious.models import *
+from app.models import *
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

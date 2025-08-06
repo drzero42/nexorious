@@ -352,7 +352,7 @@ class TestSeedDataEdgeCases:
             if platform.source == "official":
                 assert platform.version_added == "1.0.0"
     
-    @patch('nexorious.seed_data.seeder.logger')
+    @patch('app.seed_data.seeder.logger')
     def test_logging_output(self, mock_logger, session: Session):
         """Test that appropriate logging occurs during seeding."""
         seed_all_official_data(session, "1.0.0")

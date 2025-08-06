@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import httpx
 from rapidfuzz import fuzz, process
 
-from nexorious.utils.rate_limiter import (
+from app.utils.rate_limiter import (
     RateLimitConfig, 
     RateLimitedClient, 
     TokenBucketRateLimiter,

@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from nexorious.services.steam import (
+from app.services.steam import (
     SteamService, 
     create_steam_service,
     SteamAPIError,
@@ -14,7 +14,7 @@ from nexorious.services.steam import (
     SteamUserInfo,
     SteamGame
 )
-from nexorious.utils.rate_limiter import RateLimitExceeded
+from app.utils.rate_limiter import RateLimitExceeded
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def steam_service():
 @pytest.fixture
 def mock_rate_limiter():
     """Mock rate limiter for testing."""
-    with patch('nexorious.services.steam.RateLimitedClient') as mock:
+    with patch('app.services.steam.RateLimitedClient') as mock:
         yield mock
 
 

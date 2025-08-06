@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-from nexorious.main import app
-from nexorious.core.database import get_session
-from nexorious.core.security import get_current_user
-from nexorious.api.dependencies import get_igdb_service_dependency
-from nexorious.services.igdb import GameMetadata, IGDBService, IGDB_PLATFORM_MAPPING
-from nexorious.models.game import Game
+from app.main import app
+from app.core.database import get_session
+from app.core.security import get_current_user
+from app.api.dependencies import get_igdb_service_dependency
+from app.services.igdb import GameMetadata, IGDBService, IGDB_PLATFORM_MAPPING
+from app.models.game import Game
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def client():
 
 def get_mock_user():
     """Create a mock user for testing."""
-    from nexorious.models.user import User
+    from app.models.user import User
     return User(
         id="test-user-id",
         username="testuser",

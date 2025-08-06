@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 import json
 
-from nexorious.models.user import User
-from nexorious.services.steam import SteamUserInfo, SteamAuthenticationError, SteamAPIError
-from nexorious.tests.integration_test_utils import (
+from app.models.user import User
+from app.services.steam import SteamUserInfo, SteamAuthenticationError, SteamAPIError
+from app.tests.integration_test_utils import (
     client_fixture as client,
     session_fixture as session,
     test_user_fixture as test_user,
@@ -23,7 +23,7 @@ from nexorious.tests.integration_test_utils import (
 @pytest.fixture
 def mock_steam_service():
     """Mock Steam service for testing."""
-    with patch('nexorious.api.steam_config.create_steam_service') as mock:
+    with patch('app.api.steam_config.create_steam_service') as mock:
         yield mock
 
 
@@ -221,7 +221,7 @@ class TestSteamConfigHelpers:
 
     def test_mask_api_key(self):
         """Test API key masking function."""
-        from nexorious.api.steam_config import _mask_api_key
+        from app.api.steam_config import _mask_api_key
         
         api_key = "ABCDEF1234567890ABCDEF1234567890"
         masked = _mask_api_key(api_key)
@@ -230,7 +230,7 @@ class TestSteamConfigHelpers:
 
     def test_mask_api_key_short(self):
         """Test API key masking with short key."""
-        from nexorious.api.steam_config import _mask_api_key
+        from app.api.steam_config import _mask_api_key
         
         api_key = "SHORT"
         masked = _mask_api_key(api_key)

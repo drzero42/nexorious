@@ -21,12 +21,12 @@ uv run alembic upgrade head
 
 4. Start the development server:
 ```bash
-uv run python -m nexorious.main
+uv run python -m app.main
 ```
 
 Or use uvicorn directly:
 ```bash
-uv run uvicorn nexorious.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 ## API Documentation
@@ -52,7 +52,7 @@ uv run pytest -v
 
 Run tests for a specific file:
 ```bash
-uv run pytest nexorious/tests/test_business_logic.py
+uv run pytest app/tests/test_business_logic.py
 ```
 
 ### Coverage Analysis
@@ -60,16 +60,16 @@ uv run pytest nexorious/tests/test_business_logic.py
 Run tests with coverage analysis:
 ```bash
 # Basic coverage with terminal output
-uv run pytest --cov=nexorious
+uv run pytest --cov=app
 
 # Coverage with missing lines highlighted
-uv run pytest --cov=nexorious --cov-report=term-missing
+uv run pytest --cov=app --cov-report=term-missing
 
 # Generate HTML coverage report
-uv run pytest --cov=nexorious --cov-report=html
+uv run pytest --cov=app --cov-report=html
 
 # Both terminal and HTML reports
-uv run pytest --cov=nexorious --cov-report=term-missing --cov-report=html
+uv run pytest --cov=app --cov-report=term-missing --cov-report=html
 ```
 
 ### Focused Coverage
@@ -77,10 +77,10 @@ uv run pytest --cov=nexorious --cov-report=term-missing --cov-report=html
 Run coverage for specific modules:
 ```bash
 # Business logic coverage
-uv run pytest nexorious/tests/test_business_logic.py --cov=nexorious.api.games --cov=nexorious.services.igdb --cov=nexorious.services.storage --cov-report=term-missing
+uv run pytest app/tests/test_business_logic.py --cov=app.api.games --cov=app.services.igdb --cov=app.services.storage --cov-report=term-missing
 
 # API endpoints coverage
-uv run pytest nexorious/tests/test_auth_register.py --cov=nexorious.api.auth --cov-report=term-missing
+uv run pytest app/tests/test_auth_register.py --cov=app.api.auth --cov-report=term-missing
 ```
 
 ### Coverage Reports
@@ -133,7 +133,7 @@ You can monitor rate limiter status programmatically:
 
 ```python
 # In your code
-from nexorious.services.igdb import IGDBService
+from app.services.igdb import IGDBService
 
 async with IGDBService() as igdb:
     status = igdb.get_rate_limiter_status()
@@ -164,22 +164,22 @@ For recovery, updates, or troubleshooting, you can manually manage seed data usi
 
 Load all official seed data:
 ```bash
-uv run python -m nexorious.seed_data.cli
+uv run python -m app.seed_data.cli
 ```
 
 Check for potential conflicts before seeding:
 ```bash
-uv run python -m nexorious.seed_data.cli --check-conflicts
+uv run python -m app.seed_data.cli --check-conflicts
 ```
 
 Force seeding (skip conflict prompts):
 ```bash
-uv run python -m nexorious.seed_data.cli --force
+uv run python -m app.seed_data.cli --force
 ```
 
 Load seed data with version tracking:
 ```bash
-uv run python -m nexorious.seed_data.cli --version "2.0.0"
+uv run python -m app.seed_data.cli --version "2.0.0"
 ```
 
 #### Conflict Resolution
