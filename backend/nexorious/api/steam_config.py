@@ -40,20 +40,31 @@ def _get_user_steam_config(user: User) -> dict:
     """Get user's Steam configuration from preferences."""
     try:
         preferences = user.preferences
-        return preferences.get("steam", {})
-    except (json.JSONDecodeError, TypeError):
+        steam_config = preferences.get("steam", {})
+        logger.debug(f"Retrieved Steam config for user {user.id}: has_api_key={bool(steam_config.get('web_api_key'))}, has_steam_id={bool(steam_config.get('steam_id'))}, is_verified={steam_config.get('is_verified', False)}")
+        return steam_config
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Error parsing preferences for user {user.id}: {str(e)}")
         return {}
 
 
 def _update_user_steam_config(user: User, session: Session, steam_config: dict) -> None:
     """Update user's Steam configuration in preferences."""
     try:
+        logger.debug(f"Starting Steam config update for user {user.id}")
         preferences = user.preferences.copy()
+        
         preferences["steam"] = steam_config
         user.preferences_json = json.dumps(preferences)
         user.updated_at = datetime.now(timezone.utc)
+        
+        logger.debug(f"About to commit Steam config changes for user {user.id}")
+        session.add(user)  # Explicitly add user to session
         session.commit()
+        logger.debug(f"Database commit completed for user {user.id}")
+        
         session.refresh(user)
+        logger.debug(f"User refreshed from database for user {user.id}")
     except Exception as e:
         logger.error(f"Error updating Steam config for user {user.id}: {str(e)}")
         raise HTTPException(
@@ -67,7 +78,9 @@ async def get_steam_config(
     current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get current user's Steam configuration (without exposing full API key)."""
+    logger.debug(f"GET /api/steam/config called for user {current_user.id} ({current_user.username})")
     steam_config = _get_user_steam_config(current_user)
+    logger.debug(f"Raw preferences_json for user {current_user.id}: {current_user.preferences_json[:100] + '...' if len(current_user.preferences_json) > 100 else current_user.preferences_json}")
     
     has_api_key = bool(steam_config.get("web_api_key"))
     api_key_masked = None
@@ -91,6 +104,8 @@ async def set_steam_config(
     session: Annotated[Session, Depends(get_session)]
 ):
     """Set or update user's Steam Web API configuration."""
+    logger.debug(f"Steam config save requested for user {current_user.id} ({current_user.username})")
+    logger.debug(f"API key provided: {bool(config_data.web_api_key)}, Steam ID: {config_data.steam_id}")
     
     # Verify the API key is valid before saving
     try:
@@ -127,7 +142,9 @@ async def set_steam_config(
             "configured_at": datetime.now(timezone.utc).isoformat()
         }
         
+        logger.debug(f"Saving Steam config to database for user {current_user.id}")
         _update_user_steam_config(current_user, session, steam_config)
+        logger.debug(f"Steam config saved successfully for user {current_user.id}")
         
         logger.info(f"Steam configuration updated for user {current_user.id}")
         
@@ -166,6 +183,7 @@ async def delete_steam_config(
     session: Annotated[Session, Depends(get_session)]
 ):
     """Remove user's Steam Web API configuration."""
+    logger.debug(f"DELETE /api/steam/config called for user {current_user.id} ({current_user.username})")
     
     try:
         # Update user preferences to remove Steam configuration

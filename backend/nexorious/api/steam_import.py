@@ -7,7 +7,7 @@ import logging
 from typing import Annotated, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from sqlmodel import Session, select, and_
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from ..core.database import get_session
 from ..core.security import get_current_user
@@ -71,6 +71,58 @@ def _validate_steam_config(steam_config: dict) -> tuple[str, str]:
     return steam_config["web_api_key"], steam_config["steam_id"]
 
 
+def _cleanup_stale_jobs(session: Session, user_id: str, stale_hours: int = 2) -> int:
+    """
+    Clean up stale Steam import jobs that have been stuck in active states.
+    
+    Jobs are considered stale if they've been in PENDING, PROCESSING, AWAITING_REVIEW,
+    or FINALIZING status for more than the specified number of hours.
+    
+    Args:
+        session: Database session
+        user_id: User ID to clean up jobs for
+        stale_hours: Number of hours after which jobs are considered stale
+        
+    Returns:
+        Number of jobs cleaned up
+    """
+    stale_threshold = datetime.now(timezone.utc) - timedelta(hours=stale_hours)
+    logger.debug(f"Looking for jobs older than {stale_threshold} for user {user_id}")
+    
+    # Find stale jobs for this user
+    stale_jobs = session.exec(
+        select(SteamImportJob).where(
+            and_(
+                SteamImportJob.user_id == user_id,
+                SteamImportJob.status.in_([
+                    SteamImportJobStatus.PENDING,
+                    SteamImportJobStatus.PROCESSING,
+                    SteamImportJobStatus.AWAITING_REVIEW,
+                    SteamImportJobStatus.FINALIZING
+                ]),
+                SteamImportJob.updated_at < stale_threshold
+            )
+        )
+    ).all()
+    
+    cleaned_count = 0
+    for job in stale_jobs:
+        logger.debug(f"Cleaning up stale job {job.id} (status: {job.status}, updated: {job.updated_at})")
+        job.status = SteamImportJobStatus.FAILED
+        job.error_message = f"Job timed out after {stale_hours} hours in {job.status} status"
+        job.updated_at = datetime.now(timezone.utc)
+        session.add(job)
+        cleaned_count += 1
+    
+    if cleaned_count > 0:
+        session.commit()
+        logger.info(f"Cleaned up {cleaned_count} stale Steam import jobs for user {user_id}")
+    else:
+        logger.debug(f"No stale jobs found requiring cleanup for user {user_id}")
+    
+    return cleaned_count
+
+
 @router.post("/", response_model=SteamImportJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_import_job(
     request: SteamImportJobCreateRequest,
@@ -96,26 +148,46 @@ async def create_import_job(
         steam_config = _get_user_steam_config(current_user)
         api_key, steam_id = _validate_steam_config(steam_config)
         
+        # Clean up any stale jobs before checking for active ones
+        logger.debug(f"Checking for stale jobs for user {current_user.username}")
+        cleaned_jobs = _cleanup_stale_jobs(session, current_user.id)
+        if cleaned_jobs > 0:
+            logger.debug(f"Cleaned up {cleaned_jobs} stale jobs for user {current_user.username}")
+        else:
+            logger.debug(f"No stale jobs found for user {current_user.username}")
+        
         # Check for existing active import jobs
+        active_statuses = [
+            SteamImportJobStatus.PENDING,
+            SteamImportJobStatus.PROCESSING,
+            SteamImportJobStatus.AWAITING_REVIEW,
+            SteamImportJobStatus.FINALIZING
+        ]
+        logger.debug(f"Checking for existing active jobs for user {current_user.id} with statuses: {[s.value for s in active_statuses]}")
+        
         existing_job = session.exec(
             select(SteamImportJob).where(
                 and_(
                     SteamImportJob.user_id == current_user.id,
-                    SteamImportJob.status.in_([
-                        SteamImportJobStatus.PENDING,
-                        SteamImportJobStatus.PROCESSING,
-                        SteamImportJobStatus.AWAITING_REVIEW,
-                        SteamImportJobStatus.FINALIZING
-                    ])
+                    SteamImportJob.status.in_(active_statuses)
                 )
             )
         ).first()
         
         if existing_job:
+            logger.debug(f"Found existing active job blocking new import:")
+            logger.debug(f"  Job ID: {existing_job.id}")
+            logger.debug(f"  Status: {existing_job.status}")
+            logger.debug(f"  Created: {existing_job.created_at}")
+            logger.debug(f"  Updated: {existing_job.updated_at}")
+            logger.debug(f"  User ID: {existing_job.user_id}")
+            logger.error(f"Returning 409 error - Active import job {existing_job.id} (status: {existing_job.status}) exists for user {current_user.username}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Active import job already exists: {existing_job.id}"
             )
+        
+        logger.debug(f"No existing active jobs found for user {current_user.username} - proceeding with new job creation")
         
         # Create new import job
         import_job = SteamImportJob(

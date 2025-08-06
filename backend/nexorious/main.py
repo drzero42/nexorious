@@ -75,9 +75,10 @@ app.include_router(steam_router, prefix="/api")
 app.include_router(steam_import_router, prefix="/api")
 
 # Mount static files for cover art
-cover_art_path = os.path.join(settings.storage_path, "cover_art")
-os.makedirs(cover_art_path, exist_ok=True)
-app.mount("/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art")
+if settings.storage_path:
+    cover_art_path = os.path.join(settings.storage_path, "cover_art")
+    os.makedirs(cover_art_path, exist_ok=True)
+    app.mount("/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art")
 
 # Mount static files for logos
 logos_path = "static/logos"
