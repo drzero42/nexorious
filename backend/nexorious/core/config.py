@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
     
     # Database
-    database_url: Optional[str] = Field(
+    database_url: str = Field(
         default="sqlite:///./nexorious.db",
         description="Database URL. Use sqlite:///./nexorious.db for SQLite or postgresql://user:pass@localhost/db for PostgreSQL"
     )
