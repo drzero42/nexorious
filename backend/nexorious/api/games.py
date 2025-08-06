@@ -5,6 +5,7 @@ Game management endpoints for CRUD operations and metadata handling.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, or_, and_, func, col
 from datetime import datetime, timezone, date
+from decimal import Decimal
 import json
 import re
 import logging
@@ -145,7 +146,7 @@ async def list_games(
         filters.append(col(Game.publisher).icontains(publisher))
     
     if release_year:
-        filters.append(func.extract('year', Game.release_date) == release_year)
+        filters.append(func.extract('year', col(Game.release_date)) == release_year)
     
     
     if fuzzy_search_mode:
@@ -154,9 +155,11 @@ async def list_games(
             query = query.where(and_(*filters))
         
         # Get all games matching non-text filters
-        all_games = session.exec(query).all()
+        all_games = list(session.exec(query).all())
         
         # Apply fuzzy matching
+        assert q is not None, "q should not be None in fuzzy search mode"
+        assert fuzzy_threshold is not None, "fuzzy_threshold should not be None in fuzzy search mode"
         fuzzy_games = _rank_games_by_fuzzy_match(all_games, q, fuzzy_threshold)
         
         # Apply pagination to fuzzy results
@@ -168,7 +171,7 @@ async def list_games(
         pages = (total + per_page - 1) // per_page
         
         return GameListResponse(
-            games=games,
+            games=[GameResponse.model_validate(game) for game in games],
             total=total,
             page=page,
             per_page=per_page,
@@ -180,7 +183,7 @@ async def list_games(
             query = query.where(and_(*filters))
         
         # Apply sorting
-        sort_field = getattr(Game, sort_by, Game.title)
+        sort_field = col(getattr(Game, sort_by or "title", Game.title))
         if sort_order == "desc":
             query = query.order_by(sort_field.desc())
         else:
@@ -198,7 +201,7 @@ async def list_games(
         pages = (total + per_page - 1) // per_page
         
         return GameListResponse(
-            games=games,
+            games=[GameResponse.model_validate(game) for game in games],
             total=total,
             page=page,
             per_page=per_page,
@@ -228,7 +231,7 @@ async def get_game(
     
     # Convert to response format
     game_response = GameResponse.model_validate(game)
-    game_response.aliases = aliases
+    game_response.aliases = [GameAliasResponse.model_validate(alias) for alias in aliases]
     
     return game_response
 
@@ -374,7 +377,7 @@ async def search_igdb(
                 igdb_id=metadata.igdb_id,
                 igdb_slug=metadata.igdb_slug,
                 title=metadata.title,
-                release_date=metadata.release_date,
+                release_date=parse_date_string(metadata.release_date),
                 cover_art_url=metadata.cover_art_url,
                 description=metadata.description,
                 platforms=platforms,
@@ -889,7 +892,7 @@ async def bulk_metadata_operation(
                         updated_fields.append('release_date')
                     
                     if fresh_metadata.rating_average:
-                        game.rating_average = fresh_metadata.rating_average
+                        game.rating_average = Decimal(str(fresh_metadata.rating_average))
                         updated_fields.append('rating_average')
                     
                     game.rating_count = fresh_metadata.rating_count or 0
@@ -947,7 +950,7 @@ async def bulk_metadata_operation(
                         populated_fields.append('release_date')
                     
                     if updated_metadata.rating_average and not game.rating_average:
-                        game.rating_average = updated_metadata.rating_average
+                        game.rating_average = Decimal(str(updated_metadata.rating_average))
                         populated_fields.append('rating_average')
                     
                     # Populate time-to-beat fields if missing
