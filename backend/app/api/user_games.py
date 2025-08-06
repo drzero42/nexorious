@@ -135,7 +135,6 @@ async def list_user_games(
 ):
     """List user's game collection with filtering and sorting."""
     
-    logger.info("This is an INFO log message")
     # Handle limit parameter as alias for per_page
     if limit is not None:
         per_page = limit
