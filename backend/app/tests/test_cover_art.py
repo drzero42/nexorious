@@ -11,13 +11,13 @@ import os
 import tempfile
 import shutil
 
-from nexorious.main import app
-from nexorious.core.database import get_session
-from nexorious.core.security import get_current_user
-from nexorious.api.dependencies import get_igdb_service_dependency
-from nexorious.services.igdb import GameMetadata, IGDBService
-from nexorious.models.game import Game
-from nexorious.models.user import User
+from app.main import app
+from app.core.database import get_session
+from app.core.security import get_current_user
+from app.api.dependencies import get_igdb_service_dependency
+from app.services.igdb import GameMetadata, IGDBService
+from app.models.game import Game
+from app.models.user import User
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ class TestCoverArtDownload:
         """Test successful cover art download."""
         try:
             # Create a game in the test database (using the client's session)
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_game_data)
             session.add(game)
@@ -163,7 +163,7 @@ class TestCoverArtDownload:
         
         try:
             # Create a game without cover art URL in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_data)
             session.add(game)
@@ -189,7 +189,7 @@ class TestCoverArtDownload:
         """Test cover art download by admin user."""
         try:
             # Create a game in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_game_data)
             session.add(game)
@@ -215,7 +215,7 @@ class TestCoverArtDownload:
         """Test cover art download failure."""
         try:
             # Create a game in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             game = Game(**sample_game_data)
             session.add(game)
@@ -247,7 +247,7 @@ class TestBulkCoverArtDownload:
         
         try:
             # Create games in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             for i, game_id in enumerate(game_ids):
                 game = Game(
@@ -306,7 +306,7 @@ class TestBulkCoverArtDownload:
         
         try:
             # Create games in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             
             # Game 1 - already has local cover art
@@ -365,7 +365,7 @@ class TestBulkCoverArtDownload:
         
         try:
             # Create games in the test database
-            from nexorious.core.database import get_session
+            from app.core.database import get_session
             session = next(app.dependency_overrides[get_session]())
             
             # Game 1 - valid game
@@ -609,7 +609,7 @@ class TestStaticFileServing:
     
     def test_cover_art_directory_creation(self, temp_storage_dir):
         """Test that cover art directory is created automatically."""
-        with patch('nexorious.core.config.settings.storage_path', temp_storage_dir):
+        with patch('app.core.config.settings.storage_path', temp_storage_dir):
             # Create cover art directory manually since the app has already been imported
             cover_art_path = os.path.join(temp_storage_dir, "cover_art")
             os.makedirs(cover_art_path, exist_ok=True)

@@ -7,7 +7,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 import json
 
-from nexorious.services.igdb import IGDBService, GameMetadata, map_igdb_time_to_beat_to_db_fields
+from app.services.igdb import IGDBService, GameMetadata, map_igdb_time_to_beat_to_db_fields
 
 
 class TestTimeToBeatMapping:
@@ -99,7 +99,7 @@ class TestIGDBService:
     @pytest.fixture
     def igdb_service(self):
         """Create an IGDB service instance for testing."""
-        with patch('nexorious.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"

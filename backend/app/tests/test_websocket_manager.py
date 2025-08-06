@@ -8,15 +8,15 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 from fastapi import WebSocket, status
 
-from nexorious.services.websocket_manager import (
+from app.services.websocket_manager import (
     WebSocketConnectionManager,
     WebSocketConnection,
     WebSocketEventType,
     WebSocketMessage,
     get_websocket_manager
 )
-from nexorious.models.steam_import import SteamImportJob, SteamImportJobStatus
-from nexorious.models.user import User, UserSession
+from app.models.steam_import import SteamImportJob, SteamImportJobStatus
+from app.models.user import User, UserSession
 
 
 class TestWebSocketConnection:
@@ -125,8 +125,8 @@ class TestWebSocketConnectionManager:
         mock_session.exec.return_value.first.return_value = mock_user_session
         mock_session.get.side_effect = [mock_user, mock_import_job]
         
-        with patch('nexorious.services.websocket_manager.verify_token') as mock_verify_token, \
-             patch('nexorious.services.websocket_manager.hash_token') as mock_hash_token:
+        with patch('app.services.websocket_manager.verify_token') as mock_verify_token, \
+             patch('app.services.websocket_manager.hash_token') as mock_hash_token:
             
             mock_verify_token.return_value = {"sub": "user123"}
             mock_hash_token.return_value = "hashed_token"
@@ -151,7 +151,7 @@ class TestWebSocketConnectionManager:
         mock_websocket = AsyncMock(spec=WebSocket)
         mock_session = Mock()
         
-        with patch('nexorious.services.websocket_manager.verify_token') as mock_verify_token:
+        with patch('app.services.websocket_manager.verify_token') as mock_verify_token:
             mock_verify_token.side_effect = Exception("Invalid token")
             
             connection = await self.manager.authenticate_and_connect(
@@ -186,8 +186,8 @@ class TestWebSocketConnectionManager:
         mock_session.exec.return_value.first.return_value = mock_user_session
         mock_session.get.side_effect = [mock_user, mock_import_job]
         
-        with patch('nexorious.services.websocket_manager.verify_token') as mock_verify_token, \
-             patch('nexorious.services.websocket_manager.hash_token') as mock_hash_token:
+        with patch('app.services.websocket_manager.verify_token') as mock_verify_token, \
+             patch('app.services.websocket_manager.hash_token') as mock_hash_token:
             
             mock_verify_token.return_value = {"sub": "user123"}
             mock_hash_token.return_value = "hashed_token"

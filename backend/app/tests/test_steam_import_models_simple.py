@@ -5,7 +5,7 @@ Simple test for Steam import models creation and validation.
 import pytest
 from datetime import datetime, timezone
 
-from nexorious.models.steam_import import (
+from app.models.steam_import import (
     SteamImportJob,
     SteamImportGame,
     SteamImportJobStatus,

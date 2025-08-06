@@ -7,10 +7,10 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
-from nexorious.services.steam_import import SteamImportService
-from nexorious.services.websocket_manager import WebSocketEventType
-from nexorious.models.steam_import import SteamImportJob, SteamImportGame, SteamImportJobStatus, SteamImportGameStatus
-from nexorious.services.steam import SteamGame
+from app.services.steam_import import SteamImportService
+from app.services.websocket_manager import WebSocketEventType
+from app.models.steam_import import SteamImportJob, SteamImportGame, SteamImportJobStatus, SteamImportGameStatus
+from app.services.steam import SteamGame
 
 
 class TestSteamImportServiceWebSocketIntegration:
@@ -290,7 +290,7 @@ class TestSteamImportServiceWebSocketIntegration:
             SteamGame(appid=456, name="Game 2", img_icon_url="icon2.jpg")
         ]
         
-        with patch('nexorious.services.steam_import.SteamService') as mock_steam_service_class:
+        with patch('app.services.steam_import.SteamService') as mock_steam_service_class:
             mock_steam_service_class.return_value = mock_steam_service
             mock_steam_service.get_owned_games.return_value = mock_steam_games
             

@@ -7,7 +7,7 @@ import pytest
 import time
 from unittest.mock import AsyncMock, patch
 
-from nexorious.utils.rate_limiter import (
+from app.utils.rate_limiter import (
     RateLimitConfig,
     TokenBucketRateLimiter,
     RateLimitedClient,

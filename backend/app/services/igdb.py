@@ -13,9 +13,9 @@ import httpx
 from igdb.wrapper import IGDBWrapper
 from rapidfuzz import fuzz, process
 
-from nexorious.core.config import settings
-from nexorious.services.storage import storage_service
-from nexorious.utils.rate_limiter import (
+from app.core.config import settings
+from app.services.storage import storage_service
+from app.utils.rate_limiter import (
     RateLimitConfig, 
     RateLimitedClient, 
     create_igdb_rate_limiter,

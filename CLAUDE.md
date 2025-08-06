@@ -12,7 +12,7 @@ The project is a full-featured game collection management service with comprehen
 
 ### Core Directories
 - `backend/` - FastAPI Python backend with complete API implementation
-  - `nexorious/` - Main application package with API routes, models, services
+  - `app/` - Main application package with API routes, models, services
   - `alembic/` - Database migration management
   - `storage/` - File storage for cover art and uploads
   - `tests/` - Comprehensive test suite with >80% coverage
@@ -68,10 +68,10 @@ uv run alembic revision --autogenerate -m "description of changes"
 ### Development Server
 ```bash
 # Start development server with auto-reload
-uv run python -m nexorious.main
+uv run python -m app.main
 
 # Alternative using uvicorn directly
-uv run uvicorn nexorious.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 ### Testing and Quality Assurance
@@ -80,13 +80,13 @@ uv run uvicorn nexorious.main:app --reload
 uv run pytest
 
 # Run tests with coverage (target >80%)
-uv run pytest --cov=nexorious --cov-report=term-missing
+uv run pytest --cov=app --cov-report=term-missing
 
 # Generate HTML coverage report
-uv run pytest --cov=nexorious --cov-report=html
+uv run pytest --cov=app --cov-report=html
 
 # Run specific test file
-uv run pytest nexorious/tests/test_business_logic.py
+uv run pytest app/tests/test_business_logic.py
 
 # Run tests with verbose output
 uv run pytest -v
@@ -184,7 +184,7 @@ The Darkadia CSV import system has comprehensive test coverage (>90%):
 - **DOM Testing**: jsdom environment with @testing-library utilities
 
 ### Test Naming Conventions
-- Backend: `test_*.py` files in `nexorious/tests/`
+- Backend: `test_*.py` files in `app/tests/`
 - Frontend: `*.test.ts` files alongside source code (NOT starting with `+` for Svelte files)
 
 ## Standard operating procedure
@@ -218,7 +218,7 @@ These rules must always be adhered to during development.
 ### Backend Development Rules  
 - Run database migrations with `uv run alembic upgrade head` after pulling changes
 - **MANDATORY**: Run `uv run pytest` after ANY backend code changes and ensure 100% pass rate
-- **MANDATORY**: Run `uv run pytest --cov=nexorious --cov-report=term-missing` to verify test coverage meets >80% requirement
+- **MANDATORY**: Run `uv run pytest --cov=app --cov-report=term-missing` to verify test coverage meets >80% requirement
 - **CRITICAL**: All backend tests must pass - zero failures accepted
 - Always test API endpoints manually using Swagger UI at http://localhost:8000/docs
 
@@ -245,7 +245,7 @@ npm run test
 #### Backend Testing (Required After Any Backend Changes)  
 ```bash
 # Run all tests with coverage (must pass 100%)
-uv run pytest --cov=nexorious --cov-report=term-missing
+uv run pytest --cov=app --cov-report=term-missing
 
 # If any tests fail, fix them immediately before proceeding
 ```

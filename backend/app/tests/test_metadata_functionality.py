@@ -6,8 +6,8 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import date
 
-from nexorious.services.igdb import IGDBService, GameMetadata
-from nexorious.services.storage import StorageService
+from app.services.igdb import IGDBService, GameMetadata
+from app.services.storage import StorageService
 
 
 class TestIGDBMetadataService:
@@ -16,7 +16,7 @@ class TestIGDBMetadataService:
     @pytest.fixture
     def igdb_service(self):
         """Create IGDB service instance for testing."""
-        with patch('nexorious.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
@@ -184,7 +184,7 @@ class TestStorageService:
     @pytest.fixture
     def storage_service(self):
         """Create storage service instance for testing."""
-        with patch('nexorious.services.storage.settings') as mock_settings:
+        with patch('app.services.storage.settings') as mock_settings:
             mock_settings.storage_path = "/tmp/test_storage"
             
             service = StorageService()

@@ -5,7 +5,7 @@ Simple WebSocket endpoint tests that verify endpoint configuration and basic fun
 import pytest
 from fastapi.testclient import TestClient
 
-from nexorious.main import app
+from app.main import app
 
 
 class TestWebSocketEndpointConfiguration:
@@ -46,7 +46,7 @@ class TestWebSocketEndpointConfiguration:
     
     def test_websocket_manager_import(self):
         """Test that WebSocket manager can be imported successfully."""
-        from nexorious.services.websocket_manager import get_websocket_manager, WebSocketConnectionManager
+        from app.services.websocket_manager import get_websocket_manager, WebSocketConnectionManager
         
         manager = get_websocket_manager()
         assert isinstance(manager, WebSocketConnectionManager)
@@ -56,7 +56,7 @@ class TestWebSocketEndpointConfiguration:
     
     def test_websocket_event_types_import(self):
         """Test that WebSocket event types can be imported successfully."""
-        from nexorious.services.websocket_manager import WebSocketEventType
+        from app.services.websocket_manager import WebSocketEventType
         
         # Verify all expected event types exist
         expected_events = [
@@ -78,7 +78,7 @@ class TestWebSocketEndpointConfiguration:
     
     def test_steam_import_service_has_websocket_integration(self):
         """Test that Steam import service has WebSocket integration."""
-        from nexorious.services.steam_import import SteamImportService
+        from app.services.steam_import import SteamImportService
         from unittest.mock import Mock
         
         # Create a mock service instance
@@ -111,7 +111,7 @@ class TestWebSocketEndpointBasicFunctionality:
     
     def test_websocket_endpoint_path_pattern(self):
         """Test that WebSocket endpoint uses correct path pattern."""
-        from nexorious.api.steam_import import router
+        from app.api.steam_import import router
         
         # Find the WebSocket route in the router - it should be a WebSocketRoute
         websocket_routes = [route for route in router.routes if hasattr(route, 'path_regex') and 'ws' in str(route.path_regex.pattern)]
@@ -125,7 +125,7 @@ class TestWebSocketEndpointBasicFunctionality:
     def test_websocket_endpoint_import_success(self):
         """Test that WebSocket endpoint can be imported without errors."""
         try:
-            from nexorious.api.steam_import import websocket_steam_import
+            from app.api.steam_import import websocket_steam_import
             assert callable(websocket_steam_import), "WebSocket endpoint should be callable"
         except ImportError as e:
             pytest.fail(f"Failed to import WebSocket endpoint: {e}")
@@ -134,8 +134,8 @@ class TestWebSocketEndpointBasicFunctionality:
         """Test that all WebSocket dependencies are available."""
         try:
             from fastapi import WebSocket, Query
-            from nexorious.core.database import get_session
-            from nexorious.services.websocket_manager import get_websocket_manager
+            from app.core.database import get_session
+            from app.services.websocket_manager import get_websocket_manager
             
             # All imports should succeed
             assert WebSocket is not None

@@ -5,11 +5,11 @@ Tests for fuzzy search functionality in games API.
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
-from nexorious.main import app
-from nexorious.core.database import get_session
-from nexorious.models.game import Game
-from nexorious.models.user import User
-from nexorious.core.security import get_password_hash
+from app.main import app
+from app.core.database import get_session
+from app.models.game import Game
+from app.models.user import User
+from app.core.security import get_password_hash
 from .integration_test_utils import (
     client_fixture as client,
     session_fixture as session,

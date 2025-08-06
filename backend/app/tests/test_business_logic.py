@@ -6,8 +6,8 @@ Tests core utility functions, data processing, and business rules.
 import pytest
 from unittest.mock import patch
 
-from nexorious.services.igdb import IGDBService, GameMetadata
-from nexorious.services.storage import StorageService
+from app.services.igdb import IGDBService, GameMetadata
+from app.services.storage import StorageService
 
 
 class TestIGDBServiceBusinessLogic:
@@ -64,7 +64,7 @@ class TestIGDBServiceBusinessLogic:
 class TestStorageServiceBusinessLogic:
     """Test business logic in storage service."""
     
-    @patch('nexorious.services.storage.Path.mkdir')
+    @patch('app.services.storage.Path.mkdir')
     def test_ensure_directories_creation(self, mock_mkdir):
         """Test that directories are created during initialization."""
         StorageService()

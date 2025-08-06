@@ -4,7 +4,7 @@ Tests for IGDB service functionality including fuzzy matching.
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
-from nexorious.services.igdb import IGDBService, GameMetadata, TwitchAuthError, IGDBError
+from app.services.igdb import IGDBService, GameMetadata, TwitchAuthError, IGDBError
 
 
 class TestIGDBService:

@@ -8,8 +8,8 @@ import time
 from unittest.mock import AsyncMock, patch, MagicMock
 from typing import List
 
-from nexorious.services.igdb import IGDBService, IGDBError
-from nexorious.utils.rate_limiter import RateLimitConfig, RateLimitExceeded
+from app.services.igdb import IGDBService, IGDBError
+from app.utils.rate_limiter import RateLimitConfig, RateLimitExceeded
 
 
 class TestRateLimitedIGDBService:
@@ -18,7 +18,7 @@ class TestRateLimitedIGDBService:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch('nexorious.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
@@ -210,7 +210,7 @@ class TestRateLimitedIGDBService:
         )
         
         # Replace the rate limiter with a more restrictive one
-        from nexorious.utils.rate_limiter import create_igdb_rate_limiter
+        from app.utils.rate_limiter import create_igdb_rate_limiter
         igdb_service._rate_limiter = create_igdb_rate_limiter(restrictive_config)
         
         mock_wrapper = MagicMock()
@@ -236,7 +236,7 @@ class TestRateLimitedIGDBService:
             max_retries=0
         )
         
-        from nexorious.utils.rate_limiter import create_igdb_rate_limiter
+        from app.utils.rate_limiter import create_igdb_rate_limiter
         igdb_service._rate_limiter = create_igdb_rate_limiter(restrictive_config)
         
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test"}]'

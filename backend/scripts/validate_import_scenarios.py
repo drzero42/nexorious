@@ -19,10 +19,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-# Add the parent directory to the path so we can import nexorious modules
+# Add the parent directory to the path so we can import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from nexorious.core.config import settings
+from app.core.config import settings
 
 console = Console()
 
