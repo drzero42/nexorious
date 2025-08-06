@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
-  import { ImportResults, WebSocketStatus } from '$lib/components/steam';
+  import { ImportResults } from '$lib/components/steam';
   import { steamImport } from '$lib/stores/steam-import.svelte';
   import { ui } from '$lib/stores';
 
@@ -15,8 +15,8 @@
 
   onMount(async () => {
     try {
-      // Initialize the import job monitoring if not already connected
-      if (!steamImport.value.isConnected) {
+      // Initialize the import job monitoring if not already polling
+      if (!steamImport.value.isPolling) {
         await steamImport.connectToJob(jobId);
       }
       
@@ -50,7 +50,7 @@
   });
 
   onDestroy(() => {
-    // Clean up WebSocket connection when leaving results page
+    // Clean up polling when leaving results page since import is complete
     steamImport.disconnect();
   });
 
@@ -131,8 +131,7 @@
             </p>
           </div>
           
-          <!-- WebSocket Status -->
-          <WebSocketStatus />
+          <!-- Import Complete - No Status Needed -->
         </div>
       </div>
 

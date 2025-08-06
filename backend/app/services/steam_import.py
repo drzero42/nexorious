@@ -16,7 +16,7 @@ from ..models.game import Game
 from ..models.user import User
 from ..services.steam import SteamService, SteamGame, SteamAPIError, SteamAuthenticationError
 from ..services.igdb import IGDBService, GameMetadata, IGDBError
-from ..services.websocket_manager import get_websocket_manager, WebSocketEventType
+# Removed WebSocket imports - now using simple polling instead of real-time events
 from ..api.schemas.game import GameMetadataAcceptRequest
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class SteamImportService:
         """Initialize Steam import service."""
         self.session = session
         self.igdb_service = igdb_service
-        self.ws_manager = get_websocket_manager()
+        # Removed WebSocket manager - polling provides status updates instead
         logger.info("Steam import service initialized")
     
     async def start_import_job(self, job_id: str, steam_api_key: str, steam_id: str) -> None:
@@ -53,7 +53,7 @@ class SteamImportService:
             
             # Update job status to processing
             await self._update_job_status(job, SteamImportJobStatus.PROCESSING)
-            await self._emit_status_change(job)
+            # Status changes now polled by frontend instead of WebSocket events
             
             # Initialize Steam service
             steam_service = SteamService(steam_api_key)
@@ -77,7 +77,7 @@ class SteamImportService:
             await self._save_job_changes(job)
             
             # Emit progress update with total game count
-            await self._emit_progress_update(job)
+            # Progress updates now polled by frontend instead of WebSocket events
             
             # Phase 2: Two-phase matching process
             logger.info(f"Phase 2: Starting two-phase matching for {len(steam_games)} games")
@@ -145,15 +145,13 @@ class SteamImportService:
                     })
                     job.matched_games += 1
                     
-                    # Emit game matched event
-                    await self._emit_game_matched(job, steam_game, matched_game_id, match_type)
+                    # Game matching tracked in database, polled by frontend
                 else:
                     # No match found - needs user review
                     import_game.status = SteamImportGameStatus.AWAITING_USER
                     job.awaiting_review_games += 1
                     
-                    # Emit game needs review event
-                    await self._emit_game_needs_review(job, steam_game)
+                    # Game review status tracked in database, polled by frontend
                 
                 # Save the import game record
                 self.session.add(import_game)
@@ -165,7 +163,7 @@ class SteamImportService:
                 # Commit changes periodically (every 10 games)
                 if processed_count % 10 == 0:
                     await self._save_job_changes(job)
-                    await self._emit_progress_update(job)
+                    # Progress updates now polled by frontend instead of WebSocket events
                     logger.debug(f"Progress update: {processed_count}/{len(steam_games)} games processed")
                 
             except Exception as e:
@@ -184,7 +182,7 @@ class SteamImportService:
         
         # Final save of all changes
         await self._save_job_changes(job)
-        await self._emit_progress_update(job)
+        # Progress updates now polled by frontend instead of WebSocket events
         logger.info(f"Completed processing {processed_count} Steam games")
     
     async def _perform_two_phase_matching(self, steam_game: SteamGame) -> Optional[Tuple[str, str]]:
@@ -283,11 +281,11 @@ class SteamImportService:
         if job.awaiting_review_games > 0:
             # Has games that need manual review
             await self._update_job_status(job, SteamImportJobStatus.AWAITING_REVIEW)
-            await self._emit_status_change(job)
+            # Status changes now polled by frontend instead of WebSocket events
         elif job.matched_games > 0:
             # All games are matched, ready for final import
             await self._update_job_status(job, SteamImportJobStatus.FINALIZING)
-            await self._emit_status_change(job)
+            # Status changes now polled by frontend instead of WebSocket events
         else:
             # No games could be processed
             await self._fail_job(job, "No games could be matched or processed")
@@ -341,8 +339,7 @@ class SteamImportService:
                         job.skipped_games += 1
                         job.awaiting_review_games -= 1
                         
-                        # Emit game skipped event
-                        await self._emit_game_skipped(job, game)
+                        # Game skipping tracked in database, polled by frontend
             
             # Save changes and update job status
             await self._save_job_changes(job)
@@ -350,7 +347,7 @@ class SteamImportService:
             # Move to finalizing if no more games await review
             if job.awaiting_review_games == 0:
                 await self._update_job_status(job, SteamImportJobStatus.FINALIZING)
-                await self._emit_status_change(job)
+                # Status changes now polled by frontend instead of WebSocket events
             
             logger.info(f"User decisions processed for job {job_id}")
             
@@ -392,8 +389,7 @@ class SteamImportService:
                         import_game.status = SteamImportGameStatus.PLATFORM_ADDED
                         job.platform_added_games += 1
                         
-                        # Emit platform added event
-                        await self._emit_platform_added(job, import_game)
+                        # Platform additions tracked in database, polled by frontend
                     else:
                         # Import new game from IGDB
                         success = await self._import_new_game_from_igdb(import_game)
@@ -401,8 +397,7 @@ class SteamImportService:
                             import_game.status = SteamImportGameStatus.IMPORTED
                             job.imported_games += 1
                             
-                            # Emit game imported event
-                            await self._emit_game_imported(job, import_game)
+                            # Game imports tracked in database, polled by frontend
                         else:
                             import_game.status = SteamImportGameStatus.IMPORT_FAILED
                             import_game.error_message = "Failed to import game from IGDB"
@@ -417,8 +412,7 @@ class SteamImportService:
             job.completed_at = datetime.now(timezone.utc)
             await self._save_job_changes(job)
             
-            # Emit completion event
-            await self._emit_import_complete(job)
+            # Import completion tracked in database, polled by frontend
             
             logger.info(f"Final import completed for job {job_id}")
             
@@ -494,23 +488,40 @@ class SteamImportService:
     
     async def cancel_import_job(self, job_id: str) -> None:
         """Cancel an import job."""
+        logger.info(f"🔧 DEBUG: SteamImportService.cancel_import_job called with job_id: {job_id}")
         logger.info(f"Cancelling import job {job_id}")
         
         try:
+            logger.debug(f"🔧 DEBUG: Fetching job {job_id} from database in service")
             job = self.session.get(SteamImportJob, job_id)
             if not job:
+                logger.error(f"🔧 DEBUG: Job {job_id} not found in service method")
                 raise SteamImportProcessingError(f"Import job {job_id} not found")
             
+            logger.debug(f"🔧 DEBUG: Job found in service - Status: {job.status}, User ID: {job.user_id}")
+            
             if job.status in [SteamImportJobStatus.COMPLETED, SteamImportJobStatus.FAILED]:
+                logger.warning(f"🔧 DEBUG: Cannot cancel job {job_id} with status {job.status}")
                 raise SteamImportProcessingError(f"Cannot cancel job {job_id} with status {job.status}")
             
+            logger.debug(f"🔧 DEBUG: Job status is valid for cancellation, updating to FAILED")
             await self._update_job_status(job, SteamImportJobStatus.FAILED)
+            
+            logger.debug(f"🔧 DEBUG: Setting error message to 'Job cancelled by user'")
             job.error_message = "Job cancelled by user"
+            
+            logger.debug(f"🔧 DEBUG: Saving job changes to database")
             await self._save_job_changes(job)
             
+            logger.info(f"🔧 DEBUG: Job {job_id} successfully cancelled in service")
             logger.info(f"Import job {job_id} cancelled successfully")
             
+        except SteamImportProcessingError:
+            logger.error(f"🔧 DEBUG: SteamImportProcessingError in cancel_import_job")
+            # Re-raise processing errors as-is
+            raise
         except Exception as e:
+            logger.error(f"🔧 DEBUG: Unexpected error in service cancel_import_job: {str(e)}", exc_info=True)
             logger.error(f"Error cancelling job {job_id}: {str(e)}")
             raise
     
@@ -540,8 +551,7 @@ class SteamImportService:
         job.updated_at = datetime.now(timezone.utc)
         await self._save_job_changes(job)
         
-        # Emit error event
-        await self._emit_import_error(job, error_message)
+        # Import errors tracked in database, polled by frontend
         logger.error(f"Job {job.id} failed: {error_message}")
     
     async def _fail_job_by_id(self, job_id: str, error_message: str) -> None:
@@ -553,164 +563,7 @@ class SteamImportService:
         except Exception as e:
             logger.error(f"Error failing job {job_id}: {str(e)}")
     
-    # WebSocket event emission methods
-    
-    async def _emit_status_change(self, job: SteamImportJob) -> None:
-        """Emit status change event via WebSocket."""
-        logger.debug(f"Emitting status change event for job {job.id}: {job.status}")
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.IMPORT_STATUS_CHANGE,
-                data={
-                    "status": job.status.value,
-                    "total_games": job.total_games,
-                    "processed_games": job.processed_games,
-                    "matched_games": job.matched_games,
-                    "awaiting_review_games": job.awaiting_review_games,
-                    "skipped_games": job.skipped_games,
-                    "imported_games": job.imported_games,
-                    "platform_added_games": job.platform_added_games,
-                    "error_message": job.error_message
-                }
-            )
-            logger.debug(f"Status change event sent successfully for job {job.id}")
-        except Exception as e:
-            logger.error(f"Error emitting status change event for job {job.id}: {str(e)}")
-    
-    async def _emit_progress_update(self, job: SteamImportJob) -> None:
-        """Emit progress update event via WebSocket."""
-        logger.debug(f"Emitting progress update for job {job.id}: {job.processed_games}/{job.total_games}")
-        try:
-            progress_percentage = 0
-            if job.total_games > 0:
-                progress_percentage = (job.processed_games / job.total_games) * 100
-            
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.IMPORT_PROGRESS,
-                data={
-                    "total_games": job.total_games,
-                    "processed_games": job.processed_games,
-                    "matched_games": job.matched_games,
-                    "awaiting_review_games": job.awaiting_review_games,
-                    "skipped_games": job.skipped_games,
-                    "imported_games": job.imported_games,
-                    "platform_added_games": job.platform_added_games,
-                    "progress_percentage": round(progress_percentage, 2)
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting progress update event for job {job.id}: {str(e)}")
-    
-    async def _emit_game_matched(self, job: SteamImportJob, steam_game: SteamGame, matched_game_id: str, match_type: str) -> None:
-        """Emit game matched event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.GAME_MATCHED,
-                data={
-                    "steam_appid": steam_game.appid,
-                    "steam_name": steam_game.name,
-                    "matched_game_id": matched_game_id,
-                    "match_type": match_type
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting game matched event for job {job.id}: {str(e)}")
-    
-    async def _emit_game_needs_review(self, job: SteamImportJob, steam_game: SteamGame) -> None:
-        """Emit game needs review event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.GAME_NEEDS_REVIEW,
-                data={
-                    "steam_appid": steam_game.appid,
-                    "steam_name": steam_game.name
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting game needs review event for job {job.id}: {str(e)}")
-    
-    async def _emit_game_imported(self, job: SteamImportJob, import_game: SteamImportGame) -> None:
-        """Emit game imported event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.GAME_IMPORTED,
-                data={
-                    "steam_appid": import_game.steam_appid,
-                    "steam_name": import_game.steam_name,
-                    "matched_game_id": import_game.matched_game_id
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting game imported event for job {job.id}: {str(e)}")
-    
-    async def _emit_platform_added(self, job: SteamImportJob, import_game: SteamImportGame) -> None:
-        """Emit platform added event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.PLATFORM_ADDED,
-                data={
-                    "steam_appid": import_game.steam_appid,
-                    "steam_name": import_game.steam_name,
-                    "matched_game_id": import_game.matched_game_id
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting platform added event for job {job.id}: {str(e)}")
-    
-    async def _emit_game_skipped(self, job: SteamImportJob, import_game: SteamImportGame) -> None:
-        """Emit game skipped event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.GAME_SKIPPED,
-                data={
-                    "steam_appid": import_game.steam_appid,
-                    "steam_name": import_game.steam_name
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting game skipped event for job {job.id}: {str(e)}")
-    
-    async def _emit_import_complete(self, job: SteamImportJob) -> None:
-        """Emit import complete event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.IMPORT_COMPLETE,
-                data={
-                    "total_games": job.total_games,
-                    "processed_games": job.processed_games,
-                    "matched_games": job.matched_games,
-                    "skipped_games": job.skipped_games,
-                    "imported_games": job.imported_games,
-                    "platform_added_games": job.platform_added_games,
-                    "completed_at": job.completed_at.isoformat() if job.completed_at else None
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting import complete event for job {job.id}: {str(e)}")
-    
-    async def _emit_import_error(self, job: SteamImportJob, error_message: str) -> None:
-        """Emit import error event via WebSocket."""
-        try:
-            await self.ws_manager.send_to_job(
-                job_id=job.id,
-                event_type=WebSocketEventType.IMPORT_ERROR,
-                data={
-                    "error_message": error_message,
-                    "status": job.status.value,
-                    "total_games": job.total_games,
-                    "processed_games": job.processed_games
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error emitting import error event for job {job.id}: {str(e)}")
+    # WebSocket event emission methods removed - status updates now polled via REST API
 
 
 def create_steam_import_service(session: Session, igdb_service: IGDBService) -> SteamImportService:

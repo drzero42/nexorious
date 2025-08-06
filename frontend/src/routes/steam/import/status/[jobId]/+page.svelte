@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
-  import { ImportStatusProgress, WebSocketStatus } from '$lib/components/steam';
+  import { ImportStatusProgress } from '$lib/components/steam';
   import { steamImport } from '$lib/stores/steam-import.svelte';
 
   // Get job ID from route parameters
@@ -105,12 +105,30 @@
     }
   }
 
-  function handleCancel() {
-    if (confirm('Are you sure you want to cancel the Steam import? This action cannot be undone.')) {
-      steamImport.cancelJob(jobId);
-      goto('/settings/steam');
-    }
+  // Manual navigation function
+  function handleGoToReview() {
+    goto(`/steam/import/review/${jobId}`);
   }
+
+  // Check if review button should be shown
+  $: showReviewButton = (() => {
+    const job = steamImport.value.currentJob;
+    if (!job) return false;
+    
+    // Show button if status is awaiting_review
+    if (job.status === 'awaiting_review') return true;
+    
+    // Show button if processing is complete and there are games awaiting review
+    if (job.status === 'processing' && 
+        job.total_games > 0 && 
+        job.processed_games === job.total_games && 
+        job.awaiting_review_games > 0) {
+      return true;
+    }
+    
+    return false;
+  })();
+
 </script>
 
 <svelte:head>
@@ -142,8 +160,18 @@
             <p class="mt-2 text-gray-600">Importing your Steam library in the background</p>
           </div>
           
-          <!-- WebSocket Status -->
-          <WebSocketStatus />
+          <!-- Import Status Indicator -->
+          <div class="text-sm text-gray-500">
+            {#if steamImport.value.lastUpdated}
+              Last updated: {new Intl.DateTimeFormat('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+              }).format(steamImport.value.lastUpdated)}
+            {:else}
+              Loading...
+            {/if}
+          </div>
         </div>
       </div>
 
@@ -182,13 +210,19 @@
           
           <!-- Action Buttons -->
           <div class="flex justify-between items-center">
-            <button
-              on:click={handleCancel}
-              class="btn-secondary text-red-600 border-red-300 hover:bg-red-50"
-              disabled={steamImport.value.currentJob?.status === 'processing'}
-            >
-              Cancel Import
-            </button>
+            {#if showReviewButton}
+              <button
+                on:click={handleGoToReview}
+                class="btn-primary"
+              >
+                <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                Continue to Review
+              </button>
+            {:else}
+              <div></div>
+            {/if}
             
             <div class="text-sm text-gray-500">
               Job ID: {jobId}

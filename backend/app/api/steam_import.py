@@ -5,7 +5,7 @@ Steam import API endpoints for managing background Steam library import jobs.
 import json
 import logging
 from typing import Annotated, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select, and_
 from datetime import datetime, timezone, timedelta
 
@@ -15,7 +15,7 @@ from ..models.user import User
 from ..models.steam_import import SteamImportJob, SteamImportGame, SteamImportJobStatus, SteamImportGameStatus
 from ..services.steam_import import SteamImportService, SteamImportProcessingError, create_steam_import_service
 from ..services.igdb import IGDBService
-from ..services.websocket_manager import get_websocket_manager, WebSocketConnectionManager
+# Removed WebSocket imports - now using simple polling
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.steam import (
     SteamImportJobCreateRequest,
@@ -538,42 +538,60 @@ async def cancel_import_job(
     This endpoint allows users to cancel import jobs that are in progress.
     Cancellation is only allowed for jobs that are not yet completed or failed.
     """
+    logger.info(f"🔧 DEBUG: DELETE /steam/import/{job_id} endpoint called")
+    logger.info(f"🔧 DEBUG: User requesting cancellation: {current_user.username} (ID: {current_user.id})")
     logger.info(f"Cancelling import job {job_id}")
     
     try:
         # Get the import job
+        logger.debug(f"🔧 DEBUG: Fetching job {job_id} from database")
         job = session.get(SteamImportJob, job_id)
         if not job:
+            logger.warning(f"🔧 DEBUG: Job {job_id} not found in database")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Import job {job_id} not found"
             )
         
+        logger.debug(f"🔧 DEBUG: Job found - Status: {job.status}, User ID: {job.user_id}")
+        
         # Verify ownership
         if job.user_id != current_user.id:
+            logger.warning(f"🔧 DEBUG: Access denied - Job belongs to user {job.user_id}, request from user {current_user.id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this import job"
             )
         
+        logger.debug(f"🔧 DEBUG: User ownership verified, proceeding with cancellation")
+        
         # Cancel the job using the import service
+        logger.debug(f"🔧 DEBUG: Creating steam import service")
         steam_import_service = create_steam_import_service(session, igdb_service)
+        
+        logger.debug(f"🔧 DEBUG: Calling steam_import_service.cancel_import_job")
         await steam_import_service.cancel_import_job(job_id)
         
+        logger.info(f"🔧 DEBUG: Service call completed successfully")
         logger.info(f"Import job {job_id} cancelled successfully")
         
-        return SuccessResponse(message="Import job cancelled successfully")
+        response = SuccessResponse(message="Import job cancelled successfully")
+        logger.debug(f"🔧 DEBUG: Returning success response: {response}")
+        return response
         
-    except HTTPException:
+    except HTTPException as http_exc:
+        logger.error(f"🔧 DEBUG: HTTPException occurred: {http_exc.status_code} - {http_exc.detail}")
         # Re-raise HTTP exceptions as-is
         raise
     except SteamImportProcessingError as e:
+        logger.error(f"🔧 DEBUG: Steam import processing error: {str(e)}")
         logger.error(f"Steam import processing error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"🔧 DEBUG: Unexpected error in cancel endpoint: {str(e)}", exc_info=True)
         logger.error(f"Error cancelling job {job_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -581,95 +599,4 @@ async def cancel_import_job(
         )
 
 
-@router.websocket("/ws/{job_id}")
-async def websocket_steam_import(
-    websocket: WebSocket,
-    job_id: str,
-    token: str = Query(..., description="JWT access token for authentication"),
-    session: Annotated[Session, Depends(get_session)] = None,
-    ws_manager: WebSocketConnectionManager = Depends(get_websocket_manager)
-):
-    """
-    WebSocket endpoint for real-time Steam import updates.
-    
-    This endpoint provides real-time communication for Steam import jobs including:
-    - Import status changes and phase transitions
-    - Real-time progress updates (game count and percentage)
-    - Individual game matching results
-    - Games flagged for manual review
-    - Import completion and error notifications
-    
-    Authentication is performed via JWT token in query parameter.
-    Connection is automatically closed if authentication fails or job access is denied.
-    """
-    connection = None
-    
-    try:
-        # Authenticate and establish connection
-        connection = await ws_manager.authenticate_and_connect(
-            websocket=websocket,
-            job_id=job_id,
-            token=token,
-            session=session
-        )
-        
-        if not connection:
-            # Authentication failed - connection already closed by manager
-            logger.debug(f"WebSocket authentication failed for job {job_id}")
-            return
-        
-        logger.info(f"WebSocket connection established for job {job_id}, user {connection.user_id}")
-        logger.debug(f"WebSocket endpoint processing started for job {job_id}")
-        
-        # Keep connection alive and handle client messages
-        try:
-            while True:
-                # Wait for messages from client (mainly for heartbeat/ping responses)
-                message = await websocket.receive_text()
-                
-                try:
-                    # Parse client message
-                    client_data = json.loads(message)
-                    
-                    # Handle client heartbeat responses
-                    if client_data.get("type") == "heartbeat_response":
-                        logger.debug(f"Received heartbeat response from job {job_id}")
-                        connection.last_heartbeat = datetime.now(timezone.utc)
-                    
-                    # Handle other client messages if needed
-                    elif client_data.get("type") == "ping":
-                        # Send pong response using standard WebSocketMessage format
-                        from ..services.websocket_manager import WebSocketMessage, WebSocketEventType
-                        pong_message = WebSocketMessage(
-                            event_type=WebSocketEventType.PONG,
-                            job_id=job_id,
-                            timestamp=datetime.now(timezone.utc),
-                            data={"status": "pong"}
-                        )
-                        await websocket.send_text(pong_message.model_dump_json())
-                        
-                except json.JSONDecodeError:
-                    # Invalid JSON from client - log but don't disconnect
-                    logger.warning(f"Invalid JSON received from WebSocket client for job {job_id}")
-                except Exception as e:
-                    logger.error(f"Error processing client message for job {job_id}: {str(e)}")
-                
-        except WebSocketDisconnect:
-            logger.info(f"WebSocket client disconnected for job {job_id}")
-            logger.debug(f"WebSocket connection closed normally for job {job_id}")
-        except Exception as e:
-            logger.error(f"Unexpected error in WebSocket connection for job {job_id}: {str(e)}")
-            
-    except Exception as e:
-        logger.error(f"Error in WebSocket endpoint for job {job_id}: {str(e)}")
-        logger.debug(f"WebSocket endpoint error for job {job_id}: {str(e)}")
-        try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Server error")
-        except Exception:
-            pass  # Connection might already be closed
-    
-    finally:
-        # Clean up connection
-        if connection:
-            await ws_manager.disconnect(connection)
-            logger.info(f"WebSocket connection cleaned up for job {job_id}, user {connection.user_id}")
+# WebSocket endpoint removed - now using simple HTTP polling via existing GET /steam/import/{job_id} endpoint
