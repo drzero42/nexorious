@@ -356,6 +356,38 @@ function createSteamStore() {
       }
     },
 
+    async getActiveImportJob(): Promise<any | null> {
+      // Validate Steam configuration first
+      if (!state.config?.has_api_key || !state.config?.is_verified) {
+        return null;
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam/import/active`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getActiveImportJob();
+          }
+          throw new Error('Failed to fetch active import job');
+        }
+
+        const activeJob = await response.json();
+        return activeJob; // Will be null if no active job
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get active import job';
+        // Don't throw error for this method - just return null and let caller handle
+        console.warn('Failed to check for active import job:', errorMessage);
+        return null;
+      }
+    },
+
   };
 
   return steamStore;

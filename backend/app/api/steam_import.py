@@ -241,6 +241,69 @@ async def create_import_job(
         )
 
 
+@router.get("/active", response_model=SteamImportJobResponse | None)
+async def get_active_import_job(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """
+    Get the current user's active Steam import job.
+    
+    This endpoint checks if the user has any active import jobs currently running.
+    Active jobs are those in PENDING, PROCESSING, AWAITING_REVIEW, or FINALIZING status.
+    
+    Returns:
+        Active import job details if one exists, null otherwise
+    """
+    logger.debug(f"Getting active import job for user {current_user.username}")
+    
+    try:
+        # Check for existing active import jobs using the same logic as create endpoint
+        active_statuses = [
+            SteamImportJobStatus.PENDING,
+            SteamImportJobStatus.PROCESSING,
+            SteamImportJobStatus.AWAITING_REVIEW,
+            SteamImportJobStatus.FINALIZING
+        ]
+        
+        active_job = session.exec(
+            select(SteamImportJob).where(
+                and_(
+                    SteamImportJob.user_id == current_user.id,
+                    SteamImportJob.status.in_(active_statuses)
+                )
+            )
+        ).first()
+        
+        if active_job:
+            logger.debug(f"Found active import job {active_job.id} with status {active_job.status} for user {current_user.username}")
+            return SteamImportJobResponse(
+                id=active_job.id,
+                status=active_job.status,
+                total_games=active_job.total_games,
+                processed_games=active_job.processed_games,
+                matched_games=active_job.matched_games,
+                awaiting_review_games=active_job.awaiting_review_games,
+                skipped_games=active_job.skipped_games,
+                imported_games=active_job.imported_games,
+                platform_added_games=active_job.platform_added_games,
+                error_message=active_job.error_message,
+                created_at=active_job.created_at,
+                updated_at=active_job.updated_at,
+                completed_at=active_job.completed_at
+            )
+        else:
+            logger.debug(f"No active import job found for user {current_user.username}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting active import job for user {current_user.username}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get active import job: {str(e)}"
+        )
+
+
 @router.get("/{job_id}", response_model=SteamImportJobStatusResponse)
 async def get_import_job_status(
     job_id: str,
