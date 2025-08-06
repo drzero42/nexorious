@@ -11,6 +11,7 @@
 
   let isLoading = true;
   let error: string | null = null;
+  let processingTimeout: NodeJS.Timeout | null = null;
 
   onMount(async () => {
     try {
@@ -24,24 +25,83 @@
   });
 
   onDestroy(() => {
-    // Clean up WebSocket connection
+    // Clean up WebSocket connection and timeout
     steamImport.disconnect();
+    if (processingTimeout) {
+      clearTimeout(processingTimeout);
+      processingTimeout = null;
+    }
   });
 
-  // Handle job status changes
+  // Handle job status changes and processing completion
   $: {
     const job = steamImport.value.currentJob;
-    if (job && job.status === 'awaiting_review') {
-      // Navigate to review page when job reaches review phase
-      goto(`/steam/import/review/${jobId}`);
-    } else if (job && job.status === 'finalizing') {
-      // Navigate to confirmation page when ready for final import
-      goto(`/steam/import/confirm/${jobId}`);
-    } else if (job && job.status === 'completed') {
-      // Navigate to results page when completed
-      goto(`/steam/import/results/${jobId}`);
-    } else if (job && job.status === 'failed') {
-      error = job.error_message || 'Import job failed';
+    if (job) {
+      // Handle status-based navigation (existing logic)
+      if (job.status === 'awaiting_review') {
+        // Navigate to review page when job reaches review phase
+        goto(`/steam/import/review/${jobId}`);
+      } else if (job.status === 'finalizing') {
+        // Navigate to confirmation page when ready for final import
+        goto(`/steam/import/confirm/${jobId}`);
+      } else if (job.status === 'completed') {
+        // Navigate to results page when completed
+        goto(`/steam/import/results/${jobId}`);
+      } else if (job.status === 'failed') {
+        error = job.error_message || 'Import job failed';
+      }
+      
+      // Handle processing complete but status not updated yet
+      else if (job.status === 'processing' && 
+               job.total_games > 0 && 
+               job.processed_games === job.total_games) {
+        console.log('Processing complete, determining next navigation...', {
+          awaiting_review_games: job.awaiting_review_games,
+          matched_games: job.matched_games
+        });
+        
+        // Clear any existing timeout
+        if (processingTimeout) {
+          clearTimeout(processingTimeout);
+        }
+        
+        // Set timeout for fallback status refresh if navigation doesn't happen
+        processingTimeout = setTimeout(async () => {
+          console.log('Timeout reached, refreshing job status as fallback...');
+          try {
+            await steamImport.fetchJobStatus(jobId);
+          } catch (error) {
+            console.error('Error refreshing job status:', error);
+          }
+        }, 3000); // 3 second timeout
+        
+        // All games processed, navigate based on results
+        if (job.awaiting_review_games > 0) {
+          // Has games needing review, navigate to review
+          console.log('Navigating to review page due to games awaiting review');
+          // Clear timeout since we're navigating
+          if (processingTimeout) {
+            clearTimeout(processingTimeout);
+            processingTimeout = null;
+          }
+          goto(`/steam/import/review/${jobId}`);
+        } else if (job.matched_games > 0) {
+          // All matched, navigate to confirm
+          console.log('Navigating to confirm page due to all games matched');
+          // Clear timeout since we're navigating
+          if (processingTimeout) {
+            clearTimeout(processingTimeout);
+            processingTimeout = null;
+          }
+          goto(`/steam/import/confirm/${jobId}`);
+        }
+      }
+      
+      // Clear timeout if status is no longer processing
+      else if (job.status !== 'processing' && processingTimeout) {
+        clearTimeout(processingTimeout);
+        processingTimeout = null;
+      }
     }
   }
 

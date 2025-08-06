@@ -10,17 +10,16 @@
   }
 
   interface IGDBGame {
-    id: number;
-    name: string;
-    summary?: string;
-    first_release_date?: number;
-    cover?: {
-      url: string;
-      image_id: string;
-    };
-    platforms?: Array<{
-      name: string;
-    }>;
+    igdb_id: string;
+    igdb_slug?: string;
+    title: string;
+    release_date?: string;
+    cover_art_url?: string;
+    description?: string;
+    platforms: string[];
+    howlongtobeat_main?: number;
+    howlongtobeat_extra?: number;
+    howlongtobeat_completionist?: number;
   }
 
   let { initialQuery, onGameSelected, onCancel }: Props = $props();
@@ -29,7 +28,7 @@
   let searchResults: IGDBGame[] = $state([]);
   let isSearching = $state(false);
   let searchError = $state<string | null>(null);
-  let selectedGameId = $state<number | null>(null);
+  let selectedGameId = $state<string | null>(null);
   let searchTimeout: NodeJS.Timeout | null = null;
 
   // Auto-search on mount with initial query
@@ -67,10 +66,16 @@
     searchError = null;
 
     try {
-      const response = await fetch(`${config.apiUrl}/games/search-igdb?query=${encodeURIComponent(query)}`, {
+      const response = await fetch(`${config.apiUrl}/games/search/igdb`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': `Bearer ${auth.value.accessToken}`
-        }
+        },
+        body: JSON.stringify({
+          query: query,
+          limit: 10
+        })
       });
 
       if (!response.ok) {
@@ -82,7 +87,7 @@
       }
 
       const data = await response.json();
-      searchResults = data.candidates || [];
+      searchResults = data.games || [];
     } catch (error) {
       searchError = error instanceof Error ? error.message : 'Search failed';
       searchResults = [];
@@ -92,24 +97,23 @@
   }
 
   function handleGameSelect(game: IGDBGame) {
-    selectedGameId = game.id;
+    selectedGameId = game.igdb_id;
   }
 
   function handleConfirmSelection() {
-    const selectedGame = searchResults.find(game => game.id === selectedGameId);
+    const selectedGame = searchResults.find(game => game.igdb_id === selectedGameId);
     if (selectedGame) {
       onGameSelected(selectedGame);
     }
   }
 
-  function formatReleaseDate(timestamp?: number): string {
-    if (!timestamp) return '';
-    return new Date(timestamp * 1000).getFullYear().toString();
+  function formatReleaseDate(dateString?: string): string {
+    if (!dateString) return '';
+    return new Date(dateString).getFullYear().toString();
   }
 
-  function getCoverImageUrl(cover?: { image_id: string }): string {
-    if (!cover?.image_id) return '';
-    return `https://images.igdb.com/igdb/image/upload/t_cover_small/${cover.image_id}.jpg`;
+  function getCoverImageUrl(url?: string): string {
+    return url || '';
   }
 
   function handleKeyDown(event: KeyboardEvent) {
@@ -167,19 +171,19 @@
         Found {searchResults.length} game{searchResults.length === 1 ? '' : 's'}:
       </div>
       
-      {#each searchResults as game (game.id)}
+      {#each searchResults as game (game.igdb_id)}
         <button
           class="w-full p-3 border rounded-lg text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors
-                 {selectedGameId === game.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}"
+                 {selectedGameId === game.igdb_id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}"
           onclick={() => handleGameSelect(game)}
         >
           <div class="flex items-start space-x-3">
             <!-- Game Cover -->
             <div class="flex-shrink-0 w-12 h-16 bg-gray-100 rounded overflow-hidden">
-              {#if game.cover}
+              {#if game.cover_art_url}
                 <img 
-                  src={getCoverImageUrl(game.cover)} 
-                  alt="{game.name} cover"
+                  src={getCoverImageUrl(game.cover_art_url)} 
+                  alt="{game.title} cover"
                   class="w-full h-full object-cover"
                   loading="lazy"
                 />
@@ -196,11 +200,11 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center space-x-2 mb-1">
                 <h4 class="text-sm font-medium text-gray-900 truncate">
-                  {game.name}
+                  {game.title}
                 </h4>
-                {#if game.first_release_date}
+                {#if game.release_date}
                   <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                    {formatReleaseDate(game.first_release_date)}
+                    {formatReleaseDate(game.release_date)}
                   </span>
                 {/if}
               </div>
@@ -210,7 +214,7 @@
                   <div class="flex flex-wrap gap-1">
                     {#each game.platforms.slice(0, 3) as platform}
                       <span class="text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">
-                        {platform.name}
+                        {platform}
                       </span>
                     {/each}
                     {#if game.platforms.length > 3}
@@ -222,16 +226,16 @@
                 </div>
               {/if}
               
-              {#if game.summary}
+              {#if game.description}
                 <p class="text-xs text-gray-600 line-clamp-2">
-                  {game.summary}
+                  {game.description}
                 </p>
               {/if}
             </div>
 
             <!-- Selection Indicator -->
             <div class="flex-shrink-0">
-              {#if selectedGameId === game.id}
+              {#if selectedGameId === game.igdb_id}
                 <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                   <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
