@@ -2,259 +2,157 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Quick Reference
 
-This is a project named "nexorious". The backend is written in Python with FastAPI and the frontend is written in Typescript with Svelte. It is licensed under the MIT License.
+### Common Commands
+| Task | Backend Command | Frontend Command |
+|------|----------------|------------------|
+| Install dependencies | `cd /home/abo/workspace/home/nexorious/backend && uv sync` | `cd /home/abo/workspace/home/nexorious/frontend && npm install` |
+| Start development server | `uv run python -m app.main` | `npm run dev` |
+| Run tests | `uv run pytest` | `npm run test` |
+| Run tests with coverage | `uv run pytest --cov=app --cov-report=term-missing` | `npm run test:coverage` |
+| Type checking | Built into pytest | `npm run check` |
+| Database migrations | `uv run alembic upgrade head` | N/A |
 
-## Repository Structure
-
-The project is a full-featured game collection management service with comprehensive backend and frontend implementations:
-
-### Core Directories
-- `backend/` - FastAPI Python backend with complete API implementation
-  - `app/` - Main application package with API routes, models, services
-  - `alembic/` - Database migration management
-  - `storage/` - File storage for cover art and uploads
-  - `tests/` - Comprehensive test suite with >80% coverage
-- `frontend/` - SvelteKit TypeScript frontend with complete UI
-  - `src/` - Application source code with components, routes, stores
-  - `tests/` - Frontend test suite with >70% coverage
-  - `static/` - Static assets and PWA configuration
-- `docs/` - Project documentation and planning
-  - `PRD.md` - Product Requirements Document
-  - `TASK_BREAKDOWN.md` - Detailed task tracking
-  - `wireframes/` - UI/UX design mockups
-- `storage/` - Runtime file storage for cover art
-
-### Configuration Files
-- `flake.nix` / `flake.lock` - Nix development environment
-- `backend/pyproject.toml` - Python dependencies and project configuration
-- `frontend/package.json` - Node.js dependencies and scripts
-- `README.md` - Project overview and setup instructions
-- `LICENSE` - MIT license
-
-## Development Environment
-
-### Nix Development Shell
-The project includes a `flake.nix` file that provides a reproducible development environment:
-- Run `nix develop` to enter the development shell
-- Includes Python 3.13, uv, ruff, mypy, pytest, and system dependencies
-- Uses nixpkgs unstable for latest packages
-
-### Python Package Managers
-This project uses **uv** for Python dependency management with support for:
-- Standard Python development
-- Modern Python tooling
-- Development tools (pytest, mypy, ruff)
-- IDE support (PyCharm, VSCode, Cursor)
-
-## Backend Development
-
-### Setup and Dependencies
+### Environment Validation
 ```bash
+# Verify development environment
+nix develop  # Enter development shell
+cd /home/abo/workspace/home/nexorious/backend && uv --version
+cd /home/abo/workspace/home/nexorious/frontend && npm --version
+```
+
+### Important URLs
+- Backend API Docs: http://localhost:8000/docs
+- Health Check: http://localhost:8000/health
+- Frontend Dev: http://localhost:5173
+
+## Setup & Development
+
+### Development Environment
+The project uses Nix for reproducible development:
+```bash
+nix develop  # Enter development shell with Python 3.13, uv, ruff, mypy, pytest
+```
+
+### Initial Setup
+```bash
+# Backend setup
 cd /home/abo/workspace/home/nexorious/backend
-uv sync  # Install all dependencies including dev dependencies
-```
+uv sync  # Install all dependencies
+uv run alembic upgrade head  # Run database migrations
 
-### Database Management
-```bash
-# Run database migrations
-uv run alembic upgrade head
-
-# Create new migration (after model changes)
-uv run alembic revision --autogenerate -m "description of changes"
-```
-
-### Development Server
-```bash
-# Start development server with auto-reload
-uv run python -m app.main
-
-# Alternative using uvicorn directly
-uv run uvicorn app.main:app --reload
-```
-
-### Testing and Quality Assurance
-```bash
-# Run all tests
-uv run pytest
-
-# Run tests with coverage (target >80%)
-uv run pytest --cov=app --cov-report=term-missing
-
-# Generate HTML coverage report
-uv run pytest --cov=app --cov-report=html
-
-# Run specific test file
-uv run pytest app/tests/test_business_logic.py
-
-# Run tests with verbose output
-uv run pytest -v
-```
-
-### API Documentation
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc  
-- Health check: http://localhost:8000/health
-
-## Frontend Development
-
-### Setup and Dependencies
-```bash
+# Frontend setup  
 cd /home/abo/workspace/home/nexorious/frontend
 npm install  # Install all dependencies
 ```
 
-### Development Server
+### Project Structure
+- `backend/` - FastAPI Python backend with API routes, models, services
+- `frontend/` - SvelteKit TypeScript frontend with components, routes, stores  
+- `docs/` - PRD, task breakdown, wireframes
+- `storage/` - Runtime file storage for cover art
+
+## Additional Commands
+
+### Database Management
 ```bash
-# Start development server with hot reload
-npm run dev
+# Create new migration (after model changes)
+uv run alembic revision --autogenerate -m "description of changes"
+
+# Alternative backend server start
+uv run uvicorn app.main:app --reload
 ```
 
-### Building and Checking
+### Frontend Building
 ```bash
-# Type checking and validation
-npm run check
-
 # Build for production
 npm run build
 
-# Preview production build
+# Preview production build  
 npm run preview
-```
-
-### Testing
-```bash
-# Run all tests
-npm run test
-
-# Run tests with coverage (target >70%)
-npm run test:coverage
 
 # Run tests with UI
 npm run test:ui
-
-# Run tests once (CI mode)
-npm run test:run
 ```
 
-## Testing Framework and Coverage Requirements
+## Testing & Quality Assurance
+
+### Testing Requirements
+- **Backend**: >80% coverage, all tests must pass
+- **Frontend**: >70% coverage, all tests must pass  
+- **Zero tolerance**: Fix failing tests immediately
 
 ### Backend Testing (pytest)
 - **Framework**: pytest with pytest-asyncio for async testing
-- **Coverage Target**: >80% for all business logic, API endpoints, and services
-- **Test Types**:
-  - Unit tests for models, services, and business logic
-  - Integration tests for API endpoints with database
-  - External API integration tests with mocking (IGDB)
-- **Coverage Analysis**: HTML reports generated in `htmlcov/` directory
-- **Database Testing**: Supports both PostgreSQL and SQLite test databases
+- **Test Types**: Unit tests, API integration tests, IGDB mocking
+- **Coverage Reports**: HTML reports in `htmlcov/` directory
+- **Database Testing**: PostgreSQL and SQLite support
 
 #### CSV Import Testing
-The Darkadia CSV import system has comprehensive test coverage (>90%):
-- **Location**: `backend/scripts/tests/`
-- **Test Files**: 5 modules covering all import functionality
-- **Key Features**:
-  - Idempotency validation (safe to re-run imports)
-  - All three merge strategies (Interactive, Overwrite, Preserve)
-  - Decision caching for Interactive merger
-  - Platform duplicate prevention
-  - Large dataset performance testing
-- **Quick Test Commands**:
-  ```bash
-  # Run all import tests
-  uv run pytest scripts/tests/ -v
-  
-  # Run with coverage
-  uv run pytest scripts/tests/ --cov=scripts --cov-report=term-missing
-  
-  # Test specific functionality
-  uv run pytest scripts/tests/test_idempotency.py -v
-  ```
-- **Documentation**: See `backend/scripts/tests/README.md` for complete testing guide
+Comprehensive test coverage (>90%) in `backend/scripts/tests/`:
+- Idempotency validation, merge strategies, decision caching
+- Platform duplicate prevention, performance testing
+- Documentation: `backend/scripts/tests/README.md`
 
 ### Frontend Testing (Vitest)
-- **Framework**: Vitest with @testing-library/svelte
-- **Coverage Target**: >70% for components, stores, and utilities  
-- **Test Types**:
-  - Unit tests for Svelte components and stores
-  - Integration tests for user workflows
-  - Utility function tests
-- **Coverage Analysis**: HTML reports generated in `coverage/` directory
-- **DOM Testing**: jsdom environment with @testing-library utilities
+- **Framework**: Vitest with @testing-library/svelte  
+- **Test Types**: Component tests, store tests, utility tests
+- **Coverage Reports**: HTML reports in `coverage/` directory
+- **DOM Testing**: jsdom environment
 
-### Test Naming Conventions
-- Backend: `test_*.py` files in `app/tests/`
-- Frontend: `*.test.ts` files alongside source code (NOT starting with `+` for Svelte files)
-
-## Standard operating procedure
-
-These rules must always be adhered to during development.
-
-** ALWAYS ASK QUESTIONS IF YOU ARE UNCERTAIN ABOUT SOMETHING! **
-
-### Directory and Command Management
-- This project has a frontend and a backend. They live in dirs called `frontend/` and `backend/`.
-- Always cd into the frontend dir before running commands related to the frontend.
-- Always cd into the backend dir before running commands related to the backend.
-- When running cd always use full paths.
-- Always use `uv run python` instead of just `python` for backend commands.
-
-### Planning and Documentation
-- Before performing any work always read docs/PRD.md and docs/TASK_BREAKDOWN.md
-- When a task has been implemented mark the task(s) as done in the task breakdown
-- When you are writing code, please use context7 MCP to learn the APIs used and verify that your generated code is valid
-
-### Version Control and Branching
-- When you are asked to work on a task you will create a branch that contains the task name.
-- When you are told 'lets work on task XXX' you must first create a branch that contains the task name.
-
-### Frontend Development Rules
-- For Svelte Typescript tests, the filename is not allowed to start with `+`
-- **MANDATORY**: Run `npm run check` after ANY frontend code changes and fix all errors
-- **MANDATORY**: Run `npm run test` after ANY frontend changes and ensure 100% pass rate
-- **CRITICAL**: All 778 frontend tests must pass - zero failures accepted
-
-### Backend Development Rules  
-- Run database migrations with `uv run alembic upgrade head` after pulling changes
-- **MANDATORY**: Run `uv run pytest` after ANY backend code changes and ensure 100% pass rate
-- **MANDATORY**: Run `uv run pytest --cov=app --cov-report=term-missing` to verify test coverage meets >80% requirement
-- **CRITICAL**: All backend tests must pass - zero failures accepted
-- Always test API endpoints manually using Swagger UI at http://localhost:8000/docs
-
-### Quality Assurance
-- Backend code coverage must maintain >80%
-- Frontend code coverage must maintain >70%
-- All tests must pass before committing changes
-- Use type checking tools (`npm run check` for frontend, mypy via pytest for backend)
-
-### Test Execution Requirements
-**CRITICAL**: All tests must pass at all times. After ANY code changes, you MUST:
-
-#### Frontend Testing (Required After Any Frontend Changes)
+### Test Commands
 ```bash
-# Run TypeScript checking (must pass)
-npm run check
-
-# Run all tests (must pass 100%)
-npm run test
-
-# If any tests fail, fix them immediately before proceeding
-```
-
-#### Backend Testing (Required After Any Backend Changes)  
-```bash
-# Run all tests with coverage (must pass 100%)
+# Backend - all must pass
+uv run pytest
 uv run pytest --cov=app --cov-report=term-missing
 
-# If any tests fail, fix them immediately before proceeding
+# Frontend - all must pass
+npm run check
+npm run test
+
+# CSV Import specific tests
+uv run pytest scripts/tests/ -v
 ```
 
-#### Test Failure Policy
-- **Zero tolerance for failing tests** - All tests must pass before any commit
-- **Immediate fix required** - If code changes break tests, fix tests in the same session
-- **No exceptions** - Tests failing due to "intentional errors" in stderr are acceptable only if the test itself passes
-- **Full suite validation** - Always run the complete test suite, not just individual tests
+### Test Conventions
+- Backend: `test_*.py` files in `app/tests/`
+- Frontend: `*.test.ts` files (NOT starting with `+` for Svelte files)
+
+## Development Rules
+
+> **Always ask questions if you are uncertain about something!**
+
+### Essential Workflow
+1. **Planning**: Read `docs/PRD.md` and `docs/TASK_BREAKDOWN.md` before starting work
+2. **Branching**: Create feature branch with task name when working on tasks
+3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
+4. **Testing**: Run tests after ANY code changes - zero failures accepted
+5. **Documentation**: Use context7 MCP to verify API usage in generated code
+
+### Required After Code Changes
+
+#### Frontend Changes
+```bash
+npm run check  # Must pass
+npm run test   # Must pass (all 778 tests)
+```
+
+#### Backend Changes  
+```bash
+uv run alembic upgrade head  # After pulling changes
+uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverage
+```
+
+### File Naming Rules
+- Backend tests: `test_*.py` files in `app/tests/`
+- Frontend tests: `*.test.ts` files (NOT starting with `+` for Svelte files)
+
+### Quality Gates
+- All tests must pass before committing
+- Backend: >80% coverage required
+- Frontend: >70% coverage required  
+- Fix failing tests immediately in same session
 
 ## Project Architecture
 
@@ -289,11 +187,3 @@ uv run pytest --cov=app --cov-report=term-missing
 - **Platform Support**: Multi-platform game ownership tracking
 - **Storefront Integration**: Support for Steam, Epic, GOG, PlayStation, Xbox, Nintendo, and physical media
 
-### Development Workflow
-1. **Planning**: Tasks defined in `docs/TASK_BREAKDOWN.md`
-2. **Development**: Feature branches with descriptive names
-3. **Testing**: **MANDATORY** - All tests must pass after every code change
-   - Frontend: Run `npm run check` + `npm run test` (100% pass rate required)
-   - Backend: Run `pytest` + coverage validation (100% pass rate required)
-4. **Quality Assurance**: Type checking and linting with zero tolerance for failures
-5. **Documentation**: Comprehensive API documentation via OpenAPI/Swagger
