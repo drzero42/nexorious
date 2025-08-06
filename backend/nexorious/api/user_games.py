@@ -3,7 +3,7 @@ User game collection management endpoints.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select, and_, func, or_
+from sqlmodel import Session, select, and_, func, or_, col
 from datetime import datetime, timezone
 from typing import Annotated, Optional, List
 import logging
@@ -188,8 +188,8 @@ async def list_user_games(
         # Regular search in game title and personal notes
         query = query.join(Game)
         query = query.where(or_(
-            Game.title.icontains(q),
-            and_(UserGame.personal_notes.is_not(None), UserGame.personal_notes.icontains(q))
+            col(Game.title).icontains(q),
+            and_(UserGame.personal_notes.is_not(None), col(UserGame.personal_notes).icontains(q))
         ))
     
     if fuzzy_search_mode:

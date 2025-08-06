@@ -3,7 +3,7 @@ Game management endpoints for CRUD operations and metadata handling.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select, or_, and_, func
+from sqlmodel import Session, select, or_, and_, func, col
 from datetime import datetime, timezone, date
 import json
 import re
@@ -130,19 +130,19 @@ async def list_games(
     if q and not fuzzy_search_mode:
         # Regular search in title, description, and aliases
         search_filter = or_(
-            Game.title.icontains(q),
-            and_(Game.description.is_not(None), Game.description.icontains(q))
+            col(Game.title).icontains(q),
+            and_(col(Game.description).is_not(None), col(Game.description).icontains(q))
         )
         filters.append(search_filter)
     
     if genre:
-        filters.append(Game.genre.icontains(genre))
+        filters.append(col(Game.genre).icontains(genre))
     
     if developer:
-        filters.append(Game.developer.icontains(developer))
+        filters.append(col(Game.developer).icontains(developer))
     
     if publisher:
-        filters.append(Game.publisher.icontains(publisher))
+        filters.append(col(Game.publisher).icontains(publisher))
     
     if release_year:
         filters.append(func.extract('year', Game.release_date) == release_year)
