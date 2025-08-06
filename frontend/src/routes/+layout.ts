@@ -5,11 +5,11 @@ import type { LayoutLoad } from './$types';
 
 export const ssr = false; // Disable SSR for this app
 
-export const load: LayoutLoad = async ({ url }) => {
+export const load: LayoutLoad = async ({ url, fetch }) => {
   // Only check setup status in the browser and not on the setup page itself
   if (browser && url.pathname !== '/setup') {
     try {
-      const setupStatus = await auth.checkSetupStatus();
+      const setupStatus = await auth.checkSetupStatus(fetch);
       
       if (setupStatus.needs_setup) {
         // Redirect to setup page if initial admin setup is needed

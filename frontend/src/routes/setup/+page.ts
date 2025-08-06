@@ -3,10 +3,10 @@ import { auth } from '$lib/stores';
 import { redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async () => {
+export const load: PageLoad = async ({ fetch }) => {
   // Check if setup is actually needed
   if (browser) {
-    const setupStatus = await auth.checkSetupStatus();
+    const setupStatus = await auth.checkSetupStatus(fetch);
     
     if (!setupStatus.needs_setup) {
       // If setup is not needed, redirect to login

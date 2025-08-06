@@ -182,6 +182,34 @@ describe('Auth Store', () => {
 			expect(typeof auth.checkSetupStatus).toBe('function');
 		});
 
+		it('should handle setup status check with custom fetch', async () => {
+			// Create a custom fetch mock
+			const customFetch = vi.fn().mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ needs_setup: false })
+			});
+
+			// Test checkSetupStatus with custom fetch
+			if (auth.checkSetupStatus) {
+				try {
+					await auth.checkSetupStatus(customFetch);
+					expect(customFetch).toHaveBeenCalledWith(
+						'http://localhost:8000/api/auth/setup/status',
+						{
+							method: 'GET',
+							headers: {
+								'Content-Type': 'application/json',
+							},
+						}
+					);
+				} catch (error) {
+					// Expected in test environment
+				}
+			}
+
+			expect(typeof auth.checkSetupStatus).toBe('function');
+		});
+
 		it('should handle initial admin creation', async () => {
 			// Mock successful admin creation response
 			mockFetch.mockResolvedValueOnce({

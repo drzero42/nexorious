@@ -276,9 +276,10 @@ function createAuthStore() {
       }
     },
 
-    checkSetupStatus: async (): Promise<SetupStatusResponse> => {
+    checkSetupStatus: async (fetchFn?: typeof fetch): Promise<SetupStatusResponse> => {
       try {
-        const response = await fetch(`${config.apiUrl}/auth/setup/status`, {
+        const fetchToUse = fetchFn || fetch;
+        const response = await fetchToUse(`${config.apiUrl}/auth/setup/status`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
