@@ -2,7 +2,7 @@ import { config } from '$lib/env';
 import { auth } from '$lib/stores';
 
 export interface WebSocketEvent {
-  type: 'import_status_change' | 'import_progress' | 'game_matched' | 'game_needs_review' | 
+  event_type: 'import_status_change' | 'import_progress' | 'game_matched' | 'game_needs_review' | 
         'game_imported' | 'platform_added' | 'game_skipped' | 'import_complete' | 'import_error' |
         'heartbeat' | 'pong';
   data: any;
@@ -207,7 +207,7 @@ export class SteamImportWebSocketService {
     this.eventHandlers.onMessage?.(event);
 
     // Call specific event handlers
-    switch (event.type) {
+    switch (event.event_type) {
       case 'import_status_change':
         this.eventHandlers.onStatusChange?.(event.data.status, event.data);
         break;
@@ -243,7 +243,7 @@ export class SteamImportWebSocketService {
         this.send({ type: 'heartbeat_response', timestamp: new Date().toISOString() });
         break;
       default:
-        console.log('Unknown WebSocket event type:', event.type);
+        console.log('Unknown WebSocket event type:', event.event_type);
     }
   }
 
