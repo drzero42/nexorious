@@ -2,23 +2,22 @@
   import { ProgressBar } from '$lib/components';
   import { steamImport } from '$lib/stores/steam-import.svelte';
 
-  // Get current job data
-  $: job = steamImport.value.currentJob;
-  $: isProcessing = job?.status === 'processing';
-  $: isProcessingComplete = job?.status === 'processing' && job.total_games > 0 && job.processed_games === job.total_games;
+  // Get current job data using $derived for proper Svelte 5 reactivity
+  const job = $derived(steamImport.value.currentJob);
+  const isProcessing = $derived(job?.status === 'processing');
+  const isProcessingComplete = $derived(job?.status === 'processing' && job && job.total_games > 0 && job.processed_games === job.total_games);
   
-  // Calculate estimated time remaining (simple linear estimation)
-  $: {
+  
+  // Calculate estimated time remaining using $derived
+  const estimatedTimeRemaining = $derived.by(() => {
     if (job && isProcessing && job.processed_games > 0) {
       const avgTimePerGame = (Date.now() - new Date(job.created_at).getTime()) / job.processed_games;
       const remainingGames = job.total_games - job.processed_games;
-      estimatedTimeRemaining = Math.ceil((avgTimePerGame * remainingGames) / 1000 / 60); // minutes
+      return Math.ceil((avgTimePerGame * remainingGames) / 1000 / 60); // minutes
     } else {
-      estimatedTimeRemaining = null;
+      return null;
     }
-  }
-  
-  let estimatedTimeRemaining: number | null = null;
+  });
 
   // Format time remaining
   function formatTimeRemaining(minutes: number | null): string {
@@ -53,11 +52,11 @@
   }
 
   // Get phase indicator steps
-  $: phaseSteps = [
+  const phaseSteps = $derived([
     { key: 'processing', label: 'Processing', completed: job?.status !== 'pending' },
     { key: 'review', label: 'Review', completed: job?.status && ['finalizing', 'completed'].includes(job.status) },
     { key: 'import', label: 'Import', completed: job?.status === 'completed' }
-  ];
+  ]);
 </script>
 
 <div class="card space-y-6">

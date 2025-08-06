@@ -9,8 +9,8 @@
   // Get job ID from route parameters
   const jobId = $page.params.jobId!;
 
-  let isLoading = true;
-  let error: string | null = null;
+  let isLoading = $state(true);
+  let error = $state<string | null>(null);
   let processingTimeout: NodeJS.Timeout | null = null;
 
   onMount(async () => {
@@ -33,8 +33,8 @@
     }
   });
 
-  // Handle job status changes and processing completion
-  $: {
+  // Handle job status changes and processing completion using $effect
+  $effect(() => {
     const job = steamImport.value.currentJob;
     if (job) {
       // Handle status-based navigation (existing logic)
@@ -103,15 +103,15 @@
         processingTimeout = null;
       }
     }
-  }
+  });
 
   // Manual navigation function
   function handleGoToReview() {
     goto(`/steam/import/review/${jobId}`);
   }
 
-  // Check if review button should be shown
-  $: showReviewButton = (() => {
+  // Check if review button should be shown using $derived
+  const showReviewButton = $derived.by(() => {
     const job = steamImport.value.currentJob;
     if (!job) return false;
     
@@ -127,7 +127,7 @@
     }
     
     return false;
-  })();
+  });
 
 </script>
 
@@ -212,7 +212,7 @@
           <div class="flex justify-between items-center">
             {#if showReviewButton}
               <button
-                on:click={handleGoToReview}
+                onclick={handleGoToReview}
                 class="btn-primary"
               >
                 <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
