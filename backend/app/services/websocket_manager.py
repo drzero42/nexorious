@@ -33,6 +33,7 @@ class WebSocketEventType(str, Enum):
     IMPORT_ERROR = "import_error"
     CONNECTION_STATUS = "connection_status"
     HEARTBEAT = "heartbeat"
+    PONG = "pong"
 
 
 class WebSocketMessage(BaseModel):

@@ -4,7 +4,7 @@ import { auth } from '$lib/stores';
 export interface WebSocketEvent {
   event_type: 'import_status_change' | 'import_progress' | 'game_matched' | 'game_needs_review' | 
         'game_imported' | 'platform_added' | 'game_skipped' | 'import_complete' | 'import_error' |
-        'heartbeat' | 'pong';
+        'heartbeat' | 'pong' | 'connection_status';
   data: any;
   timestamp: string;
 }
@@ -241,6 +241,9 @@ export class SteamImportWebSocketService {
       case 'heartbeat':
         // Respond to server heartbeat
         this.send({ type: 'heartbeat_response', timestamp: new Date().toISOString() });
+        break;
+      case 'connection_status':
+        // Connection status update - no specific action needed
         break;
       default:
         console.log('Unknown WebSocket event type:', event.event_type);

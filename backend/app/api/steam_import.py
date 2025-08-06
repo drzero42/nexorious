@@ -638,12 +638,15 @@ async def websocket_steam_import(
                     
                     # Handle other client messages if needed
                     elif client_data.get("type") == "ping":
-                        # Send pong response
-                        pong_message = {
-                            "type": "pong",
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        }
-                        await websocket.send_text(json.dumps(pong_message))
+                        # Send pong response using standard WebSocketMessage format
+                        from ..services.websocket_manager import WebSocketMessage, WebSocketEventType
+                        pong_message = WebSocketMessage(
+                            event_type=WebSocketEventType.PONG,
+                            job_id=job_id,
+                            timestamp=datetime.now(timezone.utc),
+                            data={"status": "pong"}
+                        )
+                        await websocket.send_text(pong_message.model_dump_json())
                         
                 except json.JSONDecodeError:
                     # Invalid JSON from client - log but don't disconnect
