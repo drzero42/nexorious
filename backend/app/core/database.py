@@ -57,6 +57,9 @@ def run_alembic_migrations():
         
         logger.info("Starting database migrations...")
         
+        # Configure alembic logging
+        alembic_cfg.attributes['configure_logger'] = False
+
         # Run migrations to head
         command.upgrade(alembic_cfg, "head")
         

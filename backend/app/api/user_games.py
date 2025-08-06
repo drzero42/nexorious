@@ -32,6 +32,7 @@ from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
 
 
 def _rank_user_games_by_fuzzy_match(user_games: List[UserGame], query: str, threshold: float = 0.6) -> List[UserGame]:
@@ -134,6 +135,7 @@ async def list_user_games(
 ):
     """List user's game collection with filtering and sorting."""
     
+    logger.info("This is an INFO log message")
     # Handle limit parameter as alias for per_page
     if limit is not None:
         per_page = limit
