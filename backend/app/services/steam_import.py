@@ -72,8 +72,7 @@ class SteamImportService:
             job.total_games = len(steam_games)
             job.steam_library_data = json.dumps([{
                 "appid": game.appid,
-                "name": game.name,
-                "img_icon_url": game.img_icon_url
+                "name": game.name
             } for game in steam_games])
             await self._save_job_changes(job)
             
@@ -614,8 +613,7 @@ class SteamImportService:
                     "steam_appid": steam_game.appid,
                     "steam_name": steam_game.name,
                     "matched_game_id": matched_game_id,
-                    "match_type": match_type,
-                    "img_icon_url": steam_game.img_icon_url
+                    "match_type": match_type
                 }
             )
         except Exception as e:
@@ -629,8 +627,7 @@ class SteamImportService:
                 event_type=WebSocketEventType.GAME_NEEDS_REVIEW,
                 data={
                     "steam_appid": steam_game.appid,
-                    "steam_name": steam_game.name,
-                    "img_icon_url": steam_game.img_icon_url
+                    "steam_name": steam_game.name
                 }
             )
         except Exception as e:

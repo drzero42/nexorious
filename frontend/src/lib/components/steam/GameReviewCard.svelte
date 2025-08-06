@@ -15,10 +15,8 @@
 
   let showSearchWidget = $state(false);
 
-  // Generate Steam store URL and icon URL
+  // Generate Steam store URL
   const steamStoreUrl = $derived(`https://store.steampowered.com/app/${game.steam_appid}/`);
-  const steamIconUrl = $derived(game.steam_appid ? 
-    `https://media.steampowered.com/steamcommunity/public/images/apps/${game.steam_appid}/` : '');
 
   function handleSkip() {
     steamImport.setUserDecision(game.steam_appid.toString(), {
@@ -108,24 +106,9 @@
     <!-- Game Icon -->
     <div class="flex-shrink-0">
       <div class="w-16 h-16 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
-        {#if steamIconUrl}
-          <img 
-            src="{steamIconUrl}icon.jpg" 
-            alt="{game.steam_name} icon"
-            class="w-full h-full object-cover"
-            onerror={(event) => {
-              // Fallback to generic game icon
-              const target = event?.target as HTMLImageElement;
-              if (target) {
-                target.src = '/favicon.svg';
-              }
-            }}
-          />
-        {:else}
-          <svg class="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-        {/if}
+        <svg class="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
       </div>
     </div>
 

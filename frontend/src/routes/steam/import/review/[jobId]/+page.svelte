@@ -53,6 +53,19 @@
   $: completedReviews = Object.keys(reviewedGames).length;
   $: allReviewsComplete = completedReviews === totalReviewGames && totalReviewGames > 0;
 
+  // Auto-submit when all reviews are complete (optional, can be disabled for explicit user control)
+  let autoSubmitEnabled = false; // Set to true to enable auto-submission
+  let hasAutoSubmitted = false;
+
+  $: {
+    if (autoSubmitEnabled && allReviewsComplete && !isSubmitting && !hasAutoSubmitted) {
+      hasAutoSubmitted = true;
+      handleSubmitDecisions();
+    } else if (!allReviewsComplete) {
+      hasAutoSubmitted = false;
+    }
+  }
+
   async function handleSubmitDecisions() {
     if (!allReviewsComplete) {
       ui.showError('Please review all games before proceeding');
@@ -72,17 +85,58 @@
     }
   }
 
-  function handleSkipAll() {
+  async function handleSkipAll() {
     if (confirm('Are you sure you want to skip all remaining games? They will not be imported.')) {
-      // Skip all remaining games
-      awaitingReviewGames.forEach(game => {
-        if (!reviewedGames[game.steam_appid.toString()]) {
-          steamImport.setUserDecision(game.steam_appid.toString(), {
-            action: 'skip',
-            notes: 'Skipped via skip all'
-          });
-        }
-      });
+      console.log('🔧 DEBUG: Skip All started');
+      console.log('🔧 DEBUG: Current reviewedGames:', reviewedGames);
+      console.log('🔧 DEBUG: Current awaitingReviewGames:', awaitingReviewGames);
+      console.log('🔧 DEBUG: Store userDecisions before:', steamImport.value.userDecisions);
+      
+      isSubmitting = true;
+      try {
+        // Skip all remaining games
+        awaitingReviewGames.forEach((game, index) => {
+          const steamAppIdStr = game.steam_appid.toString();
+          console.log(`🔧 DEBUG: Processing game ${index + 1}/${awaitingReviewGames.length}: ${game.steam_name} (${steamAppIdStr})`);
+          
+          if (!reviewedGames[steamAppIdStr]) {
+            console.log(`🔧 DEBUG: Setting skip decision for ${steamAppIdStr}`);
+            steamImport.setUserDecision(steamAppIdStr, {
+              action: 'skip',
+              notes: 'Skipped via skip all'
+            });
+          } else {
+            console.log(`🔧 DEBUG: Game ${steamAppIdStr} already has decision:`, reviewedGames[steamAppIdStr]);
+          }
+        });
+        
+        console.log('🔧 DEBUG: Store userDecisions after forEach:', steamImport.value.userDecisions);
+        console.log('🔧 DEBUG: Object.keys(userDecisions).length:', Object.keys(steamImport.value.userDecisions).length);
+        
+        // Auto-submit the skip decisions
+        console.log('🔧 DEBUG: About to submit decisions:', steamImport.value.userDecisions);
+        console.log('🔧 DEBUG: JobId:', jobId);
+        console.log('🔧 DEBUG: Current job status:', steamImport.value.currentJob?.status);
+        console.log('🔧 DEBUG: Current job details:', steamImport.value.currentJob);
+        
+        await steamImport.submitUserDecisions(jobId, steamImport.value.userDecisions);
+        
+        console.log('🔧 DEBUG: Submission successful!');
+        ui.showSuccess('All remaining games skipped successfully');
+        // Job status will change and trigger navigation via reactive statement
+      } catch (err) {
+        console.error('🔧 DEBUG: Skip All error details:', err);
+        console.error('🔧 DEBUG: Error stack:', err instanceof Error ? err.stack : 'No stack');
+        console.error('🔧 DEBUG: Error message:', err instanceof Error ? err.message : String(err));
+        
+        error = err instanceof Error ? err.message : 'Failed to skip games';
+        ui.showError(error);
+      } finally {
+        isSubmitting = false;
+        console.log('🔧 DEBUG: Skip All completed, isSubmitting set to false');
+      }
+    } else {
+      console.log('🔧 DEBUG: Skip All cancelled by user');
     }
   }
 </script>
@@ -207,10 +261,18 @@
               </div>
               <button
                 on:click={handleSkipAll}
-                class="btn-secondary text-sm"
-                disabled={completedReviews === totalReviewGames}
+                class="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={completedReviews === totalReviewGames || isSubmitting}
               >
-                Skip All Remaining
+                {#if isSubmitting}
+                  <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Skipping...
+                {:else}
+                  Skip All Remaining
+                {/if}
               </button>
             </div>
           </div>

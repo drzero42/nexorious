@@ -65,7 +65,6 @@ class SteamGame:
     """Steam game information from Steam Web API."""
     appid: int
     name: str
-    img_icon_url: Optional[str] = None
 
 
 class SteamAPIError(Exception):
@@ -196,8 +195,7 @@ class SteamService:
             for game_data in games_data:
                 game = SteamGame(
                     appid=game_data["appid"],
-                    name=game_data.get("name", ""),
-                    img_icon_url=game_data.get("img_icon_url")
+                    name=game_data.get("name", "")
                 )
                 games.append(game)
             
@@ -222,8 +220,7 @@ class SteamService:
             for game_data in games_data:
                 game = SteamGame(
                     appid=game_data["appid"],
-                    name=game_data.get("name", ""),
-                    img_icon_url=game_data.get("img_icon_url")
+                    name=game_data.get("name", "")
                 )
                 games.append(game)
             

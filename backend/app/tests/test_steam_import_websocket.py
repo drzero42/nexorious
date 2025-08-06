@@ -87,8 +87,7 @@ class TestSteamImportServiceWebSocketIntegration:
         job = SteamImportJob(id="job123", user_id="user456")
         steam_game = SteamGame(
             appid=123456,
-            name="Test Game",
-            img_icon_url="test_icon.jpg"
+            name="Test Game"
         )
         
         await self.service._emit_game_matched(job, steam_game, "game789", "database")
@@ -102,7 +101,6 @@ class TestSteamImportServiceWebSocketIntegration:
         assert call_args[1]["data"]["steam_name"] == "Test Game"
         assert call_args[1]["data"]["matched_game_id"] == "game789"
         assert call_args[1]["data"]["match_type"] == "database"
-        assert call_args[1]["data"]["img_icon_url"] == "test_icon.jpg"
     
     @pytest.mark.asyncio
     async def test_emit_game_needs_review(self):
@@ -110,8 +108,7 @@ class TestSteamImportServiceWebSocketIntegration:
         job = SteamImportJob(id="job123", user_id="user456")
         steam_game = SteamGame(
             appid=789123,
-            name="Unmatched Game",
-            img_icon_url="unmatched_icon.jpg"
+            name="Unmatched Game"
         )
         
         await self.service._emit_game_needs_review(job, steam_game)
@@ -123,7 +120,6 @@ class TestSteamImportServiceWebSocketIntegration:
         assert call_args[1]["event_type"] == WebSocketEventType.GAME_NEEDS_REVIEW
         assert call_args[1]["data"]["steam_appid"] == 789123
         assert call_args[1]["data"]["steam_name"] == "Unmatched Game"
-        assert call_args[1]["data"]["img_icon_url"] == "unmatched_icon.jpg"
     
     @pytest.mark.asyncio
     async def test_emit_game_imported(self):
@@ -286,8 +282,8 @@ class TestSteamImportServiceWebSocketIntegration:
         # Mock Steam service and games
         mock_steam_service = AsyncMock()
         mock_steam_games = [
-            SteamGame(appid=123, name="Game 1", img_icon_url="icon1.jpg"),
-            SteamGame(appid=456, name="Game 2", img_icon_url="icon2.jpg")
+            SteamGame(appid=123, name="Game 1"),
+            SteamGame(appid=456, name="Game 2")
         ]
         
         with patch('app.services.steam_import.SteamService') as mock_steam_service_class:

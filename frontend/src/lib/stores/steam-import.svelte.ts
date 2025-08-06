@@ -356,36 +356,74 @@ function createSteamImportStore() {
     },
 
     async submitUserDecisions(jobId: string, decisions: Record<string, UserDecision>): Promise<void> {
+      console.log('🔧 DEBUG: submitUserDecisions called');
+      console.log('🔧 DEBUG: jobId:', jobId);
+      console.log('🔧 DEBUG: decisions:', decisions);
+      console.log('🔧 DEBUG: decisions object keys:', Object.keys(decisions));
+      console.log('🔧 DEBUG: decisions object length:', Object.keys(decisions).length);
+      
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/import/${jobId}/decision`, {
+        const payload = { decisions };
+        const url = `${config.apiUrl}/steam/import/${jobId}/decision`;
+        
+        console.log('🔧 DEBUG: API URL:', url);
+        console.log('🔧 DEBUG: Payload:', JSON.stringify(payload, null, 2));
+        console.log('🔧 DEBUG: Auth token present:', !!auth.value.accessToken);
+        
+        const response = await fetch(url, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${auth.value.accessToken}`
           },
-          body: JSON.stringify({ decisions })
+          body: JSON.stringify(payload)
         });
 
+        console.log('🔧 DEBUG: Response status:', response.status);
+        console.log('🔧 DEBUG: Response status text:', response.statusText);
+        console.log('🔧 DEBUG: Response ok:', response.ok);
+
         if (!response.ok) {
+          console.log('🔧 DEBUG: Response not ok, handling error');
+          
           if (response.status === 401) {
+            console.log('🔧 DEBUG: 401 response, refreshing auth');
             await auth.refreshAuth();
             return this.submitUserDecisions(jobId, decisions);
           }
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to submit decisions');
+          
+          let errorData;
+          let rawResponseText = '';
+          try {
+            rawResponseText = await response.text();
+            console.log('🔧 DEBUG: Raw error response text:', rawResponseText);
+            errorData = JSON.parse(rawResponseText);
+            console.log('🔧 DEBUG: Error response data:', errorData);
+          } catch (jsonError) {
+            console.log('🔧 DEBUG: Failed to parse error response as JSON:', jsonError);
+            console.log('🔧 DEBUG: Raw response was:', rawResponseText);
+            errorData = {};
+          }
+          
+          const errorMessage = errorData.detail || `Failed to submit decisions (${response.status}: ${response.statusText})`;
+          console.error('🔧 DEBUG: Throwing error:', errorMessage);
+          throw new Error(errorMessage);
         }
 
+        console.log('🔧 DEBUG: Submission successful, clearing user decisions');
         // Clear user decisions after successful submission
         state = { ...state, userDecisions: {} };
 
       } catch (error) {
+        console.error('🔧 DEBUG: submitUserDecisions caught error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to submit decisions';
         state = { ...state, error: errorMessage };
         throw error;
       } finally {
         state = { ...state, isLoading: false };
+        console.log('🔧 DEBUG: submitUserDecisions finally block, isLoading set to false');
       }
     },
 

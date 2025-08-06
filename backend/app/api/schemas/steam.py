@@ -106,7 +106,6 @@ class SteamGameResponse(BaseModel):
     """Response schema for Steam game information."""
     appid: int = Field(..., description="Steam App ID")
     name: str = Field(..., description="Game name")
-    img_icon_url: Optional[str] = Field(None, description="Game icon URL")
 
 
 class SteamLibraryResponse(BaseModel):

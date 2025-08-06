@@ -214,7 +214,6 @@ class TestSteamService:
             assert isinstance(result[0], SteamGame)
             assert result[0].appid == 730
             assert result[0].name == "Counter-Strike: Global Offensive"
-            assert result[0].img_icon_url == "icon_url"
             assert result[1].appid == 440
             assert result[1].name == "Team Fortress 2"
 
@@ -341,13 +340,11 @@ class TestSteamDataClasses:
         """Test SteamGame creation."""
         game = SteamGame(
             appid=730,
-            name="Counter-Strike: Global Offensive",
-            img_icon_url="icon_url"
+            name="Counter-Strike: Global Offensive"
         )
         
         assert game.appid == 730
         assert game.name == "Counter-Strike: Global Offensive"
-        assert game.img_icon_url == "icon_url"
 
 
 class TestSteamExceptions:
