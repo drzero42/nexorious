@@ -8,7 +8,7 @@ from sqlalchemy import pool
 from alembic import context
 
 # Add the backend directory to the Python path so we can import our models
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from app.core.config import settings
 from sqlmodel import SQLModel
