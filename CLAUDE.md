@@ -58,6 +58,8 @@ npm install  # Install all dependencies
 ### Database Management
 ```bash
 # Create new migration (after model changes)
+# IMPORTANT: Claude Code should run this command when migrations are needed
+# DO NOT write migration files manually - always use autogenerate
 uv run alembic revision --autogenerate -m "description of changes"
 
 # Alternative backend server start
