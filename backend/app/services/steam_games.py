@@ -111,7 +111,7 @@ class SteamGamesService:
         self._igdb_service = igdb_service
         
         # Configuration for automatic matching
-        self.auto_match_confidence_threshold = 0.90  # 90% similarity required
+        self.auto_match_confidence_threshold = 0.80  # 80% similarity required (lowered from 90%)
         self.auto_match_batch_size = 10  # Process in batches for rate limiting
         
         logger.debug("SteamGamesService initialized")
@@ -217,22 +217,34 @@ class SteamGamesService:
             self.session.commit()
             logger.info(f"Steam library import phase completed for user {user_id}: {imported_count} imported, {skipped_count} skipped")
             
-            # Automatic IGDB matching for newly imported games
+            # Automatic IGDB matching for all unmatched games (both new and existing)
             auto_matched_count = 0
-            if enable_auto_matching and new_steam_games:
-                logger.info(f"Starting automatic IGDB matching for {len(new_steam_games)} new Steam games")
+            if enable_auto_matching:
+                logger.info(f"Starting automatic IGDB matching for unmatched Steam games")
                 try:
-                    # Refresh Steam game records to get database IDs
-                    self.session.refresh_all(new_steam_games)
+                    # Find all unmatched Steam games for this user (not just newly imported ones)
+                    unmatched_games_query = select(SteamGame).where(
+                        and_(
+                            SteamGame.user_id == user_id,
+                            SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                            SteamGame.ignored == False    # Not ignored by user
+                        )
+                    )
+                    unmatched_games = self.session.exec(unmatched_games_query).all()
                     
-                    # Perform automatic matching
-                    match_results = await self._auto_match_steam_games([sg.id for sg in new_steam_games])
-                    auto_matched_count = match_results.successful_matches
-                    
-                    # Add any matching errors to overall error list
-                    errors.extend(match_results.errors)
-                    
-                    logger.info(f"Automatic IGDB matching completed: {auto_matched_count} games matched")
+                    if unmatched_games:
+                        logger.info(f"Found {len(unmatched_games)} unmatched Steam games to process (includes both new and existing games)")
+                        
+                        # Perform automatic matching on all unmatched games
+                        match_results = await self._auto_match_steam_games([sg.id for sg in unmatched_games])
+                        auto_matched_count = match_results.successful_matches
+                        
+                        # Add any matching errors to overall error list
+                        errors.extend(match_results.errors)
+                        
+                        logger.info(f"Automatic IGDB matching completed: {auto_matched_count} games matched out of {len(unmatched_games)} unmatched games")
+                    else:
+                        logger.info("No unmatched Steam games found for auto-matching")
                     
                 except Exception as e:
                     error_msg = f"Error during automatic IGDB matching: {str(e)}"
@@ -270,7 +282,7 @@ class SteamGamesService:
         Returns:
             AutoMatchResults with detailed matching results
         """
-        logger.info(f"Starting automatic IGDB matching for {len(steam_game_ids)} Steam games")
+        logger.info(f"🎯 [Auto-Match] Starting automatic IGDB matching for {len(steam_game_ids)} Steam games (confidence threshold: {self.auto_match_confidence_threshold:.0%})")
         
         results = []
         successful_matches = 0
@@ -279,36 +291,43 @@ class SteamGamesService:
         errors = []
         
         # Process in batches to respect rate limits
+        total_batches = (len(steam_game_ids) + self.auto_match_batch_size - 1) // self.auto_match_batch_size
         for i in range(0, len(steam_game_ids), self.auto_match_batch_size):
             batch = steam_game_ids[i:i + self.auto_match_batch_size]
-            logger.debug(f"Processing auto-match batch {i//self.auto_match_batch_size + 1}: {len(batch)} games")
+            current_batch = i // self.auto_match_batch_size + 1
+            logger.info(f"🎯 [Auto-Match] Processing batch {current_batch}/{total_batches}: {len(batch)} games")
             
-            for steam_game_id in batch:
+            for j, steam_game_id in enumerate(batch):
                 try:
+                    logger.debug(f"🎯 [Auto-Match] Processing game {i+j+1}/{len(steam_game_ids)} (ID: {steam_game_id})")
                     result = await self._auto_match_single_steam_game(steam_game_id)
                     results.append(result)
                     
                     if result.matched:
                         successful_matches += 1
-                        logger.debug(f"Auto-matched {result.steam_game_name} -> {result.igdb_game_title} (confidence: {result.confidence_score:.2f})")
+                        logger.info(f"✅ [Auto-Match] MATCHED: '{result.steam_game_name}' -> '{result.igdb_game_title}' (confidence: {result.confidence_score:.1%}, IGDB ID: {result.igdb_id})")
                     elif result.error_message:
                         failed_matches += 1
+                        logger.warning(f"❌ [Auto-Match] FAILED: '{result.steam_game_name}' - {result.error_message}")
                         errors.append(result.error_message)
                     else:
                         skipped_games += 1  # Low confidence, skip for manual matching
+                        confidence_info = f" (confidence: {result.confidence_score:.1%})" if result.confidence_score else ""
+                        logger.info(f"⏭️ [Auto-Match] SKIPPED: '{result.steam_game_name}' - confidence too low{confidence_info}")
                         
                 except Exception as e:
                     error_msg = f"Error auto-matching Steam game {steam_game_id}: {str(e)}"
-                    logger.error(error_msg)
+                    logger.error(f"💥 [Auto-Match] EXCEPTION: {error_msg}")
                     errors.append(error_msg)
                     failed_matches += 1
                     continue
             
             # Small delay between batches to be respectful of IGDB API
             if i + self.auto_match_batch_size < len(steam_game_ids):
+                logger.debug(f"🎯 [Auto-Match] Waiting 0.5s between batches...")
                 await asyncio.sleep(0.5)
         
-        logger.info(f"Automatic IGDB matching completed: {successful_matches} matched, {failed_matches} failed, {skipped_games} skipped")
+        logger.info(f"🎯 [Auto-Match] COMPLETED: {successful_matches} matched ✅, {failed_matches} failed ❌, {skipped_games} skipped ⏭️ (out of {len(steam_game_ids)} games)")
         
         return AutoMatchResults(
             total_processed=len(steam_game_ids),
@@ -330,8 +349,10 @@ class SteamGamesService:
             AutoMatchResult with matching details
         """
         # Get Steam game
+        logger.debug(f"🎯 [Single Match] Looking up Steam game with ID: {steam_game_id}")
         steam_game = self.session.get(SteamGame, steam_game_id)
         if not steam_game:
+            logger.error(f"🎯 [Single Match] Steam game not found in database: {steam_game_id}")
             return AutoMatchResult(
                 steam_game_id=steam_game_id,
                 steam_game_name="Unknown",
@@ -340,8 +361,11 @@ class SteamGamesService:
                 error_message="Steam game not found in database"
             )
         
+        logger.debug(f"🎯 [Single Match] Processing '{steam_game.game_name}' (Steam AppID: {steam_game.steam_appid})")
+        
         # Skip if already matched
         if steam_game.igdb_id:
+            logger.debug(f"🎯 [Single Match] Skipping '{steam_game.game_name}' - already has IGDB match: {steam_game.igdb_id}")
             return AutoMatchResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=steam_game.game_name,
@@ -352,13 +376,17 @@ class SteamGamesService:
         
         try:
             # Search IGDB for potential matches
+            logger.debug(f"🎯 [Single Match] Searching IGDB for '{steam_game.game_name}'...")
             igdb_candidates = await self.igdb_service.search_games(
                 query=steam_game.game_name,
                 limit=5,  # Get top 5 candidates
                 fuzzy_threshold=self.auto_match_confidence_threshold
             )
             
+            logger.debug(f"🎯 [Single Match] IGDB search returned {len(igdb_candidates)} candidates for '{steam_game.game_name}'")
+            
             if not igdb_candidates:
+                logger.debug(f"🎯 [Single Match] No IGDB candidates found for '{steam_game.game_name}'")
                 return AutoMatchResult(
                     steam_game_id=steam_game_id,
                     steam_game_name=steam_game.game_name,
@@ -366,26 +394,44 @@ class SteamGamesService:
                     matched=False
                 )
             
+            # Log all candidates for debugging
+            for i, candidate in enumerate(igdb_candidates):
+                logger.debug(f"🎯 [Single Match] Candidate {i+1}: '{candidate.title}' (IGDB ID: {candidate.igdb_id})")
+            
             # Get the best match (first result, as they're ranked by fuzzy matching)
             best_match = igdb_candidates[0]
+            logger.debug(f"🎯 [Single Match] Best match candidate: '{best_match.title}' (IGDB ID: {best_match.igdb_id})")
             
             # Calculate confidence score using fuzzy matching
             from rapidfuzz import fuzz
             confidence = fuzz.ratio(steam_game.game_name.lower(), best_match.title.lower()) / 100.0
+            logger.debug(f"🎯 [Single Match] Confidence score: {confidence:.1%} (threshold: {self.auto_match_confidence_threshold:.1%})")
             
             # Only auto-match if confidence is above threshold
             if confidence >= self.auto_match_confidence_threshold:
+                logger.debug(f"🎯 [Single Match] Confidence meets threshold, proceeding with match...")
                 # Check if Game record exists in our database, create if needed
                 game_query = select(Game).where(Game.igdb_id == best_match.igdb_id)
                 existing_game = self.session.exec(game_query).first()
                 
                 if not existing_game:
                     # Create Game record from IGDB metadata
+                    logger.debug(f"🎯 [Single Match] Creating new Game record for IGDB ID {best_match.igdb_id}")
+                    
+                    # Convert string release_date to date object for SQLite compatibility
+                    release_date_obj = None
+                    if best_match.release_date:
+                        try:
+                            release_date_obj = datetime.strptime(best_match.release_date, '%Y-%m-%d').date()
+                            logger.debug(f"🎯 [Single Match] Converted release_date '{best_match.release_date}' to date object")
+                        except ValueError as e:
+                            logger.warning(f"🎯 [Single Match] Invalid release_date format '{best_match.release_date}': {e}")
+                    
                     game = Game(
                         igdb_id=best_match.igdb_id,
                         title=best_match.title,
                         summary=best_match.description,
-                        release_date=best_match.release_date,
+                        release_date=release_date_obj,
                         cover_art_url=best_match.cover_art_url,
                         igdb_rating=best_match.rating_average,
                         igdb_rating_count=best_match.rating_count,
@@ -397,14 +443,31 @@ class SteamGamesService:
                         created_at=datetime.now(timezone.utc),
                         updated_at=datetime.now(timezone.utc)
                     )
-                    self.session.add(game)
-                    self.session.flush()  # Get the ID
+                    
+                    try:
+                        self.session.add(game)
+                        self.session.flush()  # Get the ID
+                        logger.debug(f"🎯 [Single Match] Created Game record with ID {game.id}")
+                    except Exception as e:
+                        logger.error(f"🎯 [Single Match] Database error creating Game record: {str(e)}")
+                        self.session.rollback()  # Rollback the failed transaction
+                        raise  # Re-raise to trigger the outer catch block
+                else:
+                    logger.debug(f"🎯 [Single Match] Using existing Game record ID {existing_game.id}")
                 
                 # Update Steam game with IGDB match
+                logger.debug(f"🎯 [Single Match] Updating SteamGame {steam_game_id} with IGDB ID {best_match.igdb_id}")
                 steam_game.igdb_id = best_match.igdb_id
                 steam_game.updated_at = datetime.now(timezone.utc)
-                self.session.add(steam_game)
-                self.session.commit()
+                
+                try:
+                    self.session.add(steam_game)
+                    self.session.commit()
+                    logger.debug(f"🎯 [Single Match] Successfully matched '{steam_game.game_name}' to '{best_match.title}'")
+                except Exception as e:
+                    logger.error(f"🎯 [Single Match] Database error updating SteamGame: {str(e)}")
+                    self.session.rollback()  # Rollback the failed transaction
+                    raise  # Re-raise to trigger the outer catch block
                 
                 return AutoMatchResult(
                     steam_game_id=steam_game_id,
@@ -417,6 +480,7 @@ class SteamGamesService:
                 )
             else:
                 # Low confidence, leave for manual matching
+                logger.debug(f"🎯 [Single Match] Confidence {confidence:.1%} below threshold {self.auto_match_confidence_threshold:.1%}, skipping '{steam_game.game_name}'")
                 return AutoMatchResult(
                     steam_game_id=steam_game_id,
                     steam_game_name=steam_game.game_name,
@@ -427,7 +491,12 @@ class SteamGamesService:
                 
         except IGDBError as e:
             error_msg = f"IGDB error matching '{steam_game.game_name}': {str(e)}"
-            logger.error(error_msg)
+            logger.error(f"🎯 [Single Match] IGDB ERROR for '{steam_game.game_name}': {str(e)}")
+            # Ensure session is in clean state after IGDB errors
+            try:
+                self.session.rollback()
+            except Exception:
+                pass  # Ignore rollback errors
             return AutoMatchResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=steam_game.game_name,
@@ -437,7 +506,13 @@ class SteamGamesService:
             )
         except Exception as e:
             error_msg = f"Unexpected error matching '{steam_game.game_name}': {str(e)}"
-            logger.error(error_msg)
+            logger.error(f"🎯 [Single Match] UNEXPECTED ERROR for '{steam_game.game_name}': {str(e)}")
+            logger.exception(f"🎯 [Single Match] Exception details for '{steam_game.game_name}':")
+            # Ensure session is in clean state after unexpected errors
+            try:
+                self.session.rollback()
+            except Exception:
+                pass  # Ignore rollback errors
             return AutoMatchResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=steam_game.game_name,
@@ -446,8 +521,65 @@ class SteamGamesService:
                 error_message=error_msg
             )
     
-    # Placeholder methods for remaining functionality
-    # These will be implemented in subsequent steps
+    async def retry_auto_matching_for_unmatched_games(self, user_id: str) -> AutoMatchResults:
+        """
+        Manually retry auto-matching for all unmatched Steam games.
+        
+        Args:
+            user_id: User ID for authorization
+            
+        Returns:
+            AutoMatchResults with detailed matching results
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        logger.info(f"🎯 [Manual Auto-Match] Starting manual auto-matching retry for user {user_id}")
+        
+        try:
+            # Validate user exists
+            user = self.session.get(User, user_id)
+            if not user:
+                raise SteamGamesServiceError(f"User {user_id} not found")
+            
+            # Find all unmatched Steam games for this user
+            unmatched_games_query = select(SteamGame).where(
+                and_(
+                    SteamGame.user_id == user_id,
+                    SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                    SteamGame.ignored == False    # Not ignored by user
+                )
+            )
+            unmatched_games = self.session.exec(unmatched_games_query).all()
+            
+            if not unmatched_games:
+                logger.info(f"🎯 [Manual Auto-Match] No unmatched Steam games found for user {user_id}")
+                return AutoMatchResults(
+                    total_processed=0,
+                    successful_matches=0,
+                    failed_matches=0,
+                    skipped_games=0,
+                    results=[],
+                    errors=[]
+                )
+            
+            logger.info(f"🎯 [Manual Auto-Match] Found {len(unmatched_games)} unmatched Steam games for user {user_id}")
+            
+            # Perform automatic matching on all unmatched games
+            match_results = await self._auto_match_steam_games([sg.id for sg in unmatched_games])
+            
+            logger.info(f"🎯 [Manual Auto-Match] Manual auto-matching completed for user {user_id}: "
+                       f"{match_results.successful_matches} matched, {match_results.failed_matches} failed, "
+                       f"{match_results.skipped_games} skipped")
+            
+            return match_results
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"Error during manual auto-matching for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to retry auto-matching: {str(e)}")
     
     async def match_steam_game_to_igdb(
         self, 
@@ -586,12 +718,21 @@ class SteamGamesService:
                     
                     logger.debug(f"🎮 [Steam Service] Got IGDB metadata: {game_metadata.title}")
                     
+                    # Convert string release_date to date object for SQLite compatibility
+                    release_date_obj = None
+                    if game_metadata.release_date:
+                        try:
+                            release_date_obj = datetime.strptime(game_metadata.release_date, '%Y-%m-%d').date()
+                            logger.debug(f"🎮 [Steam Service] Converted release_date '{game_metadata.release_date}' to date object")
+                        except ValueError as e:
+                            logger.warning(f"🎮 [Steam Service] Invalid release_date format '{game_metadata.release_date}': {e}")
+                    
                     # Create new Game record from GameMetadata
                     game = Game(
                         igdb_id=steam_game.igdb_id,
                         title=game_metadata.title,
                         summary=game_metadata.description,
-                        release_date=game_metadata.release_date,
+                        release_date=release_date_obj,
                         cover_art_url=game_metadata.cover_art_url,
                         igdb_rating=game_metadata.rating_average,
                         igdb_rating_count=game_metadata.rating_count,
@@ -810,12 +951,21 @@ class SteamGamesService:
                                 failed_syncs += 1
                                 continue
                             
+                            # Convert string release_date to date object for SQLite compatibility
+                            release_date_obj = None
+                            if game_metadata.release_date:
+                                try:
+                                    release_date_obj = datetime.strptime(game_metadata.release_date, '%Y-%m-%d').date()
+                                    logger.debug(f"Converted release_date '{game_metadata.release_date}' to date object for '{steam_game.game_name}'")
+                                except ValueError as e:
+                                    logger.warning(f"Invalid release_date format '{game_metadata.release_date}' for '{steam_game.game_name}': {e}")
+                            
                             # Create new Game record from GameMetadata
                             game = Game(
                                 igdb_id=steam_game.igdb_id,
                                 title=game_metadata.title,
                                 summary=game_metadata.description,
-                                release_date=game_metadata.release_date,
+                                release_date=release_date_obj,
                                 cover_art_url=game_metadata.cover_art_url,
                                 igdb_rating=game_metadata.rating_average,
                                 igdb_rating_count=game_metadata.rating_count,
@@ -827,12 +977,23 @@ class SteamGamesService:
                                 created_at=datetime.now(timezone.utc),
                                 updated_at=datetime.now(timezone.utc)
                             )
-                            self.session.add(game)
-                            self.session.flush()  # Get the game ID
-                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                            
+                            try:
+                                self.session.add(game)
+                                self.session.flush()  # Get the game ID
+                                logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                            except Exception as db_error:
+                                logger.error(f"Database error creating Game record: {str(db_error)}")
+                                self.session.rollback()  # Rollback failed transaction
+                                raise db_error  # Re-raise to trigger outer catch
                             
                         except Exception as e:
                             logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                            # Ensure session is rolled back after any error
+                            try:
+                                self.session.rollback()
+                            except Exception:
+                                pass  # Ignore rollback errors
                             error_msg = f"Failed to create game record for '{steam_game.game_name}': {str(e)}"
                             errors.append(error_msg)
                             results.append(SyncResult(
@@ -913,6 +1074,11 @@ class SteamGamesService:
                     
                 except Exception as e:
                     logger.error(f"Error syncing Steam game '{steam_game.game_name}' (ID: {steam_game.id}): {str(e)}")
+                    # Ensure session is rolled back after sync errors
+                    try:
+                        self.session.rollback()
+                    except Exception:
+                        pass  # Ignore rollback errors
                     error_msg = f"Failed to sync '{steam_game.game_name}': {str(e)}"
                     errors.append(error_msg)
                     results.append(SyncResult(

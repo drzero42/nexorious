@@ -123,6 +123,15 @@
     }
   }
 
+  async function handleAutoMatch() {
+    try {
+      await steamGames.retryAutoMatching();
+      await loadSteamGames(); // Refresh data to show newly matched games
+    } catch (error) {
+      // Error handled in store
+    }
+  }
+
   async function handleTabChange(tab: 'needs-attention' | 'in-sync') {
     activeTab = tab;
     await loadTabData();
@@ -131,7 +140,7 @@
   // Reactive search using proper Svelte 5 dependency tracking
   $effect(() => {
     // Read searchQuery to establish dependency tracking
-    const query = searchQuery;
+    searchQuery;
     
     // Only execute search if we have data loaded
     if (!isLoading) {
@@ -143,6 +152,9 @@
         clearTimeout(debounceTimer);
       };
     }
+    
+    // Return undefined for the else path
+    return undefined;
   });
 
   // Derived values for reactive display
@@ -222,6 +234,28 @@
               Import Library
             {/if}
           </button>
+          
+          {#if unmatchedCount > 0}
+            <button
+              onclick={handleAutoMatch}
+              disabled={steamGames.value.isAutoMatching}
+              class="btn-secondary disabled:opacity-50"
+              title="Retry auto-matching for unmatched games"
+            >
+              {#if steamGames.value.isAutoMatching}
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Auto-matching...
+              {:else}
+                <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Auto-match
+              {/if}
+            </button>
+          {/if}
         </div>
       </div>
     </div>

@@ -212,3 +212,13 @@ class SteamGamesBulkSyncResponse(BaseModel):
     errors: List[str] = Field(default=[], description="List of error messages for failed syncs")
 
 
+class SteamGamesAutoMatchResponse(BaseModel):
+    """Response schema for manual auto-matching operation."""
+    message: str = Field(..., description="Overall status message about the auto-matching operation")
+    total_processed: int = Field(..., description="Total number of Steam games processed for matching")
+    successful_matches: int = Field(..., description="Number of games successfully matched to IGDB")
+    failed_matches: int = Field(..., description="Number of games that failed to match")
+    skipped_games: int = Field(..., description="Number of games skipped due to low confidence")
+    errors: List[str] = Field(default=[], description="List of error messages for failed matches")
+
+

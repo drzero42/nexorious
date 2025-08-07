@@ -23,7 +23,8 @@ from ..api.schemas.steam import (
     SteamGameSyncRequest,
     SteamGameSyncResponse,
     SteamGameIgnoreResponse,
-    SteamGamesBulkSyncResponse
+    SteamGamesBulkSyncResponse,
+    SteamGamesAutoMatchResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -537,4 +538,80 @@ async def toggle_steam_game_ignored_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to toggle Steam game ignored status"
+        )
+
+
+@router.post("/auto-match", response_model=SteamGamesAutoMatchResponse, status_code=status.HTTP_200_OK)
+async def retry_auto_matching_for_unmatched_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesAutoMatchResponse:
+    """
+    Manually retry auto-matching for all unmatched Steam games.
+    
+    This endpoint allows users to manually trigger the auto-matching process
+    for all Steam games that haven't been matched to IGDB games yet.
+    
+    The process:
+    1. Finds all unmatched Steam games (no IGDB ID and not ignored)
+    2. Searches IGDB for potential matches using fuzzy string matching
+    3. Automatically matches games with confidence >= 80%
+    4. Creates Game records in the database for new matches
+    5. Updates Steam games with IGDB IDs
+    
+    This is useful after:
+    - Initial Steam library import when some games weren't matched
+    - Adding new games to Steam library that need matching
+    - When IGDB database has been updated with new games
+    """
+    try:
+        # Create Steam games service
+        steam_games_service = create_steam_games_service(session)
+        
+        # Use service to retry auto-matching
+        results = await steam_games_service.retry_auto_matching_for_unmatched_games(current_user.id)
+        
+        # Create success message  
+        if results.total_processed == 0:
+            message = "No unmatched Steam games found to process"
+        elif results.successful_matches == results.total_processed:
+            message = f"Successfully auto-matched all {results.successful_matches} unmatched Steam games"
+        elif results.successful_matches > 0:
+            message = f"Auto-matched {results.successful_matches} of {results.total_processed} unmatched Steam games ({results.failed_matches} failed, {results.skipped_games} skipped due to low confidence)"
+        else:
+            message = f"Unable to auto-match any of the {results.total_processed} unmatched Steam games (all had low confidence or failed)"
+        
+        logger.info(f"Manual auto-matching completed for user {current_user.id}: {results.successful_matches} successful, {results.failed_matches} failed, {results.skipped_games} skipped")
+        
+        return SteamGamesAutoMatchResponse(
+            message=message,
+            total_processed=results.total_processed,
+            successful_matches=results.successful_matches,
+            failed_matches=results.failed_matches,
+            skipped_games=results.skipped_games,
+            errors=results.errors
+        )
+        
+    except SteamGamesServiceError as e:
+        # Convert service errors to appropriate HTTP errors
+        # Rollback session to prevent PendingRollbackError
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        # Rollback session to prevent PendingRollbackError
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        # Use a string literal instead of accessing current_user.id to avoid session issues
+        logger.error(f"Error during manual auto-matching: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retry auto-matching for Steam games"
         )

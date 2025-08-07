@@ -55,6 +55,15 @@ export interface SteamGamesBulkSyncResponse {
   errors: string[];
 }
 
+export interface SteamGamesAutoMatchResponse {
+  message: string;
+  total_processed: number;
+  successful_matches: number;
+  failed_matches: number;
+  skipped_games: number;
+  errors: string[];
+}
+
 export type SteamGameStatusFilter = 'unmatched' | 'matched' | 'ignored' | 'synced';
 
 export interface SteamGamesState {
@@ -63,6 +72,7 @@ export interface SteamGamesState {
   isLoading: boolean;
   isImporting: boolean;
   isSyncing: boolean;
+  isAutoMatching: boolean;
   error: string | null;
   lastRefresh: Date | null;
 }
@@ -73,6 +83,7 @@ const initialState: SteamGamesState = {
   isLoading: false,
   isImporting: false,
   isSyncing: false,
+  isAutoMatching: false,
   error: null,
   lastRefresh: null
 };
@@ -341,6 +352,52 @@ function createSteamGamesStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to sync Steam games';
         state = { ...state, isSyncing: false, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Manually retry auto-matching for all unmatched Steam games
+    async retryAutoMatching(): Promise<SteamGamesAutoMatchResponse> {
+      state = { ...state, isAutoMatching: true, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/auto-match`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.retryAutoMatching();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to retry auto-matching');
+        }
+
+        const data = await response.json() as SteamGamesAutoMatchResponse;
+        
+        state = {
+          ...state,
+          isAutoMatching: false,
+          error: null
+        };
+
+        if (data.successful_matches > 0) {
+          ui.showSuccess(data.message);
+        } else if (data.total_processed === 0) {
+          ui.showInfo(data.message);
+        } else {
+          ui.showWarning(data.message);
+        }
+
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to retry auto-matching';
+        state = { ...state, isAutoMatching: false, error: errorMessage };
         ui.showError(errorMessage);
         throw error;
       }
