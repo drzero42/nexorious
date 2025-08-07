@@ -393,7 +393,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 2.2.6 Needs Attention Section Implementation
 **Priority**: P0 (Critical)
 - [ ] Create Unmatched table for Steam games without IGDB ID that need matching:
-  - Display Steam game name and cover art (if available)
+  - Display Steam game name
   - Add IGDB search and choose widget for manual matching
   - Add ignore button to mark games as ignored (won't be imported)
   - Move games to Matched table after successful IGDB matching
