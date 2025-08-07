@@ -530,10 +530,23 @@
     {#if hasConfig && currentConfig?.is_verified}
       <div class="card">
         <div class="border-b border-gray-200 pb-4 mb-6">
-          <h2 class="text-lg font-semibold text-gray-900">Steam Library Import</h2>
-          <p class="mt-1 text-sm text-gray-500">
-            Import your Steam library to automatically add games to your collection
-          </p>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">Steam Library Import</h2>
+              <p class="mt-1 text-sm text-gray-500">
+                Import your Steam library to automatically add games to your collection
+              </p>
+            </div>
+            <a
+              href="/steam-games"
+              class="btn-secondary text-sm"
+            >
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+              Manage Steam Games
+            </a>
+          </div>
         </div>
 
         <div class="space-y-4">

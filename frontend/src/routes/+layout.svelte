@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { auth } from '$lib/stores';
+  import { steam } from '$lib/stores/steam.svelte';
   import { ToastContainer } from '$lib/components';
   import { onMount } from 'svelte';
   
@@ -74,6 +75,17 @@
                     Add Game
                   </a>
                 </li>
+                {#if steam.value.config?.has_api_key && steam.value.config?.is_verified}
+                  <li>
+                    <a
+                      href="/steam-games"
+                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">🔥</span>
+                      Steam Games
+                    </a>
+                  </li>
+                {/if}
               </ul>
             </li>
             
@@ -242,6 +254,18 @@
                           Add Game
                         </a>
                       </li>
+                      {#if steam.value.config?.has_api_key && steam.value.config?.is_verified}
+                        <li>
+                          <a
+                            href="/steam-games"
+                            on:click={closeMobileMenu}
+                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          >
+                            <span class="text-lg">🔥</span>
+                            Steam Games
+                          </a>
+                        </li>
+                      {/if}
                     </ul>
                   </li>
                   
