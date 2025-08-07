@@ -368,7 +368,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create `POST /api/steam-games/{steam_game_id}/sync` endpoint to add game to collection
 - [x] Create `PUT /api/steam-games/{steam_game_id}/ignore` endpoint to toggle ignored status
 - [x] Create `POST /api/steam-games/sync` endpoint for comprehensive matched game synchronization
-- [ ] Add proper authentication and authorization for all Steam Games endpoints
+- [x] Add proper authentication and authorization for all Steam Games endpoints
 
 #### 2.2.4 Steam Games Backend Services  
 **Priority**: P0 (Critical)
