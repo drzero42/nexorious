@@ -165,3 +165,9 @@ class SteamGamesListResponse(BaseModel):
     games: List[SteamGameResponse] = Field(..., description="List of Steam games")
 
 
+class SteamGamesImportStartedResponse(BaseModel):
+    """Response schema for starting Steam library import."""
+    message: str = Field(..., description="Status message about the import task")
+    started: bool = Field(..., description="Whether the background import task was started successfully")
+
+

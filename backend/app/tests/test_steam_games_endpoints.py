@@ -186,3 +186,59 @@ class TestSteamGamesListEndpoint:
         
         # Should return validation error for invalid status filter
         assert response.status_code == 422
+
+
+class TestSteamGamesImportEndpoint:
+    """Test POST /api/steam-games/import endpoint."""
+    
+    def test_import_steam_games_without_auth(self, client: TestClient):
+        """Test that importing Steam games requires authentication."""
+        response = client.post("/api/steam-games/import")
+        
+        assert_api_error(response, 403)
+    
+    def test_import_steam_games_without_steam_config(self, client: TestClient, auth_headers: Dict[str, str]):
+        """Test importing Steam games without Steam configuration."""
+        response = client.post("/api/steam-games/import", headers=auth_headers)
+        
+        assert_api_error(response, 400)
+        assert "Steam Web API key not configured" in response.json()["error"]
+    
+    def test_import_steam_games_with_partial_config(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test importing Steam games with incomplete Steam configuration."""
+        # Set only API key but no Steam ID
+        test_user.preferences_json = '{"steam": {"web_api_key": "test_api_key_12345678901234567890"}}'
+        session.add(test_user)
+        session.commit()
+        
+        response = client.post("/api/steam-games/import", headers=auth_headers)
+        
+        assert_api_error(response, 400)
+        assert "Steam ID not configured" in response.json()["error"]
+    
+    def test_import_steam_games_with_unverified_config(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test importing Steam games with unverified Steam configuration."""
+        # Set API key and Steam ID but not verified
+        test_user.preferences_json = '{"steam": {"web_api_key": "test_api_key_12345678901234567890", "steam_id": "76561198000000000", "is_verified": false}}'
+        session.add(test_user)
+        session.commit()
+        
+        response = client.post("/api/steam-games/import", headers=auth_headers)
+        
+        assert_api_error(response, 400)
+        assert "Steam configuration not verified" in response.json()["error"]
+    
+    def test_import_steam_games_success(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test successful Steam games import start."""
+        # Set complete verified Steam configuration
+        test_user.preferences_json = '{"steam": {"web_api_key": "test_api_key_12345678901234567890", "steam_id": "76561198000000000", "is_verified": true, "configured_at": "2024-01-01T00:00:00"}}'
+        session.add(test_user)
+        session.commit()
+        
+        response = client.post("/api/steam-games/import", headers=auth_headers)
+        
+        # Should return 202 Accepted since it's a background task
+        assert_api_success(response, 202)
+        data = response.json()
+        assert data["started"] is True
+        assert "import started successfully" in data["message"].lower()
