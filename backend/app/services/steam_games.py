@@ -542,10 +542,11 @@ class SteamGamesService:
         Raises:
             SteamGamesServiceError: For service errors
         """
-        logger.info(f"Syncing Steam game {steam_game_id} to collection for user {user_id}")
+        logger.info(f"🎮 [Steam Service] Syncing Steam game {steam_game_id} to collection for user {user_id}")
         
         try:
             # Step 1: Find and validate Steam game
+            logger.debug(f"🎮 [Steam Service] Step 1: Looking up Steam game with ID {steam_game_id} for user {user_id}")
             steam_game_query = select(SteamGame).where(
                 and_(
                     SteamGame.id == steam_game_id,
@@ -555,23 +556,35 @@ class SteamGamesService:
             steam_game = self.session.exec(steam_game_query).first()
             
             if not steam_game:
+                logger.error(f"🎮 [Steam Service] Steam game not found: {steam_game_id} for user {user_id}")
                 raise SteamGamesServiceError("Steam game not found or access denied")
+            
+            logger.debug(f"🎮 [Steam Service] Found Steam game: {steam_game.game_name} (AppID: {steam_game.steam_appid})")
+            logger.debug(f"🎮 [Steam Service] Steam game status: IGDB ID: {steam_game.igdb_id}, Game ID: {steam_game.game_id}, Ignored: {steam_game.ignored}")
             
             # Step 2: Validate Steam game has IGDB match
             if not steam_game.igdb_id:
+                logger.error(f"🎮 [Steam Service] Steam game {steam_game_id} not matched to IGDB")
                 raise SteamGamesServiceError("Steam game must be matched to IGDB before syncing to collection")
             
+            logger.debug(f"🎮 [Steam Service] Step 2: Steam game is matched to IGDB ID: {steam_game.igdb_id}")
+            
             # Step 3: Check if Game record exists, create if needed
+            logger.debug(f"🎮 [Steam Service] Step 3: Looking for existing Game record with IGDB ID: {steam_game.igdb_id}")
             game_query = select(Game).where(Game.igdb_id == steam_game.igdb_id)
             game = self.session.exec(game_query).first()
             
             if not game:
                 # Create Game record from IGDB
-                logger.info(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
+                logger.info(f"🎮 [Steam Service] Step 3a: Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
                 try:
+                    logger.debug(f"🎮 [Steam Service] Fetching game metadata from IGDB...")
                     game_metadata = await self.igdb_service.get_game_by_id(steam_game.igdb_id)
                     if not game_metadata:
+                        logger.error(f"🎮 [Steam Service] Could not fetch game data from IGDB for ID {steam_game.igdb_id}")
                         raise SteamGamesServiceError(f"Could not fetch game data from IGDB for ID {steam_game.igdb_id}")
+                    
+                    logger.debug(f"🎮 [Steam Service] Got IGDB metadata: {game_metadata.title}")
                     
                     # Create new Game record from GameMetadata
                     game = Game(
@@ -592,13 +605,16 @@ class SteamGamesService:
                     )
                     self.session.add(game)
                     self.session.flush()  # Get the game ID
-                    logger.info(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
                     
                 except Exception as e:
-                    logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                    logger.error(f"🎮 [Steam Service] Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
                     raise SteamGamesServiceError("Failed to create game from IGDB data")
+            else:
+                logger.debug(f"🎮 [Steam Service] Step 3b: Found existing Game record: {game.title} (ID: {game.id})")
             
             # Step 4: Check if UserGame relationship exists
+            logger.debug(f"🎮 [Steam Service] Step 4: Checking for UserGame relationship for user {user_id} and game {game.id}")
             user_game_query = select(UserGame).where(
                 and_(
                     UserGame.user_id == user_id,
@@ -610,6 +626,7 @@ class SteamGamesService:
             action = "updated_existing"
             if not user_game:
                 # Create new UserGame
+                logger.info(f"🎮 [Steam Service] Step 4a: Creating new UserGame relationship")
                 user_game = UserGame(
                     user_id=user_id,
                     game_id=game.id,
@@ -623,9 +640,12 @@ class SteamGamesService:
                 self.session.add(user_game)
                 self.session.flush()  # Get the user_game ID
                 action = "created_new"
-                logger.info(f"Created new UserGame {user_game.id} for game {game.id}")
+                logger.info(f"🎮 [Steam Service] Created new UserGame {user_game.id} for game {game.id}")
+            else:
+                logger.debug(f"🎮 [Steam Service] Step 4b: Found existing UserGame relationship: {user_game.id}")
             
             # Step 5: Ensure Steam platform/storefront association exists
+            logger.debug(f"🎮 [Steam Service] Step 5: Looking up Steam platform and storefront")
             # Get platform and storefront objects
             pc_platform_query = select(Platform).where(Platform.name == "pc-windows")
             pc_platform = self.session.exec(pc_platform_query).first()
@@ -634,9 +654,14 @@ class SteamGamesService:
             steam_storefront = self.session.exec(steam_storefront_query).first()
             
             if not pc_platform or not steam_storefront:
+                logger.error(f"🎮 [Steam Service] Missing platform/storefront: PC={pc_platform}, Steam={steam_storefront}")
                 raise SteamGamesServiceError("PC (Windows) platform or Steam storefront not found in database")
             
+            logger.debug(f"🎮 [Steam Service] Found PC platform: {pc_platform.name} (ID: {pc_platform.id})")
+            logger.debug(f"🎮 [Steam Service] Found Steam storefront: {steam_storefront.name} (ID: {steam_storefront.id})")
+            
             # Check if platform association already exists
+            logger.debug(f"🎮 [Steam Service] Step 5a: Checking for existing platform association")
             platform_association_query = select(UserGamePlatform).where(
                 and_(
                     UserGamePlatform.user_game_id == user_game.id,
@@ -648,6 +673,7 @@ class SteamGamesService:
             
             if not existing_association:
                 # Create Steam platform association
+                logger.info(f"🎮 [Steam Service] Step 5b: Creating Steam platform association for UserGame {user_game.id}")
                 platform_association = UserGamePlatform(
                     user_game_id=user_game.id,
                     platform_id=pc_platform.id,
@@ -657,33 +683,44 @@ class SteamGamesService:
                     updated_at=datetime.now(timezone.utc)
                 )
                 self.session.add(platform_association)
-                logger.info(f"Added Steam platform association for UserGame {user_game.id}")
+                logger.info(f"🎮 [Steam Service] Added Steam platform association for UserGame {user_game.id}")
+            else:
+                logger.debug(f"🎮 [Steam Service] Step 5c: Steam platform association already exists")
             
             # Step 6: Update Steam game sync tracking (only if not already set)
+            logger.debug(f"🎮 [Steam Service] Step 6: Updating Steam game sync tracking")
             if steam_game.game_id is None:
+                logger.info(f"🎮 [Steam Service] Setting Steam game game_id to {game.id}")
                 steam_game.game_id = game.id
                 steam_game.updated_at = datetime.now(timezone.utc)
                 self.session.add(steam_game)
-                logger.info(f"Set SteamGame {steam_game_id} game_id to {game.id}")
+                logger.info(f"🎮 [Steam Service] Set SteamGame {steam_game_id} game_id to {game.id}")
+            else:
+                logger.debug(f"🎮 [Steam Service] Steam game already has game_id set: {steam_game.game_id}")
             
             # Commit all changes
+            logger.debug(f"🎮 [Steam Service] Step 7: Committing all database changes")
             self.session.commit()
             self.session.refresh(steam_game)
             
-            logger.info(f"Steam game sync completed: {steam_game_id} -> UserGame {user_game.id} ({action}) for user {user_id}")
+            logger.info(f"🎮 [Steam Service] Steam game sync completed: {steam_game_id} -> UserGame {user_game.id} ({action}) for user {user_id}")
             
-            return SyncResult(
+            result = SyncResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=steam_game.game_name,
                 user_game_id=user_game.id,
                 action=action
             )
+            logger.debug(f"🎮 [Steam Service] Returning result: {result}")
+            return result
             
-        except SteamGamesServiceError:
+        except SteamGamesServiceError as e:
+            logger.error(f"🎮 [Steam Service] SteamGamesServiceError in sync: {str(e)}")
             # Re-raise service errors without wrapping
             raise
         except Exception as e:
-            logger.error(f"Error syncing Steam game {steam_game_id} to collection for user {user_id}: {str(e)}")
+            logger.error(f"🎮 [Steam Service] Unexpected error syncing Steam game {steam_game_id} for user {user_id}: {str(e)}")
+            logger.exception("🎮 [Steam Service] Exception details:")
             return SyncResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=getattr(steam_game, 'game_name', 'Unknown') if 'steam_game' in locals() else 'Unknown',

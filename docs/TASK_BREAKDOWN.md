@@ -383,12 +383,12 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.5 Steam Games Frontend Page
 **Priority**: P0 (Critical)
-- [ ] Create `/steam-games` page for Steam library import workflow accessible only to users with valid Steam configuration
-- [ ] Add Steam Games menu item that appears only when user has Steam settings configured
-- [ ] Implement page layout with two main sections: "Needs Attention" (awaiting import) and "In Sync" (imported to collection)
-- [ ] Add manual refresh button at top of page (no real-time updates)
-- [ ] Create responsive design that works on desktop and mobile devices
-- [ ] Integrate with existing Steam Configuration (show link to settings if not configured)
+- [x] Create `/steam-games` page for Steam library import workflow accessible only to users with valid Steam configuration
+- [x] Add Steam Games menu item that appears only when user has Steam settings configured
+- [x] Implement page layout with two main sections: "Needs Attention" (awaiting import) and "In Sync" (imported to collection)
+- [x] Add manual refresh button at top of page (no real-time updates)
+- [x] Create responsive design that works on desktop and mobile devices
+- [x] Integrate with existing Steam Configuration (show link to settings if not configured)
 
 #### 2.2.6 Needs Attention Section Implementation
 **Priority**: P0 (Critical)
