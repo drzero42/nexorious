@@ -147,4 +147,21 @@ class VanityUrlResolveResponse(BaseModel):
     error_message: Optional[str] = Field(None, description="Error message if resolution failed")
 
 
+class SteamGameResponse(BaseModel):
+    """Response schema for Steam game from database."""
+    id: str = Field(..., description="Steam game UUID")
+    steam_appid: int = Field(..., description="Steam AppID from Steam Web API")
+    game_name: str = Field(..., description="Game name from Steam Web API")
+    igdb_id: Optional[str] = Field(None, description="IGDB ID when matched to games table")
+    game_id: Optional[str] = Field(None, description="Game ID when synced to user collection")
+    ignored: bool = Field(..., description="Whether user has marked this game as ignored")
+    created_at: datetime = Field(..., description="When the Steam game was added")
+    updated_at: datetime = Field(..., description="When the Steam game was last updated")
+
+
+class SteamGamesListResponse(BaseModel):
+    """Response schema for listing Steam games."""
+    total: int = Field(..., description="Total number of Steam games")
+    games: List[SteamGameResponse] = Field(..., description="List of Steam games")
+
 
