@@ -171,3 +171,14 @@ class SteamGamesImportStartedResponse(BaseModel):
     started: bool = Field(..., description="Whether the background import task was started successfully")
 
 
+class SteamGameMatchRequest(BaseModel):
+    """Request schema for matching Steam game to IGDB game."""
+    igdb_id: Optional[str] = Field(None, description="IGDB game ID to match Steam game to. Set to null to clear existing match.")
+
+
+class SteamGameMatchResponse(BaseModel):
+    """Response schema for Steam game IGDB matching."""
+    message: str = Field(..., description="Status message about the matching operation")
+    steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+
+

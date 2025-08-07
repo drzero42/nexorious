@@ -13,11 +13,14 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.steam_game import SteamGame
+from ..models.game import Game
 from ..services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
 from ..api.schemas.steam import (
     SteamGameResponse,
     SteamGamesListResponse,
-    SteamGamesImportStartedResponse
+    SteamGamesImportStartedResponse,
+    SteamGameMatchRequest,
+    SteamGameMatchResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -260,4 +263,96 @@ async def import_steam_library(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start Steam library import"
+        )
+
+
+@router.put("/{steam_game_id}/match", response_model=SteamGameMatchResponse, status_code=status.HTTP_200_OK)
+async def match_steam_game_to_igdb(
+    steam_game_id: str,
+    match_request: SteamGameMatchRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGameMatchResponse:
+    """
+    Match a Steam game to an IGDB game by setting the igdb_id field.
+    
+    This endpoint allows users to manually match their Steam games to IGDB games,
+    which prepares them for import into the main game collection.
+    
+    - Set igdb_id to match a Steam game to an IGDB game
+    - Set igdb_id to null to clear an existing match
+    - Only the Steam game owner can perform this operation
+    """
+    try:
+        # Find the Steam game and verify ownership
+        steam_game_query = select(SteamGame).where(
+            and_(
+                SteamGame.id == steam_game_id,
+                SteamGame.user_id == current_user.id
+            )
+        )
+        steam_game = session.exec(steam_game_query).first()
+        
+        if not steam_game:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Steam game not found or access denied"
+            )
+        
+        # If igdb_id is provided, validate it exists in games table
+        if match_request.igdb_id is not None:
+            game_query = select(Game).where(Game.igdb_id == match_request.igdb_id)
+            existing_game = session.exec(game_query).first()
+            
+            if not existing_game:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid IGDB ID. Game must exist in the main games collection first."
+                )
+        
+        # Update the Steam game's IGDB ID
+        old_igdb_id = steam_game.igdb_id
+        steam_game.igdb_id = match_request.igdb_id
+        steam_game.updated_at = datetime.now(timezone.utc)
+        
+        session.add(steam_game)
+        session.commit()
+        session.refresh(steam_game)
+        
+        # Create response message
+        if match_request.igdb_id is None:
+            if old_igdb_id:
+                message = f"Cleared IGDB match for Steam game '{steam_game.game_name}'"
+            else:
+                message = f"No IGDB match to clear for Steam game '{steam_game.game_name}'"
+        else:
+            if old_igdb_id:
+                message = f"Updated IGDB match for Steam game '{steam_game.game_name}'"
+            else:
+                message = f"Successfully matched Steam game '{steam_game.game_name}' to IGDB"
+        
+        logger.info(f"Steam game {steam_game_id} IGDB match updated: {old_igdb_id} -> {match_request.igdb_id} by user {current_user.id}")
+        
+        return SteamGameMatchResponse(
+            message=message,
+            steam_game=SteamGameResponse(
+                id=steam_game.id,
+                steam_appid=steam_game.steam_appid,
+                game_name=steam_game.game_name,
+                igdb_id=steam_game.igdb_id,
+                game_id=steam_game.game_id,
+                ignored=steam_game.ignored,
+                created_at=steam_game.created_at,
+                updated_at=steam_game.updated_at
+            )
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 404, 400) without modification
+        raise
+    except Exception as e:
+        logger.error(f"Error matching Steam game {steam_game_id} to IGDB for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to match Steam game to IGDB"
         )
