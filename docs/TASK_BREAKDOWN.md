@@ -367,8 +367,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Create `PUT /api/steam-games/{steam_game_id}/match` endpoint for manual IGDB matching
 - [ ] Create `POST /api/steam-games/{steam_game_id}/sync` endpoint to add game to collection
 - [ ] Create `PUT /api/steam-games/{steam_game_id}/ignore` endpoint to toggle ignored status
-- [ ] Create `POST /api/steam-games/sync-matched` endpoint for bulk sync of matched games
-- [ ] Create `POST /api/steam-games/resync` endpoint to maintain platform/storefront associations
+- [ ] Create `POST /api/steam-games/sync` endpoint for comprehensive matched game synchronization
 - [ ] Add proper authentication and authorization for all Steam Games endpoints
 
 #### 2.2.4 Steam Games Backend Services  
@@ -379,7 +378,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [ ] Implement collection import logic to add Steam games to user_games with proper platform/storefront
 - [ ] Add ignore/un-ignore workflow logic for games user doesn't want to import
 - [ ] Create deduplication logic using Steam AppID to prevent duplicate entries
-- [ ] Implement bulk operations for matched games import and re-sync functionality
+- [ ] Implement unified sync functionality for all matched games (ensures games table entries, user_games associations, and Steam platform/storefront relationships)
 - [ ] Add comprehensive error handling and logging for all Steam games operations
 
 #### 2.2.5 Steam Games Frontend Page
@@ -407,7 +406,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - Display ignored Steam games with reason (if tracked)
   - Add un-ignore button to move games back to appropriate section
 - [ ] Add bulk import button at top: Pull Steam library and populate steam_games table
-- [ ] Add bulk import button at top of Matched table: Process all matched games for import to main collection
+- [ ] Add Sync button: Process all matched games (not ignored) to ensure they exist in main collection with proper Steam platform/storefront associations
 
 #### 2.2.7 In Sync Section Implementation  
 **Priority**: P1 (High)
@@ -416,8 +415,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - Show game name, Steam AppID, IGDB ID
   - Display import status indicator
   - Add individual game action buttons if needed
-- [ ] Add re-sync button at top of In Sync section
-- [ ] Implement re-sync functionality to verify Steam platform/storefront associations in main collection
+- [ ] Add unified Sync button for comprehensive matched game synchronization
 - [ ] Add filtering and sorting options for large lists
 - [ ] Show statistics: total Steam games, matched games, imported games
 

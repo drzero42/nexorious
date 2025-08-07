@@ -430,7 +430,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Background Task Endpoint**: Backend endpoint to start background task for importing Steam library into steam_games table
 - **Steam Web API Integration**: Import complete Steam library and populate table using Steam AppID for deduplication
 - **IGDB Matching**: Backend logic to match Steam games with IGDB entries for metadata enhancement
-- **Collection Import**: Backend logic to import Steam games into main user collection with proper platform/storefront associations
+- **Collection Sync**: Unified backend logic to synchronize all matched Steam games (not ignored) with main collection, ensuring proper game table entries, user_games associations, and Steam platform/storefront relationships
 - **Backend-First Approach**: Implement as much functionality as possible in backend rather than frontend
 
 ##### 2.2.3 Steam Games Frontend Interface
@@ -455,13 +455,12 @@ To create the definitive self-hosted solution for personal game collection manag
   - Un-ignore button to move games back to appropriate section based on their data
 - **Bulk Operations**:
   - Import button at top: Pull Steam library and add new games to steam_games table (use Steam AppID for deduplication)
-  - Import All button at top of Matched table: Process all matched games for import to main collection
-  - Re-sync button at top of In Sync section: Ensure platform/storefront associations are maintained in main collection
+  - Sync button: Process all matched games (not ignored) to ensure they exist in main collection with proper Steam platform/storefront associations
 
 ##### 2.2.5 In Sync Section Display
 - **Imported Games Table**: Steam games that have been successfully imported to main collection (Steam AppID, IGDB ID, Game ID all populated)
 - **Display Elements**: Thumbnail cover art, game name, Steam ID, IGDB ID, import status
-- **Re-sync Functionality**: Button to verify and maintain Steam platform/storefront associations in main collection
+- **Sync Functionality**: Sync button ensures all matched games are properly synchronized with main collection
 
 - **Requirements**:
   - Steam Web API integration for library import with rate limiting and error handling
@@ -478,7 +477,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Games are properly categorized into Matched, Unmatched, and Ignored sections
   - Manual IGDB matching moves games from Unmatched to Matched
   - Import operations properly add Steam games to main user collection with Steam platform/storefront
-  - Re-sync maintains proper platform associations for imported games in main collection
+  - Sync maintains proper platform associations for all matched games in main collection
   - Ignore functionality works bidirectionally (ignore → un-ignore)
   - All operations work without real-time updates (manual refresh only)
 
