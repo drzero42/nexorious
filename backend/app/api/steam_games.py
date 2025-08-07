@@ -25,7 +25,8 @@ from ..api.schemas.steam import (
     SteamGameMatchRequest,
     SteamGameMatchResponse,
     SteamGameSyncRequest,
-    SteamGameSyncResponse
+    SteamGameSyncResponse,
+    SteamGameIgnoreResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -555,4 +556,79 @@ async def sync_steam_game_to_collection(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sync Steam game to collection"
+        )
+
+
+@router.put("/{steam_game_id}/ignore", response_model=SteamGameIgnoreResponse, status_code=status.HTTP_200_OK)
+async def toggle_steam_game_ignored_status(
+    steam_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGameIgnoreResponse:
+    """
+    Toggle the ignored status of a Steam game.
+    
+    This endpoint allows users to mark Steam games as ignored (won't be imported)
+    or un-ignore them to make them available for import again.
+    
+    - Toggles the ignored field (True ↔ False)
+    - Only the Steam game owner can perform this operation
+    - Updates the updated_at timestamp
+    """
+    try:
+        # Find the Steam game and verify ownership
+        steam_game_query = select(SteamGame).where(
+            and_(
+                SteamGame.id == steam_game_id,
+                SteamGame.user_id == current_user.id
+            )
+        )
+        steam_game = session.exec(steam_game_query).first()
+        
+        if not steam_game:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Steam game not found or access denied"
+            )
+        
+        # Toggle the ignored status
+        old_ignored = steam_game.ignored
+        steam_game.ignored = not old_ignored
+        steam_game.updated_at = datetime.now(timezone.utc)
+        
+        session.add(steam_game)
+        session.commit()
+        session.refresh(steam_game)
+        
+        # Create appropriate success message
+        if steam_game.ignored:
+            message = f"Steam game '{steam_game.game_name}' is now ignored and won't be imported"
+        else:
+            message = f"Steam game '{steam_game.game_name}' is no longer ignored and can be imported"
+        
+        logger.info(f"Steam game {steam_game_id} ignored status toggled: {old_ignored} -> {steam_game.ignored} by user {current_user.id}")
+        
+        return SteamGameIgnoreResponse(
+            message=message,
+            steam_game=SteamGameResponse(
+                id=steam_game.id,
+                steam_appid=steam_game.steam_appid,
+                game_name=steam_game.game_name,
+                igdb_id=steam_game.igdb_id,
+                game_id=steam_game.game_id,
+                ignored=steam_game.ignored,
+                created_at=steam_game.created_at,
+                updated_at=steam_game.updated_at
+            ),
+            ignored=steam_game.ignored
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 404) without modification
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling ignored status for Steam game {steam_game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to toggle Steam game ignored status"
         )

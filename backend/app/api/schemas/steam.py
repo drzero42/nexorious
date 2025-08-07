@@ -195,3 +195,10 @@ class SteamGameSyncResponse(BaseModel):
     action: str = Field(..., description="Action taken: 'created_new' or 'updated_existing'")
 
 
+class SteamGameIgnoreResponse(BaseModel):
+    """Response schema for Steam game ignore/un-ignore operation."""
+    message: str = Field(..., description="Status message about the ignore/un-ignore operation")
+    steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+    ignored: bool = Field(..., description="The new ignored status for clarity")
+
+

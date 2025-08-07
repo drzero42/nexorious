@@ -446,3 +446,140 @@ class TestSteamGameMatchEndpoint:
         response = client.put(f"/api/steam-games/{steam_game.id}/match", json=match_data)
         
         assert_api_error(response, 403)
+
+
+class TestSteamGameIgnoreEndpoint:
+    """Test PUT /api/steam-games/{steam_game_id}/ignore endpoint."""
+    
+    def test_ignore_steam_game_success_false_to_true(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test successfully ignoring a Steam game (False -> True)."""
+        # Create Steam game that is not ignored
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Counter-Strike: Global Offensive",
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # Toggle to ignored
+        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "is now ignored and won't be imported" in data["message"]
+        assert data["steam_game"]["id"] == steam_game.id
+        assert data["steam_game"]["ignored"] == True
+        assert data["ignored"] == True
+        
+        # Verify database was updated
+        session.refresh(steam_game)
+        assert steam_game.ignored == True
+    
+    def test_ignore_steam_game_success_true_to_false(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test successfully un-ignoring a Steam game (True -> False)."""
+        # Create Steam game that is ignored
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Counter-Strike: Global Offensive",
+            ignored=True
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # Toggle to not ignored
+        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "is no longer ignored and can be imported" in data["message"]
+        assert data["steam_game"]["id"] == steam_game.id
+        assert data["steam_game"]["ignored"] == False
+        assert data["ignored"] == False
+        
+        # Verify database was updated
+        session.refresh(steam_game)
+        assert steam_game.ignored == False
+    
+    def test_ignore_steam_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
+        """Test ignoring non-existent Steam game returns 404."""
+        response = client.put("/api/steam-games/nonexistent-id/ignore", headers=auth_headers)
+        
+        assert_api_error(response, 404)
+        assert "Steam game not found or access denied" in response.json()["error"]
+    
+    def test_ignore_steam_game_different_user(self, client: TestClient, session: Session, auth_headers: Dict[str, str]):
+        """Test ignoring Steam game belonging to different user returns 404."""
+        # Create different user
+        other_user = User(username="otheruser", password_hash="hashed")
+        session.add(other_user)
+        
+        # Create Steam game for other user
+        steam_game = SteamGame(
+            user_id=other_user.id,
+            steam_appid=730,
+            game_name="Other User Game",
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # Try to ignore as current user
+        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        
+        assert_api_error(response, 404)
+        assert "Steam game not found or access denied" in response.json()["error"]
+        
+        # Verify database was not changed
+        session.refresh(steam_game)
+        assert steam_game.ignored == False
+    
+    def test_ignore_steam_game_without_auth(self, client: TestClient, session: Session, test_user: User):
+        """Test that ignoring Steam game requires authentication."""
+        # Create Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        response = client.put(f"/api/steam-games/{steam_game.id}/ignore")
+        
+        assert_api_error(response, 403)
+        
+        # Verify database was not changed
+        session.refresh(steam_game)
+        assert steam_game.ignored == False
+    
+    def test_ignore_steam_game_updates_timestamp(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test that ignoring Steam game updates the updated_at timestamp."""
+        # Create Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # Store original timestamp
+        original_updated_at = steam_game.updated_at
+        
+        # Wait a moment to ensure timestamp difference
+        import time
+        time.sleep(0.01)
+        
+        # Toggle ignored status
+        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        
+        # Verify timestamp was updated
+        session.refresh(steam_game)
+        assert steam_game.updated_at > original_updated_at
