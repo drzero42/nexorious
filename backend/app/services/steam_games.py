@@ -24,6 +24,8 @@ from ..models.platform import Platform, Storefront
 from ..services.steam import SteamService, SteamAuthenticationError, SteamAPIError
 from ..services.igdb import IGDBService, IGDBError
 from ..core.database import get_session
+from ..api.games import import_from_igdb
+from ..api.schemas.game import GameMetadataAcceptRequest
 
 
 logger = logging.getLogger(__name__)
@@ -410,52 +412,8 @@ class SteamGamesService:
             # Only auto-match if confidence is above threshold
             if confidence >= self.auto_match_confidence_threshold:
                 logger.debug(f"🎯 [Single Match] Confidence meets threshold, proceeding with match...")
-                # Check if Game record exists in our database, create if needed
-                game_query = select(Game).where(Game.igdb_id == best_match.igdb_id)
-                existing_game = self.session.exec(game_query).first()
                 
-                if not existing_game:
-                    # Create Game record from IGDB metadata
-                    logger.debug(f"🎯 [Single Match] Creating new Game record for IGDB ID {best_match.igdb_id}")
-                    
-                    # Convert string release_date to date object for SQLite compatibility
-                    release_date_obj = None
-                    if best_match.release_date:
-                        try:
-                            release_date_obj = datetime.strptime(best_match.release_date, '%Y-%m-%d').date()
-                            logger.debug(f"🎯 [Single Match] Converted release_date '{best_match.release_date}' to date object")
-                        except ValueError as e:
-                            logger.warning(f"🎯 [Single Match] Invalid release_date format '{best_match.release_date}': {e}")
-                    
-                    game = Game(
-                        igdb_id=best_match.igdb_id,
-                        title=best_match.title,
-                        summary=best_match.description,
-                        release_date=release_date_obj,
-                        cover_art_url=best_match.cover_art_url,
-                        igdb_rating=best_match.rating_average,
-                        igdb_rating_count=best_match.rating_count,
-                        time_to_beat_hastily=best_match.hastily,
-                        time_to_beat_normally=best_match.normally,
-                        time_to_beat_completely=best_match.completely,
-                        igdb_platforms=best_match.igdb_platform_ids,
-                        igdb_platform_names=best_match.platform_names,
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc)
-                    )
-                    
-                    try:
-                        self.session.add(game)
-                        self.session.flush()  # Get the ID
-                        logger.debug(f"🎯 [Single Match] Created Game record with ID {game.id}")
-                    except Exception as e:
-                        logger.error(f"🎯 [Single Match] Database error creating Game record: {str(e)}")
-                        self.session.rollback()  # Rollback the failed transaction
-                        raise  # Re-raise to trigger the outer catch block
-                else:
-                    logger.debug(f"🎯 [Single Match] Using existing Game record ID {existing_game.id}")
-                
-                # Update Steam game with IGDB match
+                # Update Steam game with IGDB match (no Game record creation)
                 logger.debug(f"🎯 [Single Match] Updating SteamGame {steam_game_id} with IGDB ID {best_match.igdb_id}")
                 steam_game.igdb_id = best_match.igdb_id
                 steam_game.updated_at = datetime.now(timezone.utc)
@@ -707,50 +665,25 @@ class SteamGamesService:
             game = self.session.exec(game_query).first()
             
             if not game:
-                # Create Game record from IGDB
+                # Create Game record using import_from_igdb
                 logger.info(f"🎮 [Steam Service] Step 3a: Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
                 try:
-                    logger.debug(f"🎮 [Steam Service] Fetching game metadata from IGDB...")
-                    game_metadata = await self.igdb_service.get_game_by_id(steam_game.igdb_id)
-                    if not game_metadata:
-                        logger.error(f"🎮 [Steam Service] Could not fetch game data from IGDB for ID {steam_game.igdb_id}")
-                        raise SteamGamesServiceError(f"Could not fetch game data from IGDB for ID {steam_game.igdb_id}")
+                    # Get user for import_from_igdb call
+                    user = self.session.get(User, user_id)
+                    if not user:
+                        raise SteamGamesServiceError(f"User {user_id} not found")
                     
-                    logger.debug(f"🎮 [Steam Service] Got IGDB metadata: {game_metadata.title}")
+                    # Use import_from_igdb to create Game record with proper platform handling
+                    import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
+                    game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
                     
-                    # Convert string release_date to date object for SQLite compatibility
-                    release_date_obj = None
-                    if game_metadata.release_date:
-                        try:
-                            release_date_obj = datetime.strptime(game_metadata.release_date, '%Y-%m-%d').date()
-                            logger.debug(f"🎮 [Steam Service] Converted release_date '{game_metadata.release_date}' to date object")
-                        except ValueError as e:
-                            logger.warning(f"🎮 [Steam Service] Invalid release_date format '{game_metadata.release_date}': {e}")
-                    
-                    # Create new Game record from GameMetadata
-                    game = Game(
-                        igdb_id=steam_game.igdb_id,
-                        title=game_metadata.title,
-                        summary=game_metadata.description,
-                        release_date=release_date_obj,
-                        cover_art_url=game_metadata.cover_art_url,
-                        igdb_rating=game_metadata.rating_average,
-                        igdb_rating_count=game_metadata.rating_count,
-                        time_to_beat_hastily=game_metadata.hastily,
-                        time_to_beat_normally=game_metadata.normally,
-                        time_to_beat_completely=game_metadata.completely,
-                        igdb_platforms=game_metadata.igdb_platform_ids,
-                        igdb_platform_names=game_metadata.platform_names,
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc)
-                    )
-                    self.session.add(game)
-                    self.session.flush()  # Get the game ID
-                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                    # Get the created Game record
+                    game = self.session.get(Game, game_response.id)
+                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
                     
                 except Exception as e:
                     logger.error(f"🎮 [Steam Service] Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
-                    raise SteamGamesServiceError("Failed to create game from IGDB data")
+                    raise SteamGamesServiceError(f"Failed to create game from IGDB data: {str(e)}")
             else:
                 logger.debug(f"🎮 [Steam Service] Step 3b: Found existing Game record: {game.title} (ID: {game.id})")
             
@@ -934,12 +867,13 @@ class SteamGamesService:
                     game = self.session.exec(game_query).first()
                     
                     if not game:
-                        # Create Game record from IGDB
+                        # Create Game record using import_from_igdb
                         logger.debug(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
                         try:
-                            game_metadata = await self.igdb_service.get_game_by_id(steam_game.igdb_id)
-                            if not game_metadata:
-                                error_msg = f"Could not fetch game data from IGDB for '{steam_game.game_name}' (IGDB ID: {steam_game.igdb_id})"
+                            # Get user for import_from_igdb call
+                            user = self.session.get(User, user_id)
+                            if not user:
+                                error_msg = f"User {user_id} not found during bulk sync"
                                 errors.append(error_msg)
                                 results.append(SyncResult(
                                     steam_game_id=steam_game.id,
@@ -951,41 +885,13 @@ class SteamGamesService:
                                 failed_syncs += 1
                                 continue
                             
-                            # Convert string release_date to date object for SQLite compatibility
-                            release_date_obj = None
-                            if game_metadata.release_date:
-                                try:
-                                    release_date_obj = datetime.strptime(game_metadata.release_date, '%Y-%m-%d').date()
-                                    logger.debug(f"Converted release_date '{game_metadata.release_date}' to date object for '{steam_game.game_name}'")
-                                except ValueError as e:
-                                    logger.warning(f"Invalid release_date format '{game_metadata.release_date}' for '{steam_game.game_name}': {e}")
+                            # Use import_from_igdb to create Game record with proper platform handling
+                            import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
+                            game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
                             
-                            # Create new Game record from GameMetadata
-                            game = Game(
-                                igdb_id=steam_game.igdb_id,
-                                title=game_metadata.title,
-                                summary=game_metadata.description,
-                                release_date=release_date_obj,
-                                cover_art_url=game_metadata.cover_art_url,
-                                igdb_rating=game_metadata.rating_average,
-                                igdb_rating_count=game_metadata.rating_count,
-                                time_to_beat_hastily=game_metadata.hastily,
-                                time_to_beat_normally=game_metadata.normally,
-                                time_to_beat_completely=game_metadata.completely,
-                                igdb_platforms=game_metadata.igdb_platform_ids,
-                                igdb_platform_names=game_metadata.platform_names,
-                                created_at=datetime.now(timezone.utc),
-                                updated_at=datetime.now(timezone.utc)
-                            )
-                            
-                            try:
-                                self.session.add(game)
-                                self.session.flush()  # Get the game ID
-                                logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
-                            except Exception as db_error:
-                                logger.error(f"Database error creating Game record: {str(db_error)}")
-                                self.session.rollback()  # Rollback failed transaction
-                                raise db_error  # Re-raise to trigger outer catch
+                            # Get the created Game record
+                            game = self.session.get(Game, game_response.id)
+                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
                             
                         except Exception as e:
                             logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
