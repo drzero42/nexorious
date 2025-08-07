@@ -363,7 +363,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 #### 2.2.3 Steam Games Backend API Endpoints
 **Priority**: P0 (Critical)
 - [x] Create `GET /api/steam-games` endpoint to list user's Steam games with filtering
-- [ ] Create `POST /api/steam-games/import` endpoint to trigger background Steam library population
+- [x] Create `POST /api/steam-games/import` endpoint to trigger background Steam library population
 - [ ] Create `PUT /api/steam-games/{steam_game_id}/match` endpoint for manual IGDB matching
 - [ ] Create `POST /api/steam-games/{steam_game_id}/sync` endpoint to add game to collection
 - [ ] Create `PUT /api/steam-games/{steam_game_id}/ignore` endpoint to toggle ignored status
