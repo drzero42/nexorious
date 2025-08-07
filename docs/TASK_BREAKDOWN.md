@@ -347,7 +347,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.2 Steam Games Database Implementation (Backend)
 **Priority**: P0 (Critical)
-- [ ] Create `steam_games` table with required fields:
+- [x] Create `steam_games` table with required fields:
   - UUID (primary key)
   - User ID (foreign key to users table)  
   - Steam AppID (INTEGER from Steam Web API)
@@ -355,10 +355,10 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
   - IGDB ID (UUID, nullable, foreign key to games table)
   - Game ID (UUID, nullable, foreign key to games table when synced)
   - Ignored (BOOLEAN, default=False)
-- [ ] Create SteamGame SQLModel with proper relationships
-- [ ] Add database migration for steam_games table
-- [ ] Add proper indexes for performance (user_id, steam_appid, igdb_id, game_id)
-- [ ] Create database constraints to prevent duplicate Steam AppID per user
+- [x] Create SteamGame SQLModel with proper relationships
+- [x] Add database migration for steam_games table
+- [x] Add proper indexes for performance (user_id, steam_appid, igdb_id, game_id)
+- [x] Create database constraints to prevent duplicate Steam AppID per user
 
 #### 2.2.3 Steam Games Backend API Endpoints
 **Priority**: P0 (Critical)
