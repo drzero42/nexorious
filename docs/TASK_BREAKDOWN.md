@@ -392,51 +392,51 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.6 Needs Attention Section Implementation
 **Priority**: P0 (Critical)
-- [ ] Create Unmatched table for Steam games without IGDB ID that need matching:
+- [x] Create Unmatched table for Steam games without IGDB ID that need matching:
   - Display Steam game name
   - Add IGDB search and choose widget for manual matching
   - Add ignore button to mark games as ignored (won't be imported)
   - Move games to Matched table after successful IGDB matching
-- [ ] Create Matched table for Steam games with IGDB ID ready for import:
+- [x] Create Matched table for Steam games with IGDB ID ready for import:
   - Display Steam game info with matched IGDB game details
   - Add import button to add individual games to main collection  
   - Add search and choose widget to allow users to change IGDB match
   - Add ignore button to mark games as ignored (won't be imported)
-- [ ] Create Ignored table for Steam games marked as ignored that won't be imported:
+- [x] Create Ignored table for Steam games marked as ignored that won't be imported:
   - Display ignored Steam games with reason (if tracked)
   - Add un-ignore button to move games back to appropriate section
-- [ ] Add bulk import button at top: Pull Steam library and populate steam_games table
-- [ ] Add Sync button: Process all matched games (not ignored) to ensure they exist in main collection with proper Steam platform/storefront associations
+- [x] Add bulk import button at top: Pull Steam library and populate steam_games table
+- [x] Add Sync button: Process all matched games (not ignored) to ensure they exist in main collection with proper Steam platform/storefront associations
 
 #### 2.2.7 In Sync Section Implementation  
 **Priority**: P1 (High)
-- [ ] Create In Sync table for Steam games successfully imported to main collection:
+- [x] Create In Sync table for Steam games successfully imported to main collection:
   - Display thumbnail cover art from IGDB
   - Show game name, Steam AppID, IGDB ID
   - Display import status indicator
   - Add individual game action buttons if needed
-- [ ] Add unified Sync button for comprehensive matched game synchronization
-- [ ] Add filtering and sorting options for large lists
-- [ ] Show statistics: total Steam games, matched games, imported games
+- [x] Add unified Sync button for comprehensive matched game synchronization
+- [x] Add filtering and sorting options for large lists
+- [x] Show statistics: total Steam games, matched games, imported games
 
 #### 2.2.8 Steam Games UI Components
 **Priority**: P1 (High)  
-- [ ] Create `SteamGameCard.svelte` component for displaying Steam game information
-- [ ] Build `IGDBMatchWidget.svelte` component for IGDB search and selection
-- [ ] Implement `SteamGamesTable.svelte` component for organized display of different game states
-- [ ] Create `SteamGameActions.svelte` component for individual game actions (import, ignore, match)
-- [ ] Add `SteamGamesStats.svelte` component for displaying section statistics
-- [ ] Implement responsive design for all components to work on mobile devices
-- [ ] Add loading states and error handling to all interactive components
+- [x] Create `SteamGameCard.svelte` component for displaying Steam game information
+- [x] Build `IGDBMatchWidget.svelte` component for IGDB search and selection
+- [x] Implement `SteamGamesTable.svelte` component for organized display of different game states
+- [x] Create `SteamGameActions.svelte` component for individual game actions (import, ignore, match)
+- [x] Add `SteamGamesStats.svelte` component for displaying section statistics
+- [x] Implement responsive design for all components to work on mobile devices
+- [x] Add loading states and error handling to all interactive components
 
 #### 2.2.9 Steam Games Integration & Navigation
 **Priority**: P1 (High)
-- [ ] Add Steam Games navigation menu item with conditional visibility
-- [ ] Integrate with existing Steam Configuration system
-- [ ] Add Steam Games link/shortcut from Steam settings page
+- [x] Add Steam Games navigation menu item with conditional visibility
+- [x] Integrate with existing Steam Configuration system
+- [x] Add Steam Games link/shortcut from Steam settings page
 - [ ] Create dashboard widget or statistic showing Steam games status (optional)
 - [ ] Add Steam games count to user statistics if applicable
-- [ ] Ensure proper navigation flow between Steam settings and Steam games management
+- [x] Ensure proper navigation flow between Steam settings and Steam games management
 
 #### 2.2.10 Steam Games Testing
 **Priority**: P1 (High)
