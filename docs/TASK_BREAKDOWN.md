@@ -337,13 +337,13 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.1 Remove Existing Steam Import System
 **Priority**: P0 (Critical) - **MUST BE COMPLETED FIRST**
-- [ ] Remove existing Steam import background processing system completely
-- [ ] Remove Steam import WebSocket infrastructure and related endpoints  
-- [ ] Remove Steam import job models and database tables (SteamImportJob, SteamImportGame)
-- [ ] Remove Steam import frontend pages (/steam/import/* routes)
-- [ ] Remove Steam import UI components and WebSocket services
-- [ ] Clean up Steam import-related tests and documentation
-- [ ] Retain Steam Configuration functionality in settings (keep existing /api/steam/config endpoints)
+- [x] Remove existing Steam import background processing system completely
+- [x] Remove Steam import WebSocket infrastructure and related endpoints  
+- [x] Remove Steam import job models and database tables (SteamImportJob, SteamImportGame)
+- [x] Remove Steam import frontend pages (/steam/import/* routes)
+- [x] Remove Steam import UI components and WebSocket services
+- [x] Clean up Steam import-related tests and documentation
+- [x] Retain Steam Configuration functionality in settings (keep existing /api/steam/config endpoints)
 
 #### 2.2.2 Steam Games Database Implementation (Backend)
 **Priority**: P0 (Critical)
