@@ -77,18 +77,20 @@
 
   async function loadTabData() {
     try {
+      const searchTerm = searchQuery.trim();
+      
       if (activeTab === 'needs-attention') {
         const [unmatched, matched, ignored] = await Promise.all([
-          steamGames.listSteamGames(0, 1000, 'unmatched', searchQuery),
-          steamGames.listSteamGames(0, 1000, 'matched', searchQuery),
-          steamGames.listSteamGames(0, 1000, 'ignored', searchQuery)
+          steamGames.listSteamGames(0, 1000, 'unmatched', searchTerm || undefined),
+          steamGames.listSteamGames(0, 1000, 'matched', searchTerm || undefined),
+          steamGames.listSteamGames(0, 1000, 'ignored', searchTerm || undefined)
         ]);
         
         unmatchedGames = unmatched.games;
         matchedGames = matched.games;
         ignoredGames = ignored.games;
       } else {
-        const synced = await steamGames.listSteamGames(0, 1000, 'synced', searchQuery);
+        const synced = await steamGames.listSteamGames(0, 1000, 'synced', searchTerm || undefined);
         inSyncGames = synced.games;
       }
     } catch (error) {
@@ -126,13 +128,21 @@
     await loadTabData();
   }
 
-  // Reactive search
+  // Reactive search using proper Svelte 5 dependency tracking
   $effect(() => {
-    const debounceTimer = setTimeout(async () => {
-      await loadTabData();
-    }, 300);
-
-    return () => clearTimeout(debounceTimer);
+    // Read searchQuery to establish dependency tracking
+    const query = searchQuery;
+    
+    // Only execute search if we have data loaded
+    if (!isLoading) {
+      const debounceTimer = setTimeout(async () => {
+        await loadTabData();
+      }, 300);
+      
+      return () => {
+        clearTimeout(debounceTimer);
+      };
+    }
   });
 
   // Derived values for reactive display
