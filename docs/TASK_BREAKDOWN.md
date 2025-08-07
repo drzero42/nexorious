@@ -440,37 +440,17 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.10 Steam Games Testing
 **Priority**: P1 (High)
-- [ ] Unit tests for SteamGame model and database operations
-- [ ] Unit tests for SteamGamesService class and all business logic methods
-- [ ] Integration tests for all Steam Games API endpoints  
-- [ ] Unit tests for IGDB matching logic specific to Steam games
-- [ ] Integration tests for Steam library import and deduplication
-- [ ] Unit tests for collection sync logic and platform/storefront management
-- [ ] Component tests for all Steam Games UI components
-- [ ] Integration tests for complete Steam Games workflow (import → match → sync)
-- [ ] End-to-end tests for Steam Games page functionality
-- [ ] Performance tests for large Steam libraries (1000+ games)
-- [ ] Error scenario testing for Steam Web API failures and recovery
-
-### 2.3 Enhanced IGDB Integration
-- [ ] Improved metadata population
-- [ ] Better fuzzy matching algorithms
-- [ ] Completion time estimates integration
-- [ ] Metadata refresh capabilities
-- [ ] Batch processing for large imports
-
-### 2.4 IGDB Game Data Update System
-- [x] Backend: Modify IGDB import process to automatically mark games as verified when imported from IGDB
-- [x] Frontend: Add visual indicators (badges/icons) for IGDB-verified games in collection views
-- [x] Frontend: Implement "Update from IGDB" interface for individual games
-- [x] Frontend: Update game editing forms to show locked metadata fields vs editable personal data fields
-- [ ] Backend: Implement automatic `last_updated` field updates during IGDB metadata refresh operations
-- [ ] Frontend: Add display of `last_updated` timestamp in game detail views and admin interfaces
-- [ ] Frontend: Add filtering/sorting capabilities based on `last_updated` field for admin review of stale data
-- [ ] API: Expose `last_updated` field in game API responses for frontend consumption
-- [ ] Testing: Add comprehensive tests for IGDB verification system
-- [ ] Testing: Add tests for `last_updated` field automatic updates during IGDB operations
-- [ ] Documentation: Update API documentation for new IGDB refresh endpoints
+- [x] Unit tests for SteamGame model and database operations
+- [x] Unit tests for SteamGamesService class and all business logic methods
+- [x] Integration tests for all Steam Games API endpoints  
+- [x] Unit tests for IGDB matching logic specific to Steam games
+- [x] Integration tests for Steam library import and deduplication
+- [x] Unit tests for collection sync logic and platform/storefront management
+- [x] Component tests for all Steam Games UI components
+- [x] Integration tests for complete Steam Games workflow (import → match → sync)
+- [x] End-to-end tests for Steam Games page functionality
+- [x] Performance tests for large Steam libraries (1000+ games)
+- [x] Error scenario testing for Steam Web API failures and recovery
 
 ## Phase 3: Discovery & Organization
 **Priority: P1-P2 (High-Medium)**
