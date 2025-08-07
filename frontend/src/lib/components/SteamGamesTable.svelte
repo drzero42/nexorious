@@ -14,6 +14,9 @@
     showIgnoreButton?: boolean;
     showUnignoreButton?: boolean;
     onRefresh?: () => Promise<void>;
+    collapsible?: boolean;
+    collapsed?: boolean;
+    onToggleCollapse?: () => void;
   }
 
   let {
@@ -26,7 +29,10 @@
     showSyncButton = false,
     showIgnoreButton = false,
     showUnignoreButton = false,
-    onRefresh
+    onRefresh,
+    collapsible = false,
+    collapsed = false,
+    onToggleCollapse
   }: Props = $props();
 
   // State for IGDB matching
@@ -116,33 +122,56 @@
 
 <div class="card">
   <div class="border-b border-gray-200 pb-4 mb-4">
-    <h2 class="text-lg font-semibold text-gray-900 flex items-center">
-      <span class="text-xl mr-2">{icon}</span>
-      {title} ({games.length})
-    </h2>
-    <p class="text-sm text-gray-600 mt-1">
-      {description}
-    </p>
+    {#if collapsible}
+      <button
+        type="button"
+        onclick={onToggleCollapse}
+        class="w-full flex items-center justify-between text-left hover:bg-gray-50 -mx-2 -my-1 px-2 py-1 rounded transition-colors duration-200"
+      >
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900 flex items-center">
+            <span class="text-xl mr-2">{icon}</span>
+            {title} ({games.length})
+          </h2>
+          <p class="text-sm text-gray-600 mt-1">
+            {description}
+          </p>
+        </div>
+        <svg class="h-5 w-5 text-gray-400 transition-transform duration-200 {collapsed ? '' : 'rotate-180'}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    {:else}
+      <h2 class="text-lg font-semibold text-gray-900 flex items-center">
+        <span class="text-xl mr-2">{icon}</span>
+        {title} ({games.length})
+      </h2>
+      <p class="text-sm text-gray-600 mt-1">
+        {description}
+      </p>
+    {/if}
   </div>
 
-  {#if games.length === 0}
-    <div class="text-center py-8">
-      <div class="text-4xl mb-2">{icon}</div>
-      <p class="text-gray-500 text-sm">{emptyMessage}</p>
-    </div>
-  {:else}
-    <div class="space-y-3">
-      {#each games as game (game.id)}
-        <SteamGameCard
-          {game}
-          onMatch={showMatchButton ? () => handleMatch(game) : undefined}
-          onSync={showSyncButton ? () => handleSync(game) : undefined}
-          onIgnore={showIgnoreButton ? () => handleIgnore(game) : undefined}
-          onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}
-          isLoading={isGameLoading(game.id)}
-        />
-      {/each}
-    </div>
+  {#if !collapsed}
+    {#if games.length === 0}
+      <div class="text-center py-8">
+        <div class="text-4xl mb-2">{icon}</div>
+        <p class="text-gray-500 text-sm">{emptyMessage}</p>
+      </div>
+    {:else}
+      <div class="space-y-3">
+        {#each games as game (game.id)}
+          <SteamGameCard
+            {game}
+            onMatch={showMatchButton ? () => handleMatch(game) : undefined}
+            onSync={showSyncButton ? () => handleSync(game) : undefined}
+            onIgnore={showIgnoreButton ? () => handleIgnore(game) : undefined}
+            onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}
+            isLoading={isGameLoading(game.id)}
+          />
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 

@@ -16,6 +16,10 @@
   let searchQuery = $state('');
   let isRefreshing = $state(false);
   
+  // Collapsible table state
+  let unmatchedCollapsed = $state(false);
+  let matchedCollapsed = $state(false);
+  
   // Stats
   let unmatchedCount = $state(0);
   let matchedCount = $state(0);
@@ -135,6 +139,14 @@
   async function handleTabChange(tab: 'needs-attention' | 'in-sync') {
     activeTab = tab;
     await loadTabData();
+  }
+
+  function toggleUnmatchedCollapsed() {
+    unmatchedCollapsed = !unmatchedCollapsed;
+  }
+
+  function toggleMatchedCollapsed() {
+    matchedCollapsed = !matchedCollapsed;
   }
 
   // Reactive search using proper Svelte 5 dependency tracking
@@ -479,6 +491,9 @@
                 showMatchButton={true}
                 showIgnoreButton={true}
                 onRefresh={loadTabData}
+                collapsible={true}
+                collapsed={unmatchedCollapsed}
+                onToggleCollapse={toggleUnmatchedCollapsed}
               />
             {/if}
 
@@ -493,6 +508,9 @@
                 showSyncButton={true}
                 showIgnoreButton={true}
                 onRefresh={loadTabData}
+                collapsible={true}
+                collapsed={matchedCollapsed}
+                onToggleCollapse={toggleMatchedCollapsed}
               />
             {/if}
 
