@@ -23,7 +23,8 @@ from ..api.schemas.steam import (
     SteamGameSyncRequest,
     SteamGameSyncResponse,
     SteamGameIgnoreResponse,
-    SteamGamesBulkSyncResponse
+    SteamGamesBulkSyncResponse,
+    SteamGamesAutoMatchResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -319,17 +320,26 @@ async def sync_steam_game_to_collection(
     
     This operation is idempotent - can be run multiple times safely.
     """
+    logger.info(f"🎮 [Steam Sync API] Starting sync for steam_game_id: {steam_game_id}, user_id: {current_user.id}")
+    logger.debug(f"🎮 [Steam Sync API] Sync request body: {sync_request}")
+    logger.debug(f"🎮 [Steam Sync API] Current user: {current_user.username} (admin: {current_user.is_admin})")
+    
     try:
         # Create Steam games service
         steam_games_service = create_steam_games_service(session)
+        logger.debug(f"🎮 [Steam Sync API] Steam games service created successfully")
         
         # Use service to handle sync operation
+        logger.debug(f"🎮 [Steam Sync API] Calling service sync method...")
         result = await steam_games_service.sync_steam_game_to_collection(
             steam_game_id=steam_game_id,
             user_id=current_user.id
         )
+        logger.info(f"🎮 [Steam Sync API] Service returned result: action={result.action}")
+        logger.debug(f"🎮 [Steam Sync API] Full service result: {result}")
         
         if result.action == "failed":
+            logger.error(f"🎮 [Steam Sync API] Service reported failure: {result.error_message}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.error_message or "Failed to sync Steam game to collection"
@@ -341,15 +351,20 @@ async def sync_steam_game_to_collection(
         else:
             message = f"Updated Steam game '{result.steam_game_name}' in your collection (ensured Steam platform association)"
         
+        logger.info(f"🎮 [Steam Sync API] Success message: {message}")
+        
         # Get updated Steam game for response
         steam_game = session.get(SteamGame, steam_game_id)
         if not steam_game:
+            logger.error(f"🎮 [Steam Sync API] Steam game not found in DB after sync: {steam_game_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Steam game not found after sync"
             )
         
-        return SteamGameSyncResponse(
+        logger.debug(f"🎮 [Steam Sync API] Retrieved updated Steam game from DB: {steam_game.game_name} (game_id: {steam_game.game_id})")
+        
+        response = SteamGameSyncResponse(
             message=message,
             steam_game=SteamGameResponse(
                 id=steam_game.id,
@@ -365,28 +380,37 @@ async def sync_steam_game_to_collection(
             action=result.action
         )
         
+        logger.info(f"🎮 [Steam Sync API] Sync completed successfully")
+        return response
+        
     except SteamGamesServiceError as e:
+        logger.error(f"🎮 [Steam Sync API] SteamGamesServiceError: {str(e)}")
         # Convert service errors to appropriate HTTP errors
         if "not found or access denied" in str(e).lower():
+            logger.warning(f"🎮 [Steam Sync API] Steam game not found or access denied: {steam_game_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e)
             )
         elif "must be matched to igdb" in str(e).lower():
+            logger.warning(f"🎮 [Steam Sync API] Steam game not matched to IGDB: {steam_game_id}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(e)
             )
         else:
+            logger.error(f"🎮 [Steam Sync API] Unexpected service error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
             )
-    except HTTPException:
+    except HTTPException as e:
+        logger.warning(f"🎮 [Steam Sync API] HTTPException raised: {e.status_code} - {e.detail}")
         # Re-raise HTTPExceptions without modification
         raise
     except Exception as e:
-        logger.error(f"Error syncing Steam game {steam_game_id} to collection for user {current_user.id}: {str(e)}")
+        logger.error(f"🎮 [Steam Sync API] Unexpected error syncing Steam game {steam_game_id} for user {current_user.id}: {str(e)}")
+        logger.exception("🎮 [Steam Sync API] Exception details:")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sync Steam game to collection"
@@ -514,4 +538,80 @@ async def toggle_steam_game_ignored_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to toggle Steam game ignored status"
+        )
+
+
+@router.post("/auto-match", response_model=SteamGamesAutoMatchResponse, status_code=status.HTTP_200_OK)
+async def retry_auto_matching_for_unmatched_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesAutoMatchResponse:
+    """
+    Manually retry auto-matching for all unmatched Steam games.
+    
+    This endpoint allows users to manually trigger the auto-matching process
+    for all Steam games that haven't been matched to IGDB games yet.
+    
+    The process:
+    1. Finds all unmatched Steam games (no IGDB ID and not ignored)
+    2. Searches IGDB for potential matches using fuzzy string matching
+    3. Automatically matches games with confidence >= 80%
+    4. Creates Game records in the database for new matches
+    5. Updates Steam games with IGDB IDs
+    
+    This is useful after:
+    - Initial Steam library import when some games weren't matched
+    - Adding new games to Steam library that need matching
+    - When IGDB database has been updated with new games
+    """
+    try:
+        # Create Steam games service
+        steam_games_service = create_steam_games_service(session)
+        
+        # Use service to retry auto-matching
+        results = await steam_games_service.retry_auto_matching_for_unmatched_games(current_user.id)
+        
+        # Create success message  
+        if results.total_processed == 0:
+            message = "No unmatched Steam games found to process"
+        elif results.successful_matches == results.total_processed:
+            message = f"Successfully auto-matched all {results.successful_matches} unmatched Steam games"
+        elif results.successful_matches > 0:
+            message = f"Auto-matched {results.successful_matches} of {results.total_processed} unmatched Steam games ({results.failed_matches} failed, {results.skipped_games} skipped due to low confidence)"
+        else:
+            message = f"Unable to auto-match any of the {results.total_processed} unmatched Steam games (all had low confidence or failed)"
+        
+        logger.info(f"Manual auto-matching completed for user {current_user.id}: {results.successful_matches} successful, {results.failed_matches} failed, {results.skipped_games} skipped")
+        
+        return SteamGamesAutoMatchResponse(
+            message=message,
+            total_processed=results.total_processed,
+            successful_matches=results.successful_matches,
+            failed_matches=results.failed_matches,
+            skipped_games=results.skipped_games,
+            errors=results.errors
+        )
+        
+    except SteamGamesServiceError as e:
+        # Convert service errors to appropriate HTTP errors
+        # Rollback session to prevent PendingRollbackError
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        # Rollback session to prevent PendingRollbackError
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        # Use a string literal instead of accessing current_user.id to avoid session issues
+        logger.error(f"Error during manual auto-matching: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retry auto-matching for Steam games"
         )
