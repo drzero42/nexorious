@@ -372,14 +372,14 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 2.2.4 Steam Games Backend Services  
 **Priority**: P0 (Critical)
-- [ ] Create SteamGamesService class for Steam games import and sync logic
-- [ ] Implement Steam library import using existing Steam Web API integration
-- [ ] Add IGDB matching logic for Steam games (automatic where possible)
-- [ ] Implement collection import logic to add Steam games to user_games with proper platform/storefront
-- [ ] Add ignore/un-ignore workflow logic for games user doesn't want to import
-- [ ] Create deduplication logic using Steam AppID to prevent duplicate entries
-- [ ] Implement unified sync functionality for all matched games (ensures games table entries, user_games associations, and Steam platform/storefront relationships)
-- [ ] Add comprehensive error handling and logging for all Steam games operations
+- [x] Create SteamGamesService class for Steam games import and sync logic
+- [x] Implement Steam library import using existing Steam Web API integration
+- [x] Add IGDB matching logic for Steam games (automatic where possible)
+- [x] Implement collection import logic to add Steam games to user_games with proper platform/storefront
+- [x] Add ignore/un-ignore workflow logic for games user doesn't want to import
+- [x] Create deduplication logic using Steam AppID to prevent duplicate entries
+- [x] Implement unified sync functionality for all matched games (ensures games table entries, user_games associations, and Steam platform/storefront relationships)
+- [x] Add comprehensive error handling and logging for all Steam games operations
 
 #### 2.2.5 Steam Games Frontend Page
 **Priority**: P0 (Critical)
