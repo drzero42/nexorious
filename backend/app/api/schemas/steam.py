@@ -101,8 +101,8 @@ class SteamUserInfoResponse(BaseModel):
     last_logoff: Optional[int] = Field(None, description="Last logoff timestamp")
 
 
-class SteamGameResponse(BaseModel):
-    """Response schema for Steam game information."""
+class SteamLibraryGameResponse(BaseModel):
+    """Response schema for Steam game information from Steam API."""
     appid: int = Field(..., description="Steam App ID")
     name: str = Field(..., description="Game name")
 
@@ -110,7 +110,7 @@ class SteamGameResponse(BaseModel):
 class SteamLibraryResponse(BaseModel):
     """Response schema for Steam library information."""
     total_games: int = Field(..., description="Total number of games in library")
-    games: list[SteamGameResponse] = Field(..., description="List of games in library")
+    games: list[SteamLibraryGameResponse] = Field(..., description="List of games in library")
     steam_user_info: SteamUserInfoResponse = Field(..., description="Steam user information")
 
 
@@ -180,5 +180,18 @@ class SteamGameMatchResponse(BaseModel):
     """Response schema for Steam game IGDB matching."""
     message: str = Field(..., description="Status message about the matching operation")
     steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+
+
+class SteamGameSyncRequest(BaseModel):
+    """Request schema for syncing Steam game to main collection."""
+    pass  # Empty body - the Steam game ID is in the URL path
+
+
+class SteamGameSyncResponse(BaseModel):
+    """Response schema for Steam game sync to main collection."""
+    message: str = Field(..., description="Status message about the sync operation")
+    steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+    user_game_id: str = Field(..., description="ID of the created or updated user game in main collection")
+    action: str = Field(..., description="Action taken: 'created_new' or 'updated_existing'")
 
 

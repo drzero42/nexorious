@@ -14,13 +14,18 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.steam_game import SteamGame
 from ..models.game import Game
+from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
+from ..models.platform import Platform, Storefront
 from ..services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
+from ..services.igdb import IGDBService
 from ..api.schemas.steam import (
     SteamGameResponse,
     SteamGamesListResponse,
     SteamGamesImportStartedResponse,
     SteamGameMatchRequest,
-    SteamGameMatchResponse
+    SteamGameMatchResponse,
+    SteamGameSyncRequest,
+    SteamGameSyncResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -355,4 +360,199 @@ async def match_steam_game_to_igdb(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to match Steam game to IGDB"
+        )
+
+
+@router.post("/{steam_game_id}/sync", response_model=SteamGameSyncResponse, status_code=status.HTTP_200_OK)
+async def sync_steam_game_to_collection(
+    steam_game_id: str,
+    sync_request: SteamGameSyncRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGameSyncResponse:
+    """
+    Sync a matched Steam game to the user's main collection.
+    
+    This endpoint performs a complete sync flow:
+    1. Validates Steam game exists and is matched to IGDB
+    2. Ensures the Game record exists in database (creates from IGDB if needed)
+    3. Creates or updates UserGame relationship with Steam platform/storefront
+    4. Updates Steam game sync tracking (sets game_id on first sync)
+    
+    This operation is idempotent - can be run multiple times safely.
+    """
+    try:
+        # Step 1: Find and validate Steam game
+        steam_game_query = select(SteamGame).where(
+            and_(
+                SteamGame.id == steam_game_id,
+                SteamGame.user_id == current_user.id
+            )
+        )
+        steam_game = session.exec(steam_game_query).first()
+        
+        if not steam_game:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Steam game not found or access denied"
+            )
+        
+        # Step 2: Validate Steam game has IGDB match
+        if not steam_game.igdb_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Steam game must be matched to IGDB before syncing to collection"
+            )
+        
+        # Step 3: Check if Game record exists, create if needed
+        game_query = select(Game).where(Game.igdb_id == steam_game.igdb_id)
+        game = session.exec(game_query).first()
+        
+        if not game:
+            # Create Game record from IGDB
+            logger.info(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
+            igdb_service = IGDBService()
+            try:
+                game_metadata = await igdb_service.get_game_by_id(steam_game.igdb_id)
+                if not game_metadata:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Could not fetch game data from IGDB for ID {steam_game.igdb_id}"
+                    )
+                
+                # Create new Game record from GameMetadata
+                game = Game(
+                    igdb_id=steam_game.igdb_id,
+                    title=game_metadata.title,
+                    summary=game_metadata.description,
+                    release_date=game_metadata.release_date,
+                    cover_art_url=game_metadata.cover_art_url,
+                    igdb_rating=game_metadata.rating_average,
+                    igdb_rating_count=game_metadata.rating_count,
+                    time_to_beat_hastily=game_metadata.hastily,
+                    time_to_beat_normally=game_metadata.normally,
+                    time_to_beat_completely=game_metadata.completely,
+                    igdb_platforms=game_metadata.igdb_platform_ids,
+                    igdb_platform_names=game_metadata.platform_names,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
+                )
+                session.add(game)
+                session.flush()  # Get the game ID
+                logger.info(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                
+            except Exception as e:
+                logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create game from IGDB data"
+                )
+        
+        # Step 4: Check if UserGame relationship exists
+        user_game_query = select(UserGame).where(
+            and_(
+                UserGame.user_id == current_user.id,
+                UserGame.game_id == game.id
+            )
+        )
+        user_game = session.exec(user_game_query).first()
+        
+        action = "updated_existing"
+        if not user_game:
+            # Create new UserGame
+            user_game = UserGame(
+                user_id=current_user.id,
+                game_id=game.id,
+                ownership_status=OwnershipStatus.OWNED,
+                play_status=PlayStatus.NOT_STARTED,
+                is_loved=False,
+                hours_played=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            session.add(user_game)
+            session.flush()  # Get the user_game ID
+            action = "created_new"
+            logger.info(f"Created new UserGame {user_game.id} for game {game.id}")
+        
+        # Step 5: Ensure Steam platform/storefront association exists
+        # First get platform and storefront IDs
+        pc_platform_query = select(Platform).where(Platform.name == "PC (Windows)")
+        pc_platform = session.exec(pc_platform_query).first()
+        
+        steam_storefront_query = select(Storefront).where(Storefront.name == "Steam")
+        steam_storefront = session.exec(steam_storefront_query).first()
+        
+        if not pc_platform or not steam_storefront:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PC (Windows) platform or Steam storefront not found in database"
+            )
+        
+        # Check if platform association already exists
+        platform_association_query = select(UserGamePlatform).where(
+            and_(
+                UserGamePlatform.user_game_id == user_game.id,
+                UserGamePlatform.platform_id == pc_platform.id,
+                UserGamePlatform.storefront_id == steam_storefront.id
+            )
+        )
+        existing_association = session.exec(platform_association_query).first()
+        
+        if not existing_association:
+            # Create Steam platform association
+            platform_association = UserGamePlatform(
+                user_game_id=user_game.id,
+                platform_id=pc_platform.id,
+                storefront_id=steam_storefront.id,
+                is_available=True,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            session.add(platform_association)
+            logger.info(f"Added Steam platform association for UserGame {user_game.id}")
+        
+        # Step 6: Update Steam game sync tracking (only if not already set)
+        if steam_game.game_id is None:
+            steam_game.game_id = game.id
+            steam_game.updated_at = datetime.now(timezone.utc)
+            session.add(steam_game)
+            logger.info(f"Set SteamGame {steam_game_id} game_id to {game.id}")
+        
+        # Commit all changes
+        session.commit()
+        session.refresh(steam_game)
+        
+        # Create success message
+        if action == "created_new":
+            message = f"Successfully added Steam game '{steam_game.game_name}' to your collection"
+        else:
+            message = f"Updated Steam game '{steam_game.game_name}' in your collection (ensured Steam platform association)"
+        
+        logger.info(f"Steam game sync completed: {steam_game_id} -> UserGame {user_game.id} ({action}) for user {current_user.id}")
+        
+        return SteamGameSyncResponse(
+            message=message,
+            steam_game=SteamGameResponse(
+                id=steam_game.id,
+                steam_appid=steam_game.steam_appid,
+                game_name=steam_game.game_name,
+                igdb_id=steam_game.igdb_id,
+                game_id=steam_game.game_id,
+                ignored=steam_game.ignored,
+                created_at=steam_game.created_at,
+                updated_at=steam_game.updated_at
+            ),
+            user_game_id=user_game.id,
+            action=action
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 404, 400) without modification
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing Steam game {steam_game_id} to collection for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to sync Steam game to collection"
         )
