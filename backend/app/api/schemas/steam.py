@@ -202,3 +202,13 @@ class SteamGameIgnoreResponse(BaseModel):
     ignored: bool = Field(..., description="The new ignored status for clarity")
 
 
+class SteamGamesBulkSyncResponse(BaseModel):
+    """Response schema for bulk Steam games sync operation."""
+    message: str = Field(..., description="Overall status message about the bulk sync operation")
+    total_processed: int = Field(..., description="Total number of Steam games processed")
+    successful_syncs: int = Field(..., description="Number of games successfully synced to collection")
+    failed_syncs: int = Field(..., description="Number of games that failed to sync")
+    skipped_games: int = Field(..., description="Number of games skipped (already synced or not matched)")
+    errors: List[str] = Field(default=[], description="List of error messages for failed syncs")
+
+

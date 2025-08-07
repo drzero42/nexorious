@@ -583,3 +583,349 @@ class TestSteamGameIgnoreEndpoint:
         # Verify timestamp was updated
         session.refresh(steam_game)
         assert steam_game.updated_at > original_updated_at
+
+
+class TestSteamGamesBulkSyncEndpoint:
+    """Test POST /api/steam-games/sync endpoint."""
+    
+    def _create_steam_platform_data(self, session: Session):
+        """Helper method to create Steam platform and storefront data."""
+        from ..models.platform import Platform, Storefront
+        
+        # Create required platform and storefront for Steam games
+        pc_platform = Platform(
+            name="pc-windows",
+            display_name="PC (Windows)",
+            icon_url="test.png",
+            is_active=True
+        )
+        steam_storefront = Storefront(
+            name="steam",
+            display_name="Steam",
+            icon_url="test.png",
+            base_url="https://store.steampowered.com",
+            is_active=True
+        )
+        session.add(pc_platform)
+        session.add(steam_storefront)
+        return pc_platform, steam_storefront
+    
+    def test_bulk_sync_steam_games_no_matched_games(self, client: TestClient, auth_headers: Dict[str, str]):
+        """Test bulk sync when user has no matched Steam games."""
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["message"] == "No matched Steam games found that need syncing"
+        assert data["total_processed"] == 0
+        assert data["successful_syncs"] == 0
+        assert data["failed_syncs"] == 0
+        assert data["skipped_games"] == 0
+        assert data["errors"] == []
+    
+    def test_bulk_sync_steam_games_success_single_game(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test successful bulk sync with single matched Steam game."""
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create a test game in the main collection
+        test_game = Game(
+            title="Counter-Strike: Global Offensive",
+            description="Tactical FPS game",
+            igdb_id="1234"
+        )
+        session.add(test_game)
+        
+        # Create a matched Steam game (has igdb_id but no game_id)
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Counter-Strike: Global Offensive",
+            igdb_id="1234",  # Matched to IGDB
+            game_id=None,    # Not synced yet
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "Successfully synced all 1 matched Steam games" in data["message"]
+        assert data["total_processed"] == 1
+        assert data["successful_syncs"] == 1
+        assert data["failed_syncs"] == 0
+        assert data["skipped_games"] == 0
+        assert data["errors"] == []
+        
+        # Verify Steam game was updated
+        session.refresh(steam_game)
+        assert steam_game.game_id == test_game.id
+    
+    def test_bulk_sync_steam_games_success_multiple_games(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test successful bulk sync with multiple matched Steam games."""
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create test games in the main collection
+        test_game1 = Game(title="Game 1", igdb_id="1111")
+        test_game2 = Game(title="Game 2", igdb_id="2222")
+        session.add(test_game1)
+        session.add(test_game2)
+        
+        # Create matched Steam games
+        steam_game1 = SteamGame(
+            user_id=test_user.id,
+            steam_appid=100,
+            game_name="Game 1",
+            igdb_id="1111",
+            game_id=None,
+            ignored=False
+        )
+        steam_game2 = SteamGame(
+            user_id=test_user.id,
+            steam_appid=200,
+            game_name="Game 2",
+            igdb_id="2222",
+            game_id=None,
+            ignored=False
+        )
+        session.add(steam_game1)
+        session.add(steam_game2)
+        session.commit()
+        
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "Successfully synced all 2 matched Steam games" in data["message"]
+        assert data["total_processed"] == 2
+        assert data["successful_syncs"] == 2
+        assert data["failed_syncs"] == 0
+        
+        # Verify both Steam games were updated
+        session.refresh(steam_game1)
+        session.refresh(steam_game2)
+        assert steam_game1.game_id == test_game1.id
+        assert steam_game2.game_id == test_game2.id
+    
+    def test_bulk_sync_steam_games_filters_correctly(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test that bulk sync only processes games that match criteria."""
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create test game
+        test_game = Game(title="Test Game", igdb_id="1234")
+        session.add(test_game)
+        
+        # Create various Steam games to test filtering
+        steam_game_unmatched = SteamGame(
+            user_id=test_user.id,
+            steam_appid=100,
+            game_name="Unmatched Game",
+            igdb_id=None,  # No IGDB match
+            game_id=None,
+            ignored=False
+        )
+        steam_game_ignored = SteamGame(
+            user_id=test_user.id,
+            steam_appid=200,
+            game_name="Ignored Game",
+            igdb_id="1234",
+            game_id=None,
+            ignored=True  # Ignored
+        )
+        steam_game_already_synced = SteamGame(
+            user_id=test_user.id,
+            steam_appid=300,
+            game_name="Already Synced Game",
+            igdb_id="1234",
+            game_id=test_game.id,  # Already synced
+            ignored=False
+        )
+        steam_game_valid = SteamGame(
+            user_id=test_user.id,
+            steam_appid=400,
+            game_name="Valid Game",
+            igdb_id="1234",
+            game_id=None,  # Should be processed
+            ignored=False
+        )
+        
+        session.add(steam_game_unmatched)
+        session.add(steam_game_ignored)
+        session.add(steam_game_already_synced)
+        session.add(steam_game_valid)
+        session.commit()
+        
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["total_processed"] == 1  # Only the valid game
+        assert data["successful_syncs"] == 1
+        
+        # Verify only the valid game was updated
+        session.refresh(steam_game_valid)
+        assert steam_game_valid.game_id == test_game.id
+        
+        # Verify others were not changed
+        session.refresh(steam_game_unmatched)
+        session.refresh(steam_game_ignored)
+        session.refresh(steam_game_already_synced)
+        assert steam_game_unmatched.game_id is None
+        assert steam_game_ignored.game_id is None
+        assert steam_game_already_synced.game_id == test_game.id  # Unchanged
+    
+    def test_bulk_sync_steam_games_creates_user_game(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test that bulk sync creates UserGame and platform associations."""
+        from ..models.user_game import UserGame, UserGamePlatform
+        from ..models.platform import Platform, Storefront
+        
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create test game
+        test_game = Game(title="Test Game", igdb_id="1234")
+        session.add(test_game)
+        
+        # Create matched Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            igdb_id="1234",
+            game_id=None,
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        
+        # Verify UserGame was created
+        from sqlmodel import select, and_
+        user_game = session.exec(
+            select(UserGame).where(
+                and_(
+                    UserGame.user_id == test_user.id,
+                    UserGame.game_id == test_game.id
+                )
+            )
+        ).first()
+        assert user_game is not None
+        assert user_game.ownership_status.value == "owned"
+        
+        # Verify Steam platform association was created
+        pc_platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
+        steam_storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
+        
+        platform_association = session.exec(
+            select(UserGamePlatform).where(
+                and_(
+                    UserGamePlatform.user_game_id == user_game.id,
+                    UserGamePlatform.platform_id == pc_platform.id,
+                    UserGamePlatform.storefront_id == steam_storefront.id
+                )
+            )
+        ).first()
+        assert platform_association is not None
+        assert platform_association.is_available == True
+    
+    def test_bulk_sync_steam_games_idempotent(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test that bulk sync is idempotent and can be run multiple times."""
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create test game
+        test_game = Game(title="Test Game", igdb_id="1234")
+        session.add(test_game)
+        
+        # Create matched Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            igdb_id="1234",
+            game_id=None,
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # First sync
+        response1 = client.post("/api/steam-games/sync", headers=auth_headers)
+        assert_api_success(response1, 200)
+        data1 = response1.json()
+        assert data1["total_processed"] == 1
+        assert data1["successful_syncs"] == 1
+        
+        # Second sync should find no games to process
+        response2 = client.post("/api/steam-games/sync", headers=auth_headers)
+        assert_api_success(response2, 200)
+        data2 = response2.json()
+        assert data2["message"] == "No matched Steam games found that need syncing"
+        assert data2["total_processed"] == 0
+        assert data2["successful_syncs"] == 0
+    
+    def test_bulk_sync_steam_games_without_auth(self, client: TestClient):
+        """Test that bulk sync requires authentication."""
+        response = client.post("/api/steam-games/sync")
+        
+        assert_api_error(response, 403)
+    
+    def test_bulk_sync_steam_games_with_existing_user_game(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test bulk sync when UserGame already exists (should update existing)."""
+        from ..models.user_game import UserGame, OwnershipStatus, PlayStatus
+        
+        # Create required platform and storefront for Steam games
+        self._create_steam_platform_data(session)
+        
+        # Create test game
+        test_game = Game(title="Test Game", igdb_id="1234")
+        session.add(test_game)
+        
+        # Create existing UserGame for this game
+        existing_user_game = UserGame(
+            user_id=test_user.id,
+            game_id=test_game.id,
+            ownership_status=OwnershipStatus.BORROWED,  # Different status from default OWNED
+            play_status=PlayStatus.COMPLETED,
+            is_loved=True,
+            hours_played=50
+        )
+        session.add(existing_user_game)
+        
+        # Create matched Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            igdb_id="1234",
+            game_id=None,  # Not synced yet
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["total_processed"] == 1
+        assert data["successful_syncs"] == 1
+        assert data["failed_syncs"] == 0
+        
+        # Verify Steam game was synced
+        session.refresh(steam_game)
+        assert steam_game.game_id == test_game.id
+        
+        # Verify the existing UserGame was not modified (sync should work with existing UserGame)
+        session.refresh(existing_user_game)
+        assert existing_user_game.ownership_status == OwnershipStatus.BORROWED  # Should remain unchanged
+        assert existing_user_game.play_status == PlayStatus.COMPLETED  # Should remain unchanged
+        assert existing_user_game.is_loved == True  # Should remain unchanged
+        assert existing_user_game.hours_played == 50  # Should remain unchanged

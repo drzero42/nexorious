@@ -26,7 +26,8 @@ from ..api.schemas.steam import (
     SteamGameMatchResponse,
     SteamGameSyncRequest,
     SteamGameSyncResponse,
-    SteamGameIgnoreResponse
+    SteamGameIgnoreResponse,
+    SteamGamesBulkSyncResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -478,10 +479,10 @@ async def sync_steam_game_to_collection(
         
         # Step 5: Ensure Steam platform/storefront association exists
         # First get platform and storefront IDs
-        pc_platform_query = select(Platform).where(Platform.name == "PC (Windows)")
+        pc_platform_query = select(Platform).where(Platform.name == "pc-windows")
         pc_platform = session.exec(pc_platform_query).first()
         
-        steam_storefront_query = select(Storefront).where(Storefront.name == "Steam")
+        steam_storefront_query = select(Storefront).where(Storefront.name == "steam")
         steam_storefront = session.exec(steam_storefront_query).first()
         
         if not pc_platform or not steam_storefront:
@@ -556,6 +557,210 @@ async def sync_steam_game_to_collection(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sync Steam game to collection"
+        )
+
+
+@router.post("/sync", response_model=SteamGamesBulkSyncResponse, status_code=status.HTTP_200_OK)
+async def sync_all_matched_steam_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesBulkSyncResponse:
+    """
+    Sync all matched Steam games to the user's main collection.
+    
+    This endpoint performs a comprehensive sync operation for all Steam games that:
+    1. Have an IGDB ID (are matched to IGDB games)
+    2. Are not ignored
+    3. Have not been synced to the main collection yet (game_id is null)
+    
+    For each qualifying Steam game, this operation:
+    1. Ensures the Game record exists in database (creates from IGDB if needed)
+    2. Creates or updates UserGame relationship with Steam platform/storefront
+    3. Updates Steam game sync tracking (sets game_id)
+    
+    This operation is idempotent and can be run multiple times safely.
+    Returns detailed statistics about the sync operation.
+    """
+    try:
+        # Find all matched Steam games that haven't been synced yet
+        matched_steam_games_query = select(SteamGame).where(
+            and_(
+                SteamGame.user_id == current_user.id,
+                SteamGame.igdb_id.isnot(None),  # Has IGDB match
+                SteamGame.game_id.is_(None),     # Not yet synced
+                SteamGame.ignored == False       # Not ignored
+            )
+        )
+        matched_steam_games = session.exec(matched_steam_games_query).all()
+        
+        total_processed = len(matched_steam_games)
+        successful_syncs = 0
+        failed_syncs = 0
+        skipped_games = 0
+        errors = []
+        
+        logger.info(f"Starting bulk sync for {total_processed} matched Steam games for user {current_user.id}")
+        
+        if total_processed == 0:
+            return SteamGamesBulkSyncResponse(
+                message="No matched Steam games found that need syncing",
+                total_processed=0,
+                successful_syncs=0,
+                failed_syncs=0,
+                skipped_games=0,
+                errors=[]
+            )
+        
+        # Get platform and storefront objects once for efficiency
+        pc_platform_query = select(Platform).where(Platform.name == "pc-windows")
+        pc_platform = session.exec(pc_platform_query).first()
+        
+        steam_storefront_query = select(Storefront).where(Storefront.name == "steam")
+        steam_storefront = session.exec(steam_storefront_query).first()
+        
+        if not pc_platform or not steam_storefront:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PC (Windows) platform or Steam storefront not found in database"
+            )
+        
+        # Process each Steam game
+        for steam_game in matched_steam_games:
+            try:
+                # Check if Game record exists, create if needed
+                game_query = select(Game).where(Game.igdb_id == steam_game.igdb_id)
+                game = session.exec(game_query).first()
+                
+                if not game:
+                    # Create Game record from IGDB
+                    logger.debug(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
+                    igdb_service = IGDBService()
+                    try:
+                        game_metadata = await igdb_service.get_game_by_id(steam_game.igdb_id)
+                        if not game_metadata:
+                            errors.append(f"Could not fetch game data from IGDB for '{steam_game.game_name}' (IGDB ID: {steam_game.igdb_id})")
+                            failed_syncs += 1
+                            continue
+                        
+                        # Create new Game record from GameMetadata
+                        game = Game(
+                            igdb_id=steam_game.igdb_id,
+                            title=game_metadata.title,
+                            summary=game_metadata.description,
+                            release_date=game_metadata.release_date,
+                            cover_art_url=game_metadata.cover_art_url,
+                            igdb_rating=game_metadata.rating_average,
+                            igdb_rating_count=game_metadata.rating_count,
+                            time_to_beat_hastily=game_metadata.hastily,
+                            time_to_beat_normally=game_metadata.normally,
+                            time_to_beat_completely=game_metadata.completely,
+                            igdb_platforms=game_metadata.igdb_platform_ids,
+                            igdb_platform_names=game_metadata.platform_names,
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc)
+                        )
+                        session.add(game)
+                        session.flush()  # Get the game ID
+                        logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                        errors.append(f"Failed to create game record for '{steam_game.game_name}': {str(e)}")
+                        failed_syncs += 1
+                        continue
+                
+                # Check if UserGame relationship exists
+                user_game_query = select(UserGame).where(
+                    and_(
+                        UserGame.user_id == current_user.id,
+                        UserGame.game_id == game.id
+                    )
+                )
+                user_game = session.exec(user_game_query).first()
+                
+                if not user_game:
+                    # Create new UserGame
+                    user_game = UserGame(
+                        user_id=current_user.id,
+                        game_id=game.id,
+                        ownership_status=OwnershipStatus.OWNED,
+                        play_status=PlayStatus.NOT_STARTED,
+                        is_loved=False,
+                        hours_played=0,
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
+                    )
+                    session.add(user_game)
+                    session.flush()  # Get the user_game ID
+                    logger.debug(f"Created new UserGame {user_game.id} for game {game.id}")
+                
+                # Ensure Steam platform/storefront association exists
+                platform_association_query = select(UserGamePlatform).where(
+                    and_(
+                        UserGamePlatform.user_game_id == user_game.id,
+                        UserGamePlatform.platform_id == pc_platform.id,
+                        UserGamePlatform.storefront_id == steam_storefront.id
+                    )
+                )
+                existing_association = session.exec(platform_association_query).first()
+                
+                if not existing_association:
+                    # Create Steam platform association
+                    platform_association = UserGamePlatform(
+                        user_game_id=user_game.id,
+                        platform_id=pc_platform.id,
+                        storefront_id=steam_storefront.id,
+                        is_available=True,
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
+                    )
+                    session.add(platform_association)
+                    logger.debug(f"Added Steam platform association for UserGame {user_game.id}")
+                
+                # Update Steam game sync tracking
+                steam_game.game_id = game.id
+                steam_game.updated_at = datetime.now(timezone.utc)
+                session.add(steam_game)
+                
+                successful_syncs += 1
+                logger.debug(f"Successfully synced Steam game '{steam_game.game_name}' to collection")
+                
+            except Exception as e:
+                logger.error(f"Error syncing Steam game '{steam_game.game_name}' (ID: {steam_game.id}): {str(e)}")
+                errors.append(f"Failed to sync '{steam_game.game_name}': {str(e)}")
+                failed_syncs += 1
+                continue
+        
+        # Commit all changes
+        session.commit()
+        
+        # Create success message
+        if successful_syncs == total_processed:
+            message = f"Successfully synced all {successful_syncs} matched Steam games to your collection"
+        elif successful_syncs > 0:
+            message = f"Synced {successful_syncs} of {total_processed} Steam games to your collection ({failed_syncs} failed)"
+        else:
+            message = f"Failed to sync any of the {total_processed} matched Steam games"
+        
+        logger.info(f"Bulk Steam game sync completed for user {current_user.id}: {successful_syncs} successful, {failed_syncs} failed")
+        
+        return SteamGamesBulkSyncResponse(
+            message=message,
+            total_processed=total_processed,
+            successful_syncs=successful_syncs,
+            failed_syncs=failed_syncs,
+            skipped_games=skipped_games,  # Always 0 in this implementation as we pre-filter
+            errors=errors
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 500 for missing platform/storefront)
+        raise
+    except Exception as e:
+        logger.error(f"Error during bulk Steam game sync for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to sync Steam games to collection"
         )
 
 

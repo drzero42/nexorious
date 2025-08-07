@@ -366,8 +366,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Create `POST /api/steam-games/import` endpoint to trigger background Steam library population
 - [x] Create `PUT /api/steam-games/{steam_game_id}/match` endpoint for manual IGDB matching
 - [x] Create `POST /api/steam-games/{steam_game_id}/sync` endpoint to add game to collection
-- [ ] Create `PUT /api/steam-games/{steam_game_id}/ignore` endpoint to toggle ignored status
-- [ ] Create `POST /api/steam-games/sync` endpoint for comprehensive matched game synchronization
+- [x] Create `PUT /api/steam-games/{steam_game_id}/ignore` endpoint to toggle ignored status
+- [x] Create `POST /api/steam-games/sync` endpoint for comprehensive matched game synchronization
 - [ ] Add proper authentication and authorization for all Steam Games endpoints
 
 #### 2.2.4 Steam Games Backend Services  
