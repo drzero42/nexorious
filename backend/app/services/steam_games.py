@@ -422,20 +422,37 @@ class SteamGamesService:
             
             # Only auto-match if confidence is above threshold
             if confidence >= self.auto_match_confidence_threshold:
-                logger.debug(f"🎯 [Single Match] Confidence meets threshold, proceeding with match...")
+                logger.info(f"✅ [Single Match] Confidence meets threshold ({confidence:.1%} >= {self.auto_match_confidence_threshold:.1%}), proceeding with match...")
+                
+                # Log game state before update
+                logger.info(f"📋 [Single Match] BEFORE UPDATE - Game: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id} | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
                 
                 # Update Steam game with IGDB match (no Game record creation)
-                logger.debug(f"🎯 [Single Match] Updating SteamGame {steam_game_id} with IGDB ID {best_match.igdb_id}")
+                logger.info(f"💾 [Single Match] Setting IGDB ID for SteamGame {steam_game_id}: '{steam_game.game_name}' -> IGDB ID {best_match.igdb_id}")
+                old_igdb_id = steam_game.igdb_id
                 steam_game.igdb_id = best_match.igdb_id
                 steam_game.updated_at = datetime.now(timezone.utc)
                 
+                logger.info(f"📋 [Single Match] AFTER ASSIGNMENT - Game: '{steam_game.game_name}' | old_igdb_id: {old_igdb_id} | new_igdb_id: {steam_game.igdb_id}")
+                
                 try:
+                    logger.info(f"💾 [Single Match] Adding to session and committing...")
                     self.session.add(steam_game)
                     self.session.commit()
-                    logger.debug(f"🎯 [Single Match] Successfully matched '{steam_game.game_name}' to '{best_match.title}'")
+                    logger.info(f"✅ [Single Match] DATABASE COMMIT SUCCESSFUL - '{steam_game.game_name}' matched to '{best_match.title}' (IGDB ID: {best_match.igdb_id})")
+                    
+                    # Verify the update in database
+                    self.session.refresh(steam_game)
+                    logger.info(f"🔍 [Single Match] VERIFICATION - Game after refresh: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id} | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
+                    
                 except Exception as e:
-                    logger.error(f"🎯 [Single Match] Database error updating SteamGame: {str(e)}")
+                    logger.error(f"❌ [Single Match] DATABASE COMMIT FAILED for '{steam_game.game_name}': {str(e)}")
+                    logger.error(f"💥 [Single Match] Rolling back transaction...")
                     self.session.rollback()  # Rollback the failed transaction
+                    
+                    # Log final state after rollback
+                    self.session.refresh(steam_game)
+                    logger.error(f"🔄 [Single Match] AFTER ROLLBACK - Game: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id}")
                     raise  # Re-raise to trigger the outer catch block
                 
                 return AutoMatchResult(
@@ -512,6 +529,7 @@ class SteamGamesService:
                 raise SteamGamesServiceError(f"User {user_id} not found")
             
             # Find all unmatched Steam games for this user
+            logger.info(f"🔍 [Manual Auto-Match] Searching for unmatched games for user {user_id}")
             unmatched_games_query = select(SteamGame).where(
                 and_(
                     SteamGame.user_id == user_id,
@@ -520,6 +538,20 @@ class SteamGamesService:
                 )
             )
             unmatched_games = self.session.exec(unmatched_games_query).all()
+            
+            # Debug: Log current state of all games for this user
+            all_games_query = select(SteamGame).where(SteamGame.user_id == user_id)
+            all_games = self.session.exec(all_games_query).all()
+            logger.info(f"📊 [Manual Auto-Match] All games state for user {user_id}:")
+            for game in all_games:
+                logger.info(f"  - {game.game_name} | igdb_id: {game.igdb_id} | game_id: {game.game_id} | ignored: {game.ignored}")
+            
+            logger.info(f"📊 [Manual Auto-Match] Game counts for user {user_id}:")
+            logger.info(f"  - Total games: {len(all_games)}")
+            logger.info(f"  - Unmatched (no igdb_id, not ignored): {len([g for g in all_games if not g.igdb_id and not g.ignored])}")
+            logger.info(f"  - Matched (has igdb_id, no game_id, not ignored): {len([g for g in all_games if g.igdb_id and not g.game_id and not g.ignored])}")
+            logger.info(f"  - Synced (has game_id): {len([g for g in all_games if g.game_id])}")
+            logger.info(f"  - Ignored: {len([g for g in all_games if g.ignored])}")
             
             if not unmatched_games:
                 logger.info(f"🎯 [Manual Auto-Match] No unmatched Steam games found for user {user_id}")
@@ -533,8 +565,12 @@ class SteamGamesService:
                 )
             
             logger.info(f"🎯 [Manual Auto-Match] Found {len(unmatched_games)} unmatched Steam games for user {user_id}")
+            logger.info(f"🎮 [Manual Auto-Match] Unmatched games:")
+            for game in unmatched_games:
+                logger.info(f"  - {game.game_name} (Steam ID: {game.steam_appid})")
             
             # Perform automatic matching on all unmatched games
+            logger.info(f"🚀 [Manual Auto-Match] Starting automatic matching process...")
             match_results = await self._auto_match_steam_games([sg.id for sg in unmatched_games])
             
             logger.info(f"🎯 [Manual Auto-Match] Manual auto-matching completed for user {user_id}: "

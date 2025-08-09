@@ -107,11 +107,17 @@ async def list_steam_games(
     - synced: Games successfully imported to main collection
     """
     try:
+        logger.info(f"🔄 [API LIST] Listing Steam games for user {current_user.id} with params:")
+        logger.info(f"  - offset: {offset}, limit: {limit}")
+        logger.info(f"  - status_filter: {status_filter}")
+        logger.info(f"  - search: {search}")
+        
         # Build base query for user's Steam games
         query = select(SteamGame).where(SteamGame.user_id == current_user.id)
         
         # Apply status filter
         if status_filter:
+            logger.info(f"📊 [API LIST] Applying status filter: {status_filter}")
             if status_filter == "unmatched":
                 query = query.where(and_(SteamGame.igdb_id.is_(None), SteamGame.ignored == False))
             elif status_filter == "matched":
@@ -125,6 +131,7 @@ async def list_steam_games(
         if search:
             search_term = f"%{search.strip().lower()}%"
             query = query.where(func.lower(SteamGame.game_name).contains(search_term))
+            logger.info(f"🔍 [API LIST] Applying search filter: {search_term}")
         
         # Get total count by creating a count query from the same filters
         count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == current_user.id)
@@ -144,13 +151,39 @@ async def list_steam_games(
             search_term = f"%{search.strip().lower()}%"
             count_query = count_query.where(func.lower(SteamGame.game_name).contains(search_term))
         
+        logger.info(f"📊 [API LIST] Executing count query...")
         total = session.exec(count_query).first() or 0
+        logger.info(f"📊 [API LIST] Total count: {total}")
         
         # Apply pagination and ordering
         query = query.order_by(SteamGame.game_name.asc()).offset(offset).limit(limit)
         
         # Execute query
+        logger.info(f"📊 [API LIST] Executing main query...")
         steam_games = session.exec(query).all()
+        logger.info(f"📊 [API LIST] Retrieved {len(steam_games)} games from database")
+        
+        # Debug: Log all games with their current state
+        logger.info(f"📋 [API LIST] All games state breakdown:")
+        all_games_query = select(SteamGame).where(SteamGame.user_id == current_user.id)
+        all_games = session.exec(all_games_query).all()
+        
+        unmatched_count = len([g for g in all_games if not g.igdb_id and not g.ignored])
+        matched_count = len([g for g in all_games if g.igdb_id and not g.game_id and not g.ignored])
+        synced_count = len([g for g in all_games if g.game_id])
+        ignored_count = len([g for g in all_games if g.ignored])
+        
+        logger.info(f"  - Total games: {len(all_games)}")
+        logger.info(f"  - Unmatched (no igdb_id, not ignored): {unmatched_count}")
+        logger.info(f"  - Matched (has igdb_id, no game_id, not ignored): {matched_count}")
+        logger.info(f"  - Synced (has game_id): {synced_count}")
+        logger.info(f"  - Ignored: {ignored_count}")
+        
+        # Log details of matched games specifically
+        matched_games = [g for g in all_games if g.igdb_id and not g.game_id and not g.ignored]
+        logger.info(f"🎯 [API LIST] Detailed matched games ({len(matched_games)}):")
+        for game in matched_games:
+            logger.info(f"  - '{game.game_name}' | igdb_id: {game.igdb_id} | game_id: {game.game_id} | ignored: {game.ignored}")
         
         # Convert to response format
         games = []
@@ -166,7 +199,10 @@ async def list_steam_games(
                 updated_at=steam_game.updated_at
             ))
         
-        logger.info(f"Retrieved {len(games)} Steam games for user {current_user.id} (total: {total})")
+        logger.info(f"✅ [API LIST] Retrieved {len(games)} Steam games for user {current_user.id} (total: {total})")
+        logger.info(f"📤 [API LIST] Response games:")
+        for game in games:
+            logger.info(f"  - '{game.game_name}' | igdb_id: {game.igdb_id} | game_id: {game.game_id} | ignored: {game.ignored}")
         
         return SteamGamesListResponse(
             total=total,
@@ -624,11 +660,23 @@ async def retry_auto_matching_for_unmatched_games(
     - When IGDB database has been updated with new games
     """
     try:
+        logger.info(f"🚀 [API AUTO-MATCH] Endpoint called for user {current_user.id}")
+        
         # Create Steam games service
+        logger.info(f"🔧 [API AUTO-MATCH] Creating Steam games service...")
         steam_games_service = create_steam_games_service(session)
         
         # Use service to retry auto-matching
+        logger.info(f"📞 [API AUTO-MATCH] Calling service.retry_auto_matching_for_unmatched_games()...")
         results = await steam_games_service.retry_auto_matching_for_unmatched_games(current_user.id)
+        
+        logger.info(f"📊 [API AUTO-MATCH] Service returned results: {results}")
+        logger.info(f"📊 [API AUTO-MATCH] Results breakdown:")
+        logger.info(f"  - Total processed: {results.total_processed}")
+        logger.info(f"  - Successful matches: {results.successful_matches}")
+        logger.info(f"  - Failed matches: {results.failed_matches}")
+        logger.info(f"  - Skipped games: {results.skipped_games}")
+        logger.info(f"  - Errors: {len(results.errors)}")
         
         # Create success message  
         if results.total_processed == 0:
@@ -640,7 +688,8 @@ async def retry_auto_matching_for_unmatched_games(
         else:
             message = f"Unable to auto-match any of the {results.total_processed} unmatched Steam games (all had low confidence or failed)"
         
-        logger.info(f"Manual auto-matching completed for user {current_user.id}: {results.successful_matches} successful, {results.failed_matches} failed, {results.skipped_games} skipped")
+        logger.info(f"✅ [API AUTO-MATCH] Manual auto-matching completed for user {current_user.id}: {results.successful_matches} successful, {results.failed_matches} failed, {results.skipped_games} skipped")
+        logger.info(f"💬 [API AUTO-MATCH] Response message: {message}")
         
         return SteamGamesAutoMatchResponse(
             message=message,

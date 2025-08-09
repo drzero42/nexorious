@@ -135,36 +135,31 @@ class TestSteamGameModel:
         assert steam_game.user.id == test_user.id
         assert steam_game.user.username == test_user.username
     
-    def test_igdb_game_relationship(self, session: Session, test_user: User):
-        """Test relationship with Game model via igdb_id."""
-        # Create a game first
-        game = Game(
-            title="Counter-Strike: Global Offensive",
-            igdb_id="1234",
-            release_date=None,
-            description="Tactical FPS game",
-            igdb_slug="counter-strike-global-offensive"
-        )
-        session.add(game)
-        session.commit()
-        
-        # Create Steam game with IGDB relationship
+    def test_igdb_id_field(self, session: Session, test_user: User):
+        """Test igdb_id field stores IGDB API IDs correctly."""
+        # Create Steam game with IGDB API ID (not a foreign key reference)
+        igdb_api_id = "1234"  # This is an IGDB API ID, not a Game.id
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=game.id
+            igdb_id=igdb_api_id
         )
         
         session.add(steam_game)
         session.commit()
         session.refresh(steam_game)
         
-        # Test IGDB game relationship
-        assert steam_game.igdb_game is not None
-        assert steam_game.igdb_game.id == game.id
-        assert steam_game.igdb_game.title == "Counter-Strike: Global Offensive"
-        assert steam_game.igdb_game.igdb_id == "1234"
+        # Test that igdb_id stores the IGDB API ID correctly
+        assert steam_game.igdb_id == "1234"
+        assert steam_game.igdb_id is not None
+        
+        # Test that we can query games by IGDB API ID
+        found_game = session.exec(
+            select(SteamGame).where(SteamGame.igdb_id == igdb_api_id)
+        ).first()
+        assert found_game is not None
+        assert found_game.id == steam_game.id
     
     def test_synced_game_relationship(self, session: Session, test_user: User):
         """Test relationship with Game model via game_id (synced game)."""
@@ -457,30 +452,33 @@ class TestSteamGameModelIndexes:
 class TestSteamGameModelEdgeCases:
     """Test edge cases and error conditions."""
     
-    def test_invalid_foreign_key_references(self, session: Session, test_user: User):
-        """Test handling of invalid foreign key references."""
-        # Note: Foreign key constraints may not be enforced in SQLite test database
-        # This test focuses on what we can validate
+    def test_igdb_id_field_validation(self, session: Session, test_user: User):
+        """Test igdb_id field accepts various IGDB API ID formats."""
+        # Test with different valid IGDB API ID formats
+        test_cases = [
+            "1234",           # Numeric string
+            "56789",          # Longer numeric
+            None,             # Null/unmatched game
+        ]
         
-        # Test with valid user_id but invalid igdb_id (non-existent Game)
-        non_existent_game_id = str(uuid.uuid4())
-        steam_game = SteamGame(
-            user_id=test_user.id,
-            steam_appid=730,
-            game_name="Counter-Strike: Global Offensive",
-            igdb_id=non_existent_game_id  # This Game doesn't exist
-        )
-        
-        session.add(steam_game)
-        
-        # This should succeed in creation but relationship will be None
-        session.commit()
-        session.refresh(steam_game)
-        
-        # The steam game should exist but igdb_game relationship should be None
-        assert steam_game.id is not None
-        assert steam_game.igdb_id == non_existent_game_id
-        assert steam_game.igdb_game is None  # Relationship should be None for non-existent Game
+        for i, igdb_id in enumerate(test_cases):
+            steam_game = SteamGame(
+                user_id=test_user.id,
+                steam_appid=730 + i,  # Different app IDs
+                game_name=f"Test Game {i}",
+                igdb_id=igdb_id
+            )
+            
+            session.add(steam_game)
+            session.commit()
+            session.refresh(steam_game)
+            
+            # The steam game should exist and have the correct igdb_id
+            assert steam_game.id is not None
+            assert steam_game.igdb_id == igdb_id
+            
+            # Clear session for next iteration
+            session.expunge(steam_game)
     
     def test_extreme_values(self, session: Session, test_user: User):
         """Test handling of extreme values."""

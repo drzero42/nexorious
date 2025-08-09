@@ -78,18 +78,64 @@
   });
 
   async function loadSteamGames() {
+    console.log('🔄 [LOAD-GAMES] Starting loadSteamGames...');
     try {
       isRefreshing = true;
       
       // Load all games to get counts
+      console.log('📡 [LOAD-GAMES] Calling steamGames.listSteamGames(0, 1000)...');
       const allGames = await steamGames.listSteamGames(0, 1000);
+      console.log('📨 [LOAD-GAMES] API Response:', {
+        total: allGames.total,
+        gamesCount: allGames.games.length,
+        games: allGames.games.map(g => ({
+          id: g.id,
+          game_name: g.game_name,
+          igdb_id: g.igdb_id,
+          game_id: g.game_id,
+          ignored: g.ignored
+        }))
+      });
+      
       totalCount = allGames.total;
       
-      // Separate games by status
-      unmatchedCount = allGames.games.filter(g => !g.igdb_id && !g.ignored).length;
-      matchedCount = allGames.games.filter(g => g.igdb_id && !g.game_id && !g.ignored).length;
-      ignoredCount = allGames.games.filter(g => g.ignored).length;
-      syncedCount = allGames.games.filter(g => g.game_id).length;
+      // Separate games by status with detailed logging
+      const unmatchedGamesFiltered = allGames.games.filter(g => !g.igdb_id && !g.ignored);
+      const matchedGamesFiltered = allGames.games.filter(g => g.igdb_id && !g.game_id && !g.ignored);
+      const ignoredGamesFiltered = allGames.games.filter(g => g.ignored);
+      const syncedGamesFiltered = allGames.games.filter(g => g.game_id);
+      
+      console.log('🔍 [LOAD-GAMES] Game categorization detailed:', {
+        unmatched: {
+          count: unmatchedGamesFiltered.length,
+          games: unmatchedGamesFiltered.map(g => ({ name: g.game_name, igdb_id: g.igdb_id, ignored: g.ignored }))
+        },
+        matched: {
+          count: matchedGamesFiltered.length,
+          games: matchedGamesFiltered.map(g => ({ name: g.game_name, igdb_id: g.igdb_id, game_id: g.game_id, ignored: g.ignored }))
+        },
+        ignored: {
+          count: ignoredGamesFiltered.length,
+          games: ignoredGamesFiltered.map(g => ({ name: g.game_name, ignored: g.ignored }))
+        },
+        synced: {
+          count: syncedGamesFiltered.length,
+          games: syncedGamesFiltered.map(g => ({ name: g.game_name, game_id: g.game_id }))
+        }
+      });
+      
+      unmatchedCount = unmatchedGamesFiltered.length;
+      matchedCount = matchedGamesFiltered.length;
+      ignoredCount = ignoredGamesFiltered.length;
+      syncedCount = syncedGamesFiltered.length;
+      
+      console.log('📊 [LOAD-GAMES] Final count assignments:', {
+        unmatchedCount,
+        matchedCount,
+        ignoredCount,
+        syncedCount,
+        total: totalCount
+      });
       
       // Set initial tab based on what needs attention
       if (unmatchedCount > 0 || matchedCount > 0 || ignoredCount > 0) {
@@ -98,12 +144,28 @@
         activeTab = 'in-sync';
       }
       
-      await loadTabData();
+      console.log('🔀 [LOAD-GAMES] Active tab set to:', activeTab);
+      console.log('🎯 [LOAD-GAMES] Sync All button should be visible:', matchedCount > 0);
+      
+      // Populate tab-specific state arrays from the filtered data we already have
+      console.log('📋 [LOAD-GAMES] Populating tab-specific state arrays from existing data...');
+      unmatchedGames = unmatchedGamesFiltered; // Assign filtered array to state variable
+      matchedGames = matchedGamesFiltered;     // Assign filtered array to state variable
+      ignoredGames = ignoredGamesFiltered;     // Assign filtered array to state variable  
+      inSyncGames = syncedGamesFiltered;       // inSyncGames is the same as syncedGames
+      
+      console.log('✅ [LOAD-GAMES] Tab state arrays populated:', {
+        unmatchedGames: unmatchedGames.length,
+        matchedGames: matchedGames.length, 
+        ignoredGames: ignoredGames.length,
+        inSyncGames: inSyncGames.length
+      });
     } catch (error) {
-      console.error('Failed to load Steam games:', error);
+      console.error('❌ [LOAD-GAMES] Failed to load Steam games:', error);
       ui.showError('Failed to load Steam games');
     } finally {
       isRefreshing = false;
+      console.log('✅ [LOAD-GAMES] loadSteamGames completed');
     }
   }
 
@@ -170,11 +232,66 @@
   }
 
   async function handleAutoMatch() {
+    console.log('🚀 [AUTO-MATCH] Starting auto-match process...');
+    console.log('📊 [AUTO-MATCH] Pre-match counts:', {
+      unmatched: unmatchedCount,
+      matched: matchedCount,
+      ignored: ignoredCount,
+      synced: syncedCount,
+      activeTab: activeTab,
+      canAccessGameTabs: canAccessGameTabs
+    });
+
     try {
-      await steamGames.retryAutoMatching();
-      await loadSteamGames(); // Refresh data to show newly matched games
+      console.log('🔄 [AUTO-MATCH] Calling steamGames.retryAutoMatching()...');
+      const result = await steamGames.retryAutoMatching();
+      console.log('✅ [AUTO-MATCH] Auto-match API response:', result);
+      
+      // Optimistically update counts immediately based on auto-match result
+      if (result.successful_matches > 0) {
+        const oldUnmatched = unmatchedCount;
+        const oldMatched = matchedCount;
+        
+        // Move games from unmatched to matched count optimistically
+        unmatchedCount = Math.max(0, unmatchedCount - result.successful_matches);
+        matchedCount = matchedCount + result.successful_matches;
+        
+        console.log('⚡ [AUTO-MATCH] Optimistic count updates:', {
+          unmatchedCount: { old: oldUnmatched, new: unmatchedCount },
+          matchedCount: { old: oldMatched, new: matchedCount },
+          successful_matches: result.successful_matches
+        });
+      }
+      
+      // Switch to "Needs Attention" tab immediately if matches were found
+      if (result.successful_matches > 0 && canAccessGameTabs) {
+        console.log('🔀 [AUTO-MATCH] Switching to needs-attention tab...');
+        await handleTabChange('needs-attention');
+        console.log('✅ [AUTO-MATCH] Tab switched, activeTab is now:', activeTab);
+      }
+      
+      // Add delay to ensure backend transaction is fully committed, then refresh
+      console.log('⏱️  [AUTO-MATCH] Waiting 500ms for backend transaction commit...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Refresh data to get accurate state and verify our optimistic updates
+      console.log('🔄 [AUTO-MATCH] Refreshing data via loadSteamGames()...');
+      await loadSteamGames();
+      
+      console.log('📊 [AUTO-MATCH] Post-refresh counts:', {
+        unmatched: unmatchedCount,
+        matched: matchedCount,
+        ignored: ignoredCount,
+        synced: syncedCount,
+        activeTab: activeTab
+      });
+      
+      console.log('🎯 [AUTO-MATCH] Sync All button should be visible:', matchedCount > 0);
+      
     } catch (error) {
-      // Error handled in store
+      console.error('❌ [AUTO-MATCH] Error during auto-match:', error);
+      // On error, refresh data to restore correct state
+      await loadSteamGames();
     }
   }
 
@@ -1207,7 +1324,7 @@
                 emptyMessage="No unmatched games found"
                 showMatchButton={true}
                 showIgnoreButton={true}
-                onRefresh={loadTabData}
+                onRefresh={loadSteamGames}
                 collapsible={true}
                 collapsed={unmatchedCollapsed}
                 onToggleCollapse={toggleUnmatchedCollapsed}
@@ -1225,7 +1342,7 @@
                 showSyncButton={true}
                 showIgnoreButton={true}
                 showUnmatchButton={true}
-                onRefresh={loadTabData}
+                onRefresh={loadSteamGames}
                 collapsible={true}
                 collapsed={matchedCollapsed}
                 onToggleCollapse={toggleMatchedCollapsed}

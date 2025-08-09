@@ -124,6 +124,13 @@ function createSteamGamesStore() {
       statusFilter?: SteamGameStatusFilter,
       search?: string
     ): Promise<SteamGamesListResponse> {
+      console.log('🔄 [STORE-LIST] Starting listSteamGames with params:', {
+        offset,
+        limit,
+        statusFilter,
+        search
+      });
+      
       state = { ...state, isLoading: true, error: null };
 
       try {
@@ -140,22 +147,41 @@ function createSteamGamesStore() {
           params.append('search', search.trim());
         }
 
-        const response = await fetch(`${config.apiUrl}/steam-games?${params}`, {
+        const url = `${config.apiUrl}/steam-games?${params}`;
+        console.log('📡 [STORE-LIST] Making API call to:', url);
+
+        const response = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }
         });
 
+        console.log('📨 [STORE-LIST] List API response status:', response.status);
+        console.log('📨 [STORE-LIST] List API response ok:', response.ok);
+
         if (!response.ok) {
           if (response.status === 401) {
+            console.log('🔄 [STORE-LIST] Token expired, refreshing auth...');
             await auth.refreshAuth();
             return this.listSteamGames(offset, limit, statusFilter, search);
           }
           const errorData = await response.json().catch(() => ({}));
+          console.error('❌ [STORE-LIST] List API error:', errorData);
           throw new Error(errorData.detail || 'Failed to fetch Steam games');
         }
 
         const data = await response.json() as SteamGamesListResponse;
+        console.log('✅ [STORE-LIST] List response data:', {
+          total: data.total,
+          gamesCount: data.games.length,
+          games: data.games.map(g => ({
+            id: g.id,
+            game_name: g.game_name,
+            igdb_id: g.igdb_id,
+            game_id: g.game_id,
+            ignored: g.ignored
+          }))
+        });
         
         state = {
           ...state,
@@ -166,6 +192,13 @@ function createSteamGamesStore() {
           lastRefresh: new Date()
         };
 
+        console.log('📦 [STORE-LIST] Store state updated:', {
+          gamesCount: state.games.length,
+          total: state.total,
+          lastRefresh: state.lastRefresh
+        });
+
+        console.log('📤 [STORE-LIST] Returning list data');
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch Steam games';
@@ -376,9 +409,11 @@ function createSteamGamesStore() {
 
     // Manually retry auto-matching for all unmatched Steam games
     async retryAutoMatching(): Promise<SteamGamesAutoMatchResponse> {
+      console.log('🔄 [STORE] Starting retryAutoMatching...');
       state = { ...state, isAutoMatching: true, error: null };
 
       try {
+        console.log('📡 [STORE] Making API call to:', `${config.apiUrl}/steam-games/auto-match`);
         const response = await fetch(`${config.apiUrl}/steam-games/auto-match`, {
           method: 'POST',
           headers: {
@@ -386,16 +421,22 @@ function createSteamGamesStore() {
           }
         });
 
+        console.log('📨 [STORE] Auto-match API response status:', response.status);
+        console.log('📨 [STORE] Auto-match API response ok:', response.ok);
+
         if (!response.ok) {
           if (response.status === 401) {
+            console.log('🔄 [STORE] Token expired, refreshing auth...');
             await auth.refreshAuth();
             return this.retryAutoMatching();
           }
           const errorData = await response.json().catch(() => ({}));
+          console.error('❌ [STORE] Auto-match API error:', errorData);
           throw new Error(errorData.detail || 'Failed to retry auto-matching');
         }
 
         const data = await response.json() as SteamGamesAutoMatchResponse;
+        console.log('✅ [STORE] Auto-match response data:', data);
         
         state = {
           ...state,
@@ -404,13 +445,17 @@ function createSteamGamesStore() {
         };
 
         if (data.successful_matches > 0) {
+          console.log('🎉 [STORE] Showing success notification');
           ui.showSuccess(data.message);
         } else if (data.total_processed === 0) {
+          console.log('ℹ️ [STORE] Showing info notification');
           ui.showInfo(data.message);
         } else {
+          console.log('⚠️ [STORE] Showing warning notification');
           ui.showWarning(data.message);
         }
 
+        console.log('📤 [STORE] Returning auto-match data:', data);
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to retry auto-matching';
@@ -422,33 +467,49 @@ function createSteamGamesStore() {
 
     // Auto-match a single Steam game to IGDB
     async autoMatchSingleGame(steamGameId: string): Promise<SteamGameAutoMatchSingleResponse> {
+      console.log('🔄 [STORE-SINGLE] Starting autoMatchSingleGame for ID:', steamGameId);
       state = { ...state, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/auto-match`, {
+        const url = `${config.apiUrl}/steam-games/${steamGameId}/auto-match`;
+        console.log('📡 [STORE-SINGLE] Making API call to:', url);
+        
+        const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }
         });
 
+        console.log('📨 [STORE-SINGLE] Single auto-match API response status:', response.status);
+        console.log('📨 [STORE-SINGLE] Single auto-match API response ok:', response.ok);
+
         if (!response.ok) {
           if (response.status === 401) {
+            console.log('🔄 [STORE-SINGLE] Token expired, refreshing auth...');
             await auth.refreshAuth();
             return this.autoMatchSingleGame(steamGameId);
           }
           const errorData = await response.json().catch(() => ({}));
+          console.error('❌ [STORE-SINGLE] Single auto-match API error:', errorData);
           throw new Error(errorData.detail || 'Failed to auto-match Steam game');
         }
 
         const data = await response.json() as SteamGameAutoMatchSingleResponse;
+        console.log('✅ [STORE-SINGLE] Single auto-match response data:', data);
         
         // Update the game in our local state
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
+        console.log('🔍 [STORE-SINGLE] Looking for game in state, index:', gameIndex);
+        
         if (gameIndex !== -1) {
+          console.log('📋 [STORE-SINGLE] BEFORE update - Game in state:', state.games[gameIndex]);
           const updatedGames = [...state.games];
           updatedGames[gameIndex] = data.steam_game;
           state = { ...state, games: updatedGames };
+          console.log('📋 [STORE-SINGLE] AFTER update - Game in state:', state.games[gameIndex]);
+        } else {
+          console.warn('⚠️ [STORE-SINGLE] Game not found in state for update');
         }
 
         // Show appropriate success/info message

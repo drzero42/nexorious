@@ -49,13 +49,22 @@
 
   async function handleAutoMatch(game: SteamGameResponse) {
     try {
+      console.log('🎯 [SINGLE AUTO-MATCH] Starting single game auto-match for:', game.game_name);
       setGameLoading(game.id, true);
-      await steamGames.autoMatchSingleGame(game.id);
+      
+      console.log('🔄 [SINGLE AUTO-MATCH] Calling steamGames.autoMatchSingleGame()...');
+      const result = await steamGames.autoMatchSingleGame(game.id);
+      console.log('✅ [SINGLE AUTO-MATCH] Auto-match result:', result);
+      
+      console.log('🔄 [SINGLE AUTO-MATCH] Calling onRefresh callback...');
       await onRefresh?.();
+      console.log('✅ [SINGLE AUTO-MATCH] Refresh completed');
     } catch (error) {
+      console.error('❌ [SINGLE AUTO-MATCH] Error:', error);
       // Error handled in store
     } finally {
       setGameLoading(game.id, false);
+      console.log('✅ [SINGLE AUTO-MATCH] Single auto-match completed');
     }
   }
 

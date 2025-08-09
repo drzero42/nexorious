@@ -21,7 +21,7 @@ class SteamGame(SQLModel, table=True):
     user_id: str = Field(foreign_key="users.id", index=True)
     steam_appid: int = Field(index=True, description="Steam AppID from Steam Web API")
     game_name: str = Field(max_length=500, description="Game name from Steam Web API")
-    igdb_id: Optional[str] = Field(default=None, foreign_key="games.id", index=True, description="IGDB ID when matched to games table")
+    igdb_id: Optional[str] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., '1942')")
     game_id: Optional[str] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
     ignored: bool = Field(default=False, description="Whether user has marked this game as ignored (won't be imported)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -29,9 +29,6 @@ class SteamGame(SQLModel, table=True):
     
     # Relationships
     user: "User" = Relationship(back_populates="steam_games")
-    igdb_game: Optional["Game"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "SteamGame.igdb_id", "post_update": True}
-    )
     synced_game: Optional["Game"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "SteamGame.game_id", "post_update": True}
     )
