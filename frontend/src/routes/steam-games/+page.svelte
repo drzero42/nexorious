@@ -12,7 +12,7 @@
   let matchedGames = $state<SteamGameResponse[]>([]);
   let ignoredGames = $state<SteamGameResponse[]>([]);
   let inSyncGames = $state<SteamGameResponse[]>([]);
-  let activeTab = $state<'needs-attention' | 'in-sync' | 'configuration'>('needs-attention');
+  let activeTab = $state<'needs-attention' | 'ignored' | 'in-sync' | 'configuration'>('needs-attention');
   let searchQuery = $state('');
   let isRefreshing = $state(false);
   
@@ -112,16 +112,17 @@
       const searchTerm = searchQuery.trim();
       
       if (activeTab === 'needs-attention') {
-        const [unmatched, matched, ignored] = await Promise.all([
+        const [unmatched, matched] = await Promise.all([
           steamGames.listSteamGames(0, 1000, 'unmatched', searchTerm || undefined),
-          steamGames.listSteamGames(0, 1000, 'matched', searchTerm || undefined),
-          steamGames.listSteamGames(0, 1000, 'ignored', searchTerm || undefined)
+          steamGames.listSteamGames(0, 1000, 'matched', searchTerm || undefined)
         ]);
         
         unmatchedGames = unmatched.games;
         matchedGames = matched.games;
+      } else if (activeTab === 'ignored') {
+        const ignored = await steamGames.listSteamGames(0, 1000, 'ignored', searchTerm || undefined);
         ignoredGames = ignored.games;
-      } else {
+      } else if (activeTab === 'in-sync') {
         const synced = await steamGames.listSteamGames(0, 1000, 'synced', searchTerm || undefined);
         inSyncGames = synced.games;
       }
@@ -164,7 +165,7 @@
     }
   }
 
-  async function handleTabChange(tab: 'needs-attention' | 'in-sync' | 'configuration') {
+  async function handleTabChange(tab: 'needs-attention' | 'ignored' | 'in-sync' | 'configuration') {
     activeTab = tab;
     if (tab !== 'configuration') {
       await loadTabData();
@@ -374,7 +375,7 @@
   const steamUserInfo = $derived(verificationResult?.steam_user_info as SteamUserInfo | undefined);
 
   // Derived values for reactive display
-  const needsAttentionCount = $derived(unmatchedCount + matchedCount + ignoredCount);
+  const needsAttentionCount = $derived(unmatchedCount + matchedCount);
   const hasNeedsAttention = $derived(needsAttentionCount > 0);
   const hasInSync = $derived(syncedCount > 0);
   
@@ -587,6 +588,18 @@
             {#if hasNeedsAttention}
               <span class="ml-2 bg-red-100 text-red-600 py-0.5 px-2.5 rounded-full text-xs font-medium">
                 {needsAttentionCount}
+              </span>
+            {/if}
+          </button>
+          <button
+            onclick={() => canAccessGameTabs && handleTabChange('ignored')}
+            disabled={!canAccessGameTabs}
+            class="border-b-2 py-2 px-1 text-sm font-medium {!canAccessGameTabs ? 'border-transparent text-gray-300 cursor-not-allowed' : (activeTab === 'ignored' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')}"
+          >
+            Ignored
+            {#if ignoredCount > 0}
+              <span class="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2.5 rounded-full text-xs font-medium">
+                {ignoredCount}
               </span>
             {/if}
           </button>
@@ -1205,18 +1218,6 @@
               />
             {/if}
 
-            <!-- Ignored Games Section -->
-            {#if ignoredGames.length > 0}
-              <SteamGamesTable
-                title="Ignored Games"
-                description="These games have been marked as ignored and won't be imported."
-                icon="🚫"
-                games={ignoredGames}
-                emptyMessage="No ignored games found"
-                showUnignoreButton={true}
-                onRefresh={loadTabData}
-              />
-            {/if}
 
             {#if needsAttentionCount === 0}
               <div class="text-center py-12">
@@ -1228,6 +1229,49 @@
               </div>
             {/if}
           </div>
+          {/if}
+        </div>
+      {:else if activeTab === 'ignored'}
+        <div class="space-y-6">
+          {#if !isConfigValid}
+            <!-- Steam not configured message -->
+            <div class="text-center py-12">
+              <div class="mx-auto h-12 w-12 text-gray-400">
+                <span class="text-4xl">⚙️</span>
+              </div>
+              <h3 class="mt-2 text-sm font-semibold text-gray-900">Steam Configuration Required</h3>
+              <p class="mt-1 text-sm text-gray-500">Please configure Steam in the Configuration tab to view ignored games.</p>
+              <div class="mt-6">
+                <button
+                  onclick={() => handleTabChange('configuration')}
+                  class="btn-primary"
+                >
+                  Go to Configuration
+                </button>
+              </div>
+            </div>
+          {:else}
+          <!-- Ignored Games Section -->
+          {#if ignoredGames.length > 0}
+            <SteamGamesTable
+              title="Ignored Games"
+              description="These games have been marked as ignored and won't be imported to your collection."
+              icon="🚫"
+              games={ignoredGames}
+              emptyMessage="No ignored games found"
+              showUnignoreButton={true}
+              onRefresh={loadTabData}
+              collapsible={false}
+            />
+          {:else}
+            <div class="text-center py-12">
+              <span class="text-6xl">🚫</span>
+              <h3 class="mt-2 text-lg font-medium text-gray-900">No ignored games</h3>
+              <p class="mt-1 text-sm text-gray-500">
+                Games you mark as ignored will appear here.
+              </p>
+            </div>
+          {/if}
           {/if}
         </div>
       {:else if activeTab === 'in-sync'}
