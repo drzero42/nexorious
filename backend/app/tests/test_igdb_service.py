@@ -290,9 +290,9 @@ class TestKeywordExpansion:
         
         # Test various forms of The Telltale Series
         test_cases = [
-            ("The Walking Dead: The Telltale Series", {"The Telltale Series": ""}),
-            ("Batman: The Telltale Series Episode 1", {"The Telltale Series": ""}),
-            ("The Wolf Among Us: The Telltale Series", {"The Telltale Series": ""}),
+            ("The Walking Dead: The Telltale Series", {":": " ", "The Telltale Series": ""}),
+            ("Batman: The Telltale Series Episode 1", {":": " ", "The Telltale Series": ""}),
+            ("The Wolf Among Us: The Telltale Series", {":": " ", "The Telltale Series": ""}),
             ("the telltale series game", {"The Telltale Series": ""}),  # Case insensitive
             ("The Telltale Series - Season 1", {"The Telltale Series": ""}),
         ]
@@ -368,6 +368,223 @@ class TestKeywordExpansion:
         for original, expected in test_cases:
             result = service._generate_expanded_queries(original, keywords)
             assert result == expected, f"Cleanup failed for: '{original}', got: {result}"
+    
+    def test_detect_keywords_trademark_symbol(self):
+        """Test detection of ® registered trademark symbol."""
+        service = IGDBService()
+        
+        # Test various cases with trademark symbol
+        test_cases = [
+            ("Rocket League®", {"®": ""}),
+            ("FIFA® 24", {"®": ""}),
+            ("Call of Duty®: Modern Warfare", {":": " ", "®": ""}),
+            ("®Game Title", {"®": ""}),
+            ("Game® Title® Here", {"®": ""}),  # Multiple symbols
+            ("Pokémon® Go", {"®": ""}),
+        ]
+        
+        for query, expected in test_cases:
+            result = service._detect_keywords(query)
+            assert result == expected, f"Failed to detect ® symbol in query: '{query}'"
+    
+    def test_detect_keywords_trademark_symbol_no_match(self):
+        """Test that similar characters don't trigger false positives for ®."""
+        service = IGDBService()
+        
+        # Test cases that should NOT match
+        test_cases = [
+            "Regular game",     # No symbol
+            "Game title",       # No symbol
+            "R game",          # Just the letter R
+            "Game R rating",   # R as separate letter
+        ]
+        
+        for query in test_cases:
+            result = service._detect_keywords(query)
+            # Should not contain ® key
+            assert "®" not in result, f"False positive for query: '{query}'"
+    
+    def test_generate_expanded_queries_trademark_removal(self):
+        """Test generation of queries with ® symbol removal."""
+        service = IGDBService()
+        
+        test_cases = [
+            # Standard cases
+            ("Rocket League®", {"®": ""}, ["Rocket League"]),
+            ("FIFA® 24", {"®": ""}, ["FIFA 24"]),
+            ("Call of Duty®: Modern Warfare", {"®": ""}, ["Call of Duty: Modern Warfare"]),
+            
+            # At the beginning
+            ("®Game Title", {"®": ""}, ["Game Title"]),
+            
+            # Multiple symbols
+            ("Game® Title® Here", {"®": ""}, ["Game Title Here"]),
+            
+            # With other punctuation
+            ("Pokémon® Go!", {"®": ""}, ["Pokémon Go!"]),
+            
+            # No spaces around symbol
+            ("Game®Title", {"®": ""}, ["GameTitle"]),
+        ]
+        
+        for original, keywords, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Failed removal for query: '{original}', got: {result}"
+    
+    def test_generate_expanded_queries_mixed_keywords_with_symbols(self):
+        """Test that symbol keywords work alongside text keywords."""
+        service = IGDBService()
+        
+        # Test mixed keywords: text + symbol
+        test_query = "FIFA® GOTY Edition"
+        detected = service._detect_keywords(test_query)
+        expected_detected = {"®": "", "goty": "Game of the Year"}
+        
+        assert detected == expected_detected, f"Detection failed: {detected}"
+        
+        # Test expansion
+        expanded = service._generate_expanded_queries(test_query, detected)
+        expected_expanded = [
+            "FIFA GOTY Edition",           # ® removed
+            "FIFA® Game of the Year Edition"  # GOTY expanded
+        ]
+        
+        assert set(expanded) == set(expected_expanded), f"Mixed expansion failed: {expanded}"
+    
+    def test_detect_keywords_number_one(self):
+        """Test detection of standalone number '1'."""
+        service = IGDBService()
+        
+        # Test various cases with number 1
+        test_cases = [
+            ("Portal 1", {"1": ""}),
+            ("Mass Effect 1", {"1": ""}),
+            ("Game Title 1", {"1": ""}),
+            ("Halo 1", {"1": ""}),
+            ("FIFA 1", {"1": ""}),
+        ]
+        
+        for query, expected in test_cases:
+            result = service._detect_keywords(query)
+            assert result == expected, f"Failed to detect '1' in query: '{query}'"
+    
+    def test_detect_keywords_number_one_no_match(self):
+        """Test that '1' detection avoids false positives."""
+        service = IGDBService()
+        
+        # Test cases that should NOT match
+        test_cases = [
+            "Counter-Strike 1.6",  # Part of version number
+            "Level 11",           # Part of larger number  
+            "1998 Game",         # At start but not standalone
+            "Game 10",           # Different number
+            "Team 1-2",          # Part of range
+            "Part 1-3",          # Part of range
+            "Volume 15",         # Different number
+        ]
+        
+        for query in test_cases:
+            result = service._detect_keywords(query)
+            # Should not contain "1" key
+            assert "1" not in result, f"False positive for query: '{query}'"
+    
+    def test_detect_keywords_year_parentheses(self):
+        """Test detection of years in parentheses."""
+        service = IGDBService()
+        
+        # Test various year formats
+        test_cases = [
+            ("Call of Duty (2003)", {"(2003)": ""}),
+            ("FIFA 24 (2024)", {"(2024)": ""}),
+            ("The Witcher 3 (2015)", {"(2015)": ""}),
+            ("Game Title (1999)", {"(1999)": ""}),
+            ("Old Game (1980)", {"(1980)": ""}),
+            ("Future Game (2030)", {"(2030)": ""}),
+        ]
+        
+        for query, expected in test_cases:
+            result = service._detect_keywords(query)
+            assert result == expected, f"Failed to detect year pattern in query: '{query}'"
+    
+    def test_detect_keywords_year_parentheses_no_match(self):
+        """Test that year parentheses detection avoids false positives."""
+        service = IGDBService()
+        
+        # Test cases that should NOT match
+        test_cases = [
+            "Game (2)",           # Too few digits
+            "Game (99)",          # Too few digits
+            "Game (12345)",       # Too many digits
+            "Game 2023",          # No parentheses
+            "Game (DLC)",         # Not a number
+            "Game (v1.5)",        # Not just year
+            "(End)",              # Not a year
+        ]
+        
+        for query in test_cases:
+            result = service._detect_keywords(query)
+            # Should not contain any year patterns
+            year_keys = [k for k in result.keys() if k.startswith('(') and k.endswith(')')]
+            assert len(year_keys) == 0, f"False positive year detection for query: '{query}'"
+    
+    def test_generate_expanded_queries_number_removal(self):
+        """Test generation of queries with number '1' removal."""
+        service = IGDBService()
+        
+        test_cases = [
+            # Standard cases - note that trailing spaces are cleaned up
+            ("Portal 1", {"1": ""}, ["Portal"]),
+            ("Mass Effect 1", {"1": ""}, ["Mass Effect"]),
+            ("Game Title 1: Subtitle", {"1": ""}, ["Game Title: Subtitle"]),
+            
+            # With other text - space between "1" and "Legendary" is removed as one unit
+            ("Halo 1 Legendary Edition", {"1 ": ""}, ["Halo Legendary Edition"]),
+        ]
+        
+        for original, keywords, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Failed number removal for query: '{original}', got: {result}"
+    
+    def test_generate_expanded_queries_year_removal(self):
+        """Test generation of queries with year parentheses removal."""
+        service = IGDBService()
+        
+        test_cases = [
+            # Standard cases
+            ("Call of Duty (2003)", {"(2003)": ""}, ["Call of Duty"]),
+            ("FIFA 24 (2024)", {"(2024)": ""}, ["FIFA 24"]),
+            ("The Witcher 3 (2015)", {"(2015)": ""}, ["The Witcher 3"]),
+            
+            # With other punctuation
+            ("Game: Title (1999)", {"(1999)": ""}, ["Game: Title"]),
+            ("Game Title! (2020)", {"(2020)": ""}, ["Game Title!"]),
+        ]
+        
+        for original, keywords, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Failed year removal for query: '{original}', got: {result}"
+    
+    def test_generate_expanded_queries_complex_mixed_patterns(self):
+        """Test complex scenarios with multiple pattern types."""
+        service = IGDBService()
+        
+        # Test mixed patterns: number + year + other keywords
+        test_query = "Mass Effect 1 GOTY (2007)"
+        detected = service._detect_keywords(test_query)
+        expected_detected = {"1 ": "", "goty": "Game of the Year", "(2007)": ""}
+        
+        assert detected == expected_detected, f"Complex detection failed: {detected}"
+        
+        # Test expansion - should generate multiple combinations
+        expanded = service._generate_expanded_queries(test_query, detected)
+        
+        # Should include various combinations
+        assert "Mass Effect 1 Game of the Year (2007)" in expanded  # GOTY expanded
+        assert "Mass Effect GOTY (2007)" in expanded              # "1 " removed  
+        assert "Mass Effect 1 GOTY" in expanded                   # (2007) removed
+        
+        # Should have exactly 3 expansions (one for each keyword)
+        assert len(expanded) == 3, f"Expected 3 expansions, got: {expanded}"
     
     def test_merge_and_deduplicate_results(self):
         """Test result merging and deduplication."""

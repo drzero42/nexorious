@@ -47,6 +47,12 @@ IGDB_PLATFORM_MAPPING = {
 KEYWORD_EXPANSIONS = {
     "goty": "Game of the Year",
     "The Telltale Series": "",  # Remove this phrase from queries
+    "®": "",  # Remove registered trademark symbol
+    "(classic)": "",  # Remove (classic) from queries (case insensitive)
+    ":": " ",  # Replace colon with space
+    # Pattern-based keywords (special keys that trigger regex patterns)
+    "_pattern_year_parentheses": "",  # Remove years in parentheses like (2023)
+    "_pattern_standalone_one": "",   # Remove standalone number "1" (avoiding version numbers and episodes)
 }
 
 
@@ -713,6 +719,48 @@ class IGDBService:
         """
         return self._rate_limiter.get_status()
     
+    def _detect_pattern_keyword(self, pattern_key: str, expansion: str, query: str) -> Dict[str, str]:
+        """
+        Detect pattern-based keywords in search query.
+        
+        Args:
+            pattern_key: Pattern key from KEYWORD_EXPANSIONS (e.g., "_pattern_year_parentheses")
+            expansion: Expansion string for the pattern
+            query: Search query string
+            
+        Returns:
+            Dictionary mapping found pattern instances to their expansions
+        """
+        detected = {}
+        
+        if pattern_key == "_pattern_year_parentheses":
+            # Detect years in parentheses (4 digits)
+            year_pattern = r'\(\d{4}\)'
+            matches = re.findall(year_pattern, query)
+            for match in matches:
+                detected[match] = expansion
+                logger.debug(f"Detected year pattern '{match}' in query '{query}'")
+                
+        elif pattern_key == "_pattern_standalone_one":
+            # Detect standalone number "1" but avoid Episode/Chapter/Part/Version references
+            # Improved pattern to avoid false positives like "Episode 1", "Chapter 1", etc.
+            # Look for "1" that is:
+            # - Word boundary at start
+            # - Not followed by a dot or dash (version numbers)
+            # - Not preceded by Episode/Chapter/Part/Season/Vol/Volume (case insensitive)
+            if re.search(r'\b1\b', query) and not re.search(r'\b1[\.\-]', query):
+                # Check if it's NOT preceded by episode/chapter type words
+                episode_pattern = r'\b(?:episode|chapter|part|season|vol|volume|series)\s+1\b'
+                if not re.search(episode_pattern, query, re.IGNORECASE):
+                    # Find the actual match for replacement (include trailing space if present)
+                    match = re.search(r'\b1\s*(?=:|$)|\b1\s+', query)
+                    if match:
+                        matched_text = match.group()
+                        detected[matched_text] = expansion
+                        logger.debug(f"Detected standalone '1' pattern '{matched_text}' in query '{query}'")
+        
+        return detected
+    
     def _detect_keywords(self, query: str) -> Dict[str, str]:
         """
         Detect keywords in search query that need expansion.
@@ -721,17 +769,38 @@ class IGDBService:
             query: Search query string
             
         Returns:
-            Dictionary mapping found keywords to their expansions
+            Dictionary mapping found keywords/patterns to their expansions
         """
         detected = {}
         query_lower = query.lower()
         
         for keyword, expansion in KEYWORD_EXPANSIONS.items():
-            # Use word boundaries to match whole words only
-            pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
-            if re.search(pattern, query_lower):
-                detected[keyword] = expansion
-                logger.debug(f"Detected keyword '{keyword}' in query '{query}'")
+            # Check if this is a pattern-based keyword
+            if keyword.startswith('_pattern_'):
+                detected.update(self._detect_pattern_keyword(keyword, expansion, query))
+            # Special case for (classic) - make it case insensitive
+            elif keyword == "(classic)":
+                pattern = re.escape(keyword)
+                if re.search(pattern, query, re.IGNORECASE):
+                    # Find the actual match in the original query to preserve case for replacement
+                    match = re.search(pattern, query, re.IGNORECASE)
+                    if match:
+                        actual_match = match.group()
+                        detected[actual_match] = expansion
+                        logger.debug(f"Detected case-insensitive '{keyword}' as '{actual_match}' in query '{query}'")
+            # Check if keyword is a symbol (no alphanumeric characters)
+            elif re.match(r'^[^\w\s]+$', keyword):
+                # For symbols, use simple pattern without word boundaries
+                pattern = re.escape(keyword)
+                if re.search(pattern, query):  # Use original query for case-sensitive symbols
+                    detected[keyword] = expansion
+                    logger.debug(f"Detected symbol '{keyword}' in query '{query}'")
+            else:
+                # Use word boundaries to match whole words only for text keywords
+                pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                if re.search(pattern, query_lower):
+                    detected[keyword] = expansion
+                    logger.debug(f"Detected keyword '{keyword}' in query '{query}'")
         
         return detected
     
@@ -749,17 +818,42 @@ class IGDBService:
         expanded_queries = []
         
         for keyword, expansion in detected_keywords.items():
-            # Replace keyword with expansion (case-insensitive)
-            pattern = r'\b' + re.escape(keyword) + r'\b'
-            expanded_query = re.sub(pattern, expansion, original_query, flags=re.IGNORECASE)
+            # Check if this is a pattern-based detection result
+            # Pattern results will be the actual matched text (like "(2023)" or "1 ")
+            # not the pattern key (like "_pattern_year_parentheses")
             
-            # Clean up extra whitespace if this was a removal (empty expansion)
+            # Check if keyword is a year in parentheses pattern
+            if keyword.startswith('(') and keyword.endswith(')') and re.match(r'\(\d{4}\)', keyword):
+                # For year patterns like (2023), use exact pattern matching
+                pattern = re.escape(keyword)
+                expanded_query = re.sub(pattern, expansion, original_query)
+            # Check if keyword contains trailing space (from standalone "1" detection)
+            elif keyword.endswith(' ') or keyword.endswith('\t'):
+                # For patterns that include whitespace, use exact replacement
+                expanded_query = original_query.replace(keyword, expansion)
+            # Check if keyword is (classic) variants - case-insensitive matches need exact replacement
+            elif keyword.lower() == "(classic)":
+                # For case-insensitive (classic) matches, use exact replacement of the found match
+                expanded_query = original_query.replace(keyword, expansion)
+            # Check if keyword is a symbol (no alphanumeric characters)
+            elif re.match(r'^[^\w\s]+$', keyword):
+                # For symbols, use simple pattern without word boundaries
+                pattern = re.escape(keyword)
+                expanded_query = re.sub(pattern, expansion, original_query)  # Case-sensitive for symbols
+            else:
+                # Replace keyword with expansion (case-insensitive) for text keywords
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                expanded_query = re.sub(pattern, expansion, original_query, flags=re.IGNORECASE)
+            
+            # Clean up extra whitespace for all expansions
+            expanded_query = re.sub(r'\s+', ' ', expanded_query)  # Multiple spaces -> single space
+            expanded_query = expanded_query.strip()  # Remove leading/trailing whitespace
+            
+            # Additional cleanup for removals (empty expansions)
             if expansion == "":
-                # Remove extra spaces and normalize
-                expanded_query = re.sub(r'\s+', ' ', expanded_query)  # Multiple spaces -> single space
                 expanded_query = re.sub(r':\s+:', ':', expanded_query)  # ": :" -> ":"
+                expanded_query = re.sub(r'\s+:', ':', expanded_query)  # "word :" -> "word:"
                 expanded_query = re.sub(r':\s*$', '', expanded_query)  # Remove trailing ":"
-                expanded_query = expanded_query.strip()  # Remove leading/trailing whitespace
             
             expanded_queries.append(expanded_query)
             action = "Removed" if expansion == "" else "Expanded"
