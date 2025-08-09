@@ -13,6 +13,7 @@
     showSyncButton?: boolean;
     showIgnoreButton?: boolean;
     showUnignoreButton?: boolean;
+    showUnmatchButton?: boolean;
     onRefresh?: () => Promise<void>;
     collapsible?: boolean;
     collapsed?: boolean;
@@ -29,6 +30,7 @@
     showSyncButton = false,
     showIgnoreButton = false,
     showUnignoreButton = false,
+    showUnmatchButton = false,
     onRefresh,
     collapsible = false,
     collapsed = false,
@@ -114,6 +116,18 @@
     }
   }
 
+  async function handleUnmatch(game: SteamGameResponse) {
+    try {
+      setGameLoading(game.id, true);
+      await steamGames.matchSteamGameToIGDB(game.id, null);
+      await onRefresh?.();
+    } catch (error) {
+      // Error handled in store
+    } finally {
+      setGameLoading(game.id, false);
+    }
+  }
+
   function setGameLoading(gameId: string, loading: boolean) {
     if (loading) {
       loadingGames.add(gameId);
@@ -180,6 +194,7 @@
             onSync={showSyncButton ? () => handleSync(game) : undefined}
             onIgnore={showIgnoreButton ? () => handleIgnore(game) : undefined}
             onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}
+            onUnmatch={showUnmatchButton ? () => handleUnmatch(game) : undefined}
             isLoading={isGameLoading(game.id)}
           />
         {/each}

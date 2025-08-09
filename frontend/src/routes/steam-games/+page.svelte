@@ -1224,6 +1224,7 @@
                 emptyMessage="No matched games found"
                 showSyncButton={true}
                 showIgnoreButton={true}
+                showUnmatchButton={true}
                 onRefresh={loadTabData}
                 collapsible={true}
                 collapsed={matchedCollapsed}
@@ -1307,6 +1308,7 @@
               games={ignoredGames}
               emptyMessage="No ignored games found"
               showUnignoreButton={true}
+              showUnmatchButton={true}
               onRefresh={loadTabData}
               collapsible={false}
             />
@@ -1349,6 +1351,7 @@
               icon="🔥"
               games={inSyncGames}
               emptyMessage="No games synced yet"
+              showUnmatchButton={true}
               onRefresh={loadTabData}
             />
           {:else}

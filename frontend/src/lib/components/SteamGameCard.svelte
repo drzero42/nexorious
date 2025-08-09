@@ -8,6 +8,7 @@
     onSync?: (() => void) | undefined;
     onIgnore?: (() => void) | undefined;
     onUnignore?: (() => void) | undefined;
+    onUnmatch?: (() => void) | undefined;
     showActions?: boolean;
     isLoading?: boolean;
   }
@@ -19,6 +20,7 @@
     onSync,
     onIgnore,
     onUnignore,
+    onUnmatch,
     showActions = true,
     isLoading = false
   }: Props = $props();
@@ -44,6 +46,23 @@
   const canMatch = $derived(!game.igdb_id && !game.ignored);
   const canIgnore = $derived(!game.ignored);
   const canUnignore = $derived(game.ignored);
+  const canUnmatch = $derived(game.igdb_id !== null);
+  
+  // State for confirmation dialog
+  let showUnmatchConfirm = $state(false);
+  
+  function handleUnmatchClick() {
+    showUnmatchConfirm = true;
+  }
+  
+  function handleConfirmUnmatch() {
+    showUnmatchConfirm = false;
+    onUnmatch?.();
+  }
+  
+  function handleCancelUnmatch() {
+    showUnmatchConfirm = false;
+  }
 </script>
 
 <div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200">
@@ -207,7 +226,63 @@
             Unignore
           </button>
         {/if}
+        {#if canUnmatch && onUnmatch}
+          <button
+            onclick={handleUnmatchClick}
+            disabled={isLoading}
+            class="text-xs btn-secondary text-gray-600 hover:text-orange-600 disabled:opacity-50"
+            title="Remove IGDB match"
+          >
+            {#if isLoading}
+              <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            {:else}
+              <span class="mr-1">🔓</span>
+            {/if}
+            Unmatch
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
 </div>
+
+<!-- Unmatch Confirmation Dialog -->
+{#if showUnmatchConfirm}
+  <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div class="p-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900">
+          Confirm Unmatch
+        </h3>
+        <p class="text-sm text-gray-500 mt-1">
+          Are you sure you want to unmatch this game from IGDB? This will remove the IGDB association and move the game back to "Needs Attention".
+          {#if game.game_id}
+            <strong class="text-orange-600 block mt-2">Warning: This game is synced to your collection and will be removed from it.</strong>
+          {/if}
+        </p>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="text-sm">
+          <strong>Game:</strong> {game.game_name}
+        </div>
+        <div class="flex space-x-3 justify-end">
+          <button
+            onclick={handleCancelUnmatch}
+            class="btn-secondary text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleConfirmUnmatch}
+            class="btn-secondary text-sm text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
+          >
+            Unmatch
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}

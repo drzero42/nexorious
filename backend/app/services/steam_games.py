@@ -604,6 +604,147 @@ class SteamGamesService:
             logger.error(f"Error during single auto-match for Steam game {steam_game_id} for user {user_id}: {str(e)}")
             raise SteamGamesServiceError(f"Failed to auto-match Steam game: {str(e)}")
     
+    async def _remove_steam_platform_association(self, user_game_id: str) -> bool:
+        """
+        Remove Steam platform association from a UserGame.
+        
+        Args:
+            user_game_id: UserGame ID to remove Steam association from
+            
+        Returns:
+            bool: True if Steam association was found and removed, False otherwise
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        logger.debug(f"🔍 [Platform Delete] Starting Steam platform association removal for UserGame {user_game_id}")
+        
+        try:
+            # Get Steam platform and storefront IDs
+            steam_platform_query = select(Platform).where(Platform.name == "pc-windows")
+            steam_platform = self.session.exec(steam_platform_query).first()
+            logger.debug(f"🔍 [Platform Delete] Found Steam platform: {steam_platform.id if steam_platform else 'None'} (name: pc-windows)")
+            
+            steam_storefront_query = select(Storefront).where(Storefront.name == "steam")
+            steam_storefront = self.session.exec(steam_storefront_query).first()
+            logger.debug(f"🔍 [Platform Delete] Found Steam storefront: {steam_storefront.id if steam_storefront else 'None'} (name: steam)")
+            
+            if not steam_platform or not steam_storefront:
+                logger.error(f"🔍 [Platform Delete] Steam configuration missing - platform: {steam_platform is not None}, storefront: {steam_storefront is not None}")
+                raise SteamGamesServiceError("Steam platform configuration not found")
+            
+            # Debug: Query ALL platform associations for this UserGame first
+            all_associations_query = select(UserGamePlatform).where(UserGamePlatform.user_game_id == user_game_id)
+            all_associations = self.session.exec(all_associations_query).all()
+            logger.debug(f"🔍 [Platform Delete] UserGame {user_game_id} has {len(all_associations)} total platform associations:")
+            for assoc in all_associations:
+                platform_name = assoc.platform.name if assoc.platform else "Unknown"
+                storefront_name = assoc.storefront.name if assoc.storefront else "None"
+                logger.debug(f"  - Platform: {platform_name} (ID: {assoc.platform_id}), Storefront: {storefront_name} (ID: {assoc.storefront_id})")
+            
+            # Find and remove Steam platform association
+            steam_association_query = select(UserGamePlatform).where(
+                and_(
+                    UserGamePlatform.user_game_id == user_game_id,
+                    UserGamePlatform.platform_id == steam_platform.id,
+                    UserGamePlatform.storefront_id == steam_storefront.id
+                )
+            )
+            steam_association = self.session.exec(steam_association_query).first()
+            
+            if steam_association:
+                logger.info(f"✅ [Platform Delete] Found Steam platform association for UserGame {user_game_id}, deleting...")
+                logger.debug(f"🔍 [Platform Delete] Deleting association: UserGamePlatform ID {steam_association.id}")
+                self.session.delete(steam_association)
+                logger.info(f"✅ [Platform Delete] Steam platform association deleted from session (will commit with transaction)")
+                return True
+            else:
+                logger.warning(f"❌ [Platform Delete] Steam platform association NOT FOUND for UserGame {user_game_id}")
+                logger.debug(f"🔍 [Platform Delete] Query was looking for: user_game_id={user_game_id}, platform_id={steam_platform.id}, storefront_id={steam_storefront.id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"💥 [Platform Delete] Error removing Steam platform association for UserGame {user_game_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to remove Steam platform association: {str(e)}")
+    
+    async def _unsync_steam_game_from_collection(self, game_id: str, user_id: str) -> str:
+        """
+        Remove Steam game from user's collection with multi-platform protection.
+        
+        Args:
+            game_id: Game ID that was synced
+            user_id: User ID for authorization
+            
+        Returns:
+            str: Type of removal performed ("complete", "platform_only", "not_found")
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        logger.info(f"🔍 [Unsync] Starting Steam game unsync: game_id={game_id}, user_id={user_id}")
+        
+        try:
+            # Find UserGame
+            user_game_query = select(UserGame).where(
+                and_(UserGame.user_id == user_id, UserGame.game_id == game_id)
+            )
+            user_game = self.session.exec(user_game_query).first()
+            
+            if not user_game:
+                logger.warning(f"❌ [Unsync] UserGame not found for game_id={game_id}, user_id={user_id}")
+                return "not_found"
+            
+            logger.debug(f"✅ [Unsync] Found UserGame {user_game.id} for game_id={game_id}")
+            
+            # Check current platform associations BEFORE removal
+            before_platforms_query = select(UserGamePlatform).where(
+                UserGamePlatform.user_game_id == user_game.id
+            )
+            before_platforms = self.session.exec(before_platforms_query).all()
+            logger.debug(f"🔍 [Unsync] UserGame {user_game.id} has {len(before_platforms)} platform associations BEFORE Steam removal:")
+            for assoc in before_platforms:
+                platform_name = assoc.platform.name if assoc.platform else "Unknown"
+                storefront_name = assoc.storefront.name if assoc.storefront else "None"
+                logger.debug(f"  - Platform: {platform_name}, Storefront: {storefront_name}")
+            
+            # Remove Steam platform association
+            logger.debug(f"🔍 [Unsync] Attempting to remove Steam platform association...")
+            steam_removed = await self._remove_steam_platform_association(user_game.id)
+            
+            if not steam_removed:
+                logger.warning(f"❌ [Unsync] Steam platform association not found for UserGame {user_game.id}")
+            else:
+                logger.info(f"✅ [Unsync] Steam platform association removed for UserGame {user_game.id}")
+            
+            # Check for remaining platform associations AFTER removal
+            remaining_platforms_query = select(UserGamePlatform).where(
+                UserGamePlatform.user_game_id == user_game.id
+            )
+            remaining_platforms = self.session.exec(remaining_platforms_query).all()
+            logger.debug(f"🔍 [Unsync] UserGame {user_game.id} has {len(remaining_platforms)} platform associations AFTER Steam removal:")
+            for assoc in remaining_platforms:
+                platform_name = assoc.platform.name if assoc.platform else "Unknown"
+                storefront_name = assoc.storefront.name if assoc.storefront else "None"
+                logger.debug(f"  - Platform: {platform_name}, Storefront: {storefront_name}")
+            
+            if len(remaining_platforms) == 0:
+                # No other platforms - safe to remove entire UserGame
+                logger.info(f"✅ [Unsync] No other platforms remain, removing entire UserGame {user_game.id}")
+                self.session.delete(user_game)  # Cascades to UserGameTag automatically
+                return "complete"
+            else:
+                # Other platforms exist - only removed Steam association
+                platform_names = [p.platform.name for p in remaining_platforms if p.platform]
+                logger.info(f"🔍 [Unsync] Other platforms remain for UserGame {user_game.id}: {platform_names}")
+                return "platform_only"
+                
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"💥 [Unsync] Error unsyncing Steam game from collection: game_id={game_id}, user_id={user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to unsync Steam game from collection: {str(e)}")
+    
     async def match_steam_game_to_igdb(
         self, 
         steam_game_id: str, 
@@ -624,7 +765,7 @@ class SteamGamesService:
         Raises:
             SteamGamesServiceError: For service errors
         """
-        logger.info(f"Matching Steam game {steam_game_id} to IGDB ID {igdb_id} for user {user_id}")
+        logger.info(f"🔄 [Transaction] Starting Steam game match operation: {steam_game_id} -> IGDB ID {igdb_id} for user {user_id}")
         
         try:
             # Find the Steam game and verify ownership
@@ -654,20 +795,45 @@ class SteamGamesService:
                         logger.warning(f"IGDB validation failed for ID {igdb_id}: {str(e)}")
                         raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
             
-            # Update the Steam game's IGDB ID
+            # Store current state for unsync operations
             old_igdb_id = steam_game.igdb_id
+            old_game_id = steam_game.game_id
+            
+            # Update the Steam game's IGDB ID and handle unsync
             steam_game.igdb_id = igdb_id
+            
+            # If unmatching (igdb_id=None), also clear sync status
+            if igdb_id is None:
+                steam_game.game_id = None
+            
             steam_game.updated_at = datetime.now(timezone.utc)
             
+            # Add to session but DO NOT commit yet - need to do unsync operations first
             self.session.add(steam_game)
-            self.session.commit()
-            self.session.refresh(steam_game)
+            logger.debug(f"🔄 [Transaction] Updated SteamGame in session (not committed yet)")
+            
+            # Handle collection unsync for unmatch operations
+            unsync_result = None
+            if igdb_id is None and old_game_id:
+                logger.info(f"🔄 [Transaction] Steam game was synced (game_id: {old_game_id}), performing unsync operation")
+                unsync_result = await self._unsync_steam_game_from_collection(old_game_id, user_id)
+                logger.debug(f"🔄 [Transaction] Unsync operation result: {unsync_result}")
             
             # Create response message
             if igdb_id is None:
-                if old_igdb_id:
+                if old_igdb_id and old_game_id:
+                    # Was matched and synced - unmatched and unsynced
+                    if unsync_result == "complete":
+                        message = f"Unmatched Steam game '{steam_game.game_name}' and removed from collection"
+                    elif unsync_result == "platform_only":
+                        message = f"Unmatched Steam game '{steam_game.game_name}' and removed Steam platform (other platforms retained)"
+                    else:
+                        message = f"Unmatched Steam game '{steam_game.game_name}' and removed from collection"
+                elif old_igdb_id:
+                    # Was matched but not synced - just unmatched
                     message = f"Cleared IGDB match for Steam game '{steam_game.game_name}'"
                 else:
+                    # Was neither matched nor synced
                     message = f"No IGDB match to clear for Steam game '{steam_game.game_name}'"
             else:
                 if old_igdb_id:
@@ -675,14 +841,23 @@ class SteamGamesService:
                 else:
                     message = f"Successfully matched Steam game '{steam_game.game_name}' to IGDB"
             
-            logger.info(f"Steam game {steam_game_id} IGDB match updated: {old_igdb_id} -> {igdb_id} by user {user_id}")
+            # Commit ALL operations atomically (SteamGame changes + platform deletions)
+            logger.debug(f"🔄 [Transaction] Committing all changes to database")
+            self.session.commit()
+            self.session.refresh(steam_game)
+            logger.info(f"✅ [Transaction] Successfully committed Steam game {steam_game_id} IGDB match update: {old_igdb_id} -> {igdb_id} by user {user_id}")
             
             return steam_game, message
             
         except SteamGamesServiceError:
-            # Re-raise service errors without wrapping
+            # Re-raise service errors without wrapping but rollback first
+            logger.error(f"🔄 [Transaction] SteamGamesServiceError occurred, rolling back transaction")
+            self.session.rollback()
             raise
         except Exception as e:
+            # Rollback on any unexpected errors
+            logger.error(f"🔄 [Transaction] Unexpected error occurred, rolling back transaction: {str(e)}")
+            self.session.rollback()
             logger.error(f"Error matching Steam game {steam_game_id} to IGDB for user {user_id}: {str(e)}")
             raise SteamGamesServiceError(f"Failed to match Steam game to IGDB: {str(e)}")
     
