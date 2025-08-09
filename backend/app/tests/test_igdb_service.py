@@ -445,8 +445,9 @@ class TestKeywordExpansion:
         # Test expansion
         expanded = service._generate_expanded_queries(test_query, detected)
         expected_expanded = [
-            "FIFA GOTY Edition",           # ® removed
-            "FIFA® Game of the Year Edition"  # GOTY expanded
+            "FIFA® Game of the Year Edition",  # GOTY expanded
+            "FIFA GOTY Edition",               # ® removed
+            "FIFA Game of the Year Edition"    # Combined: both ® removed AND GOTY expanded
         ]
         
         assert set(expanded) == set(expected_expanded), f"Mixed expansion failed: {expanded}"
@@ -575,16 +576,19 @@ class TestKeywordExpansion:
         
         assert detected == expected_detected, f"Complex detection failed: {detected}"
         
-        # Test expansion - should generate multiple combinations
+        # Test expansion - should generate individual transformations plus combined
         expanded = service._generate_expanded_queries(test_query, detected)
         
-        # Should include various combinations
+        # Should include individual transformations
         assert "Mass Effect 1 Game of the Year (2007)" in expanded  # GOTY expanded
         assert "Mass Effect GOTY (2007)" in expanded              # "1 " removed  
         assert "Mass Effect 1 GOTY" in expanded                   # (2007) removed
         
-        # Should have exactly 3 expansions (one for each keyword)
-        assert len(expanded) == 3, f"Expected 3 expansions, got: {expanded}"
+        # Should also include combined transformation
+        assert "Mass Effect Game of the Year" in expanded         # All transformations combined
+        
+        # Should have exactly 4 expansions (3 individual + 1 combined)
+        assert len(expanded) == 4, f"Expected 4 expansions, got: {expanded}"
     
     def test_merge_and_deduplicate_results(self):
         """Test result merging and deduplication."""

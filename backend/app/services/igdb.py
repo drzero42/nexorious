@@ -817,49 +817,72 @@ class IGDBService:
         """
         expanded_queries = []
         
+        # Generate individual transformations (one per keyword)
         for keyword, expansion in detected_keywords.items():
-            # Check if this is a pattern-based detection result
-            # Pattern results will be the actual matched text (like "(2023)" or "1 ")
-            # not the pattern key (like "_pattern_year_parentheses")
-            
-            # Check if keyword is a year in parentheses pattern
-            if keyword.startswith('(') and keyword.endswith(')') and re.match(r'\(\d{4}\)', keyword):
-                # For year patterns like (2023), use exact pattern matching
-                pattern = re.escape(keyword)
-                expanded_query = re.sub(pattern, expansion, original_query)
-            # Check if keyword contains trailing space (from standalone "1" detection)
-            elif keyword.endswith(' ') or keyword.endswith('\t'):
-                # For patterns that include whitespace, use exact replacement
-                expanded_query = original_query.replace(keyword, expansion)
-            # Check if keyword is (classic) variants - case-insensitive matches need exact replacement
-            elif keyword.lower() == "(classic)":
-                # For case-insensitive (classic) matches, use exact replacement of the found match
-                expanded_query = original_query.replace(keyword, expansion)
-            # Check if keyword is a symbol (no alphanumeric characters)
-            elif re.match(r'^[^\w\s]+$', keyword):
-                # For symbols, use simple pattern without word boundaries
-                pattern = re.escape(keyword)
-                expanded_query = re.sub(pattern, expansion, original_query)  # Case-sensitive for symbols
-            else:
-                # Replace keyword with expansion (case-insensitive) for text keywords
-                pattern = r'\b' + re.escape(keyword) + r'\b'
-                expanded_query = re.sub(pattern, expansion, original_query, flags=re.IGNORECASE)
-            
-            # Clean up extra whitespace for all expansions
-            expanded_query = re.sub(r'\s+', ' ', expanded_query)  # Multiple spaces -> single space
-            expanded_query = expanded_query.strip()  # Remove leading/trailing whitespace
-            
-            # Additional cleanup for removals (empty expansions)
-            if expansion == "":
-                expanded_query = re.sub(r':\s+:', ':', expanded_query)  # ": :" -> ":"
-                expanded_query = re.sub(r'\s+:', ':', expanded_query)  # "word :" -> "word:"
-                expanded_query = re.sub(r':\s*$', '', expanded_query)  # Remove trailing ":"
-            
+            expanded_query = self._apply_single_transformation(original_query, keyword, expansion)
             expanded_queries.append(expanded_query)
             action = "Removed" if expansion == "" else "Expanded"
             logger.debug(f"Generated {action.lower()} query: '{expanded_query}' from keyword '{keyword}'")
         
+        # Generate fully transformed query (all keywords applied together) if multiple keywords
+        if len(detected_keywords) > 1:
+            fully_transformed = original_query
+            for keyword, expansion in detected_keywords.items():
+                fully_transformed = self._apply_single_transformation(fully_transformed, keyword, expansion)
+            
+            # Only add if it's different from individual transformations (avoid duplicates)
+            if fully_transformed not in expanded_queries and fully_transformed != original_query:
+                expanded_queries.append(fully_transformed)
+                logger.debug(f"Generated fully transformed query: '{fully_transformed}'")
+        
         return expanded_queries
+    
+    def _apply_single_transformation(self, query: str, keyword: str, expansion: str) -> str:
+        """
+        Apply a single keyword transformation to a query.
+        
+        Args:
+            query: Query to transform
+            keyword: Keyword to replace
+            expansion: Replacement text
+            
+        Returns:
+            Transformed query string
+        """
+        # Check if keyword is a year in parentheses pattern
+        if keyword.startswith('(') and keyword.endswith(')') and re.match(r'\(\d{4}\)', keyword):
+            # For year patterns like (2023), use exact pattern matching
+            pattern = re.escape(keyword)
+            expanded_query = re.sub(pattern, expansion, query)
+        # Check if keyword contains trailing space (from standalone "1" detection)
+        elif keyword.endswith(' ') or keyword.endswith('\t'):
+            # For patterns that include whitespace, use exact replacement
+            expanded_query = query.replace(keyword, expansion)
+        # Check if keyword is (classic) variants - case-insensitive matches need exact replacement
+        elif keyword.lower() == "(classic)":
+            # For case-insensitive (classic) matches, use exact replacement of the found match
+            expanded_query = query.replace(keyword, expansion)
+        # Check if keyword is a symbol (no alphanumeric characters)
+        elif re.match(r'^[^\w\s]+$', keyword):
+            # For symbols, use simple pattern without word boundaries
+            pattern = re.escape(keyword)
+            expanded_query = re.sub(pattern, expansion, query)  # Case-sensitive for symbols
+        else:
+            # Replace keyword with expansion (case-insensitive) for text keywords
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            expanded_query = re.sub(pattern, expansion, query, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace for all expansions
+        expanded_query = re.sub(r'\s+', ' ', expanded_query)  # Multiple spaces -> single space
+        expanded_query = expanded_query.strip()  # Remove leading/trailing whitespace
+        
+        # Additional cleanup for removals (empty expansions)
+        if expansion == "":
+            expanded_query = re.sub(r':\s+:', ':', expanded_query)  # ": :" -> ":"
+            expanded_query = re.sub(r'\s+:', ':', expanded_query)  # "word :" -> "word:"
+            expanded_query = re.sub(r':\s*$', '', expanded_query)  # Remove trailing ":"
+        
+        return expanded_query
     
     def _merge_and_deduplicate_results(
         self, 
