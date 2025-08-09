@@ -574,13 +574,6 @@ class SteamGamesService:
             if not steam_game:
                 raise SteamGamesServiceError("Steam game not found or access denied")
             
-            # If igdb_id is provided, validate it exists in games table
-            if igdb_id is not None:
-                game_query = select(Game).where(Game.igdb_id == igdb_id)
-                existing_game = self.session.exec(game_query).first()
-                
-                if not existing_game:
-                    raise SteamGamesServiceError("Invalid IGDB ID. Game must exist in the main games collection first.")
             
             # Update the Steam game's IGDB ID
             old_igdb_id = steam_game.igdb_id
