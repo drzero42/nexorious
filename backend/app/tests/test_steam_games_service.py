@@ -144,7 +144,7 @@ class TestSteamGamesServiceInit:
         assert service.session == session
         assert service._steam_service is None
         assert service._igdb_service is None
-        assert service.auto_match_confidence_threshold == 0.80
+        assert service.auto_match_confidence_threshold == 0.60
         assert service.auto_match_batch_size == 10
     
     def test_init_with_mocks(self, session: Session, mock_steam_service, mock_igdb_service):

@@ -42,27 +42,12 @@ def _rank_user_games_by_fuzzy_match(user_games: List[UserGame], query: str, thre
     
     query_lower = query.lower().strip()
     
-    # Calculate similarity scores for each user game
+    # Calculate similarity scores for each user game using shared fuzzy matching logic
+    from app.utils.fuzzy_match import calculate_fuzzy_confidence
     scored_games = []
     for user_game in user_games:
-        # Calculate multiple similarity scores using game title
-        title_lower = user_game.game.title.lower()
-        
-        # Different matching strategies
-        exact_score = 1.0 if query_lower == title_lower else 0.0
-        ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
-        partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
-        token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
-        token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
-        
-        # Calculate weighted final score
-        final_score = max(
-            exact_score * 1.0,  # Exact match gets highest priority
-            ratio_score * 0.9,  # Overall similarity
-            partial_score * 0.8,  # Partial match
-            token_sort_score * 0.7,  # Token order similarity
-            token_set_score * 0.6  # Token set similarity
-        )
+        # Calculate confidence score using sophisticated multi-metric fuzzy matching
+        final_score = calculate_fuzzy_confidence(query, user_game.game.title)
         
         # Only include games above threshold
         if final_score >= threshold:

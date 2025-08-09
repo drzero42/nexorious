@@ -45,6 +45,18 @@
     showMatchWidget = true;
   }
 
+  async function handleAutoMatch(game: SteamGameResponse) {
+    try {
+      setGameLoading(game.id, true);
+      await steamGames.autoMatchSingleGame(game.id);
+      await onRefresh?.();
+    } catch (error) {
+      // Error handled in store
+    } finally {
+      setGameLoading(game.id, false);
+    }
+  }
+
   async function handleGameSelected(selectedGame: any) {
     if (!matchingGameId) return;
     
@@ -164,6 +176,7 @@
           <SteamGameCard
             {game}
             onMatch={showMatchButton ? () => handleMatch(game) : undefined}
+            onAutoMatch={showMatchButton ? () => handleAutoMatch(game) : undefined}
             onSync={showSyncButton ? () => handleSync(game) : undefined}
             onIgnore={showIgnoreButton ? () => handleIgnore(game) : undefined}
             onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}

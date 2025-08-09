@@ -4,6 +4,7 @@
   interface Props {
     game: SteamGameResponse;
     onMatch?: (() => void) | undefined;
+    onAutoMatch?: (() => void) | undefined;
     onSync?: (() => void) | undefined;
     onIgnore?: (() => void) | undefined;
     onUnignore?: (() => void) | undefined;
@@ -14,6 +15,7 @@
   let {
     game,
     onMatch,
+    onAutoMatch,
     onSync,
     onIgnore,
     onUnignore,
@@ -121,12 +123,31 @@
             {#if isLoading}
               <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             {:else}
               <span class="mr-1">🔗</span>
             {/if}
             Match
+          </button>
+        {/if}
+
+        {#if canMatch && onAutoMatch}
+          <button
+            onclick={onAutoMatch}
+            disabled={isLoading}
+            class="text-xs btn-primary disabled:opacity-50"
+            title="Automatically match to IGDB using AI"
+          >
+            {#if isLoading}
+              <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            {:else}
+              <span class="mr-1">🤖</span>
+            {/if}
+            Auto-match
           </button>
         {/if}
 

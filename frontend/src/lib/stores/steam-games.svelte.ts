@@ -64,6 +64,13 @@ export interface SteamGamesAutoMatchResponse {
   errors: string[];
 }
 
+export interface SteamGameAutoMatchSingleResponse {
+  message: string;
+  steam_game: SteamGameResponse;
+  matched: boolean;
+  confidence: number | null;
+}
+
 export type SteamGameStatusFilter = 'unmatched' | 'matched' | 'ignored' | 'synced';
 
 export interface SteamGamesState {
@@ -398,6 +405,53 @@ function createSteamGamesStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to retry auto-matching';
         state = { ...state, isAutoMatching: false, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Auto-match a single Steam game to IGDB
+    async autoMatchSingleGame(steamGameId: string): Promise<SteamGameAutoMatchSingleResponse> {
+      state = { ...state, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/auto-match`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.autoMatchSingleGame(steamGameId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to auto-match Steam game');
+        }
+
+        const data = await response.json() as SteamGameAutoMatchSingleResponse;
+        
+        // Update the game in our local state
+        const gameIndex = state.games.findIndex(g => g.id === steamGameId);
+        if (gameIndex !== -1) {
+          const updatedGames = [...state.games];
+          updatedGames[gameIndex] = data.steam_game;
+          state = { ...state, games: updatedGames };
+        }
+
+        // Show appropriate success/info message
+        if (data.matched) {
+          ui.showSuccess(data.message);
+        } else {
+          ui.showInfo(data.message);
+        }
+
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to auto-match Steam game';
+        state = { ...state, error: errorMessage };
         ui.showError(errorMessage);
         throw error;
       }

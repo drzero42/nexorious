@@ -113,7 +113,7 @@ class SteamGamesService:
         self._igdb_service = igdb_service
         
         # Configuration for automatic matching
-        self.auto_match_confidence_threshold = 0.80  # 80% similarity required (lowered from 90%)
+        self.auto_match_confidence_threshold = 0.60  # 60% similarity required (same as manual search)
         self.auto_match_batch_size = 10  # Process in batches for rate limiting
         
         logger.debug("SteamGamesService initialized")
@@ -378,11 +378,13 @@ class SteamGamesService:
         
         try:
             # Search IGDB for potential matches
+            # Use same fuzzy_threshold as manual search (0.6) instead of auto_match_confidence_threshold (0.8)
+            # This ensures consistent behavior with manual search and gets more candidates
             logger.debug(f"🎯 [Single Match] Searching IGDB for '{steam_game.game_name}'...")
             igdb_candidates = await self.igdb_service.search_games(
                 query=steam_game.game_name,
                 limit=5,  # Get top 5 candidates
-                fuzzy_threshold=self.auto_match_confidence_threshold
+                fuzzy_threshold=0.6  # Use same threshold as manual search (/games/search/igdb)
             )
             
             logger.debug(f"🎯 [Single Match] IGDB search returned {len(igdb_candidates)} candidates for '{steam_game.game_name}'")
@@ -404,9 +406,9 @@ class SteamGamesService:
             best_match = igdb_candidates[0]
             logger.debug(f"🎯 [Single Match] Best match candidate: '{best_match.title}' (IGDB ID: {best_match.igdb_id})")
             
-            # Calculate confidence score using fuzzy matching
-            from rapidfuzz import fuzz
-            confidence = fuzz.ratio(steam_game.game_name.lower(), best_match.title.lower()) / 100.0
+            # Calculate confidence score using sophisticated multi-metric fuzzy matching
+            from app.utils.fuzzy_match import calculate_fuzzy_confidence
+            confidence = calculate_fuzzy_confidence(steam_game.game_name, best_match.title)
             logger.debug(f"🎯 [Single Match] Confidence score: {confidence:.1%} (threshold: {self.auto_match_confidence_threshold:.1%})")
             
             # Only auto-match if confidence is above threshold
@@ -538,6 +540,60 @@ class SteamGamesService:
         except Exception as e:
             logger.error(f"Error during manual auto-matching for user {user_id}: {str(e)}")
             raise SteamGamesServiceError(f"Failed to retry auto-matching: {str(e)}")
+    
+    async def auto_match_single_steam_game(self, steam_game_id: str, user_id: str) -> AutoMatchResult:
+        """
+        Attempt to automatically match a single Steam game to IGDB.
+        
+        Args:
+            steam_game_id: Steam game ID to auto-match
+            user_id: User ID for authorization
+            
+        Returns:
+            AutoMatchResult with matching details
+            
+        Raises:
+            SteamGamesServiceError: For service errors or validation failures
+        """
+        logger.info(f"🎯 [Single Auto-Match] Starting auto-match for Steam game {steam_game_id} for user {user_id}")
+        
+        try:
+            # Validate user exists
+            user = self.session.get(User, user_id)
+            if not user:
+                raise SteamGamesServiceError(f"User {user_id} not found")
+            
+            # Validate Steam game exists and belongs to user
+            steam_game_query = select(SteamGame).where(
+                and_(
+                    SteamGame.id == steam_game_id,
+                    SteamGame.user_id == user_id
+                )
+            )
+            steam_game = self.session.exec(steam_game_query).first()
+            
+            if not steam_game:
+                logger.error(f"🎯 [Single Auto-Match] Steam game not found: {steam_game_id} for user {user_id}")
+                raise SteamGamesServiceError("Steam game not found or access denied")
+            
+            # Perform single auto-match
+            result = await self._auto_match_single_steam_game(steam_game_id)
+            
+            if result.matched:
+                logger.info(f"🎯 [Single Auto-Match] Successfully matched '{result.steam_game_name}' to IGDB (confidence: {result.confidence_score:.1%})")
+            elif result.error_message:
+                logger.info(f"🎯 [Single Auto-Match] Failed to match '{result.steam_game_name}': {result.error_message}")
+            else:
+                logger.info(f"🎯 [Single Auto-Match] No suitable match found for '{result.steam_game_name}' (low confidence)")
+            
+            return result
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"Error during single auto-match for Steam game {steam_game_id} for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to auto-match Steam game: {str(e)}")
     
     async def match_steam_game_to_igdb(
         self, 

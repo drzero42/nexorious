@@ -222,3 +222,11 @@ class SteamGamesAutoMatchResponse(BaseModel):
     errors: List[str] = Field(default=[], description="List of error messages for failed matches")
 
 
+class SteamGameAutoMatchSingleResponse(BaseModel):
+    """Response schema for single Steam game auto-matching operation."""
+    message: str = Field(..., description="Status message about the auto-matching operation")
+    steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+    matched: bool = Field(..., description="Whether the game was successfully auto-matched")
+    confidence: Optional[float] = Field(None, description="Matching confidence score if matched")
+
+

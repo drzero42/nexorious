@@ -24,7 +24,8 @@ from ..api.schemas.steam import (
     SteamGameSyncResponse,
     SteamGameIgnoreResponse,
     SteamGamesBulkSyncResponse,
-    SteamGamesAutoMatchResponse
+    SteamGamesAutoMatchResponse,
+    SteamGameAutoMatchSingleResponse
 )
 
 router = APIRouter(prefix="/steam-games", tags=["Steam Games"])
@@ -614,4 +615,86 @@ async def retry_auto_matching_for_unmatched_games(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retry auto-matching for Steam games"
+        )
+
+
+@router.post("/{steam_game_id}/auto-match", response_model=SteamGameAutoMatchSingleResponse, status_code=status.HTTP_200_OK)
+async def auto_match_single_steam_game(
+    steam_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGameAutoMatchSingleResponse:
+    """
+    Automatically match a single Steam game to IGDB.
+    
+    This endpoint attempts to automatically find and match a Steam game to an IGDB entry
+    using fuzzy string matching with confidence scoring. The game will only be matched
+    if the confidence score meets or exceeds the configured threshold (typically 80%).
+    
+    - Only unmatched Steam games can be auto-matched
+    - The game must belong to the current user
+    - Uses the same matching algorithm as the bulk auto-match operation
+    - Returns detailed matching results including confidence score
+    """
+    try:
+        # Create Steam games service
+        steam_games_service = create_steam_games_service(session)
+        
+        # Use service to handle single auto-match operation
+        result = await steam_games_service.auto_match_single_steam_game(
+            steam_game_id=steam_game_id,
+            user_id=current_user.id
+        )
+        
+        # Create success/failure message
+        if result.matched:
+            message = f"Successfully auto-matched '{result.steam_game_name}' to IGDB with {result.confidence_score:.1%} confidence"
+        elif result.error_message:
+            message = f"Failed to auto-match '{result.steam_game_name}': {result.error_message}"
+        else:
+            message = f"No suitable IGDB match found for '{result.steam_game_name}' (confidence too low)"
+        
+        logger.info(f"Single auto-match completed for Steam game {steam_game_id} for user {current_user.id}: matched={result.matched}")
+        
+        # Get updated Steam game for response
+        steam_game = session.get(SteamGame, steam_game_id)
+        if not steam_game:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Steam game not found after auto-match operation"
+            )
+        
+        return SteamGameAutoMatchSingleResponse(
+            message=message,
+            steam_game=SteamGameResponse(
+                id=steam_game.id,
+                steam_appid=steam_game.steam_appid,
+                game_name=steam_game.game_name,
+                igdb_id=steam_game.igdb_id,
+                game_id=steam_game.game_id,
+                ignored=steam_game.ignored,
+                created_at=steam_game.created_at,
+                updated_at=steam_game.updated_at
+            ),
+            matched=result.matched,
+            confidence=result.confidence_score
+        )
+        
+    except SteamGamesServiceError as e:
+        # Convert service errors to appropriate HTTP errors
+        if "not found or access denied" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+    except Exception as e:
+        logger.error(f"Error during single auto-match for Steam game {steam_game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to auto-match Steam game"
         )
