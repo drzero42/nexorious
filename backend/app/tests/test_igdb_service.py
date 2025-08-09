@@ -284,6 +284,91 @@ class TestKeywordExpansion:
             result = service._generate_expanded_queries(original, keywords)
             assert result == expected, f"Case handling failed for: '{original}'"
     
+    def test_detect_keywords_telltale_series(self):
+        """Test detection of 'The Telltale Series' keyword."""
+        service = IGDBService()
+        
+        # Test various forms of The Telltale Series
+        test_cases = [
+            ("The Walking Dead: The Telltale Series", {"The Telltale Series": ""}),
+            ("Batman: The Telltale Series Episode 1", {"The Telltale Series": ""}),
+            ("The Wolf Among Us: The Telltale Series", {"The Telltale Series": ""}),
+            ("the telltale series game", {"The Telltale Series": ""}),  # Case insensitive
+            ("The Telltale Series - Season 1", {"The Telltale Series": ""}),
+        ]
+        
+        for query, expected in test_cases:
+            result = service._detect_keywords(query)
+            assert result == expected, f"Failed to detect Telltale Series in query: '{query}'"
+    
+    def test_detect_keywords_telltale_series_no_match(self):
+        """Test that partial telltale matches don't trigger false positives."""
+        service = IGDBService()
+        
+        # Test cases that should NOT match
+        test_cases = [
+            "Telltale Games",  # Just the company name
+            "A Telltale",      # Part of the phrase
+            "Series finale",   # Just "Series"
+            "The series",      # Just "The" and "series" separately
+            "Tell tale story", # "tell tale" as separate words
+        ]
+        
+        for query in test_cases:
+            result = service._detect_keywords(query)
+            # Should not contain The Telltale Series key
+            assert "The Telltale Series" not in result, f"False positive for query: '{query}'"
+    
+    def test_generate_expanded_queries_telltale_removal(self):
+        """Test generation of queries with Telltale Series removal."""
+        service = IGDBService()
+        
+        test_cases = [
+            # Standard cases
+            ("The Walking Dead: The Telltale Series", {"The Telltale Series": ""}, ["The Walking Dead"]),
+            ("Batman: The Telltale Series Episode 1", {"The Telltale Series": ""}, ["Batman: Episode 1"]),
+            
+            # At the beginning
+            ("The Telltale Series Walking Dead", {"The Telltale Series": ""}, ["Walking Dead"]),
+            
+            # At the end
+            ("Walking Dead The Telltale Series", {"The Telltale Series": ""}, ["Walking Dead"]),
+            
+            # With multiple spaces
+            ("Batman:   The Telltale Series  Episode", {"The Telltale Series": ""}, ["Batman: Episode"]),
+            
+            # Case variations
+            ("the telltale series batman", {"The Telltale Series": ""}, ["batman"]),
+        ]
+        
+        for original, keywords, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Failed removal for query: '{original}', got: {result}"
+    
+    def test_generate_expanded_queries_telltale_cleanup(self):
+        """Test whitespace cleanup after Telltale Series removal."""
+        service = IGDBService()
+        
+        # Test edge cases for whitespace cleanup
+        keywords = {"The Telltale Series": ""}
+        test_cases = [
+            # Trailing colon cleanup
+            ("Game: The Telltale Series", ["Game"]),
+            ("Game: The Telltale Series :", ["Game"]),
+            
+            # Multiple spaces cleanup  
+            ("Before  The Telltale Series  After", ["Before After"]),
+            
+            # Leading/trailing whitespace
+            ("  The Telltale Series Game  ", ["Game"]),
+            ("Game The Telltale Series  ", ["Game"]),
+            ("  The Telltale Series", [""]),
+        ]
+        
+        for original, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Cleanup failed for: '{original}', got: {result}"
+    
     def test_merge_and_deduplicate_results(self):
         """Test result merging and deduplication."""
         service = IGDBService()

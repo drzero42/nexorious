@@ -46,6 +46,7 @@ IGDB_PLATFORM_MAPPING = {
 # Keyword expansions for search query enhancement
 KEYWORD_EXPANSIONS = {
     "goty": "Game of the Year",
+    "The Telltale Series": "",  # Remove this phrase from queries
 }
 
 
@@ -751,8 +752,18 @@ class IGDBService:
             # Replace keyword with expansion (case-insensitive)
             pattern = r'\b' + re.escape(keyword) + r'\b'
             expanded_query = re.sub(pattern, expansion, original_query, flags=re.IGNORECASE)
+            
+            # Clean up extra whitespace if this was a removal (empty expansion)
+            if expansion == "":
+                # Remove extra spaces and normalize
+                expanded_query = re.sub(r'\s+', ' ', expanded_query)  # Multiple spaces -> single space
+                expanded_query = re.sub(r':\s+:', ':', expanded_query)  # ": :" -> ":"
+                expanded_query = re.sub(r':\s*$', '', expanded_query)  # Remove trailing ":"
+                expanded_query = expanded_query.strip()  # Remove leading/trailing whitespace
+            
             expanded_queries.append(expanded_query)
-            logger.debug(f"Generated expanded query: '{expanded_query}' from keyword '{keyword}'")
+            action = "Removed" if expansion == "" else "Expanded"
+            logger.debug(f"Generated {action.lower()} query: '{expanded_query}' from keyword '{keyword}'")
         
         return expanded_queries
     
