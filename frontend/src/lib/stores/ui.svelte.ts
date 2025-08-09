@@ -56,6 +56,7 @@ const initialState: UIState = {
 
 function createUIStore() {
   let state = $state<UIState>(initialState);
+  const timeoutMap = new Map<string, ReturnType<typeof setTimeout>>(); // Track timeouts for cleanup
 
   // Initialize preferences from localStorage
   function initializePreferences() {
@@ -118,18 +119,28 @@ function createUIStore() {
 
       // Auto-remove notification after duration
       if (newNotification.duration && newNotification.duration > 0) {
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           state = {
             ...state,
             notifications: state.notifications.filter(n => n.id !== id)
           };
+          timeoutMap.delete(id); // Clean up timeout reference
         }, newNotification.duration);
+        
+        timeoutMap.set(id, timeoutId); // Store timeout reference for cleanup
       }
 
       return id;
     },
 
     removeNotification: (id: string) => {
+      // Clear any pending timeout for this notification
+      const timeoutId = timeoutMap.get(id);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutMap.delete(id);
+      }
+
       state = {
         ...state,
         notifications: state.notifications.filter(n => n.id !== id)
@@ -137,6 +148,12 @@ function createUIStore() {
     },
 
     clearNotifications: () => {
+      // Clear all pending timeouts
+      timeoutMap.forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      timeoutMap.clear();
+
       state = { ...state, notifications: [] };
     },
 

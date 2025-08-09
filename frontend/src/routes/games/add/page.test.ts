@@ -320,6 +320,8 @@ describe('Game Addition Page', () => {
     });
 
     it('should navigate to games list after successful addition', async () => {
+      vi.useFakeTimers();
+      
       render(GameAddPage);
       
       // Navigate to search results and select game
@@ -344,9 +346,21 @@ describe('Game Addition Page', () => {
       const confirmButton = screen.getByRole('button', { name: /add to collection/i });
       await fireEvent.click(confirmButton);
       
+      // Wait for the service calls to complete
       await waitFor(() => {
-        expect(mockGoto).toHaveBeenCalledWith('/games');
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-123', {});
+        expect(mockUserGamesStore.addGameToCollection).toHaveBeenCalled();
       });
+      
+      // Should not redirect immediately
+      expect(mockGoto).not.toHaveBeenCalled();
+      
+      // Fast-forward the 1-second timeout for successful redirect
+      vi.advanceTimersByTime(1000);
+      
+      expect(mockGoto).toHaveBeenCalledWith('/games');
+      
+      vi.useRealTimers();
     });
 
 

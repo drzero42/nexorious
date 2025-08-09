@@ -29,6 +29,7 @@ const initialState: AuthState = {
 
 function createAuthStore() {
   let state = $state<AuthState>(initialState);
+  let refreshPromise: Promise<boolean> | null = null; // Guard against concurrent refresh attempts
 
   // Load auth state from localStorage on initialization
   if (browser) {
@@ -118,41 +119,53 @@ function createAuthStore() {
         return false;
       }
 
-      try {
-        const response = await fetch(`${config.apiUrl}/auth/refresh`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ refresh_token: state.refreshToken }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Token refresh failed');
-        }
-
-        const data = await response.json();
-        const newState = {
-          ...state,
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || state.refreshToken,
-        };
-
-        state = newState;
-        
-        if (browser) {
-          localStorage.setItem('auth', JSON.stringify(newState));
-        }
-        
-        return true;
-      } catch (error) {
-        console.error('Token refresh failed:', error);
-        state = initialState;
-        if (browser) {
-          localStorage.removeItem('auth');
-        }
-        return false;
+      // Return existing promise if refresh is already in progress
+      if (refreshPromise) {
+        return refreshPromise;
       }
+
+      // Create new refresh promise
+      refreshPromise = (async () => {
+        try {
+          const response = await fetch(`${config.apiUrl}/auth/refresh`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ refresh_token: state.refreshToken }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Token refresh failed');
+          }
+
+          const data = await response.json();
+          const newState = {
+            ...state,
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || state.refreshToken,
+          };
+
+          state = newState;
+          
+          if (browser) {
+            localStorage.setItem('auth', JSON.stringify(newState));
+          }
+          
+          return true;
+        } catch (error) {
+          console.error('Token refresh failed:', error);
+          state = initialState;
+          if (browser) {
+            localStorage.removeItem('auth');
+          }
+          return false;
+        } finally {
+          refreshPromise = null; // Clear the promise reference
+        }
+      })();
+
+      return refreshPromise;
     },
 
     clearError: () => {

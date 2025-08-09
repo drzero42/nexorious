@@ -134,7 +134,15 @@ describe('Home Page', () => {
       setSetupStatusError();
       renderComponent(HomePage);
 
-      // Wait for the async onMount logic to complete
+      // First wait for checkSetupStatus to be called
+      await vi.waitFor(
+        () => {
+          expect(mockAuthStore.checkSetupStatus).toHaveBeenCalled();
+        },
+        { timeout: 2000 }
+      );
+
+      // Then wait for the error handling and redirect
       await vi.waitFor(
         () => {
           expect(mockGoto).toHaveBeenCalledWith('/login');

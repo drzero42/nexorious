@@ -1,16 +1,17 @@
 <script lang="ts">
   import { games } from '$lib/stores';
-  import { userGames, OwnershipStatus, PlayStatus } from '$lib/stores/user-games.svelte';
-  import type { UserGamePlatform } from '$lib/stores/user-games.svelte';
+  import { userGames } from '$lib/stores/user-games.svelte';
+  import type { UserGamePlatform, UserGame } from '$lib/stores/user-games.svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
   import { notifications } from '$lib/stores/notifications.svelte';
+  import { gameAdditionService, type GameFormData } from '$lib/services/game-addition';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
   import GameSearchStep from '$lib/components/GameSearchStep.svelte';
   import GameConfirmStep from '$lib/components/GameConfirmStep.svelte';
   import MetadataConfirmStep from '$lib/components/MetadataConfirmStep.svelte';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   let searchQuery = '';
   let isSearching = false;
@@ -20,7 +21,7 @@
   let step: 'search' | 'confirm' | 'metadata-confirm' = 'search';
 
   // Form data for new game (personal data only, IGDB metadata is read-only)
-  let gameData = {
+  let gameData: GameFormData = {
     // Personal data (editable)
     personal_rating: null,
     play_status: 'not_started',
@@ -39,6 +40,14 @@
   let selectedPlatforms = new Set<string>();
   let platformStorefronts = new Map<string, Set<string>>(); // platform_id -> Set<storefront_id>
   let platformStoreUrls = new Map<string, string>(); // platform_id -> store_url
+
+  // Cleanup timeouts on component destroy
+  const redirectTimeouts: ReturnType<typeof setTimeout>[] = [];
+  
+  onDestroy(() => {
+    redirectTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    redirectTimeouts.length = 0;
+  });
 
   // Load platforms and storefronts on component mount
   onMount(async () => {
@@ -61,13 +70,13 @@
 
   // Helper functions for ownership detection
   function isGameOwned(igdbId: string): boolean {
-    return userGames.value.userGames.some((userGame: any) => 
+    return userGames.value.userGames.some((userGame: UserGame) => 
       userGame.game.igdb_id === igdbId
     );
   }
 
   function getOwnedPlatformDetailsForGame(igdbId: string): UserGamePlatform[] {
-    const userGame = userGames.value.userGames.find((ug: any) => ug.game.igdb_id === igdbId);
+    const userGame = userGames.value.userGames.find((ug: UserGame) => ug.game.igdb_id === igdbId);
     if (!userGame || !userGame.platforms) return [];
     
     // Return the actual UserGamePlatform objects, not flattened objects
@@ -169,106 +178,30 @@
     addingGameId = selectedGame.igdb_id;
     
     try {
-      // Import the game from IGDB without custom overrides (IGDB metadata is read-only)
-      const createdGame = await games.createFromIGDB(selectedGame.igdb_id, {});
-      notifications.showSuccess(`Adding "${createdGame.title}" to your collection`);
-      
-      try {
-        // Add the game to the user's collection with form values
-        const platformData: any[] = [];
-        for (const platformId of selectedPlatforms) {
-          const storefronts = platformStorefronts.get(platformId) || new Set<string>();
-          
-          if (storefronts.size === 0) {
-            // No storefronts selected for this platform
-            platformData.push({
-              platform_id: platformId,
-              storefront_id: null,
-              store_game_id: null,
-              store_url: platformStoreUrls.get(platformId) || null,
-              is_available: true
-            });
-          } else {
-            // Create an entry for each selected storefront
-            for (const storefrontId of storefronts) {
-              platformData.push({
-                platform_id: platformId,
-                storefront_id: storefrontId,
-                store_game_id: null,
-                store_url: platformStoreUrls.get(platformId) || null,
-                is_available: true
-              });
-            }
-          }
-        }
-        
-        const addRequest: any = {
-          game_id: createdGame.id,
-          ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
-          platforms: platformData.length > 0 ? platformData : undefined
-        };
-        
-        const userGame = await userGames.addGameToCollection(addRequest);
+      const result = await gameAdditionService.addGameComplete(
+        selectedGame,
+        gameData,
+        selectedPlatforms,
+        platformStorefronts,
+        platformStoreUrls
+      );
 
-        // Platform details are now included in the initial request, so no separate API calls needed
-        let partialErrors = [];
-        
-        // Update progress with personal information if any were provided
-        if (gameData.play_status !== 'not_started' || gameData.hours_played > 0 || gameData.personal_notes) {
-          try {
-            await userGames.updateProgress(userGame.id, {
-              play_status: gameData.play_status as PlayStatus || PlayStatus.NOT_STARTED,
-              hours_played: gameData.hours_played || 0,
-              personal_notes: gameData.personal_notes || ''
-            });
-          } catch (progressError) {
-            console.error('Failed to update progress, but game was added to collection:', progressError);
-            partialErrors.push('Failed to save progress information');
-          }
-        }
-        
-        // Update user game details (rating and loved status) if any were provided
-        if (gameData.personal_rating || gameData.is_loved) {
-          try {
-            const updateData: any = {
-              is_loved: gameData.is_loved || false
-            };
-            
-            // Only include personal_rating if it has a value to avoid TypeScript strict mode issues
-            if (gameData.personal_rating) {
-              updateData.personal_rating = gameData.personal_rating;
-            }
-            
-            await userGames.updateUserGame(userGame.id, updateData);
-          } catch (updateError) {
-            console.error('Failed to update game details, but game was added to collection:', updateError);
-            partialErrors.push('Failed to save rating and favorite status');
-          }
-        }
-        
-        // Show success message with any partial error warnings
-        if (partialErrors.length > 0) {
-          notifications.showWarning(`"${createdGame.title}" added to collection, but some details couldn't be saved: ${partialErrors.join(', ')}`);
-        } else {
-          notifications.showSuccess(`"${createdGame.title}" successfully added to your collection!`);
-        }
-        
+      if (result.success) {
         // Brief delay to show success message before redirect
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           goto('/games');
         }, 1000);
-      } catch (collectionError) {
-        console.error('Failed to add game to collection:', collectionError);
-        notifications.showError(`Game was imported but couldn't be added to your collection. Please try again or contact support.`);
-        // Brief delay before redirect
-        setTimeout(() => {
+        redirectTimeouts.push(timeoutId);
+      } else {
+        // Brief delay before redirect on failure
+        const timeoutId = setTimeout(() => {
           goto('/games');
         }, 2000);
+        redirectTimeouts.push(timeoutId);
       }
     } catch (error) {
-      console.error('Failed to create game:', error);
-      // Import failed - notify user
-      notifications.showError('Failed to import game from IGDB. Please try a different search or contact support.');
+      console.error('Unexpected error during game addition:', error);
+      notifications.showError('An unexpected error occurred. Please try again.');
     } finally {
       addingGameId = null;
     }

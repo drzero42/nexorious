@@ -81,6 +81,9 @@ describe('UserGames Store', () => {
 		vi.clearAllMocks();
 		global.fetch = mockFetch;
 		
+		// Suppress console.error for cleaner test output
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		
 		// Get the mocked auth module
 		const { auth } = await import('./auth.svelte');
 		
