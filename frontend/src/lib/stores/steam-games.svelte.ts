@@ -55,6 +55,14 @@ export interface SteamGamesBulkSyncResponse {
   errors: string[];
 }
 
+export interface SteamGamesBulkUnignoreResponse {
+  message: string;
+  total_processed: number;
+  successful_unignores: number;
+  failed_unignores: number;
+  errors: string[];
+}
+
 export interface SteamGamesAutoMatchResponse {
   message: string;
   total_processed: number;
@@ -80,6 +88,7 @@ export interface SteamGamesState {
   isImporting: boolean;
   isSyncing: boolean;
   isAutoMatching: boolean;
+  isUnignoringAll: boolean;
   error: string | null;
   lastRefresh: Date | null;
 }
@@ -91,6 +100,7 @@ const initialState: SteamGamesState = {
   isImporting: false,
   isSyncing: false,
   isAutoMatching: false,
+  isUnignoringAll: false,
   error: null,
   lastRefresh: null
 };
@@ -493,6 +503,41 @@ function createSteamGamesStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to toggle ignored status';
         state = { ...state, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Unignore all Steam games
+    async unignoreAllGames(): Promise<SteamGamesBulkUnignoreResponse> {
+      state = { ...state, isUnignoringAll: true, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/unignore-all`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.unignoreAllGames();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to unignore all Steam games');
+        }
+
+        const data = await response.json() as SteamGamesBulkUnignoreResponse;
+        
+        state = { ...state, isUnignoringAll: false, error: null };
+        
+        ui.showSuccess(data.message || 'All games have been unignored successfully');
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to unignore all games';
+        state = { ...state, error: errorMessage, isUnignoringAll: false };
         ui.showError(errorMessage);
         throw error;
       }

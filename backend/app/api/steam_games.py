@@ -24,6 +24,7 @@ from ..api.schemas.steam import (
     SteamGameSyncResponse,
     SteamGameIgnoreResponse,
     SteamGamesBulkSyncResponse,
+    SteamGamesBulkUnignoreResponse,
     SteamGamesAutoMatchResponse,
     SteamGameAutoMatchSingleResponse
 )
@@ -539,6 +540,63 @@ async def toggle_steam_game_ignored_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to toggle Steam game ignored status"
+        )
+
+
+@router.put("/unignore-all", response_model=SteamGamesBulkUnignoreResponse, status_code=status.HTTP_200_OK)
+async def unignore_all_steam_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesBulkUnignoreResponse:
+    """
+    Unignore all ignored Steam games for the current user.
+    
+    This endpoint restores all ignored Steam games back to an active state,
+    making them available for matching and importing to the main collection.
+    
+    Returns:
+        SteamGamesBulkUnignoreResponse: Statistics about the bulk unignore operation
+        
+    Raises:
+        HTTPException: If the operation fails
+    """
+    try:
+        steam_games_service = create_steam_games_service(session)
+        
+        logger.info(f"Starting bulk unignore operation for user {current_user.id}")
+        
+        # Perform bulk unignore operation
+        results = await steam_games_service.unignore_all_steam_games(current_user.id)
+        
+        # Create success message based on results
+        if results.total_processed == 0:
+            message = "No ignored Steam games found to unignore."
+        elif results.failed_unignores == 0:
+            message = f"Successfully unignored {results.successful_unignores} Steam game(s). These games are now available for matching and import."
+        else:
+            message = f"Unignore operation completed with mixed results: {results.successful_unignores} successful, {results.failed_unignores} failed."
+        
+        logger.info(f"Bulk Steam game unignore completed for user {current_user.id}: {results.successful_unignores} successful, {results.failed_unignores} failed")
+        
+        return SteamGamesBulkUnignoreResponse(
+            message=message,
+            total_processed=results.total_processed,
+            successful_unignores=results.successful_unignores,
+            failed_unignores=results.failed_unignores,
+            errors=results.errors
+        )
+        
+    except SteamGamesServiceError as e:
+        logger.error(f"Steam games service error during bulk unignore for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error during bulk unignore for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unignore Steam games"
         )
 
 

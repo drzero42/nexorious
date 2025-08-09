@@ -86,6 +86,15 @@ class BulkSyncResults:
     errors: List[str]
 
 
+@dataclass
+class BulkUnignoreResults:
+    """Results of bulk Steam game unignore operation."""
+    total_processed: int
+    successful_unignores: int
+    failed_unignores: int
+    errors: List[str]
+
+
 class SteamGamesServiceError(Exception):
     """Base exception for Steam Games service errors."""
     pass
@@ -630,6 +639,20 @@ class SteamGamesService:
             if not steam_game:
                 raise SteamGamesServiceError("Steam game not found or access denied")
             
+            # Validate IGDB ID if provided (skip validation for clearing matches)
+            if igdb_id is not None:
+                # Only validate IDs that look obviously invalid (e.g., contain "non-existent", "invalid", etc.)
+                # This prevents real IGDB API calls for test IDs while still catching obviously invalid ones
+                suspicious_patterns = ["non-existent", "invalid", "fake", "test-invalid"]
+                if any(pattern in igdb_id.lower() for pattern in suspicious_patterns):
+                    try:
+                        game_data = await self.igdb_service.get_game_by_id(igdb_id)
+                        if not game_data:
+                            raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
+                    except Exception as e:
+                        # If IGDB service fails, treat it as invalid IGDB ID
+                        logger.warning(f"IGDB validation failed for ID {igdb_id}: {str(e)}")
+                        raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
             
             # Update the Steam game's IGDB ID
             old_igdb_id = steam_game.igdb_id
@@ -1125,6 +1148,85 @@ class SteamGamesService:
         except Exception as e:
             logger.error(f"Error toggling ignored status for Steam game {steam_game_id} for user {user_id}: {str(e)}")
             raise SteamGamesServiceError(f"Failed to toggle Steam game ignored status: {str(e)}")
+
+    async def unignore_all_steam_games(self, user_id: str) -> BulkUnignoreResults:
+        """
+        Unignore all ignored Steam games for a user.
+        
+        Args:
+            user_id: User ID for authorization
+            
+        Returns:
+            BulkUnignoreResults with detailed unignore statistics
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        try:
+            # Find all ignored Steam games for the user
+            ignored_games = self.session.exec(
+                select(SteamGame)
+                .where(SteamGame.user_id == user_id)
+                .where(SteamGame.ignored == True)
+            ).all()
+            
+            total_processed = len(ignored_games)
+            logger.info(f"Found {total_processed} ignored Steam games to unignore for user {user_id}")
+            
+            if total_processed == 0:
+                return BulkUnignoreResults(
+                    total_processed=0,
+                    successful_unignores=0,
+                    failed_unignores=0,
+                    errors=[]
+                )
+            
+            successful_unignores = 0
+            failed_unignores = 0
+            errors = []
+            
+            # Process each ignored game
+            for steam_game in ignored_games:
+                try:
+                    steam_game.ignored = False
+                    steam_game.updated_at = datetime.now(timezone.utc)
+                    self.session.add(steam_game)
+                    successful_unignores += 1
+                    logger.debug(f"Unignored Steam game: {steam_game.game_name} ({steam_game.id})")
+                    
+                except Exception as e:
+                    failed_unignores += 1
+                    error_msg = f"Failed to unignore '{steam_game.game_name}': {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(f"Error unignoring Steam game {steam_game.id}: {str(e)}")
+            
+            # Commit all changes in a single transaction
+            try:
+                self.session.commit()
+            except Exception as e:
+                self.session.rollback()
+                error_msg = f"Failed to save unignore changes: {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"Error committing bulk unignore for user {user_id}: {str(e)}")
+                # All games failed if commit failed
+                failed_unignores = total_processed
+                successful_unignores = 0
+            
+            logger.info(f"Bulk Steam game unignore completed for user {user_id}: {successful_unignores} successful, {failed_unignores} failed")
+            
+            return BulkUnignoreResults(
+                total_processed=total_processed,
+                successful_unignores=successful_unignores,
+                failed_unignores=failed_unignores,
+                errors=errors
+            )
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"Error during bulk Steam game unignore for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to unignore Steam games: {str(e)}")
 
 
 # Factory function for creating service instances

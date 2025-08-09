@@ -156,6 +156,19 @@
     }
   }
 
+  async function handleUnignoreAll() {
+    const confirmed = confirm(`This will restore ${ignoredGames.length} ignored games back to your "Needs Attention" list. Are you sure?`);
+    
+    if (!confirmed) return;
+    
+    try {
+      await steamGames.unignoreAllGames();
+      await loadSteamGames(); // Refresh data
+    } catch (error) {
+      // Error handled in store
+    }
+  }
+
   async function handleAutoMatch() {
     try {
       await steamGames.retryAutoMatching();
@@ -1251,6 +1264,40 @@
               </div>
             </div>
           {:else}
+          <!-- Bulk Actions for Ignored Games -->
+          {#if ignoredGames.length > 0}
+            <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                  <svg class="h-6 w-6 text-orange-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.268 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <div>
+                    <h3 class="text-sm font-medium text-orange-800">Ignored Games Available</h3>
+                    <p class="text-sm text-orange-700 mt-1">
+                      {ignoredGames.length} {ignoredGames.length === 1 ? 'game is' : 'games are'} currently ignored and can be restored
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onclick={handleUnignoreAll}
+                  disabled={steamGames.value.isUnignoringAll}
+                  class="btn-primary disabled:opacity-50"
+                >
+                  {#if steamGames.value.isUnignoringAll}
+                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Restoring...
+                  {:else}
+                    Unignore All
+                  {/if}
+                </button>
+              </div>
+            </div>
+          {/if}
+
           <!-- Ignored Games Section -->
           {#if ignoredGames.length > 0}
             <SteamGamesTable

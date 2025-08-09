@@ -212,6 +212,15 @@ class SteamGamesBulkSyncResponse(BaseModel):
     errors: List[str] = Field(default=[], description="List of error messages for failed syncs")
 
 
+class SteamGamesBulkUnignoreResponse(BaseModel):
+    """Response schema for bulk Steam games unignore operation."""
+    message: str = Field(..., description="Overall status message about the bulk unignore operation")
+    total_processed: int = Field(..., description="Total number of Steam games processed")
+    successful_unignores: int = Field(..., description="Number of games successfully unignored")
+    failed_unignores: int = Field(..., description="Number of games that failed to unignore")
+    errors: List[str] = Field(default=[], description="List of error messages for failed unignores")
+
+
 class SteamGamesAutoMatchResponse(BaseModel):
     """Response schema for manual auto-matching operation."""
     message: str = Field(..., description="Overall status message about the auto-matching operation")
