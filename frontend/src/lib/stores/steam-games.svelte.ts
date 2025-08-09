@@ -63,6 +63,28 @@ export interface SteamGamesBulkUnignoreResponse {
   errors: string[];
 }
 
+export interface SteamGamesBulkUnmatchResponse {
+  message: string;
+  total_processed: number;
+  successful_unmatches: number;
+  failed_unmatches: number;
+  unsynced_games: number;
+  errors: string[];
+}
+
+export interface SteamGamesBulkUnsyncResponse {
+  message: string;
+  total_processed: number;
+  successful_unsyncs: number;
+  failed_unsyncs: number;
+  errors: string[];
+}
+
+export interface SteamGameUnsyncResponse {
+  message: string;
+  steam_game: SteamGameResponse;
+}
+
 export interface SteamGamesAutoMatchResponse {
   message: string;
   total_processed: number;
@@ -89,6 +111,8 @@ export interface SteamGamesState {
   isSyncing: boolean;
   isAutoMatching: boolean;
   isUnignoringAll: boolean;
+  isUnmatchingAll: boolean;
+  isUnsyncingAll: boolean;
   error: string | null;
   lastRefresh: Date | null;
 }
@@ -101,6 +125,8 @@ const initialState: SteamGamesState = {
   isSyncing: false,
   isAutoMatching: false,
   isUnignoringAll: false,
+  isUnmatchingAll: false,
+  isUnsyncingAll: false,
   error: null,
   lastRefresh: null
 };
@@ -599,6 +625,117 @@ function createSteamGamesStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to unignore all games';
         state = { ...state, error: errorMessage, isUnignoringAll: false };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Unmatch all Steam games
+    async unmatchAllGames(): Promise<SteamGamesBulkUnmatchResponse> {
+      state = { ...state, isUnmatchingAll: true, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/unmatch-all`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.unmatchAllGames();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to unmatch all Steam games');
+        }
+
+        const data = await response.json() as SteamGamesBulkUnmatchResponse;
+        
+        state = { ...state, isUnmatchingAll: false, error: null };
+        
+        ui.showSuccess(data.message || 'All matched games have been unmatched successfully');
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to unmatch all games';
+        state = { ...state, error: errorMessage, isUnmatchingAll: false };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Unsync individual Steam game from collection
+    async unsyncSteamGameFromCollection(steamGameId: string): Promise<SteamGameUnsyncResponse> {
+      state = { ...state, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/unsync`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.unsyncSteamGameFromCollection(steamGameId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to unsync Steam game from collection');
+        }
+
+        const data = await response.json() as SteamGameUnsyncResponse;
+        
+        // Update the game in our local state
+        const gameIndex = state.games.findIndex(g => g.id === steamGameId);
+        if (gameIndex !== -1) {
+          const updatedGames = [...state.games];
+          updatedGames[gameIndex] = data.steam_game;
+          state = { ...state, games: updatedGames };
+        }
+
+        ui.showSuccess(data.message);
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to unsync Steam game';
+        state = { ...state, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Unsync all Steam games from collection
+    async unsyncAllGames(): Promise<SteamGamesBulkUnsyncResponse> {
+      state = { ...state, isUnsyncingAll: true, error: null };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/unsync-all`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.unsyncAllGames();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to unsync all Steam games');
+        }
+
+        const data = await response.json() as SteamGamesBulkUnsyncResponse;
+        
+        state = { ...state, isUnsyncingAll: false, error: null };
+        
+        ui.showSuccess(data.message || 'All synced games have been unsynced successfully');
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to unsync all games';
+        state = { ...state, error: errorMessage, isUnsyncingAll: false };
         ui.showError(errorMessage);
         throw error;
       }

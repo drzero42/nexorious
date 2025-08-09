@@ -14,6 +14,7 @@
     showIgnoreButton?: boolean;
     showUnignoreButton?: boolean;
     showUnmatchButton?: boolean;
+    showUnsyncButton?: boolean;
     onRefresh?: () => Promise<void>;
     collapsible?: boolean;
     collapsed?: boolean;
@@ -31,6 +32,7 @@
     showIgnoreButton = false,
     showUnignoreButton = false,
     showUnmatchButton = false,
+    showUnsyncButton = false,
     onRefresh,
     collapsible = false,
     collapsed = false,
@@ -137,6 +139,18 @@
     }
   }
 
+  async function handleUnsync(game: SteamGameResponse) {
+    try {
+      setGameLoading(game.id, true);
+      await steamGames.unsyncSteamGameFromCollection(game.id);
+      await onRefresh?.();
+    } catch (error) {
+      // Error handled in store
+    } finally {
+      setGameLoading(game.id, false);
+    }
+  }
+
   function setGameLoading(gameId: string, loading: boolean) {
     if (loading) {
       loadingGames.add(gameId);
@@ -204,6 +218,7 @@
             onIgnore={showIgnoreButton ? () => handleIgnore(game) : undefined}
             onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}
             onUnmatch={showUnmatchButton ? () => handleUnmatch(game) : undefined}
+            onUnsync={showUnsyncButton ? () => handleUnsync(game) : undefined}
             isLoading={isGameLoading(game.id)}
           />
         {/each}

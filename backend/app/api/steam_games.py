@@ -25,6 +25,9 @@ from ..api.schemas.steam import (
     SteamGameIgnoreResponse,
     SteamGamesBulkSyncResponse,
     SteamGamesBulkUnignoreResponse,
+    SteamGamesBulkUnmatchResponse,
+    SteamGamesBulkUnsyncResponse,
+    SteamGameUnsyncResponse,
     SteamGamesAutoMatchResponse,
     SteamGameAutoMatchSingleResponse
 )
@@ -633,6 +636,208 @@ async def unignore_all_steam_games(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unignore Steam games"
+        )
+
+
+@router.put("/unmatch-all", response_model=SteamGamesBulkUnmatchResponse, status_code=status.HTTP_200_OK)
+async def unmatch_all_matched_steam_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesBulkUnmatchResponse:
+    """
+    Unmatch all matched Steam games for the current user.
+    
+    This endpoint removes IGDB associations from all matched Steam games,
+    returning them to unmatched status. Games synced to collection will
+    also be unsynced (with multi-platform protection).
+    
+    Processes:
+    - Matched games (have igdb_id, no game_id, not ignored)
+    - Synced games (have both igdb_id and game_id, not ignored)
+    
+    For synced games, also removes them from collection while preserving
+    multi-platform ownership through proper platform management.
+    
+    Returns:
+        SteamGamesBulkUnmatchResponse: Statistics about the bulk unmatch operation
+        
+    Raises:
+        HTTPException: If the operation fails
+    """
+    try:
+        steam_games_service = create_steam_games_service(session)
+        
+        logger.info(f"Starting bulk unmatch operation for user {current_user.id}")
+        
+        # Perform bulk unmatch operation
+        results = await steam_games_service.unmatch_all_matched_games(current_user.id)
+        
+        # Create success message based on results
+        if results.total_processed == 0:
+            message = "No matched Steam games found to unmatch."
+        elif results.failed_unmatches == 0:
+            message = f"Successfully unmatched {results.successful_unmatches} Steam game(s). These games have returned to unmatched status."
+            if results.unsynced_games > 0:
+                message += f" Also removed {results.unsynced_games} game(s) from your collection."
+        else:
+            message = f"Unmatch operation completed with mixed results: {results.successful_unmatches} successful, {results.failed_unmatches} failed."
+            if results.unsynced_games > 0:
+                message += f" Removed {results.unsynced_games} game(s) from collection."
+        
+        logger.info(f"Bulk Steam game unmatch completed for user {current_user.id}: {results.successful_unmatches} successful, {results.failed_unmatches} failed, {results.unsynced_games} unsynced")
+        
+        return SteamGamesBulkUnmatchResponse(
+            message=message,
+            total_processed=results.total_processed,
+            successful_unmatches=results.successful_unmatches,
+            failed_unmatches=results.failed_unmatches,
+            unsynced_games=results.unsynced_games,
+            errors=results.errors
+        )
+        
+    except SteamGamesServiceError as e:
+        logger.error(f"Steam games service error during bulk unmatch for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error during bulk unmatch for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unmatch Steam games"
+        )
+
+
+@router.put("/unsync-all", response_model=SteamGamesBulkUnsyncResponse, status_code=status.HTTP_200_OK)
+async def unsync_all_synced_steam_games(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGamesBulkUnsyncResponse:
+    """
+    Unsync all synced Steam games from the user's collection.
+    
+    This endpoint removes Steam platform/storefront associations from UserGames
+    and clears game_id from SteamGames (but keeps IGDB matches intact).
+    
+    Games return to "matched but not synced" state and can be re-synced later.
+    Multi-platform protection ensures other platform associations are preserved.
+    
+    Returns:
+        SteamGamesBulkUnsyncResponse: Statistics about the bulk unsync operation
+        
+    Raises:
+        HTTPException: If the operation fails
+    """
+    try:
+        steam_games_service = create_steam_games_service(session)
+        
+        logger.info(f"Starting bulk unsync operation for user {current_user.id}")
+        
+        # Perform bulk unsync operation
+        results = await steam_games_service.unsync_all_synced_games(current_user.id)
+        
+        # Create success message based on results
+        if results.total_processed == 0:
+            message = "No synced Steam games found to unsync."
+        elif results.failed_unsyncs == 0:
+            message = f"Successfully unsynced {results.successful_unsyncs} Steam game(s) from your collection. These games remain matched and can be re-synced."
+        else:
+            message = f"Unsync operation completed with mixed results: {results.successful_unsyncs} successful, {results.failed_unsyncs} failed."
+        
+        logger.info(f"Bulk Steam game unsync completed for user {current_user.id}: {results.successful_unsyncs} successful, {results.failed_unsyncs} failed")
+        
+        return SteamGamesBulkUnsyncResponse(
+            message=message,
+            total_processed=results.total_processed,
+            successful_unsyncs=results.successful_unsyncs,
+            failed_unsyncs=results.failed_unsyncs,
+            errors=results.errors
+        )
+        
+    except SteamGamesServiceError as e:
+        logger.error(f"Steam games service error during bulk unsync for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error during bulk unsync for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unsync Steam games"
+        )
+
+
+@router.post("/{steam_game_id}/unsync", response_model=SteamGameUnsyncResponse, status_code=status.HTTP_200_OK)
+async def unsync_steam_game_from_collection(
+    steam_game_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> SteamGameUnsyncResponse:
+    """
+    Unsync a Steam game from the user's collection.
+    
+    This endpoint removes the Steam platform/storefront association from the
+    UserGame and clears the game_id from SteamGame (but keeps IGDB match intact).
+    
+    The game returns to "matched but not synced" state and can be re-synced later.
+    Multi-platform protection ensures other platform associations are preserved.
+    
+    Args:
+        steam_game_id: Steam game ID to unsync
+        
+    Returns:
+        SteamGameUnsyncResponse: Updated Steam game and status message
+        
+    Raises:
+        HTTPException: If the operation fails
+    """
+    try:
+        steam_games_service = create_steam_games_service(session)
+        
+        # Use service to handle unsync operation
+        steam_game, message = await steam_games_service.unsync_steam_game_from_collection(
+            steam_game_id=steam_game_id,
+            user_id=current_user.id
+        )
+        
+        return SteamGameUnsyncResponse(
+            message=message,
+            steam_game=SteamGameResponse(
+                id=steam_game.id,
+                steam_appid=steam_game.steam_appid,
+                game_name=steam_game.game_name,
+                igdb_id=steam_game.igdb_id,
+                game_id=steam_game.game_id,
+                ignored=steam_game.ignored,
+                created_at=steam_game.created_at,
+                updated_at=steam_game.updated_at
+            )
+        )
+        
+    except SteamGamesServiceError as e:
+        # Convert service errors to appropriate HTTP errors
+        if "not found or access denied" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        elif "not synced to collection" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e)
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+    except Exception as e:
+        logger.error(f"Error unsyncing Steam game {steam_game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unsync Steam game"
         )
 
 

@@ -95,6 +95,25 @@ class BulkUnignoreResults:
     errors: List[str]
 
 
+@dataclass  
+class BulkUnmatchResults:
+    """Results of bulk Steam game unmatch operation."""
+    total_processed: int
+    successful_unmatches: int
+    failed_unmatches: int
+    unsynced_games: int
+    errors: List[str]
+
+
+@dataclass
+class BulkUnsyncResults:
+    """Results of bulk Steam game unsync operation."""
+    total_processed: int
+    successful_unsyncs: int
+    failed_unsyncs: int
+    errors: List[str]
+
+
 class SteamGamesServiceError(Exception):
     """Base exception for Steam Games service errors."""
     pass
@@ -1438,6 +1457,270 @@ class SteamGamesService:
         except Exception as e:
             logger.error(f"Error during bulk Steam game unignore for user {user_id}: {str(e)}")
             raise SteamGamesServiceError(f"Failed to unignore Steam games: {str(e)}")
+
+    async def unmatch_all_matched_games(self, user_id: str) -> BulkUnmatchResults:
+        """
+        Unmatch all matched (but not synced) Steam games for a user.
+        
+        Finds games with igdb_id but no game_id and clears their igdb_id.
+        This only affects games that are matched but haven't been synced yet.
+        
+        Args:
+            user_id: User ID for authorization
+            
+        Returns:
+            BulkUnmatchResults with detailed unmatch statistics
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        try:
+            # Find matched but not synced Steam games for the user
+            matched_games = self.session.exec(
+                select(SteamGame)
+                .where(SteamGame.user_id == user_id)
+                .where(SteamGame.igdb_id.isnot(None))  # Has IGDB match
+                .where(SteamGame.game_id.is_(None))    # NOT synced to collection
+                .where(SteamGame.ignored == False)     # Not ignored
+            ).all()
+            
+            total_processed = len(matched_games)
+            logger.info(f"Found {total_processed} matched (non-synced) Steam games to unmatch for user {user_id}")
+            
+            if total_processed == 0:
+                return BulkUnmatchResults(
+                    total_processed=0,
+                    successful_unmatches=0,
+                    failed_unmatches=0,
+                    unsynced_games=0,  # Always 0 since we don't target synced games
+                    errors=[]
+                )
+            
+            successful_unmatches = 0
+            failed_unmatches = 0
+            errors = []
+            
+            # Process each matched (non-synced) game
+            for steam_game in matched_games:
+                try:
+                    logger.debug(f"Processing '{steam_game.game_name}' (igdb_id: {steam_game.igdb_id})")
+                    
+                    # Clear IGDB match only (no game_id to clear since we filtered them out)
+                    steam_game.igdb_id = None
+                    steam_game.updated_at = datetime.now(timezone.utc)
+                    
+                    # Add to session (will be committed later)
+                    self.session.add(steam_game)
+                    
+                    successful_unmatches += 1
+                    logger.debug(f"Successfully unmatched Steam game: {steam_game.game_name} ({steam_game.id})")
+                    
+                except Exception as e:
+                    failed_unmatches += 1
+                    error_msg = f"Failed to unmatch '{steam_game.game_name}': {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(f"Error unmatching Steam game {steam_game.id}: {str(e)}")
+            
+            # Commit all changes in a single transaction
+            try:
+                self.session.commit()
+                logger.info(f"Successfully committed bulk unmatch transaction for user {user_id}")
+            except Exception as e:
+                self.session.rollback()
+                error_msg = f"Failed to save unmatch changes: {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"Error committing bulk unmatch for user {user_id}: {str(e)}")
+                # All games failed if commit failed
+                failed_unmatches = total_processed
+                successful_unmatches = 0
+            
+            logger.info(f"Bulk Steam game unmatch completed for user {user_id}: {successful_unmatches} successful, {failed_unmatches} failed")
+            
+            return BulkUnmatchResults(
+                total_processed=total_processed,
+                successful_unmatches=successful_unmatches,
+                failed_unmatches=failed_unmatches,
+                unsynced_games=0,  # Always 0 since we don't target synced games
+                errors=errors
+            )
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"Error during bulk Steam game unmatch for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to unmatch Steam games: {str(e)}")
+
+    async def unsync_all_synced_games(self, user_id: str) -> BulkUnsyncResults:
+        """
+        Unsync all synced Steam games for a user.
+        
+        Finds games with game_id (synced to collection) and:
+        1. Removes Steam platform/storefront from UserGame
+        2. If no other platforms, removes the entire UserGame
+        3. Clears game_id from SteamGame (but keeps igdb_id)
+        
+        Args:
+            user_id: User ID for authorization
+            
+        Returns:
+            BulkUnsyncResults with detailed unsync statistics
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        try:
+            # Find synced Steam games for the user
+            synced_games = self.session.exec(
+                select(SteamGame)
+                .where(SteamGame.user_id == user_id)
+                .where(SteamGame.game_id.isnot(None))  # Synced to collection
+                .where(SteamGame.ignored == False)     # Not ignored
+            ).all()
+            
+            total_processed = len(synced_games)
+            logger.info(f"Found {total_processed} synced Steam games to unsync for user {user_id}")
+            
+            if total_processed == 0:
+                return BulkUnsyncResults(
+                    total_processed=0,
+                    successful_unsyncs=0,
+                    failed_unsyncs=0,
+                    errors=[]
+                )
+            
+            successful_unsyncs = 0
+            failed_unsyncs = 0
+            errors = []
+            
+            # Process each synced game
+            for steam_game in synced_games:
+                try:
+                    logger.debug(f"Processing '{steam_game.game_name}' (game_id: {steam_game.game_id})")
+                    
+                    # Store original game_id for unsync operation
+                    old_game_id = steam_game.game_id
+                    
+                    # First unsync from collection (removes platform association)
+                    try:
+                        unsync_result = await self._unsync_steam_game_from_collection(old_game_id, user_id)
+                        logger.debug(f"Unsync operation result: {unsync_result}")
+                    except Exception as unsync_e:
+                        error_msg = f"Failed to unsync '{steam_game.game_name}' from collection: {str(unsync_e)}"
+                        errors.append(error_msg)
+                        logger.error(f"Unsync error for {steam_game.id}: {str(unsync_e)}")
+                        failed_unsyncs += 1
+                        continue  # Skip to next game
+                    
+                    # Clear game_id from SteamGame (keeps igdb_id - returns to matched state)
+                    steam_game.game_id = None
+                    steam_game.updated_at = datetime.now(timezone.utc)
+                    
+                    # Add to session (will be committed later)
+                    self.session.add(steam_game)
+                    
+                    successful_unsyncs += 1
+                    logger.debug(f"Successfully unsynced Steam game: {steam_game.game_name} ({steam_game.id})")
+                    
+                except Exception as e:
+                    failed_unsyncs += 1
+                    error_msg = f"Failed to unsync '{steam_game.game_name}': {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(f"Error unsyncing Steam game {steam_game.id}: {str(e)}")
+            
+            # Commit all changes in a single transaction
+            try:
+                self.session.commit()
+                logger.info(f"Successfully committed bulk unsync transaction for user {user_id}")
+            except Exception as e:
+                self.session.rollback()
+                error_msg = f"Failed to save unsync changes: {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"Error committing bulk unsync for user {user_id}: {str(e)}")
+                # All games failed if commit failed
+                failed_unsyncs = total_processed
+                successful_unsyncs = 0
+            
+            logger.info(f"Bulk Steam game unsync completed for user {user_id}: {successful_unsyncs} successful, {failed_unsyncs} failed")
+            
+            return BulkUnsyncResults(
+                total_processed=total_processed,
+                successful_unsyncs=successful_unsyncs,
+                failed_unsyncs=failed_unsyncs,
+                errors=errors
+            )
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            raise
+        except Exception as e:
+            logger.error(f"Error during bulk Steam game unsync for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to unsync Steam games: {str(e)}")
+
+    async def unsync_steam_game_from_collection(self, steam_game_id: str, user_id: str) -> Tuple[SteamGame, str]:
+        """
+        Unsync a single Steam game from the user's collection.
+        
+        This removes the Steam platform/storefront from the UserGame and
+        clears the game_id from SteamGame (but keeps igdb_id intact).
+        
+        Args:
+            steam_game_id: Steam game ID to unsync
+            user_id: User ID for authorization
+            
+        Returns:
+            Tuple of (updated SteamGame, status message)
+            
+        Raises:
+            SteamGamesServiceError: For service errors
+        """
+        try:
+            # Find and validate Steam game
+            steam_game = self.session.get(SteamGame, steam_game_id)
+            if not steam_game or steam_game.user_id != user_id:
+                raise SteamGamesServiceError(f"Steam game {steam_game_id} not found or access denied")
+            
+            # Check if game is actually synced
+            if not steam_game.game_id:
+                raise SteamGamesServiceError(f"Steam game '{steam_game.game_name}' is not synced to collection")
+            
+            logger.info(f"Unsyncing Steam game '{steam_game.game_name}' (game_id: {steam_game.game_id}) for user {user_id}")
+            
+            # Store original game_id for unsync operation
+            old_game_id = steam_game.game_id
+            
+            # Perform unsync from collection
+            unsync_result = await self._unsync_steam_game_from_collection(old_game_id, user_id)
+            logger.debug(f"Unsync operation result: {unsync_result}")
+            
+            # Clear game_id from SteamGame (keeps igdb_id - returns to matched state)
+            steam_game.game_id = None
+            steam_game.updated_at = datetime.now(timezone.utc)
+            
+            # Commit changes
+            self.session.add(steam_game)
+            self.session.commit()
+            
+            # Create response message
+            if unsync_result == "complete":
+                message = f"Removed Steam game '{steam_game.game_name}' from collection"
+            elif unsync_result == "platform_only":
+                message = f"Removed Steam platform from '{steam_game.game_name}' (other platforms retained)"
+            else:
+                message = f"Unsynced Steam game '{steam_game.game_name}' from collection"
+            
+            logger.info(f"Successfully unsynced Steam game '{steam_game.game_name}' for user {user_id}")
+            
+            return steam_game, message
+            
+        except SteamGamesServiceError:
+            # Re-raise service errors without wrapping
+            self.session.rollback()
+            raise
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error unsyncing Steam game {steam_game_id} for user {user_id}: {str(e)}")
+            raise SteamGamesServiceError(f"Failed to unsync Steam game: {str(e)}")
 
 
 # Factory function for creating service instances

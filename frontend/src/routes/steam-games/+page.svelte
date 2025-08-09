@@ -218,6 +218,42 @@
     }
   }
 
+  async function handleUnmatchAll() {
+    if (matchedCount === 0) {
+      ui.showInfo('No matched games to unmatch.');
+      return;
+    }
+    
+    const confirmMessage = `This will remove IGDB matches from ${matchedCount} matched games, returning them to unmatched status. Are you sure?`;
+    const confirmed = confirm(confirmMessage);
+    if (!confirmed) return;
+    
+    try {
+      await steamGames.unmatchAllGames();
+      await loadSteamGames(); // Refresh data
+    } catch (error) {
+      // Error handled in store
+    }
+  }
+
+  async function handleUnsyncAll() {
+    if (syncedCount === 0) {
+      ui.showInfo('No synced games to unsync.');
+      return;
+    }
+    
+    const confirmMessage = `This will remove ${syncedCount} games from your collection. IGDB matches will remain intact so you can re-sync them later. Are you sure?`;
+    const confirmed = confirm(confirmMessage);
+    if (!confirmed) return;
+    
+    try {
+      await steamGames.unsyncAllGames();
+      await loadSteamGames(); // Refresh data
+    } catch (error) {
+      // Error handled in store
+    }
+  }
+
   async function handleUnignoreAll() {
     const confirmed = confirm(`This will restore ${ignoredGames.length} ignored games back to your "Needs Attention" list. Are you sure?`);
     
@@ -1293,21 +1329,38 @@
                     </p>
                   </div>
                 </div>
-                <button
-                  onclick={handleSyncAll}
-                  disabled={steamGames.value.isSyncing}
-                  class="btn-primary disabled:opacity-50"
-                >
-                  {#if steamGames.value.isSyncing}
-                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Syncing...
-                  {:else}
-                    Sync All Matched
-                  {/if}
-                </button>
+                <div class="flex space-x-3">
+                  <button
+                    onclick={handleSyncAll}
+                    disabled={steamGames.value.isSyncing}
+                    class="btn-primary disabled:opacity-50"
+                  >
+                    {#if steamGames.value.isSyncing}
+                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Syncing...
+                    {:else}
+                      Sync All Matched
+                    {/if}
+                  </button>
+                  <button
+                    onclick={handleUnmatchAll}
+                    disabled={steamGames.value.isUnmatchingAll}
+                    class="btn-secondary text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                  >
+                    {#if steamGames.value.isUnmatchingAll}
+                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Unmatching...
+                    {:else}
+                      Unmatch All
+                    {/if}
+                  </button>
+                </div>
               </div>
             </div>
           {/if}
@@ -1460,6 +1513,40 @@
               </div>
             </div>
           {:else}
+          <!-- Bulk Actions for In Sync -->
+          {#if syncedCount > 0}
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                  <svg class="h-6 w-6 text-red-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <h3 class="text-sm font-medium text-red-800">Collection Management</h3>
+                    <p class="text-sm text-red-700 mt-1">
+                      {syncedCount} {syncedCount === 1 ? 'game is' : 'games are'} synced to your collection
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onclick={handleUnsyncAll}
+                  disabled={steamGames.value.isUnsyncingAll}
+                  class="btn-secondary text-red-600 hover:text-red-700 disabled:opacity-50"
+                >
+                  {#if steamGames.value.isUnsyncingAll}
+                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Unsyncing...
+                  {:else}
+                    Unsync All
+                  {/if}
+                </button>
+              </div>
+            </div>
+          {/if}
+
           <!-- In Sync Games Section -->
           {#if inSyncGames.length > 0}
             <SteamGamesTable
@@ -1468,7 +1555,7 @@
               icon="🔥"
               games={inSyncGames}
               emptyMessage="No games synced yet"
-              showUnmatchButton={true}
+              showUnsyncButton={true}
               onRefresh={loadTabData}
             />
           {:else}

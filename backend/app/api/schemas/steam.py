@@ -221,6 +221,31 @@ class SteamGamesBulkUnignoreResponse(BaseModel):
     errors: List[str] = Field(default=[], description="List of error messages for failed unignores")
 
 
+class SteamGamesBulkUnmatchResponse(BaseModel):
+    """Response schema for bulk Steam games unmatch operation."""
+    message: str = Field(..., description="Overall status message about the bulk unmatch operation")
+    total_processed: int = Field(..., description="Total number of Steam games processed")
+    successful_unmatches: int = Field(..., description="Number of games successfully unmatched")
+    failed_unmatches: int = Field(..., description="Number of games that failed to unmatch")
+    unsynced_games: int = Field(..., description="Number of games that were also removed from collection")
+    errors: List[str] = Field(default=[], description="List of error messages for failed unmatches")
+
+
+class SteamGamesBulkUnsyncResponse(BaseModel):
+    """Response schema for bulk Steam games unsync operation."""
+    message: str = Field(..., description="Overall status message about the bulk unsync operation")
+    total_processed: int = Field(..., description="Total number of Steam games processed")
+    successful_unsyncs: int = Field(..., description="Number of games successfully unsynced")
+    failed_unsyncs: int = Field(..., description="Number of games that failed to unsync")
+    errors: List[str] = Field(default=[], description="List of error messages for failed unsyncs")
+
+
+class SteamGameUnsyncResponse(BaseModel):
+    """Response schema for individual Steam game unsync operation."""
+    message: str = Field(..., description="Status message about the unsync operation")
+    steam_game: SteamGameResponse = Field(..., description="Updated Steam game information")
+
+
 class SteamGamesAutoMatchResponse(BaseModel):
     """Response schema for manual auto-matching operation."""
     message: str = Field(..., description="Overall status message about the auto-matching operation")

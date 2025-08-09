@@ -9,6 +9,7 @@
     onIgnore?: (() => void) | undefined;
     onUnignore?: (() => void) | undefined;
     onUnmatch?: (() => void) | undefined;
+    onUnsync?: (() => void) | undefined;
     showActions?: boolean;
     isLoading?: boolean;
   }
@@ -21,6 +22,7 @@
     onIgnore,
     onUnignore,
     onUnmatch,
+    onUnsync,
     showActions = true,
     isLoading = false
   }: Props = $props();
@@ -46,10 +48,12 @@
   const canMatch = $derived(!game.igdb_id && !game.ignored);
   const canIgnore = $derived(!game.ignored);
   const canUnignore = $derived(game.ignored);
-  const canUnmatch = $derived(game.igdb_id !== null);
+  const canUnmatch = $derived(game.igdb_id !== null && !game.game_id); // Only matched, not synced
+  const canUnsync = $derived(game.game_id !== null); // Only synced games
   
-  // State for confirmation dialog
+  // State for confirmation dialogs
   let showUnmatchConfirm = $state(false);
+  let showUnsyncConfirm = $state(false);
   
   function handleUnmatchClick() {
     showUnmatchConfirm = true;
@@ -62,6 +66,19 @@
   
   function handleCancelUnmatch() {
     showUnmatchConfirm = false;
+  }
+  
+  function handleUnsyncClick() {
+    showUnsyncConfirm = true;
+  }
+  
+  function handleConfirmUnsync() {
+    showUnsyncConfirm = false;
+    onUnsync?.();
+  }
+  
+  function handleCancelUnsync() {
+    showUnsyncConfirm = false;
   }
 </script>
 
@@ -244,6 +261,25 @@
             Unmatch
           </button>
         {/if}
+
+        {#if canUnsync && onUnsync}
+          <button
+            onclick={handleUnsyncClick}
+            disabled={isLoading}
+            class="text-xs btn-secondary text-gray-600 hover:text-red-600 disabled:opacity-50"
+            title="Remove from collection (keeps IGDB match)"
+          >
+            {#if isLoading}
+              <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            {:else}
+              <span class="mr-1">📤</span>
+            {/if}
+            Unsync
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -259,9 +295,6 @@
         </h3>
         <p class="text-sm text-gray-500 mt-1">
           Are you sure you want to unmatch this game from IGDB? This will remove the IGDB association and move the game back to "Needs Attention".
-          {#if game.game_id}
-            <strong class="text-orange-600 block mt-2">Warning: This game is synced to your collection and will be removed from it.</strong>
-          {/if}
         </p>
       </div>
       <div class="p-4 space-y-3">
@@ -280,6 +313,41 @@
             class="btn-secondary text-sm text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
           >
             Unmatch
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Unsync Confirmation Dialog -->
+{#if showUnsyncConfirm}
+  <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div class="p-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900">
+          Confirm Unsync
+        </h3>
+        <p class="text-sm text-gray-500 mt-1">
+          Are you sure you want to remove this game from your collection? The IGDB match will remain intact and you can re-sync it later.
+        </p>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="text-sm">
+          <strong>Game:</strong> {game.game_name}
+        </div>
+        <div class="flex space-x-3 justify-end">
+          <button
+            onclick={handleCancelUnsync}
+            class="btn-secondary text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleConfirmUnsync}
+            class="btn-secondary text-sm text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+          >
+            Unsync
           </button>
         </div>
       </div>
