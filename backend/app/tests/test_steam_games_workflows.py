@@ -15,6 +15,7 @@ from ..models.game import Game
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
 from ..models.platform import Platform, Storefront
 from ..services.steam_games import SteamGamesService, create_steam_games_service
+from ..services.steam import SteamGame as SteamGameData
 from .integration_test_utils import (
     client_fixture as client,
     session_fixture as session,
@@ -43,15 +44,15 @@ class TestCompleteImportToSyncWorkflow:
         session.add(test_user)
         
         # Create platforms and storefronts
-        pc_platform = Platform(name="PC", is_primary=True)
-        steam_storefront = Storefront(name="Steam")
+        pc_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
+        steam_storefront = Storefront(name="steam", display_name="Steam")
         session.add_all([pc_platform, steam_storefront])
         session.commit()
         
         # Step 1: Mock Steam library import
         mock_steam_games = [
-            type('MockGame', (), {'appid': 730, 'name': 'Counter-Strike: Global Offensive', 'playtime_forever': 1200})(),
-            type('MockGame', (), {'appid': 440, 'name': 'Team Fortress 2', 'playtime_forever': 500})()
+            SteamGameData(appid=730, name='Counter-Strike: Global Offensive'),
+            SteamGameData(appid=440, name='Team Fortress 2')
         ]
         
         with patch('app.api.steam_games.import_steam_library_task') as mock_task:
@@ -98,7 +99,7 @@ class TestCompleteImportToSyncWorkflow:
         
         # Step 4: Manually match Steam games to IGDB games
         for steam_game, igdb_game in zip(steam_games, igdb_games):
-            match_request = {"igdb_id": igdb_game.id}
+            match_request = {"igdb_id": igdb_game.igdb_id}
             response = client.put(
                 f"/api/steam-games/{steam_game.id}/match",
                 json=match_request,
@@ -106,7 +107,7 @@ class TestCompleteImportToSyncWorkflow:
             )
             assert_api_success(response, 200)
             match_data = response.json()
-            assert match_data["steam_game"]["igdb_id"] == igdb_game.id
+            assert match_data["steam_game"]["igdb_id"] == igdb_game.igdb_id
         
         # Step 5: Verify games appear in matched list
         response = client.get("/api/steam-games?status_filter=matched", headers=auth_headers)
@@ -152,8 +153,8 @@ class TestCompleteImportToSyncWorkflow:
         
         # Verify all user games have proper ownership status
         for user_game in user_games:
-            assert user_game.ownership_status == OwnershipStatus.owned
-            assert user_game.play_status == PlayStatus.not_started  # Default status
+            assert user_game.ownership_status == OwnershipStatus.OWNED
+            assert user_game.play_status == PlayStatus.NOT_STARTED  # Default status
     
     @pytest.mark.asyncio
     async def test_workflow_with_ignore_functionality(
@@ -314,7 +315,9 @@ class TestCompleteImportToSyncWorkflow:
         )
         assert_api_error(response, 422)  # Unprocessable Entity
         error_data = response.json()
-        assert "must be matched to igdb" in error_data["detail"].lower()
+        # Handle both error formats
+        error_message = error_data.get("detail", error_data.get("error", "")).lower()
+        assert "must be matched to igdb" in error_message
         
         # Step 2: Try to match to non-existent IGDB game
         match_request = {"igdb_id": "non-existent-igdb-id"}
@@ -325,7 +328,9 @@ class TestCompleteImportToSyncWorkflow:
         )
         assert_api_error(response, 400)  # Bad Request
         error_data = response.json()
-        assert "invalid igdb id" in error_data["detail"].lower()
+        # Handle both error formats
+        error_message = error_data.get("detail", error_data.get("error", "")).lower()
+        assert "invalid igdb id" in error_message
         
         # Step 3: Try to access non-existent Steam game
         response = client.put(
@@ -365,7 +370,9 @@ class TestCompleteImportToSyncWorkflow:
         response = client.post("/api/steam-games/import", headers=auth_headers)
         assert_api_error(response, 400)  # Bad Request
         error_data = response.json()
-        assert "steam web api key not configured" in error_data["detail"].lower()
+        # Handle both error formats
+        error_message = error_data.get("detail", error_data.get("error", "")).lower()
+        assert "steam web api key not configured" in error_message
 
 
 class TestAutoMatchingWorkflows:
@@ -407,7 +414,7 @@ class TestAutoMatchingWorkflows:
             user_id=test_user.id,
             steam_appid=999,
             game_name="Already Matched Game",
-            igdb_id=igdb_game.id,
+            igdb_id=igdb_game.igdb_id,
             ignored=False
         )
         session.add(matched_game)
@@ -474,8 +481,8 @@ class TestBulkOperationsWorkflows:
         """Test bulk sync of all matched Steam games."""
         
         # Create platforms and storefronts
-        pc_platform = Platform(name="PC", is_primary=True)
-        steam_storefront = Storefront(name="Steam")
+        pc_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
+        steam_storefront = Storefront(name="steam", display_name="Steam")
         session.add_all([pc_platform, steam_storefront])
         
         # Create IGDB games
@@ -497,7 +504,7 @@ class TestBulkOperationsWorkflows:
                 user_id=test_user.id,
                 steam_appid=1000 + i,
                 game_name=f"Game {i+1}",
-                igdb_id=igdb_game.id,
+                igdb_id=igdb_game.igdb_id,
                 game_id=None,  # Not synced yet
                 ignored=False
             )

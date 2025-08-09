@@ -7,17 +7,17 @@ import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
 import asyncio
+import re
 from dataclasses import dataclass
 
 import httpx
 from igdb.wrapper import IGDBWrapper
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 
 from app.core.config import settings
 from app.services.storage import storage_service
 from app.utils.rate_limiter import (
     RateLimitConfig, 
-    RateLimitedClient, 
     create_igdb_rate_limiter,
     RateLimitExceeded
 )
@@ -41,6 +41,11 @@ IGDB_PLATFORM_MAPPING = {
     5: "nintendo-wii",       # Nintendo Wii
     39: "ios",               # iOS
     34: "android",           # Android
+}
+
+# Keyword expansions for search query enhancement
+KEYWORD_EXPANSIONS = {
+    "goty": "Game of the Year",
 }
 
 
@@ -229,64 +234,61 @@ class IGDBService:
         return self._wrapper
     
     async def search_games(self, query: str, limit: int = 10, fuzzy_threshold: float = 0.6) -> List[GameMetadata]:
-        """Search for games by title with fuzzy matching."""
+        """Search for games by title with fuzzy matching and keyword expansion."""
         if not query.strip():
             logger.debug("Empty search query provided")
             return []
         
         logger.info(f"Starting IGDB search for query: '{query}' (limit: {limit}, threshold: {fuzzy_threshold})")
         
+        # Check for keywords that need expansion
+        detected_keywords = self._detect_keywords(query)
+        
         try:
-            # Build IGDB query
-            igdb_query = f'''
-                fields id, name, slug, summary, genres.name, involved_companies.company.name, 
-                       involved_companies.developer, involved_companies.publisher, 
-                       first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
-                search "{query.strip()}";
-                limit {limit * 2};
-            '''
+            # Always perform original search
+            original_results = await self._perform_single_search(query.strip(), limit * 2)
             
-            logger.debug(f"IGDB query: {igdb_query.strip()}")
-            
-            # Execute rate-limited search
-            logger.debug("Executing rate-limited IGDB API request")
-            response = await self._rate_limited_api_request('games', igdb_query)
-            
-            logger.debug(f"IGDB API response received: {len(response)} bytes")
-            
-            # Parse JSON response
-            try:
-                games_data = json.loads(response.decode('utf-8'))
-                logger.debug(f"Parsed {len(games_data)} games from IGDB response")
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse IGDB response as JSON: {e}")
-                logger.debug(f"Raw response (first 500 chars): {response[:500]}")
-                raise IGDBError(f"Invalid JSON response from IGDB: {e}")
-            
-            # Convert to GameMetadata objects (without time-to-beat data for performance)
-            games = []
-            for i, game_data in enumerate(games_data):
-                logger.debug(f"Processing game {i+1}/{len(games_data)}: {game_data.get('name', 'Unknown')}")
+            # If keywords detected, perform expanded searches
+            expanded_results = []
+            if detected_keywords:
+                logger.info(f"Keywords detected in query '{query}': {list(detected_keywords.keys())}")
+                expanded_queries = self._generate_expanded_queries(query, detected_keywords)
                 
-                metadata = self._parse_game_data(game_data)
-                if metadata:
-                    # Note: Time-to-beat data is not fetched during search for performance reasons
-                    # It will be fetched later during actual game import via get_game_by_id()
-                    games.append(metadata)
-                else:
-                    logger.debug(f"Failed to parse game data for item {i+1}")
+                # Execute expanded searches concurrently
+                logger.debug(f"Executing {len(expanded_queries)} expanded searches concurrently")
+                expanded_search_tasks = [
+                    self._perform_single_search(exp_query, limit * 2) 
+                    for exp_query in expanded_queries
+                ]
+                
+                expanded_search_results = await asyncio.gather(*expanded_search_tasks, return_exceptions=True)
+                
+                # Filter out failed searches and collect successful results
+                for i, result in enumerate(expanded_search_results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Expanded search failed for query '{expanded_queries[i]}': {result}")
+                    elif isinstance(result, list):
+                        expanded_results.append(result)
+                        logger.debug(f"Expanded search for '{expanded_queries[i]}' returned {len(result)} results")
             
-            logger.debug(f"Successfully parsed {len(games)} valid games")
+            # Merge and deduplicate results
+            if expanded_results:
+                merged_games = self._merge_and_deduplicate_results(original_results, expanded_results, limit * 2)
+                logger.info(f"Merged {len(original_results)} original + {sum(len(r) for r in expanded_results)} expanded results into {len(merged_games)} unique games")
+            else:
+                merged_games = original_results
+                logger.debug(f"No keyword expansion performed, using {len(merged_games)} original results")
             
             # Apply fuzzy matching and ranking
-            if games:
-                logger.debug("Applying fuzzy matching and ranking")
-                games = self._rank_games_by_fuzzy_match(games, query, fuzzy_threshold)
-                games = games[:limit]  # Limit results after ranking
-                logger.debug(f"After fuzzy matching and limiting: {len(games)} games")
+            if merged_games:
+                logger.debug("Applying fuzzy matching and ranking to merged results")
+                merged_games = self._rank_games_by_fuzzy_match(merged_games, query, fuzzy_threshold)
+                merged_games = merged_games[:limit]  # Limit results after ranking
+                logger.debug(f"After fuzzy matching and limiting: {len(merged_games)} games")
             
-            logger.info(f"Successfully found {len(games)} games for query: '{query}'")
-            return games
+            logger.info(f"Successfully found {len(merged_games)} games for query: '{query}'" + 
+                       (f" (with {len(detected_keywords)} keyword expansions)" if detected_keywords else ""))
+            return merged_games
             
         except IGDBError:
             # Re-raise IGDB errors as-is
@@ -294,6 +296,50 @@ class IGDBService:
         except Exception as e:
             logger.error(f"Unexpected error during IGDB search for query '{query}': {e}", exc_info=True)
             raise IGDBError(f"Failed to search games: {e}")
+    
+    async def _perform_single_search(self, query: str, limit: int) -> List[GameMetadata]:
+        """Perform a single IGDB search and return GameMetadata objects."""
+        # Build IGDB query
+        igdb_query = f'''
+            fields id, name, slug, summary, genres.name, involved_companies.company.name, 
+                   involved_companies.developer, involved_companies.publisher, 
+                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
+            search "{query}";
+            limit {limit};
+        '''
+        
+        logger.debug(f"IGDB query: {igdb_query.strip()}")
+        
+        # Execute rate-limited search
+        logger.debug("Executing rate-limited IGDB API request")
+        response = await self._rate_limited_api_request('games', igdb_query)
+        
+        logger.debug(f"IGDB API response received: {len(response)} bytes")
+        
+        # Parse JSON response
+        try:
+            games_data = json.loads(response.decode('utf-8'))
+            logger.debug(f"Parsed {len(games_data)} games from IGDB response")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse IGDB response as JSON: {e}")
+            logger.debug(f"Raw response (first 500 chars): {response[:500]}")
+            raise IGDBError(f"Invalid JSON response from IGDB: {e}")
+        
+        # Convert to GameMetadata objects (without time-to-beat data for performance)
+        games = []
+        for i, game_data in enumerate(games_data):
+            logger.debug(f"Processing game {i+1}/{len(games_data)}: {game_data.get('name', 'Unknown')}")
+            
+            metadata = self._parse_game_data(game_data)
+            if metadata:
+                # Note: Time-to-beat data is not fetched during search for performance reasons
+                # It will be fetched later during actual game import via get_game_by_id()
+                games.append(metadata)
+            else:
+                logger.debug(f"Failed to parse game data for item {i+1}")
+        
+        logger.debug(f"Successfully parsed {len(games)} valid games")
+        return games
     
     def _rank_games_by_fuzzy_match(self, games: List[GameMetadata], query: str, threshold: float = 0.6) -> List[GameMetadata]:
         """Rank games by fuzzy matching similarity to query."""
@@ -680,3 +726,91 @@ class IGDBService:
             Dictionary with rate limiter status information
         """
         return self._rate_limiter.get_status()
+    
+    def _detect_keywords(self, query: str) -> Dict[str, str]:
+        """
+        Detect keywords in search query that need expansion.
+        
+        Args:
+            query: Search query string
+            
+        Returns:
+            Dictionary mapping found keywords to their expansions
+        """
+        detected = {}
+        query_lower = query.lower()
+        
+        for keyword, expansion in KEYWORD_EXPANSIONS.items():
+            # Use word boundaries to match whole words only
+            pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+            if re.search(pattern, query_lower):
+                detected[keyword] = expansion
+                logger.debug(f"Detected keyword '{keyword}' in query '{query}'")
+        
+        return detected
+    
+    def _generate_expanded_queries(self, original_query: str, detected_keywords: Dict[str, str]) -> List[str]:
+        """
+        Generate expanded queries by replacing keywords with their expansions.
+        
+        Args:
+            original_query: Original search query
+            detected_keywords: Dictionary of detected keywords and their expansions
+            
+        Returns:
+            List of expanded query strings
+        """
+        expanded_queries = []
+        
+        for keyword, expansion in detected_keywords.items():
+            # Replace keyword with expansion (case-insensitive)
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            expanded_query = re.sub(pattern, expansion, original_query, flags=re.IGNORECASE)
+            expanded_queries.append(expanded_query)
+            logger.debug(f"Generated expanded query: '{expanded_query}' from keyword '{keyword}'")
+        
+        return expanded_queries
+    
+    def _merge_and_deduplicate_results(
+        self, 
+        original_results: List[GameMetadata], 
+        expanded_results: List[List[GameMetadata]], 
+        limit: int
+    ) -> List[GameMetadata]:
+        """
+        Merge and deduplicate search results, prioritizing original query results.
+        
+        Args:
+            original_results: Results from original query
+            expanded_results: List of results from expanded queries
+            limit: Maximum number of results to return
+            
+        Returns:
+            Merged and deduplicated results
+        """
+        seen_ids = set()
+        merged = []
+        
+        # Add original results first (highest priority)
+        for game in original_results:
+            if game.igdb_id not in seen_ids:
+                merged.append(game)
+                seen_ids.add(game.igdb_id)
+                if len(merged) >= limit:
+                    break
+        
+        # Add expanded results for unseen games
+        for expanded_list in expanded_results:
+            for game in expanded_list:
+                if game.igdb_id not in seen_ids and len(merged) < limit:
+                    merged.append(game)
+                    seen_ids.add(game.igdb_id)
+                    if len(merged) >= limit:
+                        break
+            if len(merged) >= limit:
+                break
+        
+        logger.debug(f"Merged results: {len(merged)} games from {len(original_results)} original + "
+                    f"{sum(len(r) for r in expanded_results)} expanded results")
+        
+        return merged[:limit]

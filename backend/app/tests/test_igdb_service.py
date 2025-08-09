@@ -200,3 +200,244 @@ class TestGameMetadata:
         assert metadata.rating_average == 8.5
         assert metadata.rating_count == 100
         assert metadata.estimated_playtime_hours == 40
+
+
+class TestKeywordExpansion:
+    """Test cases for keyword expansion functionality."""
+    
+    def test_detect_keywords_goty(self):
+        """Test detection of GOTY keyword."""
+        service = IGDBService()
+        
+        # Test various forms of GOTY
+        test_cases = [
+            ("GOTY 2023", {"goty": "Game of the Year"}),
+            ("Best GOTY games", {"goty": "Game of the Year"}),
+            ("goty edition", {"goty": "Game of the Year"}),
+            ("Goty nominees", {"goty": "Game of the Year"}),
+            ("What is the GOTY?", {"goty": "Game of the Year"}),
+        ]
+        
+        for query, expected in test_cases:
+            result = service._detect_keywords(query)
+            assert result == expected, f"Failed for query: '{query}'"
+    
+    def test_detect_keywords_no_match(self):
+        """Test that non-keywords are not detected."""
+        service = IGDBService()
+        
+        # Test cases that should NOT match
+        test_cases = [
+            "great games",
+            "gothic game",  # Contains 'got' but not 'goty'
+            "mythology game",  # Contains 'oty' but not 'goty'
+            "got you",  # Contains 'got' but not 'goty'
+            "",  # Empty string
+        ]
+        
+        for query in test_cases:
+            result = service._detect_keywords(query)
+            assert result == {}, f"False positive for query: '{query}'"
+    
+    def test_detect_keywords_word_boundaries(self):
+        """Test that keyword detection respects word boundaries."""
+        service = IGDBService()
+        
+        # These should NOT match because goty is part of a larger word
+        no_match_cases = [
+            "ergoty game",  # goty at end of word
+            "gotyness",     # goty at start of word
+            "ergotycool",   # goty in middle of word
+        ]
+        
+        for query in no_match_cases:
+            result = service._detect_keywords(query)
+            assert result == {}, f"Should not match word boundary case: '{query}'"
+    
+    def test_generate_expanded_queries(self):
+        """Test generation of expanded queries."""
+        service = IGDBService()
+        
+        test_cases = [
+            ("GOTY 2023", {"goty": "Game of the Year"}, ["Game of the Year 2023"]),
+            ("Best GOTY games", {"goty": "Game of the Year"}, ["Best Game of the Year games"]),
+            ("goty edition", {"goty": "Game of the Year"}, ["Game of the Year edition"]),
+        ]
+        
+        for original, keywords, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Failed for query: '{original}'"
+    
+    def test_generate_expanded_queries_case_preservation(self):
+        """Test that case is handled correctly in expanded queries."""
+        service = IGDBService()
+        
+        # Test mixed case scenarios
+        keywords = {"goty": "Game of the Year"}
+        test_cases = [
+            ("GOTY winners", ["Game of the Year winners"]),
+            ("Goty nominees", ["Game of the Year nominees"]),
+            ("best goty", ["best Game of the Year"]),
+        ]
+        
+        for original, expected in test_cases:
+            result = service._generate_expanded_queries(original, keywords)
+            assert result == expected, f"Case handling failed for: '{original}'"
+    
+    def test_merge_and_deduplicate_results(self):
+        """Test result merging and deduplication."""
+        service = IGDBService()
+        
+        # Create test data with some overlapping IGDB IDs
+        original_results = [
+            GameMetadata(igdb_id="1", title="Game A"),
+            GameMetadata(igdb_id="2", title="Game B"),
+        ]
+        
+        expanded_results = [
+            [
+                GameMetadata(igdb_id="2", title="Game B"),  # Duplicate
+                GameMetadata(igdb_id="3", title="Game C"),  # New
+            ],
+            [
+                GameMetadata(igdb_id="1", title="Game A"),  # Duplicate
+                GameMetadata(igdb_id="4", title="Game D"),  # New
+            ]
+        ]
+        
+        result = service._merge_and_deduplicate_results(original_results, expanded_results, limit=10)
+        
+        # Should have 4 unique games
+        assert len(result) == 4
+        
+        # Original results should appear first
+        assert result[0].igdb_id == "1"  # Game A from original
+        assert result[1].igdb_id == "2"  # Game B from original
+        
+        # Check all IDs are unique
+        seen_ids = set()
+        for game in result:
+            assert game.igdb_id not in seen_ids, f"Duplicate ID found: {game.igdb_id}"
+            seen_ids.add(game.igdb_id)
+    
+    def test_merge_and_deduplicate_results_with_limit(self):
+        """Test result merging respects limit."""
+        service = IGDBService()
+        
+        original_results = [
+            GameMetadata(igdb_id="1", title="Game A"),
+            GameMetadata(igdb_id="2", title="Game B"),
+        ]
+        
+        expanded_results = [
+            [
+                GameMetadata(igdb_id="3", title="Game C"),
+                GameMetadata(igdb_id="4", title="Game D"),
+                GameMetadata(igdb_id="5", title="Game E"),
+            ]
+        ]
+        
+        result = service._merge_and_deduplicate_results(original_results, expanded_results, limit=3)
+        
+        # Should respect limit of 3
+        assert len(result) == 3
+        
+        # Original results should appear first
+        assert result[0].igdb_id == "1"
+        assert result[1].igdb_id == "2"
+        assert result[2].igdb_id == "3"  # First from expanded
+    
+    def test_merge_and_deduplicate_empty_results(self):
+        """Test merging with empty results."""
+        service = IGDBService()
+        
+        # Test with empty original results
+        result = service._merge_and_deduplicate_results([], [[GameMetadata(igdb_id="1", title="Game A")]], limit=10)
+        assert len(result) == 1
+        assert result[0].igdb_id == "1"
+        
+        # Test with empty expanded results
+        original = [GameMetadata(igdb_id="1", title="Game A")]
+        result = service._merge_and_deduplicate_results(original, [], limit=10)
+        assert len(result) == 1
+        assert result[0].igdb_id == "1"
+        
+        # Test with both empty
+        result = service._merge_and_deduplicate_results([], [], limit=10)
+        assert len(result) == 0
+    
+    @pytest.mark.asyncio
+    async def test_search_games_with_keyword_expansion(self):
+        """Test end-to-end search with keyword expansion."""
+        service = IGDBService()
+        
+        # Mock the single search method to return different results
+        original_game = GameMetadata(igdb_id="1", title="GOTY Award Winner")
+        expanded_game = GameMetadata(igdb_id="2", title="Game of the Year 2023")
+        
+        async def mock_single_search(query, limit):
+            if "GOTY" in query:
+                return [original_game]
+            elif "Game of the Year" in query:
+                return [expanded_game]
+            return []
+        
+        # Mock fuzzy matching to return all games as-is
+        def mock_fuzzy_match(games, query, threshold):
+            return games
+        
+        with patch.object(service, '_perform_single_search', side_effect=mock_single_search):
+            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                result = await service.search_games("GOTY 2023", limit=10)
+                
+                # Should get both results merged
+                assert len(result) == 2
+                
+                # Original result should appear first
+                assert result[0].igdb_id == "1"
+                assert result[1].igdb_id == "2"
+    
+    @pytest.mark.asyncio
+    async def test_search_games_without_keywords(self):
+        """Test search without keywords works normally."""
+        service = IGDBService()
+        
+        game = GameMetadata(igdb_id="1", title="Regular Game")
+        
+        # Mock fuzzy matching to return all games as-is
+        def mock_fuzzy_match(games, query, threshold):
+            return games
+        
+        with patch.object(service, '_perform_single_search', return_value=[game]):
+            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                result = await service.search_games("Regular Game", limit=10)
+                
+                # Should get only the original search result
+                assert len(result) == 1
+                assert result[0].igdb_id == "1"
+    
+    @pytest.mark.asyncio
+    async def test_search_games_expansion_failure_fallback(self):
+        """Test that expansion failures don't break the search."""
+        service = IGDBService()
+        
+        original_game = GameMetadata(igdb_id="1", title="GOTY Winner")
+        
+        async def mock_single_search(query, limit):
+            if "GOTY" in query:
+                return [original_game]
+            elif "Game of the Year" in query:
+                raise IGDBError("Expanded search failed")
+            return []
+        
+        # Mock fuzzy matching to return all games as-is
+        def mock_fuzzy_match(games, query, threshold):
+            return games
+        
+        with patch.object(service, '_perform_single_search', side_effect=mock_single_search):
+            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                # Should not raise exception, should return original results
+                result = await service.search_games("GOTY 2023", limit=10)
+                
+                assert len(result) == 1
+                assert result[0].igdb_id == "1"

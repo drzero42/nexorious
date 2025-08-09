@@ -24,7 +24,7 @@ from ..services.steam_games import (
     SyncResult,
     BulkSyncResults
 )
-from ..services.steam import SteamAuthenticationError, SteamAPIError
+from ..services.steam import SteamAuthenticationError, SteamAPIError, SteamGame as SteamGameData
 from ..services.igdb import IGDBError
 from .integration_test_utils import (
     session_fixture as session,
@@ -279,7 +279,7 @@ class TestSteamLibraryImport:
         
         # Try to import the same game again
         mock_steam_service.get_owned_games.return_value = [
-            {"appid": 730, "name": "Counter-Strike: Global Offensive", "playtime_forever": 1200}
+            SteamGameData(appid=730, name="Counter-Strike: Global Offensive")
         ]
         
         result = await steam_games_service.import_steam_library(
@@ -376,7 +376,7 @@ class TestAutoMatching:
         assert result.steam_game_id == steam_game.id
         assert result.steam_game_name == "Counter-Strike: Global Offensive"
         assert result.steam_appid == 730
-        assert result.igdb_id == "game-1234"
+        assert result.igdb_id == "1234"
         assert result.confidence_score >= 0.80
     
     @pytest.mark.asyncio
@@ -576,18 +576,18 @@ class TestManualMatching:
         # Match Steam game to IGDB game
         result_game, message = await steam_games_service.match_steam_game_to_igdb(
             steam_game_id=steam_game.id,
-            igdb_id=igdb_game.id,
+            igdb_id=igdb_game.igdb_id,
             user_id=test_user.id
         )
         
         # Verify result
         assert result_game.id == steam_game.id
-        assert result_game.igdb_id == igdb_game.id
+        assert result_game.igdb_id == igdb_game.igdb_id
         assert "matched" in message.lower()
         
         # Verify database update
         steam_games_service.session.refresh(steam_game)
-        assert steam_game.igdb_id == igdb_game.id
+        assert steam_game.igdb_id == igdb_game.igdb_id
     
     @pytest.mark.asyncio
     async def test_match_steam_game_to_igdb_clear_existing(
@@ -698,8 +698,8 @@ class TestCollectionSync:
         session.add(igdb_game)
         
         # Create Steam platform
-        steam_platform = Platform(name="PC", is_primary=True)
-        steam_storefront = Storefront(name="Steam")
+        steam_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
+        steam_storefront = Storefront(name="steam", display_name="Steam")
         session.add_all([steam_platform, steam_storefront])
         session.commit()
         
@@ -708,7 +708,7 @@ class TestCollectionSync:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=igdb_game.id
+            igdb_id=igdb_game.igdb_id
         )
         session.add(steam_game)
         session.commit()
@@ -736,7 +736,7 @@ class TestCollectionSync:
         
         assert len(user_games) == 1
         user_game = user_games[0]
-        assert user_game.ownership_status == OwnershipStatus.owned
+        assert user_game.ownership_status == OwnershipStatus.OWNED
         
         # Verify Steam game was updated with game_id
         session.refresh(steam_game)
@@ -788,8 +788,8 @@ class TestCollectionSync:
             session.add(game)
         
         # Create platforms/storefronts
-        steam_platform = Platform(name="PC", is_primary=True)
-        steam_storefront = Storefront(name="Steam")
+        steam_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
+        steam_storefront = Storefront(name="steam", display_name="Steam")
         session.add_all([steam_platform, steam_storefront])
         session.commit()
         
@@ -800,7 +800,7 @@ class TestCollectionSync:
                 user_id=test_user.id,
                 steam_appid=730 + i,
                 game_name=f"Game {i+1}",
-                igdb_id=igdb_game.id,
+                igdb_id=igdb_game.igdb_id,
                 ignored=False
             )
             matched_games.append(steam_game)
@@ -966,7 +966,7 @@ class TestErrorHandling:
         """Test import handles IGDB errors gracefully."""
         # Setup Steam service to return games
         mock_steam_service.get_owned_games.return_value = [
-            {"appid": 730, "name": "Counter-Strike: Global Offensive", "playtime_forever": 1200}
+            SteamGameData(appid=730, name="Counter-Strike: Global Offensive")
         ]
         
         # Setup IGDB service to raise error

@@ -15,6 +15,7 @@ from .integration_test_utils import (
     session_fixture as session,
     test_user_fixture as test_user,
     auth_headers_fixture as auth_headers,
+    test_game_fixture as test_game,
     assert_api_success,
     assert_api_error
 )
@@ -409,8 +410,8 @@ class TestSteamGameMatchEndpoint:
         assert_api_error(response, 404)
         assert "Steam game not found or access denied" in response.json()["error"]
     
-    def test_match_steam_game_any_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
-        """Test matching Steam game to any IGDB ID succeeds (no validation)."""
+    def test_match_steam_game_valid_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], test_game):
+        """Test matching Steam game to a valid IGDB ID succeeds."""
         # Create Steam game
         steam_game = SteamGame(
             user_id=test_user.id,
@@ -421,15 +422,37 @@ class TestSteamGameMatchEndpoint:
         session.add(steam_game)
         session.commit()
         
-        # Match to any IGDB ID (no validation needed since user selected from search)
-        match_data = {"igdb_id": "any-igdb-id-from-search"}
+        # Match to valid IGDB ID (using test_game fixture)
+        match_data = {"igdb_id": test_game.igdb_id}
         response = client.put(f"/api/steam-games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
-        assert data["steam_game"]["igdb_id"] == "any-igdb-id-from-search"
+        assert data["steam_game"]["igdb_id"] == test_game.igdb_id
+    
+    def test_match_steam_game_invalid_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+        """Test matching Steam game to invalid IGDB ID fails with 400."""
+        # Create Steam game
+        steam_game = SteamGame(
+            user_id=test_user.id,
+            steam_appid=730,
+            game_name="Test Game",
+            ignored=False
+        )
+        session.add(steam_game)
+        session.commit()
+        
+        # Try to match to non-existent IGDB ID
+        match_data = {"igdb_id": "non-existent-igdb-id"}
+        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+                             json=match_data, 
+                             headers=auth_headers)
+        
+        assert response.status_code == 400
+        data = response.json()
+        assert "invalid igdb id" in data["error"].lower()
     
     def test_match_steam_game_without_auth(self, client: TestClient, session: Session, test_user: User):
         """Test that matching Steam game requires authentication."""

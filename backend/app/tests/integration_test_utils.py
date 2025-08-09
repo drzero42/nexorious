@@ -515,17 +515,27 @@ def create_test_user_game_data(
 
 def assert_api_error(response, status_code: int, error_message: str = None):
     """Assert that an API response contains the expected error."""
+    if response.status_code != status_code:
+        print(f"DEBUG: Expected status {status_code}, got {response.status_code}. Response: {response.json()}")
     assert response.status_code == status_code
     data = response.json()
     
+    # Debug: Print actual response for failing tests
+    if status_code == 422 and "detail" not in data:
+        print(f"DEBUG: Unexpected 422 response format: {data}")
+    
     # Handle different error formats
     if status_code == 422:
-        # FastAPI validation errors use 'detail' field
-        assert "detail" in data
+        # FastAPI validation errors use 'detail' field, but custom handlers may use 'error'
+        assert "detail" in data or "error" in data
         if error_message:
-            # For 422, check if error_message is in any of the detail messages
-            detail_str = str(data["detail"])
-            assert error_message in detail_str
+            # Check both detail and error fields
+            if "detail" in data:
+                detail_str = str(data["detail"])
+                assert error_message in detail_str
+            elif "error" in data:
+                error_str = str(data["error"])
+                assert error_message in error_str
     elif "detail" in data:
         # FastAPI HTTPException errors use 'detail' field
         if error_message:
