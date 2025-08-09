@@ -131,6 +131,7 @@ uv run pytest scripts/tests/ -v
 3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
 5. **Documentation**: Use context7 MCP to verify API usage in generated code
+6. **Expert Consultation**: Always consult the experts
 
 ### Required After Code Changes
 
