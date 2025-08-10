@@ -11,6 +11,7 @@ from sqlmodel.pool import StaticPool
 from ..main import app
 from ..core.database import get_session
 from ..models.user import User
+from ..models.platform import Platform, Storefront
 
 
 # Test database setup
@@ -211,3 +212,198 @@ class TestPreferencesHandling:
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code != 404 or response.json().get("error") != "Steam Games feature is disabled"
+
+
+def create_platform_and_storefront(session: Session, platform_active: bool = True, storefront_active: bool = True):
+    """Helper function to create PC-Windows platform and Steam storefront for testing."""
+    # Create PC-Windows platform
+    platform = Platform(
+        name="pc-windows",
+        display_name="PC (Windows)",
+        is_active=platform_active,
+        source="official"
+    )
+    session.add(platform)
+    
+    # Create Steam storefront
+    storefront = Storefront(
+        name="steam",
+        display_name="Steam",
+        is_active=storefront_active,
+        source="official"
+    )
+    session.add(storefront)
+    
+    session.commit()
+    session.refresh(platform)
+    session.refresh(storefront)
+    
+    return platform, storefront
+
+
+class TestSteamGamesPlatformStorefrontValidation:
+    """Test Steam Games platform and storefront dependency validation."""
+    
+    def test_steam_enabled_with_active_dependencies(self, client: TestClient, session: Session):
+        """Test that Steam Games works when platform and storefront are active."""
+        # Create active platform and storefront
+        create_platform_and_storefront(session, platform_active=True, storefront_active=True)
+        
+        token = create_user_with_preferences(client, "active_deps_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        # Should not be 404 due to platform/storefront issues
+        assert response.status_code != 404 or "platform" not in response.json().get("error", "").lower()
+        assert response.status_code != 404 or "storefront" not in response.json().get("error", "").lower()
+    
+    def test_steam_disabled_inactive_platform(self, client: TestClient, session: Session):
+        """Test that Steam Games is disabled when PC-Windows platform is inactive."""
+        # Create inactive platform, active storefront
+        create_platform_and_storefront(session, platform_active=False, storefront_active=True)
+        
+        token = create_user_with_preferences(client, "inactive_platform_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        assert "PC-Windows platform is inactive" in response.json()["error"]
+    
+    def test_steam_disabled_inactive_storefront(self, client: TestClient, session: Session):
+        """Test that Steam Games is disabled when Steam storefront is inactive."""
+        # Create active platform, inactive storefront
+        create_platform_and_storefront(session, platform_active=True, storefront_active=False)
+        
+        token = create_user_with_preferences(client, "inactive_storefront_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        assert "Steam storefront is inactive" in response.json()["error"]
+    
+    def test_steam_disabled_both_dependencies_inactive(self, client: TestClient, session: Session):
+        """Test that Steam Games is disabled when both platform and storefront are inactive."""
+        # Create inactive platform and storefront
+        create_platform_and_storefront(session, platform_active=False, storefront_active=False)
+        
+        token = create_user_with_preferences(client, "both_inactive_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        # Should fail on platform check first
+        assert "PC-Windows platform is inactive" in response.json()["error"]
+    
+    def test_steam_disabled_missing_platform(self, client: TestClient, session: Session):
+        """Test that Steam Games is disabled when PC-Windows platform doesn't exist."""
+        # Create only storefront, no platform
+        storefront = Storefront(
+            name="steam",
+            display_name="Steam",
+            is_active=True,
+            source="official"
+        )
+        session.add(storefront)
+        session.commit()
+        
+        token = create_user_with_preferences(client, "missing_platform_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        assert "PC-Windows platform not found" in response.json()["error"]
+    
+    def test_steam_disabled_missing_storefront(self, client: TestClient, session: Session):
+        """Test that Steam Games is disabled when Steam storefront doesn't exist."""
+        # Create only platform, no storefront
+        platform = Platform(
+            name="pc-windows",
+            display_name="PC (Windows)",
+            is_active=True,
+            source="official"
+        )
+        session.add(platform)
+        session.commit()
+        
+        token = create_user_with_preferences(client, "missing_storefront_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        assert "Steam storefront not found" in response.json()["error"]
+    
+    def test_steam_disabled_ui_preference_overrides_active_dependencies(self, client: TestClient, session: Session):
+        """Test that UI preference takes precedence over active platform/storefront."""
+        # Create active platform and storefront
+        create_platform_and_storefront(session, platform_active=True, storefront_active=True)
+        
+        token = create_user_with_preferences(client, "ui_disabled_user", "password123", {
+            "ui": {"steam_games_visible": False}
+        })
+        
+        response = client.get(
+            "/api/steam-games",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404
+        assert response.json()["error"] == "Steam Games feature is disabled"
+    
+    def test_all_steam_endpoints_respect_platform_storefront_validation(self, client: TestClient, session: Session):
+        """Test that all Steam Games endpoints respect platform/storefront validation."""
+        # Create inactive platform
+        create_platform_and_storefront(session, platform_active=False, storefront_active=True)
+        
+        token = create_user_with_preferences(client, "all_endpoints_user", "password123", {
+            "ui": {"steam_games_visible": True}
+        })
+        
+        # Test all Steam Games endpoints - should all fail with platform validation
+        endpoints_and_methods = [
+            ("GET", "/api/steam-games", {}),
+            ("POST", "/api/steam-games/import", {}),
+            ("PUT", "/api/steam-games/test-id/match", {"igdb_id": 123}),
+            ("POST", "/api/steam-games/test-id/sync", {}),
+            ("POST", "/api/steam-games/sync", {}),
+            ("PUT", "/api/steam-games/test-id/ignore", {}),
+            ("PUT", "/api/steam-games/unignore-all", {}),
+            ("PUT", "/api/steam-games/unmatch-all", {}),
+            ("PUT", "/api/steam-games/unsync-all", {}),
+            ("POST", "/api/steam-games/test-id/unsync", {}),
+            ("POST", "/api/steam-games/auto-match", {}),
+            ("POST", "/api/steam-games/test-id/auto-match", {}),
+        ]
+        
+        for method, url, json_data in endpoints_and_methods:
+            if method == "GET":
+                response = client.get(url, headers={"Authorization": f"Bearer {token}"})
+            elif method == "POST":
+                response = client.post(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
+            elif method == "PUT":
+                response = client.put(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
+            
+            assert response.status_code == 404, f"Expected 404 for {method} {url}, got {response.status_code}"
+            assert "PC-Windows platform is inactive" in response.json()["error"]

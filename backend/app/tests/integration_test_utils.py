@@ -149,6 +149,22 @@ def test_platform_fixture(session: Session) -> Platform:
     return platform
 
 
+@pytest.fixture(name="pc_windows_platform")
+def pc_windows_platform_fixture(session: Session) -> Platform:
+    """Create a PC-Windows platform required for Steam Games functionality."""
+    platform = Platform(
+        name="pc-windows",
+        display_name="PC (Windows)",
+        icon_url="/static/logos/platforms/pc-windows/pc-windows-icon-light.svg",
+        is_active=True,
+        source="official"
+    )
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    return platform
+
+
 @pytest.fixture(name="test_storefront")
 def test_storefront_fixture(session: Session) -> Storefront:
     """Create a test storefront in the database."""
@@ -178,6 +194,36 @@ def test_storefront_2_fixture(session: Session) -> Storefront:
     session.commit()
     session.refresh(storefront)
     return storefront
+
+
+@pytest.fixture(name="steam_dependencies")
+def steam_dependencies_fixture(session: Session):
+    """Create all dependencies required for Steam Games functionality."""
+    # Create PC-Windows platform
+    pc_windows_platform = Platform(
+        name="pc-windows",
+        display_name="PC (Windows)",
+        icon_url="/static/logos/platforms/pc-windows/pc-windows-icon-light.svg",
+        is_active=True,
+        source="official"
+    )
+    session.add(pc_windows_platform)
+    
+    # Create Steam storefront
+    steam_storefront = Storefront(
+        name="steam",
+        display_name="Steam",
+        icon_url="/static/logos/storefronts/steam/steam-icon-light.svg",
+        base_url="https://store.steampowered.com",
+        is_active=True,
+        source="official"
+    )
+    session.add(steam_storefront)
+    session.commit()
+    session.refresh(pc_windows_platform)
+    session.refresh(steam_storefront)
+    
+    return {"platform": pc_windows_platform, "storefront": steam_storefront}
 
 
 @pytest.fixture(name="test_game")

@@ -16,9 +16,17 @@ from .integration_test_utils import (
     test_user_fixture as test_user,
     auth_headers_fixture as auth_headers,
     test_game_fixture as test_game,
+    steam_dependencies_fixture as steam_dependencies,
     assert_api_success,
     assert_api_error
 )
+
+
+# Auto-use Steam dependencies for all tests in this module
+@pytest.fixture(autouse=True)
+def setup_steam_dependencies(steam_dependencies):
+    """Automatically set up Steam dependencies for all tests in this module."""
+    pass
 
 
 class TestSteamGamesListEndpoint:
@@ -615,23 +623,31 @@ class TestSteamGamesBulkSyncEndpoint:
     def _create_steam_platform_data(self, session: Session):
         """Helper method to create Steam platform and storefront data."""
         from ..models.platform import Platform, Storefront
+        from sqlmodel import select
         
-        # Create required platform and storefront for Steam games
-        pc_platform = Platform(
-            name="pc-windows",
-            display_name="PC (Windows)",
-            icon_url="test.png",
-            is_active=True
-        )
-        steam_storefront = Storefront(
-            name="steam",
-            display_name="Steam",
-            icon_url="test.png",
-            base_url="https://store.steampowered.com",
-            is_active=True
-        )
-        session.add(pc_platform)
-        session.add(steam_storefront)
+        # Check if PC-Windows platform already exists
+        pc_platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
+        if not pc_platform:
+            pc_platform = Platform(
+                name="pc-windows",
+                display_name="PC (Windows)",
+                icon_url="test.png",
+                is_active=True
+            )
+            session.add(pc_platform)
+        
+        # Check if Steam storefront already exists
+        steam_storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
+        if not steam_storefront:
+            steam_storefront = Storefront(
+                name="steam",
+                display_name="Steam",
+                icon_url="test.png",
+                base_url="https://store.steampowered.com",
+                is_active=True
+            )
+            session.add(steam_storefront)
+        
         return pc_platform, steam_storefront
     
     def test_bulk_sync_steam_games_no_matched_games(self, client: TestClient, auth_headers: Dict[str, str]):
