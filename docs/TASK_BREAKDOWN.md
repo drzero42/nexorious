@@ -71,8 +71,6 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] IGDB platform data caching and retrieval for platform filtering
 - [x] Update IGDB service to retrieve and store game slug field from API responses
 - [x] Create database migration to add igdb_slug field to games table
-- [ ] Update IGDB service to automatically set `last_updated` field when importing or refreshing game metadata
-- [ ] Create database migration to add `last_updated` field to games table
 
 ### 1.2 Frontend Foundation
 
