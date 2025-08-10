@@ -5,6 +5,7 @@ export interface User {
   id: string;
   username: string;
   isAdmin: boolean;
+  preferences?: Record<string, any>;
 }
 
 export interface SetupStatusResponse {
@@ -335,6 +336,53 @@ function createAuthStore() {
         return adminUser;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create initial admin';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    updatePreferences: async (preferences: Record<string, any>) => {
+      if (!state.accessToken) {
+        throw new Error('Not authenticated');
+      }
+
+      state = { ...state, isLoading: true, error: null };
+      
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/me`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.accessToken}`
+          },
+          body: JSON.stringify({ preferences }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to update preferences');
+        }
+
+        const updatedUser = await response.json();
+        const newState = {
+          ...state,
+          user: {
+            ...updatedUser,
+            isAdmin: updatedUser.is_admin // Map backend snake_case to frontend camelCase
+          },
+          isLoading: false,
+          error: null
+        };
+
+        state = newState;
+        
+        if (browser) {
+          localStorage.setItem('auth', JSON.stringify(newState));
+        }
+        
+        return updatedUser;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update preferences';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }

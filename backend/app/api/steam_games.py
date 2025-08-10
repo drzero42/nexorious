@@ -11,6 +11,7 @@ import json
 from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
+from .dependencies import verify_steam_games_enabled
 from ..models.steam_game import SteamGame
 from ..models.user_game import UserGame
 from ..services.steam import SteamAuthenticationError, SteamAPIError
@@ -95,7 +96,7 @@ async def import_steam_library_task(user_id: str, steam_config: dict):
 @router.get("", response_model=SteamGamesListResponse, status_code=status.HTTP_200_OK)
 async def list_steam_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)],
     offset: int = Query(default=0, ge=0, description="Number of items to skip"),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of items to return"),
     status_filter: Optional[str] = Query(default=None, pattern="^(unmatched|matched|ignored|synced)$", description="Filter by Steam game status"),
@@ -237,7 +238,7 @@ async def list_steam_games(
 @router.post("/import", response_model=SteamGamesImportStartedResponse, status_code=status.HTTP_202_ACCEPTED)
 async def import_steam_library(
     background_tasks: BackgroundTasks,
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesImportStartedResponse:
     """
     Start background import of user's Steam library.
@@ -295,7 +296,7 @@ async def match_steam_game_to_igdb(
     steam_game_id: str,
     match_request: SteamGameMatchRequest,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGameMatchResponse:
     """
     Match a Steam game to an IGDB game by setting the igdb_id field.
@@ -363,7 +364,7 @@ async def sync_steam_game_to_collection(
     steam_game_id: str,
     sync_request: SteamGameSyncRequest,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGameSyncResponse:
     """
     Sync a matched Steam game to the user's main collection.
@@ -477,7 +478,7 @@ async def sync_steam_game_to_collection(
 @router.post("/sync", response_model=SteamGamesBulkSyncResponse, status_code=status.HTTP_200_OK)
 async def sync_all_matched_steam_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesBulkSyncResponse:
     """
     Sync all matched Steam games to the user's main collection.
@@ -541,7 +542,7 @@ async def sync_all_matched_steam_games(
 async def toggle_steam_game_ignored_status(
     steam_game_id: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGameIgnoreResponse:
     """
     Toggle the ignored status of a Steam game.
@@ -615,7 +616,7 @@ async def toggle_steam_game_ignored_status(
 @router.put("/unignore-all", response_model=SteamGamesBulkUnignoreResponse, status_code=status.HTTP_200_OK)
 async def unignore_all_steam_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesBulkUnignoreResponse:
     """
     Unignore all ignored Steam games for the current user.
@@ -672,7 +673,7 @@ async def unignore_all_steam_games(
 @router.put("/unmatch-all", response_model=SteamGamesBulkUnmatchResponse, status_code=status.HTTP_200_OK)
 async def unmatch_all_matched_steam_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesBulkUnmatchResponse:
     """
     Unmatch all matched Steam games for the current user.
@@ -742,7 +743,7 @@ async def unmatch_all_matched_steam_games(
 @router.put("/unsync-all", response_model=SteamGamesBulkUnsyncResponse, status_code=status.HTTP_200_OK)
 async def unsync_all_synced_steam_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesBulkUnsyncResponse:
     """
     Unsync all synced Steam games from the user's collection.
@@ -803,7 +804,7 @@ async def unsync_all_synced_steam_games(
 async def unsync_steam_game_from_collection(
     steam_game_id: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGameUnsyncResponse:
     """
     Unsync a Steam game from the user's collection.
@@ -875,7 +876,7 @@ async def unsync_steam_game_from_collection(
 @router.post("/auto-match", response_model=SteamGamesAutoMatchResponse, status_code=status.HTTP_200_OK)
 async def retry_auto_matching_for_unmatched_games(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGamesAutoMatchResponse:
     """
     Manually retry auto-matching for all unmatched Steam games.
@@ -965,7 +966,7 @@ async def retry_auto_matching_for_unmatched_games(
 async def auto_match_single_steam_game(
     steam_game_id: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(verify_steam_games_enabled)]
 ) -> SteamGameAutoMatchSingleResponse:
     """
     Automatically match a single Steam game to IGDB.

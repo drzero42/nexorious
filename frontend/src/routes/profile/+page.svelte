@@ -22,14 +22,23 @@
   // Form loading states
   let isSubmittingUsername = false;
   let isSubmittingPassword = false;
+  let isSubmittingPreferences = false;
 
   // Validation timeout
   let usernameTimeout: ReturnType<typeof setTimeout>;
+
+  // Interface preferences
+  let steamGamesVisible = true;
 
   onMount(() => {
     // Initialize username field with current username
     if (auth.value.user) {
       newUsername = auth.value.user.username;
+      
+      // Initialize Steam Games visibility setting
+      const preferences = auth.value.user.preferences || {};
+      const uiPrefs = preferences.ui || {};
+      steamGamesVisible = uiPrefs.steam_games_visible !== false; // Default to true
     }
   });
 
@@ -150,6 +159,33 @@
     newPassword = '';
     confirmPassword = '';
     passwordError = '';
+  }
+
+  async function handleSteamGamesToggle() {
+    if (!auth.value.user) return;
+
+    isSubmittingPreferences = true;
+    try {
+      // Create updated preferences with Steam Games visibility setting
+      const currentPrefs = auth.value.user.preferences || {};
+      const updatedPrefs = {
+        ...currentPrefs,
+        ui: {
+          ...(currentPrefs.ui || {}),
+          steam_games_visible: steamGamesVisible
+        }
+      };
+
+      await auth.updatePreferences(updatedPrefs);
+      ui.showSuccess(`Steam Games ${steamGamesVisible ? 'enabled' : 'disabled'} successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update Steam Games setting';
+      ui.showError(errorMessage);
+      // Revert the toggle on error
+      steamGamesVisible = !steamGamesVisible;
+    } finally {
+      isSubmittingPreferences = false;
+    }
   }
 </script>
 
@@ -433,6 +469,52 @@
           >
             Cancel
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interface Preferences Card -->
+    <div class="card max-w-2xl">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">Interface Preferences</h2>
+      <p class="text-sm text-gray-500 mb-6">Configure which features are visible in your interface</p>
+      
+      <!-- Steam Games Toggle -->
+      <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+        <div class="flex items-center space-x-3">
+          <div class="flex-shrink-0">
+            <span class="text-2xl">🔥</span>
+          </div>
+          <div class="flex-1">
+            <h3 class="text-sm font-medium text-gray-900">Steam Games Feature</h3>
+            <p class="text-sm text-gray-500">
+              Show Steam Games menu and enable Steam library integration
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button
+            type="button"
+            disabled={isSubmittingPreferences}
+            on:click={() => { steamGamesVisible = !steamGamesVisible; handleSteamGamesToggle(); }}
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            class:bg-blue-600={steamGamesVisible}
+            class:bg-gray-200={!steamGamesVisible}
+            role="switch"
+            aria-checked={steamGamesVisible}
+            aria-label="Toggle Steam Games feature"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+              class:translate-x-6={steamGamesVisible}
+              class:translate-x-1={!steamGamesVisible}
+            ></span>
+          </button>
+          {#if isSubmittingPreferences}
+            <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          {/if}
         </div>
       </div>
     </div>

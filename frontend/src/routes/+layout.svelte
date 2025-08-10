@@ -74,15 +74,17 @@
                     Add Game
                   </a>
                 </li>
-                <li>
-                  <a
-                    href="/steam-games"
-                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                  >
-                    <span class="text-lg">🔥</span>
-                    Steam Games
-                  </a>
-                </li>
+                {#if auth.value.user?.preferences?.ui?.steam_games_visible !== false}
+                  <li>
+                    <a
+                      href="/steam-games"
+                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    >
+                      <span class="text-lg">🔥</span>
+                      Steam Games
+                    </a>
+                  </li>
+                {/if}
               </ul>
             </li>
             
@@ -251,16 +253,18 @@
                           Add Game
                         </a>
                       </li>
-                      <li>
-                        <a
-                          href="/steam-games"
-                          on:click={closeMobileMenu}
-                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                        >
-                          <span class="text-lg">🔥</span>
-                          Steam Games
-                        </a>
-                      </li>
+                      {#if auth.value.user?.preferences?.ui?.steam_games_visible !== false}
+                        <li>
+                          <a
+                            href="/steam-games"
+                            on:click={closeMobileMenu}
+                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          >
+                            <span class="text-lg">🔥</span>
+                            Steam Games
+                          </a>
+                        </li>
+                      {/if}
                     </ul>
                   </li>
                   
