@@ -137,7 +137,7 @@ describe('Admin Platforms Page', () => {
     it('displays the page header correctly', () => {
       render(AdminPlatformsPage);
       expect(screen.getByText('Platform & Storefront Management')).toBeInTheDocument();
-      expect(screen.getByText('Manage available platforms and storefronts for the application')).toBeInTheDocument();
+      expect(screen.getByText('Manage available platforms and storefronts for the application. Click on status badges to toggle between active and inactive states.')).toBeInTheDocument();
     });
 
     it('shows loading state when store is loading', async () => {

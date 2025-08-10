@@ -40,6 +40,10 @@
   let showDeleteConfirm = false;
   let deleteTarget: { type: 'platform' | 'storefront'; id: string; name: string } | null = null;
 
+  // Loading states for status toggles
+  let platformToggleLoading = new Set<string>();
+  let storefrontToggleLoading = new Set<string>();
+
 
   // Reactive statements to track platform store state
   $: platformsList = $platforms.platforms;
@@ -147,7 +151,8 @@
       if (editingPlatform) {
         // Update existing platform
         const updateData: PlatformUpdateRequest = {
-          display_name: platformForm.display_name
+          display_name: platformForm.display_name,
+          is_active: platformForm.is_active ?? true
         };
         if (platformForm.icon_url && platformForm.icon_url.trim()) {
           updateData.icon_url = platformForm.icon_url;
@@ -178,7 +183,8 @@
       if (editingStorefront) {
         // Update existing storefront
         const updateData: StorefrontUpdateRequest = {
-          display_name: storefrontForm.display_name
+          display_name: storefrontForm.display_name,
+          is_active: storefrontForm.is_active ?? true
         };
         if (storefrontForm.icon_url && storefrontForm.icon_url.trim()) {
           updateData.icon_url = storefrontForm.icon_url;
@@ -198,18 +204,34 @@
   }
 
   async function togglePlatformStatus(platform: Platform) {
+    // Add to loading set
+    platformToggleLoading.add(platform.id);
+    platformToggleLoading = platformToggleLoading; // Trigger reactivity
+    
     try {
       await platforms.updatePlatform(platform.id, { is_active: !platform.is_active });
     } catch (err) {
       console.error('Failed to toggle platform status:', err);
+    } finally {
+      // Remove from loading set
+      platformToggleLoading.delete(platform.id);
+      platformToggleLoading = platformToggleLoading; // Trigger reactivity
     }
   }
 
   async function toggleStorefrontStatus(storefront: Storefront) {
+    // Add to loading set
+    storefrontToggleLoading.add(storefront.id);
+    storefrontToggleLoading = storefrontToggleLoading; // Trigger reactivity
+    
     try {
       await platforms.updateStorefront(storefront.id, { is_active: !storefront.is_active });
     } catch (err) {
       console.error('Failed to toggle storefront status:', err);
+    } finally {
+      // Remove from loading set
+      storefrontToggleLoading.delete(storefront.id);
+      storefrontToggleLoading = storefrontToggleLoading; // Trigger reactivity
     }
   }
 
@@ -314,8 +336,14 @@
     <div class="border-b border-gray-200 pb-5">
       <h1 class="text-3xl font-bold leading-tight text-gray-900">Platform & Storefront Management</h1>
       <p class="mt-2 max-w-4xl text-sm text-gray-500">
-        Manage available platforms and storefronts for the application
+        Manage available platforms and storefronts for the application. Click on status badges to toggle between active and inactive states.
       </p>
+      <div class="mt-3 p-3 bg-blue-50 rounded-md">
+        <p class="text-sm text-blue-700">
+          <strong>Status Info:</strong> Active platforms and storefronts are available to users when adding games. 
+          Inactive ones are hidden from users but preserved in the system. Click the status badges to toggle between active/inactive states.
+        </p>
+      </div>
     </div>
 
     <!-- Tab Navigation -->
@@ -455,12 +483,17 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                           <button
                             on:click={() => togglePlatformStatus(platform)}
-                            class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            disabled={platformToggleLoading.has(platform.id)}
+                            class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                               platform.is_active
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-100 text-gray-800'
+                                ? 'bg-green-100 text-green-800 hover:bg-green-200 hover:text-green-900 focus:ring-green-500'
+                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200 hover:text-gray-900 focus:ring-gray-500'
                             }`}
+                            title="Click to toggle platform status"
                           >
+                            {#if platformToggleLoading.has(platform.id)}
+                              <div class="animate-spin rounded-full h-3 w-3 border border-current border-t-transparent mr-1"></div>
+                            {/if}
                             {platform.is_active ? 'Active' : 'Inactive'}
                           </button>
                         </td>
@@ -542,12 +575,17 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                           <button
                             on:click={() => toggleStorefrontStatus(storefront)}
-                            class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            disabled={storefrontToggleLoading.has(storefront.id)}
+                            class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                               storefront.is_active
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-100 text-gray-800'
+                                ? 'bg-green-100 text-green-800 hover:bg-green-200 hover:text-green-900 focus:ring-green-500'
+                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200 hover:text-gray-900 focus:ring-gray-500'
                             }`}
+                            title="Click to toggle storefront status"
                           >
+                            {#if storefrontToggleLoading.has(storefront.id)}
+                              <div class="animate-spin rounded-full h-3 w-3 border border-current border-t-transparent mr-1"></div>
+                            {/if}
                             {storefront.is_active ? 'Active' : 'Inactive'}
                           </button>
                         </td>
@@ -735,6 +773,19 @@
               <p class="mt-1 text-sm text-gray-500">The storefront that will be automatically selected when users add games for this platform.</p>
             </div>
             
+            <div class="flex items-center">
+              <input
+                id="platform-is-active"
+                type="checkbox"
+                bind:checked={platformForm.is_active}
+                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
+              <label for="platform-is-active" class="ml-2 block text-sm text-gray-900">
+                Active platform
+              </label>
+            </div>
+            <p class="text-sm text-gray-500">Inactive platforms won't be available for users when adding games.</p>
+            
             <div class="flex justify-end space-x-3 pt-4">
               <button
                 type="button"
@@ -814,6 +865,19 @@
                 placeholder="/static/logos/storefronts/example/icon.svg or https://example.com/icon.png"
               />
             </div>
+            
+            <div class="flex items-center">
+              <input
+                id="storefront-is-active"
+                type="checkbox"
+                bind:checked={storefrontForm.is_active}
+                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
+              <label for="storefront-is-active" class="ml-2 block text-sm text-gray-900">
+                Active storefront
+              </label>
+            </div>
+            <p class="text-sm text-gray-500">Inactive storefronts won't be available for users when adding games.</p>
             
             <div class="flex justify-end space-x-3 pt-4">
               <button
