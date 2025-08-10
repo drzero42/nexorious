@@ -4,6 +4,7 @@
   import { RouteGuard, SteamGamesTable } from '$lib/components';
   import { steam, ui, auth } from '$lib/stores';
   import { steamGames, type SteamGameResponse, type SteamGamesListResponse } from '$lib/stores/steam-games.svelte';
+  import { steamAvailability } from '$lib/stores/steam-availability.svelte';
   import type { SteamUserInfo } from '$lib/stores';
 
   // Page state
@@ -51,10 +52,10 @@
   let totalCount = $state(0);
 
   onMount(async () => {
-    // Check if Steam Games feature is enabled
-    const user = auth.value.user;
-    if (user && user.preferences?.ui?.steam_games_visible === false) {
-      ui.showError('Steam Games feature is disabled. You can enable it in Profile Settings.');
+    // Check if Steam Games feature is available
+    if (!steamAvailability.isAvailable) {
+      const reason = steamAvailability.unavailableReason || 'Steam Games feature is not available';
+      ui.showError(reason);
       goto('/dashboard');
       return;
     }

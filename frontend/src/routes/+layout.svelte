@@ -1,21 +1,38 @@
 <script lang="ts">
   import '../app.css';
   import { auth } from '$lib/stores';
+  import { platforms } from '$lib/stores/platforms.svelte';
   import { ToastContainer } from '$lib/components';
+  import { steamAvailability } from '$lib/stores/steam-availability.svelte';
   import { onMount } from 'svelte';
   
   let mobileMenuOpen = false;
   
-  onMount(() => {
+  onMount(async () => {
     // Check if user is authenticated and refresh token if needed
     const authState = auth.value;
     
     if (authState.accessToken && authState.refreshToken) {
       // Optionally refresh token on app start
-      auth.refreshAuth();
+      await auth.refreshAuth();
+      
+      // Load platforms data for authenticated users
+      // This is needed for Steam availability checking
+      if (auth.value.user) {
+        try {
+          // Admin users need all platforms (active + inactive) for management
+          // Regular users only need active platforms for efficiency
+          if (auth.value.user.isAdmin) {
+            await platforms.fetchAll();
+          } else {
+            await platforms.fetchActivePlatformsAndStorefronts();
+          }
+        } catch (error) {
+          console.warn('Failed to load platforms data:', error);
+          // Don't block app loading if platforms fail to load
+        }
+      }
     }
-    
-    
   });
   
   function closeMobileMenu() {
@@ -74,7 +91,7 @@
                     Add Game
                   </a>
                 </li>
-                {#if auth.value.user?.preferences?.ui?.steam_games_visible !== false}
+                {#if steamAvailability.isAvailable}
                   <li>
                     <a
                       href="/steam-games"
@@ -253,7 +270,7 @@
                           Add Game
                         </a>
                       </li>
-                      {#if auth.value.user?.preferences?.ui?.steam_games_visible !== false}
+                      {#if steamAvailability.isAvailable}
                         <li>
                           <a
                             href="/steam-games"
