@@ -154,6 +154,7 @@ class SteamGameResponse(BaseModel):
     game_name: str = Field(..., description="Game name from Steam Web API")
     igdb_id: Optional[str] = Field(None, description="IGDB ID when matched to games table")
     game_id: Optional[str] = Field(None, description="Game ID when synced to user collection")
+    user_game_id: Optional[str] = Field(None, description="UserGame ID when synced to user collection")
     ignored: bool = Field(..., description="Whether user has marked this game as ignored")
     created_at: datetime = Field(..., description="When the Steam game was added")
     updated_at: datetime = Field(..., description="When the Steam game was last updated")

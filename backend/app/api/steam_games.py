@@ -12,6 +12,7 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.steam_game import SteamGame
+from ..models.user_game import UserGame
 from ..services.steam import SteamAuthenticationError, SteamAPIError
 from ..services.steam_games import create_steam_games_service, SteamGamesServiceError
 from ..api.schemas.steam import (
@@ -115,8 +116,18 @@ async def list_steam_games(
         logger.info(f"  - status_filter: {status_filter}")
         logger.info(f"  - search: {search}")
         
-        # Build base query for user's Steam games
-        query = select(SteamGame).where(SteamGame.user_id == current_user.id)
+        # Build base query for user's Steam games with UserGame join to get user_game_id
+        query = (
+            select(SteamGame, UserGame.id.label('user_game_id'))
+            .outerjoin(
+                UserGame,
+                and_(
+                    SteamGame.game_id == UserGame.game_id,
+                    UserGame.user_id == current_user.id
+                )
+            )
+            .where(SteamGame.user_id == current_user.id)
+        )
         
         # Apply status filter
         if status_filter:
@@ -163,8 +174,8 @@ async def list_steam_games(
         
         # Execute query
         logger.info(f"📊 [API LIST] Executing main query...")
-        steam_games = session.exec(query).all()
-        logger.info(f"📊 [API LIST] Retrieved {len(steam_games)} games from database")
+        results = session.exec(query).all()
+        logger.info(f"📊 [API LIST] Retrieved {len(results)} games from database")
         
         # Debug: Log all games with their current state
         logger.info(f"📋 [API LIST] All games state breakdown:")
@@ -190,13 +201,16 @@ async def list_steam_games(
         
         # Convert to response format
         games = []
-        for steam_game in steam_games:
+        for result in results:
+            steam_game = result[0]  # SteamGame object
+            user_game_id = result[1] if len(result) > 1 else None  # user_game_id from join
             games.append(SteamGameResponse(
                 id=steam_game.id,
                 steam_appid=steam_game.steam_appid,
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -312,6 +326,7 @@ async def match_steam_game_to_igdb(
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=None,  # No user_game_id for just matching (not synced yet)
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -413,6 +428,7 @@ async def sync_steam_game_to_collection(
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=result.user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -547,6 +563,19 @@ async def toggle_steam_game_ignored_status(
             user_id=current_user.id
         )
         
+        # Get user_game_id if synced
+        user_game_id = None
+        if steam_game.game_id:
+            user_game_result = session.exec(
+                select(UserGame.id).where(
+                    and_(
+                        UserGame.game_id == steam_game.game_id,
+                        UserGame.user_id == current_user.id
+                    )
+                )
+            ).first()
+            user_game_id = user_game_result
+        
         return SteamGameIgnoreResponse(
             message=message,
             steam_game=SteamGameResponse(
@@ -555,6 +584,7 @@ async def toggle_steam_game_ignored_status(
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -810,6 +840,7 @@ async def unsync_steam_game_from_collection(
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=None,  # Always None after unsync
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -976,6 +1007,19 @@ async def auto_match_single_steam_game(
                 detail="Steam game not found after auto-match operation"
             )
         
+        # Get user_game_id if synced
+        user_game_id = None
+        if steam_game.game_id:
+            user_game_result = session.exec(
+                select(UserGame.id).where(
+                    and_(
+                        UserGame.game_id == steam_game.game_id,
+                        UserGame.user_id == current_user.id
+                    )
+                )
+            ).first()
+            user_game_id = user_game_result
+        
         return SteamGameAutoMatchSingleResponse(
             message=message,
             steam_game=SteamGameResponse(
@@ -984,6 +1028,7 @@ async def auto_match_single_steam_game(
                 game_name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 game_id=steam_game.game_id,
+                user_game_id=user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at

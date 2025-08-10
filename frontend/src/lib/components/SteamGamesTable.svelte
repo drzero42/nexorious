@@ -15,6 +15,7 @@
     showUnignoreButton?: boolean;
     showUnmatchButton?: boolean;
     showUnsyncButton?: boolean;
+    showGameLink?: boolean;
     onRefresh?: () => Promise<void>;
     collapsible?: boolean;
     collapsed?: boolean;
@@ -33,6 +34,7 @@
     showUnignoreButton = false,
     showUnmatchButton = false,
     showUnsyncButton = false,
+    showGameLink = false,
     onRefresh,
     collapsible = false,
     collapsed = false,
@@ -219,6 +221,7 @@
             onUnignore={showUnignoreButton ? () => handleUnignore(game) : undefined}
             onUnmatch={showUnmatchButton ? () => handleUnmatch(game) : undefined}
             onUnsync={showUnsyncButton ? () => handleUnsync(game) : undefined}
+            {showGameLink}
             isLoading={isGameLoading(game.id)}
           />
         {/each}

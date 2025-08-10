@@ -15,6 +15,7 @@ describe('SteamGameCard', () => {
     game_name: 'Counter-Strike: Global Offensive',
     igdb_id: null,
     game_id: null,
+    user_game_id: null,
     ignored: false,
     created_at: '2025-01-10T10:00:00Z',
     updated_at: '2025-01-10T10:00:00Z'

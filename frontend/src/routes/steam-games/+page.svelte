@@ -1592,6 +1592,7 @@
               games={inSyncGames}
               emptyMessage="No games synced yet"
               showUnsyncButton={true}
+              showGameLink={true}
               onRefresh={loadTabData}
             />
           {:else}

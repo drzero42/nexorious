@@ -12,6 +12,7 @@
     onUnsync?: (() => void) | undefined;
     showActions?: boolean;
     isLoading?: boolean;
+    showGameLink?: boolean;
   }
 
   let {
@@ -24,7 +25,8 @@
     onUnmatch,
     onUnsync,
     showActions = true,
-    isLoading = false
+    isLoading = false,
+    showGameLink = false
   }: Props = $props();
 
   function formatDate(dateString: string): string {
@@ -87,9 +89,18 @@
     <!-- Steam Game Info -->
     <div class="flex-1 min-w-0">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-medium text-gray-900 truncate">
-          {game.game_name}
-        </h3>
+        {#if showGameLink && game.user_game_id}
+          <a 
+            href="/games/{game.user_game_id}" 
+            class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200 block"
+          >
+            {game.game_name}
+          </a>
+        {:else}
+          <h3 class="text-sm font-medium text-gray-900 truncate">
+            {game.game_name}
+          </h3>
+        {/if}
         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {status.color}">
           <span class="mr-1">{status.icon}</span>
           {status.label}

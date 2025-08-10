@@ -9,6 +9,7 @@ export interface SteamGameResponse {
   game_name: string;
   igdb_id: string | null;
   game_id: string | null;
+  user_game_id: string | null;
   ignored: boolean;
   created_at: string;
   updated_at: string;
