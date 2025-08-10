@@ -2,10 +2,10 @@
  import { userGames, platforms, ui } from '$lib/stores';
  import { onMount } from 'svelte';
  import { goto } from '$app/navigation';
- import { RouteGuard, Pagination, PlatformBadges } from '$lib/components';
+ import { RouteGuard, Pagination, PlatformBadges, PlatformSelector } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
- import { PlayStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest } from '$lib/stores/user-games.svelte';
+ import { PlayStatus, OwnershipStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest, type BulkAddPlatformRequest, type UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
 
  let viewMode: 'grid' | 'list' = 'grid';
  let searchQuery = '';
@@ -33,9 +33,23 @@
  let bulkStatus = '';
  let bulkRating = '';
  let bulkIsLoved = false;
+ let bulkOwnershipStatus = '';
  let isBulkUpdating = false;
 let showDeleteConfirmation = false;
 let isDeletingBulk = false;
+
+// Bulk platform operations state
+let showBulkPlatformAddModal = false;
+let showBulkPlatformRemoveModal = false;
+let isProcessingBulkPlatforms = false;
+
+// Platform selection for bulk operations
+let bulkSelectedPlatforms = new Set<string>();
+let bulkPlatformStorefronts = new Map<string, Set<string>>();
+let bulkPlatformStoreUrls = new Map<string, string>();
+
+// Platform removal selection (currently not implemented)
+// let platformsToRemove: { id: string; platformName: string; storefrontName: string }[] = [];
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
@@ -207,6 +221,7 @@ let isDeletingBulk = false;
   bulkStatus = '';
   bulkRating = '';
   bulkIsLoved = false;
+  bulkOwnershipStatus = '';
  }
 
  function closeBulkModal() {
@@ -228,6 +243,7 @@ let isDeletingBulk = false;
    if (bulkStatus) updateData.play_status = bulkStatus as PlayStatus;
    if (bulkRating) updateData.personal_rating = parseFloat(bulkRating);
    if (bulkIsLoved) updateData.is_loved = true;
+   if (bulkOwnershipStatus) updateData.ownership_status = bulkOwnershipStatus as OwnershipStatus;
 
    await userGames.bulkUpdateStatus(updateData);
    
@@ -300,6 +316,130 @@ async function confirmBulkDelete() {
   isDeletingBulk = false;
  }
 }
+
+// Bulk Platform Operations Functions
+function resetBulkPlatformState() {
+  bulkSelectedPlatforms = new Set<string>();
+  bulkPlatformStorefronts = new Map<string, Set<string>>();
+  bulkPlatformStoreUrls = new Map<string, string>();
+  // platformsToRemove = []; // Currently not implemented
+}
+
+function closeBulkPlatformAddModal() {
+  showBulkPlatformAddModal = false;
+  resetBulkPlatformState();
+}
+
+function closeBulkPlatformRemoveModal() {
+  showBulkPlatformRemoveModal = false;
+  resetBulkPlatformState();
+}
+
+// Platform selection functions for bulk operations (similar to game editing)
+function toggleBulkPlatform(platformId: string) {
+  if (bulkSelectedPlatforms.has(platformId)) {
+    bulkSelectedPlatforms.delete(platformId);
+    bulkPlatformStorefronts.delete(platformId);
+    bulkPlatformStoreUrls.delete(platformId);
+  } else {
+    bulkSelectedPlatforms.add(platformId);
+    
+    const storefronts = new Set<string>();
+    const platform = $platforms.platforms.find(p => p.id === platformId);
+    
+    if (platform?.default_storefront_id) {
+      storefronts.add(platform.default_storefront_id);
+    }
+    
+    bulkPlatformStorefronts.set(platformId, storefronts);
+  }
+  
+  bulkSelectedPlatforms = new Set(bulkSelectedPlatforms);
+  bulkPlatformStorefronts = new Map(bulkPlatformStorefronts);
+  bulkPlatformStoreUrls = new Map(bulkPlatformStoreUrls);
+}
+
+function toggleBulkStorefrontForPlatform(platformId: string, storefrontId: string) {
+  const storefronts = bulkPlatformStorefronts.get(platformId) || new Set<string>();
+  if (storefronts.has(storefrontId)) {
+    storefronts.delete(storefrontId);
+  } else {
+    storefronts.add(storefrontId);
+  }
+  
+  bulkPlatformStorefronts.set(platformId, storefronts);
+  bulkPlatformStorefronts = new Map(bulkPlatformStorefronts);
+}
+
+function setBulkStoreUrlForPlatform(platformId: string, url: string) {
+  if (url.trim()) {
+    bulkPlatformStoreUrls.set(platformId, url);
+  } else {
+    bulkPlatformStoreUrls.delete(platformId);
+  }
+  bulkPlatformStoreUrls = new Map(bulkPlatformStoreUrls);
+}
+
+async function applyBulkAddPlatforms() {
+  if (selectedGameIds.size === 0 || bulkSelectedPlatforms.size === 0) return;
+
+  isProcessingBulkPlatforms = true;
+  
+  try {
+    // Build platform associations array
+    const platformAssociations: UserGamePlatformCreateRequest[] = [];
+    
+    for (const platformId of bulkSelectedPlatforms) {
+      const storefronts = bulkPlatformStorefronts.get(platformId) || new Set();
+      const storeUrl = bulkPlatformStoreUrls.get(platformId);
+      
+      if (storefronts.size === 0) {
+        // Add platform without storefront
+        platformAssociations.push({
+          platform_id: platformId,
+          ...(storeUrl && { store_url: storeUrl })
+        });
+      } else {
+        // Add platform with each selected storefront
+        for (const storefrontId of storefronts) {
+          platformAssociations.push({
+            platform_id: platformId,
+            storefront_id: storefrontId,
+            ...(storeUrl && { store_url: storeUrl })
+          });
+        }
+      }
+    }
+    
+    const request: BulkAddPlatformRequest = {
+      user_game_ids: Array.from(selectedGameIds),
+      platform_associations: platformAssociations
+    };
+
+    await userGames.bulkAddPlatforms(request);
+    
+    ui.showSuccess(
+      'Bulk Platform Add Successful', 
+      `Added platforms to ${selectedGameIds.size} game${selectedGameIds.size !== 1 ? 's' : ''} successfully.`
+    );
+    
+    clearSelection();
+    closeBulkPlatformAddModal();
+  } catch (error) {
+    console.error('Failed to bulk add platforms:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    ui.showError(
+      'Bulk Platform Add Failed', 
+      `Failed to add platforms: ${errorMessage}`
+    );
+    closeBulkPlatformAddModal();
+  } finally {
+    isProcessingBulkPlatforms = false;
+  }
+}
+
+// Bulk platform removal functionality is currently not implemented
+// as it requires complex UI to select which specific platform associations to remove
 </script>
 
 <svelte:head>
@@ -376,7 +516,19 @@ async function confirmBulkDelete() {
         on:click={() => showBulkModal = true}
         class="btn-secondary text-sm px-3 py-1"
        >
-        Bulk Actions
+        Bulk Edit
+       </button>
+       <button
+        on:click={() => showBulkPlatformAddModal = true}
+        class="btn-secondary text-sm px-3 py-1 ml-2"
+       >
+        Add Platforms
+       </button>
+       <button
+        on:click={() => showBulkPlatformRemoveModal = true}
+        class="btn-secondary text-sm px-3 py-1 ml-2"
+       >
+        Remove Platforms
        </button>
       {/if}
      </div>
@@ -995,6 +1147,25 @@ async function confirmBulkDelete() {
          </select>
         </div>
 
+        <!-- Ownership Status Update -->
+        <div>
+         <label for="bulkOwnershipStatus" class="block text-sm font-medium text-gray-700">
+          Ownership Status
+         </label>
+         <select
+          id="bulkOwnershipStatus"
+          bind:value={bulkOwnershipStatus}
+          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+         >
+          <option value="">No change</option>
+          <option value="owned">Owned</option>
+          <option value="borrowed">Borrowed</option>
+          <option value="rented">Rented</option>
+          <option value="subscription">Subscription</option>
+          <option value="no_longer_owned">No Longer Owned</option>
+         </select>
+        </div>
+
         <!-- Rating Update -->
         <div>
          <label for="bulkRating" class="block text-sm font-medium text-gray-700">
@@ -1121,6 +1292,156 @@ async function confirmBulkDelete() {
       disabled={isDeletingBulk}
       on:click={cancelBulkDelete}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Cancel
+     </button>
+    </div>
+   </div>
+  </div>
+{/if}
+
+<!-- Bulk Add Platforms Modal -->
+{#if showBulkPlatformAddModal}
+ <!-- svelte-ignore a11y-click-events-have-key-events -->
+ <!-- svelte-ignore a11y-no-static-element-interactions -->
+ <div 
+  class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
+  role="dialog" 
+  aria-modal="true" 
+  aria-labelledby="bulk-platform-add-title"
+  tabindex="-1" 
+  on:click={closeBulkPlatformAddModal} 
+  on:keydown={(e) => e.key === 'Escape' && closeBulkPlatformAddModal()}
+ >
+  <div class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+     <div class="sm:flex sm:items-start">
+      <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
+       <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+       </svg>
+      </div>
+      <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="bulk-platform-add-title">
+        Add Platforms to Selected Games
+       </h3>
+       <div class="mt-2">
+        <p class="text-sm text-gray-500">
+         Add platform/storefront associations to {selectedGameIds.size} selected game{selectedGameIds.size !== 1 ? 's' : ''}
+        </p>
+       </div>
+
+       <div class="mt-6">
+        <PlatformSelector
+          bind:selectedPlatforms={bulkSelectedPlatforms}
+          bind:platformStorefronts={bulkPlatformStorefronts}
+          bind:platformStoreUrls={bulkPlatformStoreUrls}
+          igdbPlatformNames={[]}
+          on:platform-toggle={(e) => toggleBulkPlatform(e.detail.platformId)}
+          on:storefront-toggle={(e) => toggleBulkStorefrontForPlatform(e.detail.platformId, e.detail.storefrontId)}
+          on:store-url-change={(e) => setBulkStoreUrlForPlatform(e.detail.platformId, e.detail.url)}
+        />
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+     <button
+      type="button"
+      disabled={isProcessingBulkPlatforms || bulkSelectedPlatforms.size === 0}
+      on:click={applyBulkAddPlatforms}
+      class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      {#if isProcessingBulkPlatforms}
+       <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+       </svg>
+       Adding...
+      {:else}
+       Add Platforms
+      {/if}
+     </button>
+     <button
+      type="button"
+      disabled={isProcessingBulkPlatforms}
+      on:click={closeBulkPlatformAddModal}
+      class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Cancel
+     </button>
+    </div>
+   </div>
+  </div>
+{/if}
+
+<!-- Bulk Remove Platforms Modal -->
+{#if showBulkPlatformRemoveModal}
+ <!-- svelte-ignore a11y-click-events-have-key-events -->
+ <!-- svelte-ignore a11y-no-static-element-interactions -->
+ <div 
+  class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
+  role="dialog" 
+  aria-modal="true" 
+  aria-labelledby="bulk-platform-remove-title"
+  tabindex="-1" 
+  on:click={closeBulkPlatformRemoveModal} 
+  on:keydown={(e) => e.key === 'Escape' && closeBulkPlatformRemoveModal()}
+ >
+  <div class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+     <div class="sm:flex sm:items-start">
+      <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+       <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+       </svg>
+      </div>
+      <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="bulk-platform-remove-title">
+        Remove Platforms from Selected Games
+       </h3>
+       <div class="mt-2">
+        <p class="text-sm text-gray-500">
+         Select platform/storefront associations to remove from {selectedGameIds.size} selected game{selectedGameIds.size !== 1 ? 's' : ''}
+        </p>
+       </div>
+
+       <div class="mt-6">
+        <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
+         <div class="flex">
+          <div class="flex-shrink-0">
+           <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.517-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+           </svg>
+          </div>
+          <div class="ml-3">
+           <h3 class="text-sm font-medium text-yellow-800">
+            Coming Soon
+           </h3>
+           <div class="mt-2 text-sm text-yellow-700">
+            <p>
+             Platform removal functionality requires identifying which specific platform associations exist across selected games. This feature will be implemented with backend support.
+            </p>
+           </div>
+          </div>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+     <button
+      type="button"
+      disabled={true}
+      class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+     >
+      Remove Platforms (Coming Soon)
+     </button>
+     <button
+      type="button"
+      on:click={closeBulkPlatformRemoveModal}
+      class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm"
      >
       Cancel
      </button>
