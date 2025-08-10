@@ -129,11 +129,24 @@ class BulkStatusUpdateRequest(BaseModel):
     play_status: Optional[PlayStatus] = Field(None, description="New play status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="New rating")
     is_loved: Optional[bool] = Field(None, description="New loved status")
+    ownership_status: Optional[OwnershipStatus] = Field(None, description="New ownership status")
 
 
 class BulkDeleteRequest(BaseModel):
     """Request schema for bulk deletion operations."""
     user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to delete")
+
+
+class BulkAddPlatformRequest(BaseModel):
+    """Request schema for bulk platform addition operations."""
+    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to add platforms to")
+    platform_associations: List[UserGamePlatformCreateRequest] = Field(..., min_length=1, description="Platform associations to add")
+
+
+class BulkRemovePlatformRequest(BaseModel):
+    """Request schema for bulk platform removal operations."""
+    user_game_ids: List[str] = Field(..., min_length=1, description="List of user game IDs to remove platforms from")
+    platform_association_ids: List[str] = Field(..., min_length=1, description="Platform association IDs to remove")
 
 
 class CollectionStatsResponse(BaseModel):

@@ -107,10 +107,21 @@ export interface BulkStatusUpdateRequest {
   play_status?: PlayStatus;
   personal_rating?: number | null;
   is_loved?: boolean;
+  ownership_status?: OwnershipStatus;
 }
 
 export interface BulkDeleteRequest {
   user_game_ids: string[];
+}
+
+export interface BulkAddPlatformRequest {
+  user_game_ids: string[];
+  platform_associations: UserGamePlatformCreateRequest[];
+}
+
+export interface BulkRemovePlatformRequest {
+  user_game_ids: string[];
+  platform_association_ids: string[];
 }
 
 export interface SuccessResponse {
@@ -480,6 +491,9 @@ function createUserGamesStore() {
               if (data.is_loved !== undefined) {
                 updatedUserGame.is_loved = data.is_loved;
               }
+              if (data.ownership_status !== undefined) {
+                updatedUserGame.ownership_status = data.ownership_status;
+              }
               
               // Update the timestamp
               updatedUserGame.updated_at = new Date().toISOString();
@@ -521,6 +535,56 @@ function createUserGamesStore() {
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk delete games';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Bulk add platforms to games
+    bulkAddPlatforms: async (data: BulkAddPlatformRequest) => {
+      state = { ...state, isLoading: true, error: null };
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/user-games/bulk-add-platforms`, {
+          method: 'POST',
+          body: JSON.stringify(data),
+        });
+        
+        const result: SuccessResponse = await response.json();
+
+        // Reload the affected games to get updated platform associations
+        // For now, we'll just trigger a reload of the entire list to ensure consistency
+        // In a more optimized version, we could update the state locally
+        await store.loadUserGames({}, state.pagination.page, state.pagination.per_page);
+
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to bulk add platforms';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Bulk remove platforms from games
+    bulkRemovePlatforms: async (data: BulkRemovePlatformRequest) => {
+      state = { ...state, isLoading: true, error: null };
+
+      try {
+        const response = await apiCall(`${config.apiUrl}/user-games/bulk-remove-platforms`, {
+          method: 'DELETE',
+          body: JSON.stringify(data),
+        });
+        
+        const result: SuccessResponse = await response.json();
+
+        // Reload the affected games to get updated platform associations
+        // For now, we'll just trigger a reload of the entire list to ensure consistency
+        // In a more optimized version, we could update the state locally
+        await store.loadUserGames({}, state.pagination.page, state.pagination.per_page);
+
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to bulk remove platforms';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
