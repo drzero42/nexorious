@@ -102,6 +102,73 @@ export interface SteamGameAutoMatchSingleResponse {
   confidence: number | null;
 }
 
+// Batch processing interfaces
+export interface BatchSessionStartResponse {
+  session_id: string;
+  total_items: number;
+  operation_type: string;
+  status: string;
+  message: string;
+}
+
+export interface BatchNextResponse {
+  session_id: string;
+  batch_processed: number;
+  batch_successful: number;
+  batch_failed: number;
+  batch_errors: string[];
+  current_batch_items: SteamGameResponse[];
+  total_items: number;
+  processed_items: number;
+  successful_items: number;
+  failed_items: number;
+  remaining_items: number;
+  progress_percentage: number;
+  status: string;
+  is_complete: boolean;
+  message: string;
+}
+
+export interface BatchStatusResponse {
+  session_id: string;
+  operation_type: string;
+  total_items: number;
+  processed_items: number;
+  successful_items: number;
+  failed_items: number;
+  remaining_items: number;
+  progress_percentage: number;
+  status: string;
+  is_complete: boolean;
+  created_at: string;
+  updated_at: string;
+  errors: string[];
+}
+
+export interface BatchCancelResponse {
+  session_id: string;
+  status: string;
+  processed_items: number;
+  successful_items: number;
+  failed_items: number;
+  message: string;
+}
+
+export interface BatchSessionState {
+  sessionId: string;
+  operationType: 'auto_match' | 'sync';
+  totalItems: number;
+  processedItems: number;
+  successfulItems: number;
+  failedItems: number;
+  remainingItems: number;
+  progressPercentage: number;
+  status: string;
+  isComplete: boolean;
+  errors: string[];
+  isProcessing: boolean;
+}
+
 export type SteamGameStatusFilter = 'unmatched' | 'matched' | 'ignored' | 'synced';
 
 export interface SteamGamesState {
@@ -116,6 +183,9 @@ export interface SteamGamesState {
   isUnsyncingAll: boolean;
   error: string | null;
   lastRefresh: Date | null;
+  // Batch processing state
+  activeBatchSession: BatchSessionState | null;
+  isBatchProcessing: boolean;
 }
 
 const initialState: SteamGamesState = {
@@ -129,7 +199,9 @@ const initialState: SteamGamesState = {
   isUnmatchingAll: false,
   isUnsyncingAll: false,
   error: null,
-  lastRefresh: null
+  lastRefresh: null,
+  activeBatchSession: null,
+  isBatchProcessing: false
 };
 
 function createSteamGamesStore() {
@@ -740,6 +812,348 @@ function createSteamGamesStore() {
         ui.showError(errorMessage);
         throw error;
       }
+    },
+
+    // ===== BATCH PROCESSING METHODS =====
+
+    // Start batch auto-matching session
+    async startBatchAutoMatch(): Promise<BatchSessionStartResponse> {
+      console.log('🚀 [BATCH-AUTO-MATCH] Starting batch auto-match session...');
+      state = { ...state, error: null, isBatchProcessing: true };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/batch/auto-match/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.startBatchAutoMatch();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to start batch auto-match session');
+        }
+
+        const data = await response.json() as BatchSessionStartResponse;
+        
+        // Initialize batch session state
+        if (data.session_id) {
+          state = {
+            ...state,
+            activeBatchSession: {
+              sessionId: data.session_id,
+              operationType: 'auto_match',
+              totalItems: data.total_items,
+              processedItems: 0,
+              successfulItems: 0,
+              failedItems: 0,
+              remainingItems: data.total_items,
+              progressPercentage: 0,
+              status: data.status,
+              isComplete: false,
+              errors: [],
+              isProcessing: false
+            }
+          };
+        }
+
+        ui.showSuccess(data.message);
+        console.log('✅ [BATCH-AUTO-MATCH] Session started:', data);
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to start batch auto-match session';
+        state = { ...state, error: errorMessage, isBatchProcessing: false };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Process next batch in auto-matching session
+    async processBatchAutoMatch(sessionId: string): Promise<BatchNextResponse> {
+      console.log(`🔄 [BATCH-AUTO-MATCH] Processing next batch for session ${sessionId}...`);
+      
+      if (state.activeBatchSession) {
+        state.activeBatchSession.isProcessing = true;
+        state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/batch/auto-match/${sessionId}/next`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.processBatchAutoMatch(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to process batch');
+        }
+
+        const data = await response.json() as BatchNextResponse;
+
+        // Update batch session state
+        if (state.activeBatchSession && state.activeBatchSession.sessionId === sessionId) {
+          state.activeBatchSession = {
+            ...state.activeBatchSession,
+            processedItems: data.processed_items,
+            successfulItems: data.successful_items,
+            failedItems: data.failed_items,
+            remainingItems: data.remaining_items,
+            progressPercentage: data.progress_percentage,
+            status: data.status,
+            isComplete: data.is_complete,
+            errors: [...state.activeBatchSession.errors, ...data.batch_errors],
+            isProcessing: false
+          };
+          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+        }
+
+        console.log('✅ [BATCH-AUTO-MATCH] Batch processed:', data);
+        return data;
+      } catch (error) {
+        if (state.activeBatchSession) {
+          state.activeBatchSession.isProcessing = false;
+          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+        }
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process batch';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Start batch sync session
+    async startBatchSync(): Promise<BatchSessionStartResponse> {
+      console.log('🚀 [BATCH-SYNC] Starting batch sync session...');
+      state = { ...state, error: null, isBatchProcessing: true };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/batch/sync/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.startBatchSync();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to start batch sync session');
+        }
+
+        const data = await response.json() as BatchSessionStartResponse;
+        
+        // Initialize batch session state
+        if (data.session_id) {
+          state = {
+            ...state,
+            activeBatchSession: {
+              sessionId: data.session_id,
+              operationType: 'sync',
+              totalItems: data.total_items,
+              processedItems: 0,
+              successfulItems: 0,
+              failedItems: 0,
+              remainingItems: data.total_items,
+              progressPercentage: 0,
+              status: data.status,
+              isComplete: false,
+              errors: [],
+              isProcessing: false
+            }
+          };
+        }
+
+        ui.showSuccess(data.message);
+        console.log('✅ [BATCH-SYNC] Session started:', data);
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to start batch sync session';
+        state = { ...state, error: errorMessage, isBatchProcessing: false };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Process next batch in sync session
+    async processBatchSync(sessionId: string): Promise<BatchNextResponse> {
+      console.log(`🔄 [BATCH-SYNC] Processing next sync batch for session ${sessionId}...`);
+      
+      if (state.activeBatchSession) {
+        state.activeBatchSession.isProcessing = true;
+        state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+      }
+
+      try {
+        const response = await fetch(`${config.apiUrl}/steam-games/batch/sync/${sessionId}/next`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.processBatchSync(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to process sync batch');
+        }
+
+        const data = await response.json() as BatchNextResponse;
+
+        // Update batch session state
+        if (state.activeBatchSession && state.activeBatchSession.sessionId === sessionId) {
+          state.activeBatchSession = {
+            ...state.activeBatchSession,
+            processedItems: data.processed_items,
+            successfulItems: data.successful_items,
+            failedItems: data.failed_items,
+            remainingItems: data.remaining_items,
+            progressPercentage: data.progress_percentage,
+            status: data.status,
+            isComplete: data.is_complete,
+            errors: [...state.activeBatchSession.errors, ...data.batch_errors],
+            isProcessing: false
+          };
+          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+        }
+
+        console.log('✅ [BATCH-SYNC] Batch processed:', data);
+        return data;
+      } catch (error) {
+        if (state.activeBatchSession) {
+          state.activeBatchSession.isProcessing = false;
+          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+        }
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process sync batch';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Cancel batch operation
+    async cancelBatchOperation(sessionId: string): Promise<BatchCancelResponse> {
+      console.log(`❌ [BATCH-CANCEL] Cancelling batch session ${sessionId}...`);
+
+      try {
+        const operationType = state.activeBatchSession?.operationType || 'auto_match';
+        const endpoint = operationType === 'auto_match' 
+          ? `${config.apiUrl}/steam-games/batch/auto-match/${sessionId}`
+          : `${config.apiUrl}/steam-games/batch/sync/${sessionId}`;
+
+        const response = await fetch(endpoint, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.cancelBatchOperation(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to cancel batch operation');
+        }
+
+        const data = await response.json() as BatchCancelResponse;
+        
+        // Clear batch session state
+        state = { 
+          ...state, 
+          activeBatchSession: null,
+          isBatchProcessing: false
+        };
+
+        ui.showSuccess(data.message);
+        console.log('✅ [BATCH-CANCEL] Session cancelled:', data);
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to cancel batch operation';
+        state = { ...state, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Get batch status
+    async getBatchStatus(sessionId: string): Promise<BatchStatusResponse> {
+      try {
+        const operationType = state.activeBatchSession?.operationType || 'auto_match';
+        const endpoint = operationType === 'auto_match'
+          ? `${config.apiUrl}/steam-games/batch/auto-match/${sessionId}/status`
+          : `${config.apiUrl}/steam-games/batch/sync/${sessionId}/status`;
+
+        const response = await fetch(endpoint, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getBatchStatus(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to get batch status');
+        }
+
+        const data = await response.json() as BatchStatusResponse;
+        
+        // Update batch session state if it matches current session
+        if (state.activeBatchSession && state.activeBatchSession.sessionId === sessionId) {
+          state.activeBatchSession = {
+            ...state.activeBatchSession,
+            processedItems: data.processed_items,
+            successfulItems: data.successful_items,
+            failedItems: data.failed_items,
+            remainingItems: data.remaining_items,
+            progressPercentage: data.progress_percentage,
+            status: data.status,
+            isComplete: data.is_complete,
+            errors: data.errors
+          };
+          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
+        }
+
+        return data;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get batch status';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Clear batch session
+    clearBatchSession() {
+      state = { 
+        ...state, 
+        activeBatchSession: null,
+        isBatchProcessing: false
+      };
     },
 
     // Clear error state

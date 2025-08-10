@@ -13,6 +13,9 @@ from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
 from .api.steam_config import router as steam_router
 from .api.steam_games import router as steam_games_router
+from .api.batch_auto_match import router as batch_auto_match_router
+from .api.batch_sync import router as batch_sync_router
+from .services.batch_session_manager import startup_batch_session_manager, shutdown_batch_session_manager
 
 # Configure logging
 def get_log_level(level_str: str) -> int:
@@ -43,9 +46,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up Nexorious Game Collection Management Service")
     run_alembic_migrations()
     logger.info("Database initialized")
+    await startup_batch_session_manager()
+    logger.info("Batch session manager initialized")
     yield
     # Shutdown
     logger.info("Shutting down Nexorious Game Collection Management Service")
+    await shutdown_batch_session_manager()
+    logger.info("Batch session manager shutdown completed")
 
 # Create FastAPI app
 app = FastAPI(
@@ -73,6 +80,8 @@ app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
 app.include_router(steam_router, prefix="/api")
 app.include_router(steam_games_router, prefix="/api")
+app.include_router(batch_auto_match_router, prefix="/api")
+app.include_router(batch_sync_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:

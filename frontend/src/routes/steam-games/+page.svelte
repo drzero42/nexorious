@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, SteamGamesTable } from '$lib/components';
+  import { RouteGuard, SteamGamesTable, BatchProgressModal } from '$lib/components';
   import { steam, ui, auth } from '$lib/stores';
   import { steamGames, type SteamGameResponse, type SteamGamesListResponse } from '$lib/stores/steam-games.svelte';
   import { steamAvailability } from '$lib/stores/steam-availability.svelte';
@@ -51,6 +51,12 @@
   let syncedCount = $state(0);
   let totalCount = $state(0);
 
+  // Batch processing state
+  let showBatchModal = $state(false);
+  let batchProcessingActive = $state(false);
+  let processingTimeout: NodeJS.Timeout | null = $state(null);
+  let isCancelling = $state(false);
+
   onMount(async () => {
     // Check if Steam Games feature is available
     if (!steamAvailability.isAvailable) {
@@ -84,6 +90,11 @@
     } finally {
       isLoading = false;
     }
+  });
+
+  onDestroy(() => {
+    // Clean up any running batch processing intervals to prevent memory leaks
+    stopBatchProcessing();
   });
 
   // Helper function to update counts from all games data
@@ -254,14 +265,7 @@
     }
   }
 
-  async function handleSyncAll() {
-    try {
-      await steamGames.syncAllMatchedGames();
-      await loadSteamGames(); // Refresh data
-    } catch (error) {
-      // Error handled in store
-    }
-  }
+  // Remove handleSyncAll - replaced by handleBatchSync
 
   async function handleUnmatchAll() {
     if (matchedCount === 0) {
@@ -312,68 +316,197 @@
     }
   }
 
-  async function handleAutoMatch() {
-    console.log('🚀 [AUTO-MATCH] Starting auto-match process...');
-    console.log('📊 [AUTO-MATCH] Pre-match counts:', {
-      unmatched: unmatchedCount,
-      matched: matchedCount,
-      ignored: ignoredCount,
-      synced: syncedCount,
-      activeTab: activeTab,
-      canAccessGameTabs: canAccessGameTabs
-    });
+  async function handleBatchAutoMatch() {
+    if (unmatchedCount === 0) {
+      ui.showInfo('No unmatched games found to auto-match.');
+      return;
+    }
+    
+    const confirmed = confirm(
+      `Start batch auto-matching for ${unmatchedCount} unmatched games? ` +
+      `This will process games in small batches and you can cancel at any time.`
+    );
+    
+    if (!confirmed) return;
 
     try {
-      console.log('🔄 [AUTO-MATCH] Calling steamGames.retryAutoMatching()...');
-      const result = await steamGames.retryAutoMatching();
-      console.log('✅ [AUTO-MATCH] Auto-match API response:', result);
+      console.log('🚀 [BATCH-AUTO-MATCH] Starting batch auto-match process...');
       
-      // Optimistically update counts immediately based on auto-match result
-      if (result.successful_matches > 0) {
-        const oldUnmatched = unmatchedCount;
-        const oldMatched = matchedCount;
-        
-        // Move games from unmatched to matched count optimistically
-        unmatchedCount = Math.max(0, unmatchedCount - result.successful_matches);
-        matchedCount = matchedCount + result.successful_matches;
-        
-        console.log('⚡ [AUTO-MATCH] Optimistic count updates:', {
-          unmatchedCount: { old: oldUnmatched, new: unmatchedCount },
-          matchedCount: { old: oldMatched, new: matchedCount },
-          successful_matches: result.successful_matches
-        });
+      // Start the batch session
+      const session = await steamGames.startBatchAutoMatch();
+      
+      if (!session.session_id) {
+        // No games to process
+        return;
       }
       
-      // Switch to "Needs Attention" tab immediately if matches were found
-      if (result.successful_matches > 0 && canAccessGameTabs) {
-        console.log('🔀 [AUTO-MATCH] Switching to needs-attention tab...');
-        await handleTabChange('needs-attention');
-        console.log('✅ [AUTO-MATCH] Tab switched, activeTab is now:', activeTab);
-      }
+      // Show progress modal
+      showBatchModal = true;
+      batchProcessingActive = true;
       
-      // Add delay to ensure backend transaction is fully committed, then refresh
-      console.log('⏱️  [AUTO-MATCH] Waiting 500ms for backend transaction commit...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Refresh data to get accurate state and verify our optimistic updates
-      console.log('🔄 [AUTO-MATCH] Refreshing data via loadSteamGames()...');
-      await loadSteamGames();
-      
-      console.log('📊 [AUTO-MATCH] Post-refresh counts:', {
-        unmatched: unmatchedCount,
-        matched: matchedCount,
-        ignored: ignoredCount,
-        synced: syncedCount,
-        activeTab: activeTab
-      });
-      
-      console.log('🎯 [AUTO-MATCH] Sync All button should be visible:', matchedCount > 0);
+      // Start interval-based batch processing
+      startBatchProcessing(session.session_id, 'auto_match');
       
     } catch (error) {
-      console.error('❌ [AUTO-MATCH] Error during auto-match:', error);
-      // On error, refresh data to restore correct state
-      await loadSteamGames();
+      console.error('❌ [BATCH-AUTO-MATCH] Error during batch auto-match:', error);
+      batchProcessingActive = false;
     }
+  }
+
+  async function handleBatchSync() {
+    if (matchedCount === 0) {
+      ui.showInfo('No matched games found to sync.');
+      return;
+    }
+    
+    const confirmed = confirm(
+      `Start batch sync for ${matchedCount} matched games? ` +
+      `This will add games to your collection in small batches and you can cancel at any time.`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      console.log('🚀 [BATCH-SYNC] Starting batch sync process...');
+      
+      // Start the batch session
+      const session = await steamGames.startBatchSync();
+      
+      if (!session.session_id) {
+        // No games to process
+        return;
+      }
+      
+      // Show progress modal
+      showBatchModal = true;
+      batchProcessingActive = true;
+      
+      // Start interval-based batch processing
+      startBatchProcessing(session.session_id, 'sync');
+      
+    } catch (error) {
+      console.error('❌ [BATCH-SYNC] Error during batch sync:', error);
+      batchProcessingActive = false;
+    }
+  }
+
+  function startBatchProcessing(sessionId: string, operationType: 'auto_match' | 'sync') {
+    console.log(`🚀 [BATCH-${operationType.toUpperCase()}] Starting sequential batch processing`);
+    
+    // Clear any existing timeout
+    if (processingTimeout) {
+      clearTimeout(processingTimeout);
+    }
+    
+    // Start the sequential processing chain
+    processNextBatch(sessionId, operationType);
+  }
+  
+  async function processNextBatch(sessionId: string, operationType: 'auto_match' | 'sync') {
+    try {
+      // Check for cancellation immediately - before any processing
+      if (!batchProcessingActive || isCancelling) {
+        console.log(`❌ [BATCH-${operationType.toUpperCase()}] Processing cancelled by user`);
+        stopBatchProcessing();
+        return;
+      }
+      
+      const batchSession = steamGames.value.activeBatchSession;
+      
+      // Check if processing is complete
+      if (!batchSession || batchSession.isComplete || batchSession.status !== 'active') {
+        console.log(`✅ [BATCH-${operationType.toUpperCase()}] Batch processing completed`);
+        await completeBatchProcessing();
+        return;
+      }
+      
+      console.log(`🔄 [BATCH-${operationType.toUpperCase()}] Processing next batch...`);
+      
+      // Process next batch
+      if (operationType === 'auto_match') {
+        await steamGames.processBatchAutoMatch(sessionId);
+      } else {
+        await steamGames.processBatchSync(sessionId);
+      }
+      
+      // Check for cancellation again after batch processing, before UI refresh
+      if (!batchProcessingActive || isCancelling) {
+        console.log(`❌ [BATCH-${operationType.toUpperCase()}] Processing cancelled after batch completion`);
+        stopBatchProcessing();
+        return;
+      }
+      
+      // Refresh the current tab data to show progress
+      await loadTabData();
+      
+      // Check for cancellation one more time before scheduling next batch
+      if (!batchProcessingActive || isCancelling) {
+        console.log(`❌ [BATCH-${operationType.toUpperCase()}] Processing cancelled after UI refresh`);
+        stopBatchProcessing();
+        return;
+      }
+      
+      // Schedule next batch after a short delay (sequential, not parallel)
+      processingTimeout = setTimeout(() => {
+        processNextBatch(sessionId, operationType);
+      }, 50);
+      
+    } catch (error) {
+      console.error(`❌ [BATCH-${operationType.toUpperCase()}] Error during batch processing:`, error);
+      stopBatchProcessing();
+    }
+  }
+
+  async function completeBatchProcessing() {
+    console.log('🎉 [BATCH-COMPLETE] Completing batch processing...');
+    stopBatchProcessing();
+    
+    // Final refresh when done
+    try {
+      await loadSteamGames();
+    } catch (error) {
+      console.error('❌ [BATCH-COMPLETE] Error during final refresh:', error);
+    }
+  }
+
+  function stopBatchProcessing() {
+    console.log('⏹️ [BATCH-STOP] Stopping batch processing...');
+    
+    if (processingTimeout) {
+      clearTimeout(processingTimeout);
+      processingTimeout = null;
+    }
+    
+    batchProcessingActive = false;
+    isCancelling = false;
+  }
+
+  function handleBatchModalClose() {
+    console.log('🔄 [MODAL-CLOSE] Closing batch modal...');
+    showBatchModal = false;
+    stopBatchProcessing();
+    steamGames.clearBatchSession();
+  }
+
+  async function handleBatchCancel() {
+    console.log('❌ [CANCEL] User requested cancellation...');
+    
+    // Set cancellation flag immediately for responsive UI
+    isCancelling = true;
+    
+    // If there's an active session, cancel it properly
+    const sessionId = steamGames.value.activeBatchSession?.sessionId;
+    if (sessionId) {
+      try {
+        await steamGames.cancelBatchOperation(sessionId);
+      } catch (error) {
+        console.error('❌ [CANCEL] Error cancelling batch operation:', error);
+      }
+    }
+    
+    // Stop processing and close modal
+    stopBatchProcessing();
+    showBatchModal = false;
   }
 
   async function handleTabChange(tab: 'needs-attention' | 'ignored' | 'in-sync' | 'configuration') {
@@ -689,12 +822,12 @@
           
           {#if unmatchedCount > 0}
             <button
-              onclick={handleAutoMatch}
-              disabled={steamGames.value.isAutoMatching}
+              onclick={handleBatchAutoMatch}
+              disabled={steamGames.value.isBatchProcessing || batchProcessingActive}
               class="btn-secondary disabled:opacity-50"
               title="Retry auto-matching for unmatched games"
             >
-              {#if steamGames.value.isAutoMatching}
+              {#if steamGames.value.isBatchProcessing || batchProcessingActive}
                 <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1396,11 +1529,11 @@
                 </div>
                 <div class="flex space-x-3">
                   <button
-                    onclick={handleSyncAll}
-                    disabled={steamGames.value.isSyncing}
+                    onclick={handleBatchSync}
+                    disabled={steamGames.value.isBatchProcessing || batchProcessingActive}
                     class="btn-primary disabled:opacity-50"
                   >
-                    {#if steamGames.value.isSyncing}
+                    {#if steamGames.value.isBatchProcessing || batchProcessingActive}
                       <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1641,3 +1774,11 @@
   </div>
   {/if}
 </RouteGuard>
+
+<!-- Batch Progress Modal -->
+<BatchProgressModal
+  isOpen={showBatchModal}
+  onClose={handleBatchModalClose}
+  onCancel={handleBatchCancel}
+  isCancelling={isCancelling}
+/>

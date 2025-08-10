@@ -16,6 +16,7 @@ export { default as Portal } from './Portal.svelte';
 // Steam Games components
 export { default as SteamGameCard } from './SteamGameCard.svelte';
 export { default as SteamGamesTable } from './SteamGamesTable.svelte';
+export { default as BatchProgressModal } from './BatchProgressModal.svelte';
 
 // Game addition workflow components
 export { default as GameSearchStep } from './GameSearchStep.svelte';
