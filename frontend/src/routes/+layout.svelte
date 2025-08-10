@@ -1,12 +1,17 @@
 <script lang="ts">
   import '../app.css';
   import { auth } from '$lib/stores';
-  import { platforms } from '$lib/stores/platforms.svelte';
+  import { platforms, type Storefront } from '$lib/stores/platforms.svelte';
   import { ToastContainer } from '$lib/components';
   import { steamAvailability } from '$lib/stores/steam-availability.svelte';
+  import { buildIconUrl } from '$lib/utils/icon-utils';
   import { onMount } from 'svelte';
   
   let mobileMenuOpen = false;
+  
+  // Get Steam storefront icon URL
+  $: steamStorefront = $platforms.storefronts.find((storefront: Storefront) => storefront.name === 'steam');
+  $: steamIconUrl = steamStorefront ? buildIconUrl(steamStorefront.icon_url) : null;
   
   onMount(async () => {
     // Check if user is authenticated and refresh token if needed
@@ -97,7 +102,25 @@
                       href="/steam-games"
                       class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                     >
-                      <span class="text-lg">🔥</span>
+                      {#if steamIconUrl}
+                        <img 
+                          src="{steamIconUrl}" 
+                          alt="Steam icon" 
+                          class="w-5 h-5"
+                          loading="lazy"
+                          on:error={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            const fallback = img.nextElementSibling as HTMLElement;
+                            if (img && fallback) {
+                              img.style.display = 'none';
+                              fallback.style.display = 'inline';
+                            }
+                          }}
+                        />
+                        <span class="text-lg hidden">🔥</span>
+                      {:else}
+                        <span class="text-lg">🔥</span>
+                      {/if}
                       Steam Games
                     </a>
                   </li>
@@ -277,7 +300,25 @@
                             on:click={closeMobileMenu}
                             class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                           >
-                            <span class="text-lg">🔥</span>
+                            {#if steamIconUrl}
+                              <img 
+                                src="{steamIconUrl}" 
+                                alt="Steam icon" 
+                                class="w-5 h-5"
+                                loading="lazy"
+                                on:error={(e) => {
+                                  const img = e.target as HTMLImageElement;
+                                  const fallback = img.nextElementSibling as HTMLElement;
+                                  if (img && fallback) {
+                                    img.style.display = 'none';
+                                    fallback.style.display = 'inline';
+                                  }
+                                }}
+                              />
+                              <span class="text-lg hidden">🔥</span>
+                            {:else}
+                              <span class="text-lg">🔥</span>
+                            {/if}
                             Steam Games
                           </a>
                         </li>
