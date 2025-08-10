@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { RouteGuard, SteamGamesTable } from '$lib/components';
   import { steam, ui } from '$lib/stores';
-  import { steamGames, type SteamGameResponse } from '$lib/stores/steam-games.svelte';
+  import { steamGames, type SteamGameResponse, type SteamGamesListResponse } from '$lib/stores/steam-games.svelte';
   import type { SteamUserInfo } from '$lib/stores';
 
   // Page state
@@ -77,6 +77,79 @@
     }
   });
 
+  // Helper function to update counts from all games data
+  function updateCounts(allGames: SteamGamesListResponse) {
+    console.log('📊 [UPDATE-COUNTS] Updating counts from', allGames.games.length, 'games');
+    
+    totalCount = allGames.total;
+    
+    // Separate games by status with detailed logging
+    const unmatchedGamesFiltered = allGames.games.filter((g: SteamGameResponse) => !g.igdb_id && !g.ignored);
+    const matchedGamesFiltered = allGames.games.filter((g: SteamGameResponse) => g.igdb_id && !g.game_id && !g.ignored);
+    const ignoredGamesFiltered = allGames.games.filter((g: SteamGameResponse) => g.ignored);
+    const syncedGamesFiltered = allGames.games.filter((g: SteamGameResponse) => g.game_id);
+    
+    console.log('🔍 [UPDATE-COUNTS] Game categorization detailed:', {
+      unmatched: {
+        count: unmatchedGamesFiltered.length,
+        games: unmatchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, igdb_id: g.igdb_id, ignored: g.ignored }))
+      },
+      matched: {
+        count: matchedGamesFiltered.length,
+        games: matchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, igdb_id: g.igdb_id, game_id: g.game_id, ignored: g.ignored }))
+      },
+      ignored: {
+        count: ignoredGamesFiltered.length,
+        games: ignoredGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, ignored: g.ignored }))
+      },
+      synced: {
+        count: syncedGamesFiltered.length,
+        games: syncedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, game_id: g.game_id }))
+      }
+    });
+    
+    unmatchedCount = unmatchedGamesFiltered.length;
+    matchedCount = matchedGamesFiltered.length;
+    ignoredCount = ignoredGamesFiltered.length;
+    syncedCount = syncedGamesFiltered.length;
+    
+    console.log('📊 [UPDATE-COUNTS] Final count assignments:', {
+      unmatchedCount,
+      matchedCount,
+      ignoredCount,
+      syncedCount,
+      total: totalCount
+    });
+
+    // Return the filtered arrays for use by loadSteamGames
+    return {
+      unmatchedGamesFiltered,
+      matchedGamesFiltered,
+      ignoredGamesFiltered,
+      syncedGamesFiltered
+    };
+  }
+
+  // Hybrid refresh function that preserves search filters while updating counts
+  async function handleIgnoreRefresh() {
+    console.log('🔄 [IGNORE-REFRESH] Starting hybrid refresh to preserve search filter...');
+    try {
+      // First, update counts by loading all games data
+      console.log('📡 [IGNORE-REFRESH] Loading all games for count update...');
+      const allGames = await steamGames.listSteamGames(0, 1000);
+      updateCounts(allGames); // We don't need the returned arrays here, just count updates
+      
+      // Then refresh the current tab with search filter preserved
+      console.log('🔄 [IGNORE-REFRESH] Loading filtered tab data...');
+      await loadTabData();
+      
+      console.log('✅ [IGNORE-REFRESH] Hybrid refresh completed');
+    } catch (error) {
+      console.error('❌ [IGNORE-REFRESH] Failed to refresh:', error);
+      ui.showError('Failed to refresh data');
+    }
+  }
+
   async function loadSteamGames() {
     console.log('🔄 [LOAD-GAMES] Starting loadSteamGames...');
     try {
@@ -97,45 +170,8 @@
         }))
       });
       
-      totalCount = allGames.total;
-      
-      // Separate games by status with detailed logging
-      const unmatchedGamesFiltered = allGames.games.filter(g => !g.igdb_id && !g.ignored);
-      const matchedGamesFiltered = allGames.games.filter(g => g.igdb_id && !g.game_id && !g.ignored);
-      const ignoredGamesFiltered = allGames.games.filter(g => g.ignored);
-      const syncedGamesFiltered = allGames.games.filter(g => g.game_id);
-      
-      console.log('🔍 [LOAD-GAMES] Game categorization detailed:', {
-        unmatched: {
-          count: unmatchedGamesFiltered.length,
-          games: unmatchedGamesFiltered.map(g => ({ name: g.game_name, igdb_id: g.igdb_id, ignored: g.ignored }))
-        },
-        matched: {
-          count: matchedGamesFiltered.length,
-          games: matchedGamesFiltered.map(g => ({ name: g.game_name, igdb_id: g.igdb_id, game_id: g.game_id, ignored: g.ignored }))
-        },
-        ignored: {
-          count: ignoredGamesFiltered.length,
-          games: ignoredGamesFiltered.map(g => ({ name: g.game_name, ignored: g.ignored }))
-        },
-        synced: {
-          count: syncedGamesFiltered.length,
-          games: syncedGamesFiltered.map(g => ({ name: g.game_name, game_id: g.game_id }))
-        }
-      });
-      
-      unmatchedCount = unmatchedGamesFiltered.length;
-      matchedCount = matchedGamesFiltered.length;
-      ignoredCount = ignoredGamesFiltered.length;
-      syncedCount = syncedGamesFiltered.length;
-      
-      console.log('📊 [LOAD-GAMES] Final count assignments:', {
-        unmatchedCount,
-        matchedCount,
-        ignoredCount,
-        syncedCount,
-        total: totalCount
-      });
+      // Update counts using extracted function and get filtered arrays
+      const { unmatchedGamesFiltered, matchedGamesFiltered, ignoredGamesFiltered, syncedGamesFiltered } = updateCounts(allGames);
       
       // Set initial tab based on what needs attention
       if (unmatchedCount > 0 || matchedCount > 0 || ignoredCount > 0) {
@@ -1377,7 +1413,7 @@
                 emptyMessage="No unmatched games found"
                 showMatchButton={true}
                 showIgnoreButton={true}
-                onRefresh={loadSteamGames}
+                onRefresh={handleIgnoreRefresh}
                 collapsible={true}
                 collapsed={unmatchedCollapsed}
                 onToggleCollapse={toggleUnmatchedCollapsed}
@@ -1395,7 +1431,7 @@
                 showSyncButton={true}
                 showIgnoreButton={true}
                 showUnmatchButton={true}
-                onRefresh={loadSteamGames}
+                onRefresh={handleIgnoreRefresh}
                 collapsible={true}
                 collapsed={matchedCollapsed}
                 onToggleCollapse={toggleMatchedCollapsed}
