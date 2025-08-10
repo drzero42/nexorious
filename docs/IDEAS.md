@@ -14,6 +14,9 @@ During import of Darkadia games with non-interactive strategies, all games that 
 ## No direct SQLAlchemy usage
 Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
 
+## Steam Games menu item icon
+The Steam Games menu item should use the Steam icon rather than the current emoji.
+
 ## Steam Games profile setting
 Add a profile setting to allow the user to disable the Steam Games integration functionality. It will hide the Steam Games menu item and will make all Steam Games pages (if visited directly) show a message about this being disabled.
 
