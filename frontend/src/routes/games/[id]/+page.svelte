@@ -11,13 +11,23 @@
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
-  import type { UserGame, PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
+  import type { PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import { auth } from '$lib/stores/auth.svelte';
 
-  let game: UserGame | null = null;
   let isLoading = true;
   let isEditing = false;
   let isUpdatingFromIGDB = false;
+  
+  // Reactive game data from store
+  $: gameId = $page.params.id!;
+  $: game = userGames.selectors.byId(gameId);
+  $: isLoadingStore = userGames.value.isLoading;
+  
+  // Combined loading state
+  $: isLoadingCombined = isLoading || isLoadingStore || userGames.entityState.optimisticUpdates.isPendingFor(gameId);
+  
+  // Visual feedback states for optimistic updates
+  $: hasOptimisticUpdates = userGames.entityState.optimisticUpdates.isPendingFor(gameId);
   let editData: {
     // Personal data
     personal_rating?: number | undefined;
@@ -109,34 +119,32 @@
     console.log('Updated store URLs:', platformStoreUrls);
   }
 
-  $: gameId = $page.params.id!;
-
   onMount(async () => {
     // Load game details and platforms - authentication is handled by RouteGuard
     await Promise.all([
-      loadGame(),
+      ensureGameLoaded(),
       loadPlatforms()
     ]);
   });
 
-  async function loadGame() {
+  async function ensureGameLoaded() {
     try {
       isLoading = true;
-      // Fetch the specific game by ID using the dedicated API method
-      game = await userGames.getUserGame(gameId);
-      
-      if (game) {
-        resetEditData();
-        // Load IGDB platform data for filtering from stored data
-        loadIGDBPlatformData();
+      // Only fetch if we don't have the game in our store or if it's being updated
+      if (!game || userGames.entityState.optimisticUpdates.isPendingFor(gameId)) {
+        await userGames.getUserGame(gameId);
       }
     } catch (error) {
       console.error('Failed to load game:', error);
-      // Set game to null on error so "Game not found" message shows
-      game = null;
     } finally {
       isLoading = false;
     }
+  }
+  
+  // Reactive update when game data changes
+  $: if (game) {
+    resetEditData();
+    loadIGDBPlatformData();
   }
 
   function loadIGDBPlatformData() {
@@ -228,16 +236,14 @@
         }
       }
       
-      console.log('API calls successful, reloading game data...');
+      console.log('API calls successful, platform data updated automatically...');
       
       // Immediately update dropdown if adding to no-longer-owned game
       if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
         editData.ownership_status = OwnershipStatus.OWNED;
       }
       
-      // Reload the game to get updated platform data
-      await loadGame();
-      
+      // Note: Game data is updated automatically through store reactivity
       // Clear all selections
       selectedPlatforms.clear();
       platformStorefronts.clear();
@@ -295,10 +301,7 @@
         editData.ownership_status = OwnershipStatus.NO_LONGER_OWNED;
       }
       
-      // Force fresh data fetch from server, then reload game with updated data
-      await userGames.fetchUserGames(); // Force refresh from server
-      await loadGame(); // Now uses fresh data
-      
+      // Note: Game data is updated automatically through store optimistic updates
       // Clear the confirmation dialog
       platformToRemove = null;
 
@@ -384,8 +387,7 @@
       await userGames.updateUserGame(gameId, userGameUpdate);
       await userGames.updateProgress(gameId, progressUpdate);
       
-      // Reload the game to get updated data
-      await loadGame();
+      // Note: Game data is updated automatically through store optimistic updates
       isEditing = false;
       
       // Show success message
@@ -419,8 +421,9 @@
       // Call the games store refresh metadata function
       const result = await games.refreshMetadata(game.game.id);
       
-      // Reload the game to get updated data
-      await loadGame();
+      // Note: Game data should be updated automatically, but for IGDB refresh
+      // we may need to refresh the specific game from the server
+      await userGames.getUserGame(gameId);
       
       // Show success message with updated fields info
       if (result && result.updated_fields && result.updated_fields.length > 0) {
@@ -474,7 +477,7 @@
 
 <RouteGuard requireAuth={true}>
 <div class="space-y-6">
-{#if isLoading}
+{#if isLoadingCombined}
   <div class="flex items-center justify-center py-12">
     <div class="text-center">
       <svg class="mx-auto h-12 w-12 text-gray-400 loading" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -594,6 +597,14 @@
                     <h1 class="text-3xl font-bold text-gray-900">
                       {game.game.title}
                     </h1>
+                    {#if hasOptimisticUpdates}
+                      <div class="flex items-center space-x-2">
+                        <svg class="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span class="text-sm text-blue-600 font-medium">Updating...</span>
+                      </div>
+                    {/if}
                   </div>
                 </div>
                 {#if game.is_loved}
@@ -1055,14 +1066,14 @@
                   <button
                     type="button"
                     on:click={addPlatforms}
-                    disabled={selectedPlatforms.size === 0 || isAddingPlatform}
-                    class="btn-secondary inline-flex items-center gap-x-2"
+                    disabled={selectedPlatforms.size === 0 || isAddingPlatform || hasOptimisticUpdates}
+                    class="btn-secondary inline-flex items-center gap-x-2 transition-all duration-200 {hasOptimisticUpdates ? 'opacity-75 ring-2 ring-blue-300' : ''}"
                   >
-                    {#if isAddingPlatform}
-                      <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {#if isAddingPlatform || hasOptimisticUpdates}
+                      <svg class="animate-spin h-4 w-4 {hasOptimisticUpdates ? 'text-blue-600' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Adding...
+                      {hasOptimisticUpdates ? 'Updating...' : 'Adding...'}
                     {:else}
                       <svg class="-ml-0.5 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -1084,12 +1095,20 @@
               </button>
               <button
                 type="submit"
-                class="btn-primary inline-flex items-center gap-x-2"
+                disabled={hasOptimisticUpdates}
+                class="btn-primary inline-flex items-center gap-x-2 disabled:opacity-75 transition-all duration-200 {hasOptimisticUpdates ? 'ring-2 ring-blue-300' : ''}"
               >
-                <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
-                </svg>
-                Save Changes
+                {#if hasOptimisticUpdates}
+                  <svg class="animate-spin -ml-0.5 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Saving...
+                {:else}
+                  <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                  </svg>
+                  Save Changes
+                {/if}
               </button>
             </div>
           </form>
