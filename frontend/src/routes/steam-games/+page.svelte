@@ -1515,7 +1515,7 @@
               emptyMessage="No ignored games found"
               showUnignoreButton={true}
               showUnmatchButton={true}
-              onRefresh={loadTabData}
+              onRefresh={handleIgnoreRefresh}
               collapsible={false}
             />
           {:else}
