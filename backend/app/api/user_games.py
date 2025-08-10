@@ -26,6 +26,8 @@ from ..api.schemas.user_game import (
     UserGamePlatformResponse,
     BulkStatusUpdateRequest,
     BulkDeleteRequest,
+    BulkAddPlatformRequest,
+    BulkRemovePlatformRequest,
     CollectionStatsResponse
 )
 from ..api.schemas.common import SuccessResponse
@@ -410,6 +412,10 @@ async def bulk_update_user_games(
             user_game.is_loved = bulk_data.is_loved
             updated = True
         
+        if bulk_data.ownership_status is not None:
+            user_game.ownership_status = bulk_data.ownership_status
+            updated = True
+        
         if updated:
             user_game.updated_at = datetime.now(timezone.utc)
             update_count += 1
@@ -457,6 +463,136 @@ async def bulk_delete_user_games(
     return SuccessResponse(
         message="Bulk deletion completed successfully",
         deleted_count=delete_count,
+        failed_count=failed_count
+    )
+
+
+@router.post("/bulk-add-platforms", response_model=SuccessResponse)
+async def bulk_add_platforms_to_user_games(
+    bulk_data: BulkAddPlatformRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Bulk add platform associations to multiple user games."""
+    
+    # Get user games to add platforms to
+    user_games = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id.in_(bulk_data.user_game_ids),
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).all()
+    
+    found_ids = {user_game.id for user_game in user_games}
+    add_count = 0
+    failed_count = len(bulk_data.user_game_ids) - len(found_ids)
+    
+    # Validate platforms and storefronts exist
+    platform_ids = {assoc.platform_id for assoc in bulk_data.platform_associations}
+    storefront_ids = {assoc.storefront_id for assoc in bulk_data.platform_associations if assoc.storefront_id}
+    
+    platforms = session.exec(select(Platform).where(Platform.id.in_(platform_ids))).all()
+    if len(platforms) != len(platform_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more platform IDs are invalid"
+        )
+    
+    if storefront_ids:
+        storefronts = session.exec(select(Storefront).where(Storefront.id.in_(storefront_ids))).all()
+        if len(storefronts) != len(storefront_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more storefront IDs are invalid"
+            )
+    
+    # Add platform associations to each user game
+    for user_game in user_games:
+        for platform_assoc in bulk_data.platform_associations:
+            # Check if this platform/storefront combination already exists
+            existing = session.exec(
+                select(UserGamePlatform).where(
+                    and_(
+                        UserGamePlatform.user_game_id == user_game.id,
+                        UserGamePlatform.platform_id == platform_assoc.platform_id,
+                        UserGamePlatform.storefront_id == platform_assoc.storefront_id
+                    )
+                )
+            ).first()
+            
+            if not existing:
+                # Create new platform association
+                platform_obj = UserGamePlatform(
+                    user_game_id=user_game.id,
+                    platform_id=platform_assoc.platform_id,
+                    storefront_id=platform_assoc.storefront_id,
+                    store_game_id=platform_assoc.store_game_id,
+                    store_url=str(platform_assoc.store_url) if platform_assoc.store_url else None,
+                    is_available=platform_assoc.is_available
+                )
+                session.add(platform_obj)
+                add_count += 1
+        
+        # Update the user_game timestamp
+        user_game.updated_at = datetime.now(timezone.utc)
+    
+    session.commit()
+    
+    return SuccessResponse(
+        message="Bulk platform addition completed successfully",
+        updated_count=add_count,
+        failed_count=failed_count
+    )
+
+
+@router.delete("/bulk-remove-platforms", response_model=SuccessResponse)
+async def bulk_remove_platforms_from_user_games(
+    bulk_data: BulkRemovePlatformRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Bulk remove platform associations from multiple user games."""
+    
+    # Get user games to remove platforms from
+    user_games = session.exec(
+        select(UserGame).where(
+            and_(
+                UserGame.id.in_(bulk_data.user_game_ids),
+                UserGame.user_id == current_user.id
+            )
+        )
+    ).all()
+    
+    found_game_ids = {user_game.id for user_game in user_games}
+    remove_count = 0
+    failed_count = len(bulk_data.user_game_ids) - len(found_game_ids)
+    
+    # Get platform associations to remove that belong to the user's games
+    platform_associations = session.exec(
+        select(UserGamePlatform).where(
+            and_(
+                UserGamePlatform.id.in_(bulk_data.platform_association_ids),
+                UserGamePlatform.user_game_id.in_(found_game_ids)
+            )
+        )
+    ).all()
+    
+    # Remove platform associations
+    for platform_assoc in platform_associations:
+        session.delete(platform_assoc)
+        remove_count += 1
+    
+    # Update user_game timestamps
+    for user_game in user_games:
+        user_game.updated_at = datetime.now(timezone.utc)
+    
+    session.commit()
+    
+    return SuccessResponse(
+        message="Bulk platform removal completed successfully",
+        updated_count=remove_count,
         failed_count=failed_count
     )
 
