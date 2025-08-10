@@ -16,7 +16,3 @@ Go through all direct usage of SQLAlchemy and check if SQLModel could be used in
 
 ## Steam Games menu item icon
 The Steam Games menu item should use the Steam icon rather than the current emoji.
-
-## Steam Games auto-matching and syncing small batches
-Since we are not doing full and proper queueing and background workers, instead of running hundreds of games through either the auto-matching or syncinc functionality at once, the frontend should only trigger batches of 5 or 10 games at a time and do a refresh before starting the next batch. That will give the user some feedback along the way so it won't just be a stuck interface the user has to wait for. It will also allow us to add a cancel button, which will just stop the frontend from triggering the next batch.
-This requires a mix of changes to the frontend and backend.
