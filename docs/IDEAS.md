@@ -17,3 +17,6 @@ Go through all direct usage of SQLAlchemy and check if SQLModel could be used in
 ## Darkadia import based on same principles as Steam Games
 The Darkadia CSV import should be rebuilt based on the same principles as the Steam Games feature. Biggest differences are that the Darkadia CSV import is unlikely to be much more than a one-off operation, and that Darkadia CSV contains a lot more information (platform/storefront information, date it was added, completion status and more).
 The flow should be that the CSV is read into a darkadia_games table, in the same style as steam_games. From there the same matching and syncing functionality as for Steam Games should be available.
+
+## Add IGDB Title to Steam Games
+Matched games should show both the Steam title and the IGDB title of the match to allow users to review the match before syncing.
