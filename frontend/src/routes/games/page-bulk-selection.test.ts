@@ -196,7 +196,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       });
     });
 
-    it('should show selected count and bulk actions after selecting games', async () => {
+    it('should show selected count and bulk edit after selecting games', async () => {
       render(GamesPage);
       
       await waitFor(() => {
@@ -206,10 +206,10 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       const selectAllButton = screen.getByText(/select all/i);
       await fireEvent.click(selectAllButton);
       
-      // Should show selected count and bulk actions
+      // Should show selected count and bulk edit
       await waitFor(() => {
         expect(screen.getByText(/3 selected/)).toBeInTheDocument();
-        expect(screen.getByText(/bulk actions/i)).toBeInTheDocument();
+        expect(screen.getByText(/bulk edit/i)).toBeInTheDocument();
       });
     });
   });
@@ -268,7 +268,7 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
   });
 
   describe('Bulk Operations Modal', () => {
-    it('should open bulk operations modal when bulk actions button is clicked', async () => {
+    it('should open bulk operations modal when bulk edit button is clicked', async () => {
       render(GamesPage);
       
       await waitFor(() => {
@@ -280,12 +280,12 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       await fireEvent.click(selectAllButton);
       
       await waitFor(() => {
-        expect(screen.getByText(/bulk actions/i)).toBeInTheDocument();
+        expect(screen.getByText(/bulk edit/i)).toBeInTheDocument();
       });
 
-      // Click bulk actions button
-      const bulkActionsButton = screen.getByText(/bulk actions/i);
-      await fireEvent.click(bulkActionsButton);
+      // Click bulk edit button
+      const bulkEditButton = screen.getByText(/bulk edit/i);
+      await fireEvent.click(bulkEditButton);
       
       // Modal should open
       await waitFor(() => {
@@ -304,8 +304,8 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       const selectAllButton = screen.getByText(/select all/i);
       await fireEvent.click(selectAllButton);
       
-      const bulkActionsButton = screen.getByText(/bulk actions/i);
-      await fireEvent.click(bulkActionsButton);
+      const bulkEditButton = screen.getByText(/bulk edit/i);
+      await fireEvent.click(bulkEditButton);
       
       await waitFor(() => {
         expect(screen.getByText('Bulk Operations')).toBeInTheDocument();
@@ -334,8 +334,8 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       const selectAllButton = screen.getByText(/select all/i);
       await fireEvent.click(selectAllButton);
       
-      const bulkActionsButton = screen.getByText(/bulk actions/i);
-      await fireEvent.click(bulkActionsButton);
+      const bulkEditButton = screen.getByText(/bulk edit/i);
+      await fireEvent.click(bulkEditButton);
       
       await waitFor(() => {
         expect(screen.getByText('Bulk Operations')).toBeInTheDocument();
@@ -380,8 +380,8 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       const selectAllButton = screen.getByText(/select all/i);
       await fireEvent.click(selectAllButton);
       
-      const bulkActionsButton = screen.getByText(/bulk actions/i);
-      await fireEvent.click(bulkActionsButton);
+      const bulkEditButton = screen.getByText(/bulk edit/i);
+      await fireEvent.click(bulkEditButton);
       
       await waitFor(() => {
         const modal = screen.getByRole('dialog');

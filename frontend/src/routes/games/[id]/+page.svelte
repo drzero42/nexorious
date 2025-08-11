@@ -20,14 +20,14 @@
   
   // Reactive game data from store
   $: gameId = $page.params.id!;
-  $: game = userGames.selectors.byId(gameId);
+  $: game = userGames.selectors?.byId(gameId) ?? null;
   $: isLoadingStore = userGames.value.isLoading;
   
   // Combined loading state
-  $: isLoadingCombined = isLoading || isLoadingStore || userGames.entityState.optimisticUpdates.isPendingFor(gameId);
+  $: isLoadingCombined = isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
   
   // Visual feedback states for optimistic updates
-  $: hasOptimisticUpdates = userGames.entityState.optimisticUpdates.isPendingFor(gameId);
+  $: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false;
   let editData: {
     // Personal data
     personal_rating?: number | undefined;

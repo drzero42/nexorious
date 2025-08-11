@@ -1,6 +1,35 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Mock Date and Date.now() to return consistent timestamps for tests
+// Use this approach instead of fake timers to avoid breaking async operations
+const originalDate = Date;
+
+Date.now = vi.fn(() => new Date('2023-01-01T00:00:00.000Z').getTime());
+
+// Override the global Date constructor
+(global as any).Date = class extends originalDate {
+  constructor(...args: [] | [string | number | Date]) {
+    if (args.length === 0) {
+      super('2023-01-01T00:00:00.000Z');
+    } else {
+      super(...args);
+    }
+  }
+  
+  static override now() {
+    return new Date('2023-01-01T00:00:00.000Z').getTime();
+  }
+  
+  static override UTC(...args: Parameters<typeof originalDate.UTC>) {
+    return originalDate.UTC(...args);
+  }
+  
+  static override parse(dateString: string) {
+    return originalDate.parse(dateString);
+  }
+};
+
 // Store original console methods
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
@@ -21,7 +50,12 @@ console.error = vi.fn((message, ...args) => {
 			message.includes('Failed to create game') ||
 			message.includes('Failed to add game to collection') ||
 			message.includes('Failed to update progress') ||
-			message.includes('Failed to update game details')
+			message.includes('Failed to update game details') ||
+			message.includes('Failed to load platforms and storefronts') ||
+			message.includes('Failed to check setup status') ||
+			message.includes('Failed to refresh auth') ||
+			message.includes('Setup status check failed') ||
+			message.includes('Refresh failed')
 		)
 	) {
 		return; // Suppress these expected errors in tests

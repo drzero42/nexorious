@@ -9,7 +9,7 @@ export const mockGame: Game = {
   genre: 'Action',
   developer: 'Test Developer',
   publisher: 'Test Publisher',
-  release_date: '2024-01-01',
+  release_date: '2023-01-01',
   cover_art_url: 'https://example.com/cover.jpg',
   rating_average: 45,
   rating_count: 100,
@@ -20,8 +20,8 @@ export const mockGame: Game = {
   howlongtobeat_completionist: 45,  // Realistic completionist time
   igdb_id: 'igdb-123',
   igdb_slug: 'test-game-slug',
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z'
+  created_at: '2023-01-01T00:00:00.000Z',
+  updated_at: '2023-01-01T00:00:00.000Z'
 };
 
 export const mockGames: Game[] = [
@@ -45,7 +45,7 @@ export const mockIGDBCandidate: IGDBGameCandidate = {
   igdb_id: 'igdb-123',
   igdb_slug: 'test-igdb-game-slug',
   title: 'Test IGDB Game',
-  release_date: '2024-01-01',
+  release_date: '2023-01-01',
   cover_art_url: 'https://example.com/igdb-cover.jpg',
   description: 'A test game from IGDB',
   platforms: ['PC', 'PlayStation 5']
@@ -234,8 +234,8 @@ export class APIResponseMock {
             icon_url: null,
             is_active: true,
             source: 'system',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z'
           },
           { 
             id: 'ps5', 
@@ -244,8 +244,8 @@ export class APIResponseMock {
             icon_url: null,
             is_active: true,
             source: 'system',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z'
           }
         ];
         return Promise.resolve(this.createResponse({ platforms: mockPlatforms }));
@@ -262,8 +262,8 @@ export class APIResponseMock {
             base_url: 'https://store.steampowered.com',
             is_active: true,
             source: 'system',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z'
           },
           { 
             id: 'epic', 
@@ -273,8 +273,8 @@ export class APIResponseMock {
             base_url: 'https://www.epicgames.com/store',
             is_active: true,
             source: 'system',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
+            created_at: '2023-01-01T00:00:00.000Z',
+            updated_at: '2023-01-01T00:00:00.000Z'
           }
         ];
         return Promise.resolve(this.createResponse({ storefronts: mockStorefronts }));

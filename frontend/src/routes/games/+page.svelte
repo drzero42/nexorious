@@ -30,8 +30,8 @@
  $: isBulkSelectionMode = selectedGameIds.size > 0;
 
 // Real-time update states
-$: hasOptimisticUpdates = userGames.entityState.optimisticUpdates.isPending;
-$: isBulkProcessing = userGames.entityState.bulkOperations.isProcessing;
+$: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPending ?? false;
+$: isBulkProcessing = userGames.entityState?.bulkOperations?.isProcessing ?? false;
 let recentlyUpdatedGameIds = new Set<string>();
 let updateTimeout: NodeJS.Timeout | undefined;
 

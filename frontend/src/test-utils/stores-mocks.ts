@@ -8,9 +8,9 @@ export const mockGameMetadata = {
   genre: 'Action',
   developer: 'Test Developer',
   publisher: 'Test Publisher',
-  release_date: '2024-01-01',
+  release_date: '2023-01-01',
   cover_art_url: 'https://example.com/cover.jpg',
-  rating_average: 45,
+  rating_average: 85.5,  // IGDB rating out of 100
   rating_count: 100,
   game_metadata: '{}',
   estimated_playtime_hours: 25,
@@ -19,8 +19,8 @@ export const mockGameMetadata = {
   howlongtobeat_completionist: 45,
   igdb_id: 'igdb-123',
   igdb_slug: 'test-game-slug',
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z'
+  created_at: '2023-01-01T00:00:00.000Z',
+  updated_at: '2023-01-01T00:00:00.000Z'
 };
 
 // Mock user game (includes game metadata + user-specific data)
@@ -33,10 +33,40 @@ export const mockUserGame = {
   play_status: 'completed' as const,
   hours_played: 25,
   personal_notes: 'Great game!',
-  acquired_date: '2024-01-01',
-  platforms: [],
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z'
+  acquired_date: '2023-01-01',
+  platforms: [
+    {
+      id: 'platform-1',
+      platform: {
+        id: 'pc-windows',
+        name: 'pc-windows',
+        display_name: 'PC (Windows)',
+        icon_url: 'https://example.com/pc-icon.png',
+        is_active: true,
+        source: 'official',
+        version_added: '1.0.0',
+        created_at: '2023-01-01T00:00:00.000Z',
+        updated_at: '2023-01-01T00:00:00.000Z'
+      },
+      storefront: {
+        id: 'steam',
+        name: 'steam',
+        display_name: 'Steam',
+        icon_url: 'https://example.com/steam-icon.png',
+        base_url: 'https://store.steampowered.com',
+        is_active: true,
+        source: 'official',
+        version_added: '1.0.0',
+        created_at: '2023-01-01T00:00:00.000Z',
+        updated_at: '2023-01-01T00:00:00.000Z'
+      },
+      store_game_id: 'steam-123',
+      is_available: true,
+      created_at: '2023-01-01T00:00:00.000Z'
+    }
+  ],
+  created_at: '2023-01-01T00:00:00.000Z',
+  updated_at: '2023-01-01T00:00:00.000Z'
 };
 
 export const mockUserGames = [
@@ -73,7 +103,7 @@ export const mockUserGames = [
 // For backwards compatibility
 export const mockGames = mockUserGames;
 
-// Mock user games store
+// Mock user games store with entityState support
 export const mockUserGamesStore = {
   value: {
     userGames: mockUserGames,
@@ -89,6 +119,18 @@ export const mockUserGamesStore = {
       pages: 1
     }
   },
+  entityState: {
+    optimisticUpdates: {
+      isPending: false,
+      isPendingFor: vi.fn(() => false)
+    },
+    bulkOperations: {
+      isProcessing: false
+    }
+  },
+  selectors: {
+    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null)
+  },
   fetchUserGames: vi.fn(),
   loadUserGames: vi.fn(),
   getUserGame: vi.fn(),
@@ -98,7 +140,19 @@ export const mockUserGamesStore = {
   updateProgress: vi.fn(),
   bulkUpdateStatus: vi.fn(),
   deleteUserGame: vi.fn(),
-  clearError: vi.fn()
+  clearError: vi.fn(),
+  clearFilters: vi.fn(),
+  clearCurrentUserGame: vi.fn(),
+  getGamesByStatus: vi.fn((status) => mockUserGames.filter(g => g.play_status === status)),
+  getLovedGames: vi.fn(() => mockUserGames.filter(g => g.is_loved)),
+  getGamesByRating: vi.fn((rating) => mockUserGames.filter(g => g.personal_rating === rating)),
+  getPileOfShame: vi.fn(() => mockUserGames.filter(g => g.play_status === 'not_started')),
+  __testSetData: vi.fn((games) => {
+    mockUserGamesStore.value.userGames = games;
+  }),
+  on: vi.fn(),
+  off: vi.fn(),
+  emit: vi.fn()
 };
 
 // Mock IGDB candidates for games store
@@ -107,7 +161,7 @@ export const mockIGDBCandidates = [
     igdb_id: 'igdb-123',
     igdb_slug: 'test-igdb-game-slug',
     title: 'Test IGDB Game',
-    release_date: '2024-01-01',
+    release_date: '2023-01-01',
     cover_art_url: 'https://example.com/igdb-cover.jpg',
     description: 'A test game from IGDB',
     platforms: ['PC (Windows)', 'PlayStation 5'], // Updated to match mock platform display_names
@@ -151,8 +205,8 @@ export const mockStorefronts = [
     is_active: true, 
     source: 'official', 
     version_added: '1.0.0',
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'epic-games-store', 
@@ -163,8 +217,8 @@ export const mockStorefronts = [
     is_active: true, 
     source: 'official', 
     version_added: '1.0.0',
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'playstation-store', 
@@ -175,8 +229,8 @@ export const mockStorefronts = [
     is_active: true, 
     source: 'official', 
     version_added: '1.0.0',
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'nintendo-eshop', 
@@ -187,8 +241,8 @@ export const mockStorefronts = [
     is_active: true, 
     source: 'official', 
     version_added: '1.0.0',
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'physical', 
@@ -198,8 +252,8 @@ export const mockStorefronts = [
     is_active: true, 
     source: 'official', 
     version_added: '1.0.0',
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   }
 ];
 
@@ -219,8 +273,8 @@ export const mockPlatforms = [
       mockStorefronts.find(s => s.id === 'epic-games-store'),
       mockStorefronts.find(s => s.id === 'physical')
     ].filter(Boolean),
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'playstation-5', 
@@ -235,8 +289,8 @@ export const mockPlatforms = [
       mockStorefronts.find(s => s.id === 'playstation-store'),
       mockStorefronts.find(s => s.id === 'physical')
     ].filter(Boolean),
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'nintendo-switch', 
@@ -251,8 +305,8 @@ export const mockPlatforms = [
       mockStorefronts.find(s => s.id === 'nintendo-eshop'),
       mockStorefronts.find(s => s.id === 'physical')
     ].filter(Boolean),
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   },
   { 
     id: 'mobile-android', 
@@ -264,8 +318,8 @@ export const mockPlatforms = [
     version_added: '1.0.0',
     default_storefront_id: null, // No default storefront for Android (to test platforms without defaults)
     storefronts: [],
-    created_at: '2024-01-01T00:00:00Z', 
-    updated_at: '2024-01-01T00:00:00Z' 
+    created_at: '2023-01-01T00:00:00.000Z', 
+    updated_at: '2023-01-01T00:00:00.000Z' 
   }
 ];
 
@@ -493,6 +547,45 @@ export function resetStoresMocks() {
       pages: 1
     }
   };
+
+  // Reset entityState
+  mockUserGamesStore.entityState = {
+    optimisticUpdates: {
+      isPending: false,
+      isPendingFor: vi.fn(() => false)
+    },
+    bulkOperations: {
+      isProcessing: false
+    }
+  };
+
+  // Reset selectors
+  mockUserGamesStore.selectors = {
+    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null)
+  };
+
+  // Reset additional methods
+  mockUserGamesStore.clearFilters.mockClear();
+  mockUserGamesStore.clearCurrentUserGame.mockClear();
+  mockUserGamesStore.getGamesByStatus.mockClear();
+  mockUserGamesStore.getLovedGames.mockClear();
+  mockUserGamesStore.getGamesByRating.mockClear();
+  mockUserGamesStore.getPileOfShame.mockClear();
+  mockUserGamesStore.__testSetData.mockClear();
+
+  // Reset implementations
+  mockUserGamesStore.getGamesByStatus.mockImplementation((status) => mockUserGames.filter(g => g.play_status === status));
+  mockUserGamesStore.getLovedGames.mockImplementation(() => mockUserGames.filter(g => g.is_loved));
+  mockUserGamesStore.getGamesByRating.mockImplementation((rating) => mockUserGames.filter(g => g.personal_rating === rating));
+  mockUserGamesStore.getPileOfShame.mockImplementation(() => mockUserGames.filter(g => g.play_status === 'not_started'));
+  mockUserGamesStore.__testSetData.mockImplementation((games) => {
+    mockUserGamesStore.value.userGames = games;
+  });
+
+  // Reset event methods
+  mockUserGamesStore.on.mockClear();
+  mockUserGamesStore.off.mockClear();
+  mockUserGamesStore.emit.mockClear();
 
   // Reset games store
   mockGamesStore.fetchGames.mockClear();

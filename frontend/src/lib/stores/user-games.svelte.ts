@@ -1283,7 +1283,12 @@ function createUserGamesStore() {
     // Event system integration
     on: gameEventBus.on.bind(gameEventBus),
     off: gameEventBus.off.bind(gameEventBus),
-    emit: gameEventBus.emit.bind(gameEventBus)
+    emit: gameEventBus.emit.bind(gameEventBus),
+    
+    // Testing utility - only for test environments
+    __testSetData: (games: UserGame[]) => {
+      entityOperations.replaceAll(games);
+    }
   };
 
   return store;

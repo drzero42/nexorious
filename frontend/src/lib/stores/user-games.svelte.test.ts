@@ -40,8 +40,8 @@ describe('UserGames Store', () => {
 			cover_art_url: 'https://example.com/cover.jpg',
 			rating_count: 0,
 			game_metadata: '{}',
-			created_at: '2023-01-01T00:00:00Z',
-			updated_at: '2023-01-01T00:00:00Z'
+			created_at: '2023-01-01T00:00:00.000Z',
+			updated_at: '2023-01-01T00:00:00.000Z'
 		},
 		ownership_status: OwnershipStatus.OWNED,
 		is_physical: false,
@@ -52,8 +52,8 @@ describe('UserGames Store', () => {
 		personal_notes: 'Great game!',
 		acquired_date: '2023-01-01',
 		platforms: [],
-		created_at: '2023-01-01T00:00:00Z',
-		updated_at: '2023-01-01T00:00:00Z'
+		created_at: '2023-01-01T00:00:00.000Z',
+		updated_at: '2023-01-01T00:00:00.000Z'
 	};
 
 	const mockCollectionStats: CollectionStats = {
@@ -332,7 +332,7 @@ describe('UserGames Store', () => {
 	describe('Update User Game', () => {
 		it('should update user game', async () => {
 			// Set initial state with the game
-			userGamesStore.value.userGames = [mockUserGame];
+			userGamesStore.__testSetData([mockUserGame]);
 
 			const updateData = {
 				personal_rating: 5,
@@ -393,7 +393,7 @@ describe('UserGames Store', () => {
 	describe('Remove from Collection', () => {
 		it('should remove game from collection', async () => {
 			// Set initial state with the game
-			userGamesStore.value.userGames = [mockUserGame];
+			userGamesStore.__testSetData([mockUserGame]);
 			userGamesStore.value.currentUserGame = mockUserGame;
 
 			mockFetch.mockResolvedValueOnce({
@@ -447,7 +447,7 @@ describe('UserGames Store', () => {
 				{ ...mockUserGame, id: '4', play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 5 }
 			];
 			
-			userGamesStore.value.userGames = testGames;
+			userGamesStore.__testSetData(testGames);
 		});
 
 		it('should get games by status', () => {
@@ -503,11 +503,11 @@ describe('UserGames Store', () => {
 			});
 
 			// Set initial state
-			userGamesStore.value.userGames = [
+			userGamesStore.__testSetData([
 				{ ...mockUserGame, id: '1' },
 				{ ...mockUserGame, id: '2' },
 				{ ...mockUserGame, id: '3' }
-			];
+			]);
 
 			const result = await userGamesStore.bulkUpdateStatus(bulkData);
 
@@ -559,11 +559,11 @@ describe('UserGames Store', () => {
 			const testGame = {
 				...mockUserGame,
 				platforms: [
-					{ id: 'platform-1', platform: { id: '1', name: 'PC' }, is_available: true, created_at: '2023-01-01T00:00:00Z' }
+					{ id: 'platform-1', platform: { id: '1', name: 'PC' }, is_available: true, created_at: '2023-01-01T00:00:00.000Z' }
 				]
 			};
 
-			userGamesStore.value.userGames = [testGame];
+			userGamesStore.__testSetData([testGame]);
 			userGamesStore.value.currentUserGame = testGame;
 
 			mockFetch.mockResolvedValueOnce({

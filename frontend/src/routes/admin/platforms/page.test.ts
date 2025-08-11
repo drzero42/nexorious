@@ -32,8 +32,8 @@ vi.mock('$lib/stores', () => {
     is_active: true,
     source: 'official',
     version_added: '1.0.0',
-    created_at: '2023-01-01T00:00:00Z',
-    updated_at: '2023-01-01T00:00:00Z'
+    created_at: '2023-01-01T00:00:00.000Z',
+    updated_at: '2023-01-01T00:00:00.000Z'
   };
 
   const mockInactivePlatform: Platform = {
@@ -57,8 +57,8 @@ vi.mock('$lib/stores', () => {
     is_active: true,
     source: 'official',
     version_added: '1.0.0',
-    created_at: '2023-01-01T00:00:00Z',
-    updated_at: '2023-01-01T00:00:00Z'
+    created_at: '2023-01-01T00:00:00.000Z',
+    updated_at: '2023-01-01T00:00:00.000Z'
   };
 
   const mockInactiveStorefront: Storefront = {
