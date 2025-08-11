@@ -1,6 +1,6 @@
 <script lang="ts">
  import { userGames, platforms, ui } from '$lib/stores';
- import { onMount } from 'svelte';
+ import { onMount, onDestroy } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination, PlatformBadges, PlatformSelector } from '$lib/components';
  import { resolveImageUrl } from '$lib/utils/image-url';
@@ -29,6 +29,12 @@
  // Computed state for bulk selection mode
  $: isBulkSelectionMode = selectedGameIds.size > 0;
 
+// Real-time update states
+$: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPending ?? false;
+$: isBulkProcessing = userGames.entityState?.bulkOperations?.isProcessing ?? false;
+let recentlyUpdatedGameIds = new Set<string>();
+let updateTimeout: NodeJS.Timeout | undefined;
+
  // Bulk operations modal state
  let bulkStatus = '';
  let bulkRating = '';
@@ -54,11 +60,74 @@ let bulkPlatformStoreUrls = new Map<string, string>();
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
 
+ let eventCleanupFunctions: Array<() => void> = [];
+ 
  onMount(() => {
   // Load user games and platforms - authentication is handled by RouteGuard
   loadGames();
   platforms.fetchAll();
+  
+  // Set up event listeners for cross-view real-time updates
+  setupRealTimeUpdates();
  });
+ 
+ onDestroy(() => {
+  // Clean up event listeners
+  eventCleanupFunctions.forEach(cleanup => cleanup());
+ });
+ 
+ function setupRealTimeUpdates() {
+  // Listen for individual game updates
+  const handleGameUpdated = (data: any) => {
+    console.log('Real-time update: Game updated', data);
+    highlightUpdatedGame(data.id);
+  };
+  
+  const handlePlatformAdded = (data: any) => {
+    console.log('Real-time update: Platform added', data);
+    highlightUpdatedGame(data.gameId);
+  };
+  
+  const handlePlatformRemoved = (data: any) => {
+    console.log('Real-time update: Platform removed', data);
+    highlightUpdatedGame(data.gameId);
+  };
+  
+  const handleBulkUpdated = (data: any) => {
+    console.log('Real-time update: Bulk updated', data);
+    data.gameIds?.forEach((gameId: string) => highlightUpdatedGame(gameId));
+  };
+  
+  // Register event listeners
+  userGames.on('user-game-updated', handleGameUpdated);
+  userGames.on('platform-added', handlePlatformAdded);
+  userGames.on('platform-removed', handlePlatformRemoved);
+  userGames.on('bulk-updated', handleBulkUpdated);
+  userGames.on('bulk-platforms-added', handleBulkUpdated);
+  userGames.on('bulk-platforms-removed', handleBulkUpdated);
+  
+  // Store cleanup functions
+  eventCleanupFunctions.push(
+    () => userGames.off('user-game-updated', handleGameUpdated),
+    () => userGames.off('platform-added', handlePlatformAdded),
+    () => userGames.off('platform-removed', handlePlatformRemoved),
+    () => userGames.off('bulk-updated', handleBulkUpdated),
+    () => userGames.off('bulk-platforms-added', handleBulkUpdated),
+    () => userGames.off('bulk-platforms-removed', handleBulkUpdated)
+  );
+ }
+ 
+ function highlightUpdatedGame(gameId: string) {
+  recentlyUpdatedGameIds.add(gameId);
+  recentlyUpdatedGameIds = new Set(recentlyUpdatedGameIds); // Trigger reactivity
+  
+  // Clear the highlight after a short delay
+  clearTimeout(updateTimeout);
+  updateTimeout = setTimeout(() => {
+    recentlyUpdatedGameIds.delete(gameId);
+    recentlyUpdatedGameIds = new Set(recentlyUpdatedGameIds);
+  }, 3000);
+ }
 
  // Build filters based on current selections
  $: filters = {
@@ -448,6 +517,34 @@ async function applyBulkAddPlatforms() {
 
 <RouteGuard requireAuth={true}>
 <div class="space-y-6">
+ <!-- Real-time Update Indicator -->
+ {#if hasOptimisticUpdates || isBulkProcessing}
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <svg class="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <div>
+          <p class="text-sm font-medium text-blue-800">
+            {#if isBulkProcessing}
+              Processing bulk operation...
+            {:else if hasOptimisticUpdates}
+              Updating games...
+            {/if}
+          </p>
+          <p class="text-xs text-blue-600">Changes will be reflected automatically</p>
+        </div>
+      </div>
+      {#if recentlyUpdatedGameIds.size > 0}
+        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          {recentlyUpdatedGameIds.size} recently updated
+        </span>
+      {/if}
+    </div>
+  </div>
+ {/if}
+
  <!-- Header -->
  <div class="sm:flex sm:items-center sm:justify-between">
   <div>
@@ -809,7 +906,7 @@ async function applyBulkAddPlatforms() {
       tabindex="0"
       role="button"
       aria-label="{isBulkSelectionMode ? 'Select ' + userGame.game.title : 'View details for ' + userGame.game.title}"
-      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow {isBulkSelectionMode ? 'cursor-pointer' : 'cursor-pointer'} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''} {isBulkSelectionMode ? 'hover:ring-2 hover:ring-primary-300' : ''}"
+      class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-all duration-300 {isBulkSelectionMode ? 'cursor-pointer' : 'cursor-pointer'} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''} {isBulkSelectionMode ? 'hover:ring-2 hover:ring-primary-300' : ''} {recentlyUpdatedGameIds.has(userGame.id) ? 'ring-2 ring-green-400 shadow-lg bg-green-50' : ''}"
      >
       <!-- Selection Checkbox -->
       <div class="absolute top-2 left-2 z-10">
@@ -984,7 +1081,7 @@ async function applyBulkAddPlatforms() {
          }}
          on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
          tabindex="0"
-         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''} {isBulkSelectionMode ? 'hover:bg-primary-50' : ''}"
+         class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 transition-all duration-300 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''} {isBulkSelectionMode ? 'hover:bg-primary-50' : ''} {recentlyUpdatedGameIds.has(userGame.id) ? 'bg-green-50 ring-1 ring-green-200' : ''}"
         >
          <td class="whitespace-nowrap py-4 pl-4 pr-2 text-sm sm:pl-6">
           <input

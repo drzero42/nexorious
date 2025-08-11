@@ -3,6 +3,107 @@ import type { Game } from './games.svelte';
 import type { Platform, Storefront } from './platforms.svelte';
 import { config } from '$lib/env';
 
+// Enhanced TypeScript patterns for fine-grained reactivity
+// type DeepPartial<T> = {
+//   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+// };
+
+// Event system for cross-view synchronization
+class GameCollectionEventBus {
+  private listeners = new Map<string, Set<Function>>();
+
+  emit(event: string, data: any) {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      callbacks.forEach(callback => callback(data));
+    }
+  }
+
+  on(event: string, callback: Function) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback);
+  }
+
+  off(event: string, callback: Function) {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      callbacks.delete(callback);
+    }
+  }
+}
+
+export const gameEventBus = new GameCollectionEventBus();
+
+// Optimistic update management
+interface OptimisticUpdate<T> {
+  id: string;
+  optimistic: T;
+  original: T;
+  timestamp: number;
+}
+
+interface OptimisticState<T extends { id: string }> {
+  pending: Map<string, OptimisticUpdate<T>>;
+  rollbacks: Map<string, () => void>;
+}
+
+class OptimisticUpdates<T extends { id: string }> {
+  private state = $state<OptimisticState<T>>({
+    pending: new Map(),
+    rollbacks: new Map()
+  });
+
+  apply(
+    id: string, 
+    optimisticData: Partial<T>,
+    original: T,
+    rollbackFn: () => void
+  ): T {
+    const update: OptimisticUpdate<T> = {
+      id,
+      optimistic: { ...original, ...optimisticData } as T,
+      original,
+      timestamp: Date.now()
+    };
+
+    this.state.pending.set(id, update);
+    this.state.rollbacks.set(id, rollbackFn);
+    
+    return update.optimistic;
+  }
+
+  commit(id: string): void {
+    this.state.pending.delete(id);
+    this.state.rollbacks.delete(id);
+  }
+
+  rollback(id: string): void {
+    const rollbackFn = this.state.rollbacks.get(id);
+    
+    if (rollbackFn) {
+      rollbackFn();
+      this.state.pending.delete(id);
+      this.state.rollbacks.delete(id);
+    }
+  }
+
+  rollbackAll(): void {
+    for (const [id] of this.state.pending) {
+      this.rollback(id);
+    }
+  }
+
+  get isPending() {
+    return this.state.pending.size > 0;
+  }
+
+  isPendingFor(id: string): boolean {
+    return this.state.pending.has(id);
+  }
+}
+
 export enum OwnershipStatus {
   OWNED = 'owned',
   BORROWED = 'borrowed',
@@ -143,6 +244,32 @@ export interface CollectionStats {
   total_hours_played: number;
 }
 
+// Enhanced state with entity-based storage
+export interface UserGamesEntityState {
+  entities: Map<string, UserGame>;
+  ids: string[];
+  currentUserGameId: string | null;
+  stats: CollectionStats | null;
+  isLoading: boolean;
+  error: string | null;
+  filters: UserGameFilters;
+  pagination: {
+    page: number;
+    per_page: number;
+    total: number;
+    pages: number;
+  };
+  // Optimistic update tracking
+  optimisticUpdates: OptimisticUpdates<UserGame>;
+  // Bulk operation status
+  bulkOperations: {
+    isProcessing: boolean;
+    processingIds: Set<string>;
+    lastOperation?: string;
+  };
+}
+
+// Legacy interface for backward compatibility
 export interface UserGamesState {
   userGames: UserGame[];
   currentUserGame: UserGame | null;
@@ -158,9 +285,10 @@ export interface UserGamesState {
   };
 }
 
-const initialState: UserGamesState = {
-  userGames: [],
-  currentUserGame: null,
+const initialEntityState: UserGamesEntityState = {
+  entities: new Map(),
+  ids: [],
+  currentUserGameId: null,
   stats: null,
   isLoading: false,
   error: null,
@@ -170,11 +298,132 @@ const initialState: UserGamesState = {
     per_page: 20,
     total: 0,
     pages: 0
+  },
+  optimisticUpdates: new OptimisticUpdates<UserGame>(),
+  bulkOperations: {
+    isProcessing: false,
+    processingIds: new Set(),
   }
 };
 
 function createUserGamesStore() {
-  let state = $state<UserGamesState>(initialState);
+  let entityState = $state<UserGamesEntityState>(initialEntityState);
+
+  // Computed selectors for backward compatibility and performance
+  const selectors = {
+    get userGames() {
+      return entityState.ids.map(id => entityState.entities.get(id)!).filter(Boolean);
+    },
+    
+    get currentUserGame() {
+      return entityState.currentUserGameId ? entityState.entities.get(entityState.currentUserGameId) || null : null;
+    },
+    
+    get isLoading() {
+      return entityState.isLoading || entityState.optimisticUpdates.isPending;
+    },
+    
+    get hasOptimisticUpdates() {
+      return entityState.optimisticUpdates.isPending;
+    },
+    
+    byId: (id: string) => entityState.entities.get(id),
+    
+    byStatus: (status: PlayStatus) => 
+      selectors.userGames.filter(game => game.play_status === status),
+      
+    byPlatform: (platformId: string) => 
+      selectors.userGames.filter(game => 
+        game.platforms.some(p => p.platform.id === platformId)
+      ),
+      
+    byRating: (rating: number) => 
+      selectors.userGames.filter(game => game.personal_rating === rating),
+      
+    get lovedGames() {
+      return selectors.userGames.filter(game => game.is_loved);
+    },
+    
+    get pileOfShame() {
+      return selectors.userGames.filter(game => game.play_status === PlayStatus.NOT_STARTED);
+    }
+  };
+  
+  // Entity management utilities
+  const entityOperations = {
+    addOne: (entity: UserGame) => {
+      entityState.entities.set(entity.id, entity);
+      if (!entityState.ids.includes(entity.id)) {
+        entityState.ids.unshift(entity.id); // Add to beginning like original
+      }
+    },
+    
+    addMany: (entities: UserGame[]) => {
+      entities.forEach(entity => {
+        entityState.entities.set(entity.id, entity);
+        if (!entityState.ids.includes(entity.id)) {
+          entityState.ids.push(entity.id);
+        }
+      });
+    },
+    
+    updateOne: (id: string, changes: Partial<UserGame>) => {
+      const existing = entityState.entities.get(id);
+      if (existing) {
+        const updated = { ...existing, ...changes, updated_at: new Date().toISOString() };
+        entityState.entities.set(id, updated);
+        
+        // Update current user game if it's the same
+        if (entityState.currentUserGameId === id) {
+          // No need to set currentUserGameId again, selector will pick up the change
+        }
+        
+        // Emit update event for cross-view synchronization
+        gameEventBus.emit('user-game-updated', { id, game: updated, changes });
+        
+        return updated;
+      }
+      return null;
+    },
+    
+    updateMany: (updates: Array<{ id: string; changes: Partial<UserGame> }>) => {
+      const updatedGames: UserGame[] = [];
+      updates.forEach(({ id, changes }) => {
+        const updated = entityOperations.updateOne(id, changes);
+        if (updated) updatedGames.push(updated);
+      });
+      return updatedGames;
+    },
+    
+    removeOne: (id: string) => {
+      entityState.entities.delete(id);
+      entityState.ids = entityState.ids.filter(existingId => existingId !== id);
+      if (entityState.currentUserGameId === id) {
+        entityState.currentUserGameId = null;
+      }
+    },
+    
+    removeMany: (ids: string[]) => {
+      ids.forEach(id => {
+        entityState.entities.delete(id);
+        if (entityState.currentUserGameId === id) {
+          entityState.currentUserGameId = null;
+        }
+      });
+      entityState.ids = entityState.ids.filter(id => !ids.includes(id));
+    },
+    
+    clear: () => {
+      entityState.entities.clear();
+      entityState.ids = [];
+      entityState.currentUserGameId = null;
+    },
+    
+    replaceAll: (entities: UserGame[]) => {
+      entityOperations.clear();
+      entityOperations.addMany(entities);
+    }
+  };
 
   const apiCall = async (url: string, options: RequestInit = {}) => {
     const authState = auth.value;
@@ -232,12 +481,31 @@ function createUserGamesStore() {
 
   const store = {
     get value() {
-      return state;
+      // Return backward-compatible state structure
+      const legacyState: UserGamesState = {
+        userGames: selectors.userGames,
+        currentUserGame: selectors.currentUserGame,
+        stats: entityState.stats,
+        isLoading: selectors.isLoading,
+        error: entityState.error,
+        filters: entityState.filters,
+        pagination: entityState.pagination
+      };
+      return legacyState;
+    },
+    
+    get entityState() {
+      return entityState;
+    },
+    
+    get selectors() {
+      return selectors;
     },
 
-    // Load user's game collection
+    // Load user's game collection with enhanced entity storage
     loadUserGames: async (filters: UserGameFilters = {}, page: number = 1, per_page: number = 20) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.isLoading = true;
+      entityState.error = null;
 
       try {
         const params = new URLSearchParams();
@@ -255,50 +523,67 @@ function createUserGamesStore() {
         const response = await apiCall(`${config.apiUrl}/user-games/?${params}`);
         const data: UserGameListResponse = await response.json();
 
-        state = {
-          ...state,
-          userGames: data.user_games,
-          filters,
-          pagination: {
-            page: data.page,
-            per_page: data.per_page,
-            total: data.total,
-            pages: data.pages
-          },
-          isLoading: false
+        // Replace all entities with new data (for pagination/filtering scenarios)
+        entityOperations.replaceAll(data.user_games);
+        
+        entityState.filters = filters;
+        entityState.pagination = {
+          page: data.page,
+          per_page: data.per_page,
+          total: data.total,
+          pages: data.pages
         };
+        entityState.isLoading = false;
+        
+        // Emit collection updated event
+        gameEventBus.emit('collection-loaded', {
+          games: data.user_games,
+          pagination: entityState.pagination,
+          filters
+        });
+        
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load user games';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.isLoading = false;
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Get a specific user game by ID
+    // Get a specific user game by ID with enhanced caching
     getUserGame: async (id: string) => {
-      state = { ...state, isLoading: true, error: null };
+      // Check if we already have this game in our entities
+      const existingGame = entityState.entities.get(id);
+      if (existingGame && !entityState.optimisticUpdates.isPendingFor(id)) {
+        entityState.currentUserGameId = id;
+        return existingGame;
+      }
+
+      entityState.isLoading = true;
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/${id}`);
         const userGame: UserGame = await response.json();
 
-        state = {
-          ...state,
-          currentUserGame: userGame,
-          isLoading: false
-        };
+        // Add/update the entity
+        entityOperations.addOne(userGame);
+        entityState.currentUserGameId = id;
+        entityState.isLoading = false;
 
         return userGame;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load user game';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.isLoading = false;
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
     // Add a game to user's collection
     addGameToCollection: async (gameData: UserGameCreateRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.isLoading = true;
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/`, {
@@ -308,24 +593,46 @@ function createUserGamesStore() {
         
         const userGame: UserGame = await response.json();
 
-        state = {
-          ...state,
-          userGames: [userGame, ...state.userGames],
-          currentUserGame: userGame,
-          isLoading: false
-        };
+        // Add to entities
+        entityOperations.addOne(userGame);
+        entityState.currentUserGameId = userGame.id;
+        entityState.isLoading = false;
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('game-added', { game: userGame });
 
         return userGame;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to add game to collection';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.isLoading = false;
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Update user game details
+    // Update user game details with optimistic updates
     updateUserGame: async (id: string, gameData: UserGameUpdateRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      const existingGame = entityState.entities.get(id);
+      if (!existingGame) {
+        throw new Error(`Game with id ${id} not found in collection`);
+      }
+
+      // Apply optimistic update immediately
+      const rollback = () => {
+        entityOperations.updateOne(id, existingGame);
+      };
+      
+      // Apply optimistic update
+      entityState.optimisticUpdates.apply(
+        id, 
+        gameData, 
+        existingGame, 
+        rollback
+      );
+      
+      // Update entity with optimistic data
+      entityOperations.updateOne(id, gameData);
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/${id}`, {
@@ -334,27 +641,45 @@ function createUserGamesStore() {
         });
         
         const updatedUserGame: UserGame = await response.json();
-
-        state = {
-          ...state,
-          userGames: state.userGames.map(userGame => 
-            userGame.id === id ? updatedUserGame : userGame
-          ),
-          currentUserGame: state.currentUserGame?.id === id ? updatedUserGame : state.currentUserGame,
-          isLoading: false
-        };
+        
+        // Commit optimistic update and replace with server response
+        entityState.optimisticUpdates.commit(id);
+        entityOperations.updateOne(id, updatedUserGame);
 
         return updatedUserGame;
       } catch (error) {
+        // Rollback optimistic update on failure
+        entityState.optimisticUpdates.rollback(id);
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to update user game';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Update game progress
+    // Update game progress with optimistic updates
     updateProgress: async (id: string, progressData: ProgressUpdateRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      const existingGame = entityState.entities.get(id);
+      if (!existingGame) {
+        throw new Error(`Game with id ${id} not found in collection`);
+      }
+
+      // Apply optimistic update immediately
+      const rollback = () => {
+        entityOperations.updateOne(id, existingGame);
+      };
+      
+      // Apply optimistic update
+      entityState.optimisticUpdates.apply(
+        id, 
+        progressData, 
+        existingGame, 
+        rollback
+      );
+      
+      // Update entity with optimistic data
+      entityOperations.updateOne(id, progressData);
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/${id}/progress`, {
@@ -363,49 +688,106 @@ function createUserGamesStore() {
         });
         
         const updatedUserGame: UserGame = await response.json();
-
-        state = {
-          ...state,
-          userGames: state.userGames.map(userGame => 
-            userGame.id === id ? updatedUserGame : userGame
-          ),
-          currentUserGame: state.currentUserGame?.id === id ? updatedUserGame : state.currentUserGame,
-          isLoading: false
-        };
+        
+        // Commit optimistic update and replace with server response
+        entityState.optimisticUpdates.commit(id);
+        entityOperations.updateOne(id, updatedUserGame);
 
         return updatedUserGame;
       } catch (error) {
+        // Rollback optimistic update on failure
+        entityState.optimisticUpdates.rollback(id);
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to update progress';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Remove game from collection
+    // Remove game from collection with optimistic updates
     removeFromCollection: async (id: string) => {
-      state = { ...state, isLoading: true, error: null };
+      const existingGame = entityState.entities.get(id);
+      if (!existingGame) {
+        throw new Error(`Game with id ${id} not found in collection`);
+      }
+
+      // Apply optimistic removal immediately
+      const rollback = () => {
+        entityOperations.addOne(existingGame);
+        if (entityState.currentUserGameId === id) {
+          entityState.currentUserGameId = id;
+        }
+      };
+      
+      entityState.optimisticUpdates.apply(
+        id, 
+        {}, // No changes, just tracking
+        existingGame, 
+        rollback
+      );
+      
+      // Remove from entities optimistically
+      entityOperations.removeOne(id);
+      entityState.error = null;
 
       try {
         await apiCall(`${config.apiUrl}/user-games/${id}`, {
           method: 'DELETE',
         });
-
-        state = {
-          ...state,
-          userGames: state.userGames.filter(userGame => userGame.id !== id),
-          currentUserGame: state.currentUserGame?.id === id ? null : state.currentUserGame,
-          isLoading: false
-        };
+        
+        // Commit optimistic update
+        entityState.optimisticUpdates.commit(id);
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('game-removed', { gameId: id, game: existingGame });
+        
       } catch (error) {
+        // Rollback optimistic update on failure
+        entityState.optimisticUpdates.rollback(id);
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to remove game from collection';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Add platform to user game
+    // Add platform to user game with optimistic updates
     addPlatformToUserGame: async (userGameId: string, platformData: UserGamePlatformCreateRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      const existingGame = entityState.entities.get(userGameId);
+      if (!existingGame) {
+        throw new Error(`Game with id ${userGameId} not found in collection`);
+      }
+
+      // Create optimistic platform entry (we won't have the real ID yet)
+      const optimisticPlatform: UserGamePlatform = {
+        id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        platform: { id: platformData.platform_id } as Platform, // Will be populated by server
+        storefront: platformData.storefront_id ? { id: platformData.storefront_id } as Storefront : undefined,
+        store_game_id: platformData.store_game_id,
+        store_url: platformData.store_url,
+        is_available: true,
+        created_at: new Date().toISOString()
+      } as UserGamePlatform;
+
+      const optimisticGameUpdate = {
+        platforms: [...existingGame.platforms, optimisticPlatform]
+      };
+
+      // Apply optimistic update immediately
+      const rollback = () => {
+        entityOperations.updateOne(userGameId, { platforms: existingGame.platforms });
+      };
+      
+      entityState.optimisticUpdates.apply(
+        userGameId, 
+        optimisticGameUpdate, 
+        existingGame, 
+        rollback
+      );
+      
+      // Update entity with optimistic data
+      entityOperations.updateOne(userGameId, optimisticGameUpdate);
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms`, {
@@ -414,56 +796,118 @@ function createUserGamesStore() {
         });
         
         const updatedUserGame: UserGame = await response.json();
-
-        state = {
-          ...state,
-          userGames: state.userGames.map(userGame => 
-            userGame.id === userGameId ? updatedUserGame : userGame
-          ),
-          currentUserGame: state.currentUserGame?.id === userGameId ? updatedUserGame : state.currentUserGame,
-          isLoading: false
-        };
+        
+        // Commit optimistic update and replace with server response
+        entityState.optimisticUpdates.commit(userGameId);
+        entityOperations.updateOne(userGameId, updatedUserGame);
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('platform-added', { gameId: userGameId, game: updatedUserGame, platformData });
 
         return updatedUserGame;
       } catch (error) {
+        // Rollback optimistic update on failure
+        entityState.optimisticUpdates.rollback(userGameId);
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to add platform to user game';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Remove platform from user game
+    // Remove platform from user game with optimistic updates
     removePlatformFromUserGame: async (userGameId: string, platformId: string) => {
-      state = { ...state, isLoading: true, error: null };
+      const existingGame = entityState.entities.get(userGameId);
+      if (!existingGame) {
+        throw new Error(`Game with id ${userGameId} not found in collection`);
+      }
+
+      const platformToRemove = existingGame.platforms.find(p => p.id === platformId);
+      if (!platformToRemove) {
+        throw new Error(`Platform with id ${platformId} not found in game`);
+      }
+
+      const optimisticGameUpdate = {
+        platforms: existingGame.platforms.filter(p => p.id !== platformId)
+      };
+
+      // Apply optimistic update immediately
+      const rollback = () => {
+        entityOperations.updateOne(userGameId, { platforms: existingGame.platforms });
+      };
+      
+      entityState.optimisticUpdates.apply(
+        userGameId, 
+        optimisticGameUpdate, 
+        existingGame, 
+        rollback
+      );
+      
+      // Update entity with optimistic data
+      entityOperations.updateOne(userGameId, optimisticGameUpdate);
+      entityState.error = null;
 
       try {
         await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms/${platformId}`, {
           method: 'DELETE',
         });
-
-        // Update the user game in the state
-        state = {
-          ...state,
-          userGames: state.userGames.map(userGame => 
-            userGame.id === userGameId 
-              ? { ...userGame, platforms: userGame.platforms.filter(p => p.id !== platformId) }
-              : userGame
-          ),
-          currentUserGame: state.currentUserGame?.id === userGameId 
-            ? { ...state.currentUserGame, platforms: state.currentUserGame.platforms.filter(p => p.id !== platformId) }
-            : state.currentUserGame,
-          isLoading: false
-        };
+        
+        // Commit optimistic update (no server response for DELETE)
+        entityState.optimisticUpdates.commit(userGameId);
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('platform-removed', { 
+          gameId: userGameId, 
+          platformId, 
+          platform: platformToRemove, 
+          updatedGame: entityState.entities.get(userGameId)
+        });
+        
       } catch (error) {
+        // Rollback optimistic update on failure
+        entityState.optimisticUpdates.rollback(userGameId);
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to remove platform from user game';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Bulk update status
+    // Bulk update status with optimistic updates
     bulkUpdateStatus: async (data: BulkStatusUpdateRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.bulkOperations.isProcessing = true;
+      entityState.bulkOperations.processingIds = new Set(data.user_game_ids);
+      entityState.bulkOperations.lastOperation = 'bulk-update';
+      entityState.error = null;
+
+      // Store original games for rollback
+      const originalGames = new Map<string, UserGame>();
+      const updates: Array<{ id: string; changes: Partial<UserGame> }> = [];
+      
+      data.user_game_ids.forEach(id => {
+        const existingGame = entityState.entities.get(id);
+        if (existingGame) {
+          originalGames.set(id, existingGame);
+          
+          const changes: Partial<UserGame> = {};
+          if (data.play_status !== undefined) changes.play_status = data.play_status;
+          if (data.personal_rating !== undefined) changes.personal_rating = data.personal_rating;
+          if (data.is_loved !== undefined) changes.is_loved = data.is_loved;
+          if (data.ownership_status !== undefined) changes.ownership_status = data.ownership_status;
+          
+          updates.push({ id, changes });
+          
+          // Apply optimistic update
+          const rollback = () => {
+            entityOperations.updateOne(id, originalGames.get(id)!);
+          };
+          
+          entityState.optimisticUpdates.apply(id, changes, existingGame, rollback);
+        }
+      });
+      
+      // Apply all updates optimistically
+      entityOperations.updateMany(updates);
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/bulk-update`, {
@@ -472,77 +916,149 @@ function createUserGamesStore() {
         });
         
         const result: SuccessResponse = await response.json();
-
-        // Manually update the affected user games in the state based on request data
-        state = {
-          ...state,
-          userGames: state.userGames.map(userGame => {
-            // Check if this game was in the bulk update
-            if (data.user_game_ids.includes(userGame.id)) {
-              // Create updated user game with changes applied
-              const updatedUserGame = { ...userGame };
-              
-              if (data.play_status !== undefined) {
-                updatedUserGame.play_status = data.play_status;
-              }
-              if (data.personal_rating !== undefined) {
-                updatedUserGame.personal_rating = data.personal_rating;
-              }
-              if (data.is_loved !== undefined) {
-                updatedUserGame.is_loved = data.is_loved;
-              }
-              if (data.ownership_status !== undefined) {
-                updatedUserGame.ownership_status = data.ownership_status;
-              }
-              
-              // Update the timestamp
-              updatedUserGame.updated_at = new Date().toISOString();
-              
-              return updatedUserGame;
-            }
-            return userGame;
-          }),
-          isLoading: false
-        };
+        
+        // Commit all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.commit(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('bulk-updated', {
+          gameIds: data.user_game_ids,
+          changes: data,
+          result
+        });
 
         return result;
       } catch (error) {
+        // Rollback all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.rollback(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk update status';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Bulk delete games
+    // Bulk delete games with optimistic updates
     bulkDelete: async (data: BulkDeleteRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.bulkOperations.isProcessing = true;
+      entityState.bulkOperations.processingIds = new Set(data.user_game_ids);
+      entityState.bulkOperations.lastOperation = 'bulk-delete';
+      entityState.error = null;
+
+      // Store original games for rollback
+      const originalGames = new Map<string, UserGame>();
+      data.user_game_ids.forEach(id => {
+        const existingGame = entityState.entities.get(id);
+        if (existingGame) {
+          originalGames.set(id, existingGame);
+          
+          // Apply optimistic removal
+          const rollback = () => {
+            entityOperations.addOne(originalGames.get(id)!);
+          };
+          
+          entityState.optimisticUpdates.apply(id, {}, existingGame, rollback);
+        }
+      });
+      
+      // Remove games optimistically
+      entityOperations.removeMany(data.user_game_ids);
+      
+      // Update pagination
+      entityState.pagination.total = Math.max(0, entityState.pagination.total - data.user_game_ids.length);
 
       try {
         await apiCall(`${config.apiUrl}/user-games/bulk-delete`, {
           method: 'DELETE',
           body: JSON.stringify(data),
         });
-
-        // Remove the deleted games from the state
-        state = {
-          ...state,
-          userGames: state.userGames.filter(userGame => !data.user_game_ids.includes(userGame.id)),
-          pagination: {
-            ...state.pagination,
-            total: state.pagination.total - data.user_game_ids.length
-          },
-          isLoading: false
-        };
+        
+        // Commit all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.commit(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('bulk-deleted', {
+          gameIds: data.user_game_ids,
+          games: Array.from(originalGames.values())
+        });
+        
       } catch (error) {
+        // Rollback all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.rollback(id);
+        });
+        
+        // Restore pagination
+        entityState.pagination.total = entityState.pagination.total + data.user_game_ids.length;
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk delete games';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Bulk add platforms to games
+    // Bulk add platforms to games with optimistic updates
     bulkAddPlatforms: async (data: BulkAddPlatformRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.bulkOperations.isProcessing = true;
+      entityState.bulkOperations.processingIds = new Set(data.user_game_ids);
+      entityState.bulkOperations.lastOperation = 'bulk-add-platforms';
+      entityState.error = null;
+
+      // Store original games for rollback
+      const originalGames = new Map<string, UserGame>();
+      const updates: Array<{ id: string; changes: Partial<UserGame> }> = [];
+      
+      data.user_game_ids.forEach(gameId => {
+        const existingGame = entityState.entities.get(gameId);
+        if (existingGame) {
+          originalGames.set(gameId, existingGame);
+          
+          // Create optimistic platform entries
+          const optimisticPlatforms = data.platform_associations.map(platformData => ({
+            id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            platform: { id: platformData.platform_id } as Platform,
+            storefront: platformData.storefront_id ? { id: platformData.storefront_id } as Storefront : undefined,
+            store_game_id: platformData.store_game_id,
+            store_url: platformData.store_url,
+            is_available: true,
+            created_at: new Date().toISOString()
+          } as UserGamePlatform));
+          
+          const changes: Partial<UserGame> = {
+            platforms: [...existingGame.platforms, ...optimisticPlatforms]
+          };
+          
+          updates.push({ id: gameId, changes });
+          
+          // Apply optimistic update
+          const rollback = () => {
+            entityOperations.updateOne(gameId, originalGames.get(gameId)!);
+          };
+          
+          entityState.optimisticUpdates.apply(gameId, changes, existingGame, rollback);
+        }
+      });
+      
+      // Apply all updates optimistically
+      entityOperations.updateMany(updates);
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/bulk-add-platforms`, {
@@ -551,23 +1067,85 @@ function createUserGamesStore() {
         });
         
         const result: SuccessResponse = await response.json();
-
-        // Reload the affected games to get updated platform associations
-        // For now, we'll just trigger a reload of the entire list to ensure consistency
-        // In a more optimized version, we could update the state locally
-        await store.loadUserGames({}, state.pagination.page, state.pagination.per_page);
+        
+        // For platform operations, we need to reload affected games to get proper server IDs
+        // But we'll do it more efficiently by only reloading affected games
+        const updatedGamesPromises = data.user_game_ids.map(id => 
+          apiCall(`${config.apiUrl}/user-games/${id}`).then(res => res.json())
+        );
+        
+        const updatedGames: UserGame[] = await Promise.all(updatedGamesPromises);
+        
+        // Update entities with server response and commit optimistic updates
+        updatedGames.forEach(game => {
+          entityState.optimisticUpdates.commit(game.id);
+          entityOperations.updateOne(game.id, game);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('bulk-platforms-added', {
+          gameIds: data.user_game_ids,
+          platformData: data.platform_associations,
+          result
+        });
 
         return result;
       } catch (error) {
+        // Rollback all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.rollback(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk add platforms';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Bulk remove platforms from games
+    // Bulk remove platforms from games with optimistic updates
     bulkRemovePlatforms: async (data: BulkRemovePlatformRequest) => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.bulkOperations.isProcessing = true;
+      entityState.bulkOperations.processingIds = new Set(data.user_game_ids);
+      entityState.bulkOperations.lastOperation = 'bulk-remove-platforms';
+      entityState.error = null;
+
+      // Store original games for rollback
+      const originalGames = new Map<string, UserGame>();
+      const updates: Array<{ id: string; changes: Partial<UserGame> }> = [];
+      
+      data.user_game_ids.forEach(gameId => {
+        const existingGame = entityState.entities.get(gameId);
+        if (existingGame) {
+          originalGames.set(gameId, existingGame);
+          
+          // Remove platforms optimistically
+          const updatedPlatforms = existingGame.platforms.filter(
+            platform => !data.platform_association_ids.includes(platform.id)
+          );
+          
+          const changes: Partial<UserGame> = {
+            platforms: updatedPlatforms
+          };
+          
+          updates.push({ id: gameId, changes });
+          
+          // Apply optimistic update
+          const rollback = () => {
+            entityOperations.updateOne(gameId, originalGames.get(gameId)!);
+          };
+          
+          entityState.optimisticUpdates.apply(gameId, changes, existingGame, rollback);
+        }
+      });
+      
+      // Apply all updates optimistically
+      entityOperations.updateMany(updates);
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/bulk-remove-platforms`, {
@@ -576,80 +1154,140 @@ function createUserGamesStore() {
         });
         
         const result: SuccessResponse = await response.json();
-
-        // Reload the affected games to get updated platform associations
-        // For now, we'll just trigger a reload of the entire list to ensure consistency
-        // In a more optimized version, we could update the state locally
-        await store.loadUserGames({}, state.pagination.page, state.pagination.per_page);
+        
+        // Commit all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.commit(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
+        // Emit event for cross-view synchronization
+        gameEventBus.emit('bulk-platforms-removed', {
+          gameIds: data.user_game_ids,
+          platformIds: data.platform_association_ids,
+          result
+        });
 
         return result;
       } catch (error) {
+        // Rollback all optimistic updates
+        data.user_game_ids.forEach(id => {
+          entityState.optimisticUpdates.rollback(id);
+        });
+        
+        entityState.bulkOperations.isProcessing = false;
+        entityState.bulkOperations.processingIds.clear();
+        
         const errorMessage = error instanceof Error ? error.message : 'Failed to bulk remove platforms';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
     // Get collection statistics
     getCollectionStats: async () => {
-      state = { ...state, isLoading: true, error: null };
+      entityState.isLoading = true;
+      entityState.error = null;
 
       try {
         const response = await apiCall(`${config.apiUrl}/user-games/stats`);
         const stats: CollectionStats = await response.json();
 
-        state = {
-          ...state,
-          stats,
-          isLoading: false
-        };
+        entityState.stats = stats;
+        entityState.isLoading = false;
 
         return stats;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get collection stats';
-        state = { ...state, isLoading: false, error: errorMessage };
+        entityState.isLoading = false;
+        entityState.error = errorMessage;
         throw error;
       }
     },
 
-    // Get games by play status
+    // Enhanced getter methods using entity-based selectors
     getGamesByStatus: (status: PlayStatus) => {
-      return state.userGames.filter(userGame => userGame.play_status === status);
+      return selectors.byStatus(status);
     },
 
-    // Get loved games
     getLovedGames: () => {
-      return state.userGames.filter(userGame => userGame.is_loved);
+      return selectors.lovedGames;
     },
 
-    // Get games by rating
     getGamesByRating: (rating: number) => {
-      return state.userGames.filter(userGame => userGame.personal_rating === rating);
+      return selectors.byRating(rating);
     },
 
-    // Get pile of shame (not started games)
     getPileOfShame: () => {
-      return state.userGames.filter(userGame => userGame.play_status === PlayStatus.NOT_STARTED);
+      return selectors.pileOfShame;
+    },
+    
+    getGamesByPlatform: (platformId: string) => {
+      return selectors.byPlatform(platformId);
+    },
+    
+    getGameById: (id: string) => {
+      return selectors.byId(id);
     },
 
-    // Clear current user game
+    // Enhanced state management
     clearCurrentUserGame: () => {
-      state = { ...state, currentUserGame: null };
+      entityState.currentUserGameId = null;
     },
 
-    // Clear filters
     clearFilters: () => {
-      state = { ...state, filters: {} };
+      entityState.filters = {};
     },
 
-    // Clear error
     clearError: () => {
-      state = { ...state, error: null };
+      entityState.error = null;
+    },
+    
+    clearOptimisticUpdates: () => {
+      entityState.optimisticUpdates.rollbackAll();
+    },
+    
+    // Context preservation helpers
+    getNavigationContext: () => {
+      return {
+        filters: entityState.filters,
+        pagination: entityState.pagination,
+        currentUserGameId: entityState.currentUserGameId,
+        hasOptimisticUpdates: entityState.optimisticUpdates.isPending
+      };
+    },
+    
+    restoreNavigationContext: (context: any) => {
+      if (context.filters) entityState.filters = context.filters;
+      if (context.pagination) entityState.pagination = context.pagination;
+      if (context.currentUserGameId) entityState.currentUserGameId = context.currentUserGameId;
+    },
+    
+    // Enhanced debugging and monitoring
+    getEntityStats: () => {
+      return {
+        totalEntities: entityState.entities.size,
+        idsLength: entityState.ids.length,
+        pendingOptimisticUpdates: entityState.optimisticUpdates.isPending,
+        bulkOperationInProgress: entityState.bulkOperations.isProcessing
+      };
     },
 
-    // Alias for loadUserGames for backward compatibility
+    // Backward compatibility aliases
     fetchUserGames: async (filters: UserGameFilters = {}, page: number = 1, per_page: number = 20) => {
       return await store.loadUserGames(filters, page, per_page);
+    },
+    
+    // Event system integration
+    on: gameEventBus.on.bind(gameEventBus),
+    off: gameEventBus.off.bind(gameEventBus),
+    emit: gameEventBus.emit.bind(gameEventBus),
+    
+    // Testing utility - only for test environments
+    __testSetData: (games: UserGame[]) => {
+      entityOperations.replaceAll(games);
     }
   };
 

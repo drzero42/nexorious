@@ -42,8 +42,8 @@ describe('Admin Store', () => {
           username: 'admin',
           is_admin: true,
           is_active: true,
-          created_at: '2023-01-01T00:00:00Z',
-          updated_at: '2023-01-01T00:00:00Z'
+          created_at: '2023-01-01T00:00:00.000Z',
+          updated_at: '2023-01-01T00:00:00.000Z'
         },
         {
           id: '2',
@@ -61,8 +61,8 @@ describe('Admin Store', () => {
           username: 'admin',
           isAdmin: true,
           isActive: true,
-          createdAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2023-01-01T00:00:00Z'
+          createdAt: '2023-01-01T00:00:00.000Z',
+          updatedAt: '2023-01-01T00:00:00.000Z'
         },
         {
           id: '2',
@@ -124,8 +124,8 @@ describe('Admin Store', () => {
           username: 'admin',
           is_admin: true,
           is_active: true,
-          created_at: '2023-01-01T00:00:00Z',
-          updated_at: '2023-01-01T00:00:00Z'
+          created_at: '2023-01-01T00:00:00.000Z',
+          updated_at: '2023-01-01T00:00:00.000Z'
         },
         {
           id: '2',
@@ -143,8 +143,8 @@ describe('Admin Store', () => {
           username: 'admin',
           isAdmin: true,
           isActive: true,
-          createdAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2023-01-01T00:00:00Z'
+          createdAt: '2023-01-01T00:00:00.000Z',
+          updatedAt: '2023-01-01T00:00:00.000Z'
         },
         {
           id: '2',
@@ -250,8 +250,8 @@ describe('Admin Store', () => {
         username: 'testuser',
         is_admin: false,
         is_active: true,
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-01T00:00:00Z'
+        created_at: '2023-01-01T00:00:00.000Z',
+        updated_at: '2023-01-01T00:00:00.000Z'
       }];
       
       mockFetch.mockResolvedValueOnce({
@@ -266,7 +266,7 @@ describe('Admin Store', () => {
         username: 'updateduser',
         is_admin: false,
         is_active: true,
-        created_at: '2023-01-01T00:00:00Z',
+        created_at: '2023-01-01T00:00:00.000Z',
         updated_at: '2023-01-03T00:00:00Z'
       };
 
@@ -275,7 +275,7 @@ describe('Admin Store', () => {
         username: 'updateduser',
         isAdmin: false,
         isActive: true,
-        createdAt: '2023-01-01T00:00:00Z',
+        createdAt: '2023-01-01T00:00:00.000Z',
         updatedAt: '2023-01-03T00:00:00Z'
       };
 
@@ -339,8 +339,8 @@ describe('Admin Store', () => {
           username: 'user1',
           is_admin: false,
           is_active: true,
-          created_at: '2023-01-01T00:00:00Z',
-          updated_at: '2023-01-01T00:00:00Z'
+          created_at: '2023-01-01T00:00:00.000Z',
+          updated_at: '2023-01-01T00:00:00.000Z'
         },
         {
           id: '2',
@@ -389,8 +389,8 @@ describe('Admin Store', () => {
         username: 'testuser',
         is_admin: false,
         is_active: true,
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-01T00:00:00Z'
+        created_at: '2023-01-01T00:00:00.000Z',
+        updated_at: '2023-01-01T00:00:00.000Z'
       };
 
       const expectedFrontendUser = {
@@ -398,8 +398,8 @@ describe('Admin Store', () => {
         username: 'testuser',
         isAdmin: false,
         isActive: true,
-        createdAt: '2023-01-01T00:00:00Z',
-        updatedAt: '2023-01-01T00:00:00Z'
+        createdAt: '2023-01-01T00:00:00.000Z',
+        updatedAt: '2023-01-01T00:00:00.000Z'
       };
 
       mockFetch.mockResolvedValueOnce({

@@ -68,8 +68,8 @@ vi.mock('./games.svelte', () => ({
 					cover_art_url: 'https://example.com/cover.jpg',
 					rating_count: 100,
 					game_metadata: '{}',
-					created_at: '2023-01-01T00:00:00Z',
-					updated_at: '2023-01-01T00:00:00Z'
+					created_at: '2023-01-01T00:00:00.000Z',
+					updated_at: '2023-01-01T00:00:00.000Z'
 				}
 			]
 		},
@@ -212,7 +212,7 @@ describe('Search Store', () => {
 					name: 'My Search',
 					query: { q: 'test', filters: {}, sortBy: 'title', sortOrder: 'asc' },
 					searchType: 'games',
-					created_at: '2023-01-01T00:00:00Z'
+					created_at: '2023-01-01T00:00:00.000Z'
 				}
 			];
 
@@ -235,7 +235,7 @@ describe('Search Store', () => {
 					id: 'history1',
 					query: 'test game',
 					searchType: 'games',
-					timestamp: '2023-01-01T00:00:00Z'
+					timestamp: '2023-01-01T00:00:00.000Z'
 				}
 			];
 
@@ -478,7 +478,7 @@ describe('Search Store', () => {
 					sortOrder: 'desc'
 				},
 				searchType: 'games',
-				created_at: '2023-01-01T00:00:00Z'
+				created_at: '2023-01-01T00:00:00.000Z'
 			};
 
 			search.value.savedSearches = [savedSearch];
@@ -505,7 +505,7 @@ describe('Search Store', () => {
 				name: 'My Search',
 				query: { q: 'test', filters: {}, sortBy: 'title', sortOrder: 'asc' },
 				searchType: 'games',
-				created_at: '2023-01-01T00:00:00Z'
+				created_at: '2023-01-01T00:00:00.000Z'
 			};
 
 			search.value.savedSearches = [savedSearch];
@@ -519,7 +519,7 @@ describe('Search Store', () => {
 	describe('Search History', () => {
 		it('should clear search history', () => {
 			search.value.searchHistory = [
-				{ id: '1', query: 'test', searchType: 'games', timestamp: '2023-01-01T00:00:00Z' }
+				{ id: '1', query: 'test', searchType: 'games', timestamp: '2023-01-01T00:00:00.000Z' }
 			];
 
 			search.clearSearchHistory();
@@ -529,7 +529,7 @@ describe('Search Store', () => {
 		});
 
 		it('should remove specific history item', () => {
-			const historyItem = { id: '1', query: 'test', searchType: 'games', timestamp: '2023-01-01T00:00:00Z' };
+			const historyItem = { id: '1', query: 'test', searchType: 'games', timestamp: '2023-01-01T00:00:00.000Z' };
 			search.value.searchHistory = [historyItem];
 
 			search.removeFromHistory('1');

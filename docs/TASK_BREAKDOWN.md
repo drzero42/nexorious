@@ -147,10 +147,9 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Automatic ownership status updates when platforms are added/removed with visual feedback
 - [x] Visual indicators showing current ownership status during editing and automatic status changes
 - [x] Bulk editing interface for multiple games
-- [ ] Real-time updates to collection view after edits (changes reflected immediately)
+- [x] Real-time updates to collection view after edits (changes reflected immediately)
 - [ ] Error handling and validation feedback
 - [ ] Save/cancel functionality with unsaved changes warnings
-- [ ] Game continues to appear once in collection with updated platform/storefront indicators
 
 #### 1.2.6 Automatic Game Cleanup Implementation
 **Priority**: P1 (High)
