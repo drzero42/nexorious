@@ -4,19 +4,30 @@
   import { games } from '$lib/stores/games.svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
   import { notifications } from '$lib/stores/notifications.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, FormField } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import { auth } from '$lib/stores/auth.svelte';
+  import { 
+    validatePersonalRating, 
+    validateHoursPlayed, 
+    validateStoreUrl, 
+    validatePlatformSelection, 
+    validatePersonalNotes,
+    type ValidationError,
+    getFieldError
+  } from '$lib/utils/form-validation';
 
   let isLoading = true;
   let isEditing = false;
   let isUpdatingFromIGDB = false;
+  let isRetrying = false;
+  let retryCount = 0;
   
   // Reactive game data from store
   $: gameId = $page.params.id!;
@@ -42,6 +53,15 @@
     is_loved: false,
     ownership_status: 'owned' as OwnershipStatus
   };
+
+  // Form validation state
+  let validationErrors: ValidationError[] = [];
+  let formDirtyFields = new Set<string>();
+
+  // Computed validation state
+  $: hasValidationErrors = validationErrors.length > 0;
+  $: hasUnsavedChanges = formDirtyFields.size > 0;
+  $: canSaveForm = !hasValidationErrors && !hasOptimisticUpdates;
 
   // PlatformSelector component data model
   let selectedPlatforms = new Set<string>();
@@ -119,12 +139,30 @@
     console.log('Updated store URLs:', platformStoreUrls);
   }
 
+  // Browser unload warning for unsaved changes
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (isEditing && hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = ''; // Modern browsers require this
+      return '';
+    }
+    return undefined;
+  }
+
   onMount(async () => {
     // Load game details and platforms - authentication is handled by RouteGuard
     await Promise.all([
       ensureGameLoaded(),
       loadPlatforms()
     ]);
+
+    // Add beforeunload listener for unsaved changes warning
+    window.addEventListener('beforeunload', handleBeforeUnload);
+  });
+
+  onDestroy(() => {
+    // Clean up beforeunload listener
+    window.removeEventListener('beforeunload', handleBeforeUnload);
   });
 
   async function ensureGameLoaded() {
@@ -267,8 +305,23 @@
       
     } catch (error) {
       console.error('Failed to add platforms:', error);
-      // Show error message
-      notifications.showError('Failed to add platforms. Please try again.');
+      
+      // Enhanced error handling
+      if (error instanceof Error && error.message) {
+        if (error.message.includes('unauthorized') || error.message.includes('401')) {
+          notifications.showError('Your session has expired. Please refresh the page and log in again.');
+        } else if (error.message.includes('forbidden') || error.message.includes('403')) {
+          notifications.showError('You do not have permission to add platforms to this game.');
+        } else if (error.message.includes('duplicate') || error.message.includes('already exists')) {
+          notifications.showError('One or more selected platforms are already added to this game.');
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          notifications.showError('Network error. Please check your connection and try again.');
+        } else {
+          notifications.showError(`Failed to add platforms: ${error.message}`);
+        }
+      } else {
+        notifications.showError('Failed to add platforms. Please try again.');
+      }
     } finally {
       isAddingPlatform = false;
     }
@@ -314,8 +367,23 @@
       
     } catch (error) {
       console.error('Failed to remove platform:', error);
-      // Show error message
-      notifications.showError('Failed to remove platform. Please try again.');
+      
+      // Enhanced error handling
+      if (error instanceof Error && error.message) {
+        if (error.message.includes('unauthorized') || error.message.includes('401')) {
+          notifications.showError('Your session has expired. Please refresh the page and log in again.');
+        } else if (error.message.includes('forbidden') || error.message.includes('403')) {
+          notifications.showError('You do not have permission to remove platforms from this game.');
+        } else if (error.message.includes('not found') || error.message.includes('404')) {
+          notifications.showError('The platform association was not found. It may have been already removed.');
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          notifications.showError('Network error. Please check your connection and try again.');
+        } else {
+          notifications.showError(`Failed to remove platform: ${error.message}`);
+        }
+      } else {
+        notifications.showError('Failed to remove platform. Please try again.');
+      }
     } finally {
       isRemovingPlatform = false;
     }
@@ -335,6 +403,159 @@
   function handleStoreUrlChange(event: CustomEvent<{ platformId: string; url: string }>) {
     console.log('handleStoreUrlChange event received:', event.detail);
     setStoreUrlForPlatform(event.detail.platformId, event.detail.url);
+    
+    // Validate store URL
+    validateStoreUrls();
+  }
+
+  // Validation functions
+  function validateStoreUrls() {
+    const errors: ValidationError[] = [];
+    
+    for (const [platformId, url] of platformStoreUrls) {
+      const error = validateStoreUrl(url);
+      if (error) {
+        errors.push({ field: `store_url_${platformId}`, message: error });
+      }
+    }
+    
+    // Update validation errors for store URLs
+    validationErrors = validationErrors.filter(e => !e.field.startsWith('store_url_')) 
+      .concat(errors);
+  }
+
+  function validateFormField(fieldName: string, value: any) {
+    // Remove any existing error for this field
+    validationErrors = validationErrors.filter(e => e.field !== fieldName);
+    
+    let error: string | null = null;
+    
+    switch (fieldName) {
+      case 'personal_rating':
+        error = validatePersonalRating(value);
+        break;
+      case 'hours_played':
+        error = validateHoursPlayed(value);
+        break;
+      case 'personal_notes':
+        error = validatePersonalNotes(value);
+        break;
+      case 'platform_selection':
+        const platformCount = game?.platforms?.length || 0;
+        error = validatePlatformSelection(editData.ownership_status, platformCount);
+        break;
+    }
+    
+    if (error) {
+      validationErrors = [...validationErrors, { field: fieldName, message: error }];
+    }
+  }
+
+  function validateAllFields() {
+    validateFormField('personal_rating', editData.personal_rating);
+    validateFormField('hours_played', editData.hours_played);
+    validateFormField('personal_notes', editData.personal_notes);
+    validateFormField('platform_selection', null);
+    validateStoreUrls();
+  }
+
+  function markFieldDirty(fieldName: string) {
+    formDirtyFields.add(fieldName);
+    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
+  }
+
+  function clearDirtyState() {
+    formDirtyFields.clear();
+    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
+  }
+
+  // Retry mechanism for failed operations
+  async function retryOperation<T>(
+    operation: () => Promise<T>, 
+    maxRetries: number = 3, 
+    delay: number = 1000
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await operation();
+        // Clear retry state on success
+        isRetrying = false;
+        retryCount = 0;
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Only retry on network errors
+        if (error instanceof Error && 
+            (error.message.includes('network') || 
+             error.message.includes('fetch') || 
+             error.message.includes('timeout'))) {
+          
+          if (attempt < maxRetries) {
+            console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
+            isRetrying = true;
+            retryCount = attempt;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 1.5; // Exponential backoff
+            continue;
+          }
+        }
+        
+        // For non-network errors or final attempt, throw immediately
+        isRetrying = false;
+        retryCount = 0;
+        throw error;
+      }
+    }
+    
+    // Clear retry state on final failure
+    isRetrying = false;
+    retryCount = 0;
+    throw lastError || new Error('Retry operation failed');
+  }
+
+  function handleApiValidationError(errorMessage: string) {
+    // Try to extract field-specific validation errors from API response
+    // This is a basic implementation - could be enhanced based on actual API error format
+    
+    try {
+      // Look for patterns like "field_name: error message" or similar
+      const fieldErrorPatterns = [
+        /personal_rating.*?(?:invalid|must be|should be|cannot)/i,
+        /hours_played.*?(?:invalid|must be|should be|cannot)/i,
+        /personal_notes.*?(?:invalid|must be|should be|cannot|too long)/i,
+        /ownership_status.*?(?:invalid|must be|should be|cannot)/i,
+        /platform.*?(?:invalid|must be|should be|cannot|required)/i
+      ];
+
+      let foundFieldError = false;
+      const newErrors: ValidationError[] = [];
+
+      for (const pattern of fieldErrorPatterns) {
+        const match = errorMessage.match(pattern);
+        if (match && match[0]) {
+          const matchText = match[0];
+          const fieldNameParts = matchText.split(/[:.]|must|should|cannot/);
+          const fieldName = fieldNameParts[0]?.trim() || 'unknown_field';
+          newErrors.push({ field: fieldName, message: matchText });
+          foundFieldError = true;
+        }
+      }
+
+      if (foundFieldError) {
+        // Add API validation errors to existing validation errors
+        validationErrors = [...validationErrors, ...newErrors];
+        notifications.showError('Please fix the validation errors below and try again.');
+      } else {
+        // Fall back to generic error message
+        notifications.showError(`Validation error: ${errorMessage}`);
+      }
+    } catch (parseError) {
+      // If we can't parse the error, show generic message
+      notifications.showError(`Validation error: ${errorMessage}`);
+    }
   }
 
   function resetEditData() {
@@ -348,20 +569,42 @@
         is_loved: game.is_loved,
         ownership_status: game.ownership_status
       };
+      // Clear validation state
+      validationErrors = [];
+      clearDirtyState();
     }
   }
 
   function startEditing() {
     isEditing = true;
     resetEditData();
+    validateAllFields(); // Initial validation
   }
 
-  function cancelEditing() {
+  async function cancelEditing() {
+    // Check for unsaved changes
+    if (hasUnsavedChanges) {
+      const confirmCancel = confirm(
+        'You have unsaved changes. Are you sure you want to cancel? Your changes will be lost.'
+      );
+      if (!confirmCancel) {
+        return;
+      }
+    }
+    
     isEditing = false;
     resetEditData();
   }
 
   async function saveChanges() {
+    // Run validation before saving
+    validateAllFields();
+    
+    if (hasValidationErrors) {
+      notifications.showError('Please fix the validation errors before saving.');
+      return;
+    }
+
     try {
       // Split editData into user game update and progress update
       const userGameUpdate: UserGameUpdateRequest = {
@@ -383,18 +626,40 @@
       }
 
       
-      // Always update user-specific data (personal information)
-      await userGames.updateUserGame(gameId, userGameUpdate);
-      await userGames.updateProgress(gameId, progressUpdate);
+      // Always update user-specific data (personal information) with retry
+      await retryOperation(() => userGames.updateUserGame(gameId, userGameUpdate));
+      await retryOperation(() => userGames.updateProgress(gameId, progressUpdate));
       
       // Note: Game data is updated automatically through store optimistic updates
       isEditing = false;
+      
+      // Clear validation and dirty state
+      clearDirtyState();
+      validationErrors = [];
       
       // Show success message
       notifications.showSuccess('Game information updated successfully.');
     } catch (error) {
       console.error('Failed to save changes:', error);
-      notifications.showError('Failed to save changes. Please try again.');
+      
+      // Handle different types of API errors
+      if (error instanceof Error && error.message) {
+        // Check if it's a validation error from the backend
+        if (error.message.includes('validation') || error.message.includes('invalid')) {
+          // Try to parse field-specific errors
+          handleApiValidationError(error.message);
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          notifications.showError('Network error. Please check your connection and try again.');
+        } else if (error.message.includes('unauthorized') || error.message.includes('401')) {
+          notifications.showError('Your session has expired. Please refresh the page and log in again.');
+        } else if (error.message.includes('forbidden') || error.message.includes('403')) {
+          notifications.showError('You do not have permission to edit this game.');
+        } else {
+          notifications.showError(`Failed to save changes: ${error.message}`);
+        }
+      } else {
+        notifications.showError('Failed to save changes. Please try again.');
+      }
     }
   }
 
@@ -859,6 +1124,7 @@
                     bind:value={editData.play_status}
                     on:change={(e: CustomEvent<{ value: PlayStatus }>) => {
                       editData.play_status = e.detail.value;
+                      markFieldDirty('play_status');
                     }}
                   />
                 </div>
@@ -871,6 +1137,10 @@
                     id="ownership_status"
                     bind:value={editData.ownership_status}
                     class="form-input"
+                    on:change={() => {
+                      markFieldDirty('ownership_status');
+                      validateFormField('platform_selection', null); // Re-validate platform requirement
+                    }}
                   >
                     <option value="owned">Owned</option>
                     <option value="borrowed">Borrowed</option>
@@ -880,14 +1150,21 @@
                   </select>
                 </div>
 
-                <div>
-                  <label for="personal_rating" class="form-label">
-                    Personal Rating
-                  </label>
+                <FormField 
+                  label="Personal Rating" 
+                  id="personal_rating" 
+                  error={getFieldError(validationErrors, 'personal_rating')}
+                  isDirty={formDirtyFields.has('personal_rating')}
+                  helpText="Rate this game from 1 to 5 stars (optional)"
+                >
                   <select
                     id="personal_rating"
                     bind:value={editData.personal_rating}
-                    class="form-input"
+                    class="form-select"
+                    on:change={() => {
+                      markFieldDirty('personal_rating');
+                      validateFormField('personal_rating', editData.personal_rating);
+                    }}
                   >
                     <option value={null}>No Rating</option>
                     <option value={1}>1 Star</option>
@@ -896,20 +1173,25 @@
                     <option value={4}>4 Stars</option>
                     <option value={5}>5 Stars</option>
                   </select>
-                </div>
+                </FormField>
 
-                <div>
-                  <label for="hours_played" class="form-label">
-                    Hours Played
-                  </label>
+                <FormField 
+                  label="Hours Played" 
+                  id="hours_played" 
+                  error={getFieldError(validationErrors, 'hours_played')}
+                  isDirty={formDirtyFields.has('hours_played')}
+                  helpText="Track how many hours you've played this game"
+                >
                   <TimeTrackingInput
                     id="hours_played"
                     bind:value={editData.hours_played}
                     on:change={(e: CustomEvent<{ value: number }>) => {
                       editData.hours_played = e.detail.value;
+                      markFieldDirty('hours_played');
+                      validateFormField('hours_played', editData.hours_played);
                     }}
                   />
-                </div>
+                </FormField>
               </div>
 
               <div class="mt-6 space-y-4">
@@ -919,6 +1201,7 @@
                       type="checkbox"
                       bind:checked={editData.is_loved}
                       class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      on:change={() => markFieldDirty('is_loved')}
                     />
                     <span class="ml-2 text-sm text-gray-700">
                       <span class="text-red-500">♥</span> Loved game
@@ -926,19 +1209,24 @@
                   </label>
                 </div>
 
-                <div>
-                  <label for="personal_notes" class="form-label">
-                    Personal Notes
-                  </label>
+                <FormField 
+                  label="Personal Notes" 
+                  id="personal_notes" 
+                  error={getFieldError(validationErrors, 'personal_notes')}
+                  isDirty={formDirtyFields.has('personal_notes')}
+                  helpText="Add your personal thoughts, reviews, or notes about this game"
+                >
                   <RichTextEditor
                     bind:value={editData.personal_notes}
                     placeholder="Add your personal notes about this game..."
                     editable={true}
                     onchange={(e: CustomEvent<{ value: string }>) => {
                       editData.personal_notes = e.detail.value;
+                      markFieldDirty('personal_notes');
+                      validateFormField('personal_notes', editData.personal_notes);
                     }}
                   />
-                </div>
+                </FormField>
               </div>
             </div>
 
@@ -1095,19 +1383,24 @@
               </button>
               <button
                 type="submit"
-                disabled={hasOptimisticUpdates}
-                class="btn-primary inline-flex items-center gap-x-2 disabled:opacity-75 transition-all duration-200 {hasOptimisticUpdates ? 'ring-2 ring-blue-300' : ''}"
+                disabled={!canSaveForm}
+                class="btn-primary inline-flex items-center gap-x-2 disabled:opacity-75 transition-all duration-200 {hasOptimisticUpdates ? 'ring-2 ring-blue-300' : ''} {hasValidationErrors ? 'ring-2 ring-red-300' : ''}"
+                title={hasValidationErrors ? 'Please fix validation errors before saving' : 'Save changes'}
               >
                 {#if hasOptimisticUpdates}
                   <svg class="animate-spin -ml-0.5 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Saving...
+                  {#if isRetrying}
+                    Retrying... (Attempt {retryCount}/3)
+                  {:else}
+                    Saving...
+                  {/if}
                 {:else}
                   <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
                   </svg>
-                  Save Changes
+                  {hasUnsavedChanges ? 'Save Changes *' : 'Save Changes'}
                 {/if}
               </button>
             </div>
