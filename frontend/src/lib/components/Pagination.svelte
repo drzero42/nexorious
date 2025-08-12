@@ -94,6 +94,7 @@
       <button
         on:click={handlePrevious}
         disabled={currentPage <= 1}
+        class="btn-secondary text-sm px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Previous
       </button>
@@ -105,6 +106,7 @@
         {:else}
           <button
             on:click={() => handlePageClick(page)}
+            class="px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 min-w-[40px] {page === currentPage ? 'btn-primary' : 'btn-secondary'}"
           >
             {page}
           </button>
@@ -115,6 +117,7 @@
       <button
         on:click={handleNext}
         disabled={currentPage >= totalPages}
+        class="btn-secondary text-sm px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Next
       </button>

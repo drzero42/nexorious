@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+import type { Snippet } from 'svelte';
 import FormField from './FormField.svelte';
 
-// Mock snippet for tests - create a simple component that accepts children
-const mockChildren = () => {};
+// Mock snippet for tests - use type assertion to match Snippet<[]> type
+const mockChildren = (() => {}) as Snippet<[]>;
 
 describe('FormField', () => {
   it('should render form field container', () => {
