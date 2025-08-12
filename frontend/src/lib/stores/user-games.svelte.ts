@@ -1248,6 +1248,61 @@ function createUserGamesStore() {
     clearOptimisticUpdates: () => {
       entityState.optimisticUpdates.rollbackAll();
     },
+
+    // Get available platform associations for bulk removal
+    getAvailablePlatformAssociationsForGames: (gameIds: string[]) => {
+      const platformAssociations = new Map<string, {
+        platformId: string;
+        platformName: string;
+        storefrontId?: string;
+        storefrontName?: string;
+        associationIds: string[];
+        platformIconUrl?: string;
+      }>();
+
+      gameIds.forEach(gameId => {
+        const userGame = entityState.entities.get(gameId);
+        if (userGame) {
+          userGame.platforms.forEach(platform => {
+            const key = `${platform.platform.id}-${platform.storefront?.id || 'none'}`;
+            
+            if (!platformAssociations.has(key)) {
+              const association: {
+                platformId: string;
+                platformName: string;
+                storefrontId?: string;
+                storefrontName?: string;
+                associationIds: string[];
+                platformIconUrl?: string;
+              } = {
+                platformId: platform.platform.id,
+                platformName: platform.platform.display_name,
+                associationIds: []
+              };
+              
+              if (platform.storefront?.id) {
+                association.storefrontId = platform.storefront.id;
+              }
+              
+              if (platform.storefront?.display_name) {
+                association.storefrontName = platform.storefront.display_name;
+              }
+              
+              if (platform.platform.icon_url) {
+                association.platformIconUrl = platform.platform.icon_url;
+              }
+              
+              platformAssociations.set(key, association);
+            }
+            
+            const association = platformAssociations.get(key)!;
+            association.associationIds.push(platform.id);
+          });
+        }
+      });
+
+      return Array.from(platformAssociations.values());
+    },
     
     // Context preservation helpers
     getNavigationContext: () => {
