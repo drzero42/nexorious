@@ -21,9 +21,17 @@ from .integration_test_utils import (
     session_fixture as session,
     test_user_fixture as test_user,
     auth_headers_fixture as auth_headers,
+    steam_dependencies_fixture as steam_dependencies,
     assert_api_success,
     assert_api_error
 )
+
+
+# Auto-use Steam dependencies for all tests in this module
+@pytest.fixture(autouse=True)
+def setup_steam_dependencies(steam_dependencies):
+    """Automatically set up Steam dependencies for all tests in this module."""
+    pass
 
 
 class TestCompleteImportToSyncWorkflow:
@@ -42,11 +50,6 @@ class TestCompleteImportToSyncWorkflow:
         # Setup user Steam configuration
         test_user.preferences_json = '{"steam": {"web_api_key": "test_key", "steam_id": "12345", "is_verified": true}}'
         session.add(test_user)
-        
-        # Create platforms and storefronts
-        pc_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
-        steam_storefront = Storefront(name="steam", display_name="Steam")
-        session.add_all([pc_platform, steam_storefront])
         session.commit()
         
         # Step 1: Mock Steam library import
@@ -479,11 +482,6 @@ class TestBulkOperationsWorkflows:
         auth_headers: Dict[str, str]
     ):
         """Test bulk sync of all matched Steam games."""
-        
-        # Create platforms and storefronts
-        pc_platform = Platform(name="pc-windows", display_name="PC", is_primary=True)
-        steam_storefront = Storefront(name="steam", display_name="Steam")
-        session.add_all([pc_platform, steam_storefront])
         
         # Create IGDB games
         igdb_games = []
