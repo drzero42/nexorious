@@ -3,6 +3,7 @@
  import { onMount, onDestroy } from 'svelte';
  import { goto } from '$app/navigation';
  import { RouteGuard, Pagination, PlatformBadges, PlatformSelector } from '$lib/components';
+ import PlatformRemovalSelector from '$lib/components/PlatformRemovalSelector.svelte';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
  import { PlayStatus, OwnershipStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest, type BulkAddPlatformRequest, type UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
@@ -54,8 +55,16 @@ let bulkSelectedPlatforms = new Set<string>();
 let bulkPlatformStorefronts = new Map<string, Set<string>>();
 let bulkPlatformStoreUrls = new Map<string, string>();
 
-// Platform removal selection (currently not implemented)
-// let platformsToRemove: { id: string; platformName: string; storefrontName: string }[] = [];
+// Platform removal selection
+let availablePlatformAssociations: Array<{
+  platformId: string;
+  platformName: string;
+  storefrontId?: string;
+  storefrontName?: string;
+  associationIds: string[];
+  platformIconUrl?: string;
+}> = [];
+let selectedAssociationIds: Set<string> = new Set();
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
@@ -391,7 +400,9 @@ function resetBulkPlatformState() {
   bulkSelectedPlatforms = new Set<string>();
   bulkPlatformStorefronts = new Map<string, Set<string>>();
   bulkPlatformStoreUrls = new Map<string, string>();
-  // platformsToRemove = []; // Currently not implemented
+  // Reset platform removal state
+  availablePlatformAssociations = [];
+  selectedAssociationIds = new Set();
 }
 
 function closeBulkPlatformAddModal() {
@@ -402,6 +413,13 @@ function closeBulkPlatformAddModal() {
 function closeBulkPlatformRemoveModal() {
   showBulkPlatformRemoveModal = false;
   resetBulkPlatformState();
+}
+
+function openBulkPlatformRemoveModal() {
+  // Get available platform associations for the selected games
+  availablePlatformAssociations = userGames.getAvailablePlatformAssociationsForGames(Array.from(selectedGameIds));
+  selectedAssociationIds = new Set();
+  showBulkPlatformRemoveModal = true;
 }
 
 // Platform selection functions for bulk operations (similar to game editing)
@@ -507,8 +525,47 @@ async function applyBulkAddPlatforms() {
   }
 }
 
-// Bulk platform removal functionality is currently not implemented
-// as it requires complex UI to select which specific platform associations to remove
+// Bulk platform removal function
+async function handleBulkRemovePlatforms() {
+  if (selectedAssociationIds.size === 0) {
+    ui.showError('No Selection', 'Please select at least one platform association to remove.');
+    return;
+  }
+
+  isProcessingBulkPlatforms = true;
+  
+  try {
+    const request = {
+      user_game_ids: Array.from(selectedGameIds),
+      platform_association_ids: Array.from(selectedAssociationIds)
+    };
+
+    await userGames.bulkRemovePlatforms(request);
+    
+    ui.showSuccess(
+      'Bulk Platform Remove Successful', 
+      `Removed ${selectedAssociationIds.size} platform association${selectedAssociationIds.size !== 1 ? 's' : ''} from ${selectedGameIds.size} game${selectedGameIds.size !== 1 ? 's' : ''} successfully.`
+    );
+    
+    clearSelection();
+    closeBulkPlatformRemoveModal();
+  } catch (error) {
+    console.error('Failed to bulk remove platforms:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    ui.showError(
+      'Bulk Platform Remove Failed', 
+      `Failed to remove platforms: ${errorMessage}`
+    );
+    closeBulkPlatformRemoveModal();
+  } finally {
+    isProcessingBulkPlatforms = false;
+  }
+}
+
+// Handle platform selection changes from PlatformRemovalSelector
+function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<string> }>) {
+  selectedAssociationIds = event.detail.selectedAssociationIds;
+}
 </script>
 
 <svelte:head>
@@ -622,7 +679,7 @@ async function applyBulkAddPlatforms() {
         Add Platforms
        </button>
        <button
-        on:click={() => showBulkPlatformRemoveModal = true}
+        on:click={openBulkPlatformRemoveModal}
         class="btn-secondary text-sm px-3 py-1 ml-2"
        >
         Remove Platforms
@@ -1504,25 +1561,11 @@ async function applyBulkAddPlatforms() {
        </div>
 
        <div class="mt-6">
-        <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
-         <div class="flex">
-          <div class="flex-shrink-0">
-           <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.517-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-           </svg>
-          </div>
-          <div class="ml-3">
-           <h3 class="text-sm font-medium text-yellow-800">
-            Coming Soon
-           </h3>
-           <div class="mt-2 text-sm text-yellow-700">
-            <p>
-             Platform removal functionality requires identifying which specific platform associations exist across selected games. This feature will be implemented with backend support.
-            </p>
-           </div>
-          </div>
-         </div>
-        </div>
+        <PlatformRemovalSelector
+          bind:availablePlatformAssociations={availablePlatformAssociations}
+          bind:selectedAssociationIds={selectedAssociationIds}
+          on:selection-change={handleSelectionChange}
+        />
        </div>
       </div>
      </div>
@@ -1530,10 +1573,19 @@ async function applyBulkAddPlatforms() {
     <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
      <button
       type="button"
-      disabled={true}
+      disabled={isProcessingBulkPlatforms || selectedAssociationIds.size === 0}
+      on:click={handleBulkRemovePlatforms}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
-      Remove Platforms (Coming Soon)
+      {#if isProcessingBulkPlatforms}
+       <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+       </svg>
+       Processing...
+      {:else}
+       Remove Platforms ({selectedAssociationIds.size})
+      {/if}
      </button>
      <button
       type="button"
