@@ -20,6 +20,7 @@ from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame
 from ..api.dependencies import get_igdb_service_dependency
 from ..services.igdb import IGDBService, GameMetadata
+from ..services.logo_service import LogoService
 
 
 @pytest.fixture(name="session")
@@ -35,6 +36,19 @@ def session_fixture():
         yield session
 
 
+@pytest.fixture(name="test_logo_service", scope="session")
+def test_logo_service_fixture():
+    """Create a test logo service with temporary directory."""
+    import tempfile
+    import shutil
+    
+    temp_dir = tempfile.mkdtemp()
+    service = LogoService(temp_dir)
+    yield service
+    # Cleanup temp directory after test
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @pytest.fixture(name="client")
 def client_fixture(session: Session):
     """Create a test client with the test database session."""
@@ -47,6 +61,28 @@ def client_fixture(session: Session):
             yield new_session
 
     app.dependency_overrides[get_session] = get_session_override
+    client = TestClient(app)
+    yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(name="client_with_logo_service")
+def client_with_logo_service_fixture(session: Session, test_logo_service: LogoService):
+    """Create a test client with the test database session and logo service."""
+    # Store the engine for creating new sessions
+    test_engine = session.get_bind()
+    
+    def get_session_override():
+        # Create a new session for each request to avoid isolation issues
+        with Session(test_engine) as new_session:
+            yield new_session
+    
+    def get_logo_service_override():
+        return test_logo_service
+
+    from ..api.platforms import get_logo_service
+    app.dependency_overrides[get_session] = get_session_override
+    app.dependency_overrides[get_logo_service] = get_logo_service_override
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
@@ -138,9 +174,9 @@ def admin_headers_fixture(admin_user: User, session: Session) -> Dict[str, str]:
 def test_platform_fixture(session: Session) -> Platform:
     """Create a test platform in the database."""
     platform = Platform(
-        name="pc",
-        display_name="PC",
-        icon_url="https://example.com/pc.png",
+        name="test-platform",
+        display_name="Test Platform",
+        icon_url="https://example.com/test-platform.png",
         is_active=True
     )
     session.add(platform)
@@ -169,10 +205,10 @@ def pc_windows_platform_fixture(session: Session) -> Platform:
 def test_storefront_fixture(session: Session) -> Storefront:
     """Create a test storefront in the database."""
     storefront = Storefront(
-        name="steam",
-        display_name="Steam",
-        icon_url="https://example.com/steam.png",
-        base_url="https://store.steampowered.com",
+        name="test-storefront",
+        display_name="Test Storefront",
+        icon_url="https://example.com/test-storefront.png",
+        base_url="https://store.test-storefront.com",
         is_active=True
     )
     session.add(storefront)
@@ -185,9 +221,9 @@ def test_storefront_fixture(session: Session) -> Storefront:
 def test_storefront_2_fixture(session: Session) -> Storefront:
     """Create a second test storefront in the database."""
     storefront = Storefront(
-        name="epic",
-        display_name="Epic Games Store",
-        base_url="https://store.epicgames.com/",
+        name="test-storefront-2",
+        display_name="Test Storefront 2",
+        base_url="https://store.test-storefront-2.com/",
         is_active=True
     )
     session.add(storefront)

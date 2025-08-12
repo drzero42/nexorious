@@ -2,7 +2,7 @@
 Platform and storefront management endpoints (admin-only).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File
 from sqlmodel import Session, select, func
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -31,8 +31,14 @@ from ..api.schemas.platform import (
     PlatformStorefrontAssociationResponse
 )
 from ..api.schemas.common import SuccessResponse
+from ..services.logo_service import LogoService, logo_service
 
 router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
+
+
+def get_logo_service() -> LogoService:
+    """Dependency to get the logo service instance."""
+    return logo_service
 
 
 # Platform endpoints
@@ -417,6 +423,102 @@ async def delete_platform(
     return SuccessResponse(message="Platform deleted successfully")
 
 
+# Platform logo management endpoints
+@router.post("/{platform_id}/logo")
+async def upload_platform_logo(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)],
+    theme: str = Query(..., description="Logo theme: light or dark"),
+    file: UploadFile = File(...)
+):
+    """Upload a logo for a platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Upload the logo file
+    icon_url = await logo_service.upload_logo("platforms", platform.name, theme, file)
+    
+    # Update platform's icon_url to point to the new logo
+    # We'll use the light theme as the default icon_url
+    if theme == "light":
+        platform.icon_url = icon_url
+        platform.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(platform)
+    
+    return {
+        "message": f"Logo uploaded successfully for {platform.display_name}",
+        "theme": theme,
+        "icon_url": icon_url,
+        "platform": platform
+    }
+
+
+@router.delete("/{platform_id}/logo")
+async def delete_platform_logo(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)],
+    theme: Optional[str] = Query(default=None, description="Logo theme to delete (light/dark), or all if not specified")
+):
+    """Delete logo(s) for a platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    # Delete logo file(s)
+    deleted_files = logo_service.delete_logo("platforms", platform.name, theme)
+    
+    # If we deleted the light theme (which is the default), clear the icon_url
+    if theme == "light" or theme is None:
+        platform.icon_url = None
+        platform.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(platform)
+    
+    return {
+        "message": f"Logo(s) deleted successfully for {platform.display_name}",
+        "deleted_files": len(deleted_files),
+        "platform": platform
+    }
+
+
+@router.get("/{platform_id}/logos")
+async def list_platform_logos(
+    platform_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)]
+):
+    """List available logos for a platform (admin only)."""
+    
+    platform = session.get(Platform, platform_id)
+    if not platform:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Platform not found"
+        )
+    
+    logos = logo_service.list_logos("platforms", platform.name)
+    
+    return {
+        "platform": platform,
+        "logos": logos
+    }
+
+
 @router.get("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
 async def get_platform_default_storefront(
     platform_id: str,
@@ -657,6 +759,102 @@ async def delete_storefront(
     session.commit()
     
     return SuccessResponse(message="Storefront deleted successfully")
+
+
+# Storefront logo management endpoints
+@router.post("/storefronts/{storefront_id}/logo")
+async def upload_storefront_logo(
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)],
+    theme: str = Query(..., description="Logo theme: light or dark"),
+    file: UploadFile = File(...)
+):
+    """Upload a logo for a storefront (admin only)."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    # Upload the logo file
+    icon_url = await logo_service.upload_logo("storefronts", storefront.name, theme, file)
+    
+    # Update storefront's icon_url to point to the new logo
+    # We'll use the light theme as the default icon_url
+    if theme == "light":
+        storefront.icon_url = icon_url
+        storefront.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(storefront)
+    
+    return {
+        "message": f"Logo uploaded successfully for {storefront.display_name}",
+        "theme": theme,
+        "icon_url": icon_url,
+        "storefront": storefront
+    }
+
+
+@router.delete("/storefronts/{storefront_id}/logo")
+async def delete_storefront_logo(
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)],
+    theme: Optional[str] = Query(default=None, description="Logo theme to delete (light/dark), or all if not specified")
+):
+    """Delete logo(s) for a storefront (admin only)."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    # Delete logo file(s)
+    deleted_files = logo_service.delete_logo("storefronts", storefront.name, theme)
+    
+    # If we deleted the light theme (which is the default), clear the icon_url
+    if theme == "light" or theme is None:
+        storefront.icon_url = None
+        storefront.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(storefront)
+    
+    return {
+        "message": f"Logo(s) deleted successfully for {storefront.display_name}",
+        "deleted_files": len(deleted_files),
+        "storefront": storefront
+    }
+
+
+@router.get("/storefronts/{storefront_id}/logos")
+async def list_storefront_logos(
+    storefront_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    logo_service: Annotated[LogoService, Depends(get_logo_service)]
+):
+    """List available logos for a storefront (admin only)."""
+    
+    storefront = session.get(Storefront, storefront_id)
+    if not storefront:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Storefront not found"
+        )
+    
+    logos = logo_service.list_logos("storefronts", storefront.name)
+    
+    return {
+        "storefront": storefront,
+        "logos": logos
+    }
 
 
 # Statistics endpoints
