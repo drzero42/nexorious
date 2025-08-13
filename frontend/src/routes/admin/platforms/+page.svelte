@@ -3,6 +3,7 @@
   import { platforms, auth } from '$lib/stores';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import LogoUpload from '$lib/components/LogoUpload.svelte';
   import type { Platform, Storefront, PlatformCreateRequest, StorefrontCreateRequest, PlatformUpdateRequest, StorefrontUpdateRequest } from '$lib/stores/platforms.svelte';
 
   let isLoading = true;
@@ -43,6 +44,10 @@
   // Loading states for status toggles
   let platformToggleLoading = new Set<string>();
   let storefrontToggleLoading = new Set<string>();
+
+  // Modal tab state
+  let platformModalTab: 'basic' | 'logo' = 'basic';
+  let storefrontModalTab: 'basic' | 'logo' = 'basic';
 
 
   // Reactive statements to track platform store state
@@ -108,6 +113,7 @@
     };
     editingPlatform = null;
     showCreatePlatformForm = false;
+    platformModalTab = 'basic';
   }
 
   function resetStorefrontForm() {
@@ -120,6 +126,7 @@
     };
     editingStorefront = null;
     showCreateStorefrontForm = false;
+    storefrontModalTab = 'basic';
   }
 
   function editPlatform(platform: Platform) {
@@ -326,6 +333,39 @@
   // Check if platform has storefront association
   function hasAssociation(platformId: string, storefrontId: string): boolean {
     return platformAssociations.get(platformId)?.has(storefrontId) || false;
+  }
+
+  // Logo upload event handlers
+  function handlePlatformLogoUploaded(event: CustomEvent) {
+    // Refresh the platform data to get the updated icon_url
+    if (editingPlatform) {
+      platforms.fetchAll();
+      // Update the form to reflect the new icon_url if it was the light theme
+      if (event.detail.theme === 'light') {
+        platformForm.icon_url = event.detail.iconUrl;
+      }
+    }
+  }
+
+  function handleStorefrontLogoUploaded(event: CustomEvent) {
+    // Refresh the storefront data to get the updated icon_url
+    if (editingStorefront) {
+      platforms.fetchAll();
+      // Update the form to reflect the new icon_url if it was the light theme
+      if (event.detail.theme === 'light') {
+        storefrontForm.icon_url = event.detail.iconUrl;
+      }
+    }
+  }
+
+  function handleLogoDeleted() {
+    // Refresh data when logo is deleted
+    platforms.fetchAll();
+  }
+
+  function handleLogoError(event: CustomEvent) {
+    console.error('Logo operation error:', event.detail.message);
+    // The LogoUpload component already shows the error, we just log it here
   }
 
 </script>
@@ -715,13 +755,44 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetPlatformForm} on:keydown={(e) => e.key === 'Escape' && resetPlatformForm()}>
-      <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
+      <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
         <div class="mt-3">
           <h3 class="text-lg font-medium text-gray-900 mb-4">
             {editingPlatform ? 'Edit Platform' : 'Create New Platform'}
           </h3>
-          
-          <form on:submit|preventDefault={savePlatform} class="space-y-4">
+
+          <!-- Tab Navigation -->
+          <div class="border-b border-gray-200 mb-4">
+            <nav class="-mb-px flex space-x-8">
+              <button
+                type="button"
+                on:click={() => platformModalTab = 'basic'}
+                class={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  platformModalTab === 'basic'
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Basic Info
+              </button>
+              {#if editingPlatform}
+                <button
+                  type="button"
+                  on:click={() => platformModalTab = 'logo'}
+                  class={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    platformModalTab === 'logo'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Logo Management
+                </button>
+              {/if}
+            </nav>
+          </div>
+
+          {#if platformModalTab === 'basic'}
+            <form on:submit|preventDefault={savePlatform} class="space-y-4">
             <div>
               <label for="platform-name" class="block text-sm font-medium text-gray-700">Platform Name</label>
               <input
@@ -802,6 +873,29 @@
               </button>
             </div>
           </form>
+          {:else if platformModalTab === 'logo' && editingPlatform}
+            <!-- Logo Management Tab -->
+            <div class="space-y-4">
+              <LogoUpload
+                entityType="platforms"
+                entityId={editingPlatform.id}
+                currentIconUrl={editingPlatform.icon_url}
+                on:uploaded={handlePlatformLogoUploaded}
+                on:deleted={handleLogoDeleted}
+                on:error={handleLogoError}
+              />
+              
+              <div class="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  on:click={resetPlatformForm}
+                  class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -812,13 +906,44 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetStorefrontForm} on:keydown={(e) => e.key === 'Escape' && resetStorefrontForm()}>
-      <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
+      <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
         <div class="mt-3">
           <h3 class="text-lg font-medium text-gray-900 mb-4">
             {editingStorefront ? 'Edit Storefront' : 'Create New Storefront'}
           </h3>
-          
-          <form on:submit|preventDefault={saveStorefront} class="space-y-4">
+
+          <!-- Tab Navigation -->
+          <div class="border-b border-gray-200 mb-4">
+            <nav class="-mb-px flex space-x-8">
+              <button
+                type="button"
+                on:click={() => storefrontModalTab = 'basic'}
+                class={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  storefrontModalTab === 'basic'
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Basic Info
+              </button>
+              {#if editingStorefront}
+                <button
+                  type="button"
+                  on:click={() => storefrontModalTab = 'logo'}
+                  class={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    storefrontModalTab === 'logo'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Logo Management
+                </button>
+              {/if}
+            </nav>
+          </div>
+
+          {#if storefrontModalTab === 'basic'}
+            <form on:submit|preventDefault={saveStorefront} class="space-y-4">
             <div>
               <label for="storefront-name" class="block text-sm font-medium text-gray-700">Storefront Name</label>
               <input
@@ -895,6 +1020,29 @@
               </button>
             </div>
           </form>
+          {:else if storefrontModalTab === 'logo' && editingStorefront}
+            <!-- Logo Management Tab -->
+            <div class="space-y-4">
+              <LogoUpload
+                entityType="storefronts"
+                entityId={editingStorefront.id}
+                currentIconUrl={editingStorefront.icon_url}
+                on:uploaded={handleStorefrontLogoUploaded}
+                on:deleted={handleLogoDeleted}
+                on:error={handleLogoError}
+              />
+              
+              <div class="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  on:click={resetStorefrontForm}
+                  class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
