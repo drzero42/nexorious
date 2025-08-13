@@ -43,6 +43,7 @@ class Game(SQLModel, table=True):
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: Optional[datetime] = Field(default=None, description="Timestamp when IGDB metadata was last refreshed")
     
     # Relationships
     aliases: List["GameAlias"] = Relationship(back_populates="game")
