@@ -24,7 +24,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 - [x] Implement Platform and Storefront models
 - [x] Design Game metadata models with IGDB integration fields
 - [x] Add IGDB slug field to Game model for proper link generation
-- [ ] Add `last_updated` field to Game model for tracking when IGDB metadata was last refreshed
+- [x] Add `last_updated` field to Game model for tracking when IGDB metadata was last refreshed
 - [x] Create User Game Collection models (user_games, user_game_platforms)
 - [x] Implement Tagging system models (tags, user_game_tags)
 - [x] Add Wishlist models
