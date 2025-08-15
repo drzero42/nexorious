@@ -1,1 +1,1 @@
-Let us work on task $ARGUMENTS. Only do the next unchecked point. Remember to create a branch.
+Let us work on task $ARGUMENTS. Only do the next unchecked point. Remember to create a branch. Think hard and consult the experts.
