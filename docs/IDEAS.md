@@ -20,3 +20,8 @@ The flow should be that the CSV is read into a darkadia_games table, in the same
 
 ## Add IGDB Title to Steam Games
 Matched games should show both the Steam title and the IGDB title of the match to allow users to review the match before syncing.
+
+## UserGames should be kept unless specifically deleted
+Ensure the following logic is followed everywhere.
+When removing the last platform/storefront, change ownership to No Longer Owned. If adding a platform/storefront to a UserGame change ownership to Owned.
+Only actually delete a UserGame if the user deletes it.
