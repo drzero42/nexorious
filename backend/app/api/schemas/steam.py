@@ -266,3 +266,6 @@ class SteamGameAutoMatchSingleResponse(BaseModel):
     confidence: Optional[float] = Field(None, description="Matching confidence score if matched")
 
 
+# Aliases for new import framework
+SteamVanityResolveRequest = VanityUrlResolveRequest
+SteamVanityResolveResponse = VanityUrlResolveResponse

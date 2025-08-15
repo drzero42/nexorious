@@ -15,6 +15,7 @@ from app.tests.integration_test_utils import (
     session_fixture as session,
     test_user_fixture as test_user,
     auth_headers_fixture as auth_headers,
+    steam_dependencies_fixture as steam_dependencies,
     assert_api_error,
     assert_api_success
 )
@@ -23,8 +24,15 @@ from app.tests.integration_test_utils import (
 @pytest.fixture
 def mock_steam_service():
     """Mock Steam service for testing."""
-    with patch('app.api.steam_config.create_steam_service') as mock:
+    with patch('app.services.import_sources.steam.create_steam_service') as mock:
         yield mock
+
+
+# Auto-use Steam dependencies for all tests in this module
+@pytest.fixture(autouse=True)
+def setup_steam_dependencies(steam_dependencies):
+    """Automatically set up Steam dependencies for all tests in this module."""
+    pass
 
 
 class TestSteamConfigEndpoints:
@@ -32,12 +40,12 @@ class TestSteamConfigEndpoints:
 
     def test_get_steam_config_no_config(self, client: TestClient, auth_headers):
         """Test getting Steam config when user has no configuration."""
-        response = client.get("/api/steam/config", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/config", headers=auth_headers)
         
         assert_api_success(response)
         data = response.json()
         assert data["has_api_key"] is False
-        assert data["api_key_masked"] is None
+        assert data["api_key_masked"] is None  # None when no config
         assert data["steam_id"] is None
         assert data["is_verified"] is False
         assert data["configured_at"] is None
@@ -57,7 +65,7 @@ class TestSteamConfigEndpoints:
         user.preferences_json = json.dumps(steam_config)
         session.commit()
         
-        response = client.get("/api/steam/config", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/config", headers=auth_headers)
         
         assert_api_success(response)
         data = response.json()
@@ -69,7 +77,7 @@ class TestSteamConfigEndpoints:
 
     def test_get_steam_config_unauthorized(self, client: TestClient):
         """Test getting Steam config without authentication."""
-        response = client.get("/api/steam/config")
+        response = client.get("/api/import/sources/steam/config")
         
         assert_api_error(response, 403)
 
@@ -96,7 +104,7 @@ class TestSteamConfigEndpoints:
             "steam_id": "76561197960435530"
         }
         
-        response = client.put("/api/steam/config", json=config_data, headers=auth_headers)
+        response = client.put("/api/import/sources/steam/config", json=config_data, headers=auth_headers)
         
         assert_api_success(response)
         data = response.json()
@@ -111,7 +119,7 @@ class TestSteamConfigEndpoints:
             "web_api_key": "INVALID_API_KEY_WITH_SPECIAL_CHARS!"
         }
         
-        response = client.put("/api/steam/config", json=config_data, headers=auth_headers)
+        response = client.put("/api/import/sources/steam/config", json=config_data, headers=auth_headers)
         
         assert_api_error(response, 422)  # Pydantic validation error
 
@@ -126,7 +134,7 @@ class TestSteamConfigEndpoints:
             "web_api_key": "ABCDEF1234567890ABCDEF1234567890"  # Valid format, invalid key
         }
         
-        response = client.put("/api/steam/config", json=config_data, headers=auth_headers)
+        response = client.put("/api/import/sources/steam/config", json=config_data, headers=auth_headers)
         
         assert_api_error(response, 400, "Invalid Steam Web API key")  # Business logic error
 
@@ -144,10 +152,10 @@ class TestSteamConfigEndpoints:
         user.preferences_json = json.dumps(steam_config)
         session.commit()
         
-        response = client.delete("/api/steam/config", headers=auth_headers)
+        response = client.delete("/api/import/sources/steam/config", headers=auth_headers)
         
         assert_api_success(response)
-        assert "removed successfully" in response.json()["message"]
+        assert "deleted successfully" in response.json()["message"]
         
         # Verify Steam config was removed but other preferences remain
         session.refresh(user)
@@ -178,7 +186,7 @@ class TestSteamConfigEndpoints:
             "steam_id": "76561197960435530"
         }
         
-        response = client.post("/api/steam/verify", json=verification_data, headers=auth_headers)
+        response = client.post("/api/import/sources/steam/verify", json=verification_data, headers=auth_headers)
         
         assert_api_success(response)
         data = response.json()
@@ -193,7 +201,7 @@ class TestSteamConfigEndpoints:
             "web_api_key": "INVALID_API_KEY_WITH_SPECIAL_CHARS!"
         }
         
-        response = client.post("/api/steam/verify", json=verification_data, headers=auth_headers)
+        response = client.post("/api/import/sources/steam/verify", json=verification_data, headers=auth_headers)
         
         assert_api_error(response, 422)  # Pydantic validation error
         
@@ -208,7 +216,7 @@ class TestSteamConfigEndpoints:
             "web_api_key": "ABCDEF1234567890ABCDEF1234567890"  # Valid format, invalid key
         }
         
-        response = client.post("/api/steam/verify", json=verification_data, headers=auth_headers)
+        response = client.post("/api/import/sources/steam/verify", json=verification_data, headers=auth_headers)
         
         assert_api_success(response)
         data = response.json()
@@ -221,18 +229,28 @@ class TestSteamConfigHelpers:
 
     def test_mask_api_key(self):
         """Test API key masking function."""
-        from app.api.steam_config import _mask_api_key
+        from app.services.import_sources.steam import SteamImportService
+        from app.core.database import get_session
+        
+        # Create a minimal service instance for testing
+        session = next(get_session())
+        service = SteamImportService(session)
         
         api_key = "ABCDEF1234567890ABCDEF1234567890"
-        masked = _mask_api_key(api_key)
+        masked = service._mask_api_key(api_key)
         
         assert masked == "ABCDEF12****7890"
 
     def test_mask_api_key_short(self):
         """Test API key masking with short key."""
-        from app.api.steam_config import _mask_api_key
+        from app.services.import_sources.steam import SteamImportService
+        from app.core.database import get_session
+        
+        # Create a minimal service instance for testing
+        session = next(get_session())
+        service = SteamImportService(session)
         
         api_key = "SHORT"
-        masked = _mask_api_key(api_key)
+        masked = service._mask_api_key(api_key)
         
         assert masked == "****"

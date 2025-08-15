@@ -78,7 +78,7 @@ class TestSteamGamesFeatureDisable:
             "ui": {"steam_games_visible": False}
         })
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -90,20 +90,39 @@ class TestSteamGamesFeatureDisable:
             "ui": {"steam_games_visible": False}
         })
         
-        # Test all Steam Games endpoints
+        # Test all Steam endpoints that use verify_steam_games_enabled dependency
         endpoints_and_methods = [
-            ("GET", "/api/steam-games", {}),
-            ("POST", "/api/steam-games/import", {}),
-            ("PUT", "/api/steam-games/test-id/match", {"igdb_id": 123}),
-            ("POST", "/api/steam-games/test-id/sync", {}),
-            ("POST", "/api/steam-games/sync", {}),
-            ("PUT", "/api/steam-games/test-id/ignore", {}),
-            ("PUT", "/api/steam-games/unignore-all", {}),
-            ("PUT", "/api/steam-games/unmatch-all", {}),
-            ("PUT", "/api/steam-games/unsync-all", {}),
-            ("POST", "/api/steam-games/test-id/unsync", {}),
-            ("POST", "/api/steam-games/auto-match", {}),
-            ("POST", "/api/steam-games/test-id/auto-match", {}),
+            # Configuration endpoints
+            ("GET", "/api/import/sources/steam/config", {}),
+            ("PUT", "/api/import/sources/steam/config", {"web_api_key": "test_key", "steam_id": "76561197960435530"}),
+            ("DELETE", "/api/import/sources/steam/config", {}),
+            ("POST", "/api/import/sources/steam/verify", {"web_api_key": "test_key", "steam_id": "76561197960435530"}),
+            ("POST", "/api/import/sources/steam/resolve-vanity", {"vanity_url": "testuser"}),
+            
+            # Library and games endpoints
+            ("GET", "/api/import/sources/steam/library", {}),
+            ("GET", "/api/import/sources/steam/games", {}),
+            ("POST", "/api/import/sources/steam/games/import", {}),
+            
+            # Individual game operations
+            ("PUT", "/api/import/sources/steam/games/test-id/match", {"igdb_id": "123"}),
+            ("POST", "/api/import/sources/steam/games/test-id/auto-match", {}),
+            ("POST", "/api/import/sources/steam/games/test-id/sync", {}),
+            ("POST", "/api/import/sources/steam/games/test-id/unsync", {}),
+            ("PUT", "/api/import/sources/steam/games/test-id/ignore", {}),
+            
+            # Bulk operations
+            ("POST", "/api/import/sources/steam/games/auto-match", {}),
+            ("POST", "/api/import/sources/steam/games/sync", {}),
+            ("POST", "/api/import/sources/steam/games/unsync", {}),
+            ("PUT", "/api/import/sources/steam/games/unignore-all", {}),
+            ("PUT", "/api/import/sources/steam/games/unmatch-all", {}),
+            
+            # Modern batch operations
+            ("POST", "/api/import/sources/steam/batch/auto-match/start", {"session_type": "steam"}),
+            ("POST", "/api/import/sources/steam/batch/sync/start", {"session_type": "steam"}),
+            ("GET", "/api/import/sources/steam/batch/test-session-id/status", {}),
+            ("DELETE", "/api/import/sources/steam/batch/test-session-id", {}),
         ]
         
         for method, url, json_data in endpoints_and_methods:
@@ -123,7 +142,7 @@ class TestSteamGamesFeatureDisable:
             "ui": {"steam_games_visible": True}
         })
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         # Should not be 404 (feature disabled), might be other errors like Steam not configured
@@ -133,7 +152,7 @@ class TestSteamGamesFeatureDisable:
         """Test that users with no preferences default to Steam Games enabled."""
         token = create_user_with_preferences(client, "no_prefs_user", "password123")
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         # Should not be 404 (feature disabled), might be other errors like Steam not configured
@@ -151,7 +170,7 @@ class TestPreferencesHandling:
         
         # First verify Steam Games is accessible
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code != 404 or response.json().get("error") != "Steam Games feature is disabled"
@@ -172,7 +191,7 @@ class TestPreferencesHandling:
         
         # Now Steam Games should be disabled
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -186,7 +205,7 @@ class TestPreferencesHandling:
         
         # First verify Steam Games is disabled
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -208,7 +227,7 @@ class TestPreferencesHandling:
         
         # Now Steam Games should be accessible
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code != 404 or response.json().get("error") != "Steam Games feature is disabled"
@@ -254,7 +273,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         # Should not be 404 due to platform/storefront issues
@@ -271,7 +290,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -287,7 +306,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -303,7 +322,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -327,7 +346,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -350,7 +369,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -366,7 +385,7 @@ class TestSteamGamesPlatformStorefrontValidation:
         })
         
         response = client.get(
-            "/api/steam-games",
+            "/api/import/sources/steam/config",
             headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 404
@@ -381,20 +400,12 @@ class TestSteamGamesPlatformStorefrontValidation:
             "ui": {"steam_games_visible": True}
         })
         
-        # Test all Steam Games endpoints - should all fail with platform validation
+        # Test key Steam endpoints that use verify_steam_games_enabled dependency - should all fail with platform validation
         endpoints_and_methods = [
-            ("GET", "/api/steam-games", {}),
-            ("POST", "/api/steam-games/import", {}),
-            ("PUT", "/api/steam-games/test-id/match", {"igdb_id": 123}),
-            ("POST", "/api/steam-games/test-id/sync", {}),
-            ("POST", "/api/steam-games/sync", {}),
-            ("PUT", "/api/steam-games/test-id/ignore", {}),
-            ("PUT", "/api/steam-games/unignore-all", {}),
-            ("PUT", "/api/steam-games/unmatch-all", {}),
-            ("PUT", "/api/steam-games/unsync-all", {}),
-            ("POST", "/api/steam-games/test-id/unsync", {}),
-            ("POST", "/api/steam-games/auto-match", {}),
-            ("POST", "/api/steam-games/test-id/auto-match", {}),
+            ("GET", "/api/import/sources/steam/config", {}),
+            ("GET", "/api/import/sources/steam/games", {}),
+            ("POST", "/api/import/sources/steam/games/auto-match", {}),
+            ("POST", "/api/import/sources/steam/batch/auto-match/start", {"session_type": "steam"}),
         ]
         
         for method, url, json_data in endpoints_and_methods:

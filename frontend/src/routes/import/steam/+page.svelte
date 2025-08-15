@@ -58,38 +58,21 @@
   let isCancelling = $state(false);
 
   onMount(async () => {
-    // Check if Steam Games feature is available
+    console.log('🔄 [STEAM-PAGE] onMount started - checking Steam availability...');
+    
+    // Use the new simple availability check
+    await steamAvailability.checkAvailability();
+    
     if (!steamAvailability.isAvailable) {
       const reason = steamAvailability.unavailableReason || 'Steam Games feature is not available';
+      console.log('❌ [STEAM-PAGE] Steam unavailable:', reason);
       ui.showError(reason);
       goto('/dashboard');
       return;
     }
-
-    try {
-      await steam.getConfig();
-      
-      // If we have existing config, populate Steam ID
-      if (steam.value.config?.steam_id) {
-        steamId = steam.value.config.steam_id;
-      }
-
-      // Check for active import jobs if configuration is verified
-      await checkForActiveImportJob();
-      
-      // Load Steam games if configuration is verified
-      if (steam.value.config?.has_api_key && steam.value.config?.is_verified) {
-        await loadSteamGames();
-      } else {
-        // If Steam is not configured or not verified, show configuration tab
-        activeTab = 'configuration';
-      }
-    } catch (error) {
-      // Config doesn't exist yet, show configuration tab
-      activeTab = 'configuration';
-    } finally {
-      isLoading = false;
-    }
+    
+    console.log('✅ [STEAM-PAGE] Steam is available, initializing Steam data...');
+    await initializeSteamData();
   });
 
   onDestroy(() => {
@@ -112,19 +95,19 @@
     console.log('🔍 [UPDATE-COUNTS] Game categorization detailed:', {
       unmatched: {
         count: unmatchedGamesFiltered.length,
-        games: unmatchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, igdb_id: g.igdb_id, ignored: g.ignored }))
+        games: unmatchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.name, igdb_id: g.igdb_id, ignored: g.ignored }))
       },
       matched: {
         count: matchedGamesFiltered.length,
-        games: matchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, igdb_id: g.igdb_id, game_id: g.game_id, ignored: g.ignored }))
+        games: matchedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.name, igdb_id: g.igdb_id, game_id: g.game_id, ignored: g.ignored }))
       },
       ignored: {
         count: ignoredGamesFiltered.length,
-        games: ignoredGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, ignored: g.ignored }))
+        games: ignoredGamesFiltered.map((g: SteamGameResponse) => ({ name: g.name, ignored: g.ignored }))
       },
       synced: {
         count: syncedGamesFiltered.length,
-        games: syncedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.game_name, game_id: g.game_id }))
+        games: syncedGamesFiltered.map((g: SteamGameResponse) => ({ name: g.name, game_id: g.game_id }))
       }
     });
     
@@ -183,7 +166,7 @@
         gamesCount: allGames.games.length,
         games: allGames.games.map(g => ({
           id: g.id,
-          game_name: g.game_name,
+          game_name: g.name,
           igdb_id: g.igdb_id,
           game_id: g.game_id,
           ignored: g.ignored
@@ -692,6 +675,7 @@
     }
   }
 
+
   // Reactive search using proper Svelte 5 dependency tracking
   $effect(() => {
     // Read searchQuery to establish dependency tracking
@@ -726,6 +710,40 @@
   // Configuration status for conditional interactivity
   const isConfigValid = $derived(hasConfig && currentConfig?.is_verified);
   const canAccessGameTabs = $derived(isConfigValid);
+
+  // Initialize Steam configuration and games data (called from reactive effect)
+  async function initializeSteamData() {
+    try {
+      console.log('🔧 [STEAM-PAGE] Starting Steam data initialization...');
+      
+      await steam.getConfig();
+      
+      // If we have existing config, populate Steam ID
+      if (steam.value.config?.steam_id) {
+        steamId = steam.value.config.steam_id;
+      }
+
+      // Check for active import jobs if configuration is verified
+      await checkForActiveImportJob();
+      
+      // Load Steam games if configuration is verified
+      if (steam.value.config?.has_api_key && steam.value.config?.is_verified) {
+        console.log('🎮 [STEAM-PAGE] Steam config verified, loading games...');
+        await loadSteamGames();
+      } else {
+        // If Steam is not configured or not verified, show configuration tab
+        console.log('⚙️ [STEAM-PAGE] Steam not configured, showing configuration tab');
+        activeTab = 'configuration';
+      }
+    } catch (error) {
+      // Config doesn't exist yet, show configuration tab
+      console.log('❌ [STEAM-PAGE] Steam config error, showing configuration tab:', error);
+      activeTab = 'configuration';
+    } finally {
+      console.log('✅ [STEAM-PAGE] Steam data initialization completed');
+      isLoading = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -845,7 +863,7 @@
       </div>
     </div>
 
-    {#if isLoading}
+    {#if isLoading || steamAvailability.isLoading}
       <!-- Loading State -->
       <div class="flex items-center justify-center py-12">
         <div class="text-center">
@@ -853,7 +871,9 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p class="mt-2 text-sm text-gray-500">Loading Steam games...</p>
+          <p class="mt-2 text-sm text-gray-500">
+            {steamAvailability.isLoading ? 'Checking Steam availability...' : 'Loading Steam games...'}
+          </p>
         </div>
       </div>
     {:else}

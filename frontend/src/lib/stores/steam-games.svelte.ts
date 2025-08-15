@@ -5,8 +5,8 @@ import { ui } from './ui.svelte';
 // Steam Games API interfaces based on backend schemas
 export interface SteamGameResponse {
   id: string;
-  steam_appid: number;
-  game_name: string;
+  external_id: string;
+  name: string;
   igdb_id: string | null;
   igdb_title: string | null;
   game_id: string | null;
@@ -32,22 +32,33 @@ export interface SteamGameMatchRequest {
 
 export interface SteamGameMatchResponse {
   message: string;
-  steam_game: SteamGameResponse;
+  game: SteamGameResponse;
 }
 
 export interface SteamGameSyncResponse {
   message: string;
-  steam_game: SteamGameResponse;
+  game: SteamGameResponse;
   user_game_id: string;
   action: string;
 }
 
 export interface SteamGameIgnoreResponse {
   message: string;
-  steam_game: SteamGameResponse;
+  game: SteamGameResponse;
   ignored: boolean;
 }
 
+// Unified bulk operation response interface matching backend schema
+export interface BulkOperationResponse {
+  message: string;
+  total_processed: number;
+  successful_operations: number;
+  failed_operations: number;
+  skipped_items: number;
+  errors: string[];
+}
+
+// Legacy interfaces for backward compatibility (will be replaced)
 export interface SteamGamesBulkSyncResponse {
   message: string;
   total_processed: number;
@@ -84,7 +95,7 @@ export interface SteamGamesBulkUnsyncResponse {
 
 export interface SteamGameUnsyncResponse {
   message: string;
-  steam_game: SteamGameResponse;
+  game: SteamGameResponse;
 }
 
 export interface SteamGamesAutoMatchResponse {
@@ -247,7 +258,7 @@ function createSteamGamesStore() {
           params.append('search', search.trim());
         }
 
-        const url = `${config.apiUrl}/steam-games?${params}`;
+        const url = `${config.apiUrl}/import/sources/steam/games?${params}`;
         console.log('📡 [STORE-LIST] Making API call to:', url);
 
         const response = await fetch(url, {
@@ -276,7 +287,7 @@ function createSteamGamesStore() {
           gamesCount: data.games.length,
           games: data.games.map(g => ({
             id: g.id,
-            game_name: g.game_name,
+            name: g.name,
             igdb_id: g.igdb_id,
             game_id: g.game_id,
             ignored: g.ignored
@@ -312,7 +323,7 @@ function createSteamGamesStore() {
       state = { ...state, isImporting: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/import`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/import`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -351,7 +362,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/match`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/${steamGameId}/match`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -375,7 +386,7 @@ function createSteamGamesStore() {
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
         if (gameIndex !== -1) {
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.steam_game;
+          updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
         }
 
@@ -395,7 +406,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null };
 
       try {
-        const url = `${config.apiUrl}/steam-games/${steamGameId}/sync`;
+        const url = `${config.apiUrl}/import/sources/steam/games/${steamGameId}/sync`;
         const requestBody = {};
         console.log('🎮 [Steam Sync] Request URL:', url);
         console.log('🎮 [Steam Sync] Request body:', requestBody);
@@ -442,7 +453,7 @@ function createSteamGamesStore() {
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
         if (gameIndex !== -1) {
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.steam_game;
+          updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
           console.log('🎮 [Steam Sync] Updated local state for game at index:', gameIndex);
         } else {
@@ -462,11 +473,11 @@ function createSteamGamesStore() {
     },
 
     // Sync all matched Steam games
-    async syncAllMatchedGames(): Promise<SteamGamesBulkSyncResponse> {
+    async syncAllMatchedGames(): Promise<BulkOperationResponse> {
       state = { ...state, isSyncing: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/sync`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/sync`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -482,7 +493,7 @@ function createSteamGamesStore() {
           throw new Error(errorData.detail || 'Failed to sync Steam games');
         }
 
-        const data = await response.json() as SteamGamesBulkSyncResponse;
+        const data = await response.json() as BulkOperationResponse;
         
         state = {
           ...state,
@@ -490,7 +501,7 @@ function createSteamGamesStore() {
           error: null
         };
 
-        if (data.successful_syncs > 0) {
+        if (data.successful_operations > 0) {
           ui.showSuccess(data.message);
         } else if (data.total_processed === 0) {
           ui.showInfo(data.message);
@@ -508,13 +519,13 @@ function createSteamGamesStore() {
     },
 
     // Manually retry auto-matching for all unmatched Steam games
-    async retryAutoMatching(): Promise<SteamGamesAutoMatchResponse> {
+    async retryAutoMatching(): Promise<BulkOperationResponse> {
       console.log('🔄 [STORE] Starting retryAutoMatching...');
       state = { ...state, isAutoMatching: true, error: null };
 
       try {
-        console.log('📡 [STORE] Making API call to:', `${config.apiUrl}/steam-games/auto-match`);
-        const response = await fetch(`${config.apiUrl}/steam-games/auto-match`, {
+        console.log('📡 [STORE] Making API call to:', `${config.apiUrl}/import/sources/steam/games/auto-match`);
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/auto-match`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -535,7 +546,7 @@ function createSteamGamesStore() {
           throw new Error(errorData.detail || 'Failed to retry auto-matching');
         }
 
-        const data = await response.json() as SteamGamesAutoMatchResponse;
+        const data = await response.json() as BulkOperationResponse;
         console.log('✅ [STORE] Auto-match response data:', data);
         
         state = {
@@ -544,7 +555,7 @@ function createSteamGamesStore() {
           error: null
         };
 
-        if (data.successful_matches > 0) {
+        if (data.successful_operations > 0) {
           console.log('🎉 [STORE] Showing success notification');
           ui.showSuccess(data.message);
         } else if (data.total_processed === 0) {
@@ -571,7 +582,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null };
 
       try {
-        const url = `${config.apiUrl}/steam-games/${steamGameId}/auto-match`;
+        const url = `${config.apiUrl}/import/sources/steam/games/${steamGameId}/auto-match`;
         console.log('📡 [STORE-SINGLE] Making API call to:', url);
         
         const response = await fetch(url, {
@@ -605,7 +616,7 @@ function createSteamGamesStore() {
         if (gameIndex !== -1) {
           console.log('📋 [STORE-SINGLE] BEFORE update - Game in state:', state.games[gameIndex]);
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.steam_game;
+          updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
           console.log('📋 [STORE-SINGLE] AFTER update - Game in state:', state.games[gameIndex]);
         } else {
@@ -633,7 +644,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/ignore`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/${steamGameId}/ignore`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -655,7 +666,7 @@ function createSteamGamesStore() {
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
         if (gameIndex !== -1) {
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.steam_game;
+          updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
         }
 
@@ -670,11 +681,11 @@ function createSteamGamesStore() {
     },
 
     // Unignore all Steam games
-    async unignoreAllGames(): Promise<SteamGamesBulkUnignoreResponse> {
+    async unignoreAllGames(): Promise<BulkOperationResponse> {
       state = { ...state, isUnignoringAll: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/unignore-all`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/unignore-all`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -690,7 +701,7 @@ function createSteamGamesStore() {
           throw new Error(errorData.detail || 'Failed to unignore all Steam games');
         }
 
-        const data = await response.json() as SteamGamesBulkUnignoreResponse;
+        const data = await response.json() as BulkOperationResponse;
         
         state = { ...state, isUnignoringAll: false, error: null };
         
@@ -705,11 +716,11 @@ function createSteamGamesStore() {
     },
 
     // Unmatch all Steam games
-    async unmatchAllGames(): Promise<SteamGamesBulkUnmatchResponse> {
+    async unmatchAllGames(): Promise<BulkOperationResponse> {
       state = { ...state, isUnmatchingAll: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/unmatch-all`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/unmatch-all`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -725,7 +736,7 @@ function createSteamGamesStore() {
           throw new Error(errorData.detail || 'Failed to unmatch all Steam games');
         }
 
-        const data = await response.json() as SteamGamesBulkUnmatchResponse;
+        const data = await response.json() as BulkOperationResponse;
         
         state = { ...state, isUnmatchingAll: false, error: null };
         
@@ -744,7 +755,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/${steamGameId}/unsync`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/${steamGameId}/unsync`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -766,7 +777,7 @@ function createSteamGamesStore() {
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
         if (gameIndex !== -1) {
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.steam_game;
+          updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
         }
 
@@ -781,12 +792,12 @@ function createSteamGamesStore() {
     },
 
     // Unsync all Steam games from collection
-    async unsyncAllGames(): Promise<SteamGamesBulkUnsyncResponse> {
+    async unsyncAllGames(): Promise<BulkOperationResponse> {
       state = { ...state, isUnsyncingAll: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/unsync-all`, {
-          method: 'PUT',
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/unsync`, {
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }
@@ -801,7 +812,7 @@ function createSteamGamesStore() {
           throw new Error(errorData.detail || 'Failed to unsync all Steam games');
         }
 
-        const data = await response.json() as SteamGamesBulkUnsyncResponse;
+        const data = await response.json() as BulkOperationResponse;
         
         state = { ...state, isUnsyncingAll: false, error: null };
         
@@ -823,7 +834,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null, isBatchProcessing: true };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/batch/auto-match/start`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/auto-match/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -879,13 +890,8 @@ function createSteamGamesStore() {
     async processBatchAutoMatch(sessionId: string): Promise<BatchNextResponse> {
       console.log(`🔄 [BATCH-AUTO-MATCH] Processing next batch for session ${sessionId}...`);
       
-      if (state.activeBatchSession) {
-        state.activeBatchSession.isProcessing = true;
-        state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
-      }
-
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/batch/auto-match/${sessionId}/next`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/auto-match/${sessionId}/next`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -900,37 +906,50 @@ function createSteamGamesStore() {
             return this.processBatchAutoMatch(sessionId);
           }
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to process batch');
+          throw new Error(errorData.detail || 'Failed to process batch auto-match');
         }
 
         const data = await response.json() as BatchNextResponse;
-
+        
         // Update batch session state
-        if (state.activeBatchSession && state.activeBatchSession.sessionId === sessionId) {
-          state.activeBatchSession = {
-            ...state.activeBatchSession,
-            processedItems: data.processed_items,
-            successfulItems: data.successful_items,
-            failedItems: data.failed_items,
-            remainingItems: data.remaining_items,
-            progressPercentage: data.progress_percentage,
-            status: data.status,
-            isComplete: data.is_complete,
-            errors: [...state.activeBatchSession.errors, ...data.batch_errors],
-            isProcessing: false
+        if (state.activeBatchSession) {
+          state = {
+            ...state,
+            activeBatchSession: {
+              ...state.activeBatchSession,
+              processedItems: data.processed_items,
+              successfulItems: data.successful_items,
+              failedItems: data.failed_items,
+              remainingItems: data.remaining_items,
+              progressPercentage: data.progress_percentage,
+              status: data.status,
+              isComplete: data.is_complete,
+              errors: data.current_batch_items ? [...state.activeBatchSession.errors] : [...state.activeBatchSession.errors, ...data.batch_errors],
+              isProcessing: !data.is_complete
+            }
           };
-          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
         }
 
-        console.log('✅ [BATCH-AUTO-MATCH] Batch processed:', data);
+        console.log(`✅ [BATCH-AUTO-MATCH] Processed batch: ${data.batch_successful} successful, ${data.batch_failed} failed`);
         return data;
       } catch (error) {
-        if (state.activeBatchSession) {
-          state.activeBatchSession.isProcessing = false;
-          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
-        }
-        const errorMessage = error instanceof Error ? error.message : 'Failed to process batch';
-        state = { ...state, error: errorMessage };
+        console.error('❌ [BATCH-AUTO-MATCH] Error processing batch:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process batch auto-match';
+        
+        // Update error state
+        state = { 
+          ...state, 
+          error: errorMessage,
+          isBatchProcessing: false,
+          activeBatchSession: state.activeBatchSession ? {
+            ...state.activeBatchSession,
+            isProcessing: false,
+            status: 'failed',
+            isComplete: true,
+            errors: [...state.activeBatchSession.errors, errorMessage]
+          } : null
+        };
+        
         throw error;
       }
     },
@@ -941,7 +960,7 @@ function createSteamGamesStore() {
       state = { ...state, error: null, isBatchProcessing: true };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/batch/sync/start`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/sync/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -997,13 +1016,8 @@ function createSteamGamesStore() {
     async processBatchSync(sessionId: string): Promise<BatchNextResponse> {
       console.log(`🔄 [BATCH-SYNC] Processing next sync batch for session ${sessionId}...`);
       
-      if (state.activeBatchSession) {
-        state.activeBatchSession.isProcessing = true;
-        state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
-      }
-
       try {
-        const response = await fetch(`${config.apiUrl}/steam-games/batch/sync/${sessionId}/next`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/sync/${sessionId}/next`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1018,37 +1032,50 @@ function createSteamGamesStore() {
             return this.processBatchSync(sessionId);
           }
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to process sync batch');
+          throw new Error(errorData.detail || 'Failed to process batch sync');
         }
 
         const data = await response.json() as BatchNextResponse;
-
+        
         // Update batch session state
-        if (state.activeBatchSession && state.activeBatchSession.sessionId === sessionId) {
-          state.activeBatchSession = {
-            ...state.activeBatchSession,
-            processedItems: data.processed_items,
-            successfulItems: data.successful_items,
-            failedItems: data.failed_items,
-            remainingItems: data.remaining_items,
-            progressPercentage: data.progress_percentage,
-            status: data.status,
-            isComplete: data.is_complete,
-            errors: [...state.activeBatchSession.errors, ...data.batch_errors],
-            isProcessing: false
+        if (state.activeBatchSession) {
+          state = {
+            ...state,
+            activeBatchSession: {
+              ...state.activeBatchSession,
+              processedItems: data.processed_items,
+              successfulItems: data.successful_items,
+              failedItems: data.failed_items,
+              remainingItems: data.remaining_items,
+              progressPercentage: data.progress_percentage,
+              status: data.status,
+              isComplete: data.is_complete,
+              errors: data.current_batch_items ? [...state.activeBatchSession.errors] : [...state.activeBatchSession.errors, ...data.batch_errors],
+              isProcessing: !data.is_complete
+            }
           };
-          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
         }
 
-        console.log('✅ [BATCH-SYNC] Batch processed:', data);
+        console.log(`✅ [BATCH-SYNC] Processed batch: ${data.batch_successful} successful, ${data.batch_failed} failed`);
         return data;
       } catch (error) {
-        if (state.activeBatchSession) {
-          state.activeBatchSession.isProcessing = false;
-          state = { ...state, activeBatchSession: { ...state.activeBatchSession } };
-        }
-        const errorMessage = error instanceof Error ? error.message : 'Failed to process sync batch';
-        state = { ...state, error: errorMessage };
+        console.error('❌ [BATCH-SYNC] Error processing batch:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process batch sync';
+        
+        // Update error state
+        state = { 
+          ...state, 
+          error: errorMessage,
+          isBatchProcessing: false,
+          activeBatchSession: state.activeBatchSession ? {
+            ...state.activeBatchSession,
+            isProcessing: false,
+            status: 'failed',
+            isComplete: true,
+            errors: [...state.activeBatchSession.errors, errorMessage]
+          } : null
+        };
+        
         throw error;
       }
     },
@@ -1058,12 +1085,7 @@ function createSteamGamesStore() {
       console.log(`❌ [BATCH-CANCEL] Cancelling batch session ${sessionId}...`);
 
       try {
-        const operationType = state.activeBatchSession?.operationType || 'auto_match';
-        const endpoint = operationType === 'auto_match' 
-          ? `${config.apiUrl}/steam-games/batch/auto-match/${sessionId}`
-          : `${config.apiUrl}/steam-games/batch/sync/${sessionId}`;
-
-        const response = await fetch(endpoint, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/${sessionId}`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -1104,8 +1126,8 @@ function createSteamGamesStore() {
       try {
         const operationType = state.activeBatchSession?.operationType || 'auto_match';
         const endpoint = operationType === 'auto_match'
-          ? `${config.apiUrl}/steam-games/batch/auto-match/${sessionId}/status`
-          : `${config.apiUrl}/steam-games/batch/sync/${sessionId}/status`;
+          ? `${config.apiUrl}/import/jobs?source=steam&type=auto_match`
+          : `${config.apiUrl}/import/jobs?source=steam&type=bulk_sync`;
 
         const response = await fetch(endpoint, {
           headers: {

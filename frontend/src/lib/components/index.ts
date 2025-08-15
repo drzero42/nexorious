@@ -19,6 +19,12 @@ export { default as SteamGameCard } from './SteamGameCard.svelte';
 export { default as SteamGamesTable } from './SteamGamesTable.svelte';
 export { default as BatchProgressModal } from './BatchProgressModal.svelte';
 
+// Generic Import components
+export { default as ImportGameCard } from './ImportGameCard.svelte';
+export { default as ImportGameTable } from './ImportGameTable.svelte';
+export { default as ImportStatsOverview } from './ImportStatsOverview.svelte';
+export { default as ImportConfigurationSection } from './ImportConfigurationSection.svelte';
+
 // Game addition workflow components
 export { default as GameSearchStep } from './GameSearchStep.svelte';
 export { default as GameConfirmStep } from './GameConfirmStep.svelte';

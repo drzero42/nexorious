@@ -63,7 +63,7 @@
   const canUnignore = $derived(game.ignored);
   const canUnmatch = $derived(game.igdb_id !== null && !game.game_id); // Only matched, not synced
   const canUnsync = $derived(game.game_id !== null); // Only synced games
-  const showBothTitles = $derived(shouldShowBothTitles(game.game_name, game.igdb_title));
+  const showBothTitles = $derived(shouldShowBothTitles(game.name, game.igdb_title));
   
   // State for confirmation dialogs
   let showUnmatchConfirm = $state(false);
@@ -110,13 +110,13 @@
                 <a 
                   href="/games/{game.user_game_id}" 
                   class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200"
-                  aria-label="Steam title: {game.game_name}"
+                  aria-label="Steam title: {game.name}"
                 >
-                  {game.game_name}
+                  {game.name}
                 </a>
               {:else}
-                <h3 class="text-sm font-medium text-gray-900 truncate" aria-label="Steam title: {game.game_name}">
-                  {game.game_name}
+                <h3 class="text-sm font-medium text-gray-900 truncate" aria-label="Steam title: {game.name}">
+                  {game.name}
                 </h3>
               {/if}
             </div>
@@ -135,11 +135,11 @@
                 href="/games/{game.user_game_id}" 
                 class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200 block"
               >
-                {game.igdb_title || game.game_name}
+                {game.igdb_title || game.name}
               </a>
             {:else}
               <h3 class="text-sm font-medium text-gray-900 truncate">
-                {game.igdb_title || game.game_name}
+                {game.igdb_title || game.name}
               </h3>
             {/if}
           {/if}
@@ -155,7 +155,7 @@
         <div class="flex items-center space-x-4">
           <span class="inline-flex items-center">
             <span class="mr-1">🎮</span>
-            Steam ID: {game.steam_appid}
+            Steam ID: {game.external_id}
           </span>
           {#if game.igdb_id}
             <span class="inline-flex items-center">
@@ -354,7 +354,7 @@
       </div>
       <div class="p-4 space-y-3">
         <div class="text-sm">
-          <strong>Game:</strong> {game.game_name}
+          <strong>Game:</strong> {game.name}
         </div>
         <div class="flex space-x-3 justify-end">
           <button
@@ -389,7 +389,7 @@
       </div>
       <div class="p-4 space-y-3">
         <div class="text-sm">
-          <strong>Game:</strong> {game.game_name}
+          <strong>Game:</strong> {game.name}
         </div>
         <div class="flex space-x-3 justify-end">
           <button
