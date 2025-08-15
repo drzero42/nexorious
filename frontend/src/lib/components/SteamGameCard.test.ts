@@ -14,6 +14,7 @@ describe('SteamGameCard', () => {
     steam_appid: 730,
     game_name: 'Counter-Strike: Global Offensive',
     igdb_id: null,
+    igdb_title: null,
     game_id: null,
     user_game_id: null,
     ignored: false,
@@ -32,7 +33,7 @@ describe('SteamGameCard', () => {
     it('displays creation date', () => {
       render(SteamGameCard, { game: baseSteamGame });
 
-      expect(screen.getByText(/Added: 1\/10\/2025/)).toBeInTheDocument();
+      expect(screen.getByText(/Added: 10\/01\/2025/)).toBeInTheDocument();
     });
 
     it('displays updated date when different from creation date', () => {
@@ -43,8 +44,8 @@ describe('SteamGameCard', () => {
 
       render(SteamGameCard, { game: updatedGame });
 
-      expect(screen.getByText(/Added: 1\/10\/2025/)).toBeInTheDocument();
-      expect(screen.getByText(/Updated: 1\/12\/2025/)).toBeInTheDocument();
+      expect(screen.getByText(/Added: 10\/01\/2025/)).toBeInTheDocument();
+      expect(screen.getByText(/Updated: 12\/01\/2025/)).toBeInTheDocument();
     });
 
     it('does not display updated date when same as creation date', () => {
@@ -77,7 +78,8 @@ describe('SteamGameCard', () => {
     it('displays matched status for games with IGDB ID but no game_id', () => {
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, { game: matchedGame });
@@ -92,6 +94,7 @@ describe('SteamGameCard', () => {
       const syncedGame = {
         ...baseSteamGame,
         igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive',
         game_id: 'user-game-1'
       };
 
@@ -117,11 +120,11 @@ describe('SteamGameCard', () => {
       const { container: unmatchedContainer } = render(SteamGameCard, { game: baseSteamGame });
       expect(unmatchedContainer.querySelector('.bg-yellow-100.text-yellow-600')).toBeInTheDocument();
 
-      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1' };
+      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive' };
       const { container: matchedContainer } = render(SteamGameCard, { game: matchedGame });
       expect(matchedContainer.querySelector('.bg-blue-100.text-blue-600')).toBeInTheDocument();
 
-      const syncedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', game_id: 'user-game-1' };
+      const syncedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive', game_id: 'user-game-1' };
       const { container: syncedContainer } = render(SteamGameCard, { game: syncedGame });
       expect(syncedContainer.querySelector('.bg-green-100.text-green-600')).toBeInTheDocument();
 
@@ -149,7 +152,8 @@ describe('SteamGameCard', () => {
       const onSync = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, {
@@ -196,7 +200,8 @@ describe('SteamGameCard', () => {
       const onMatch = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, {
@@ -223,6 +228,7 @@ describe('SteamGameCard', () => {
       const syncedGame = {
         ...baseSteamGame,
         igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive',
         game_id: 'user-game-1'
       };
 
@@ -274,7 +280,8 @@ describe('SteamGameCard', () => {
       const onSync = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, {
@@ -344,7 +351,8 @@ describe('SteamGameCard', () => {
       const onSync = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, {
@@ -421,7 +429,8 @@ describe('SteamGameCard', () => {
       const onSync = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
-        igdb_id: 'igdb-game-1'
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive'
       };
 
       render(SteamGameCard, {
@@ -472,13 +481,13 @@ describe('SteamGameCard', () => {
       unmount();
 
       // Test matched but not synced - should show message
-      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1' };
+      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive' };
       const { unmount: unmount2 } = render(SteamGameCard, { game: matchedGame });
       expect(screen.getByText('Ready to sync to your collection')).toBeInTheDocument();
       unmount2();
 
       // Test already synced - should not show message
-      const syncedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', game_id: 'user-game-1' };
+      const syncedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive', game_id: 'user-game-1' };
       render(SteamGameCard, { game: syncedGame });
       expect(screen.queryByText('Ready to sync to your collection')).not.toBeInTheDocument();
     });
@@ -490,7 +499,7 @@ describe('SteamGameCard', () => {
       unmount();
 
       // Test matched - should not show message
-      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1' };
+      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive' };
       const { unmount: unmount2 } = render(SteamGameCard, { game: matchedGame });
       expect(screen.queryByText('Needs IGDB matching before sync')).not.toBeInTheDocument();
       unmount2();
@@ -508,7 +517,7 @@ describe('SteamGameCard', () => {
       unmount();
 
       // Test with IGDB ID
-      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1' };
+      const matchedGame = { ...baseSteamGame, igdb_id: 'igdb-game-1', igdb_title: 'Counter-Strike: Global Offensive' };
       render(SteamGameCard, { game: matchedGame });
       expect(screen.getByText('IGDB Matched')).toBeInTheDocument();
     });
@@ -523,6 +532,7 @@ describe('SteamGameCard', () => {
       const syncedGame = {
         ...baseSteamGame,
         igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive',
         game_id: 'user-game-1'
       };
       render(SteamGameCard, { game: syncedGame });
@@ -569,6 +579,67 @@ describe('SteamGameCard', () => {
       const heading = container.querySelector('h3');
       expect(heading).toBeInTheDocument();
       expect(heading).toHaveTextContent('Counter-Strike: Global Offensive');
+    });
+  });
+
+  describe('Dual Title Display', () => {
+    it('shows both titles when Steam and IGDB titles are different', () => {
+      const differentTitlesGame = {
+        ...baseSteamGame,
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive - Special Edition'
+      };
+
+      render(SteamGameCard, { game: differentTitlesGame });
+
+      // Should show both titles with labels
+      expect(screen.getByText('Counter-Strike: Global Offensive')).toBeInTheDocument();
+      expect(screen.getByText('Counter-Strike: Global Offensive - Special Edition')).toBeInTheDocument();
+      expect(screen.getByText('IGDB:')).toBeInTheDocument();
+    });
+
+    it('shows single title when Steam and IGDB titles are identical', () => {
+      const identicalTitlesGame = {
+        ...baseSteamGame,
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive' // Exactly the same as game_name
+      };
+
+      render(SteamGameCard, { game: identicalTitlesGame });
+
+      // Should only show one title, not both
+      const csgoTexts = screen.getAllByText('Counter-Strike: Global Offensive');
+      expect(csgoTexts).toHaveLength(1); // Only one instance should be visible
+      expect(screen.queryByText('IGDB:')).not.toBeInTheDocument();
+    });
+
+    it('shows single title when IGDB title is null', () => {
+      const noIgdbTitleGame = {
+        ...baseSteamGame,
+        igdb_id: 'igdb-game-1',
+        igdb_title: null
+      };
+
+      render(SteamGameCard, { game: noIgdbTitleGame });
+
+      // Should only show Steam title
+      expect(screen.getByText('Counter-Strike: Global Offensive')).toBeInTheDocument();
+      expect(screen.queryByText('IGDB:')).not.toBeInTheDocument();
+    });
+
+    it('shows both titles for subtle differences', () => {
+      const subtleDifferenceGame = {
+        ...baseSteamGame,
+        igdb_id: 'igdb-game-1',
+        igdb_title: 'Counter-Strike: Global Offensive™'
+      };
+
+      render(SteamGameCard, { game: subtleDifferenceGame });
+
+      // Should show both titles even for small differences
+      expect(screen.getByText('Counter-Strike: Global Offensive')).toBeInTheDocument();
+      expect(screen.getByText('Counter-Strike: Global Offensive™')).toBeInTheDocument();
+      expect(screen.getByText('IGDB:')).toBeInTheDocument();
     });
   });
 

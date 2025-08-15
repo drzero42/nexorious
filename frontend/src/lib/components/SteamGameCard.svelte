@@ -33,6 +33,17 @@
     return new Date(dateString).toLocaleDateString();
   }
 
+  /**
+   * Checks if Steam and IGDB titles should show both titles
+   * Shows both titles unless they are exactly identical
+   */
+  function shouldShowBothTitles(steamTitle: string, igdbTitle: string | null): boolean {
+    if (!igdbTitle) return false;
+    
+    // Show both titles unless they are exactly the same
+    return steamTitle !== igdbTitle;
+  }
+
   function getStatusDisplay(): { label: string; color: string; icon: string } {
     if (game.ignored) {
       return { label: 'Ignored', color: 'bg-gray-100 text-gray-600', icon: '🚫' };
@@ -52,6 +63,7 @@
   const canUnignore = $derived(game.ignored);
   const canUnmatch = $derived(game.igdb_id !== null && !game.game_id); // Only matched, not synced
   const canUnsync = $derived(game.game_id !== null); // Only synced games
+  const showBothTitles = $derived(shouldShowBothTitles(game.game_name, game.igdb_title));
   
   // State for confirmation dialogs
   let showUnmatchConfirm = $state(false);
@@ -89,19 +101,51 @@
     <!-- Steam Game Info -->
     <div class="flex-1 min-w-0">
       <div class="flex items-center justify-between mb-2">
-        {#if showGameLink && game.user_game_id}
-          <a 
-            href="/games/{game.user_game_id}" 
-            class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200 block"
-          >
-            {game.game_name}
-          </a>
-        {:else}
-          <h3 class="text-sm font-medium text-gray-900 truncate">
-            {game.game_name}
-          </h3>
-        {/if}
-        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {status.color}">
+        <div class="flex-1 min-w-0 mr-3">
+          {#if showBothTitles}
+            <!-- Steam Title -->
+            <div class="flex items-center space-x-2 mb-1">
+              <span class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Steam:</span>
+              {#if showGameLink && game.user_game_id}
+                <a 
+                  href="/games/{game.user_game_id}" 
+                  class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200"
+                  aria-label="Steam title: {game.game_name}"
+                >
+                  {game.game_name}
+                </a>
+              {:else}
+                <h3 class="text-sm font-medium text-gray-900 truncate" aria-label="Steam title: {game.game_name}">
+                  {game.game_name}
+                </h3>
+              {/if}
+            </div>
+            
+            <!-- IGDB Title -->
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-blue-600 uppercase tracking-wide font-semibold">IGDB:</span>
+              <span class="text-sm font-medium text-blue-700 truncate" aria-label="IGDB title: {game.igdb_title}">
+                {game.igdb_title}
+              </span>
+            </div>
+          {:else}
+            <!-- Single Title Display -->
+            {#if showGameLink && game.user_game_id}
+              <a 
+                href="/games/{game.user_game_id}" 
+                class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 transition-colors duration-200 block"
+              >
+                {game.igdb_title || game.game_name}
+              </a>
+            {:else}
+              <h3 class="text-sm font-medium text-gray-900 truncate">
+                {game.igdb_title || game.game_name}
+              </h3>
+            {/if}
+          {/if}
+        </div>
+        
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {status.color} flex-shrink-0">
           <span class="mr-1">{status.icon}</span>
           {status.label}
         </span>

@@ -101,16 +101,34 @@ class TestCompleteImportToSyncWorkflow:
         session.commit()
         
         # Step 4: Manually match Steam games to IGDB games
-        for steam_game, igdb_game in zip(steam_games, igdb_games):
-            match_request = {"igdb_id": igdb_game.igdb_id}
-            response = client.put(
-                f"/api/steam-games/{steam_game.id}/match",
-                json=match_request,
-                headers=auth_headers
-            )
-            assert_api_success(response, 200)
-            match_data = response.json()
-            assert match_data["steam_game"]["igdb_id"] == igdb_game.igdb_id
+        # Mock IGDB service to validate fake IGDB IDs
+        class MockGameData:
+            def __init__(self, title):
+                self.title = title
+        
+        # Create mock IGDB service with proper return values for each game
+        mock_igdb_service = AsyncMock()
+        
+        def mock_factory(session):
+            from ..services.steam_games import SteamGamesService
+            return SteamGamesService(session, igdb_service=mock_igdb_service)
+        
+        with patch('app.api.steam_games.create_steam_games_service', side_effect=mock_factory):
+            for steam_game, igdb_game in zip(steam_games, igdb_games):
+                # Configure mock for this specific IGDB ID
+                mock_game_data = MockGameData(igdb_game.title)
+                mock_igdb_service.get_game_by_id.return_value = mock_game_data
+                
+                match_request = {"igdb_id": igdb_game.igdb_id}
+                response = client.put(
+                    f"/api/steam-games/{steam_game.id}/match",
+                    json=match_request,
+                    headers=auth_headers
+                )
+                assert_api_success(response, 200)
+                match_data = response.json()
+                assert match_data["steam_game"]["igdb_id"] == igdb_game.igdb_id
+                assert match_data["steam_game"]["igdb_title"] == igdb_game.title
         
         # Step 5: Verify games appear in matched list
         response = client.get("/api/steam-games?status_filter=matched", headers=auth_headers)

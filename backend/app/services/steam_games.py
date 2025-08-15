@@ -450,6 +450,7 @@ class SteamGamesService:
                 logger.info(f"💾 [Single Match] Setting IGDB ID for SteamGame {steam_game_id}: '{steam_game.game_name}' -> IGDB ID {best_match.igdb_id}")
                 old_igdb_id = steam_game.igdb_id
                 steam_game.igdb_id = best_match.igdb_id
+                steam_game.igdb_title = best_match.title
                 steam_game.updated_at = datetime.now(timezone.utc)
                 
                 logger.info(f"📋 [Single Match] AFTER ASSIGNMENT - Game: '{steam_game.game_name}' | old_igdb_id: {old_igdb_id} | new_igdb_id: {steam_game.igdb_id}")
@@ -835,27 +836,28 @@ class SteamGamesService:
             if not steam_game:
                 raise SteamGamesServiceError("Steam game not found or access denied")
             
-            # Validate IGDB ID if provided (skip validation for clearing matches)
+            # Validate IGDB ID and fetch title if provided (skip validation for clearing matches)
+            igdb_title = None
             if igdb_id is not None:
-                # Only validate IDs that look obviously invalid (e.g., contain "non-existent", "invalid", etc.)
-                # This prevents real IGDB API calls for test IDs while still catching obviously invalid ones
-                suspicious_patterns = ["non-existent", "invalid", "fake", "test-invalid"]
-                if any(pattern in igdb_id.lower() for pattern in suspicious_patterns):
-                    try:
-                        game_data = await self.igdb_service.get_game_by_id(igdb_id)
-                        if not game_data:
-                            raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
-                    except Exception as e:
-                        # If IGDB service fails, treat it as invalid IGDB ID
-                        logger.warning(f"IGDB validation failed for ID {igdb_id}: {str(e)}")
+                try:
+                    # Fetch IGDB game data to get the title and validate the ID
+                    game_data = await self.igdb_service.get_game_by_id(igdb_id)
+                    if not game_data:
                         raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
+                    igdb_title = game_data.title
+                    logger.debug(f"🔄 [Transaction] Retrieved IGDB title: '{igdb_title}' for IGDB ID {igdb_id}")
+                except Exception as e:
+                    # If IGDB service fails, treat it as invalid IGDB ID
+                    logger.warning(f"IGDB validation failed for ID {igdb_id}: {str(e)}")
+                    raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
             
             # Store current state for unsync operations
             old_igdb_id = steam_game.igdb_id
             old_game_id = steam_game.game_id
             
-            # Update the Steam game's IGDB ID and handle unsync
+            # Update the Steam game's IGDB ID and title
             steam_game.igdb_id = igdb_id
+            steam_game.igdb_title = igdb_title  # Set to None when clearing match
             
             # If unmatching (igdb_id=None), also clear sync status
             if igdb_id is None:

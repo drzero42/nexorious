@@ -553,7 +553,8 @@ class TestManualMatching:
     async def test_match_steam_game_to_igdb_success(
         self,
         steam_games_service: SteamGamesService,
-        test_user: User
+        test_user: User,
+        mock_igdb_service
     ):
         """Test successful manual matching of Steam game to IGDB."""
         # Create Steam game
@@ -573,6 +574,14 @@ class TestManualMatching:
         steam_games_service.session.add(igdb_game)
         steam_games_service.session.commit()
         
+        # Configure mock IGDB service to return proper game data for validation
+        class MockGameData:
+            def __init__(self, title):
+                self.title = title
+        
+        mock_game_data = MockGameData("Counter-Strike: Global Offensive")
+        mock_igdb_service.get_game_by_id.return_value = mock_game_data
+        
         # Match Steam game to IGDB game
         result_game, message = await steam_games_service.match_steam_game_to_igdb(
             steam_game_id=steam_game.id,
@@ -583,11 +592,16 @@ class TestManualMatching:
         # Verify result
         assert result_game.id == steam_game.id
         assert result_game.igdb_id == igdb_game.igdb_id
+        assert result_game.igdb_title == "Counter-Strike: Global Offensive"
         assert "matched" in message.lower()
         
         # Verify database update
         steam_games_service.session.refresh(steam_game)
         assert steam_game.igdb_id == igdb_game.igdb_id
+        assert steam_game.igdb_title == "Counter-Strike: Global Offensive"
+        
+        # Verify IGDB service was called for validation
+        mock_igdb_service.get_game_by_id.assert_called_once_with("1234")
     
     @pytest.mark.asyncio
     async def test_match_steam_game_to_igdb_clear_existing(
