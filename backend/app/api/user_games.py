@@ -31,6 +31,7 @@ from ..api.schemas.user_game import (
     CollectionStatsResponse
 )
 from ..api.schemas.common import SuccessResponse
+from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
 
 router = APIRouter(prefix="/user-games", tags=["User Game Collection"])
 logger = logging.getLogger(__name__)
@@ -454,11 +455,30 @@ async def bulk_delete_user_games(
     delete_count = len(user_games)
     failed_count = len(bulk_data.user_game_ids) - len(found_ids)
     
+    # Collect game IDs for cleanup before deleting user games
+    game_ids_for_cleanup = [user_game.game_id for user_game in user_games]
+    
     # Delete the user games
     for user_game in user_games:
         session.delete(user_game)
     
     session.commit()
+    
+    # Attempt batch game cleanup in separate operation
+    if game_ids_for_cleanup:
+        try:
+            cleanup_results = cleanup_multiple_games(game_ids_for_cleanup, session)
+            cleaned_count = sum(1 for success in cleanup_results.values() if success)
+            logger.info(
+                f"Bulk cleanup completed after user game deletion: "
+                f"{cleaned_count}/{len(game_ids_for_cleanup)} games cleaned up"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Bulk game cleanup failed after user game deletion: {e}",
+                exc_info=True
+            )
+            # Don't re-raise - user game deletions already succeeded
     
     return SuccessResponse(
         message="Bulk deletion completed successfully",
@@ -830,8 +850,26 @@ async def remove_game_from_collection(
             detail="User game not found"
         )
     
+    # Store game_id for cleanup before deleting the user_game
+    game_id = user_game.game_id
+    
+    # Delete user game first
     session.delete(user_game)
     session.commit()
+    
+    # Attempt automatic game cleanup in separate transaction
+    try:
+        cleanup_result = cleanup_unreferenced_game(game_id, session)
+        if cleanup_result:
+            logger.info(f"Successfully cleaned up unreferenced game {game_id} after user game deletion")
+        else:
+            logger.debug(f"Game {game_id} still has references - cleanup skipped")
+    except Exception as e:
+        logger.warning(
+            f"Game cleanup failed for {game_id} after user game deletion: {e}",
+            exc_info=True
+        )
+        # Don't re-raise - user game deletion already succeeded
     
     return SuccessResponse(message="User game deleted successfully")
 

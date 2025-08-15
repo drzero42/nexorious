@@ -155,8 +155,8 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 **Priority**: P1 (High)
 - [x] Create game cleanup service in `backend/app/services/game_cleanup.py`
 - [x] Implement `cleanup_unreferenced_game(game_id)` function with reference counting
-- [ ] Add automatic game cleanup to UserGame deletion endpoint in `user_games.py`
-- [ ] Add automatic game cleanup to bulk UserGame deletion endpoint
+- [x] Add automatic game cleanup to UserGame deletion endpoint in `user_games.py`
+- [x] Add automatic game cleanup to bulk UserGame deletion endpoint
 - [ ] Add automatic game cleanup to wishlist deletion endpoints (if they exist)
 - [x] Ensure proper cascade deletion of GameAlias records when Game is deleted
 - [x] Add database transaction handling for atomic cleanup operations
