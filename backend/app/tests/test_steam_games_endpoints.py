@@ -441,7 +441,10 @@ class TestSteamGameMatchEndpoint:
         assert data["steam_game"]["igdb_id"] == test_game.igdb_id
     
     def test_match_steam_game_any_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
-        """Test matching Steam game to any IGDB ID succeeds (no validation)."""
+        """Test matching Steam game to any IGDB ID succeeds with proper IGDB service mocking."""
+        from unittest.mock import patch, AsyncMock
+        from ..services.steam_games import SteamGamesService
+        
         # Create Steam game
         steam_game = SteamGame(
             user_id=test_user.id,
@@ -452,15 +455,36 @@ class TestSteamGameMatchEndpoint:
         session.add(steam_game)
         session.commit()
         
-        # Match to any IGDB ID (no validation needed since user selected from search)
-        match_data = {"igdb_id": "any-igdb-id-from-search"}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
-                             json=match_data, 
-                             headers=auth_headers)
+        # Mock IGDB service to return a valid game for any ID
+        class MockGameData:
+            def __init__(self, title):
+                self.title = title
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["steam_game"]["igdb_id"] == "any-igdb-id-from-search"
+        mock_game_data = MockGameData("Mocked IGDB Game Title")
+        
+        # Create a mock IGDB service with the method we need
+        mock_igdb_service = AsyncMock()
+        mock_igdb_service.get_game_by_id.return_value = mock_game_data
+        
+        # Patch the factory function to inject our mock IGDB service
+        def mock_factory(session):
+            return SteamGamesService(session, igdb_service=mock_igdb_service)
+        
+        with patch('app.api.steam_games.create_steam_games_service', side_effect=mock_factory):
+            
+            # Match to any IGDB ID (validation mocked to succeed)
+            match_data = {"igdb_id": "any-igdb-id-from-search"}
+            response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+                                 json=match_data, 
+                                 headers=auth_headers)
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["steam_game"]["igdb_id"] == "any-igdb-id-from-search"
+            assert data["steam_game"]["igdb_title"] == "Mocked IGDB Game Title"
+            
+            # Verify IGDB service was called for validation
+            mock_igdb_service.get_game_by_id.assert_called_once_with("any-igdb-id-from-search")
     
     def test_match_steam_game_without_auth(self, client: TestClient, session: Session, test_user: User):
         """Test that matching Steam game requires authentication."""

@@ -8,6 +8,7 @@ export interface SteamGameResponse {
   steam_appid: number;
   game_name: string;
   igdb_id: string | null;
+  igdb_title: string | null;
   game_id: string | null;
   user_game_id: string | null;
   ignored: boolean;
