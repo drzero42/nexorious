@@ -6,7 +6,7 @@
   import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, FormField } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, FormField, StarRating } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
@@ -727,13 +727,6 @@
     return labels[status] || status;
   }
 
-  function renderStars(rating: number) {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(i <= rating ? '★' : '☆');
-    }
-    return stars.join('');
-  }
 </script>
 
 <svelte:head>
@@ -1157,22 +1150,18 @@
                   isDirty={formDirtyFields.has('personal_rating')}
                   helpText="Rate this game from 1 to 5 stars (optional)"
                 >
-                  <select
+                  <StarRating
                     id="personal_rating"
                     bind:value={editData.personal_rating}
-                    class="form-select"
-                    on:change={() => {
+                    size="md"
+                    clearable={true}
+                    showLabel={true}
+                    onchange={(e) => {
+                      editData.personal_rating = e.detail.value || undefined;
                       markFieldDirty('personal_rating');
                       validateFormField('personal_rating', editData.personal_rating);
                     }}
-                  >
-                    <option value={null}>No Rating</option>
-                    <option value={1}>1 Star</option>
-                    <option value={2}>2 Stars</option>
-                    <option value={3}>3 Stars</option>
-                    <option value={4}>4 Stars</option>
-                    <option value={5}>5 Stars</option>
-                  </select>
+                  />
                 </FormField>
 
                 <FormField 
@@ -1428,14 +1417,12 @@
               <div class="bg-gray-50 p-4 rounded-lg">
                 <dt class="text-sm font-medium text-gray-500">Rating</dt>
                 <dd class="mt-1">
-                  {#if game.personal_rating}
-                    <div class="flex items-center space-x-1">
-                      <span class="text-yellow-400 text-lg">{renderStars(game.personal_rating)}</span>
-                      <span class="text-sm font-medium text-gray-900">({game.personal_rating}/5)</span>
-                    </div>
-                  {:else}
-                    <span class="text-sm text-gray-500">Not rated</span>
-                  {/if}
+                  <StarRating
+                    value={game.personal_rating}
+                    readonly={true}
+                    size="md"
+                    showLabel={true}
+                  />
                 </dd>
               </div>
 

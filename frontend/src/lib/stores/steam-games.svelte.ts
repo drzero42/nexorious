@@ -616,7 +616,7 @@ function createSteamGamesStore() {
         if (gameIndex !== -1) {
           console.log('📋 [STORE-SINGLE] BEFORE update - Game in state:', state.games[gameIndex]);
           const updatedGames = [...state.games];
-          updatedGames[gameIndex] = data.game;
+          updatedGames[gameIndex] = data.steam_game;
           state = { ...state, games: updatedGames };
           console.log('📋 [STORE-SINGLE] AFTER update - Game in state:', state.games[gameIndex]);
         } else {

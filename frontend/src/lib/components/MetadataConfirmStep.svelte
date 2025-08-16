@@ -3,6 +3,7 @@
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import PlatformSelector from './PlatformSelector.svelte';
+  import StarRating from './StarRating.svelte';
 
   export let selectedGame: IGDBGameCandidate | null;
   export let gameData: any;
@@ -203,18 +204,18 @@
         <label for="metadata-personal-rating" class="form-label">
           Personal Rating
         </label>
-        <select
-          id="metadata-personal-rating"
-          bind:value={gameData.personal_rating}
-          class="form-input"
-        >
-          <option value={null}>No Rating</option>
-          <option value={1}>★ 1 Star</option>
-          <option value={2}>★★ 2 Stars</option>
-          <option value={3}>★★★ 3 Stars</option>
-          <option value={4}>★★★★ 4 Stars</option>
-          <option value={5}>★★★★★ 5 Stars</option>
-        </select>
+        <div class="mt-1">
+          <StarRating
+            id="metadata-personal-rating"
+            bind:value={gameData.personal_rating}
+            size="md"
+            clearable={true}
+            showLabel={true}
+            onchange={(e) => {
+              gameData.personal_rating = e.detail.value;
+            }}
+          />
+        </div>
       </div>
 
       <div>

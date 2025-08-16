@@ -13,6 +13,7 @@ export { default as ProgressStatistics } from './ProgressStatistics.svelte';
 export { default as PlatformBadges } from './PlatformBadges.svelte';
 export { default as Portal } from './Portal.svelte';
 export { default as FormField } from './FormField.svelte';
+export { default as StarRating } from './StarRating.svelte';
 
 // Steam Games components
 export { default as SteamGameCard } from './SteamGameCard.svelte';
