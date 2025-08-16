@@ -53,7 +53,7 @@
 
   async function handleAutoMatch(game: SteamGameResponse) {
     try {
-      console.log('🎯 [SINGLE AUTO-MATCH] Starting single game auto-match for:', game.game_name);
+      console.log('🎯 [SINGLE AUTO-MATCH] Starting single game auto-match for:', game.name);
       setGameLoading(game.id, true);
       
       console.log('🔄 [SINGLE AUTO-MATCH] Calling steamGames.autoMatchSingleGame()...');
@@ -237,7 +237,7 @@
       <div class="bg-white rounded-lg shadow-xl">
         <div class="p-4 border-b border-gray-200">
           <h3 class="text-lg font-medium text-gray-900">
-            Match "{matchingGame.game_name}" to IGDB
+            Match "{matchingGame.name}" to IGDB
           </h3>
           <p class="text-sm text-gray-500 mt-1">
             Search for the correct game in the IGDB database
@@ -245,7 +245,7 @@
         </div>
         <div class="p-4">
           <IGDBSearchWidget
-            initialQuery={matchingGame.game_name}
+            initialQuery={matchingGame.name}
             onGameSelected={handleGameSelected}
             onCancel={handleCancelMatch}
           />

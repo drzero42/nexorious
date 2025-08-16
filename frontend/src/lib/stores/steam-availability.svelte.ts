@@ -1,79 +1,97 @@
 import { auth } from './auth.svelte';
-import { platforms, type PlatformsState } from './platforms.svelte';
-import { isSteamGamesAvailable, getSteamGamesUnavailableReason } from '$lib/utils/steam-utils';
+import { config } from '$lib/env';
 
 export interface SteamAvailability {
   /** Whether Steam Games feature is available */
   isAvailable: boolean;
-  /** Whether platforms/storefronts data is still loading */
+  /** Whether availability check is in progress */
   isLoading: boolean;
-  /** Error message if data failed to load */
-  error: string | null;
   /** Reason why Steam Games is unavailable (null if available) */
   unavailableReason: string | null;
 }
 
 /**
- * Reactive store that provides Steam Games availability status.
- * This mirrors the backend verify_steam_games_enabled() dependency logic:
- * 1. User has Steam Games UI feature enabled (default: True)
- * 2. PC-Windows platform exists and is active  
- * 3. Steam storefront exists and is active
+ * Simple Steam availability store that uses backend API to check availability.
+ * This replaces the complex frontend logic with a simple API call to /api/import/sources/steam/availability.
+ * 
+ * The backend handles all the complex logic:
+ * - User preferences check
+ * - PC-Windows platform availability
+ * - Steam storefront availability
  */
 function createSteamAvailabilityStore() {
-  let platformsState = $state<PlatformsState>({ platforms: [], storefronts: [], isLoading: false, error: null });
-  
-  // Subscribe to platforms store
-  platforms.subscribe((state) => {
-    platformsState = state;
+  let availability = $state<SteamAvailability>({
+    isAvailable: false,
+    isLoading: true,
+    unavailableReason: null
   });
 
   return {
-    get isAvailable() {
-      const user = auth.value.user;
-      const platformsList = platformsState.platforms;
-      const storefrontsList = platformsState.storefronts;
-
-      // If platforms data is still loading, not available
-      if (platformsState.isLoading && platformsList.length === 0 && storefrontsList.length === 0) {
-        return false;
-      }
-
-      // If there's an error loading platforms data, not available
-      if (platformsState.error) {
-        return false;
-      }
-
-      // Check Steam Games availability
-      return isSteamGamesAvailable(user, platformsList, storefrontsList);
+    get isAvailable() { 
+      return availability.isAvailable; 
     },
-
-    get isLoading() {
-      return platformsState.isLoading && platformsState.platforms.length === 0 && platformsState.storefronts.length === 0;
+    
+    get isLoading() { 
+      return availability.isLoading; 
     },
-
-    get error() {
-      return platformsState.error;
+    
+    get unavailableReason() { 
+      return availability.unavailableReason; 
     },
+    
+    /**
+     * Check Steam availability via backend API.
+     * This is much simpler and more reliable than the previous approach.
+     */
+    async checkAvailability(): Promise<void> {
+      console.log('🔄 [STEAM-AVAILABILITY] Starting availability check via API...');
+      
+      availability.isLoading = true;
+      
+      try {
+        if (!auth.value.accessToken) {
+          console.log('❌ [STEAM-AVAILABILITY] No access token available');
+          availability.isAvailable = false;
+          availability.unavailableReason = 'Not authenticated';
+          return;
+        }
 
-    get unavailableReason() {
-      if (this.isAvailable) {
-        return null;
+        console.log('📡 [STEAM-AVAILABILITY] Calling backend availability API...');
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/availability`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          console.error('❌ [STEAM-AVAILABILITY] API request failed:', response.status, response.statusText);
+          availability.isAvailable = false;
+          availability.unavailableReason = `API request failed: ${response.status}`;
+          return;
+        }
+
+        const data = await response.json();
+        console.log('✅ [STEAM-AVAILABILITY] API response received:', data);
+        
+        availability.isAvailable = data.available;
+        availability.unavailableReason = data.reason;
+        
+        if (data.available) {
+          console.log('🎯 [STEAM-AVAILABILITY] Steam is available!');
+        } else {
+          console.log('❌ [STEAM-AVAILABILITY] Steam not available:', data.reason);
+        }
+        
+      } catch (error) {
+        console.error('❌ [STEAM-AVAILABILITY] Error checking Steam availability:', error);
+        availability.isAvailable = false;
+        availability.unavailableReason = 'Failed to check Steam availability';
+      } finally {
+        availability.isLoading = false;
+        console.log('✅ [STEAM-AVAILABILITY] Availability check completed');
       }
-
-      const user = auth.value.user;
-      const platformsList = platformsState.platforms;
-      const storefrontsList = platformsState.storefronts;
-
-      if (platformsState.isLoading && platformsList.length === 0 && storefrontsList.length === 0) {
-        return null; // Still loading
-      }
-
-      if (platformsState.error) {
-        return `Failed to load platforms data: ${platformsState.error}`;
-      }
-
-      return getSteamGamesUnavailableReason(user, platformsList, storefrontsList);
     }
   };
 }

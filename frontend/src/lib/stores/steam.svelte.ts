@@ -73,7 +73,7 @@ function createSteamStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/config`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/config`, {
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }
@@ -113,7 +113,7 @@ function createSteamStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/config`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/config`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -159,7 +159,7 @@ function createSteamStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/config`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/config`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
@@ -195,7 +195,7 @@ function createSteamStore() {
       state = { ...state, isVerifying: true, error: null, verificationResult: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/verify`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/verify`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -237,7 +237,7 @@ function createSteamStore() {
       state = { ...state, isResolvingVanity: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/resolve-vanity`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/resolve-vanity`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -290,7 +290,7 @@ function createSteamStore() {
       }
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/import`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/games/import`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -315,7 +315,7 @@ function createSteamStore() {
         
         // Navigate to import status page
         setTimeout(() => {
-          goto(`/steam/import/status/${job.id}`);
+          goto(`/import/steam/status/${job.id}`);
         }, 1500);
 
         return job.id;
@@ -334,7 +334,7 @@ function createSteamStore() {
       }
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/library`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/steam/library`, {
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }
@@ -363,7 +363,7 @@ function createSteamStore() {
       }
 
       try {
-        const response = await fetch(`${config.apiUrl}/steam/import/active`, {
+        const response = await fetch(`${config.apiUrl}/import/jobs?source=steam&status=running`, {
           headers: {
             'Authorization': `Bearer ${auth.value.accessToken}`
           }

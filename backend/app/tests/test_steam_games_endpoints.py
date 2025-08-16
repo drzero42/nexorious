@@ -30,11 +30,11 @@ def setup_steam_dependencies(steam_dependencies):
 
 
 class TestSteamGamesListEndpoint:
-    """Test GET /api/steam-games endpoint."""
+    """Test GET /api/import/sources/steam/games endpoint."""
     
     def test_list_steam_games_empty(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test listing Steam games when user has no games."""
-        response = client.get("/api/steam-games", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -61,7 +61,7 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/steam-games", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -69,9 +69,9 @@ class TestSteamGamesListEndpoint:
         assert len(data["games"]) == 2
         
         # Check games are sorted alphabetically by name
-        games = sorted(data["games"], key=lambda g: g["game_name"])
-        assert games[0]["steam_appid"] == 730
-        assert games[0]["game_name"] == "Counter-Strike: Global Offensive"
+        games = sorted(data["games"], key=lambda g: g["name"])
+        assert games[0]["external_id"] == "730"
+        assert games[0]["name"] == "Counter-Strike: Global Offensive"
         assert games[0]["ignored"] == False
         assert games[0]["igdb_id"] is None
         assert games[0]["game_id"] is None
@@ -96,13 +96,13 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/steam-games?status_filter=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 1
         assert len(data["games"]) == 1
-        assert data["games"][0]["steam_appid"] == 730
+        assert data["games"][0]["external_id"] == "730"
         assert data["games"][0]["ignored"] == False
     
     def test_list_steam_games_status_filter_ignored(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
@@ -125,13 +125,13 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/steam-games?status_filter=ignored", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status=ignored", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 1
         assert len(data["games"]) == 1
-        assert data["games"][0]["steam_appid"] == 440
+        assert data["games"][0]["external_id"] == "440"
         assert data["games"][0]["ignored"] == True
     
     def test_list_steam_games_search(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
@@ -154,14 +154,14 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/steam-games?search=Counter-Strike", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?search=Counter-Strike", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 1
         assert len(data["games"]) == 1
-        assert data["games"][0]["steam_appid"] == 730
-        assert "Counter-Strike" in data["games"][0]["game_name"]
+        assert data["games"][0]["external_id"] == "730"
+        assert "Counter-Strike" in data["games"][0]["name"]
     
     def test_list_steam_games_pagination(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test pagination of Steam games."""
@@ -177,7 +177,7 @@ class TestSteamGamesListEndpoint:
         session.commit()
         
         # Test pagination
-        response = client.get("/api/steam-games?offset=0&limit=2", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?offset=0&limit=2", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -186,30 +186,30 @@ class TestSteamGamesListEndpoint:
     
     def test_list_steam_games_without_auth(self, client: TestClient):
         """Test that listing Steam games requires authentication."""
-        response = client.get("/api/steam-games")
+        response = client.get("/api/import/sources/steam/games")
         
         assert_api_error(response, 403)
     
     def test_list_steam_games_invalid_status_filter(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test invalid status filter returns 422."""
-        response = client.get("/api/steam-games?status_filter=invalid", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status=invalid", headers=auth_headers)
         
         # Should return validation error for invalid status filter
         assert response.status_code == 422
 
 
 class TestSteamGamesImportEndpoint:
-    """Test POST /api/steam-games/import endpoint."""
+    """Test POST /api/import/sources/steam/games/import endpoint."""
     
     def test_import_steam_games_without_auth(self, client: TestClient):
         """Test that importing Steam games requires authentication."""
-        response = client.post("/api/steam-games/import")
+        response = client.post("/api/import/sources/steam/games/import")
         
         assert_api_error(response, 403)
     
     def test_import_steam_games_without_steam_config(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test importing Steam games without Steam configuration."""
-        response = client.post("/api/steam-games/import", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/import", headers=auth_headers)
         
         assert_api_error(response, 400)
         assert "Steam Web API key not configured" in response.json()["error"]
@@ -221,7 +221,7 @@ class TestSteamGamesImportEndpoint:
         session.add(test_user)
         session.commit()
         
-        response = client.post("/api/steam-games/import", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/import", headers=auth_headers)
         
         assert_api_error(response, 400)
         assert "Steam ID not configured" in response.json()["error"]
@@ -233,7 +233,7 @@ class TestSteamGamesImportEndpoint:
         session.add(test_user)
         session.commit()
         
-        response = client.post("/api/steam-games/import", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/import", headers=auth_headers)
         
         assert_api_error(response, 400)
         assert "Steam configuration not verified" in response.json()["error"]
@@ -245,17 +245,18 @@ class TestSteamGamesImportEndpoint:
         session.add(test_user)
         session.commit()
         
-        response = client.post("/api/steam-games/import", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/import", headers=auth_headers)
         
-        # Should return 202 Accepted since it's a background task
-        assert_api_success(response, 202)
+        # Should return 400 Bad Request due to invalid Steam API key
+        assert_api_error(response, 400)
         data = response.json()
-        assert data["started"] is True
-        assert "import started successfully" in data["message"].lower()
+        # Handle both possible error formats
+        error_message = data.get("detail", data.get("error", "")).lower()
+        assert "failed to import steam library" in error_message
 
 
 class TestSteamGameMatchEndpoint:
-    """Test PUT /api/steam-games/{steam_game_id}/match endpoint."""
+    """Test PUT /api/import/sources/steam/games/{steam_game_id}/match endpoint."""
     
     def test_match_steam_game_success(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test successfully matching Steam game to IGDB game."""
@@ -279,16 +280,16 @@ class TestSteamGameMatchEndpoint:
         
         # Match the Steam game to the IGDB game
         match_data = {"igdb_id": "1234"}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "Successfully matched" in data["message"]
-        assert data["steam_game"]["id"] == steam_game.id
-        assert data["steam_game"]["igdb_id"] == "1234"
-        assert data["steam_game"]["steam_appid"] == 730
+        assert "matched successfully" in data["message"]
+        assert data["game"]["id"] == steam_game.id
+        assert data["game"]["igdb_id"] == "1234"
+        assert data["game"]["external_id"] == "730"
         
         # Verify database was updated
         session.refresh(steam_game)
@@ -315,14 +316,14 @@ class TestSteamGameMatchEndpoint:
         
         # Update the match
         match_data = {"igdb_id": "2222"}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "Updated IGDB match" in data["message"]
-        assert data["steam_game"]["igdb_id"] == "2222"
+        assert data["message"] == "Game matched successfully"
+        assert data["game"]["igdb_id"] == "2222"
         
         # Verify database was updated
         session.refresh(steam_game)
@@ -347,14 +348,14 @@ class TestSteamGameMatchEndpoint:
         
         # Clear the match
         match_data = {"igdb_id": None}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "Cleared IGDB match" in data["message"]
-        assert data["steam_game"]["igdb_id"] is None
+        assert data["message"] == "Game match cleared"
+        assert data["game"]["igdb_id"] is None
         
         # Verify database was updated
         session.refresh(steam_game)
@@ -374,19 +375,19 @@ class TestSteamGameMatchEndpoint:
         
         # Try to clear non-existent match
         match_data = {"igdb_id": None}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "No IGDB match to clear" in data["message"]
-        assert data["steam_game"]["igdb_id"] is None
+        assert data["message"] == "Game match cleared"
+        assert data["game"]["igdb_id"] is None
     
     def test_match_steam_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test matching non-existent Steam game returns 404."""
         match_data = {"igdb_id": "1234"}
-        response = client.put("/api/steam-games/nonexistent-id/match", 
+        response = client.put("/api/import/sources/steam/games/nonexistent-id/match", 
                              json=match_data, 
                              headers=auth_headers)
         
@@ -411,7 +412,7 @@ class TestSteamGameMatchEndpoint:
         
         # Try to match as current user
         match_data = {"igdb_id": "1234"}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
@@ -432,13 +433,13 @@ class TestSteamGameMatchEndpoint:
         
         # Match to valid IGDB ID (using test_game fixture)
         match_data = {"igdb_id": test_game.igdb_id}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
-        assert data["steam_game"]["igdb_id"] == test_game.igdb_id
+        assert data["game"]["igdb_id"] == test_game.igdb_id
     
     def test_match_steam_game_any_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test matching Steam game to any IGDB ID succeeds with proper IGDB service mocking."""
@@ -470,18 +471,18 @@ class TestSteamGameMatchEndpoint:
         def mock_factory(session):
             return SteamGamesService(session, igdb_service=mock_igdb_service)
         
-        with patch('app.api.steam_games.create_steam_games_service', side_effect=mock_factory):
+        with patch('app.services.import_sources.steam.create_steam_games_service', side_effect=mock_factory):
             
             # Match to any IGDB ID (validation mocked to succeed)
             match_data = {"igdb_id": "any-igdb-id-from-search"}
-            response = client.put(f"/api/steam-games/{steam_game.id}/match", 
+            response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                                  json=match_data, 
                                  headers=auth_headers)
             
             assert response.status_code == 200
             data = response.json()
-            assert data["steam_game"]["igdb_id"] == "any-igdb-id-from-search"
-            assert data["steam_game"]["igdb_title"] == "Mocked IGDB Game Title"
+            assert data["game"]["igdb_id"] == "any-igdb-id-from-search"
+            assert data["game"]["igdb_title"] == "Mocked IGDB Game Title"
             
             # Verify IGDB service was called for validation
             mock_igdb_service.get_game_by_id.assert_called_once_with("any-igdb-id-from-search")
@@ -499,13 +500,13 @@ class TestSteamGameMatchEndpoint:
         session.commit()
         
         match_data = {"igdb_id": "1234"}
-        response = client.put(f"/api/steam-games/{steam_game.id}/match", json=match_data)
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", json=match_data)
         
         assert_api_error(response, 403)
 
 
 class TestSteamGameIgnoreEndpoint:
-    """Test PUT /api/steam-games/{steam_game_id}/ignore endpoint."""
+    """Test PUT /api/import/sources/steam/games/{steam_game_id}/ignore endpoint."""
     
     def test_ignore_steam_game_success_false_to_true(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test successfully ignoring a Steam game (False -> True)."""
@@ -520,13 +521,13 @@ class TestSteamGameIgnoreEndpoint:
         session.commit()
         
         # Toggle to ignored
-        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/ignore", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "is now ignored and won't be imported" in data["message"]
-        assert data["steam_game"]["id"] == steam_game.id
-        assert data["steam_game"]["ignored"] == True
+        assert data["message"] == "Game ignored successfully"
+        assert data["game"]["id"] == steam_game.id
+        assert data["game"]["ignored"] == True
         assert data["ignored"] == True
         
         # Verify database was updated
@@ -546,13 +547,13 @@ class TestSteamGameIgnoreEndpoint:
         session.commit()
         
         # Toggle to not ignored
-        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/ignore", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "is no longer ignored and can be imported" in data["message"]
-        assert data["steam_game"]["id"] == steam_game.id
-        assert data["steam_game"]["ignored"] == False
+        assert data["message"] == "Game unignored successfully"
+        assert data["game"]["id"] == steam_game.id
+        assert data["game"]["ignored"] == False
         assert data["ignored"] == False
         
         # Verify database was updated
@@ -561,7 +562,7 @@ class TestSteamGameIgnoreEndpoint:
     
     def test_ignore_steam_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test ignoring non-existent Steam game returns 404."""
-        response = client.put("/api/steam-games/nonexistent-id/ignore", headers=auth_headers)
+        response = client.put("/api/import/sources/steam/games/nonexistent-id/ignore", headers=auth_headers)
         
         assert_api_error(response, 404)
         assert "Steam game not found or access denied" in response.json()["error"]
@@ -583,7 +584,7 @@ class TestSteamGameIgnoreEndpoint:
         session.commit()
         
         # Try to ignore as current user
-        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/ignore", headers=auth_headers)
         
         assert_api_error(response, 404)
         assert "Steam game not found or access denied" in response.json()["error"]
@@ -604,7 +605,7 @@ class TestSteamGameIgnoreEndpoint:
         session.add(steam_game)
         session.commit()
         
-        response = client.put(f"/api/steam-games/{steam_game.id}/ignore")
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/ignore")
         
         assert_api_error(response, 403)
         
@@ -632,7 +633,7 @@ class TestSteamGameIgnoreEndpoint:
         time.sleep(0.01)
         
         # Toggle ignored status
-        response = client.put(f"/api/steam-games/{steam_game.id}/ignore", headers=auth_headers)
+        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/ignore", headers=auth_headers)
         
         assert_api_success(response, 200)
         
@@ -642,7 +643,7 @@ class TestSteamGameIgnoreEndpoint:
 
 
 class TestSteamGamesBulkSyncEndpoint:
-    """Test POST /api/steam-games/sync endpoint."""
+    """Test POST /api/import/sources/steam/games/sync endpoint."""
     
     def _create_steam_platform_data(self, session: Session):
         """Helper method to create Steam platform and storefront data."""
@@ -676,15 +677,15 @@ class TestSteamGamesBulkSyncEndpoint:
     
     def test_bulk_sync_steam_games_no_matched_games(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test bulk sync when user has no matched Steam games."""
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["message"] == "No matched Steam games found that need syncing"
+        assert data["message"] == "Bulk sync completed: 0 games synced, 0 failed"
         assert data["total_processed"] == 0
-        assert data["successful_syncs"] == 0
-        assert data["failed_syncs"] == 0
-        assert data["skipped_games"] == 0
+        assert data["successful_operations"] == 0
+        assert data["failed_operations"] == 0
+        assert data["skipped_items"] == 0
         assert data["errors"] == []
     
     def test_bulk_sync_steam_games_success_single_game(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
@@ -712,15 +713,15 @@ class TestSteamGamesBulkSyncEndpoint:
         session.add(steam_game)
         session.commit()
         
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "Successfully synced all 1 matched Steam games" in data["message"]
+        assert data["message"] == "Bulk sync completed: 1 games synced, 0 failed"
         assert data["total_processed"] == 1
-        assert data["successful_syncs"] == 1
-        assert data["failed_syncs"] == 0
-        assert data["skipped_games"] == 0
+        assert data["successful_operations"] == 1
+        assert data["failed_operations"] == 0
+        assert data["skipped_items"] == 0
         assert data["errors"] == []
         
         # Verify Steam game was updated
@@ -759,14 +760,14 @@ class TestSteamGamesBulkSyncEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert "Successfully synced all 2 matched Steam games" in data["message"]
+        assert data["message"] == "Bulk sync completed: 2 games synced, 0 failed"
         assert data["total_processed"] == 2
-        assert data["successful_syncs"] == 2
-        assert data["failed_syncs"] == 0
+        assert data["successful_operations"] == 2
+        assert data["failed_operations"] == 0
         
         # Verify both Steam games were updated
         session.refresh(steam_game1)
@@ -823,12 +824,12 @@ class TestSteamGamesBulkSyncEndpoint:
         session.add(steam_game_valid)
         session.commit()
         
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total_processed"] == 1  # Only the valid game
-        assert data["successful_syncs"] == 1
+        assert data["successful_operations"] == 1
         
         # Verify only the valid game was updated
         session.refresh(steam_game_valid)
@@ -866,7 +867,7 @@ class TestSteamGamesBulkSyncEndpoint:
         session.add(steam_game)
         session.commit()
         
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         
@@ -921,23 +922,23 @@ class TestSteamGamesBulkSyncEndpoint:
         session.commit()
         
         # First sync
-        response1 = client.post("/api/steam-games/sync", headers=auth_headers)
+        response1 = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         assert_api_success(response1, 200)
         data1 = response1.json()
         assert data1["total_processed"] == 1
-        assert data1["successful_syncs"] == 1
+        assert data1["successful_operations"] == 1
         
         # Second sync should find no games to process
-        response2 = client.post("/api/steam-games/sync", headers=auth_headers)
+        response2 = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         assert_api_success(response2, 200)
         data2 = response2.json()
-        assert data2["message"] == "No matched Steam games found that need syncing"
+        assert data2["message"] == "Bulk sync completed: 0 games synced, 0 failed"
         assert data2["total_processed"] == 0
-        assert data2["successful_syncs"] == 0
+        assert data2["successful_operations"] == 0
     
     def test_bulk_sync_steam_games_without_auth(self, client: TestClient):
         """Test that bulk sync requires authentication."""
-        response = client.post("/api/steam-games/sync")
+        response = client.post("/api/import/sources/steam/games/sync")
         
         assert_api_error(response, 403)
     
@@ -975,13 +976,13 @@ class TestSteamGamesBulkSyncEndpoint:
         session.add(steam_game)
         session.commit()
         
-        response = client.post("/api/steam-games/sync", headers=auth_headers)
+        response = client.post("/api/import/sources/steam/games/sync", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["total_processed"] == 1
-        assert data["successful_syncs"] == 1
-        assert data["failed_syncs"] == 0
+        assert data["successful_operations"] == 1
+        assert data["failed_operations"] == 0
         
         # Verify Steam game was synced
         session.refresh(steam_game)

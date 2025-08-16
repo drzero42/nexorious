@@ -11,10 +11,7 @@ from .api.auth import router as auth_router
 from .api.games import router as games_router
 from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
-from .api.steam_config import router as steam_router
-from .api.steam_games import router as steam_games_router
-from .api.batch_auto_match import router as batch_auto_match_router
-from .api.batch_sync import router as batch_sync_router
+from .api.import_api import router as import_router
 from .services.batch_session_manager import startup_batch_session_manager, shutdown_batch_session_manager
 
 # Configure logging
@@ -78,10 +75,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(games_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
-app.include_router(steam_router, prefix="/api")
-app.include_router(steam_games_router, prefix="/api")
-app.include_router(batch_auto_match_router, prefix="/api")
-app.include_router(batch_sync_router, prefix="/api")
+app.include_router(import_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:
@@ -118,13 +112,21 @@ async def health_check():
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent JSON response"""
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.detail,
             "status_code": exc.status_code
         }
     )
+    
+    # Ensure CORS headers are included in error responses
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
 
 @app.exception_handler(Exception)
 async def internal_server_error_handler(request, exc: Exception):
@@ -134,13 +136,21 @@ async def internal_server_error_handler(request, exc: Exception):
         raise exc
     
     logger.error(f"Internal server error: {exc}")
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={
             "error": f"Internal server error: {str(exc)}",
             "status_code": 500
         }
     )
+    
+    # Ensure CORS headers are included in error responses
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
 
 if __name__ == "__main__":
     import uvicorn

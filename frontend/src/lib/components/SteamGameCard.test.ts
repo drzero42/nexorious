@@ -11,8 +11,8 @@ vi.setSystemTime(mockDate);
 describe('SteamGameCard', () => {
   const baseSteamGame: SteamGameResponse = {
     id: 'steam-game-1',
-    steam_appid: 730,
-    game_name: 'Counter-Strike: Global Offensive',
+    external_id: '730',
+    name: 'Counter-Strike: Global Offensive',
     igdb_id: null,
     igdb_title: null,
     game_id: null,
@@ -57,7 +57,7 @@ describe('SteamGameCard', () => {
     it('truncates long game names appropriately', () => {
       const longNameGame = {
         ...baseSteamGame,
-        game_name: 'A Very Long Game Name That Should Be Truncated In The Display Because It Is Too Long To Fit Properly'
+        name: 'A Very Long Game Name That Should Be Truncated In The Display Because It Is Too Long To Fit Properly'
       };
 
       const { container } = render(SteamGameCard, { game: longNameGame });
@@ -680,7 +680,7 @@ describe('SteamGameCard', () => {
     it('handles games with special characters in name', () => {
       const specialCharGame = {
         ...baseSteamGame,
-        game_name: 'Game with "Quotes" & Symbols <>'
+        name: 'Game with "Quotes" & Symbols <>'
       };
 
       render(SteamGameCard, { game: specialCharGame });
@@ -691,7 +691,7 @@ describe('SteamGameCard', () => {
     it('handles games with very high Steam AppID', () => {
       const highAppIdGame = {
         ...baseSteamGame,
-        steam_appid: 999999999
+        external_id: '999999999'
       };
 
       render(SteamGameCard, { game: highAppIdGame });
@@ -702,7 +702,7 @@ describe('SteamGameCard', () => {
     it('handles games with empty game name gracefully', () => {
       const emptyNameGame = {
         ...baseSteamGame,
-        game_name: ''
+        name: ''
       };
 
       render(SteamGameCard, { game: emptyNameGame });

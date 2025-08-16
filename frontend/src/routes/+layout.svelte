@@ -22,19 +22,37 @@
       await auth.refreshAuth();
       
       // Load platforms data for authenticated users
-      // This is needed for Steam availability checking
+      // This is needed for platform management and navigation
       if (auth.value.user) {
         try {
           // Admin users need all platforms (active + inactive) for management
           // Regular users only need active platforms for efficiency
+          console.log('🔄 [LAYOUT] Loading platforms data for user:', {
+            userId: auth.value.user.id,
+            username: auth.value.user.username,
+            isAdmin: auth.value.user.isAdmin
+          });
+          
           if (auth.value.user.isAdmin) {
             await platforms.fetchAll();
           } else {
             await platforms.fetchActivePlatformsAndStorefronts();
           }
+          
+          console.log('✅ [LAYOUT] Platforms data loaded successfully');
         } catch (error) {
-          console.warn('Failed to load platforms data:', error);
+          console.error('❌ [LAYOUT] Failed to load platforms data:', error);
           // Don't block app loading if platforms fail to load
+        }
+
+        // Check Steam availability for sidebar navigation
+        console.log('🔄 [LAYOUT] Checking Steam availability for navigation...');
+        try {
+          await steamAvailability.checkAvailability();
+          console.log('✅ [LAYOUT] Steam availability check completed');
+        } catch (error) {
+          console.error('❌ [LAYOUT] Failed to check Steam availability:', error);
+          // Don't block app loading if availability check fails
         }
       }
     }
@@ -96,35 +114,65 @@
                     Add Game
                   </a>
                 </li>
-                {#if steamAvailability.isAvailable}
-                  <li>
-                    <a
-                      href="/steam-games"
-                      class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                    >
-                      {#if steamIconUrl}
-                        <img 
-                          src="{steamIconUrl}" 
-                          alt="Steam icon" 
-                          class="w-5 h-5"
-                          loading="lazy"
-                          on:error={(e) => {
-                            const img = e.target as HTMLImageElement;
-                            const fallback = img.nextElementSibling as HTMLElement;
-                            if (img && fallback) {
-                              img.style.display = 'none';
-                              fallback.style.display = 'inline';
-                            }
-                          }}
-                        />
-                        <span class="text-lg hidden">🔥</span>
-                      {:else}
-                        <span class="text-lg">🔥</span>
-                      {/if}
-                      Steam Games
-                    </a>
-                  </li>
-                {/if}
+                <!-- Import Sources Section -->
+                <li>
+                  <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                    Import
+                  </div>
+                  <ul role="list" class="-mx-2 mt-2 space-y-1">
+                    {#if steamAvailability.isAvailable}
+                      <li>
+                        <a
+                          href="/import/steam"
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          {#if steamIconUrl}
+                            <img 
+                              src="{steamIconUrl}" 
+                              alt="Steam icon" 
+                              class="w-5 h-5"
+                              loading="lazy"
+                              on:error={(e) => {
+                                const img = e.target as HTMLImageElement;
+                                const fallback = img.nextElementSibling as HTMLElement;
+                                if (img && fallback) {
+                                  img.style.display = 'none';
+                                  fallback.style.display = 'inline';
+                                }
+                              }}
+                            />
+                            <span class="text-lg hidden">🔥</span>
+                          {:else}
+                            <span class="text-lg">🔥</span>
+                          {/if}
+                          Steam Library
+                        </a>
+                      </li>
+                    {/if}
+                    
+                    <!-- Future import sources will go here -->
+                    <!-- 
+                    <li>
+                      <a
+                        href="/import/epic"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                      >
+                        <span class="text-lg">🎮</span>
+                        Epic Games Store
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/import/gog"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                      >
+                        <span class="text-lg">🏪</span>
+                        GOG
+                      </a>
+                    </li>
+                    -->
+                  </ul>
+                </li>
               </ul>
             </li>
             
@@ -293,36 +341,46 @@
                           Add Game
                         </a>
                       </li>
-                      {#if steamAvailability.isAvailable}
-                        <li>
-                          <a
-                            href="/steam-games"
-                            on:click={closeMobileMenu}
-                            class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                          >
-                            {#if steamIconUrl}
-                              <img 
-                                src="{steamIconUrl}" 
-                                alt="Steam icon" 
-                                class="w-5 h-5"
-                                loading="lazy"
-                                on:error={(e) => {
-                                  const img = e.target as HTMLImageElement;
-                                  const fallback = img.nextElementSibling as HTMLElement;
-                                  if (img && fallback) {
-                                    img.style.display = 'none';
-                                    fallback.style.display = 'inline';
-                                  }
-                                }}
-                              />
-                              <span class="text-lg hidden">🔥</span>
-                            {:else}
-                              <span class="text-lg">🔥</span>
-                            {/if}
-                            Steam Games
-                          </a>
-                        </li>
-                      {/if}
+                      <!-- Import Sources Section -->
+                      <li>
+                        <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                          Import
+                        </div>
+                        <ul role="list" class="-mx-2 mt-2 space-y-1">
+                          {#if steamAvailability.isAvailable}
+                            <li>
+                              <a
+                                href="/import/steam"
+                                on:click={closeMobileMenu}
+                                class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                              >
+                                {#if steamIconUrl}
+                                  <img 
+                                    src="{steamIconUrl}" 
+                                    alt="Steam icon" 
+                                    class="w-5 h-5"
+                                    loading="lazy"
+                                    on:error={(e) => {
+                                      const img = e.target as HTMLImageElement;
+                                      const fallback = img.nextElementSibling as HTMLElement;
+                                      if (img && fallback) {
+                                        img.style.display = 'none';
+                                        fallback.style.display = 'inline';
+                                      }
+                                    }}
+                                  />
+                                  <span class="text-lg hidden">🔥</span>
+                                {:else}
+                                  <span class="text-lg">🔥</span>
+                                {/if}
+                                Steam Library
+                              </a>
+                            </li>
+                          {/if}
+                          
+                          <!-- Future import sources will go here -->
+                        </ul>
+                      </li>
                     </ul>
                   </li>
                   

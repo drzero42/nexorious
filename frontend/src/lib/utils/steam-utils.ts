@@ -5,8 +5,23 @@ import type { User } from '$lib/stores/auth.svelte';
  * Checks if the PC-Windows platform exists and is active
  */
 export function isPCWindowsPlatformActive(platforms: Platform[]): boolean {
+  console.log('🔍 [STEAM-UTILS] isPCWindowsPlatformActive called with platforms:', {
+    platformsCount: platforms.length,
+    platforms: platforms.map(p => ({ id: p.id, name: p.name, display_name: p.display_name, is_active: p.is_active }))
+  });
+  
   const pcWindowsPlatform = platforms.find(platform => platform.name === 'pc-windows');
-  return pcWindowsPlatform?.is_active ?? false;
+  const result = pcWindowsPlatform?.is_active ?? false;
+  
+  console.log('🖥️ [STEAM-UTILS] PC-Windows platform search:', {
+    searchCriteria: 'platform.name === "pc-windows"',
+    found: !!pcWindowsPlatform,
+    platform: pcWindowsPlatform || 'Not found',
+    isActive: pcWindowsPlatform?.is_active,
+    result
+  });
+  
+  return result;
 }
 
 /**
@@ -66,29 +81,45 @@ export function getSteamGamesUnavailableReason(
   platforms: Platform[],
   storefronts: Storefront[]
 ): string | null {
+  console.log('🔍 [STEAM-UTILS] getSteamGamesUnavailableReason called with:', {
+    hasUser: !!user,
+    userId: user?.id,
+    platformsCount: platforms.length,
+    storefrontsCount: storefronts.length
+  });
+  
   if (!user) {
+    console.log('❌ [STEAM-UTILS] No user found');
     return 'User not authenticated';
   }
 
   if (!isSteamGamesUserPreferenceEnabled(user)) {
+    console.log('❌ [STEAM-UTILS] Steam Games disabled in user preferences');
     return 'Steam Games feature is disabled in user preferences';
   }
 
   if (!isPCWindowsPlatformActive(platforms)) {
     const pcWindowsPlatform = platforms.find(platform => platform.name === 'pc-windows');
     if (!pcWindowsPlatform) {
+      console.log('❌ [STEAM-UTILS] PC-Windows platform not found in platforms:', 
+        platforms.map(p => p.name));
       return 'PC-Windows platform not found';
     }
+    console.log('❌ [STEAM-UTILS] PC-Windows platform found but inactive:', pcWindowsPlatform);
     return 'PC-Windows platform is inactive';
   }
 
   if (!isSteamStorefrontActive(storefronts)) {
     const steamStorefront = storefronts.find(storefront => storefront.name === 'steam');
     if (!steamStorefront) {
+      console.log('❌ [STEAM-UTILS] Steam storefront not found in storefronts:', 
+        storefronts.map(s => s.name));
       return 'Steam storefront not found';
     }
+    console.log('❌ [STEAM-UTILS] Steam storefront found but inactive:', steamStorefront);
     return 'Steam storefront is inactive';
   }
 
+  console.log('✅ [STEAM-UTILS] All checks passed, Steam Games is available');
   return null; // Available
 }
