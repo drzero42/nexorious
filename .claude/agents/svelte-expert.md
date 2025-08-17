@@ -55,3 +55,4 @@ model: sonnet
 - Reusable animations and transitions in Svelte native way
 - Up-to-date applications with latest Svelte practices
 - Seamless integration with Svelte's build tools and compiled outputs
+- All code is Svelte 5 compatible and uses the Svelte 5 approach if there are multiple ways to do it

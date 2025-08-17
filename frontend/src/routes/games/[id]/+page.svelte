@@ -6,7 +6,7 @@
   import { notifications } from '$lib/stores/notifications.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, FormField } from '$lib/components';
+  import { RouteGuard, PlayStatusDropdown, TimeTrackingInput, RichTextEditor, GameProgressCard, PlatformBadges, PlatformSelector, FormField, StarRating } from '$lib/components';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import { formatOwnershipStatus, formatIgdbRating } from '$lib/utils/format-utils';
   import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
@@ -23,120 +23,100 @@
     getFieldError
   } from '$lib/utils/form-validation';
 
-  let isLoading = true;
-  let isEditing = false;
-  let isUpdatingFromIGDB = false;
-  let isRetrying = false;
-  let retryCount = 0;
+  let isLoading = $state(true);
+  let isEditing = $state(false);
+  let isUpdatingFromIGDB = $state(false);
+  let isRetrying = $state(false);
+  let retryCount = $state(0);
   
-  // Reactive game data from store
-  $: gameId = $page.params.id!;
-  $: game = userGames.selectors?.byId(gameId) ?? null;
-  $: isLoadingStore = userGames.value.isLoading;
+  // Svelte 5 derived state from store
+  let gameId = $derived($page.params.id!);
+  let game = $derived(userGames.selectors?.byId(gameId) ?? null);
+  let isLoadingStore = $derived(userGames.value.isLoading);
+  
+  
   
   // Combined loading state
-  $: isLoadingCombined = isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
+  let isLoadingCombined = $derived(isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false));
   
   // Visual feedback states for optimistic updates
-  $: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false;
-  let editData: {
+  let hasOptimisticUpdates = $derived(userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
+
+  let editData = $state<{
     // Personal data
-    personal_rating?: number | undefined;
+    personal_rating?: number | null;
     play_status: PlayStatus;
     hours_played: number;
     personal_notes?: string | undefined;
     is_loved: boolean;
     ownership_status: OwnershipStatus;
-  } = {
+  }>({
     play_status: 'not_started' as PlayStatus,
     hours_played: 0,
     is_loved: false,
     ownership_status: 'owned' as OwnershipStatus
-  };
+  });
 
   // Form validation state
-  let validationErrors: ValidationError[] = [];
-  let formDirtyFields = new Set<string>();
+  let validationErrors = $state<ValidationError[]>([]);
+  let formDirtyFields = $state(new Set<string>());
 
   // Computed validation state
-  $: hasValidationErrors = validationErrors.length > 0;
-  $: hasUnsavedChanges = formDirtyFields.size > 0;
-  $: canSaveForm = !hasValidationErrors && !hasOptimisticUpdates;
+  let hasValidationErrors = $derived(validationErrors.length > 0);
+  let hasUnsavedChanges = $derived(formDirtyFields.size > 0);
+  let canSaveForm = $derived(!hasValidationErrors && !hasOptimisticUpdates);
 
   // PlatformSelector component data model
-  let selectedPlatforms = new Set<string>();
-  let platformStorefronts = new Map<string, Set<string>>();
-  let platformStoreUrls = new Map<string, string>();
-  let isAddingPlatform = false;
-  let isRemovingPlatform = false;
-  let platformToRemove: { platformAssociationId: string; platformName: string; storefrontName: string } | null = null;
+  let selectedPlatforms = $state(new Set<string>());
+  let platformStorefronts = $state(new Map<string, Set<string>>());
+  let platformStoreUrls = $state(new Map<string, string>());
+  let isAddingPlatform = $state(false);
+  let isRemovingPlatform = $state(false);
+  let platformToRemove = $state<{ platformAssociationId: string; platformName: string; storefrontName: string } | null>(null);
 
   // IGDB platform data state  
-  let igdbPlatformNames: string[] = [];
+  let igdbPlatformNames = $state<string[]>([]);
 
   // Platform management functions (copied from Add Game page for full functionality)
   function togglePlatform(platformId: string) {
-    console.log('togglePlatform called with:', platformId, 'current selected:', selectedPlatforms);
-    
     if (selectedPlatforms.has(platformId)) {
-      console.log('Removing platform:', platformId);
       selectedPlatforms.delete(platformId);
       platformStorefronts.delete(platformId);
       platformStoreUrls.delete(platformId);
     } else {
-      console.log('Adding platform:', platformId);
       selectedPlatforms.add(platformId);
       
       // Create storefronts set and auto-select default if available
       const storefronts = new Set<string>();
       const platform = $platforms.platforms.find(p => p.id === platformId);
-      console.log('Found platform for auto-selection:', platform);
       
       if (platform?.default_storefront_id) {
-        console.log('Auto-selecting default storefront:', platform.default_storefront_id);
         storefronts.add(platform.default_storefront_id);
       }
       
       platformStorefronts.set(platformId, storefronts);
     }
     
-    // Trigger reactivity
-    selectedPlatforms = new Set(selectedPlatforms);
-    platformStorefronts = new Map(platformStorefronts);
-    platformStoreUrls = new Map(platformStoreUrls);
-    
-    console.log('Platform toggle complete. Selected platforms:', selectedPlatforms, 'storefronts:', platformStorefronts);
+    // Svelte 5 reactive state updates automatically
   }
 
   function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
-    console.log('toggleStorefrontForPlatform called:', { platformId, storefrontId });
-    
     const storefronts = platformStorefronts.get(platformId) || new Set<string>();
     if (storefronts.has(storefrontId)) {
-      console.log('Removing storefront:', storefrontId);
       storefronts.delete(storefrontId);
     } else {
-      console.log('Adding storefront:', storefrontId);
       storefronts.add(storefrontId);
     }
     
     platformStorefronts.set(platformId, storefronts);
-    platformStorefronts = new Map(platformStorefronts); // Trigger reactivity
-    
-    console.log('Updated storefronts for platform', platformId, ':', storefronts);
   }
 
   function setStoreUrlForPlatform(platformId: string, url: string) {
-    console.log('setStoreUrlForPlatform called:', { platformId, url });
-    
     if (url.trim()) {
       platformStoreUrls.set(platformId, url);
     } else {
       platformStoreUrls.delete(platformId);
     }
-    platformStoreUrls = new Map(platformStoreUrls); // Trigger reactivity
-    
-    console.log('Updated store URLs:', platformStoreUrls);
   }
 
   // Browser unload warning for unsaved changes
@@ -150,11 +130,16 @@
   }
 
   onMount(async () => {
-    // Load game details and platforms - authentication is handled by RouteGuard
+      // Load game details and platforms - authentication is handled by RouteGuard
     await Promise.all([
       ensureGameLoaded(),
       loadPlatforms()
     ]);
+
+    // Load IGDB platform data after game is loaded
+    if (game) {
+      loadIGDBPlatformData();
+    }
 
     // Add beforeunload listener for unsaved changes warning
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -168,22 +153,30 @@
   async function ensureGameLoaded() {
     try {
       isLoading = true;
+      
       // Only fetch if we don't have the game in our store or if it's being updated
       if (!game || userGames.entityState.optimisticUpdates.isPendingFor(gameId)) {
         await userGames.getUserGame(gameId);
+        
+        // Verify the game was loaded
+        const gameAfterLoad = userGames.selectors?.byId(gameId);
+        
+        // Load IGDB platform data after successful game fetch
+        if (gameAfterLoad) {
+          loadIGDBPlatformData();
+        }
       }
     } catch (error) {
-      console.error('Failed to load game:', error);
+      // Show user-friendly error notification
+      if (!(error instanceof Error && error.message.includes('404'))) {
+        notifications.showError('Failed to load game details. Please try again.');
+      }
     } finally {
       isLoading = false;
     }
   }
   
-  // Reactive update when game data changes
-  $: if (game) {
-    resetEditData();
-    loadIGDBPlatformData();
-  }
+  // IGDB platform data loading moved to proper lifecycle hooks to avoid state sync issues
 
   function loadIGDBPlatformData() {
     if (!game || !game.game.igdb_platform_names) {
@@ -213,17 +206,11 @@
   }
 
   async function addPlatforms() {
-    console.log('addPlatforms called with selected platforms:', selectedPlatforms);
-    console.log('Platform storefronts:', platformStorefronts);
-    console.log('Platform store URLs:', platformStoreUrls);
-    
     if (selectedPlatforms.size === 0 || !game) {
-      console.log('Missing required data - selectedPlatforms:', selectedPlatforms.size, 'game:', !!game);
       return;
     }
 
     try {
-      console.log('Starting platform addition...');
       isAddingPlatform = true;
       
       // Check if adding platform to no-longer-owned game
@@ -237,8 +224,6 @@
         const selectedStorefronts = platformStorefronts.get(platformId) || new Set<string>();
         const storeUrl = platformStoreUrls.get(platformId) || '';
         
-        console.log(`Processing platform ${platformId} with ${selectedStorefronts.size} storefronts`);
-
         // If no storefronts selected, add platform without storefront
         if (selectedStorefronts.size === 0) {
           const platformData: UserGamePlatformCreateRequest = {
@@ -250,7 +235,6 @@
             platformData.store_url = storeUrl.trim();
           }
 
-          console.log('Sending platform data to API (no storefront):', platformData);
           await userGames.addPlatformToUserGame(game.id, platformData);
           totalAddedPlatforms++;
         } else {
@@ -266,15 +250,12 @@
               platformData.store_url = storeUrl.trim();
             }
 
-            console.log('Sending platform data to API:', platformData);
             await userGames.addPlatformToUserGame(game.id, platformData);
             totalAddedStorefronts++;
           }
           totalAddedPlatforms++;
         }
       }
-      
-      console.log('API calls successful, platform data updated automatically...');
       
       // Immediately update dropdown if adding to no-longer-owned game
       if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
@@ -286,11 +267,7 @@
       selectedPlatforms.clear();
       platformStorefronts.clear();
       platformStoreUrls.clear();
-      selectedPlatforms = new Set(selectedPlatforms);
-      platformStorefronts = new Map(platformStorefronts);
-      platformStoreUrls = new Map(platformStoreUrls);
 
-      console.log('Platform(s) added successfully');
       
       // Show success message
       if (totalAddedPlatforms === 1) {
@@ -389,19 +366,16 @@
     }
   }
 
-  // PlatformSelector event handlers (fixed to actually handle the events!)
+  // PlatformSelector event handlers
   function handlePlatformToggle(event: CustomEvent<{ platformId: string }>) {
-    console.log('handlePlatformToggle event received:', event.detail);
     togglePlatform(event.detail.platformId);
   }
 
   function handleStorefrontToggle(event: CustomEvent<{ platformId: string; storefrontId: string }>) {
-    console.log('handleStorefrontToggle event received:', event.detail);
     toggleStorefrontForPlatform(event.detail.platformId, event.detail.storefrontId);
   }
 
   function handleStoreUrlChange(event: CustomEvent<{ platformId: string; url: string }>) {
-    console.log('handleStoreUrlChange event received:', event.detail);
     setStoreUrlForPlatform(event.detail.platformId, event.detail.url);
     
     // Validate store URL
@@ -461,12 +435,10 @@
 
   function markFieldDirty(fieldName: string) {
     formDirtyFields.add(fieldName);
-    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
   }
 
   function clearDirtyState() {
     formDirtyFields.clear();
-    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
   }
 
   // Retry mechanism for failed operations
@@ -494,7 +466,6 @@
              error.message.includes('timeout'))) {
           
           if (attempt < maxRetries) {
-            console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
             isRetrying = true;
             retryCount = attempt;
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -562,7 +533,7 @@
     if (game) {
       editData = {
         // Personal data
-        personal_rating: game.personal_rating || undefined,
+        personal_rating: game.personal_rating ?? null,
         play_status: game.play_status,
         hours_played: game.hours_played,
         personal_notes: game.personal_notes || undefined,
@@ -624,13 +595,17 @@
       if (editData.personal_notes !== undefined) {
         progressUpdate.personal_notes = editData.personal_notes;
       }
-
       
       // Always update user-specific data (personal information) with retry
       await retryOperation(() => userGames.updateUserGame(gameId, userGameUpdate));
       await retryOperation(() => userGames.updateProgress(gameId, progressUpdate));
       
-      // Note: Game data is updated automatically through store optimistic updates
+      // Clear cached entity to force fresh fetch from server
+      userGames.entityState.entities.delete(gameId);
+      
+      // Refresh game data from server to ensure UI shows latest authoritative state
+      await userGames.getUserGame(gameId);
+      
       isEditing = false;
       
       // Clear validation and dirty state
@@ -727,13 +702,6 @@
     return labels[status] || status;
   }
 
-  function renderStars(rating: number) {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(i <= rating ? '★' : '☆');
-    }
-    return stars.join('');
-  }
 </script>
 
 <svelte:head>
@@ -761,7 +729,7 @@
       <p class="mt-2 text-sm text-gray-500">The requested game could not be found in your collection.</p>
       <div class="mt-6">
         <button
-          on:click={() => goto('/games')}
+          onclick={() => goto('/games')}
           class="btn-primary inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -777,7 +745,7 @@
     <div class="sm:flex sm:items-center sm:justify-between">
       <div class="flex items-center space-x-4">
         <button
-          on:click={() => goto('/games')}
+          onclick={() => goto('/games')}
           class="btn-secondary inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -789,7 +757,7 @@
       <div class="mt-4 sm:mt-0 flex items-center space-x-3">
         {#if !isEditing}
           <button
-            on:click={startEditing}
+            onclick={startEditing}
             class="btn-primary inline-flex items-center gap-x-2"
           >
             <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -799,7 +767,7 @@
           </button>
         {/if}
         <button
-          on:click={deleteGame}
+          onclick={deleteGame}
           class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -822,7 +790,7 @@
                 alt={game.game.title}
                 class="h-full w-full object-cover object-center"
                 loading="lazy"
-                on:error={(e) => {
+                onerror={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
                   const nextElement = target.nextElementSibling as HTMLElement;
                   target.style.display = 'none';
@@ -1033,7 +1001,7 @@
                   {/if}
                   {#if canUpdateFromIGDB()}
                     <button
-                      on:click={updateFromIGDB}
+                      onclick={updateFromIGDB}
                       disabled={isUpdatingFromIGDB}
                       class="inline-flex items-center gap-x-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Update game metadata from IGDB"
@@ -1109,7 +1077,7 @@
             
         {#if isEditing}
           <!-- Edit Form -->
-          <form on:submit|preventDefault={saveChanges} class="space-y-8">
+          <form onsubmit={(e) => { e.preventDefault(); saveChanges(); }} class="space-y-8">
 
             <!-- Personal Information Section -->
             <div class="pt-6 border-t border-gray-200">
@@ -1137,7 +1105,7 @@
                     id="ownership_status"
                     bind:value={editData.ownership_status}
                     class="form-input"
-                    on:change={() => {
+                    onchange={() => {
                       markFieldDirty('ownership_status');
                       validateFormField('platform_selection', null); // Re-validate platform requirement
                     }}
@@ -1157,22 +1125,18 @@
                   isDirty={formDirtyFields.has('personal_rating')}
                   helpText="Rate this game from 1 to 5 stars (optional)"
                 >
-                  <select
+                  <StarRating
                     id="personal_rating"
                     bind:value={editData.personal_rating}
-                    class="form-select"
-                    on:change={() => {
+                    size="md"
+                    clearable={true}
+                    showLabel={true}
+                    onchange={(e) => {
+                      editData.personal_rating = e.detail.value;
                       markFieldDirty('personal_rating');
                       validateFormField('personal_rating', editData.personal_rating);
                     }}
-                  >
-                    <option value={null}>No Rating</option>
-                    <option value={1}>1 Star</option>
-                    <option value={2}>2 Stars</option>
-                    <option value={3}>3 Stars</option>
-                    <option value={4}>4 Stars</option>
-                    <option value={5}>5 Stars</option>
-                  </select>
+                  />
                 </FormField>
 
                 <FormField 
@@ -1201,7 +1165,7 @@
                       type="checkbox"
                       bind:checked={editData.is_loved}
                       class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                      on:change={() => markFieldDirty('is_loved')}
+                      onchange={() => markFieldDirty('is_loved')}
                     />
                     <span class="ml-2 text-sm text-gray-700">
                       <span class="text-red-500">♥</span> Loved game
@@ -1307,7 +1271,7 @@
                                   </div>
                                   <button 
                                     type="button"
-                                    on:click={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
+                                    onclick={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
                                     class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded hover:bg-red-200 hover:text-red-800 transition-colors duration-200"
                                     title={game && game.platforms && game.platforms.length <= 1 ? "Remove this platform/storefront combination (ownership will become 'No Longer Owned')" : "Remove this platform/storefront combination"}
                                     aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
@@ -1353,7 +1317,7 @@
                 <div class="mt-4">
                   <button
                     type="button"
-                    on:click={addPlatforms}
+                    onclick={addPlatforms}
                     disabled={selectedPlatforms.size === 0 || isAddingPlatform || hasOptimisticUpdates}
                     class="btn-secondary inline-flex items-center gap-x-2 transition-all duration-200 {hasOptimisticUpdates ? 'opacity-75 ring-2 ring-blue-300' : ''}"
                   >
@@ -1376,7 +1340,7 @@
             <div class="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200">
               <button
                 type="button"
-                on:click={cancelEditing}
+                onclick={cancelEditing}
                 class="btn-secondary"
               >
                 Cancel
@@ -1428,14 +1392,12 @@
               <div class="bg-gray-50 p-4 rounded-lg">
                 <dt class="text-sm font-medium text-gray-500">Rating</dt>
                 <dd class="mt-1">
-                  {#if game.personal_rating}
-                    <div class="flex items-center space-x-1">
-                      <span class="text-yellow-400 text-lg">{renderStars(game.personal_rating)}</span>
-                      <span class="text-sm font-medium text-gray-900">({game.personal_rating}/5)</span>
-                    </div>
-                  {:else}
-                    <span class="text-sm text-gray-500">Not rated</span>
-                  {/if}
+                  <StarRating
+                    value={game.personal_rating}
+                    readonly={true}
+                    size="md"
+                    showLabel={true}
+                  />
                 </dd>
               </div>
 
@@ -1501,7 +1463,7 @@
         <div class="flex gap-4 px-7 py-3">
           <button
             type="button"
-            on:click={cancelRemovePlatform}
+            onclick={cancelRemovePlatform}
             class="btn-secondary flex-1"
             disabled={isRemovingPlatform}
           >
@@ -1509,7 +1471,7 @@
           </button>
           <button
             type="button"
-            on:click={removePlatform}
+            onclick={removePlatform}
             disabled={isRemovingPlatform}
             class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-x-2"
           >
