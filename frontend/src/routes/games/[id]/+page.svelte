@@ -39,9 +39,23 @@
   
   // Visual feedback states for optimistic updates
   $: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false;
+
+  // Debug reactive state changes
+  $: {
+    console.log('[COMPONENT] Reactive state changed:', {
+      gameId,
+      hasGame: !!game,
+      gameTitle: game?.game?.title,
+      isLoading,
+      isLoadingStore,
+      isLoadingCombined,
+      hasOptimisticUpdates,
+      timestamp: new Date().toISOString()
+    });
+  }
   let editData: {
     // Personal data
-    personal_rating?: number | undefined;
+    personal_rating?: number | null;
     play_status: PlayStatus;
     hours_played: number;
     personal_notes?: string | undefined;
@@ -150,14 +164,32 @@
   }
 
   onMount(async () => {
+    console.log('[COMPONENT] onMount started for gameId:', gameId);
+    console.log('[COMPONENT] Initial state on mount:', {
+      hasGame: !!game,
+      isLoading,
+      isLoadingStore: userGames.value.isLoading,
+      storeEntityCount: userGames.value.userGames?.length || 0
+    });
+
     // Load game details and platforms - authentication is handled by RouteGuard
+    console.log('[COMPONENT] Starting Promise.all for data loading...');
     await Promise.all([
       ensureGameLoaded(),
       loadPlatforms()
     ]);
 
+    console.log('[COMPONENT] Data loading completed');
+    console.log('[COMPONENT] Final state after mount:', {
+      hasGame: !!game,
+      gameTitle: game?.game?.title,
+      isLoading,
+      isLoadingStore: userGames.value.isLoading
+    });
+
     // Add beforeunload listener for unsaved changes warning
     window.addEventListener('beforeunload', handleBeforeUnload);
+    console.log('[COMPONENT] onMount completed');
   });
 
   onDestroy(() => {
@@ -166,16 +198,47 @@
   });
 
   async function ensureGameLoaded() {
+    console.log('[COMPONENT] ensureGameLoaded called for gameId:', gameId);
+    console.log('[COMPONENT] Current game state:', { hasGame: !!game, gameId: game?.id });
+    console.log('[COMPONENT] Store state:', { 
+      isLoading: userGames.value.isLoading,
+      entityCount: userGames.value.userGames?.length || 0,
+      hasPendingUpdates: userGames.entityState.optimisticUpdates.isPendingFor(gameId)
+    });
+
     try {
       isLoading = true;
+      console.log('[COMPONENT] Set isLoading = true');
+      
       // Only fetch if we don't have the game in our store or if it's being updated
       if (!game || userGames.entityState.optimisticUpdates.isPendingFor(gameId)) {
+        console.log('[COMPONENT] Game not found in store or has pending updates, fetching...');
         await userGames.getUserGame(gameId);
+        console.log('[COMPONENT] getUserGame completed successfully');
+        
+        // Verify the game was loaded
+        const gameAfterLoad = userGames.selectors?.byId(gameId);
+        console.log('[COMPONENT] Game after load:', { hasGame: !!gameAfterLoad, gameId: gameAfterLoad?.id });
+      } else {
+        console.log('[COMPONENT] Game already exists in store, skipping fetch');
       }
     } catch (error) {
-      console.error('Failed to load game:', error);
+      console.error('[COMPONENT] Failed to load game:', error);
+      console.error('[COMPONENT] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        gameId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Show user-friendly error notification
+      if (error instanceof Error && error.message.includes('404')) {
+        console.log('[COMPONENT] Game not found (404), this will show "Game not found" UI');
+      } else {
+        notifications.showError('Failed to load game details. Please try again.');
+      }
     } finally {
       isLoading = false;
+      console.log('[COMPONENT] Set isLoading = false, ensureGameLoaded completed');
     }
   }
   
@@ -562,7 +625,7 @@
     if (game) {
       editData = {
         // Personal data
-        personal_rating: game.personal_rating || undefined,
+        personal_rating: game.personal_rating ?? null,
         play_status: game.play_status,
         hours_played: game.hours_played,
         personal_notes: game.personal_notes || undefined,
@@ -736,6 +799,7 @@
 <RouteGuard requireAuth={true}>
 <div class="space-y-6">
 {#if isLoadingCombined}
+  {console.log('[TEMPLATE] Rendering loading state', { isLoadingCombined, isLoading, isLoadingStore, hasOptimisticUpdates })}
   <div class="flex items-center justify-center py-12">
     <div class="text-center">
       <svg class="mx-auto h-12 w-12 text-gray-400 loading" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -745,6 +809,7 @@
     </div>
   </div>
 {:else if !game}
+  {console.log('[TEMPLATE] Rendering game not found state', { game, gameId, isLoadingCombined })}
   <div class="text-center py-12">
     <div class="mx-auto max-w-md">
       <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -766,6 +831,7 @@
     </div>
   </div>
 {:else}
+  {console.log('[TEMPLATE] Rendering game content', { game: !!game, gameTitle: game?.game?.title, gameId })}
     <!-- Header -->
     <div class="sm:flex sm:items-center sm:justify-between">
       <div class="flex items-center space-x-4">
@@ -1157,7 +1223,7 @@
                     clearable={true}
                     showLabel={true}
                     onchange={(e) => {
-                      editData.personal_rating = e.detail.value || undefined;
+                      editData.personal_rating = e.detail.value;
                       markFieldDirty('personal_rating');
                       validateFormField('personal_rating', editData.personal_rating);
                     }}
