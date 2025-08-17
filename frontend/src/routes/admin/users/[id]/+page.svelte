@@ -7,39 +7,40 @@
   import type { AdminUser, UserDeletionImpact } from '$lib/stores/admin.svelte';
 
   // Get user ID from route params
-  $: userId = $page.params.id;
+  const userId = $derived($page.params.id);
 
-  let user: AdminUser | null = null;
-  let isLoading = true;
-  let isSaving = false;
-  let error: string | null = null;
-  let successMessage: string | null = null;
-  let showDeleteDialog = false;
-  let deletionStep = 1; // 1: impact preview, 2: confirmation
-  let deletionImpact: UserDeletionImpact | null = null;
-  let isDeletionImpactLoading = false;
-  let usernameConfirmation = '';
-  let showPasswordResetConfirmation = false;
-  let newPassword = '';
+  let user = $state<AdminUser | null>(null);
+  let isLoading = $state(true);
+  let isSaving = $state(false);
+  let error = $state<string | null>(null);
+  let successMessage = $state<string | null>(null);
+  let showDeleteDialog = $state(false);
+  let deletionStep = $state(1); // 1: impact preview, 2: confirmation
+  let deletionImpact = $state<UserDeletionImpact | null>(null);
+  let isDeletionImpactLoading = $state(false);
+  let usernameConfirmation = $state('');
+  let showPasswordResetConfirmation = $state(false);
+  let newPassword = $state('');
 
   // Form state
-  let formData = {
+  let formData = $state({
     username: '',
     isActive: true,
     isAdmin: false
-  };
-  let originalData = {
+  });
+  let originalData = $state({
     username: '',
     isActive: true,
     isAdmin: false
-  };
+  });
 
   // Reactive statement to check if current user is editing themselves
-  $: isEditingSelf = userId ? auth.value.user?.id === userId : false;
-  $: hasChanges = 
+  const isEditingSelf = $derived(userId ? auth.value.user?.id === userId : false);
+  const hasChanges = $derived(
     formData.username !== originalData.username ||
     formData.isActive !== originalData.isActive ||
-    formData.isAdmin !== originalData.isAdmin;
+    formData.isAdmin !== originalData.isAdmin
+  );
 
   onMount(async () => {
     // Check if user is admin
@@ -279,7 +280,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={() => { error = null; }}
+                onclick={() => { error = null; }}
                 type="button"
                 class="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
               >
@@ -336,7 +337,7 @@
             </div>
           </div>
 
-          <form on:submit|preventDefault={handleSave} class="space-y-6">
+          <form onsubmit={(e) => { e.preventDefault(); handleSave(); }} class="space-y-6">
             <!-- Username -->
             <div>
               <label for="username" class="block text-sm font-medium leading-6 text-gray-900">Username</label>
@@ -407,7 +408,7 @@
                 </button>
                 <button
                   type="button"
-                  on:click={resetForm}
+                  onclick={resetForm}
                   disabled={!hasChanges || isSaving}
                   class="inline-flex justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -446,7 +447,7 @@
                   </div>
                   <div class="flex space-x-3">
                     <button
-                      on:click={handlePasswordReset}
+                      onclick={handlePasswordReset}
                       disabled={!newPassword.trim() || isSaving}
                       class="inline-flex justify-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -457,7 +458,7 @@
                       {/if}
                     </button>
                     <button
-                      on:click={() => { showPasswordResetConfirmation = false; newPassword = ''; }}
+                      onclick={() => { showPasswordResetConfirmation = false; newPassword = ''; }}
                       disabled={isSaving}
                       class="inline-flex justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
                     >
@@ -467,7 +468,7 @@
                 </div>
               {:else}
                 <button
-                  on:click={() => { showPasswordResetConfirmation = true; }}
+                  onclick={() => { showPasswordResetConfirmation = true; }}
                   disabled={isSaving}
                   class="inline-flex justify-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600 disabled:opacity-50"
                 >
@@ -485,7 +486,7 @@
                 </p>
                 
                 <button
-                  on:click={startDeletion}
+                  onclick={startDeletion}
                   disabled={isSaving}
                   class="inline-flex justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50"
                 >
@@ -584,7 +585,7 @@
               <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
                 <button
                   type="button"
-                  on:click={goToConfirmation}
+                  onclick={goToConfirmation}
                   disabled={isDeletionImpactLoading || !deletionImpact}
                   class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50"
                 >
@@ -592,7 +593,7 @@
                 </button>
                 <button
                   type="button"
-                  on:click={cancelDeletion}
+                  onclick={cancelDeletion}
                   class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
                 >
                   Cancel
@@ -637,7 +638,7 @@
               <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
                 <button
                   type="button"
-                  on:click={confirmDeletion}
+                  onclick={confirmDeletion}
                   disabled={isSaving || usernameConfirmation !== user?.username}
                   class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -649,7 +650,7 @@
                 </button>
                 <button
                   type="button"
-                  on:click={() => deletionStep = 1}
+                  onclick={() => deletionStep = 1}
                   disabled={isSaving}
                   class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
                 >

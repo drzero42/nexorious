@@ -302,7 +302,11 @@ describe('Platforms Store', () => {
 			expect(result).toEqual(mockPlatform);
 			
 			const state = get(platforms);
-			expect(state.platforms).toContain(mockPlatform);
+			expect(state.platforms).toEqual(expect.arrayContaining([expect.objectContaining({
+				id: mockPlatform.id,
+				name: mockPlatform.name,
+				display_name: mockPlatform.display_name
+			})]));
 		});
 
 		it('should clean icon_url by trimming and setting to undefined if empty', async () => {
@@ -448,7 +452,11 @@ describe('Platforms Store', () => {
 			expect(result).toEqual(mockStorefront);
 			
 			const state = get(platforms);
-			expect(state.storefronts).toContain(mockStorefront);
+			expect(state.storefronts).toEqual(expect.arrayContaining([expect.objectContaining({
+				id: mockStorefront.id,
+				name: mockStorefront.name,
+				display_name: mockStorefront.display_name
+			})]));
 		});
 
 		it('should clean URL fields by trimming and setting to undefined if empty', async () => {

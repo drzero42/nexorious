@@ -88,7 +88,7 @@
       
       // Create storefronts set and auto-select default if available
       const storefronts = new Set<string>();
-      const platform = $platforms.platforms.find(p => p.id === platformId);
+      const platform = platforms.value?.platforms?.find(p => p.id === platformId);
       
       if (platform?.default_storefront_id) {
         storefronts.add(platform.default_storefront_id);
@@ -1090,7 +1090,7 @@
                   <PlayStatusDropdown
                     id="play_status"
                     bind:value={editData.play_status}
-                    on:change={(e: CustomEvent<{ value: PlayStatus }>) => {
+                    onchange={(e: CustomEvent<{ value: PlayStatus }>) => {
                       editData.play_status = e.detail.value;
                       markFieldDirty('play_status');
                     }}
@@ -1149,7 +1149,7 @@
                   <TimeTrackingInput
                     id="hours_played"
                     bind:value={editData.hours_played}
-                    on:change={(e: CustomEvent<{ value: number }>) => {
+                    onchange={(e: CustomEvent<{ value: number }>) => {
                       editData.hours_played = e.detail.value;
                       markFieldDirty('hours_played');
                       validateFormField('hours_played', editData.hours_played);
@@ -1308,9 +1308,9 @@
                   bind:platformStorefronts
                   bind:platformStoreUrls
                   igdbPlatformNames={igdbPlatformNames}
-                  on:platform-toggle={handlePlatformToggle}
-                  on:storefront-toggle={handleStorefrontToggle}
-                  on:store-url-change={handleStoreUrlChange}
+                  onplatformtoggle={handlePlatformToggle}
+                  onstorefronttoggle={handleStorefrontToggle}
+                  onstoreurlchange={handleStoreUrlChange}
                 />
 
                 <!-- Add Platform Button -->

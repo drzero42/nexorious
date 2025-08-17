@@ -1,17 +1,21 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { games } from '$lib/stores';
 
-  export let searchQuery = '';
-  export let isSearching = false;
+  interface Props {
+    searchQuery?: string;
+    isSearching?: boolean;
+    onsearch?: (event: CustomEvent<{ query: string }>) => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    search: { query: string };
-  }>();
+  let { 
+    searchQuery = $bindable(''), 
+    isSearching = $bindable(false),
+    onsearch
+  }: Props = $props();
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
-    dispatch('search', { query: searchQuery });
+    onsearch?.(new CustomEvent('search', { detail: { query: searchQuery } }));
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -39,14 +43,14 @@
             id="search"
             type="text"
             bind:value={searchQuery}
-            on:keydown={handleKeydown}
+            onkeydown={handleKeydown}
             placeholder="Enter game title..."
             class="form-input pl-10 focus:ring-2 focus:ring-primary-500"
             disabled={isSearching}
           />
         </div>
         <button
-          on:click={handleSearch}
+          onclick={handleSearch}
           disabled={isSearching || !searchQuery.trim()}
           class="btn-primary inline-flex items-center gap-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
         >

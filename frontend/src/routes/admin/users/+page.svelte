@@ -5,17 +5,17 @@
   import { RouteGuard } from '$lib/components';
   import type { AdminUser } from '$lib/stores/admin.svelte';
 
-  let isLoading = true;
-  let searchQuery = '';
-  let statusFilter: 'all' | 'active' | 'inactive' | 'admin' = 'all';
+  let isLoading = $state(true);
+  let searchQuery = $state('');
+  let statusFilter = $state<'all' | 'active' | 'inactive' | 'admin'>('all');
 
   // Reactive statements to track admin store state
-  $: users = $admin.users;
-  $: error = $admin.error;
-  $: isAdminLoading = $admin.isLoading;
+  const users = $derived($admin.users);
+  const error = $derived($admin.error);
+  const isAdminLoading = $derived($admin.isLoading);
 
   // Filtered users based on search and filter criteria
-  $: filteredUsers = users.filter(user => {
+  const filteredUsers = $derived(users.filter(user => {
     const matchesSearch = user.username.toLowerCase().includes(searchQuery.toLowerCase());
     
     switch (statusFilter) {
@@ -28,7 +28,7 @@
       default:
         return matchesSearch;
     }
-  });
+  }));
 
   onMount(async () => {
     // Check if user is admin
@@ -112,7 +112,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={() => admin.clearError()}
+                onclick={() => admin.clearError()}
                 type="button"
                 class="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
               >
@@ -194,7 +194,7 @@
               </div>
               {#if searchQuery || statusFilter !== 'all'}
                 <button
-                  on:click={() => { searchQuery = ''; statusFilter = 'all'; }}
+                  onclick={() => { searchQuery = ''; statusFilter = 'all'; }}
                   class="mt-4 text-primary-600 hover:text-primary-500 text-sm font-medium"
                 >
                   Clear filters
@@ -302,7 +302,7 @@
                             View
                           </a>
                           <button
-                            on:click={() => handleToggleUserStatus(user)}
+                            onclick={() => handleToggleUserStatus(user)}
                             class="text-gray-600 hover:text-gray-900"
                             title={user.isActive ? 'Deactivate user' : 'Activate user'}
                           >

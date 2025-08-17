@@ -3,12 +3,12 @@
   import { admin, auth } from '$lib/stores';
   import { goto } from '$app/navigation';
 
-  let isLoading = true;
+  let isLoading = $state(true);
 
-  // Reactive statements to track admin store state
-  $: statistics = $admin.statistics;
-  $: error = $admin.error;
-  $: isAdminLoading = $admin.isLoading;
+  // Reactive derived values to track admin store state  
+  const statistics = $derived($admin.statistics);
+  const error = $derived($admin.error);
+  const isAdminLoading = $derived($admin.isLoading);
 
   onMount(async () => {
     // Check if user is admin
@@ -56,7 +56,7 @@
           </div>
           <div class="mt-4">
             <button
-              on:click={() => admin.clearError()}
+              onclick={() => admin.clearError()}
               type="button"
               class="rounded-md bg-red-50 text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
             >

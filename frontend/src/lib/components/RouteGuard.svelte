@@ -4,12 +4,22 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
 
-  export let redirectTo: string = '/login';
-  export let requireAuth: boolean = true;
-  export let requireAdmin: boolean = false;
+  interface Props {
+    redirectTo?: string;
+    requireAuth?: boolean;
+    requireAdmin?: boolean;
+    children?: import('svelte').Snippet;
+  }
+  
+  let { 
+    redirectTo = '/login',
+    requireAuth = true,
+    requireAdmin = false,
+    children
+  }: Props = $props();
 
-  let isAuthorized: boolean = false;
-  let isLoading: boolean = true;
+  let isAuthorized = $state(false);
+  let isLoading = $state(true);
 
   onMount(async () => {
     if (!browser) return;
@@ -55,8 +65,8 @@
     isLoading = false;
   });
 
-  // Watch for auth state changes
-  $: {
+  // Watch for auth state changes using $effect
+  $effect(() => {
     if (browser && !isLoading) {
       const authState = auth.value;
       
@@ -66,7 +76,7 @@
         goto('/');
       }
     }
-  }
+  });
 </script>
 
 {#if isLoading}
@@ -74,7 +84,7 @@
     <div></div>
   </div>
 {:else if isAuthorized}
-  <slot />
+  {@render children?.()}
 {:else}
   <!-- This should not normally be reached due to redirects, but just in case -->
   <div>
@@ -86,7 +96,7 @@
         You don't have permission to access this page.
       </p>
       <button
-        on:click={() => goto('/')}
+        onclick={() => goto('/')}
       >
         Go Home
       </button>

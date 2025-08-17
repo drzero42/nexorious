@@ -7,11 +7,16 @@
   import { buildIconUrl } from '$lib/utils/icon-utils';
   import { onMount } from 'svelte';
   
-  let mobileMenuOpen = false;
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+  
+  let { children }: Props = $props();
+  let mobileMenuOpen = $state(false);
   
   // Get Steam storefront icon URL
-  $: steamStorefront = $platforms.storefronts.find((storefront: Storefront) => storefront.name === 'steam');
-  $: steamIconUrl = steamStorefront ? buildIconUrl(steamStorefront.icon_url) : null;
+  const steamStorefront = $derived(platforms.value.storefronts.find((storefront: Storefront) => storefront.name === 'steam'));
+  const steamIconUrl = $derived(steamStorefront ? buildIconUrl(steamStorefront.icon_url) : null);
   
   onMount(async () => {
     // Check if user is authenticated and refresh token if needed
@@ -132,7 +137,7 @@
                               alt="Steam icon" 
                               class="w-5 h-5"
                               loading="lazy"
-                              on:error={(e) => {
+                              onerror={(e) => {
                                 const img = e.target as HTMLImageElement;
                                 const fallback = img.nextElementSibling as HTMLElement;
                                 if (img && fallback) {
@@ -229,7 +234,7 @@
                 </span>
               </a>
               <button
-                on:click={() => auth.logout()}
+                onclick={() => auth.logout()}
                 class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
               >
                 <span class="text-lg">↪️</span>
@@ -245,7 +250,7 @@
     <div class="lg:hidden">
       <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6">
         <button
-          on:click={() => mobileMenuOpen = !mobileMenuOpen}
+          onclick={() => mobileMenuOpen = !mobileMenuOpen}
           class="-m-2.5 p-2.5 text-gray-700 lg:hidden"
           aria-label="Toggle mobile menu"
         >
@@ -287,7 +292,7 @@
           <div class="relative mr-16 flex w-full max-w-xs flex-1">
             <div class="absolute left-full top-0 flex w-16 justify-center pt-5">
               <button
-                on:click={closeMobileMenu}
+                onclick={closeMobileMenu}
                 class="-m-2.5 p-2.5"
                 aria-label="Close sidebar"
               >
@@ -314,7 +319,7 @@
                       <li>
                         <a
                           href="/dashboard"
-                          on:click={closeMobileMenu}
+                          onclick={closeMobileMenu}
                           class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                         >
                           <span class="text-lg">📊</span>
@@ -324,7 +329,7 @@
                       <li>
                         <a
                           href="/games"
-                          on:click={closeMobileMenu}
+                          onclick={closeMobileMenu}
                           class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                         >
                           <span class="text-lg">🎮</span>
@@ -334,7 +339,7 @@
                       <li>
                         <a
                           href="/games/add"
-                          on:click={closeMobileMenu}
+                          onclick={closeMobileMenu}
                           class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                         >
                           <span class="text-lg">➕</span>
@@ -351,7 +356,7 @@
                             <li>
                               <a
                                 href="/import/steam"
-                                on:click={closeMobileMenu}
+                                onclick={closeMobileMenu}
                                 class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                               >
                                 {#if steamIconUrl}
@@ -360,7 +365,7 @@
                                     alt="Steam icon" 
                                     class="w-5 h-5"
                                     loading="lazy"
-                                    on:error={(e) => {
+                                    onerror={(e) => {
                                       const img = e.target as HTMLImageElement;
                                       const fallback = img.nextElementSibling as HTMLElement;
                                       if (img && fallback) {
@@ -394,7 +399,7 @@
                         <li>
                           <a
                             href="/admin/dashboard"
-                            on:click={closeMobileMenu}
+                            onclick={closeMobileMenu}
                             class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                           >
                             <span class="text-lg">📊</span>
@@ -404,7 +409,7 @@
                         <li>
                           <a
                             href="/admin/users"
-                            on:click={closeMobileMenu}
+                            onclick={closeMobileMenu}
                             class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                           >
                             <span class="text-lg">👥</span>
@@ -414,7 +419,7 @@
                         <li>
                           <a
                             href="/admin/platforms"
-                            on:click={closeMobileMenu}
+                            onclick={closeMobileMenu}
                             class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                           >
                             <span class="text-lg">🏢</span>
@@ -427,7 +432,7 @@
                   <li class="mt-auto">
                     <a
                       href="/profile"
-                      on:click={closeMobileMenu}
+                      onclick={closeMobileMenu}
                       class="group -mx-2 flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                     >
                       <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500">
@@ -441,7 +446,7 @@
                       </span>
                     </a>
                     <button
-                      on:click={() => { auth.logout(); closeMobileMenu(); }}
+                      onclick={() => { auth.logout(); closeMobileMenu(); }}
                       class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                     >
                       <span class="text-lg">↪️</span>
@@ -460,7 +465,7 @@
     <div class="lg:pl-72">
       <main class="py-10">
         <div class="px-4 sm:px-6 lg:px-8">
-          <slot />
+          {@render children?.()}
         </div>
       </main>
     </div>
@@ -485,7 +490,7 @@
     
     <main class="flex-1">
       <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <slot />
+        {@render children?.()}
       </div>
     </main>
   {/if}

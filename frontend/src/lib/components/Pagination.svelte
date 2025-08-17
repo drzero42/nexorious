@@ -1,19 +1,30 @@
 <script lang="ts">
-  export let currentPage: number = 1;
-  export let totalPages: number = 1;
-  export let totalItems: number = 0;
-  export let itemsPerPage: number = 20;
-  export let onPageChange: (page: number) => void = () => {};
-  export let onItemsPerPageChange: (perPage: number) => void = () => {};
+  interface Props {
+    currentPage?: number;
+    totalPages?: number;
+    totalItems?: number;
+    itemsPerPage?: number;
+    onPageChange?: (page: number) => void;
+    onItemsPerPageChange?: (perPage: number) => void;
+  }
+  
+  let { 
+    currentPage = 1,
+    totalPages = 1,
+    totalItems = 0,
+    itemsPerPage = 20,
+    onPageChange = () => {},
+    onItemsPerPageChange = () => {}
+  }: Props = $props();
 
-  $: startItem = (currentPage - 1) * itemsPerPage + 1;
-  $: endItem = Math.min(currentPage * itemsPerPage, totalItems);
+  const startItem = $derived((currentPage - 1) * itemsPerPage + 1);
+  const endItem = $derived(Math.min(currentPage * itemsPerPage, totalItems));
 
   // Generate page numbers to show
-  $: visiblePages = (() => {
+  const visiblePages: (number | string)[] = $derived((() => {
     const delta = 2; // Show 2 pages on each side of current page
-    const range = [];
-    const rangeWithDots = [];
+    const range: number[] = [];
+    const rangeWithDots: (number | string)[] = [];
 
     for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
       range.push(i);
@@ -36,7 +47,7 @@
     }
 
     return rangeWithDots.filter((item, index, arr) => arr.indexOf(item) === index);
-  })();
+  })());
 
   function handlePageClick(page: number | string) {
     if (typeof page === 'number' && page !== currentPage) {
@@ -78,7 +89,7 @@
         <select
           id="items-per-page"
           value={itemsPerPage}
-          on:change={handleItemsPerPageChange}
+          onchange={handleItemsPerPageChange}
         >
           <option value="10">10</option>
           <option value="20">20</option>
@@ -92,7 +103,7 @@
     <div>
       <!-- Previous button -->
       <button
-        on:click={handlePrevious}
+        onclick={handlePrevious}
         disabled={currentPage <= 1}
         class="btn-secondary text-sm px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
@@ -105,7 +116,7 @@
           <span>...</span>
         {:else}
           <button
-            on:click={() => handlePageClick(page)}
+            onclick={() => handlePageClick(page)}
             class="px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 min-w-[40px] {page === currentPage ? 'btn-primary' : 'btn-secondary'}"
           >
             {page}
@@ -115,7 +126,7 @@
 
       <!-- Next button -->
       <button
-        on:click={handleNext}
+        onclick={handleNext}
         disabled={currentPage >= totalPages}
         class="btn-secondary text-sm px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >

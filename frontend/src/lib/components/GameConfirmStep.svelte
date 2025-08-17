@@ -1,26 +1,32 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import PlatformBadges from './PlatformBadges.svelte';
   import { resolveImageUrl } from '$lib/utils/image-url';
 
-  export let searchResults: IGDBGameCandidate[] = [];
-  export let addingGameId: string | null = null;
-  export let isGameOwned: (igdbId: string) => boolean;
-  export let getOwnedPlatformDetailsForGame: (igdbId: string) => any[];
-
-  const dispatch = createEventDispatcher<{
-    'back': void;
-    'game-click': { game: IGDBGameCandidate; owned: boolean };
-  }>();
-
-  function handleBack() {
-    dispatch('back');
+  interface Props {
+    searchResults?: IGDBGameCandidate[];
+    addingGameId?: string | null;
+    isGameOwned: (igdbId: string) => boolean;
+    getOwnedPlatformDetailsForGame: (igdbId: string) => any[];
+    onback?: () => void;
+    ongameclick?: (event: CustomEvent<{ game: IGDBGameCandidate; owned: boolean }>) => void;
   }
 
+  let { 
+    searchResults = [], 
+    addingGameId = null, 
+    isGameOwned, 
+    getOwnedPlatformDetailsForGame,
+    onback,
+    ongameclick
+  }: Props = $props();
+
+  function handleBack() {
+    onback?.();
+  }
 
   function handleGameClick(game: IGDBGameCandidate, owned: boolean) {
-    dispatch('game-click', { game, owned });
+    ongameclick?.(new CustomEvent('game-click', { detail: { game, owned } }));
   }
 </script>
 
@@ -51,7 +57,7 @@
           {@const owned = isGameOwned(game.igdb_id)}
           {@const ownedPlatformDetails = getOwnedPlatformDetailsForGame(game.igdb_id)}
           <button
-            on:click={() => handleGameClick(game, owned)}
+            onclick={() => handleGameClick(game, owned)}
             disabled={addingGameId !== null}
             class="w-full p-4 bg-white border-2 rounded-lg text-left hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group {owned ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-primary-300'}"
           >
@@ -156,7 +162,7 @@
 
   <div class="flex justify-start">
     <button
-      on:click={handleBack}
+      onclick={handleBack}
       class="btn-secondary inline-flex items-center gap-x-2"
     >
       <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

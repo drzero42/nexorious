@@ -386,10 +386,10 @@ describe('Games Page - Bulk Selection - Working Tests', () => {
       await waitFor(() => {
         const modal = screen.getByRole('dialog');
         expect(modal).toHaveAttribute('aria-modal', 'true');
-        expect(modal).toHaveAttribute('aria-labelledby', 'modal-title');
+        expect(modal).toHaveAttribute('aria-labelledby', 'bulk-modal-title');
         
         const modalTitle = screen.getByText('Bulk Operations');
-        expect(modalTitle).toHaveAttribute('id', 'modal-title');
+        expect(modalTitle).toHaveAttribute('id', 'bulk-modal-title');
       });
     });
   });

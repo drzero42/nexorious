@@ -2,15 +2,19 @@
 	import { onMount } from 'svelte';
 	import type { NotificationType } from '../stores/notifications.svelte';
 
-	export let id: string;
-	export let type: NotificationType = 'info';
-	export let message: string;
-	export let duration = 5000;
-	export let onRemove: (id: string) => void;
+	interface Props {
+		id: string;
+		type?: NotificationType;
+		message: string;
+		duration?: number;
+		onRemove: (id: string) => void;
+	}
 
-	let visible = false;
+	let { id, type = 'info', message, duration = 5000, onRemove }: Props = $props();
+
+	let visible = $state(false);
 	let element: HTMLDivElement;
-	let isDismissing = false;
+	let isDismissing = $state(false);
 
 	onMount(() => {
 		// Trigger entrance animation
@@ -42,21 +46,21 @@
 		}, 300);
 	}
 
-	$: typeClasses = {
+	const typeClasses = {
 		success: 'bg-green-50 border-green-200 text-green-800',
 		error: 'bg-red-50 border-red-200 text-red-800',
 		warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
 		info: 'bg-blue-50 border-blue-200 text-blue-800'
 	};
 
-	$: iconClasses = {
+	const iconClasses = {
 		success: 'text-green-400',
 		error: 'text-red-400',
 		warning: 'text-yellow-400',
 		info: 'text-blue-400'
 	};
 
-	$: icons = {
+	const icons = {
 		success: '✓',
 		error: '✕',
 		warning: '⚠',
@@ -88,7 +92,7 @@
 			<div class="ml-4 flex-shrink-0 flex">
 				<button
 					class="inline-flex text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600 transition ease-in-out duration-150"
-					on:click={dismiss}
+					onclick={dismiss}
 					type="button"
 					aria-label="Close notification"
 				>

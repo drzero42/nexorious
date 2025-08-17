@@ -5,30 +5,30 @@
   import { goto } from '$app/navigation';
 
   // Username validation state
-  let newUsername = '';
-  let isCheckingUsername = false;
-  let usernameAvailable: boolean | null = null;
-  let usernameError = '';
+  let newUsername = $state('');
+  let isCheckingUsername = $state(false);
+  let usernameAvailable = $state<boolean | null>(null);
+  let usernameError = $state('');
   
   // Password change state
-  let currentPassword = '';
-  let newPassword = '';
-  let confirmPassword = '';
-  let showCurrentPassword = false;
-  let showNewPassword = false;
-  let showConfirmPassword = false;
-  let passwordError = '';
+  let currentPassword = $state('');
+  let newPassword = $state('');
+  let confirmPassword = $state('');
+  let showCurrentPassword = $state(false);
+  let showNewPassword = $state(false);
+  let showConfirmPassword = $state(false);
+  let passwordError = $state('');
 
   // Form loading states
-  let isSubmittingUsername = false;
-  let isSubmittingPassword = false;
-  let isSubmittingPreferences = false;
+  let isSubmittingUsername = $state(false);
+  let isSubmittingPassword = $state(false);
+  let isSubmittingPreferences = $state(false);
 
   // Validation timeout
   let usernameTimeout: ReturnType<typeof setTimeout>;
 
   // Interface preferences
-  let steamGamesVisible = true;
+  let steamGamesVisible = $state(true);
 
   onMount(() => {
     // Initialize username field with current username
@@ -43,8 +43,8 @@
   });
 
   // Password strength calculation
-  $: passwordStrength = calculatePasswordStrength(newPassword);
-  $: passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
+  const passwordStrength = $derived(calculatePasswordStrength(newPassword));
+  const passwordsMatch = $derived(newPassword && confirmPassword && newPassword === confirmPassword);
 
   function calculatePasswordStrength(password: string): { score: number; label: string; color: string } {
     let score = 0;
@@ -92,9 +92,11 @@
   }
 
   // Watch username changes
-  $: if (newUsername !== undefined) {
-    checkUsername();
-  }
+  $effect(() => {
+    if (newUsername !== undefined) {
+      checkUsername();
+    }
+  });
 
   async function handleUsernameSubmit() {
     if (!newUsername || newUsername === auth.value.user?.username || !usernameAvailable) {
@@ -297,7 +299,7 @@
 
         <!-- Update Username Button -->
         <button
-          on:click={handleUsernameSubmit}
+          onclick={handleUsernameSubmit}
           disabled={!newUsername || newUsername === auth.value.user?.username || usernameAvailable !== true || isSubmittingUsername}
           class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -330,7 +332,7 @@
             />
             <button
               type="button"
-              on:click={() => showCurrentPassword = !showCurrentPassword}
+              onclick={() => showCurrentPassword = !showCurrentPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
               aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
             >
@@ -361,7 +363,7 @@
             />
             <button
               type="button"
-              on:click={() => showNewPassword = !showNewPassword}
+              onclick={() => showNewPassword = !showNewPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
               aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
             >
@@ -411,7 +413,7 @@
             />
             <button
               type="button"
-              on:click={() => showConfirmPassword = !showConfirmPassword}
+              onclick={() => showConfirmPassword = !showConfirmPassword}
               class="absolute inset-y-0 right-0 flex items-center pr-3"
               aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
             >
@@ -447,7 +449,7 @@
         <!-- Buttons -->
         <div class="flex space-x-3">
           <button
-            on:click={handlePasswordSubmit}
+            onclick={handlePasswordSubmit}
             disabled={!currentPassword || !newPassword || !confirmPassword || !passwordsMatch || isSubmittingPassword}
             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -463,7 +465,7 @@
           </button>
           
           <button
-            on:click={resetPasswordForm}
+            onclick={resetPasswordForm}
             type="button"
             class="btn-secondary"
           >
@@ -495,7 +497,7 @@
           <button
             type="button"
             disabled={isSubmittingPreferences}
-            on:click={() => { steamGamesVisible = !steamGamesVisible; handleSteamGamesToggle(); }}
+            onclick={() => { steamGamesVisible = !steamGamesVisible; handleSteamGamesToggle(); }}
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
             class:bg-blue-600={steamGamesVisible}
             class:bg-gray-200={!steamGamesVisible}

@@ -3,18 +3,28 @@
  import { groupPlatformsByPlatform } from '$lib/utils/platform-utils';
  import { buildIconUrl, getPlatformFallbackIcon, getStorefrontFallbackIcon } from '$lib/utils/icon-utils';
 
- export let platforms: UserGamePlatform[] = [];
- export let compact: boolean = false;
- export let maxVisible: number = 3;
- export let showDetails: boolean = false; // For expanded detail view
- export let showStoreLinks: boolean = false; // Include store links in expanded view
+ interface Props {
+   platforms?: UserGamePlatform[];
+   compact?: boolean;
+   maxVisible?: number;
+   showDetails?: boolean; // For expanded detail view
+   showStoreLinks?: boolean; // Include store links in expanded view
+ }
+
+ let { 
+   platforms = [], 
+   compact = false, 
+   maxVisible = 3, 
+   showDetails = false, 
+   showStoreLinks = false 
+ }: Props = $props();
 
  // Expandable state management - only one platform can be expanded at a time
- let expandedPlatform: string | null = null;
+ let expandedPlatform = $state<string | null>(null);
 
- $: groupedPlatforms = groupPlatformsByPlatform(platforms);
- $: visiblePlatforms = groupedPlatforms.slice(0, maxVisible);
- $: hiddenCount = Math.max(0, groupedPlatforms.length - maxVisible);
+ const groupedPlatforms = $derived(groupPlatformsByPlatform(platforms));
+ const visiblePlatforms = $derived(groupedPlatforms.slice(0, maxVisible));
+ const hiddenCount = $derived(Math.max(0, groupedPlatforms.length - maxVisible));
 
  // Unified styling for all platform badges - no platform-specific colors
  const unifiedBadgeStyle = {
@@ -80,8 +90,8 @@
          title="Click to {isExpanded ? 'collapse' : 'expand'} platform details"
          aria-label="{generateAccessibleLabel(group)}"
          aria-expanded="{isExpanded}"
-         on:click={(e) => toggleExpansion(groupId, e)}
-         on:keydown={(e) => handleKeydown(groupId, e)}
+         onclick={(e) => toggleExpansion(groupId, e)}
+         onkeydown={(e) => handleKeydown(groupId, e)}
     >
      
      <!-- Platform Icon and Name -->
@@ -92,7 +102,7 @@
         alt="{group.platform.display_name} icon" 
         class="{compact ? 'w-4 h-4' : 'w-5 h-5'} flex-shrink-0"
         loading="lazy"
-        on:error={(e) => {
+        onerror={(e) => {
          const img = e.target as HTMLImageElement;
          const fallback = img.nextElementSibling as HTMLElement;
          if (img && fallback) {
@@ -126,7 +136,7 @@
            alt="{storefront.storefront?.display_name} icon" 
            class="{compact ? 'w-3 h-3' : 'w-4 h-4'} flex-shrink-0"
            loading="lazy"
-           on:error={(e) => {
+           onerror={(e) => {
             const img = e.target as HTMLImageElement;
             const fallback = img.nextElementSibling as HTMLElement;
             if (img && fallback) {
@@ -175,7 +185,7 @@
             alt="{storefront.storefront?.display_name} icon" 
             class="w-3 h-3 flex-shrink-0"
             loading="lazy"
-            on:error={(e) => {
+            onerror={(e) => {
              const img = e.target as HTMLImageElement;
              const fallback = img.nextElementSibling as HTMLElement;
              if (img && fallback) {
@@ -231,8 +241,8 @@
          title="Click to {isExpanded ? 'collapse' : 'expand'} additional platforms"
          aria-label="{isExpanded ? 'Collapse' : 'Show'} {hiddenCount} additional platform{hiddenCount !== 1 ? 's' : ''}"
          aria-expanded="{isExpanded}"
-         on:click={(e) => toggleExpansion(hiddenGroupId, e)}
-         on:keydown={(e) => handleKeydown(hiddenGroupId, e)}>
+         onclick={(e) => toggleExpansion(hiddenGroupId, e)}
+         onkeydown={(e) => handleKeydown(hiddenGroupId, e)}>
      <div class="flex items-center {compact ? 'gap-1.5' : 'gap-2'}">
       <span class="{compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}" role="img" aria-hidden="true">📦</span>
       <span class="{compact ? 'text-xs' : 'text-sm'} font-bold">+{hiddenCount} {compact ? '' : 'more'}</span>
@@ -276,7 +286,7 @@
            alt="{group.platform.display_name} icon" 
            class="w-6 h-6 flex-shrink-0 mt-0.5"
            loading="lazy"
-           on:error={(e) => {
+           onerror={(e) => {
             const img = e.target as HTMLImageElement;
             const fallback = img.nextElementSibling as HTMLElement;
             if (img && fallback) {
@@ -303,7 +313,7 @@
                   alt="{storefront.storefront?.display_name} icon" 
                   class="w-4 h-4 flex-shrink-0"
                   loading="lazy"
-                  on:error={(e) => {
+                  onerror={(e) => {
                    const img = e.target as HTMLImageElement;
                    const fallback = img.nextElementSibling as HTMLElement;
                    if (img && fallback) {
@@ -332,7 +342,7 @@
                      class="flex-shrink-0 text-blue-600 hover:text-blue-800 transition-colors"
                      title="Open in {storefront.storefront?.display_name}"
                      aria-label="Open {storefront.storefront?.display_name} store page"
-                     on:click|stopPropagation
+                     onclick={(e) => e.stopPropagation()}
                 >
                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
@@ -369,7 +379,7 @@
                 alt="{storefront.storefront?.display_name} icon" 
                 class="w-5 h-5 flex-shrink-0"
                 loading="lazy"
-                on:error={(e) => {
+                onerror={(e) => {
                  const img = e.target as HTMLImageElement;
                  const fallback = img.nextElementSibling as HTMLElement;
                  if (img && fallback) {
@@ -398,7 +408,7 @@
                    class="flex-shrink-0 text-blue-600 hover:text-blue-800 transition-colors p-1"
                    title="Open in {storefront.storefront?.display_name}"
                    aria-label="Open {storefront.storefront?.display_name} store page"
-                   on:click|stopPropagation
+                   onclick={(e) => e.stopPropagation()}
               >
                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>

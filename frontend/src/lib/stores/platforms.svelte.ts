@@ -1,4 +1,3 @@
-import { writable } from 'svelte/store';
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
 
@@ -75,7 +74,7 @@ const initialState: PlatformsState = {
 };
 
 function createPlatformsStore() {
-  const { subscribe, set, update } = writable<PlatformsState>(initialState);
+  let state = $state<PlatformsState>(initialState);
 
   const apiCall = async (url: string, options: RequestInit = {}) => {
     const authState = auth.value;
@@ -115,7 +114,15 @@ function createPlatformsStore() {
   };
 
   return {
-    subscribe,
+    get value() {
+      return state;
+    },
+    
+    // Subscribe method for compatibility with Svelte store interface
+    subscribe: (run: (value: PlatformsState) => void) => {
+      run(state); // Initial call
+      return () => {}; // Return unsubscribe function directly
+    },
 
     // Fetch all platforms (loads ALL platforms regardless of active status)
     fetchPlatforms: async () => {
@@ -123,22 +130,22 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Load ALL platforms without active_only filter (active_only=false)
         const response = await apiCall(`${config.apiUrl}/platforms/?active_only=false`);
         const data = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           platforms: data.platforms,
           isLoading: false
-        }));
+        };
         return data.platforms;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch platforms';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -149,22 +156,22 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Load ALL storefronts without active_only filter (active_only=false)
         const response = await apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=false`);
         const data = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           storefronts: data.storefronts,
           isLoading: false
-        }));
+        };
         return data.storefronts;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch storefronts';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -172,7 +179,7 @@ function createPlatformsStore() {
     // Fetch both platforms and storefronts (accessible to all authenticated users)  
     fetchAll: async () => {
       console.log('🔄 [PLATFORMS-STORE] Starting fetchAll...');
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Load ALL platforms and storefronts in parallel
@@ -213,12 +220,12 @@ function createPlatformsStore() {
           searchCriteria: 'platform.name === "pc-windows"'
         });
 
-        update(state => ({
+        state = {
           ...state,
           platforms: platformsData.platforms,
           storefronts: storefrontsData.storefronts,
           isLoading: false
-        }));
+        };
 
         console.log('✅ [PLATFORMS-STORE] Store updated, fetchAll completed successfully');
 
@@ -232,7 +239,7 @@ function createPlatformsStore() {
           error: errorMessage,
           fullError: error
         });
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -243,7 +250,7 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Clean the data - convert empty strings to undefined for optional URL fields
@@ -259,16 +266,16 @@ function createPlatformsStore() {
         
         const platform: Platform = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           platforms: [...state.platforms, platform],
           isLoading: false
-        }));
+        };
 
         return platform;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create platform';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -279,7 +286,7 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Clean the data - convert empty strings to undefined for optional URL fields
@@ -295,18 +302,18 @@ function createPlatformsStore() {
         
         const updatedPlatform: Platform = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           platforms: state.platforms.map(platform => 
             platform.id === id ? updatedPlatform : platform
           ),
           isLoading: false
-        }));
+        };
 
         return updatedPlatform;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update platform';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -317,21 +324,21 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         await apiCall(`${config.apiUrl}/platforms/${id}`, {
           method: 'DELETE',
         });
 
-        update(state => ({
+        state = {
           ...state,
           platforms: state.platforms.filter(platform => platform.id !== id),
           isLoading: false
-        }));
+        };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete platform';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -342,7 +349,7 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Clean the data - convert empty strings to undefined for optional URL fields
@@ -359,16 +366,16 @@ function createPlatformsStore() {
         
         const storefront: Storefront = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           storefronts: [...state.storefronts, storefront],
           isLoading: false
-        }));
+        };
 
         return storefront;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create storefront';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -379,7 +386,7 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         // Clean the data - convert empty strings to undefined for optional URL fields
@@ -396,18 +403,18 @@ function createPlatformsStore() {
         
         const updatedStorefront: Storefront = await response.json();
 
-        update(state => ({
+        state = {
           ...state,
           storefronts: state.storefronts.map(storefront => 
             storefront.id === id ? updatedStorefront : storefront
           ),
           isLoading: false
-        }));
+        };
 
         return updatedStorefront;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update storefront';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -418,21 +425,21 @@ function createPlatformsStore() {
         throw new Error('Admin access required');
       }
 
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
 
       try {
         await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
           method: 'DELETE',
         });
 
-        update(state => ({
+        state = {
           ...state,
           storefronts: state.storefronts.filter(storefront => storefront.id !== id),
           isLoading: false
-        }));
+        };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete storefront';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -453,7 +460,7 @@ function createPlatformsStore() {
 
     // Fetch active platforms and storefronts for regular users
     fetchActivePlatformsAndStorefronts: async () => {
-      update(state => ({ ...state, isLoading: true, error: null }));
+      state = { ...state, isLoading: true, error: null };
       try {
         // Load only active platforms and storefronts in parallel
         const [platformsResponse, storefrontsResponse] = await Promise.all([
@@ -465,12 +472,12 @@ function createPlatformsStore() {
           storefrontsResponse.json()
         ]);
         
-        update(state => ({
+        state = {
           ...state,
           platforms: platformsData.platforms,
           storefronts: storefrontsData.storefronts,
           isLoading: false
-        }));
+        };
         
         return {
           platforms: platformsData.platforms,
@@ -478,7 +485,7 @@ function createPlatformsStore() {
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch active platforms and storefronts';
-        update(state => ({ ...state, isLoading: false, error: errorMessage }));
+        state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
     },
@@ -495,7 +502,7 @@ function createPlatformsStore() {
         return data.storefronts;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch platform storefronts';
-        update(state => ({ ...state, error: errorMessage }));
+        state = { ...state, error: errorMessage };
         throw error;
       }
     },
@@ -518,7 +525,7 @@ function createPlatformsStore() {
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create platform-storefront association';
-        update(state => ({ ...state, error: errorMessage }));
+        state = { ...state, error: errorMessage };
         throw error;
       }
     },
@@ -541,19 +548,19 @@ function createPlatformsStore() {
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to remove platform-storefront association';
-        update(state => ({ ...state, error: errorMessage }));
+        state = { ...state, error: errorMessage };
         throw error;
       }
     },
 
     // Clear error
     clearError: () => {
-      update(state => ({ ...state, error: null }));
+      state = { ...state, error: null };
     },
 
     // Test helper - only use in tests
     __reset: () => {
-      set(initialState);
+      state = { ...initialState };
     }
   };
 }

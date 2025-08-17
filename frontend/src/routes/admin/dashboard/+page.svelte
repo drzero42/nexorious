@@ -4,14 +4,14 @@
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
 
-  let isLoading = true;
+  let isLoading = $state(true);
 
   // Reactive statements to track admin store state
-  $: statistics = $admin.statistics;
-  $: error = $admin.error;
-  $: isAdminLoading = $admin.isLoading;
-  $: seedDataResult = $admin.seedDataResult;
-  $: isSeedDataLoading = $admin.isSeedDataLoading;
+  const statistics = $derived($admin.statistics);
+  const error = $derived($admin.error);
+  const isAdminLoading = $derived($admin.isLoading);
+  const seedDataResult = $derived($admin.seedDataResult);
+  const isSeedDataLoading = $derived($admin.isSeedDataLoading);
 
   onMount(async () => {
     // Check if user is admin
@@ -75,7 +75,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={() => admin.clearError()}
+                onclick={() => admin.clearError()}
                 type="button"
                 class="rounded-md bg-red-50 text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
               >
@@ -112,7 +112,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={() => admin.clearSeedDataResult()}
+                onclick={() => admin.clearSeedDataResult()}
                 type="button"
                 class="rounded-md bg-green-50 text-green-800 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
               >
@@ -287,7 +287,7 @@
               Manage Platforms
             </a>
             <button
-              on:click={handleLoadSeedData}
+              onclick={handleLoadSeedData}
               disabled={isSeedDataLoading}
               class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >

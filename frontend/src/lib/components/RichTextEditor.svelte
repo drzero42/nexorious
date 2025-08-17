@@ -4,16 +4,26 @@
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
   
-  export let value: string | undefined = '';
-  export let placeholder: string = 'Write something...';
-  export let editable: boolean = true;
-  export let onchange: ((event: CustomEvent<{ value: string }>) => void) | undefined = undefined;
+  interface Props {
+    value?: string | undefined;
+    placeholder?: string;
+    editable?: boolean;
+    onchange?: ((event: CustomEvent<{ value: string }>) => void) | undefined;
+  }
+  
+  let { 
+    value = $bindable(undefined), 
+    placeholder = 'Write something...', 
+    editable = true, 
+    onchange 
+  }: Props = $props();
   
   // Handle undefined value by defaulting to empty string
-  $: safeValue = value ?? '';
+  const safeValue = $derived(value ?? '');
   
   let element: HTMLElement;
-  let editor: Editor;
+  let editor: Editor | undefined;
+  let editorState = $state(0); // Force reactivity updates
   
   onMount(() => {
     editor = new Editor({
@@ -33,7 +43,11 @@
       onUpdate: ({ editor }: { editor: Editor }) => {
         const html = editor.getHTML();
         value = html;
+        editorState++; // Trigger reactivity updates
         onchange?.(new CustomEvent('change', { detail: { value: html } }));
+      },
+      onSelectionUpdate: () => {
+        editorState++; // Trigger reactivity updates when selection changes
       },
       editorProps: {
         attributes: {
@@ -49,50 +63,54 @@
     }
   });
   
-  $: if (editor && editor.isEditable !== editable) {
-    editor.setEditable(editable);
-  }
+  $effect(() => {
+    if (editor && editor.isEditable !== editable) {
+      editor.setEditable(editable);
+    }
+  });
   
-  $: if (editor && safeValue !== editor.getHTML()) {
-    editor.commands.setContent(safeValue);
-  }
+  $effect(() => {
+    if (editor && safeValue !== editor.getHTML()) {
+      editor.commands.setContent(safeValue);
+    }
+  });
   
   function toggleBold() {
-    editor.chain().focus().toggleBold().run();
+    editor?.chain().focus().toggleBold().run();
   }
   
   function toggleItalic() {
-    editor.chain().focus().toggleItalic().run();
+    editor?.chain().focus().toggleItalic().run();
   }
   
   function toggleStrike() {
-    editor.chain().focus().toggleStrike().run();
+    editor?.chain().focus().toggleStrike().run();
   }
   
   function toggleBulletList() {
-    editor.chain().focus().toggleBulletList().run();
+    editor?.chain().focus().toggleBulletList().run();
   }
   
   function toggleOrderedList() {
-    editor.chain().focus().toggleOrderedList().run();
+    editor?.chain().focus().toggleOrderedList().run();
   }
   
   function setHeading(level: 1 | 2 | 3) {
-    editor.chain().focus().toggleHeading({ level }).run();
+    editor?.chain().focus().toggleHeading({ level }).run();
   }
   
   function setParagraph() {
-    editor.chain().focus().setParagraph().run();
+    editor?.chain().focus().setParagraph().run();
   }
   
-  $: isBold = editor?.isActive('bold');
-  $: isItalic = editor?.isActive('italic');
-  $: isStrike = editor?.isActive('strike');
-  $: isBulletList = editor?.isActive('bulletList');
-  $: isOrderedList = editor?.isActive('orderedList');
-  $: isHeading1 = editor?.isActive('heading', { level: 1 });
-  $: isHeading2 = editor?.isActive('heading', { level: 2 });
-  $: isHeading3 = editor?.isActive('heading', { level: 3 });
+  const isBold = $derived(editorState >= 0 && editor?.isActive('bold'));
+  const isItalic = $derived(editorState >= 0 && editor?.isActive('italic'));
+  const isStrike = $derived(editorState >= 0 && editor?.isActive('strike'));
+  const isBulletList = $derived(editorState >= 0 && editor?.isActive('bulletList'));
+  const isOrderedList = $derived(editorState >= 0 && editor?.isActive('orderedList'));
+  const isHeading1 = $derived(editorState >= 0 && editor?.isActive('heading', { level: 1 }));
+  const isHeading2 = $derived(editorState >= 0 && editor?.isActive('heading', { level: 2 }));
+  const isHeading3 = $derived(editorState >= 0 && editor?.isActive('heading', { level: 3 }));
 </script>
 
 <div class="rich-text-editor">
@@ -103,7 +121,7 @@
           type="button"
           class="toolbar-button"
           class:active={isBold}
-          on:click={toggleBold}
+          onclick={toggleBold}
           title="Bold (Ctrl+B)"
           aria-label="Bold (Ctrl+B)"
         >
@@ -116,7 +134,7 @@
           type="button"
           class="toolbar-button"
           class:active={isItalic}
-          on:click={toggleItalic}
+          onclick={toggleItalic}
           title="Italic (Ctrl+I)"
           aria-label="Italic (Ctrl+I)"
         >
@@ -128,7 +146,7 @@
           type="button"
           class="toolbar-button"
           class:active={isStrike}
-          on:click={toggleStrike}
+          onclick={toggleStrike}
           title="Strikethrough"
           aria-label="Strikethrough"
         >
@@ -145,7 +163,7 @@
           type="button"
           class="toolbar-button"
           class:active={!isHeading1 && !isHeading2 && !isHeading3}
-          on:click={setParagraph}
+          onclick={setParagraph}
           title="Paragraph"
           aria-label="Paragraph"
         >
@@ -155,7 +173,7 @@
           type="button"
           class="toolbar-button"
           class:active={isHeading1}
-          on:click={() => setHeading(1)}
+          onclick={() => setHeading(1)}
           title="Heading 1"
           aria-label="Heading 1"
         >
@@ -165,7 +183,7 @@
           type="button"
           class="toolbar-button"
           class:active={isHeading2}
-          on:click={() => setHeading(2)}
+          onclick={() => setHeading(2)}
           title="Heading 2"
           aria-label="Heading 2"
         >
@@ -175,7 +193,7 @@
           type="button"
           class="toolbar-button"
           class:active={isHeading3}
-          on:click={() => setHeading(3)}
+          onclick={() => setHeading(3)}
           title="Heading 3"
           aria-label="Heading 3"
         >
@@ -190,7 +208,7 @@
           type="button"
           class="toolbar-button"
           class:active={isBulletList}
-          on:click={toggleBulletList}
+          onclick={toggleBulletList}
           title="Bullet list"
           aria-label="Bullet list"
         >
@@ -202,7 +220,7 @@
           type="button"
           class="toolbar-button"
           class:active={isOrderedList}
-          on:click={toggleOrderedList}
+          onclick={toggleOrderedList}
           title="Numbered list"
           aria-label="Numbered list"
         >

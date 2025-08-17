@@ -111,7 +111,7 @@
         </div>
       {/if}
 
-      <form on:submit|preventDefault={handleSetup} class="space-y-6">
+      <form onsubmit={(e) => { e.preventDefault(); handleSetup(); }} class="space-y-6">
         <div>
           <label for="username" class="form-label">
             Admin Username
@@ -121,7 +121,7 @@
             type="text"
             bind:value={username}
             bind:this={usernameInput}
-            on:keydown={handleKeydown}
+            onkeydown={handleKeydown}
             required
             minlength="3"
             placeholder="Choose a username"
@@ -141,7 +141,7 @@
             id="password"
             type="password"
             bind:value={password}
-            on:keydown={handleKeydown}
+            onkeydown={handleKeydown}
             required
             minlength="8"
             placeholder="Enter a secure password"
@@ -161,7 +161,7 @@
             id="confirmPassword"
             type="password"
             bind:value={confirmPassword}
-            on:keydown={handleKeydown}
+            onkeydown={handleKeydown}
             required
             placeholder="Confirm your password"
             class="form-input"

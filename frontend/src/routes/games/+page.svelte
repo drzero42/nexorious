@@ -8,68 +8,86 @@
  import type { UserGameFilters } from '$lib/stores';
  import { PlayStatus, OwnershipStatus, type BulkStatusUpdateRequest, type BulkDeleteRequest, type BulkAddPlatformRequest, type UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
 
- let viewMode: 'grid' | 'list' = 'grid';
- let searchQuery = '';
- let selectedPlatform = '';
- let selectedStorefront = '';
- let selectedStatus = '';
- let selectedOwnershipStatus = '';
- let lovedOnly = false;
- let hasNotesOnly = false;
- let ratingMin = '';
- let ratingMax = '';
- let sortBy = 'title';
- let sortOrder: 'asc' | 'desc' = 'asc';
+ let viewMode = $state<'grid' | 'list'>('grid');
+ let searchQuery = $state('');
+ let selectedPlatform = $state('');
+ let selectedStorefront = $state('');
+ let selectedStatus = $state<PlayStatus | ''>('');
+ let selectedOwnershipStatus = $state<OwnershipStatus | ''>('');
+ let lovedOnly = $state(false);
+ let hasNotesOnly = $state(false);
+ let ratingMin = $state('');
+ let ratingMax = $state('');
+ let sortBy = $state('title');
+ let sortOrder = $state<'asc' | 'desc'>('asc');
 
  // Bulk selection state
- let selectedGameIds: Set<string> = new Set();
- let isSelectingAll = false;
+ let selectedGameIds = $state<Set<string>>(new Set());
+ let isSelectingAll = $state(false);
  // let showBulkActions = false; // Not yet implemented
- let showBulkModal = false;
+ let showBulkModal = $state(false);
 
  // Computed state for bulk selection mode
- $: isBulkSelectionMode = selectedGameIds.size > 0;
+ const isBulkSelectionMode = $derived(selectedGameIds.size > 0);
 
 // Real-time update states
-$: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPending ?? false;
-$: isBulkProcessing = userGames.entityState?.bulkOperations?.isProcessing ?? false;
-let recentlyUpdatedGameIds = new Set<string>();
+const hasOptimisticUpdates = $derived(userGames.entityState?.optimisticUpdates?.isPending ?? false);
+const isBulkProcessing = $derived(userGames.entityState?.bulkOperations?.isProcessing ?? false);
+let recentlyUpdatedGameIds = $state<Set<string>>(new Set());
 let updateTimeout: NodeJS.Timeout | undefined;
 
  // Bulk operations modal state
- let bulkStatus = '';
- let bulkRating = '';
- let bulkIsLoved = false;
- let bulkOwnershipStatus = '';
- let isBulkUpdating = false;
-let showDeleteConfirmation = false;
-let isDeletingBulk = false;
+ let bulkStatus = $state('');
+ let bulkRating = $state('');
+ let bulkIsLoved = $state(false);
+ let bulkOwnershipStatus = $state('');
+ let isBulkUpdating = $state(false);
+let showDeleteConfirmation = $state(false);
+let isDeletingBulk = $state(false);
 
 // Bulk platform operations state
-let showBulkPlatformAddModal = false;
-let showBulkPlatformRemoveModal = false;
-let isProcessingBulkPlatforms = false;
+let showBulkPlatformAddModal = $state(false);
+let showBulkPlatformRemoveModal = $state(false);
+let isProcessingBulkPlatforms = $state(false);
 
 // Platform selection for bulk operations
-let bulkSelectedPlatforms = new Set<string>();
-let bulkPlatformStorefronts = new Map<string, Set<string>>();
-let bulkPlatformStoreUrls = new Map<string, string>();
+let bulkSelectedPlatforms = $state<Set<string>>(new Set());
+let bulkPlatformStorefronts = $state<Map<string, Set<string>>>(new Map());
+let bulkPlatformStoreUrls = $state<Map<string, string>>(new Map());
 
 // Platform removal selection
-let availablePlatformAssociations: Array<{
+let availablePlatformAssociations = $state<Array<{
   platformId: string;
   platformName: string;
   storefrontId?: string;
   storefrontName?: string;
   associationIds: string[];
   platformIconUrl?: string;
-}> = [];
-let selectedAssociationIds: Set<string> = new Set();
+}>>([]);
+let selectedAssociationIds = $state<Set<string>>(new Set());
 
  // Local state for debounced search
  let searchTimeout: ReturnType<typeof setTimeout>;
 
  let eventCleanupFunctions: Array<() => void> = [];
+
+ // State tracking for effects to prevent infinite loops
+ let prevFilters = $state({
+   selectedStatus: '',
+   selectedPlatform: '',
+   selectedStorefront: '',
+   selectedOwnershipStatus: '',
+   lovedOnly: false,
+   hasNotesOnly: false,
+   ratingMin: '',
+   ratingMax: '',
+   sortBy: 'title',
+   sortOrder: 'asc'
+ });
+ let prevSearchQuery = $state('');
+
+ // Derived stores for better type safety
+ const platformsData = $derived(platforms.value || { platforms: [], storefronts: [], isLoading: false, error: null });
  
  onMount(() => {
   // Load user games and platforms - authentication is handled by RouteGuard
@@ -139,25 +157,30 @@ let selectedAssociationIds: Set<string> = new Set();
  }
 
  // Build filters based on current selections
- $: filters = {
-  ...(searchQuery && { q: searchQuery }),
-  ...(selectedStatus && { play_status: selectedStatus }),
-  ...(selectedOwnershipStatus && { ownership_status: selectedOwnershipStatus }),
-  ...(selectedPlatform && { platform_id: selectedPlatform }),
-  ...(selectedStorefront && { storefront_id: selectedStorefront }),
-  ...(lovedOnly && { is_loved: true }),
-  ...(hasNotesOnly && { has_notes: true }),
-  ...(ratingMin && { rating_min: parseInt(ratingMin) }),
-  ...(ratingMax && { rating_max: parseInt(ratingMax) }),
-  sort_by: sortBy,
-  sort_order: sortOrder
- } as UserGameFilters;
+ const filters = $derived(() => {
+  const baseFilters: UserGameFilters = {
+    sort_by: sortBy,
+    sort_order: sortOrder
+  };
+  
+  if (searchQuery) baseFilters.q = searchQuery;
+  if (selectedStatus) baseFilters.play_status = selectedStatus as PlayStatus;
+  if (selectedOwnershipStatus) baseFilters.ownership_status = selectedOwnershipStatus as OwnershipStatus;
+  if (selectedPlatform) baseFilters.platform_id = selectedPlatform;
+  if (selectedStorefront) baseFilters.storefront_id = selectedStorefront;
+  if (lovedOnly) baseFilters.is_loved = true;
+  if (hasNotesOnly) baseFilters.has_notes = true;
+  if (ratingMin) baseFilters.rating_min = parseInt(ratingMin);
+  if (ratingMax) baseFilters.rating_max = parseInt(ratingMax);
+  
+  return baseFilters;
+ });
 
  // Load games with current filters and pagination
  async function loadGames() {
   try {
    await userGames.loadUserGames(
-    filters,
+    filters(),
     userGames.value.pagination.page,
     userGames.value.pagination.per_page
    );
@@ -182,21 +205,46 @@ let selectedAssociationIds: Set<string> = new Set();
  // Load games with page reset
  async function loadGamesWithReset() {
   try {
-   await userGames.loadUserGames(filters, 1, userGames.value.pagination.per_page);
+   await userGames.loadUserGames(filters(), 1, userGames.value.pagination.per_page);
   } catch (error) {
    console.error('Failed to load games:', error);
   }
  }
 
- // Watch for filter changes
- $: if (selectedStatus || selectedPlatform || selectedStorefront || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax || sortBy || sortOrder) {
-  handleFilterChange();
- }
+ // Watch for filter changes - track previous values to prevent unnecessary calls
+ $effect(() => {
+  const currentFilters = {
+    selectedStatus,
+    selectedPlatform,
+    selectedStorefront,
+    selectedOwnershipStatus,
+    lovedOnly,
+    hasNotesOnly,
+    ratingMin,
+    ratingMax,
+    sortBy,
+    sortOrder
+  };
+  
+  // Only trigger if filters actually changed
+  const hasChanged = Object.keys(currentFilters).some(
+    key => currentFilters[key as keyof typeof currentFilters] !== prevFilters[key as keyof typeof prevFilters]
+  );
+  
+  if (hasChanged && (selectedStatus || selectedPlatform || selectedStorefront || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax || sortBy || sortOrder)) {
+    prevFilters = { ...currentFilters };
+    handleFilterChange();
+  }
+ });
 
- // Watch for search query changes
- $: if (searchQuery !== undefined) {
-  handleSearch();
- }
+ // Watch for search query changes - track previous value to prevent unnecessary calls
+ $effect(() => {
+  // Only trigger if search query actually changed
+  if (searchQuery !== prevSearchQuery && searchQuery !== undefined) {
+    prevSearchQuery = searchQuery;
+    handleSearch();
+  }
+ });
 
  function handleAddGame() {
   goto('/games/add');
@@ -215,7 +263,7 @@ let selectedAssociationIds: Set<string> = new Set();
  // Pagination handlers
  async function handlePageChange(page: number) {
   try {
-   await userGames.loadUserGames(filters, page, userGames.value.pagination.per_page);
+   await userGames.loadUserGames(filters(), page, userGames.value.pagination.per_page);
   } catch (error) {
    console.error('Failed to load games:', error);
   }
@@ -223,7 +271,7 @@ let selectedAssociationIds: Set<string> = new Set();
 
  async function handleItemsPerPageChange(perPage: number) {
   try {
-   await userGames.loadUserGames(filters, 1, perPage);
+   await userGames.loadUserGames(filters(), 1, perPage);
   } catch (error) {
    console.error('Failed to load games:', error);
   }
@@ -258,7 +306,7 @@ let selectedAssociationIds: Set<string> = new Set();
  }
 
  // Check if any filters are active
- $: hasActiveFilters = searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax;
+ const hasActiveFilters = $derived(searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax);
 
  // Bulk Selection Functions
  function toggleGameSelection(gameId: string) {
@@ -283,16 +331,27 @@ let selectedAssociationIds: Set<string> = new Set();
  }
 
  // Reset selection when games change (e.g., after filtering)
- $: if (userGames.value.userGames && Array.isArray(userGames.value.userGames)) {
-  // Remove any selected IDs that are no longer in current results
-  const currentGameIds = new Set(userGames.value.userGames.map(game => game.id));
-  selectedGameIds = new Set([...selectedGameIds].filter(id => currentGameIds.has(id)));
-  
-  // Update "select all" state
-  isSelectingAll = selectedGameIds.size > 0 && selectedGameIds.size === userGames.value.userGames.length;
-  
-  updateBulkActionsVisibility();
- }
+ $effect(() => {
+  if (userGames.value?.userGames && Array.isArray(userGames.value.userGames)) {
+    // Remove any selected IDs that are no longer in current results
+    const currentGameIds = new Set(userGames.value.userGames.map(game => game.id));
+    const filteredSelectedIds = [...selectedGameIds].filter(id => currentGameIds.has(id));
+    
+    // Only update if the selection actually changed to prevent infinite loops
+    if (filteredSelectedIds.length !== selectedGameIds.size || 
+        !filteredSelectedIds.every(id => selectedGameIds.has(id))) {
+      selectedGameIds = new Set(filteredSelectedIds);
+    }
+    
+    // Update "select all" state based on the current (possibly updated) selection
+    const newIsSelectingAll = selectedGameIds.size > 0 && selectedGameIds.size === userGames.value.userGames.length;
+    if (newIsSelectingAll !== isSelectingAll) {
+      isSelectingAll = newIsSelectingAll;
+    }
+    
+    updateBulkActionsVisibility();
+  }
+ });
 
  // Bulk Operations Functions
  function resetBulkModal() {
@@ -432,7 +491,7 @@ function toggleBulkPlatform(platformId: string) {
     bulkSelectedPlatforms.add(platformId);
     
     const storefronts = new Set<string>();
-    const platform = $platforms.platforms.find(p => p.id === platformId);
+    const platform = platformsData.platforms.find((p: any) => p.id === platformId);
     
     if (platform?.default_storefront_id) {
       storefronts.add(platform.default_storefront_id);
@@ -612,7 +671,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
   </div>
   <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
    <button
-    on:click={handleAddGame}
+    onclick={handleAddGame}
     class="btn-primary inline-flex items-center gap-x-2"
    >
     <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -631,7 +690,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
    <div class="flex items-center space-x-4">
     {#if hasActiveFilters}
      <button
-      on:click={clearAllFilters}
+      onclick={clearAllFilters}
       class="text-sm text-primary-600 hover:text-primary-700 focus:outline-none focus:underline"
      >
       Clear all filters
@@ -643,7 +702,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <div class="flex items-center space-x-2">
       {#if selectedGameIds.size < (userGames.value.userGames?.length ?? 0)}
        <button
-        on:click={() => {
+        onclick={() => {
          selectedGameIds = new Set(userGames.value.userGames?.map(game => game.id) ?? []);
          isSelectingAll = true;
          updateBulkActionsVisibility();
@@ -655,7 +714,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
       {/if}
       {#if selectedGameIds.size > 0}
        <button
-        on:click={clearSelection}
+        onclick={clearSelection}
         class="text-sm text-gray-600 hover:text-gray-700 focus:outline-none focus:underline"
        >
         Deselect All
@@ -667,19 +726,19 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
        <span class="text-sm text-gray-500">|</span>
        <span class="text-xs text-primary-600">Click games to select/deselect</span>
        <button
-        on:click={() => showBulkModal = true}
+        onclick={() => showBulkModal = true}
         class="btn-secondary text-sm px-3 py-1"
        >
         Bulk Edit
        </button>
        <button
-        on:click={() => showBulkPlatformAddModal = true}
+        onclick={() => showBulkPlatformAddModal = true}
         class="btn-secondary text-sm px-3 py-1 ml-2"
        >
         Add Platforms
        </button>
        <button
-        on:click={openBulkPlatformRemoveModal}
+        onclick={openBulkPlatformRemoveModal}
         class="btn-secondary text-sm px-3 py-1 ml-2"
        >
         Remove Platforms
@@ -691,7 +750,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
     <!-- View Mode Toggle -->
     <div class="inline-flex rounded-md shadow-sm" role="group">
      <button
-      on:click={() => viewMode = 'grid'}
+      onclick={() => viewMode = 'grid'}
       class="{viewMode === 'grid' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative inline-flex items-center rounded-l-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
      >
       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -700,7 +759,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
       <span class="sr-only">Grid view</span>
      </button>
      <button
-      on:click={() => viewMode = 'list'}
+      onclick={() => viewMode = 'list'}
       class="{viewMode === 'list' ? 'bg-primary-50 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} relative -ml-px inline-flex items-center rounded-r-md border px-3 py-2 text-sm font-medium focus:z-10 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
      >
       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -827,7 +886,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      class="form-input"
     >
      <option value="">All Platforms</option>
-     {#each $platforms.platforms as platform (platform.id)}
+     {#each platformsData.platforms as platform (platform.id)}
       <option value={platform.id}>{platform.display_name}</option>
      {/each}
     </select>
@@ -844,7 +903,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      class="form-input"
     >
      <option value="">All Storefronts</option>
-     {#each $platforms.storefronts as storefront (storefront.id)}
+     {#each platformsData.storefronts as storefront (storefront.id)}
       <option value={storefront.id}>{storefront.display_name}</option>
      {/each}
     </select>
@@ -936,7 +995,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
    {#if userGames.value.pagination.total === 0}
     <div class="mt-6">
      <button
-      on:click={handleAddGame}
+      onclick={handleAddGame}
       class="btn-primary inline-flex items-center gap-x-2"
      >
       <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -953,13 +1012,13 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
     {#each userGames.value.userGames ?? [] as userGame (userGame.id)}
      <div
-      on:click={(e) => {
+      onclick={(e) => {
        // Don't navigate if clicking on checkbox
        if ((e.target as HTMLInputElement).type !== 'checkbox') {
         handleGameClick(userGame.id);
        }
       }}
-      on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
+      onkeydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
       tabindex="0"
       role="button"
       aria-label="{isBulkSelectionMode ? 'Select ' + userGame.game.title : 'View details for ' + userGame.game.title}"
@@ -970,8 +1029,8 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
        <input
         type="checkbox"
         checked={selectedGameIds.has(userGame.id)}
-        on:change={() => toggleGameSelection(userGame.id)}
-        on:click={(e) => e.stopPropagation()}
+        onchange={() => toggleGameSelection(userGame.id)}
+        onclick={(e) => e.stopPropagation()}
         class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
         aria-label="Select {userGame.game.title}"
        />
@@ -983,7 +1042,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
          alt="Cover art for {userGame.game.title}"
          loading="lazy"
          class="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-         on:error={(e) => {
+         onerror={(e) => {
           const target = e.currentTarget as HTMLImageElement;
           const nextElement = target.nextElementSibling as HTMLElement;
           target.style.display = 'none';
@@ -1094,7 +1153,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
          <input
           type="checkbox"
           checked={isSelectingAll}
-          on:change={() => {
+          onchange={() => {
            if (isSelectingAll) {
             clearSelection();
            } else {
@@ -1130,13 +1189,13 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
       <tbody class="divide-y divide-gray-200 bg-white">
        {#each userGames.value.userGames ?? [] as userGame (userGame.id)}
         <tr
-         on:click={(e) => {
+         onclick={(e) => {
           // Don't navigate if clicking on checkbox
           if ((e.target as HTMLInputElement).type !== 'checkbox') {
            handleGameClick(userGame.id);
           }
          }}
-         on:keydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
+         onkeydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
          tabindex="0"
          class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 transition-all duration-300 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''} {isBulkSelectionMode ? 'hover:bg-primary-50' : ''} {recentlyUpdatedGameIds.has(userGame.id) ? 'bg-green-50 ring-1 ring-green-200' : ''}"
         >
@@ -1144,8 +1203,8 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
           <input
            type="checkbox"
            checked={selectedGameIds.has(userGame.id)}
-           on:change={() => toggleGameSelection(userGame.id)}
-           on:click={(e) => e.stopPropagation()}
+           onchange={() => toggleGameSelection(userGame.id)}
+           onclick={(e) => e.stopPropagation()}
            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
            aria-label="Select {userGame.game.title}"
           />
@@ -1248,18 +1307,20 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
 
 <!-- Bulk Operations Modal -->
 {#if showBulkModal}
- <!-- svelte-ignore a11y-click-events-have-key-events -->
- <!-- svelte-ignore a11y-no-static-element-interactions -->
  <div 
   class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
-  role="dialog" 
-  aria-modal="true" 
-  aria-labelledby="modal-title"
-  tabindex="-1" 
-  on:click={closeBulkModal} 
-  on:keydown={(e) => e.key === 'Escape' && closeBulkModal()}
+  role="button" 
+  tabindex="0"
+  aria-label="Close bulk operations modal"
+  onclick={closeBulkModal} 
+  onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeBulkModal()}
  >
-  <div class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" on:click|stopPropagation>
+  <div 
+    class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" 
+    role="dialog" 
+    aria-modal="true" 
+    aria-labelledby="bulk-modal-title"
+  >
     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
      <div class="sm:flex sm:items-start">
       <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-primary-100 sm:mx-0 sm:h-10 sm:w-10">
@@ -1268,7 +1329,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
        </svg>
       </div>
       <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-       <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="bulk-modal-title">
         Bulk Operations
        </h3>
        <div class="mt-2">
@@ -1358,7 +1419,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isBulkUpdating}
-      on:click={applyBulkOperations}
+      onclick={applyBulkOperations}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       {#if isBulkUpdating}
@@ -1374,7 +1435,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isBulkUpdating}
-      on:click={showBulkDeleteConfirmation}
+      onclick={showBulkDeleteConfirmation}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       Delete Selected
@@ -1382,7 +1443,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isBulkUpdating}
-      on:click={closeBulkModal}
+      onclick={closeBulkModal}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       Cancel
@@ -1394,17 +1455,20 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
 
 <!-- Bulk Delete Confirmation Modal -->
 {#if showDeleteConfirmation}
- <!-- svelte-ignore a11y-click-events-have-key-events -->
- <!-- svelte-ignore a11y-no-static-element-interactions -->
  <div 
   class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
-  role="dialog" 
-  aria-modal="true" 
-  tabindex="-1" 
-  on:click={cancelBulkDelete} 
-  on:keydown={(e) => e.key === 'Escape' && cancelBulkDelete()}
+  role="button" 
+  tabindex="0"
+  aria-label="Close delete confirmation"
+  onclick={cancelBulkDelete} 
+  onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && cancelBulkDelete()}
  >
-  <div class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" on:click|stopPropagation>
+  <div 
+    class="relative top-20 mx-auto p-5 border max-w-lg shadow-lg rounded-md bg-white" 
+    role="dialog" 
+    aria-modal="true" 
+    aria-labelledby="bulk-delete-title"
+  >
     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
      <div class="sm:flex sm:items-start">
       <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
@@ -1413,7 +1477,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
        </svg>
       </div>
       <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-       <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+       <h3 class="text-lg leading-6 font-medium text-gray-900" id="bulk-delete-title">
         Delete Selected Games
        </h3>
        <div class="mt-2">
@@ -1428,7 +1492,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isDeletingBulk}
-      on:click={confirmBulkDelete}
+      onclick={confirmBulkDelete}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       {#if isDeletingBulk}
@@ -1444,7 +1508,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isDeletingBulk}
-      on:click={cancelBulkDelete}
+      onclick={cancelBulkDelete}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       Cancel
@@ -1456,18 +1520,20 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
 
 <!-- Bulk Add Platforms Modal -->
 {#if showBulkPlatformAddModal}
- <!-- svelte-ignore a11y-click-events-have-key-events -->
- <!-- svelte-ignore a11y-no-static-element-interactions -->
  <div 
   class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
-  role="dialog" 
-  aria-modal="true" 
-  aria-labelledby="bulk-platform-add-title"
-  tabindex="-1" 
-  on:click={closeBulkPlatformAddModal} 
-  on:keydown={(e) => e.key === 'Escape' && closeBulkPlatformAddModal()}
+  role="button" 
+  tabindex="0"
+  aria-label="Close add platforms modal"
+  onclick={closeBulkPlatformAddModal} 
+  onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeBulkPlatformAddModal()}
  >
-  <div class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+  <div 
+    class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" 
+    role="dialog" 
+    aria-modal="true" 
+    aria-labelledby="bulk-platform-add-title"
+  >
     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
      <div class="sm:flex sm:items-start">
       <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
@@ -1491,9 +1557,9 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
           bind:platformStorefronts={bulkPlatformStorefronts}
           bind:platformStoreUrls={bulkPlatformStoreUrls}
           igdbPlatformNames={[]}
-          on:platform-toggle={(e) => toggleBulkPlatform(e.detail.platformId)}
-          on:storefront-toggle={(e) => toggleBulkStorefrontForPlatform(e.detail.platformId, e.detail.storefrontId)}
-          on:store-url-change={(e) => setBulkStoreUrlForPlatform(e.detail.platformId, e.detail.url)}
+          onplatformtoggle={(e: any) => toggleBulkPlatform(e.detail.platformId)}
+          onstorefronttoggle={(e: any) => toggleBulkStorefrontForPlatform(e.detail.platformId, e.detail.storefrontId)}
+          onstoreurlchange={(e: any) => setBulkStoreUrlForPlatform(e.detail.platformId, e.detail.url)}
         />
        </div>
       </div>
@@ -1503,7 +1569,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isProcessingBulkPlatforms || bulkSelectedPlatforms.size === 0}
-      on:click={applyBulkAddPlatforms}
+      onclick={applyBulkAddPlatforms}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       {#if isProcessingBulkPlatforms}
@@ -1519,7 +1585,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isProcessingBulkPlatforms}
-      on:click={closeBulkPlatformAddModal}
+      onclick={closeBulkPlatformAddModal}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       Cancel
@@ -1531,18 +1597,20 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
 
 <!-- Bulk Remove Platforms Modal -->
 {#if showBulkPlatformRemoveModal}
- <!-- svelte-ignore a11y-click-events-have-key-events -->
- <!-- svelte-ignore a11y-no-static-element-interactions -->
  <div 
   class="fixed inset-0 bg-gray-500 bg-opacity-75 overflow-y-auto h-full w-full z-50" 
-  role="dialog" 
-  aria-modal="true" 
-  aria-labelledby="bulk-platform-remove-title"
-  tabindex="-1" 
-  on:click={closeBulkPlatformRemoveModal} 
-  on:keydown={(e) => e.key === 'Escape' && closeBulkPlatformRemoveModal()}
+  role="button" 
+  tabindex="0"
+  aria-label="Close remove platforms modal"
+  onclick={closeBulkPlatformRemoveModal} 
+  onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeBulkPlatformRemoveModal()}
  >
-  <div class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+  <div 
+    class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white" 
+    role="dialog" 
+    aria-modal="true" 
+    aria-labelledby="bulk-platform-remove-title"
+  >
     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
      <div class="sm:flex sm:items-start">
       <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
@@ -1564,7 +1632,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
         <PlatformRemovalSelector
           bind:availablePlatformAssociations={availablePlatformAssociations}
           bind:selectedAssociationIds={selectedAssociationIds}
-          on:selection-change={handleSelectionChange}
+          onselectionchange={handleSelectionChange}
         />
        </div>
       </div>
@@ -1574,7 +1642,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <button
       type="button"
       disabled={isProcessingBulkPlatforms || selectedAssociationIds.size === 0}
-      on:click={handleBulkRemovePlatforms}
+      onclick={handleBulkRemovePlatforms}
       class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
      >
       {#if isProcessingBulkPlatforms}
@@ -1589,7 +1657,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      </button>
      <button
       type="button"
-      on:click={closeBulkPlatformRemoveModal}
+      onclick={closeBulkPlatformRemoveModal}
       class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:mr-3 sm:w-auto sm:text-sm"
      >
       Cancel
