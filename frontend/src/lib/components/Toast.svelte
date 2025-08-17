@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { NotificationType } from '../stores/notifications.svelte.js';
+	import type { NotificationType } from '../stores/notifications.svelte';
 
 	export let id: string;
 	export let type: NotificationType = 'info';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { notifications } from '../stores/notifications.svelte.js';
+	import { notifications } from '../stores/notifications.svelte';
 	import Toast from './Toast.svelte';
 </script>
 
