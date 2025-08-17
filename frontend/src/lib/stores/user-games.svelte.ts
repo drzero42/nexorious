@@ -308,6 +308,7 @@ const initialEntityState: UserGamesEntityState = {
 
 function createUserGamesStore() {
   let entityState = $state<UserGamesEntityState>(initialEntityState);
+  let entitiesVersion = $state(0); // Version counter to trigger reactivity
 
   // Computed selectors for backward compatibility and performance
   const selectors = {
@@ -327,7 +328,11 @@ function createUserGamesStore() {
       return entityState.optimisticUpdates.isPending;
     },
     
-    byId: (id: string) => entityState.entities.get(id),
+    byId: (id: string) => {
+      // Access entitiesVersion to ensure reactivity tracking
+      entitiesVersion; // This makes the function reactive to entity changes
+      return entityState.entities.get(id);
+    },
     
     byStatus: (status: PlayStatus) => 
       selectors.userGames.filter(game => game.play_status === status),
@@ -356,6 +361,7 @@ function createUserGamesStore() {
       if (!entityState.ids.includes(entity.id)) {
         entityState.ids.unshift(entity.id); // Add to beginning like original
       }
+      entitiesVersion++; // Trigger reactivity
     },
     
     addMany: (entities: UserGame[]) => {
@@ -365,6 +371,7 @@ function createUserGamesStore() {
           entityState.ids.push(entity.id);
         }
       });
+      entitiesVersion++; // Trigger reactivity
     },
     
     updateOne: (id: string, changes: Partial<UserGame>) => {
@@ -372,6 +379,7 @@ function createUserGamesStore() {
       if (existing) {
         const updated = { ...existing, ...changes, updated_at: new Date().toISOString() };
         entityState.entities.set(id, updated);
+        entitiesVersion++; // Trigger reactivity
         
         // Update current user game if it's the same
         if (entityState.currentUserGameId === id) {
@@ -401,6 +409,7 @@ function createUserGamesStore() {
       if (entityState.currentUserGameId === id) {
         entityState.currentUserGameId = null;
       }
+      entitiesVersion++; // Trigger reactivity
     },
     
     removeMany: (ids: string[]) => {
@@ -411,12 +420,14 @@ function createUserGamesStore() {
         }
       });
       entityState.ids = entityState.ids.filter(id => !ids.includes(id));
+      entitiesVersion++; // Trigger reactivity
     },
     
     clear: () => {
       entityState.entities.clear();
       entityState.ids = [];
       entityState.currentUserGameId = null;
+      entitiesVersion++; // Trigger reactivity
     },
     
     replaceAll: (entities: UserGame[]) => {

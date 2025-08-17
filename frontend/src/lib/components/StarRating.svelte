@@ -292,25 +292,25 @@
 
   /* Star states */
   .star-empty {
-    color: theme('colors.gray.300');
+    color: var(--color-gray-300);
   }
 
   .star-filled {
-    color: theme('colors.yellow.400');
+    color: var(--color-yellow-400);
   }
 
   .star-interactive.star-empty:hover,
   .star-interactive.star-hovered {
-    color: theme('colors.yellow.300');
+    color: var(--color-yellow-300);
   }
 
   .star-interactive.star-filled:hover {
-    color: theme('colors.yellow.500');
+    color: var(--color-yellow-500);
   }
 
   .star-focused {
-    color: theme('colors.yellow.500') !important;
-    filter: drop-shadow(0 0 4px theme('colors.yellow.300'));
+    color: var(--color-yellow-500) !important;
+    filter: drop-shadow(0 0 4px var(--color-yellow-300));
   }
 
   /* Readonly state */
@@ -320,16 +320,16 @@
 
   /* Disabled state */
   .star-rating-disabled .star-empty {
-    color: theme('colors.gray.200');
+    color: var(--color-gray-200);
   }
 
   .star-rating-disabled .star-filled {
-    color: theme('colors.gray.400');
+    color: var(--color-gray-400);
   }
 
   /* Focus states */
   .star-rating-focused {
-    outline: 2px solid theme('colors.blue.300');
+    outline: 2px solid var(--color-primary-500);
     outline-offset: 2px;
     border-radius: 0.25rem;
   }

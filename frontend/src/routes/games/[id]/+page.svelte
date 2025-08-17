@@ -23,37 +23,26 @@
     getFieldError
   } from '$lib/utils/form-validation';
 
-  let isLoading = true;
-  let isEditing = false;
-  let isUpdatingFromIGDB = false;
-  let isRetrying = false;
-  let retryCount = 0;
+  let isLoading = $state(true);
+  let isEditing = $state(false);
+  let isUpdatingFromIGDB = $state(false);
+  let isRetrying = $state(false);
+  let retryCount = $state(0);
   
-  // Reactive game data from store
-  $: gameId = $page.params.id!;
-  $: game = userGames.selectors?.byId(gameId) ?? null;
-  $: isLoadingStore = userGames.value.isLoading;
+  // Svelte 5 derived state from store
+  let gameId = $derived($page.params.id!);
+  let game = $derived(userGames.selectors?.byId(gameId) ?? null);
+  let isLoadingStore = $derived(userGames.value.isLoading);
+  
+  
   
   // Combined loading state
-  $: isLoadingCombined = isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
+  let isLoadingCombined = $derived(isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false));
   
   // Visual feedback states for optimistic updates
-  $: hasOptimisticUpdates = userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false;
+  let hasOptimisticUpdates = $derived(userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
 
-  // Debug reactive state changes
-  $: {
-    console.log('[COMPONENT] Reactive state changed:', {
-      gameId,
-      hasGame: !!game,
-      gameTitle: game?.game?.title,
-      isLoading,
-      isLoadingStore,
-      isLoadingCombined,
-      hasOptimisticUpdates,
-      timestamp: new Date().toISOString()
-    });
-  }
-  let editData: {
+  let editData = $state<{
     // Personal data
     personal_rating?: number | null;
     play_status: PlayStatus;
@@ -61,96 +50,73 @@
     personal_notes?: string | undefined;
     is_loved: boolean;
     ownership_status: OwnershipStatus;
-  } = {
+  }>({
     play_status: 'not_started' as PlayStatus,
     hours_played: 0,
     is_loved: false,
     ownership_status: 'owned' as OwnershipStatus
-  };
+  });
 
   // Form validation state
-  let validationErrors: ValidationError[] = [];
-  let formDirtyFields = new Set<string>();
+  let validationErrors = $state<ValidationError[]>([]);
+  let formDirtyFields = $state(new Set<string>());
 
   // Computed validation state
-  $: hasValidationErrors = validationErrors.length > 0;
-  $: hasUnsavedChanges = formDirtyFields.size > 0;
-  $: canSaveForm = !hasValidationErrors && !hasOptimisticUpdates;
+  let hasValidationErrors = $derived(validationErrors.length > 0);
+  let hasUnsavedChanges = $derived(formDirtyFields.size > 0);
+  let canSaveForm = $derived(!hasValidationErrors && !hasOptimisticUpdates);
 
   // PlatformSelector component data model
-  let selectedPlatforms = new Set<string>();
-  let platformStorefronts = new Map<string, Set<string>>();
-  let platformStoreUrls = new Map<string, string>();
-  let isAddingPlatform = false;
-  let isRemovingPlatform = false;
-  let platformToRemove: { platformAssociationId: string; platformName: string; storefrontName: string } | null = null;
+  let selectedPlatforms = $state(new Set<string>());
+  let platformStorefronts = $state(new Map<string, Set<string>>());
+  let platformStoreUrls = $state(new Map<string, string>());
+  let isAddingPlatform = $state(false);
+  let isRemovingPlatform = $state(false);
+  let platformToRemove = $state<{ platformAssociationId: string; platformName: string; storefrontName: string } | null>(null);
 
   // IGDB platform data state  
-  let igdbPlatformNames: string[] = [];
+  let igdbPlatformNames = $state<string[]>([]);
 
   // Platform management functions (copied from Add Game page for full functionality)
   function togglePlatform(platformId: string) {
-    console.log('togglePlatform called with:', platformId, 'current selected:', selectedPlatforms);
-    
     if (selectedPlatforms.has(platformId)) {
-      console.log('Removing platform:', platformId);
       selectedPlatforms.delete(platformId);
       platformStorefronts.delete(platformId);
       platformStoreUrls.delete(platformId);
     } else {
-      console.log('Adding platform:', platformId);
       selectedPlatforms.add(platformId);
       
       // Create storefronts set and auto-select default if available
       const storefronts = new Set<string>();
       const platform = $platforms.platforms.find(p => p.id === platformId);
-      console.log('Found platform for auto-selection:', platform);
       
       if (platform?.default_storefront_id) {
-        console.log('Auto-selecting default storefront:', platform.default_storefront_id);
         storefronts.add(platform.default_storefront_id);
       }
       
       platformStorefronts.set(platformId, storefronts);
     }
     
-    // Trigger reactivity
-    selectedPlatforms = new Set(selectedPlatforms);
-    platformStorefronts = new Map(platformStorefronts);
-    platformStoreUrls = new Map(platformStoreUrls);
-    
-    console.log('Platform toggle complete. Selected platforms:', selectedPlatforms, 'storefronts:', platformStorefronts);
+    // Svelte 5 reactive state updates automatically
   }
 
   function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
-    console.log('toggleStorefrontForPlatform called:', { platformId, storefrontId });
-    
     const storefronts = platformStorefronts.get(platformId) || new Set<string>();
     if (storefronts.has(storefrontId)) {
-      console.log('Removing storefront:', storefrontId);
       storefronts.delete(storefrontId);
     } else {
-      console.log('Adding storefront:', storefrontId);
       storefronts.add(storefrontId);
     }
     
     platformStorefronts.set(platformId, storefronts);
-    platformStorefronts = new Map(platformStorefronts); // Trigger reactivity
-    
-    console.log('Updated storefronts for platform', platformId, ':', storefronts);
   }
 
   function setStoreUrlForPlatform(platformId: string, url: string) {
-    console.log('setStoreUrlForPlatform called:', { platformId, url });
-    
     if (url.trim()) {
       platformStoreUrls.set(platformId, url);
     } else {
       platformStoreUrls.delete(platformId);
     }
-    platformStoreUrls = new Map(platformStoreUrls); // Trigger reactivity
-    
-    console.log('Updated store URLs:', platformStoreUrls);
   }
 
   // Browser unload warning for unsaved changes
@@ -164,32 +130,19 @@
   }
 
   onMount(async () => {
-    console.log('[COMPONENT] onMount started for gameId:', gameId);
-    console.log('[COMPONENT] Initial state on mount:', {
-      hasGame: !!game,
-      isLoading,
-      isLoadingStore: userGames.value.isLoading,
-      storeEntityCount: userGames.value.userGames?.length || 0
-    });
-
-    // Load game details and platforms - authentication is handled by RouteGuard
-    console.log('[COMPONENT] Starting Promise.all for data loading...');
+      // Load game details and platforms - authentication is handled by RouteGuard
     await Promise.all([
       ensureGameLoaded(),
       loadPlatforms()
     ]);
 
-    console.log('[COMPONENT] Data loading completed');
-    console.log('[COMPONENT] Final state after mount:', {
-      hasGame: !!game,
-      gameTitle: game?.game?.title,
-      isLoading,
-      isLoadingStore: userGames.value.isLoading
-    });
+    // Load IGDB platform data after game is loaded
+    if (game) {
+      loadIGDBPlatformData();
+    }
 
     // Add beforeunload listener for unsaved changes warning
     window.addEventListener('beforeunload', handleBeforeUnload);
-    console.log('[COMPONENT] onMount completed');
   });
 
   onDestroy(() => {
@@ -198,55 +151,32 @@
   });
 
   async function ensureGameLoaded() {
-    console.log('[COMPONENT] ensureGameLoaded called for gameId:', gameId);
-    console.log('[COMPONENT] Current game state:', { hasGame: !!game, gameId: game?.id });
-    console.log('[COMPONENT] Store state:', { 
-      isLoading: userGames.value.isLoading,
-      entityCount: userGames.value.userGames?.length || 0,
-      hasPendingUpdates: userGames.entityState.optimisticUpdates.isPendingFor(gameId)
-    });
-
     try {
       isLoading = true;
-      console.log('[COMPONENT] Set isLoading = true');
       
       // Only fetch if we don't have the game in our store or if it's being updated
       if (!game || userGames.entityState.optimisticUpdates.isPendingFor(gameId)) {
-        console.log('[COMPONENT] Game not found in store or has pending updates, fetching...');
         await userGames.getUserGame(gameId);
-        console.log('[COMPONENT] getUserGame completed successfully');
         
         // Verify the game was loaded
         const gameAfterLoad = userGames.selectors?.byId(gameId);
-        console.log('[COMPONENT] Game after load:', { hasGame: !!gameAfterLoad, gameId: gameAfterLoad?.id });
-      } else {
-        console.log('[COMPONENT] Game already exists in store, skipping fetch');
+        
+        // Load IGDB platform data after successful game fetch
+        if (gameAfterLoad) {
+          loadIGDBPlatformData();
+        }
       }
     } catch (error) {
-      console.error('[COMPONENT] Failed to load game:', error);
-      console.error('[COMPONENT] Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        gameId,
-        timestamp: new Date().toISOString()
-      });
-      
       // Show user-friendly error notification
-      if (error instanceof Error && error.message.includes('404')) {
-        console.log('[COMPONENT] Game not found (404), this will show "Game not found" UI');
-      } else {
+      if (!(error instanceof Error && error.message.includes('404'))) {
         notifications.showError('Failed to load game details. Please try again.');
       }
     } finally {
       isLoading = false;
-      console.log('[COMPONENT] Set isLoading = false, ensureGameLoaded completed');
     }
   }
   
-  // Reactive update when game data changes
-  $: if (game) {
-    resetEditData();
-    loadIGDBPlatformData();
-  }
+  // IGDB platform data loading moved to proper lifecycle hooks to avoid state sync issues
 
   function loadIGDBPlatformData() {
     if (!game || !game.game.igdb_platform_names) {
@@ -276,17 +206,11 @@
   }
 
   async function addPlatforms() {
-    console.log('addPlatforms called with selected platforms:', selectedPlatforms);
-    console.log('Platform storefronts:', platformStorefronts);
-    console.log('Platform store URLs:', platformStoreUrls);
-    
     if (selectedPlatforms.size === 0 || !game) {
-      console.log('Missing required data - selectedPlatforms:', selectedPlatforms.size, 'game:', !!game);
       return;
     }
 
     try {
-      console.log('Starting platform addition...');
       isAddingPlatform = true;
       
       // Check if adding platform to no-longer-owned game
@@ -300,8 +224,6 @@
         const selectedStorefronts = platformStorefronts.get(platformId) || new Set<string>();
         const storeUrl = platformStoreUrls.get(platformId) || '';
         
-        console.log(`Processing platform ${platformId} with ${selectedStorefronts.size} storefronts`);
-
         // If no storefronts selected, add platform without storefront
         if (selectedStorefronts.size === 0) {
           const platformData: UserGamePlatformCreateRequest = {
@@ -313,7 +235,6 @@
             platformData.store_url = storeUrl.trim();
           }
 
-          console.log('Sending platform data to API (no storefront):', platformData);
           await userGames.addPlatformToUserGame(game.id, platformData);
           totalAddedPlatforms++;
         } else {
@@ -329,15 +250,12 @@
               platformData.store_url = storeUrl.trim();
             }
 
-            console.log('Sending platform data to API:', platformData);
             await userGames.addPlatformToUserGame(game.id, platformData);
             totalAddedStorefronts++;
           }
           totalAddedPlatforms++;
         }
       }
-      
-      console.log('API calls successful, platform data updated automatically...');
       
       // Immediately update dropdown if adding to no-longer-owned game
       if (wasNoLongerOwned && editData.ownership_status === OwnershipStatus.NO_LONGER_OWNED) {
@@ -349,11 +267,7 @@
       selectedPlatforms.clear();
       platformStorefronts.clear();
       platformStoreUrls.clear();
-      selectedPlatforms = new Set(selectedPlatforms);
-      platformStorefronts = new Map(platformStorefronts);
-      platformStoreUrls = new Map(platformStoreUrls);
 
-      console.log('Platform(s) added successfully');
       
       // Show success message
       if (totalAddedPlatforms === 1) {
@@ -452,19 +366,16 @@
     }
   }
 
-  // PlatformSelector event handlers (fixed to actually handle the events!)
+  // PlatformSelector event handlers
   function handlePlatformToggle(event: CustomEvent<{ platformId: string }>) {
-    console.log('handlePlatformToggle event received:', event.detail);
     togglePlatform(event.detail.platformId);
   }
 
   function handleStorefrontToggle(event: CustomEvent<{ platformId: string; storefrontId: string }>) {
-    console.log('handleStorefrontToggle event received:', event.detail);
     toggleStorefrontForPlatform(event.detail.platformId, event.detail.storefrontId);
   }
 
   function handleStoreUrlChange(event: CustomEvent<{ platformId: string; url: string }>) {
-    console.log('handleStoreUrlChange event received:', event.detail);
     setStoreUrlForPlatform(event.detail.platformId, event.detail.url);
     
     // Validate store URL
@@ -524,12 +435,10 @@
 
   function markFieldDirty(fieldName: string) {
     formDirtyFields.add(fieldName);
-    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
   }
 
   function clearDirtyState() {
     formDirtyFields.clear();
-    formDirtyFields = new Set(formDirtyFields); // Trigger reactivity
   }
 
   // Retry mechanism for failed operations
@@ -557,7 +466,6 @@
              error.message.includes('timeout'))) {
           
           if (attempt < maxRetries) {
-            console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
             isRetrying = true;
             retryCount = attempt;
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -687,13 +595,17 @@
       if (editData.personal_notes !== undefined) {
         progressUpdate.personal_notes = editData.personal_notes;
       }
-
       
       // Always update user-specific data (personal information) with retry
       await retryOperation(() => userGames.updateUserGame(gameId, userGameUpdate));
       await retryOperation(() => userGames.updateProgress(gameId, progressUpdate));
       
-      // Note: Game data is updated automatically through store optimistic updates
+      // Clear cached entity to force fresh fetch from server
+      userGames.entityState.entities.delete(gameId);
+      
+      // Refresh game data from server to ensure UI shows latest authoritative state
+      await userGames.getUserGame(gameId);
+      
       isEditing = false;
       
       // Clear validation and dirty state
@@ -799,7 +711,6 @@
 <RouteGuard requireAuth={true}>
 <div class="space-y-6">
 {#if isLoadingCombined}
-  {console.log('[TEMPLATE] Rendering loading state', { isLoadingCombined, isLoading, isLoadingStore, hasOptimisticUpdates })}
   <div class="flex items-center justify-center py-12">
     <div class="text-center">
       <svg class="mx-auto h-12 w-12 text-gray-400 loading" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -809,7 +720,6 @@
     </div>
   </div>
 {:else if !game}
-  {console.log('[TEMPLATE] Rendering game not found state', { game, gameId, isLoadingCombined })}
   <div class="text-center py-12">
     <div class="mx-auto max-w-md">
       <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -831,7 +741,6 @@
     </div>
   </div>
 {:else}
-  {console.log('[TEMPLATE] Rendering game content', { game: !!game, gameTitle: game?.game?.title, gameId })}
     <!-- Header -->
     <div class="sm:flex sm:items-center sm:justify-between">
       <div class="flex items-center space-x-4">
