@@ -1,26 +1,34 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { platforms } from '$lib/stores/platforms.svelte';
   import { buildIconUrl, getPlatformFallbackIcon } from '$lib/utils/icon-utils';
 
-  export let selectedPlatforms: Set<string>;
-  export let platformStorefronts: Map<string, Set<string>>;
-  export let platformStoreUrls: Map<string, string>;
-  export let igdbPlatformNames: string[] = [];
-
-  const dispatch = createEventDispatcher<{
-    'platform-toggle': { platformId: string };
-    'storefront-toggle': { platformId: string; storefrontId: string };
-    'store-url-change': { platformId: string; url: string };
-  }>();
+  export interface Props {
+    selectedPlatforms: Set<string>;
+    platformStorefronts: Map<string, Set<string>>;
+    platformStoreUrls: Map<string, string>;
+    igdbPlatformNames?: string[];
+    onplatformtoggle?: (event: CustomEvent<{ platformId: string }>) => void;
+    onstorefronttoggle?: (event: CustomEvent<{ platformId: string; storefrontId: string }>) => void;
+    onstoreurlchange?: (event: CustomEvent<{ platformId: string; url: string }>) => void;
+  }
+  
+  let { 
+    selectedPlatforms = $bindable(), 
+    platformStorefronts = $bindable(), 
+    platformStoreUrls = $bindable(), 
+    igdbPlatformNames = [],
+    onplatformtoggle,
+    onstorefronttoggle,
+    onstoreurlchange
+  }: Props = $props();
 
   // Local state for collapsible sections
-  let showOtherPlatforms = false;
-  let showOtherStorefronts = new Map<string, boolean>();
+  let showOtherPlatforms = $state(false);
+  let showOtherStorefronts = $state(new Map<string, boolean>());
 
   // Reactive statements for active platforms and storefronts
-  $: activePlatforms = $platforms.platforms.filter(platform => platform.is_active);
-  $: activeStorefronts = $platforms.storefronts.filter(storefront => storefront.is_active);
+  const activePlatforms = $derived(platforms.value?.platforms?.filter(platform => platform.is_active) || []);
+  const activeStorefronts = $derived(platforms.value?.storefronts?.filter(storefront => storefront.is_active) || []);
 
   // IGDB platform filtering helpers
   function isPlatformInIGDB(platform: any, igdbPlatforms: string[]): boolean {
@@ -43,20 +51,20 @@
   }
 
   // Reactive statements for filtered platforms
-  $: igdbPlatforms = getIGDBPlatforms(activePlatforms, igdbPlatformNames);
-  $: otherPlatforms = getOtherPlatforms(activePlatforms, igdbPlatformNames);
+  const igdbPlatforms = $derived(getIGDBPlatforms(activePlatforms, igdbPlatformNames));
+  const otherPlatforms = $derived(getOtherPlatforms(activePlatforms, igdbPlatformNames));
 
   // Platform and storefront management
   function togglePlatform(platformId: string) {
-    dispatch('platform-toggle', { platformId });
+    onplatformtoggle?.(new CustomEvent('platform-toggle', { detail: { platformId } }));
   }
 
   function toggleStorefrontForPlatform(platformId: string, storefrontId: string) {
-    dispatch('storefront-toggle', { platformId, storefrontId });
+    onstorefronttoggle?.(new CustomEvent('storefront-toggle', { detail: { platformId, storefrontId } }));
   }
 
   function setStoreUrlForPlatform(platformId: string, url: string) {
-    dispatch('store-url-change', { platformId, url });
+    onstoreurlchange?.(new CustomEvent('store-url-change', { detail: { platformId, url } }));
   }
 
   function isStorefrontSelectedForPlatform(platformId: string, storefrontId: string): boolean {
@@ -106,7 +114,7 @@
   </h3>
   <p class="text-sm text-gray-600 mb-4">Select where you own this game and optionally add store details.</p>
   
-  {#if $platforms.isLoading}
+  {#if platforms.value?.isLoading}
     <div class="text-center py-8">
       <svg class="animate-spin h-8 w-8 text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -114,7 +122,7 @@
       </svg>
       <p class="mt-2 text-sm text-gray-500">Loading platforms...</p>
     </div>
-  {:else if $platforms.error}
+  {:else if platforms.value?.error}
     <div class="rounded-lg bg-red-50 border border-red-200 p-4">
       <div class="flex">
         <div class="flex-shrink-0">
@@ -124,7 +132,7 @@
         </div>
         <div class="ml-3">
           <h3 class="text-sm font-medium text-red-900">Platform Loading Error</h3>
-          <p class="mt-1 text-sm text-red-800">{$platforms.error}</p>
+          <p class="mt-1 text-sm text-red-800">{platforms.value?.error}</p>
         </div>
       </div>
     </div>
@@ -148,7 +156,7 @@
                     id="platform-{platform.id}"
                     type="checkbox"
                     checked={selectedPlatforms.has(platform.id)}
-                    on:change={() => togglePlatform(platform.id)}
+                    onchange={() => togglePlatform(platform.id)}
                     class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                   />
                   <div class="ml-3 flex items-center gap-2 flex-1">
@@ -158,7 +166,7 @@
                         alt={platform.display_name} 
                         class="w-6 h-6 object-contain"
                         loading="lazy"
-                        on:error={(e) => {
+                        onerror={(e) => {
                           const img = e.target as HTMLImageElement;
                           const fallback = img.nextElementSibling as HTMLElement;
                           if (img && fallback) {
@@ -205,7 +213,7 @@
                                     <input
                                       type="checkbox"
                                       checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                      on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                      onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                       class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                     />
                                     <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
@@ -220,7 +228,7 @@
                             <div class="{getPrimaryStorefrontsForPlatform(platform.id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
                               <button
                                 type="button"
-                                on:click={() => toggleOtherStorefronts(platform.id)}
+                                onclick={() => toggleOtherStorefronts(platform.id)}
                                 class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
                               >
                                 <span class="flex items-center">
@@ -241,7 +249,7 @@
                                       <input
                                         type="checkbox"
                                         checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                        on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                        onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                         class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                       />
                                       <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
@@ -267,7 +275,7 @@
                           id="store-url-{platform.id}"
                           type="url"
                           value={platformStoreUrls.get(platform.id) || ''}
-                          on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                          oninput={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
                           placeholder="https://store.example.com/game"
                           class="form-input text-sm py-1.5"
                         />
@@ -286,7 +294,7 @@
         <div>
           <button
             type="button"
-            on:click={() => showOtherPlatforms = !showOtherPlatforms}
+            onclick={() => showOtherPlatforms = !showOtherPlatforms}
             class="w-full flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors duration-200"
           >
             <span class="text-sm font-medium text-gray-700 flex items-center">
@@ -310,7 +318,7 @@
                       id="platform-other-{platform.id}"
                       type="checkbox"
                       checked={selectedPlatforms.has(platform.id)}
-                      on:change={() => togglePlatform(platform.id)}
+                      onchange={() => togglePlatform(platform.id)}
                       class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                     />
                     <div class="ml-3 flex items-center gap-2 flex-1">
@@ -320,7 +328,7 @@
                           alt={platform.display_name} 
                           class="w-6 h-6 object-contain"
                           loading="lazy"
-                          on:error={(e) => {
+                          onerror={(e) => {
                             const img = e.target as HTMLImageElement;
                             const fallback = img.nextElementSibling as HTMLElement;
                             if (img && fallback) {
@@ -367,7 +375,7 @@
                                       <input
                                         type="checkbox"
                                         checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                        on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                        onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                         class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                       />
                                       <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
@@ -382,7 +390,7 @@
                               <div class="{getPrimaryStorefrontsForPlatform(platform.id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
                                 <button
                                   type="button"
-                                  on:click={() => toggleOtherStorefronts(platform.id)}
+                                  onclick={() => toggleOtherStorefronts(platform.id)}
                                   class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
                                 >
                                   <span class="flex items-center">
@@ -403,7 +411,7 @@
                                         <input
                                           type="checkbox"
                                           checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                          on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                          onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                         />
                                         <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
@@ -429,7 +437,7 @@
                             id="store-url-other-{platform.id}"
                             type="url"
                             value={platformStoreUrls.get(platform.id) || ''}
-                            on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                            oninput={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
                             placeholder="https://store.example.com/game"
                             class="form-input text-sm py-1.5"
                           />
@@ -454,7 +462,7 @@
                 id="platform-{platform.id}"
                 type="checkbox"
                 checked={selectedPlatforms.has(platform.id)}
-                on:change={() => togglePlatform(platform.id)}
+                onchange={() => togglePlatform(platform.id)}
                 class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
               />
               <div class="ml-3 flex items-center gap-2 flex-1">
@@ -464,7 +472,7 @@
                     alt={platform.display_name} 
                     class="w-6 h-6 object-contain"
                     loading="lazy"
-                    on:error={(e) => {
+                    onerror={(e) => {
                       const img = e.target as HTMLImageElement;
                       const fallback = img.nextElementSibling as HTMLElement;
                       if (img && fallback) {
@@ -511,7 +519,7 @@
                                 <input
                                   type="checkbox"
                                   checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                  on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                  onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                   class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                 />
                                 <span class="ml-2 text-sm font-medium text-gray-900">{storefront.display_name}</span>
@@ -526,7 +534,7 @@
                         <div class="{getPrimaryStorefrontsForPlatform(platform.id).length > 0 ? 'border-t border-gray-200 pt-3' : ''}">
                           <button
                             type="button"
-                            on:click={() => toggleOtherStorefronts(platform.id)}
+                            onclick={() => toggleOtherStorefronts(platform.id)}
                             class="flex items-center justify-between w-full p-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-colors duration-200"
                           >
                             <span class="flex items-center">
@@ -547,7 +555,7 @@
                                   <input
                                     type="checkbox"
                                     checked={isStorefrontSelectedForPlatform(platform.id, storefront.id)}
-                                    on:change={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
+                                    onchange={() => toggleStorefrontForPlatform(platform.id, storefront.id)}
                                     class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                   />
                                   <span class="ml-2 text-sm text-gray-500 italic">{storefront.display_name}</span>
@@ -573,7 +581,7 @@
                       id="store-url-{platform.id}"
                       type="url"
                       value={platformStoreUrls.get(platform.id) || ''}
-                      on:input={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
+                      oninput={(e) => setStoreUrlForPlatform(platform.id, e.currentTarget.value)}
                       placeholder="https://store.example.com/game"
                       class="form-input text-sm py-1.5"
                     />

@@ -1,21 +1,24 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { buildIconUrl, getPlatformFallbackIcon } from '$lib/utils/icon-utils';
 
-  export let availablePlatformAssociations: Array<{
-    platformId: string;
-    platformName: string;
-    storefrontId?: string;
-    storefrontName?: string;
-    associationIds: string[];
-    platformIconUrl?: string;
-  }> = [];
+  export interface Props {
+    availablePlatformAssociations?: Array<{
+      platformId: string;
+      platformName: string;
+      storefrontId?: string;
+      storefrontName?: string;
+      associationIds: string[];
+      platformIconUrl?: string;
+    }>;
+    selectedAssociationIds?: Set<string>;
+    onselectionchange?: (event: CustomEvent<{ selectedAssociationIds: Set<string> }>) => void;
+  }
 
-  export let selectedAssociationIds: Set<string> = new Set();
-
-  const dispatch = createEventDispatcher<{
-    'selection-change': { selectedAssociationIds: Set<string> };
-  }>();
+  let { 
+    availablePlatformAssociations = $bindable([]), 
+    selectedAssociationIds = $bindable(new Set()),
+    onselectionchange
+  }: Props = $props();
 
   function toggleAssociation(associationIds: string[]) {
     const newSelection = new Set(selectedAssociationIds);
@@ -32,7 +35,7 @@
     }
     
     selectedAssociationIds = newSelection;
-    dispatch('selection-change', { selectedAssociationIds: newSelection });
+    onselectionchange?.(new CustomEvent('selection-change', { detail: { selectedAssociationIds: newSelection } }));
   }
 
   function isAssociationSelected(associationIds: string[]): boolean {
@@ -71,7 +74,7 @@
           <input
             type="checkbox"
             checked={isAssociationSelected(association.associationIds)}
-            on:change={() => toggleAssociation(association.associationIds)}
+            onchange={() => toggleAssociation(association.associationIds)}
             class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
           />
           <div class="ml-3 flex items-center gap-2 flex-1">
@@ -81,7 +84,7 @@
                 alt={association.platformName} 
                 class="w-6 h-6 object-contain"
                 loading="lazy"
-                on:error={(e) => {
+                onerror={(e) => {
                   const img = e.target as HTMLImageElement;
                   const fallback = img.nextElementSibling as HTMLElement;
                   if (img && fallback) {

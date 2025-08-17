@@ -1,16 +1,20 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   
-  export let target: HTMLElement | string = 'body';
-  export let onPortalReady: (() => void) | null = null;
+  interface Props {
+    target?: HTMLElement | string;
+    onPortalReady?: (() => void) | null;
+    onready?: () => void;
+    children?: import('svelte').Snippet;
+  }
   
-  const dispatch = createEventDispatcher<{ ready: void }>();
+  let { target = 'body', onPortalReady = null, onready, children }: Props = $props();
   
   let portalTarget: HTMLElement | null = null;
   let portalContainer: HTMLElement | null = null;
-  let contentElement: HTMLElement | null = null;
-  let isReady = false;
+  let contentElement = $state<HTMLElement | null>(null);
+  let isReady = $state(false);
   
   onMount(async () => {
     if (!browser) return;
@@ -37,7 +41,7 @@
     if (onPortalReady) {
       onPortalReady();
     }
-    dispatch('ready');
+    onready?.();
   });
   
   onDestroy(() => {
@@ -47,15 +51,17 @@
   });
   
   // Move content to portal when ready
-  $: if (isReady && portalContainer && contentElement) {
-    portalContainer.appendChild(contentElement);
-    contentElement.style.display = '';
-  }
+  $effect(() => {
+    if (isReady && portalContainer && contentElement) {
+      portalContainer.appendChild(contentElement);
+      contentElement.style.display = '';
+    }
+  });
 </script>
 
 {#if browser}
   <!-- Content that will be moved to portal -->
   <div bind:this={contentElement} style="display: none;">
-    <slot />
+    {@render children?.()}
   </div>
 {/if}

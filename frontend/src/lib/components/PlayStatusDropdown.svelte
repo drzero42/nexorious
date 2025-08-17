@@ -8,9 +8,10 @@
     class?: string;
     id?: string;
     name?: string;
+    onchange?: (event: CustomEvent<{ value: PlayStatus }>) => void;
   }
 
-  let { value = $bindable(), disabled = false, class: className = '', id, name }: Props = $props();
+  let { value = $bindable(), disabled = false, class: className = '', id, name, onchange }: Props = $props();
 
   const dispatch = createEventDispatcher<{
     change: { value: PlayStatus };
@@ -72,6 +73,7 @@
     const newValue = target.value as PlayStatus;
     value = newValue;
     dispatch('change', { value: newValue });
+    onchange?.(new CustomEvent('change', { detail: { value: newValue } }));
   }
 
   function getStatusColor(statusValue: PlayStatus): string {

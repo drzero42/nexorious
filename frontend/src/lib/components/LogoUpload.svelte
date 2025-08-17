@@ -1,27 +1,34 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { buildIconUrl } from '$lib/utils/icon-utils';
   
-  // Component props
-  export let entityType: 'platforms' | 'storefronts';
-  export let entityId: string;
-  export let currentIconUrl: string | null | undefined = null;
-  export let disabled: boolean = false;
+  interface Props {
+    entityType: 'platforms' | 'storefronts';
+    entityId: string;
+    currentIconUrl?: string | null;
+    disabled?: boolean;
+    onuploaded?: (event: CustomEvent<{ theme: string; iconUrl: string; message: string }>) => void;
+    ondeleted?: (event: CustomEvent<{ theme: string; message: string }>) => void;
+    onerror?: (event: CustomEvent<{ message: string }>) => void;
+  }
+  
+  let { 
+    entityType, 
+    entityId, 
+    currentIconUrl = null, 
+    disabled = false,
+    onuploaded,
+    ondeleted,
+    onerror
+  }: Props = $props();
   
   // Component state
-  let dragOver = false;
-  let uploading = false;
-  let selectedTheme: 'light' | 'dark' = 'light';
-  let files: FileList | null = null;
+  let dragOver = $state(false);
+  let uploading = $state(false);
+  let selectedTheme = $state<'light' | 'dark'>('light');
+  let files = $state<FileList | null>(null);
   let fileInput: HTMLInputElement;
-  let previewUrl: string | null = null;
-  let error: string | null = null;
-  
-  const dispatch = createEventDispatcher<{
-    uploaded: { theme: string; iconUrl: string; message: string };
-    deleted: { theme: string; message: string };
-    error: { message: string };
-  }>();
+  let previewUrl = $state<string | null>(null);
+  let error = $state<string | null>(null);
   
   // Supported file types
   const supportedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'];
@@ -121,16 +128,18 @@
       previewUrl = null;
       if (fileInput) fileInput.value = '';
       
-      dispatch('uploaded', {
-        theme: selectedTheme,
-        iconUrl: result.icon_url,
-        message: result.message
-      });
+      onuploaded?.(new CustomEvent('uploaded', {
+        detail: {
+          theme: selectedTheme,
+          iconUrl: result.icon_url,
+          message: result.message
+        }
+      }));
       
     } catch (err: any) {
       const errorMessage = (err as Error).message ?? 'Upload failed';
       error = errorMessage;
-      dispatch('error', { message: errorMessage });
+      onerror?.(new CustomEvent('error', { detail: { message: errorMessage } }));
     } finally {
       uploading = false;
     }
@@ -158,15 +167,17 @@
       
       const result = await response.json();
       
-      dispatch('deleted', {
-        theme: theme || 'all',
-        message: result.message
-      });
+      ondeleted?.(new CustomEvent('deleted', {
+        detail: {
+          theme: theme || 'all',
+          message: result.message
+        }
+      }));
       
     } catch (err: any) {
       const errorMessage = (err as Error).message ?? 'Delete failed';
       error = errorMessage;
-      dispatch('error', { message: errorMessage });
+      onerror?.(new CustomEvent('error', { detail: { message: errorMessage } }));
     }
   }
   
@@ -215,14 +226,14 @@
           src={buildIconUrl(currentIconUrl)} 
           alt="Current logo" 
           class="w-8 h-8 object-contain"
-          on:error={(e) => {
+          onerror={(e) => {
             const img = e.target as HTMLImageElement;
             img.style.display = 'none';
           }}
         />
         <button
           type="button"
-          on:click={() => deleteLogo('light')}
+          onclick={() => deleteLogo('light')}
           class="text-red-600 hover:text-red-900 text-sm"
           {disabled}
         >
@@ -245,13 +256,13 @@
           ? 'border-primary-400 bg-primary-50' 
           : 'border-gray-300 hover:border-gray-400'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-      on:dragover={handleDragOver}
-      on:dragleave={handleDragLeave}
-      on:drop={handleDrop}
-      on:click={() => !disabled && fileInput.click()}
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+      ondrop={handleDrop}
+      onclick={() => !disabled && fileInput.click()}
       role="button"
       tabindex="0"
-      on:keydown={(e) => {
+      onkeydown={(e) => {
         if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
           fileInput.click();
         }
@@ -267,7 +278,7 @@
           <div class="flex justify-center space-x-2">
             <button
               type="button"
-              on:click|stopPropagation={uploadLogo}
+              onclick={(e) => { e.stopPropagation(); uploadLogo(); }}
               disabled={uploading || disabled}
               class="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700 disabled:opacity-50"
             >
@@ -275,7 +286,7 @@
             </button>
             <button
               type="button"
-              on:click|stopPropagation={clearPreview}
+              onclick={(e) => { e.stopPropagation(); clearPreview(); }}
               {disabled}
               class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-400"
             >
@@ -309,7 +320,7 @@
       bind:this={fileInput}
       type="file"
       accept="image/svg+xml,image/png,image/jpeg,image/webp"
-      on:change={handleFileInputChange}
+      onchange={handleFileInputChange}
       class="hidden"
       {disabled}
     />

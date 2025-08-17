@@ -33,11 +33,19 @@ const mockEditor = {
 		if (format === 'heading' && options?.level === 2) return false;
 		if (format === 'heading' && options?.level === 3) return false;
 		return false;
-	})
+	}),
+	// Add callback placeholders that will be set during component mount
+	onSelectionUpdate: undefined as (() => void) | undefined,
+	onUpdate: undefined as ((params: { editor: any }) => void) | undefined
 };
 
 vi.mock('@tiptap/core', () => ({
-	Editor: vi.fn(() => mockEditor)
+	Editor: vi.fn((config: any) => {
+		// Capture the callbacks from the component
+		mockEditor.onSelectionUpdate = config.onSelectionUpdate;
+		mockEditor.onUpdate = config.onUpdate;
+		return mockEditor;
+	})
 }));
 
 vi.mock('@tiptap/starter-kit', () => ({
@@ -191,30 +199,48 @@ describe('RichTextEditor', () => {
 	});
 
 	describe('Button States', () => {
-		it('should show active state for bold when text is bold', () => {
+		it('should show active state for bold when text is bold', async () => {
 			mockEditor.isActive.mockImplementation((format: string) => format === 'bold');
 			
 			render(RichTextEditor, { props: defaultProps });
+			
+			// Trigger reactivity update
+			mockEditor.onSelectionUpdate?.();
+			
+			// Wait for next tick for reactivity to update
+			await new Promise(resolve => setTimeout(resolve, 0));
 			
 			const boldButton = screen.getByLabelText('Bold (Ctrl+B)');
 			expect(boldButton).toHaveClass('active');
 		});
 
-		it('should show active state for italic when text is italic', () => {
+		it('should show active state for italic when text is italic', async () => {
 			mockEditor.isActive.mockImplementation((format: string) => format === 'italic');
 			
 			render(RichTextEditor, { props: defaultProps });
+			
+			// Trigger reactivity update
+			mockEditor.onSelectionUpdate?.();
+			
+			// Wait for next tick for reactivity to update
+			await new Promise(resolve => setTimeout(resolve, 0));
 			
 			const italicButton = screen.getByLabelText('Italic (Ctrl+I)');
 			expect(italicButton).toHaveClass('active');
 		});
 
-		it('should show active state for heading when text is heading', () => {
+		it('should show active state for heading when text is heading', async () => {
 			mockEditor.isActive.mockImplementation((format: string, options?: any) => 
 				format === 'heading' && options?.level === 1
 			);
 			
 			render(RichTextEditor, { props: defaultProps });
+			
+			// Trigger reactivity update
+			mockEditor.onSelectionUpdate?.();
+			
+			// Wait for next tick for reactivity to update
+			await new Promise(resolve => setTimeout(resolve, 0));
 			
 			const h1Button = screen.getByLabelText('Heading 1');
 			expect(h1Button).toHaveClass('active');
@@ -384,7 +410,7 @@ describe('RichTextEditor', () => {
 	});
 
 	describe('Button Interaction States', () => {
-		it('should handle multiple button states simultaneously', () => {
+		it('should handle multiple button states simultaneously', async () => {
 			mockEditor.isActive.mockImplementation((format: string, options?: any) => {
 				if (format === 'bold') return true;
 				if (format === 'italic') return true;
@@ -393,6 +419,12 @@ describe('RichTextEditor', () => {
 			});
 			
 			render(RichTextEditor, { props: defaultProps });
+			
+			// Trigger reactivity update
+			mockEditor.onSelectionUpdate?.();
+			
+			// Wait for next tick for reactivity to update
+			await new Promise(resolve => setTimeout(resolve, 0));
 			
 			expect(screen.getByLabelText('Bold (Ctrl+B)')).toHaveClass('active');
 			expect(screen.getByLabelText('Italic (Ctrl+I)')).toHaveClass('active');

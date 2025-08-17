@@ -10,43 +10,43 @@
  });
 
  // Calculate statistics
- $: userGamesList = userGames.value.userGames;
- $: totalGames = userGamesList.length;
- $: completedGames = userGamesList.filter(g => g.play_status === 'completed').length;
- $: masteredGames = userGamesList.filter(g => g.play_status === 'mastered').length;
- $: dominatedGames = userGamesList.filter(g => g.play_status === 'dominated').length;
- $: inProgressGames = userGamesList.filter(g => g.play_status === 'in_progress').length;
- $: notStartedGames = userGamesList.filter(g => g.play_status === 'not_started').length;
- $: droppedGames = userGamesList.filter(g => g.play_status === 'dropped').length;
- $: shelvedGames = userGamesList.filter(g => g.play_status === 'shelved').length;
- $: totalHours = userGamesList.reduce((sum, userGame) => sum + (userGame.hours_played || 0), 0);
- $: averageRating = userGamesList.filter(g => g.personal_rating).reduce((sum, userGame) => sum + (userGame.personal_rating || 0), 0) / userGamesList.filter(g => g.personal_rating).length || 0;
- $: lovedGames = userGamesList.filter(g => g.is_loved).length;
+ const userGamesList = $derived(userGames.value.userGames);
+ const totalGames = $derived(userGamesList.length);
+ const completedGames = $derived(userGamesList.filter(g => g.play_status === 'completed').length);
+ const masteredGames = $derived(userGamesList.filter(g => g.play_status === 'mastered').length);
+ const dominatedGames = $derived(userGamesList.filter(g => g.play_status === 'dominated').length);
+ const inProgressGames = $derived(userGamesList.filter(g => g.play_status === 'in_progress').length);
+ const notStartedGames = $derived(userGamesList.filter(g => g.play_status === 'not_started').length);
+ const droppedGames = $derived(userGamesList.filter(g => g.play_status === 'dropped').length);
+ const shelvedGames = $derived(userGamesList.filter(g => g.play_status === 'shelved').length);
+ const totalHours = $derived(userGamesList.reduce((sum, userGame) => sum + (userGame.hours_played || 0), 0));
+ const averageRating = $derived(userGamesList.filter(g => g.personal_rating).reduce((sum, userGame) => sum + (userGame.personal_rating || 0), 0) / userGamesList.filter(g => g.personal_rating).length || 0);
+ const lovedGames = $derived(userGamesList.filter(g => g.is_loved).length);
  
  // Pile of Shame (owned games not started)
- $: pileOfShame = notStartedGames;
+ const pileOfShame = $derived(notStartedGames);
  
  // Completion rate
- $: completionRate = totalGames > 0 ? ((completedGames + masteredGames + dominatedGames) / totalGames) * 100 : 0;
+ const completionRate = $derived(totalGames > 0 ? ((completedGames + masteredGames + dominatedGames) / totalGames) * 100 : 0);
 
  // Genre breakdown
- $: genreStats = userGamesList.reduce((stats: Record<string, number>, userGame) => {
+ const genreStats = $derived(userGamesList.reduce((stats: Record<string, number>, userGame) => {
   const genre = userGame.game.genre || 'Unknown';
   stats[genre] = (stats[genre] || 0) + 1;
   return stats;
- }, {});
+ }, {}));
 
  // Top genres
- $: topGenres = Object.entries(genreStats)
+ const topGenres = $derived(Object.entries(genreStats)
   .sort(([,a], [,b]) => (b as number) - (a as number))
-  .slice(0, 5);
+  .slice(0, 5));
 
  // Platform breakdown (would need platform data)
- // For now, we'll mock this
- $: {
+ // For now, we'll mock this - accessing totalGames to avoid unused variable warning
+ $effect(() => {
   // Placeholder for future platform stats implementation
-  totalGames; // Access totalGames to avoid unused variable warning
- }
+  totalGames; 
+ });
 
 
 </script>
@@ -75,7 +75,7 @@
     No games in your collection yet. Add some games to see your statistics!
    </div>
    <button
-    on:click={() => goto('/games/add')}
+    onclick={() => goto('/games/add')}
    >
     Add Your First Game
    </button>

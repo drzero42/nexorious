@@ -8,6 +8,7 @@
     id?: string;
     name?: string;
     placeholder?: string;
+    onchange?: (event: CustomEvent<{ value: number }>) => void;
   }
 
   let { 
@@ -16,7 +17,8 @@
     class: className = '', 
     id, 
     name, 
-    placeholder = 'Enter time played...'
+    placeholder = 'Enter time played...',
+    onchange
   }: Props = $props();
 
   const dispatch = createEventDispatcher<{
@@ -32,6 +34,7 @@
     const newValue = hours + (minutes / 60);
     value = Math.round(newValue * 100) / 100; // Round to 2 decimal places
     dispatch('change', { value });
+    onchange?.(new CustomEvent('change', { detail: { value } }));
   }
 
   // Update internal state when external value changes
@@ -45,6 +48,7 @@
     const newValue = parseFloat(target.value) || 0;
     value = newValue;
     dispatch('change', { value: newValue });
+    onchange?.(new CustomEvent('change', { detail: { value: newValue } }));
   }
 
   function incrementHours() {
@@ -70,6 +74,7 @@
   function addQuickTime(timeValue: number) {
     value = Math.max(0, value + timeValue);
     dispatch('change', { value });
+    onchange?.(new CustomEvent('change', { detail: { value } }));
   }
 </script>
 

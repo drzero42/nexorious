@@ -110,7 +110,7 @@
           </div>
         {/if}
 
-        <form on:submit|preventDefault={handleCreateUser} class="space-y-6">
+        <form onsubmit={(e) => { e.preventDefault(); handleCreateUser(); }} class="space-y-6">
           <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <!-- Username -->
             <div class="sm:col-span-2">
@@ -121,7 +121,7 @@
                 id="username"
                 type="text"
                 bind:value={username}
-                on:keydown={handleKeydown}
+                onkeydown={handleKeydown}
                 required
                 placeholder="Enter username"
                 class="form-input"
@@ -142,7 +142,7 @@
                 id="password"
                 type="password"
                 bind:value={password}
-                on:keydown={handleKeydown}
+                onkeydown={handleKeydown}
                 required
                 placeholder="Enter password"
                 class="form-input"
@@ -163,7 +163,7 @@
                 id="confirm-password"
                 type="password"
                 bind:value={confirmPassword}
-                on:keydown={handleKeydown}
+                onkeydown={handleKeydown}
                 required
                 placeholder="Confirm password"
                 class="form-input"
@@ -198,7 +198,7 @@
           <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
             <button
               type="button"
-              on:click={() => goto('/admin/users')}
+              onclick={() => goto('/admin/users')}
               disabled={isLoading}
               class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -94,7 +94,7 @@
       
       // Create storefronts set and auto-select default if available
       const storefronts = new Set<string>();
-      const platform = $platforms.platforms.find(p => p.id === platformId);
+      const platform = platforms.value?.platforms?.find(p => p.id === platformId);
       if (platform?.default_storefront_id) {
         storefronts.add(platform.default_storefront_id);
       }
@@ -246,7 +246,7 @@
     </div>
     <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
       <button
-        on:click={() => goto('/games')}
+        onclick={() => goto('/games')}
         class="btn-secondary inline-flex items-center gap-x-2"
       >
         <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -283,7 +283,7 @@
     <GameSearchStep
       bind:searchQuery
       bind:isSearching
-      on:search={handleSearch}
+      onsearch={handleSearch}
     />
   {:else if step === 'confirm'}
     <GameConfirmStep
@@ -291,8 +291,8 @@
       {addingGameId}
       {isGameOwned}
       {getOwnedPlatformDetailsForGame}
-      on:back={goBack}
-      on:game-click={handleGameClick}
+      onback={goBack}
+      ongameclick={handleGameClick}
     />
   {:else if step === 'metadata-confirm'}
     <MetadataConfirmStep
@@ -302,11 +302,11 @@
       bind:selectedPlatforms
       bind:platformStorefronts
       bind:platformStoreUrls
-      on:back={goBack}
-      on:confirm={confirmGameAddition}
-      on:platform-toggle={handlePlatformToggle}
-      on:storefront-toggle={handleStorefrontToggle}
-      on:store-url-change={handleStoreUrlChange}
+      onback={goBack}
+      onconfirm={confirmGameAddition}
+      onplatformtoggle={handlePlatformToggle}
+      onstorefronttoggle={handleStorefrontToggle}
+      onstoreurlchange={handleStoreUrlChange}
     />
   {/if}
 </div>

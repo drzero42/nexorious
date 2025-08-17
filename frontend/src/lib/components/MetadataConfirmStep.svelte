@@ -1,48 +1,123 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import PlatformSelector from './PlatformSelector.svelte';
   import StarRating from './StarRating.svelte';
 
-  export let selectedGame: IGDBGameCandidate | null;
-  export let gameData: any;
-  export let addingGameId: string | null = null;
-  export let selectedPlatforms: Set<string>;
-  export let platformStorefronts: Map<string, Set<string>>;
-  export let platformStoreUrls: Map<string, string>;
+  interface Props {
+    selectedGame?: IGDBGameCandidate | null;
+    gameData?: any;
+    addingGameId?: string | null;
+    selectedPlatforms?: Set<string>;
+    platformStorefronts?: Map<string, Set<string>>;
+    platformStoreUrls?: Map<string, string>;
+    onback?: () => void;
+    oneditdetails?: () => void;
+    onconfirm?: () => void;
+    onplatformtoggle?: (event: CustomEvent<{ platformId: string }>) => void;
+    onstorefronttoggle?: (event: CustomEvent<{ platformId: string; storefrontId: string }>) => void;
+    onstoreurlchange?: (event: CustomEvent<{ platformId: string; url: string }>) => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    'back': void;
-    'edit-details': void;
-    'confirm': void;
-    'platform-toggle': { platformId: string };
-    'storefront-toggle': { platformId: string; storefrontId: string };
-    'store-url-change': { platformId: string; url: string };
-  }>();
+  let { 
+    selectedGame = null, 
+    gameData = $bindable({}), 
+    addingGameId = null, 
+    selectedPlatforms = $bindable(new Set()), 
+    platformStorefronts = $bindable(new Map()), 
+    platformStoreUrls = $bindable(new Map()),
+    onback,
+    oneditdetails,
+    onconfirm,
+    onplatformtoggle,
+    onstorefronttoggle,
+    onstoreurlchange
+  }: Props = $props();
+
+  // Ensure gameData has default properties and make them reactive
+  $effect(() => {
+    if (gameData && typeof gameData === 'object') {
+      if (!('play_status' in gameData)) gameData.play_status = 'not_started';
+      if (!('ownership_status' in gameData)) gameData.ownership_status = 'owned';
+      if (!('personal_rating' in gameData)) gameData.personal_rating = 0;
+      if (!('hours_played' in gameData)) gameData.hours_played = 0;
+      if (!('is_loved' in gameData)) gameData.is_loved = false;
+      if (!('personal_notes' in gameData)) gameData.personal_notes = '';
+    }
+  });
+
+  // Create reactive accessors for form fields
+  let playStatus = $derived.by(() => {
+    return gameData?.play_status ?? 'not_started';
+  });
+
+  let ownershipStatus = $derived.by(() => {
+    return gameData?.ownership_status ?? 'owned';
+  });
+
+  let personalRating = $derived.by(() => {
+    return gameData?.personal_rating ?? 0;
+  });
+
+  let hoursPlayed = $derived.by(() => {
+    return gameData?.hours_played ?? 0;
+  });
+
+  let isLoved = $derived.by(() => {
+    return gameData?.is_loved ?? false;
+  });
+
+  let personalNotes = $derived.by(() => {
+    return gameData?.personal_notes ?? '';
+  });
+
+  // Functions to update gameData properties
+  function updatePlayStatus(value: string) {
+    if (gameData) gameData.play_status = value;
+  }
+
+  function updateOwnershipStatus(value: string) {
+    if (gameData) gameData.ownership_status = value;
+  }
+
+  function updatePersonalRating(value: number) {
+    if (gameData) gameData.personal_rating = value;
+  }
+
+  function updateHoursPlayed(value: number) {
+    if (gameData) gameData.hours_played = value;
+  }
+
+  function updateIsLoved(value: boolean) {
+    if (gameData) gameData.is_loved = value;
+  }
+
+  function updatePersonalNotes(value: string) {
+    if (gameData) gameData.personal_notes = value;
+  }
 
   function handleBack() {
-    dispatch('back');
+    onback?.();
   }
 
   function handleEditDetails() {
-    dispatch('edit-details');
+    oneditdetails?.();
   }
 
   function handleConfirm() {
-    dispatch('confirm');
+    onconfirm?.();
   }
 
   function handlePlatformToggle(event: CustomEvent<{ platformId: string }>) {
-    dispatch('platform-toggle', event.detail);
+    onplatformtoggle?.(event);
   }
 
   function handleStorefrontToggle(event: CustomEvent<{ platformId: string; storefrontId: string }>) {
-    dispatch('storefront-toggle', event.detail);
+    onstorefronttoggle?.(event);
   }
 
   function handleStoreUrlChange(event: CustomEvent<{ platformId: string; url: string }>) {
-    dispatch('store-url-change', event.detail);
+    onstoreurlchange?.(event);
   }
 </script>
 
@@ -156,7 +231,8 @@
         </label>
         <select
           id="metadata-play-status"
-          bind:value={gameData.play_status}
+          value={playStatus}
+          onchange={(e) => updatePlayStatus((e.target as HTMLSelectElement).value)}
           class="form-input"
         >
           <option value="not_started">🆕 Not Started</option>
@@ -176,7 +252,8 @@
         </label>
         <select
           id="metadata-ownership-status"
-          bind:value={gameData.ownership_status}
+          value={ownershipStatus}
+          onchange={(e) => updateOwnershipStatus((e.target as HTMLSelectElement).value)}
           class="form-input"
         >
           <option value="owned">💿 Owned</option>
@@ -186,15 +263,15 @@
           <option value="no_longer_owned">📦 No Longer Owned</option>
         </select>
         <p class="mt-1 text-xs text-gray-500">
-          {#if gameData.ownership_status === 'owned'}
+          {#if ownershipStatus === 'owned'}
             You own this game permanently
-          {:else if gameData.ownership_status === 'borrowed'}
+          {:else if ownershipStatus === 'borrowed'}
             Temporarily borrowed from someone
-          {:else if gameData.ownership_status === 'rented'}
+          {:else if ownershipStatus === 'rented'}
             Rented from a store or service
-          {:else if gameData.ownership_status === 'subscription'}
+          {:else if ownershipStatus === 'subscription'}
             Available through a subscription service
-          {:else if gameData.ownership_status === 'no_longer_owned'}
+          {:else if ownershipStatus === 'no_longer_owned'}
             Previously owned but no longer have access
           {/if}
         </p>
@@ -207,12 +284,12 @@
         <div class="mt-1">
           <StarRating
             id="metadata-personal-rating"
-            bind:value={gameData.personal_rating}
+            value={personalRating}
             size="md"
             clearable={true}
             showLabel={true}
             onchange={(e) => {
-              gameData.personal_rating = e.detail.value;
+              updatePersonalRating(e.detail.value ?? 0);
             }}
           />
         </div>
@@ -228,7 +305,8 @@
             type="number"
             min="0"
             step="0.1"
-            bind:value={gameData.hours_played}
+            value={hoursPlayed}
+            oninput={(e) => updateHoursPlayed(Number((e.target as HTMLInputElement).value))}
             placeholder="0"
             class="form-input pr-10"
           />
@@ -244,7 +322,8 @@
         <input
           id="metadata-is-loved"
           type="checkbox"
-          bind:checked={gameData.is_loved}
+          checked={isLoved}
+          onchange={(e) => updateIsLoved((e.target as HTMLInputElement).checked)}
           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
         />
         <span class="ml-3 text-sm font-medium text-gray-900 flex items-center gap-1">
@@ -261,7 +340,8 @@
       </label>
       <textarea
         id="metadata-personal-notes"
-        bind:value={gameData.personal_notes}
+        value={personalNotes}
+        oninput={(e) => updatePersonalNotes((e.target as HTMLTextAreaElement).value)}
         rows="3"
         placeholder="Add your thoughts, memories, or notes about this game..."
         class="form-input resize-none"
@@ -276,9 +356,9 @@
       bind:platformStorefronts
       bind:platformStoreUrls
       igdbPlatformNames={selectedGame?.platforms || []}
-      on:platform-toggle={handlePlatformToggle}
-      on:storefront-toggle={handleStorefrontToggle}
-      on:store-url-change={handleStoreUrlChange}
+      onplatformtoggle={handlePlatformToggle}
+      onstorefronttoggle={handleStorefrontToggle}
+      onstoreurlchange={handleStoreUrlChange}
     />
   </div>
 
@@ -286,7 +366,7 @@
   <div class="card p-4 bg-gray-50">
     <div class="flex flex-col sm:flex-row justify-between gap-3">
       <button
-        on:click={handleBack}
+        onclick={handleBack}
         class="btn-secondary inline-flex items-center justify-center gap-x-2 order-2 sm:order-1"
       >
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -297,7 +377,7 @@
       
       <div class="flex flex-col sm:flex-row gap-3 order-1 sm:order-2">
         <button
-          on:click={handleEditDetails}
+          onclick={handleEditDetails}
           class="btn-secondary inline-flex items-center justify-center gap-x-2"
         >
           <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -307,7 +387,7 @@
         </button>
         
         <button
-          on:click={handleConfirm}
+          onclick={handleConfirm}
           disabled={addingGameId !== null}
           class="btn-primary inline-flex items-center justify-center gap-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium"
         >

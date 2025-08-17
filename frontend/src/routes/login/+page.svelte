@@ -77,7 +77,7 @@
     </div>
    {/if}
 
-   <form on:submit|preventDefault={handleLogin} class="space-y-6">
+   <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-6">
     <div>
      <label for="username" class="form-label">
       Username
@@ -87,7 +87,7 @@
       type="text"
       bind:value={username}
       bind:this={usernameInput}
-      on:keydown={handleKeydown}
+      onkeydown={handleKeydown}
       required
       placeholder="Enter your username"
       class="form-input"
@@ -103,7 +103,7 @@
       id="password"
       type="password"
       bind:value={password}
-      on:keydown={handleKeydown}
+      onkeydown={handleKeydown}
       required
       placeholder="Enter your password"
       class="form-input"

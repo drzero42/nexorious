@@ -6,58 +6,58 @@
   import LogoUpload from '$lib/components/LogoUpload.svelte';
   import type { Platform, Storefront, PlatformCreateRequest, StorefrontCreateRequest, PlatformUpdateRequest, StorefrontUpdateRequest } from '$lib/stores/platforms.svelte';
 
-  let isLoading = true;
-  let activeTab: 'platforms' | 'storefronts' | 'associations' = 'platforms';
-  let searchQuery = '';
-  let statusFilter: 'all' | 'active' | 'inactive' = 'all';
+  let isLoading = $state(true);
+  let activeTab = $state<'platforms' | 'storefronts' | 'associations'>('platforms');
+  let searchQuery = $state('');
+  let statusFilter = $state<'all' | 'active' | 'inactive'>('all');
   
   // Association management state
-  let associationsLoading = false;
-  let platformAssociations: Map<string, Set<string>> = new Map();
+  let associationsLoading = $state(false);
+  let platformAssociations = $state<Map<string, Set<string>>>(new Map());
   
   // Platform form state
-  let showCreatePlatformForm = false;
-  let editingPlatform: Platform | null = null;
-  let platformForm: PlatformCreateRequest = {
+  let showCreatePlatformForm = $state(false);
+  let editingPlatform = $state<Platform | null>(null);
+  let platformForm = $state<PlatformCreateRequest>({
     name: '',
     display_name: '',
     icon_url: '',
     is_active: true,
     default_storefront_id: ''
-  };
+  });
 
   // Storefront form state
-  let showCreateStorefrontForm = false;
-  let editingStorefront: Storefront | null = null;
-  let storefrontForm: StorefrontCreateRequest = {
+  let showCreateStorefrontForm = $state(false);
+  let editingStorefront = $state<Storefront | null>(null);
+  let storefrontForm = $state<StorefrontCreateRequest>({
     name: '',
     display_name: '',
     icon_url: '',
     base_url: '',
     is_active: true
-  };
+  });
 
   // Confirmation dialog state
-  let showDeleteConfirm = false;
-  let deleteTarget: { type: 'platform' | 'storefront'; id: string; name: string } | null = null;
+  let showDeleteConfirm = $state(false);
+  let deleteTarget = $state<{ type: 'platform' | 'storefront'; id: string; name: string } | null>(null);
 
   // Loading states for status toggles
-  let platformToggleLoading = new Set<string>();
-  let storefrontToggleLoading = new Set<string>();
+  let platformToggleLoading = $state(new Set<string>());
+  let storefrontToggleLoading = $state(new Set<string>());
 
   // Modal tab state
-  let platformModalTab: 'basic' | 'logo' = 'basic';
-  let storefrontModalTab: 'basic' | 'logo' = 'basic';
+  let platformModalTab = $state<'basic' | 'logo'>('basic');
+  let storefrontModalTab = $state<'basic' | 'logo'>('basic');
 
 
   // Reactive statements to track platform store state
-  $: platformsList = $platforms.platforms;
-  $: storefrontsList = $platforms.storefronts;
-  $: error = $platforms.error;
-  $: isStoreLoading = $platforms.isLoading;
+  const platformsList = $derived(platforms.value?.platforms || []);
+  const storefrontsList = $derived(platforms.value?.storefronts || []);
+  const error = $derived(platforms.value?.error);
+  const isStoreLoading = $derived(platforms.value?.isLoading || false);
 
   // Filtered platforms based on search and filter criteria
-  $: filteredPlatforms = platformsList.filter(platform => {
+  const filteredPlatforms = $derived(platformsList.filter(platform => {
     const matchesSearch = platform.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           platform.display_name.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -69,10 +69,10 @@
       default:
         return matchesSearch;
     }
-  });
+  }));
 
   // Filtered storefronts based on search and filter criteria
-  $: filteredStorefronts = storefrontsList.filter(storefront => {
+  const filteredStorefronts = $derived(storefrontsList.filter(storefront => {
     const matchesSearch = storefront.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           storefront.display_name.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -84,7 +84,7 @@
       default:
         return matchesSearch;
     }
-  });
+  }));
 
   onMount(async () => {
     // Check if user is admin
@@ -390,7 +390,7 @@
     <div class="border-b border-gray-200">
       <nav class="-mb-px flex space-x-8">
         <button
-          on:click={() => activeTab = 'platforms'}
+          onclick={() => activeTab = 'platforms'}
           class={`py-2 px-1 border-b-2 font-medium text-sm ${
             activeTab === 'platforms'
               ? 'border-primary-500 text-primary-600'
@@ -401,7 +401,7 @@
           Platforms
         </button>
         <button
-          on:click={() => activeTab = 'storefronts'}
+          onclick={() => activeTab = 'storefronts'}
           class={`py-2 px-1 border-b-2 font-medium text-sm ${
             activeTab === 'storefronts'
               ? 'border-primary-500 text-primary-600'
@@ -412,7 +412,7 @@
           Storefronts
         </button>
         <button
-          on:click={() => { activeTab = 'associations'; loadAssociations(); }}
+          onclick={() => { activeTab = 'associations'; loadAssociations(); }}
           class={`py-2 px-1 border-b-2 font-medium text-sm ${
             activeTab === 'associations'
               ? 'border-primary-500 text-primary-600'
@@ -435,7 +435,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={() => platforms.clearError()}
+                onclick={() => platforms.clearError()}
                 type="button"
                 class="rounded-md bg-red-50 text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 px-3 py-2 text-sm font-medium"
               >
@@ -476,7 +476,7 @@
           {#if activeTab !== 'associations'}
             <div>
               <button
-                on:click={() => activeTab === 'platforms' ? (showCreatePlatformForm = true) : (showCreateStorefrontForm = true)}
+                onclick={() => activeTab === 'platforms' ? (showCreatePlatformForm = true) : (showCreateStorefrontForm = true)}
                 class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <span class="mr-2">+</span>
@@ -522,7 +522,7 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <button
-                            on:click={() => togglePlatformStatus(platform)}
+                            onclick={() => togglePlatformStatus(platform)}
                             disabled={platformToggleLoading.has(platform.id)}
                             class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                               platform.is_active
@@ -549,13 +549,13 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
-                            on:click={() => editPlatform(platform)}
+                            onclick={() => editPlatform(platform)}
                             class="text-primary-600 hover:text-primary-900 mr-4"
                           >
                             Edit
                           </button>
                           <button
-                            on:click={() => confirmDelete('platform', platform.id, platform.display_name)}
+                            onclick={() => confirmDelete('platform', platform.id, platform.display_name)}
                             class="text-red-600 hover:text-red-900"
                           >
                             Delete
@@ -614,7 +614,7 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <button
-                            on:click={() => toggleStorefrontStatus(storefront)}
+                            onclick={() => toggleStorefrontStatus(storefront)}
                             disabled={storefrontToggleLoading.has(storefront.id)}
                             class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                               storefront.is_active
@@ -641,13 +641,13 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
-                            on:click={() => editStorefront(storefront)}
+                            onclick={() => editStorefront(storefront)}
                             class="text-primary-600 hover:text-primary-900 mr-4"
                           >
                             Edit
                           </button>
                           <button
-                            on:click={() => confirmDelete('storefront', storefront.id, storefront.display_name)}
+                            onclick={() => confirmDelete('storefront', storefront.id, storefront.display_name)}
                             class="text-red-600 hover:text-red-900"
                           >
                             Delete
@@ -668,7 +668,7 @@
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-lg leading-6 font-medium text-gray-900">Platform-Storefront Associations</h3>
               <button
-                on:click={loadAssociations}
+                onclick={loadAssociations}
                 disabled={associationsLoading}
                 class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
               >
@@ -728,7 +728,7 @@
                             <input
                               type="checkbox"
                               checked={hasAssociation(platform.id, storefront.id)}
-                              on:change={(e) => handleAssociationChange(platform.id, storefront.id, e.currentTarget.checked)}
+                              onchange={(e) => handleAssociationChange(platform.id, storefront.id, e.currentTarget.checked)}
                               class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
                               disabled={!platform.is_active || !storefront.is_active}
                             />
@@ -752,12 +752,22 @@
 
   <!-- Platform Create/Edit Modal -->
   {#if showCreatePlatformForm}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetPlatformForm} on:keydown={(e) => e.key === 'Escape' && resetPlatformForm()}>
-      <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div 
+      class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" 
+      role="button" 
+      tabindex="0"
+      aria-label="Close modal"
+      onclick={resetPlatformForm} 
+      onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && resetPlatformForm()}
+    >
+      <div 
+        class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" 
+        role="dialog" 
+        aria-modal="true" 
+        aria-labelledby="platform-modal-title"
+      >
         <div class="mt-3">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">
+          <h3 id="platform-modal-title" class="text-lg font-medium text-gray-900 mb-4">
             {editingPlatform ? 'Edit Platform' : 'Create New Platform'}
           </h3>
 
@@ -766,7 +776,7 @@
             <nav class="-mb-px flex space-x-8">
               <button
                 type="button"
-                on:click={() => platformModalTab = 'basic'}
+                onclick={() => platformModalTab = 'basic'}
                 class={`py-2 px-1 border-b-2 font-medium text-sm ${
                   platformModalTab === 'basic'
                     ? 'border-primary-500 text-primary-600'
@@ -778,7 +788,7 @@
               {#if editingPlatform}
                 <button
                   type="button"
-                  on:click={() => platformModalTab = 'logo'}
+                  onclick={() => platformModalTab = 'logo'}
                   class={`py-2 px-1 border-b-2 font-medium text-sm ${
                     platformModalTab === 'logo'
                       ? 'border-primary-500 text-primary-600'
@@ -792,7 +802,7 @@
           </div>
 
           {#if platformModalTab === 'basic'}
-            <form on:submit|preventDefault={savePlatform} class="space-y-4">
+            <form onsubmit={(e) => { e.preventDefault(); savePlatform(); }} class="space-y-4">
             <div>
               <label for="platform-name" class="block text-sm font-medium text-gray-700">Platform Name</label>
               <input
@@ -860,7 +870,7 @@
             <div class="flex justify-end space-x-3 pt-4">
               <button
                 type="button"
-                on:click={resetPlatformForm}
+                onclick={resetPlatformForm}
                 class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 Cancel
@@ -879,16 +889,16 @@
               <LogoUpload
                 entityType="platforms"
                 entityId={editingPlatform.id}
-                currentIconUrl={editingPlatform.icon_url}
-                on:uploaded={handlePlatformLogoUploaded}
-                on:deleted={handleLogoDeleted}
-                on:error={handleLogoError}
+                currentIconUrl={editingPlatform.icon_url ?? null}
+                onuploaded={handlePlatformLogoUploaded}
+                ondeleted={handleLogoDeleted}
+                onerror={handleLogoError}
               />
               
               <div class="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  on:click={resetPlatformForm}
+                  onclick={resetPlatformForm}
                   class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
                   Close
@@ -903,12 +913,22 @@
 
   <!-- Storefront Create/Edit Modal -->
   {#if showCreateStorefrontForm}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={resetStorefrontForm} on:keydown={(e) => e.key === 'Escape' && resetStorefrontForm()}>
-      <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div 
+      class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" 
+      role="button" 
+      tabindex="0"
+      aria-label="Close modal"
+      onclick={resetStorefrontForm} 
+      onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && resetStorefrontForm()}
+    >
+      <div 
+        class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white" 
+        role="dialog" 
+        aria-modal="true" 
+        aria-labelledby="storefront-modal-title"
+      >
         <div class="mt-3">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">
+          <h3 id="storefront-modal-title" class="text-lg font-medium text-gray-900 mb-4">
             {editingStorefront ? 'Edit Storefront' : 'Create New Storefront'}
           </h3>
 
@@ -917,7 +937,7 @@
             <nav class="-mb-px flex space-x-8">
               <button
                 type="button"
-                on:click={() => storefrontModalTab = 'basic'}
+                onclick={() => storefrontModalTab = 'basic'}
                 class={`py-2 px-1 border-b-2 font-medium text-sm ${
                   storefrontModalTab === 'basic'
                     ? 'border-primary-500 text-primary-600'
@@ -929,7 +949,7 @@
               {#if editingStorefront}
                 <button
                   type="button"
-                  on:click={() => storefrontModalTab = 'logo'}
+                  onclick={() => storefrontModalTab = 'logo'}
                   class={`py-2 px-1 border-b-2 font-medium text-sm ${
                     storefrontModalTab === 'logo'
                       ? 'border-primary-500 text-primary-600'
@@ -943,7 +963,7 @@
           </div>
 
           {#if storefrontModalTab === 'basic'}
-            <form on:submit|preventDefault={saveStorefront} class="space-y-4">
+            <form onsubmit={(e) => { e.preventDefault(); saveStorefront(); }} class="space-y-4">
             <div>
               <label for="storefront-name" class="block text-sm font-medium text-gray-700">Storefront Name</label>
               <input
@@ -1007,7 +1027,7 @@
             <div class="flex justify-end space-x-3 pt-4">
               <button
                 type="button"
-                on:click={resetStorefrontForm}
+                onclick={resetStorefrontForm}
                 class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 Cancel
@@ -1026,16 +1046,16 @@
               <LogoUpload
                 entityType="storefronts"
                 entityId={editingStorefront.id}
-                currentIconUrl={editingStorefront.icon_url}
-                on:uploaded={handleStorefrontLogoUploaded}
-                on:deleted={handleLogoDeleted}
-                on:error={handleLogoError}
+                currentIconUrl={editingStorefront.icon_url ?? null}
+                onuploaded={handleStorefrontLogoUploaded}
+                ondeleted={handleLogoDeleted}
+                onerror={handleLogoError}
               />
               
               <div class="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  on:click={resetStorefrontForm}
+                  onclick={resetStorefrontForm}
                   class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
                   Close
@@ -1050,12 +1070,22 @@
 
   <!-- Delete Confirmation Modal -->
   {#if showDeleteConfirm && deleteTarget}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={cancelDelete} on:keydown={(e) => e.key === 'Escape' && cancelDelete()}>
-      <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" on:click|stopPropagation>
+    <div 
+      class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" 
+      role="button" 
+      tabindex="0"
+      aria-label="Close confirmation dialog"
+      onclick={cancelDelete} 
+      onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && cancelDelete()}
+    >
+      <div 
+        class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" 
+        role="dialog" 
+        aria-modal="true" 
+        aria-labelledby="delete-modal-title"
+      >
         <div class="mt-3">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Confirm Deletion</h3>
+          <h3 id="delete-modal-title" class="text-lg font-medium text-gray-900 mb-4">Confirm Deletion</h3>
           <p class="text-sm text-gray-500 mb-4">
             Are you sure you want to delete the {deleteTarget.type} "{deleteTarget.name}"?
           </p>
@@ -1068,14 +1098,14 @@
           <div class="flex justify-end space-x-3">
             <button
               type="button"
-              on:click={cancelDelete}
+              onclick={cancelDelete}
               class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               Cancel
             </button>
             <button
               type="button"
-              on:click={executeDelete}
+              onclick={executeDelete}
               class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
               Delete
