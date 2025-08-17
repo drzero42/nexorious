@@ -179,7 +179,7 @@ This document provides a comprehensive breakdown of tasks for developing the Gam
 
 #### 1.2.7 Rating & Tagging System
 - [x] Star rating component (1-5 stars)
-- [ ] Loved games toggle
+- [x] Loved games toggle
 - [ ] Tag creation and management interface
 - [ ] Tag assignment to games
 - [ ] Tag-based filtering
