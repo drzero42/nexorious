@@ -729,7 +729,7 @@
       <p class="mt-2 text-sm text-gray-500">The requested game could not be found in your collection.</p>
       <div class="mt-6">
         <button
-          on:click={() => goto('/games')}
+          onclick={() => goto('/games')}
           class="btn-primary inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -745,7 +745,7 @@
     <div class="sm:flex sm:items-center sm:justify-between">
       <div class="flex items-center space-x-4">
         <button
-          on:click={() => goto('/games')}
+          onclick={() => goto('/games')}
           class="btn-secondary inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -757,7 +757,7 @@
       <div class="mt-4 sm:mt-0 flex items-center space-x-3">
         {#if !isEditing}
           <button
-            on:click={startEditing}
+            onclick={startEditing}
             class="btn-primary inline-flex items-center gap-x-2"
           >
             <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -767,7 +767,7 @@
           </button>
         {/if}
         <button
-          on:click={deleteGame}
+          onclick={deleteGame}
           class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 inline-flex items-center gap-x-2"
         >
           <svg class="-ml-0.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -790,7 +790,7 @@
                 alt={game.game.title}
                 class="h-full w-full object-cover object-center"
                 loading="lazy"
-                on:error={(e) => {
+                onerror={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
                   const nextElement = target.nextElementSibling as HTMLElement;
                   target.style.display = 'none';
@@ -1001,7 +1001,7 @@
                   {/if}
                   {#if canUpdateFromIGDB()}
                     <button
-                      on:click={updateFromIGDB}
+                      onclick={updateFromIGDB}
                       disabled={isUpdatingFromIGDB}
                       class="inline-flex items-center gap-x-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Update game metadata from IGDB"
@@ -1077,7 +1077,7 @@
             
         {#if isEditing}
           <!-- Edit Form -->
-          <form on:submit|preventDefault={saveChanges} class="space-y-8">
+          <form onsubmit={(e) => { e.preventDefault(); saveChanges(); }} class="space-y-8">
 
             <!-- Personal Information Section -->
             <div class="pt-6 border-t border-gray-200">
@@ -1105,7 +1105,7 @@
                     id="ownership_status"
                     bind:value={editData.ownership_status}
                     class="form-input"
-                    on:change={() => {
+                    onchange={() => {
                       markFieldDirty('ownership_status');
                       validateFormField('platform_selection', null); // Re-validate platform requirement
                     }}
@@ -1165,7 +1165,7 @@
                       type="checkbox"
                       bind:checked={editData.is_loved}
                       class="form-checkbox h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                      on:change={() => markFieldDirty('is_loved')}
+                      onchange={() => markFieldDirty('is_loved')}
                     />
                     <span class="ml-2 text-sm text-gray-700">
                       <span class="text-red-500">♥</span> Loved game
@@ -1271,7 +1271,7 @@
                                   </div>
                                   <button 
                                     type="button"
-                                    on:click={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
+                                    onclick={() => confirmRemovePlatform(storefront.id, groupedPlatform.platform.display_name, storefront.storefront?.display_name || 'Unknown Storefront')}
                                     class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded hover:bg-red-200 hover:text-red-800 transition-colors duration-200"
                                     title={game && game.platforms && game.platforms.length <= 1 ? "Remove this platform/storefront combination (ownership will become 'No Longer Owned')" : "Remove this platform/storefront combination"}
                                     aria-label="Remove {groupedPlatform.platform.display_name} on {storefront.storefront?.display_name || 'store'}"
@@ -1317,7 +1317,7 @@
                 <div class="mt-4">
                   <button
                     type="button"
-                    on:click={addPlatforms}
+                    onclick={addPlatforms}
                     disabled={selectedPlatforms.size === 0 || isAddingPlatform || hasOptimisticUpdates}
                     class="btn-secondary inline-flex items-center gap-x-2 transition-all duration-200 {hasOptimisticUpdates ? 'opacity-75 ring-2 ring-blue-300' : ''}"
                   >
@@ -1340,7 +1340,7 @@
             <div class="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200">
               <button
                 type="button"
-                on:click={cancelEditing}
+                onclick={cancelEditing}
                 class="btn-secondary"
               >
                 Cancel
@@ -1463,7 +1463,7 @@
         <div class="flex gap-4 px-7 py-3">
           <button
             type="button"
-            on:click={cancelRemovePlatform}
+            onclick={cancelRemovePlatform}
             class="btn-secondary flex-1"
             disabled={isRemovingPlatform}
           >
@@ -1471,7 +1471,7 @@
           </button>
           <button
             type="button"
-            on:click={removePlatform}
+            onclick={removePlatform}
             disabled={isRemovingPlatform}
             class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-x-2"
           >
