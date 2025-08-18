@@ -714,10 +714,10 @@ async def create_platform_securely(name: str, user_id: str) -> Platform:
 - [x] Update `ImportType` enum to include `DARKADIA`
 
 #### Core Service Structure (Week 1-2)
-- [ ] Create `DarkadiaImportService` class extending `ImportSourceService`
-- [ ] Implement basic CSV parsing integration
-- [ ] Add file upload validation functions
-- [ ] Create platform resolution helper functions
+- [x] Create `DarkadiaImportService` class extending `ImportSourceService`
+- [x] Implement basic CSV parsing integration
+- [x] Add file upload validation functions
+- [x] Create platform resolution helper functions
 
 #### Security Implementation (Week 2-3)
 - [x] Implement `CSVSanitizer` with injection prevention
@@ -1338,11 +1338,11 @@ class PlatformResolutionTests:
 5. Add IGDB integration with rate limiting
 
 **Acceptance Criteria**:
-- [ ] Service implements all required `ImportSourceService` methods
-- [ ] Can successfully parse and import sample CSV files
-- [ ] Platform resolution handles unknown platforms gracefully
-- [ ] IGDB matching works with rate limiting
-- [ ] Import process is idempotent (can be re-run safely)
+- [x] Service implements all required `ImportSourceService` methods
+- [x] Can successfully parse and import sample CSV files
+- [x] Platform resolution handles unknown platforms gracefully
+- [x] IGDB matching works with rate limiting
+- [x] Import process is idempotent (can be re-run safely)
 
 ### High Priority Tasks (Core Functionality)
 
