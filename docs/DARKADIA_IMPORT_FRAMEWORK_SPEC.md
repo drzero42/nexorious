@@ -708,10 +708,10 @@ async def create_platform_securely(name: str, user_id: str) -> Platform:
 **Goal**: Establish core infrastructure and database changes
 
 #### Database & Models (Week 1)
-- [ ] Create `darkadia_imports` table migration
-- [ ] Implement `DarkadiaImport` SQLModel
-- [ ] Add indexes for performance
-- [ ] Update `ImportType` enum to include `DARKADIA`
+- [x] Create `darkadia_imports` table migration
+- [x] Implement `DarkadiaImport` SQLModel
+- [x] Add indexes for performance
+- [x] Update `ImportType` enum to include `DARKADIA`
 
 #### Core Service Structure (Week 1-2)
 - [ ] Create `DarkadiaImportService` class extending `ImportSourceService`
@@ -1303,10 +1303,10 @@ class PlatformResolutionTests:
 5. Test migration with sample data
 
 **Acceptance Criteria**:
-- [ ] Migration runs successfully on dev and test databases
-- [ ] All model relationships work correctly
-- [ ] Indexes improve query performance for large datasets
-- [ ] Can store and retrieve JSONB metadata
+- [x] Migration runs successfully on dev and test databases
+- [x] All model relationships work correctly
+- [x] Indexes improve query performance for large datasets
+- [x] Can store and retrieve JSONB metadata
 
 #### Task 2: Security Implementation
 **Priority**: Critical  

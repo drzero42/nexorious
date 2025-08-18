@@ -55,6 +55,7 @@ class UserGame(SQLModel, table=True):
     game: "Game" = Relationship(back_populates="user_games")
     platforms: List["UserGamePlatform"] = Relationship(back_populates="user_game", cascade_delete=True)
     tags: List["UserGameTag"] = Relationship(back_populates="user_game", cascade_delete=True)
+    darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user_game", cascade_delete=True)
     
     # Unique constraint
     __table_args__ = (
@@ -96,3 +97,4 @@ from .user import User
 from .game import Game
 from .platform import Platform, Storefront
 from .tag import UserGameTag
+from .darkadia_import import DarkadiaImport
