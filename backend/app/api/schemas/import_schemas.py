@@ -115,6 +115,8 @@ class ImportGamesList(BaseModel):
     """Response for listing imported games."""
     games: List[ImportGameResponse] = Field(..., description="List of imported games")
     total: int = Field(..., description="Total number of games")
+    offset: int = Field(..., description="Pagination offset")
+    limit: int = Field(..., description="Pagination limit")
 
 
 class ImportStartResponse(BaseModel):

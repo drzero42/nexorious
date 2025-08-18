@@ -6,8 +6,9 @@ import logging
 import json
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from datetime import datetime, timezone
+from decimal import Decimal
 from sqlmodel import Session, select, and_, func
 
 from .base import (
@@ -31,6 +32,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from scripts.darkadia.parser import DarkadiaCSVParser
+from scripts.darkadia.mapper import DarkadiaDataMapper
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ class DarkadiaImportService(ImportSourceService):
         self.csv_sanitizer = CSVSanitizer()
         self.file_validator = SecureFileUploadValidator()
         self.csv_parser = DarkadiaCSVParser()
+        self.data_mapper = DarkadiaDataMapper()
     
     def _get_user_darkadia_config(self, user: User) -> dict:
         """Get user's Darkadia configuration from preferences."""
@@ -206,11 +209,20 @@ class DarkadiaImportService(ImportSourceService):
             raise ValueError("CSV file not found")
         
         try:
-            # Parse first 10 rows for preview
-            preview_data = await self.csv_parser.parse_csv(Path(csv_file_path), max_rows=10)
+            # Parse full CSV file
+            full_data = await self.csv_parser.parse_csv(Path(csv_file_path))
+            
+            # Use first 50 rows for platform analysis
+            analysis_data = full_data[:50] if len(full_data) > 50 else full_data
+            
+            # Analyze platforms from the sample
+            platform_analysis = self._analyze_platforms(analysis_data)
+            
+            # Get actual total count
+            total_estimate = len(full_data)
             
             return {
-                "total_games_estimate": len(preview_data) * 10,  # Rough estimate
+                "total_games_estimate": total_estimate,
                 "preview_games": [
                     {
                         "name": game_data.get("Name", ""),
@@ -219,8 +231,9 @@ class DarkadiaImportService(ImportSourceService):
                         "played": game_data.get("Played", False),
                         "finished": game_data.get("Finished", False)
                     }
-                    for game_data in preview_data[:5]
+                    for game_data in analysis_data[:5]
                 ],
+                "platform_analysis": platform_analysis,
                 "file_info": {
                     "path": csv_file_path,
                     "size": Path(csv_file_path).stat().st_size,
@@ -231,7 +244,72 @@ class DarkadiaImportService(ImportSourceService):
             logger.error(f"Error getting library preview for user {user_id}: {str(e)}")
             raise ValueError(f"Failed to preview CSV file: {str(e)}")
     
-    async def import_library(self, user_id: str) -> ImportResult:
+    def _analyze_platforms(self, games_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze platform data from CSV to detect unknown platforms and resolution status."""
+        platform_stats = {}
+        unknown_platforms = set()
+        unknown_storefronts = set() 
+        
+        # Reset mapper's tracking sets
+        self.data_mapper.unknown_platforms = set()
+        self.data_mapper.unknown_storefronts = set()
+        
+        for game_data in games_data:
+            # Extract platform information
+            platforms_field = game_data.get("Platforms", "")
+            if platforms_field and str(platforms_field).strip() and str(platforms_field) != "nan":
+                # Split multiple platforms (assume comma-separated)
+                platform_names = [p.strip() for p in str(platforms_field).split(",") if p.strip()]
+                
+                for platform_name in platform_names:
+                    if platform_name not in platform_stats:
+                        platform_stats[platform_name] = {
+                            "name": platform_name,
+                            "games_count": 0,
+                            "is_known": platform_name in self.data_mapper.PLATFORM_MAPPINGS,
+                            "mapped_name": self.data_mapper.PLATFORM_MAPPINGS.get(platform_name),
+                            "suggested_mapping": self.data_mapper._map_platform_name(platform_name)
+                        }
+                    
+                    platform_stats[platform_name]["games_count"] += 1
+                    
+                    # Track unknown platforms
+                    if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
+                        unknown_platforms.add(platform_name)
+            
+            # Also check Copy platform field
+            copy_platform = game_data.get("Copy platform", "")
+            if copy_platform and str(copy_platform).strip() and str(copy_platform) != "nan":
+                platform_name = str(copy_platform).strip()
+                
+                if platform_name not in platform_stats:
+                    platform_stats[platform_name] = {
+                        "name": platform_name,
+                        "games_count": 0,
+                        "is_known": platform_name in self.data_mapper.PLATFORM_MAPPINGS,
+                        "mapped_name": self.data_mapper.PLATFORM_MAPPINGS.get(platform_name),
+                        "suggested_mapping": self.data_mapper._map_platform_name(platform_name)
+                    }
+                
+                platform_stats[platform_name]["games_count"] += 1
+                
+                if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
+                    unknown_platforms.add(platform_name)
+        
+        # Include platforms detected by the mapper
+        unknown_platforms.update(self.data_mapper.unknown_platforms)
+        unknown_storefronts.update(self.data_mapper.unknown_storefronts)
+        
+        return {
+            "platform_stats": list(platform_stats.values()),
+            "unknown_platforms": list(unknown_platforms),
+            "unknown_storefronts": list(unknown_storefronts),
+            "total_platforms": len(platform_stats),
+            "unknown_platform_count": len(unknown_platforms),
+            "known_platform_count": len(platform_stats) - len(unknown_platforms)
+        }
+    
+    async def import_library(self, user_id: str, progress_callback: Optional[Callable[[int], None]] = None) -> ImportResult:
         """Import CSV data into staging table."""
         user = self.session.get(User, user_id)
         if not user:
@@ -242,7 +320,8 @@ class DarkadiaImportService(ImportSourceService):
             raise ValueError("Darkadia CSV file not configured or verified")
         
         csv_file_path = config.config_data.get("csv_file_path")
-        file_hash = config.config_data.get("file_hash")
+        if not csv_file_path:
+            raise ValueError("CSV file path not found in configuration")
         
         try:
             # Parse the CSV file
@@ -252,9 +331,15 @@ class DarkadiaImportService(ImportSourceService):
             skipped_count = 0
             errors = []
             
-            # Import games in batches
+            # Import games in batches with progress tracking
+            total_games = len(games_data)
             for i, game_data in enumerate(games_data):
                 try:
+                    # Update progress every 10 games
+                    if progress_callback and i % 10 == 0:
+                        progress_percent = int((i / total_games) * 100)
+                        progress_callback(progress_percent)
+                    
                     # Sanitize all CSV data
                     sanitized_data = {}
                     for key, value in game_data.items():
@@ -298,6 +383,10 @@ class DarkadiaImportService(ImportSourceService):
                     errors.append(f"Row {i+1}: {str(e)}")
                     continue
             
+            # Final progress update
+            if progress_callback:
+                progress_callback(100)
+            
             # Final commit
             self.session.commit()
             
@@ -325,18 +414,18 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(DarkadiaGame.igdb_id.is_(None))
+            query = query.where(DarkadiaGame.igdb_id == None)
         elif status_filter == "matched":
-            query = query.where(DarkadiaGame.igdb_id.is_not(None))
+            query = query.where(DarkadiaGame.igdb_id != None)
         elif status_filter == "ignored":
             query = query.where(DarkadiaGame.ignored == True)
         elif status_filter == "synced":
-            query = query.where(DarkadiaGame.game_id.is_not(None))
+            query = query.where(DarkadiaGame.game_id != None)
         
         # Apply search filter
         if search:
             search_term = f"%{search.lower()}%"
-            query = query.where(DarkadiaGame.game_name.ilike(search_term))
+            query = query.where(func.lower(DarkadiaGame.game_name).like(search_term))
         
         # Get total count
         total_count = len(self.session.exec(query).all())
@@ -441,7 +530,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id.is_(None),
+                    DarkadiaGame.igdb_id == None,
                     DarkadiaGame.ignored == False
                 )
             )
@@ -583,7 +672,7 @@ class DarkadiaImportService(ImportSourceService):
                     game_id=game.id,
                     ownership_status=OwnershipStatus.OWNED,
                     play_status=play_status,
-                    personal_rating=rating,
+                    personal_rating=Decimal(str(rating)) if rating is not None else None,
                     is_loved=csv_data.get("Loved", False),
                     hours_played=0,  # Darkadia doesn't track hours
                     personal_notes=csv_data.get("Notes", ""),
@@ -680,8 +769,8 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id.is_not(None),
-                    DarkadiaGame.game_id.is_(None),  # Not yet synced
+                    DarkadiaGame.igdb_id != None,
+                    DarkadiaGame.game_id == None,  # Not yet synced
                     DarkadiaGame.ignored == False
                 )
             )
@@ -771,7 +860,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.game_id.is_not(None)
+                    DarkadiaGame.game_id != None
                 )
             )
         ).all()
@@ -870,7 +959,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id.is_not(None)
+                    DarkadiaGame.igdb_id != None
                 )
             )
         ).all()
