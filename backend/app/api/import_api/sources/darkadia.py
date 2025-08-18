@@ -1,0 +1,657 @@
+"""
+Darkadia CSV import endpoints using the new import framework.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from sqlmodel import Session
+from typing import Annotated, Optional, Dict, Any
+import logging
+from pathlib import Path
+
+from ....core.database import get_session
+from ....core.security import get_current_user
+from ....models.user import User
+from ....services.import_sources.darkadia import create_darkadia_import_service
+from ...schemas.import_schemas import (
+    SourceConfigResponse,
+    VerificationRequest,
+    VerificationResponse,
+    LibraryPreviewResponse,
+    ImportGamesList,
+    ImportStartResponse,
+    GameMatchRequest,
+    GameMatchResponse,
+    GameSyncResponse,
+    GameIgnoreResponse,
+    BulkOperationResponse
+)
+from ...schemas.darkadia import (
+    DarkadiaConfigRequest,
+    DarkadiaConfigResponse,
+    DarkadiaVerificationRequest,
+    DarkadiaUploadResponse
+)
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def get_darkadia_service(session: Annotated[Session, Depends(get_session)]):
+    """Dependency to get Darkadia import service."""
+    return create_darkadia_import_service(session)
+
+
+@router.get("/availability")
+async def get_darkadia_availability(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> Dict[str, Any]:
+    """
+    Check if Darkadia import feature is available for the current user.
+    
+    Returns simple boolean response indicating availability.
+    """
+    try:
+        logger.info(f"Checking Darkadia availability for user {current_user.id}")
+        
+        # Darkadia CSV import is always available (no special requirements)
+        logger.info(f"Darkadia is available for user {current_user.id}")
+        return {
+            "available": True,
+            "reason": None
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error checking Darkadia availability for user {current_user.id}: {str(e)}")
+        return {
+            "available": False,
+            "reason": "Internal error checking Darkadia availability"
+        }
+
+
+@router.get("/status")
+async def get_darkadia_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> Dict[str, Any]:
+    """Get Darkadia import source status."""
+    try:
+        config = await darkadia_service.get_config(current_user.id)
+        return {
+            "available": True,
+            "configured": config.is_configured,
+            "verified": config.is_verified,
+            "last_configured": config.configured_at,
+            "last_import": config.last_import
+        }
+    except Exception as e:
+        logger.error(f"Error getting Darkadia status for user {current_user.id}: {str(e)}")
+        return {
+            "available": True,
+            "configured": False,
+            "verified": False,
+            "last_configured": None,
+            "last_import": None
+        }
+
+
+# Configuration endpoints
+@router.get("/config", response_model=DarkadiaConfigResponse)
+async def get_darkadia_config(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> DarkadiaConfigResponse:
+    """Get current Darkadia configuration."""
+    try:
+        config = await darkadia_service.get_config(current_user.id)
+        
+        return DarkadiaConfigResponse(
+            has_csv_file=config.config_data.get("has_csv_file", False),
+            csv_file_path=config.config_data.get("csv_file_path"),
+            file_exists=config.config_data.get("file_exists", False),
+            file_hash=config.config_data.get("file_hash"),
+            configured_at=config.configured_at
+        )
+    except Exception as e:
+        logger.error(f"Error getting Darkadia config for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve Darkadia configuration"
+        )
+
+
+@router.post("/upload", response_model=DarkadiaUploadResponse)
+async def upload_darkadia_csv(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service),
+    file: UploadFile = File(...)
+) -> DarkadiaUploadResponse:
+    """Upload and validate Darkadia CSV file."""
+    try:
+        # Validate file
+        if not file.filename or not file.filename.endswith('.csv'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be a CSV file with .csv extension"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Create a temporary file to store the upload
+        import tempfile
+        import hashlib
+        import time
+        
+        file_hash = hashlib.sha256(content).hexdigest()[:16]
+        timestamp = int(time.time())
+        safe_filename = f"darkadia_{current_user.id}_{timestamp}_{file_hash}.csv"
+        
+        # Create temp directory if it doesn't exist
+        temp_dir = Path("/tmp/nexorious_uploads")
+        temp_dir.mkdir(exist_ok=True)
+        temp_file = temp_dir / safe_filename
+        
+        # Write file
+        temp_file.write_bytes(content)
+        temp_file.chmod(0o600)  # Read/write for owner only
+        
+        # Set configuration with temp file path
+        config = await darkadia_service.set_config(current_user.id, {
+            "csv_file_path": str(temp_file)
+        })
+        
+        # Get preview
+        preview = await darkadia_service.get_library_preview(current_user.id)
+        
+        return DarkadiaUploadResponse(
+            message="CSV file uploaded and validated successfully",
+            file_id=file_hash,
+            total_games=preview.get("total_games_estimate", 0),
+            file_path=str(temp_file),
+            file_size=len(content),
+            preview_games=preview.get("preview_games", [])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading CSV file for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload CSV file: {str(e)}"
+        )
+
+
+@router.put("/config", response_model=DarkadiaConfigResponse)
+async def update_darkadia_config(
+    request: DarkadiaConfigRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> DarkadiaConfigResponse:
+    """Update Darkadia configuration."""
+    try:
+        config = await darkadia_service.set_config(current_user.id, {
+            "csv_file_path": request.csv_file_path
+        })
+        
+        return DarkadiaConfigResponse(
+            has_csv_file=config.config_data.get("has_csv_file", False),
+            csv_file_path=config.config_data.get("csv_file_path"),
+            file_exists=config.config_data.get("file_exists", False),
+            file_hash=config.config_data.get("file_hash"),
+            configured_at=config.configured_at
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error updating Darkadia config for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update Darkadia configuration"
+        )
+
+
+@router.delete("/config")
+async def delete_darkadia_config(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> Dict[str, str]:
+    """Delete Darkadia configuration."""
+    try:
+        await darkadia_service.delete_config(current_user.id)
+        return {"message": "Darkadia configuration deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting Darkadia config for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete Darkadia configuration"
+        )
+
+
+@router.post("/verify", response_model=VerificationResponse)
+async def verify_darkadia_config(
+    request: DarkadiaVerificationRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> VerificationResponse:
+    """Verify CSV file configuration."""
+    try:
+        is_valid, error_message, verification_data = await darkadia_service.verify_config({
+            "csv_file_path": request.csv_file_path
+        })
+        
+        return VerificationResponse(
+            is_valid=is_valid,
+            error_message=error_message,
+            verification_data=verification_data or {}
+        )
+    except Exception as e:
+        logger.error(f"Error verifying Darkadia config for user {current_user.id}: {str(e)}")
+        return VerificationResponse(
+            is_valid=False,
+            error_message=f"Verification failed: {str(e)}",
+            verification_data={}
+        )
+
+
+@router.get("/preview", response_model=LibraryPreviewResponse)
+async def get_darkadia_library_preview(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> LibraryPreviewResponse:
+    """Get preview of CSV data."""
+    try:
+        preview = await darkadia_service.get_library_preview(current_user.id)
+        
+        return LibraryPreviewResponse(
+            total_games=preview.get("total_games_estimate", 0),
+            preview_games=preview.get("preview_games", []),
+            source_info=preview.get("file_info", {})
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error getting library preview for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get library preview"
+        )
+
+
+@router.post("/import", response_model=ImportStartResponse)
+async def trigger_darkadia_import(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> ImportStartResponse:
+    """Trigger Darkadia CSV import to staging table."""
+    try:
+        result = await darkadia_service.import_library(current_user.id)
+        
+        return ImportStartResponse(
+            message="Import completed successfully",
+            imported_count=result.imported_count,
+            skipped_count=result.skipped_count,
+            auto_matched_count=result.auto_matched_count,
+            total_games=result.total_games,
+            errors=result.errors
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error importing library for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to import library"
+        )
+
+
+@router.get("/games", response_model=ImportGamesList)
+async def list_darkadia_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    status_filter: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None)
+) -> ImportGamesList:
+    """List imported games with filtering and pagination."""
+    try:
+        games, total_count = await darkadia_service.list_games(
+            user_id=current_user.id,
+            offset=offset,
+            limit=limit,
+            status_filter=status_filter,
+            search=search
+        )
+        
+        return ImportGamesList(
+            games=[
+                {
+                    "id": game.id,
+                    "external_id": game.external_id,
+                    "name": game.name,
+                    "igdb_id": game.igdb_id,
+                    "igdb_title": game.igdb_title,
+                    "game_id": game.game_id,
+                    "user_game_id": game.user_game_id,
+                    "ignored": game.ignored,
+                    "created_at": game.created_at,
+                    "updated_at": game.updated_at
+                }
+                for game in games
+            ],
+            total=total_count,
+            offset=offset,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error listing games for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list games"
+        )
+
+
+@router.post("/games/{game_id}/match", response_model=GameMatchResponse)
+async def match_darkadia_game(
+    game_id: str,
+    request: GameMatchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> GameMatchResponse:
+    """Manually match game to IGDB."""
+    try:
+        game = await darkadia_service.match_game(current_user.id, game_id, request.igdb_id)
+        
+        return GameMatchResponse(
+            message="Game matched successfully" if request.igdb_id else "Game match cleared",
+            game={
+                "id": game.id,
+                "external_id": game.external_id,
+                "name": game.name,
+                "igdb_id": game.igdb_id,
+                "igdb_title": game.igdb_title,
+                "game_id": game.game_id,
+                "user_game_id": game.user_game_id,
+                "ignored": game.ignored,
+                "created_at": game.created_at,
+                "updated_at": game.updated_at
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error matching Darkadia game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to match game"
+        )
+
+
+@router.post("/games/{game_id}/auto-match", response_model=GameMatchResponse)
+async def auto_match_darkadia_game(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> GameMatchResponse:
+    """Automatically match game to IGDB."""
+    try:
+        result = await darkadia_service.auto_match_game(current_user.id, game_id)
+        
+        if result.matched:
+            # Get updated game info
+            games, _ = await darkadia_service.list_games(
+                user_id=current_user.id,
+                offset=0,
+                limit=1,
+                status_filter=None,
+                search=None
+            )
+            game = next((g for g in games if g.id == game_id), None)
+            
+            if game:
+                return GameMatchResponse(
+                    message=f"Game auto-matched successfully with confidence {result.confidence_score:.2f}",
+                    game={
+                        "id": game.id,
+                        "external_id": game.external_id,
+                        "name": game.name,
+                        "igdb_id": game.igdb_id,
+                        "igdb_title": game.igdb_title,
+                        "game_id": game.game_id,
+                        "user_game_id": game.user_game_id,
+                        "ignored": game.ignored,
+                        "created_at": game.created_at,
+                        "updated_at": game.updated_at
+                    }
+                )
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.error_message or "Auto-matching failed"
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error auto-matching Darkadia game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to auto-match game"
+        )
+
+
+@router.post("/games/auto-match-all", response_model=BulkOperationResponse)
+async def auto_match_all_darkadia_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> BulkOperationResponse:
+    """Auto-match all unmatched games."""
+    try:
+        result = await darkadia_service.auto_match_all_games(current_user.id)
+        
+        return BulkOperationResponse(
+            message=f"Auto-matched {result.successful_operations}/{result.total_processed} games",
+            total_processed=result.total_processed,
+            successful_operations=result.successful_operations,
+            failed_operations=result.failed_operations,
+            errors=result.errors
+        )
+    except Exception as e:
+        logger.error(f"Error auto-matching all games for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to auto-match games"
+        )
+
+
+@router.post("/games/{game_id}/sync", response_model=GameSyncResponse)
+async def sync_darkadia_game(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> GameSyncResponse:
+    """Sync game to main collection."""
+    try:
+        result = await darkadia_service.sync_game(current_user.id, game_id)
+        
+        if result.action == "failed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.error_message or "Failed to sync game"
+            )
+        
+        # Get updated game info
+        games, _ = await darkadia_service.list_games(
+            user_id=current_user.id,
+            offset=0,
+            limit=1,
+            status_filter=None,
+            search=None
+        )
+        game = next((g for g in games if g.id == game_id), None)
+        
+        if not game:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Game not found after sync"
+            )
+        
+        return GameSyncResponse(
+            message=f"Game {result.action.replace('_', ' ')} successfully",
+            game={
+                "id": game.id,
+                "external_id": game.external_id,
+                "name": game.name,
+                "igdb_id": game.igdb_id,
+                "igdb_title": game.igdb_title,
+                "game_id": game.game_id,
+                "user_game_id": game.user_game_id,
+                "ignored": game.ignored,
+                "created_at": game.created_at,
+                "updated_at": game.updated_at
+            },
+            user_game_id=result.user_game_id,
+            action=result.action
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing Darkadia game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to sync game"
+        )
+
+
+@router.post("/games/sync-all", response_model=BulkOperationResponse)
+async def sync_all_darkadia_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> BulkOperationResponse:
+    """Sync all matched games to collection."""
+    try:
+        result = await darkadia_service.sync_all_games(current_user.id)
+        
+        return BulkOperationResponse(
+            message=f"Synced {result.successful_operations}/{result.total_processed} games",
+            total_processed=result.total_processed,
+            successful_operations=result.successful_operations,
+            failed_operations=result.failed_operations,
+            errors=result.errors
+        )
+    except Exception as e:
+        logger.error(f"Error syncing all games for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to sync games"
+        )
+
+
+@router.post("/games/{game_id}/ignore", response_model=GameIgnoreResponse)
+async def ignore_darkadia_game(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> GameIgnoreResponse:
+    """Toggle ignore status of game."""
+    try:
+        game = await darkadia_service.ignore_game(current_user.id, game_id)
+        
+        return GameIgnoreResponse(
+            message=f"Game {'ignored' if game.ignored else 'unignored'} successfully",
+            game={
+                "id": game.id,
+                "external_id": game.external_id,
+                "name": game.name,
+                "igdb_id": game.igdb_id,
+                "igdb_title": game.igdb_title,
+                "game_id": game.game_id,
+                "user_game_id": game.user_game_id,
+                "ignored": game.ignored,
+                "created_at": game.created_at,
+                "updated_at": game.updated_at
+            },
+            ignored=game.ignored
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error ignoring Darkadia game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to ignore game"
+        )
+
+
+@router.post("/games/unignore-all", response_model=BulkOperationResponse)
+async def unignore_all_darkadia_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> BulkOperationResponse:
+    """Unignore all ignored games."""
+    try:
+        result = await darkadia_service.unignore_all_games(current_user.id)
+        
+        return BulkOperationResponse(
+            message=f"Unignored {result.successful_operations} games",
+            total_processed=result.total_processed,
+            successful_operations=result.successful_operations,
+            failed_operations=result.failed_operations,
+            errors=result.errors
+        )
+    except Exception as e:
+        logger.error(f"Error unignoring all games for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unignore games"
+        )
+
+
+@router.post("/games/unmatch-all", response_model=BulkOperationResponse)
+async def unmatch_all_darkadia_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> BulkOperationResponse:
+    """Remove IGDB matches from all games."""
+    try:
+        result = await darkadia_service.unmatch_all_games(current_user.id)
+        
+        return BulkOperationResponse(
+            message=f"Unmatched {result.successful_operations} games",
+            total_processed=result.total_processed,
+            successful_operations=result.successful_operations,
+            failed_operations=result.failed_operations,
+            errors=result.errors
+        )
+    except Exception as e:
+        logger.error(f"Error unmatching all games for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unmatch games"
+        )
