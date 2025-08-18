@@ -39,7 +39,6 @@ class Tag(SQLModel, table=True):
 ### Why These Don't Work:
 
 - `exclude=True` - Only affects Pydantic serialization (JSON output), not SQL generation
-- `sa_column=None` - Not a valid SQLAlchemy/SQLModel parameter, gets ignored
 - `@computed_field` - Pydantic v2 computed fields are still considered model fields for SQL purposes
 - Dynamic `setattr()` alone - Field still exists in model definition, so SQL includes it
 
