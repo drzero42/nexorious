@@ -1,8 +1,10 @@
 <script lang="ts">
- import { userGames, platforms, ui } from '$lib/stores';
+ import { userGames, platforms, ui, tags } from '$lib/stores';
  import { onMount, onDestroy } from 'svelte';
  import { goto } from '$app/navigation';
+import { page } from '$app/stores';
  import { RouteGuard, Pagination, PlatformBadges, PlatformSelector } from '$lib/components';
+import { TagFilter } from '$lib/components/tags';
  import PlatformRemovalSelector from '$lib/components/PlatformRemovalSelector.svelte';
  import { resolveImageUrl } from '$lib/utils/image-url';
  import type { UserGameFilters } from '$lib/stores';
@@ -94,6 +96,11 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
   loadGames();
   platforms.fetchAll();
   
+  // Load tags for filtering
+  if (tags.value.tags.length === 0) {
+    tags.fetchTags();
+  }
+  
   // Set up event listeners for cross-view real-time updates
   setupRealTimeUpdates();
  });
@@ -156,6 +163,13 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
   }, 3000);
  }
 
+ // Parse tag IDs from URL parameters
+ const selectedTagIds = $derived(() => {
+   const tagParam = $page.url.searchParams.get('tag');
+   if (!tagParam) return [];
+   return tagParam.split(',').filter(Boolean);
+ });
+
  // Build filters based on current selections
  const filters = $derived(() => {
   const baseFilters: UserGameFilters = {
@@ -172,6 +186,7 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
   if (hasNotesOnly) baseFilters.has_notes = true;
   if (ratingMin) baseFilters.rating_min = parseInt(ratingMin);
   if (ratingMax) baseFilters.rating_max = parseInt(ratingMax);
+  if (selectedTagIds().length > 0) baseFilters.tag_ids = selectedTagIds();
   
   return baseFilters;
  });
@@ -306,7 +321,7 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
  }
 
  // Check if any filters are active
- const hasActiveFilters = $derived(searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax);
+ const hasActiveFilters = $derived(searchQuery || selectedPlatform || selectedStorefront || selectedStatus || selectedOwnershipStatus || lovedOnly || hasNotesOnly || ratingMin || ratingMax || selectedTagIds().length > 0);
 
  // Bulk Selection Functions
  function toggleGameSelection(gameId: string) {
@@ -830,6 +845,11 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
      <option value="desc">Descending</option>
     </select>
    </div>
+  </div>
+
+  <!-- Tag Filter -->
+  <div class="mb-6">
+   <TagFilter />
   </div>
 
   <!-- Filter Controls -->

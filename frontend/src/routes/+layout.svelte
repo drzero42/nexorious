@@ -119,6 +119,15 @@
                     Add Game
                   </a>
                 </li>
+                <li>
+                  <a
+                    href="/tags"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">🏷️</span>
+                    Manage Tags
+                  </a>
+                </li>
                 <!-- Import Sources Section -->
                 <li>
                   <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
@@ -344,6 +353,16 @@
                         >
                           <span class="text-lg">➕</span>
                           Add Game
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href="/tags"
+                          onclick={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">🏷️</span>
+                          Manage Tags
                         </a>
                       </li>
                       <!-- Import Sources Section -->

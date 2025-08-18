@@ -31,9 +31,34 @@ vi.mock('$lib/utils/image-url', () => ({
 }));
 
 // Mock $app/navigation
-vi.mock('$app/navigation', () => ({
-  goto: vi.fn(),
-}));
+vi.mock('$app/navigation', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    goto: vi.fn(),
+  };
+});
+
+// Mock $app/stores
+vi.mock('$app/stores', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    page: {
+      subscribe: (callback: any) => {
+        callback({
+          url: {
+            searchParams: {
+              get: vi.fn().mockReturnValue(null)
+            }
+          },
+          params: {}
+        });
+        return () => {};
+      }
+    }
+  };
+});
 
 // Using mockUserGames from stores-mocks which has the proper structure
 

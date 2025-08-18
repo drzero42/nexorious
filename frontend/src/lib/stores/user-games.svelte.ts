@@ -191,6 +191,7 @@ export interface UserGameFilters {
   rating_min?: number;
   rating_max?: number;
   has_notes?: boolean;
+  tag_ids?: string[]; // Filter by tag IDs
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
 }
