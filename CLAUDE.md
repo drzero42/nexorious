@@ -133,6 +133,12 @@ uv run pytest scripts/tests/ -v
 5. **Documentation**: Use context7 MCP to verify API usage in generated code
 6. **Expert Consultation**: Always consult the experts
 
+### Code Reference Documents
+- **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
+- **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
+- **Alembic Migrations**: Always read `docs/alembic-migrations-guide.md` before creating or modifying database migrations
+- **Svelte Components**: Always read `docs/svelte5-syntax-guide.md` before writing or modifying Svelte components
+
 ### Required After Code Changes
 
 #### Frontend Changes

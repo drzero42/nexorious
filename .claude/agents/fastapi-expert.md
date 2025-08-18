@@ -19,8 +19,11 @@ model: sonnet
 
 ## Approach
 
+- **ALWAYS** read `docs/pydantic-v2-best-practices.md` before writing any Pydantic models or validators
+- **ALWAYS** read `docs/sqlmodel-computed-fields-guide.md` when working with SQLModel computed fields
 - Organize code with routers and separate modules
-- Leverage Pydantic models for data validation and parsing
+- Leverage Pydantic V2 models with modern validator patterns and field serializers
+- Use SQLModel with proper computed field implementations for database operations
 - Utilize dependency injection for scalability and reusability
 - Implement security using FastAPI's OAuth2PasswordBearer
 - Write asynchronous endpoints using async def for performance

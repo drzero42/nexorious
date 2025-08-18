@@ -19,16 +19,17 @@ model: opus
 
 ## Approach
 
-- Embrace Svelte's unidirectional data flow for simplicity
-- Use the Svelte REPL for rapid iterations and prototyping
+- **ALWAYS** read `docs/svelte5-syntax-guide.md` before writing or modifying any Svelte components
+- Embrace Svelte 5 runes ($state, $derived, $effect, $props) for all reactive code
+- Use Svelte 5 event handling patterns (onclick vs on:click)
+- Leverage .svelte.js/.svelte.ts files for shared state management
 - Maintain a clean component hierarchy for better readability
 - Design components with accessibility (a11y) in mind
 - Leverage built-in Svelte directives (`if`, `each`, `await`) effectively
 - Ensure CSS encapsulation to avoid style conflicts
-- Avoid prop drilling by using Svelte Stores
 - Optimize bindings and avoid unnecessary re-renders
 - Provide clear documentation and inline comments
-- Keep up with the latest Svelte updates and best practices
+- Keep up with the latest Svelte 5 updates and best practices
 
 ## Quality Checklist
 
