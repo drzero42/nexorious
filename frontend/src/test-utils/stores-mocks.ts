@@ -457,6 +457,78 @@ export const mockSteamStore = {
   clearError: vi.fn()
 };
 
+// Mock tags for the tags store
+export const mockTags = [
+  {
+    id: 'tag-1',
+    user_id: 'user-1',
+    name: 'Action',
+    color: '#FF0000',
+    description: 'Action games',
+    game_count: 2,
+    created_at: '2023-01-01T00:00:00.000Z',
+    updated_at: '2023-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'tag-2',
+    user_id: 'user-1',
+    name: 'RPG',
+    color: '#00FF00',
+    description: 'Role playing games',
+    game_count: 1,
+    created_at: '2023-01-01T00:00:00.000Z',
+    updated_at: '2023-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'tag-3',
+    user_id: 'user-1',
+    name: 'Strategy',
+    color: '#0000FF',
+    description: 'Strategy games',
+    game_count: 0,
+    created_at: '2023-01-01T00:00:00.000Z',
+    updated_at: '2023-01-01T00:00:00.000Z'
+  }
+];
+
+// Mock tags store
+export const mockTagsStore = {
+  value: {
+    tags: mockTags,
+    usageStats: {
+      total_tags: 3,
+      total_tagged_games: 2,
+      average_tags_per_game: 1.5,
+      tag_usage: {
+        'tag-1': 2,
+        'tag-2': 1,
+        'tag-3': 0
+      },
+      popular_tags: [mockTags[0], mockTags[1]],
+      unused_tags: [mockTags[2]]
+    },
+    isLoading: false,
+    error: null
+  },
+  fetchTags: vi.fn().mockResolvedValue(mockTags),
+  createTag: vi.fn().mockResolvedValue(mockTags[0]),
+  updateTag: vi.fn().mockResolvedValue(mockTags[0]),
+  deleteTag: vi.fn().mockResolvedValue(true),
+  createOrGetTag: vi.fn().mockResolvedValue({ tag: mockTags[0], created: true }),
+  assignTagsToGame: vi.fn().mockResolvedValue(true),
+  removeTagsFromGame: vi.fn().mockResolvedValue(true),
+  getTagUsageStats: vi.fn().mockResolvedValue({
+    total_tags: 3,
+    total_tagged_games: 2,
+    average_tags_per_game: 1.5,
+    tag_usage: { 'tag-1': 2, 'tag-2': 1, 'tag-3': 0 },
+    popular_tags: [mockTags[0], mockTags[1]],
+    unused_tags: [mockTags[2]]
+  }),
+  suggestColor: vi.fn().mockReturnValue('#6B7280'),
+  clearError: vi.fn()
+};
+
 // Mock auth store (importing from auth mocks)
 import { mockAuthStore } from './auth-mocks';
 
@@ -465,6 +537,7 @@ vi.mock('$lib/stores', () => ({
   auth: mockAuthStore,
   userGames: mockUserGamesStore,
   games: mockGamesStore,
+  tags: mockTagsStore,
   platforms: mockPlatformsStore,
   search: mockSearchStore,
   ui: mockUIStore,
@@ -505,6 +578,10 @@ vi.mock('$lib/stores/ui.svelte', () => ({
 // Mock steam store specifically
 vi.mock('$lib/stores/steam.svelte', () => ({
   steam: mockSteamStore
+}));
+
+vi.mock('$lib/stores/tags.svelte', () => ({
+  tags: mockTagsStore
 }));
 
 // Reset functions for test cleanup
@@ -717,5 +794,53 @@ export function resetStoresMocks() {
     isResolvingVanity: false,
     error: null,
     verificationResult: null
+  };
+
+  // Reset tags store
+  mockTagsStore.fetchTags.mockClear();
+  mockTagsStore.createTag.mockClear();
+  mockTagsStore.updateTag.mockClear();
+  mockTagsStore.deleteTag.mockClear();
+  mockTagsStore.createOrGetTag.mockClear();
+  mockTagsStore.assignTagsToGame.mockClear();
+  mockTagsStore.removeTagsFromGame.mockClear();
+  mockTagsStore.getTagUsageStats.mockClear();
+  mockTagsStore.suggestColor.mockClear();
+  mockTagsStore.clearError.mockClear();
+
+  // Reset to resolved promises by default
+  mockTagsStore.fetchTags.mockResolvedValue(mockTags);
+  mockTagsStore.createTag.mockResolvedValue(mockTags[0]);
+  mockTagsStore.updateTag.mockResolvedValue(mockTags[0]);
+  mockTagsStore.deleteTag.mockResolvedValue(true);
+  mockTagsStore.createOrGetTag.mockResolvedValue({ tag: mockTags[0], created: true });
+  mockTagsStore.assignTagsToGame.mockResolvedValue(true);
+  mockTagsStore.removeTagsFromGame.mockResolvedValue(true);
+  mockTagsStore.getTagUsageStats.mockResolvedValue({
+    total_tags: 3,
+    total_tagged_games: 2,
+    average_tags_per_game: 1.5,
+    tag_usage: { 'tag-1': 2, 'tag-2': 1, 'tag-3': 0 },
+    popular_tags: [mockTags[0], mockTags[1]],
+    unused_tags: [mockTags[2]]
+  });
+  mockTagsStore.suggestColor.mockReturnValue('#6B7280');
+
+  mockTagsStore.value = {
+    tags: mockTags,
+    usageStats: {
+      total_tags: 3,
+      total_tagged_games: 2,
+      average_tags_per_game: 1.5,
+      tag_usage: {
+        'tag-1': 2,
+        'tag-2': 1,
+        'tag-3': 0
+      },
+      popular_tags: [mockTags[0], mockTags[1]],
+      unused_tags: [mockTags[2]]
+    },
+    isLoading: false,
+    error: null
   };
 }

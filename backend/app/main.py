@@ -11,6 +11,7 @@ from .api.auth import router as auth_router
 from .api.games import router as games_router
 from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
+from .api.tags import router as tags_router
 from .api.import_api import router as import_router
 from .services.batch_session_manager import startup_batch_session_manager, shutdown_batch_session_manager
 
@@ -75,6 +76,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(games_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
+app.include_router(tags_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
 
 # Mount static files for cover art

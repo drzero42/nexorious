@@ -81,3 +81,14 @@ export type {
   SteamState
 } from './steam.svelte';
 
+// Tags store
+export { tags, tagEventBus, DEFAULT_TAG_COLORS } from './tags.svelte';
+export type { 
+  Tag,
+  TagCreateRequest,
+  TagUpdateRequest,
+  BulkTagAssignRequest,
+  BulkTagRemoveRequest,
+  TagsState
+} from './tags.svelte';
+
