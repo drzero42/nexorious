@@ -18,6 +18,7 @@ class ImportType(str, Enum):
     GOG = "gog"
     XBOX = "xbox"
     PLAYSTATION = "playstation"
+    DARKADIA = "darkadia"
 
 
 class ImportStatus(str, Enum):

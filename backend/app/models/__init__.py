@@ -12,6 +12,7 @@ from .tag import Tag, UserGameTag
 from .wishlist import Wishlist
 from .import_job import ImportJob
 from .steam_game import SteamGame
+from .darkadia_import import DarkadiaImport
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "Wishlist",
     "ImportJob",
     "SteamGame",
+    "DarkadiaImport",
 ]
