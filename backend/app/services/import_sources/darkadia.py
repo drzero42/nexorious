@@ -29,6 +29,7 @@ from ...models.platform import Platform, Storefront
 from ...security.file_upload_validator import SecureFileUploadValidator
 from ...security.csv_sanitizer import CSVSanitizer
 from ...services.igdb import IGDBService
+from ...services.platform_resolution import create_platform_resolution_service
 from .darkadia_transformer import DarkadiaTransformationPipeline
 import sys
 import os
@@ -50,6 +51,7 @@ class DarkadiaImportService(ImportSourceService):
         self.csv_parser = DarkadiaCSVParser()
         self.data_mapper = DarkadiaDataMapper()
         self.transformer = DarkadiaTransformationPipeline()
+        self.platform_resolution_service = create_platform_resolution_service(session)
     
     def _get_user_darkadia_config(self, user: User) -> dict:
         """Get user's Darkadia configuration from preferences."""
@@ -219,7 +221,7 @@ class DarkadiaImportService(ImportSourceService):
             analysis_data = full_data[:50] if len(full_data) > 50 else full_data
             
             # Analyze platforms from the sample
-            platform_analysis = self._analyze_platforms(analysis_data)
+            platform_analysis = await self._analyze_platforms(analysis_data)
             
             # Get actual total count
             total_estimate = len(full_data)
@@ -247,11 +249,12 @@ class DarkadiaImportService(ImportSourceService):
             logger.error(f"Error getting library preview for user {user_id}: {str(e)}")
             raise ValueError(f"Failed to preview CSV file: {str(e)}")
     
-    def _analyze_platforms(self, games_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Analyze platform data from CSV to detect unknown platforms and resolution status."""
+    async def _analyze_platforms(self, games_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze platform data from CSV to detect unknown platforms and provide resolution suggestions."""
         platform_stats = {}
         unknown_platforms = set()
         unknown_storefronts = set() 
+        platform_suggestions = {}
         
         # Reset mapper's tracking sets
         self.data_mapper.unknown_platforms = set()
@@ -265,52 +268,76 @@ class DarkadiaImportService(ImportSourceService):
                 platform_names = [p.strip() for p in str(platforms_field).split(",") if p.strip()]
                 
                 for platform_name in platform_names:
-                    if platform_name not in platform_stats:
-                        platform_stats[platform_name] = {
-                            "name": platform_name,
-                            "games_count": 0,
-                            "is_known": platform_name in self.data_mapper.PLATFORM_MAPPINGS,
-                            "mapped_name": self.data_mapper.PLATFORM_MAPPINGS.get(platform_name),
-                            "suggested_mapping": self.data_mapper._map_platform_name(platform_name)
-                        }
-                    
-                    platform_stats[platform_name]["games_count"] += 1
-                    
-                    # Track unknown platforms
-                    if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
-                        unknown_platforms.add(platform_name)
+                    await self._process_platform_name(platform_name, platform_stats, unknown_platforms, platform_suggestions)
             
             # Also check Copy platform field
             copy_platform = game_data.get("Copy platform", "")
             if copy_platform and str(copy_platform).strip() and str(copy_platform) != "nan":
                 platform_name = str(copy_platform).strip()
-                
-                if platform_name not in platform_stats:
-                    platform_stats[platform_name] = {
-                        "name": platform_name,
-                        "games_count": 0,
-                        "is_known": platform_name in self.data_mapper.PLATFORM_MAPPINGS,
-                        "mapped_name": self.data_mapper.PLATFORM_MAPPINGS.get(platform_name),
-                        "suggested_mapping": self.data_mapper._map_platform_name(platform_name)
-                    }
-                
-                platform_stats[platform_name]["games_count"] += 1
-                
-                if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
-                    unknown_platforms.add(platform_name)
+                await self._process_platform_name(platform_name, platform_stats, unknown_platforms, platform_suggestions)
         
         # Include platforms detected by the mapper
         unknown_platforms.update(self.data_mapper.unknown_platforms)
         unknown_storefronts.update(self.data_mapper.unknown_storefronts)
         
+        # Generate suggestions for unknown platforms using platform resolution service
+        for unknown_platform in unknown_platforms:
+            if unknown_platform not in platform_suggestions:
+                try:
+                    suggestions_response = await self.platform_resolution_service.suggest_platform_matches(
+                        unknown_platform_name=unknown_platform,
+                        min_confidence=0.6,
+                        max_suggestions=3
+                    )
+                    platform_suggestions[unknown_platform] = {
+                        "platform_suggestions": [s.model_dump() for s in suggestions_response.platform_suggestions],
+                        "storefront_suggestions": [s.model_dump() for s in suggestions_response.storefront_suggestions]
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to generate suggestions for platform '{unknown_platform}': {str(e)}")
+                    platform_suggestions[unknown_platform] = {
+                        "platform_suggestions": [],
+                        "storefront_suggestions": []
+                    }
+        
         return {
             "platform_stats": list(platform_stats.values()),
             "unknown_platforms": list(unknown_platforms),
             "unknown_storefronts": list(unknown_storefronts),
+            "platform_suggestions": platform_suggestions,
             "total_platforms": len(platform_stats),
             "unknown_platform_count": len(unknown_platforms),
             "known_platform_count": len(platform_stats) - len(unknown_platforms)
         }
+    
+    async def _process_platform_name(
+        self, 
+        platform_name: str, 
+        platform_stats: Dict[str, Any], 
+        unknown_platforms: set, 
+        platform_suggestions: Dict[str, Any]
+    ):
+        """Process a single platform name and update tracking structures."""
+        if platform_name not in platform_stats:
+            # Check if platform exists in database using fuzzy matching
+            is_known = platform_name in self.data_mapper.PLATFORM_MAPPINGS
+            mapped_name = self.data_mapper.PLATFORM_MAPPINGS.get(platform_name)
+            suggested_mapping = self.data_mapper._map_platform_name(platform_name)
+            
+            platform_stats[platform_name] = {
+                "name": platform_name,
+                "games_count": 0,
+                "is_known": is_known,
+                "mapped_name": mapped_name,
+                "suggested_mapping": suggested_mapping,
+                "resolution_status": "resolved" if is_known or suggested_mapping else "pending"
+            }
+        
+        platform_stats[platform_name]["games_count"] += 1
+        
+        # Track unknown platforms for resolution
+        if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
+            unknown_platforms.add(platform_name)
     
     async def import_library(self, user_id: str, progress_callback: Optional[Callable[[int], None]] = None) -> ImportResult:
         """Import CSV data into staging table using enhanced transformation pipeline."""
@@ -437,6 +464,10 @@ class DarkadiaImportService(ImportSourceService):
                     darkadia_game.set_transformation_data(transformation_metadata)
                 
                 self.session.add(darkadia_game)
+                
+                # Create DarkadiaImport record for platform resolution tracking
+                await self._create_darkadia_import_record(darkadia_game, game_data, user_id)
+                
                 imported_count += 1
                 
             except Exception as e:
@@ -446,44 +477,160 @@ class DarkadiaImportService(ImportSourceService):
         
         return imported_count, skipped_count, errors
     
+    async def _create_darkadia_import_record(self, darkadia_game, game_data: Dict[str, Any], user_id: str):
+        """Create DarkadiaImport record for platform resolution tracking."""
+        try:
+            # Extract platform information from CSV data
+            platforms_field = game_data.get("Platforms", "")
+            copy_platform = game_data.get("Copy platform", "")
+            
+            # Determine the primary platform name to track
+            original_platform_name = None
+            if copy_platform and str(copy_platform).strip() and str(copy_platform) != "nan":
+                original_platform_name = str(copy_platform).strip()
+            elif platforms_field and str(platforms_field).strip() and str(platforms_field) != "nan":
+                # Use the first platform from the list
+                platform_names = [p.strip() for p in str(platforms_field).split(",") if p.strip()]
+                if platform_names:
+                    original_platform_name = platform_names[0]
+            
+            if not original_platform_name:
+                # No platform to track
+                return
+            
+            # Check if platform is known (mapped or exists in database)
+            is_known = original_platform_name in self.data_mapper.PLATFORM_MAPPINGS
+            suggested_mapping = self.data_mapper._map_platform_name(original_platform_name)
+            platform_resolved = bool(is_known or suggested_mapping)
+            
+            # Create initial platform resolution data
+            resolution_data = {
+                "status": "resolved" if platform_resolved else "pending",
+                "original_name": original_platform_name,
+                "suggestions": [],
+                "storefront_suggestions": [],
+                "resolved_platform_id": None,
+                "resolved_storefront_id": None,
+                "resolution_timestamp": None,
+                "resolution_method": "auto" if platform_resolved else None,
+                "user_notes": None
+            }
+            
+            # If not resolved, generate suggestions
+            if not platform_resolved:
+                try:
+                    suggestions_response = await self.platform_resolution_service.suggest_platform_matches(
+                        unknown_platform_name=original_platform_name,
+                        min_confidence=0.6,
+                        max_suggestions=3
+                    )
+                    resolution_data["suggestions"] = [s.model_dump() for s in suggestions_response.platform_suggestions]
+                    resolution_data["storefront_suggestions"] = [s.model_dump() for s in suggestions_response.storefront_suggestions]
+                    
+                    if resolution_data["suggestions"]:
+                        resolution_data["status"] = "suggested"
+                except Exception as e:
+                    logger.warning(f"Failed to generate suggestions for platform '{original_platform_name}': {str(e)}")
+            
+            # Create DarkadiaImport record - this requires a UserGame first
+            # For now, we'll create a placeholder that can be associated later during sync
+            darkadia_import = DarkadiaImport(
+                user_id=user_id,
+                user_game_id=None,  # Will be set during sync when UserGame is created
+                csv_row_number=int(darkadia_game.external_id),
+                original_platform_name=original_platform_name,
+                platform_resolved=platform_resolved,
+                import_batch_id=darkadia_game.id,  # Use darkadia_game.id as batch identifier
+                csv_file_hash=hashlib.md5(json.dumps(game_data, sort_keys=True).encode()).hexdigest()
+            )
+            
+            # Set original CSV data and platform resolution data
+            darkadia_import.set_original_csv_data(game_data)
+            darkadia_import.set_platform_resolution_data(resolution_data)
+            
+            self.session.add(darkadia_import)
+            
+        except Exception as e:
+            logger.error(f"Error creating DarkadiaImport record for game {darkadia_game.game_name}: {str(e)}")
+            # Don't fail the entire import for this error
+            pass
+    
     async def _create_platform_association(self, user_game: UserGame, 
                                          darkadia_game: DarkadiaGame,
                                          csv_data: Dict[str, Any]) -> None:
-        """Create UserGamePlatform association from Darkadia copy data."""
+        """Create UserGamePlatform association from Darkadia copy data, checking for resolved platforms."""
         try:
-            # Get transformed platform/storefront data if available
-            transform_data = darkadia_game.get_transformation_data()
-            
-            # Use transformed values if available, otherwise fall back to original
-            platform_name = transform_data.get('_mapped_platform') or csv_data.get('Copy platform', '').strip()
-            storefront_name = transform_data.get('_mapped_storefront') or csv_data.get('Copy source', '').strip()
-            
-            # Handle "Copy source other" fallback
-            if not storefront_name or storefront_name.lower() in ['other', '']:
-                storefront_name = csv_data.get('Copy source other', '').strip()
-            
-            if not platform_name:
-                logger.warning(f"No platform information available for game {darkadia_game.game_name}")
-                return
-            
-            # Look up platform by name
-            platform = self.session.exec(
-                select(Platform).where(Platform.name == platform_name)
+            # First, check if there's a DarkadiaImport record with resolved platform information
+            darkadia_import = self.session.exec(
+                select(DarkadiaImport).where(
+                    and_(
+                        DarkadiaImport.user_id == user_game.user_id,
+                        DarkadiaImport.csv_row_number == int(darkadia_game.external_id),
+                        DarkadiaImport.platform_resolved == True
+                    )
+                )
             ).first()
             
-            if not platform:
-                logger.warning(f"Platform '{platform_name}' not found in database for game {darkadia_game.game_name}")
-                return
-            
-            # Look up storefront by name (optional)
+            platform = None
             storefront = None
-            if storefront_name:
-                storefront = self.session.exec(
-                    select(Storefront).where(Storefront.name == storefront_name)
+            
+            if darkadia_import:
+                # Use resolved platform information
+                resolution_data = darkadia_import.get_platform_resolution_data()
+                resolved_platform_id = resolution_data.get("resolved_platform_id")
+                resolved_storefront_id = resolution_data.get("resolved_storefront_id")
+                
+                if resolved_platform_id:
+                    platform = self.session.get(Platform, resolved_platform_id)
+                    logger.info(f"Using resolved platform for {darkadia_game.game_name}: {platform.display_name if platform else 'Not found'}")
+                
+                if resolved_storefront_id:
+                    storefront = self.session.get(Storefront, resolved_storefront_id)
+                    logger.info(f"Using resolved storefront for {darkadia_game.game_name}: {storefront.display_name if storefront else 'Not found'}")
+                
+                # Update DarkadiaImport record with user_game_id now that it's available
+                darkadia_import.user_game_id = user_game.id
+                darkadia_import.updated_at = datetime.now(timezone.utc)
+                self.session.add(darkadia_import)
+            
+            # If no resolved platform found, fall back to original logic
+            if not platform:
+                # Get transformed platform/storefront data if available
+                transform_data = darkadia_game.get_transformation_data()
+                
+                # Use transformed values if available, otherwise fall back to original
+                platform_name = transform_data.get('_mapped_platform') or csv_data.get('Copy platform', '').strip()
+                storefront_name = transform_data.get('_mapped_storefront') or csv_data.get('Copy source', '').strip()
+                
+                # Handle "Copy source other" fallback
+                if not storefront_name or storefront_name.lower() in ['other', '']:
+                    storefront_name = csv_data.get('Copy source other', '').strip()
+                
+                if not platform_name:
+                    logger.warning(f"No platform information available for game {darkadia_game.game_name}")
+                    return
+                
+                # Look up platform by name
+                platform = self.session.exec(
+                    select(Platform).where(Platform.name == platform_name)
                 ).first()
                 
-                if not storefront:
-                    logger.warning(f"Storefront '{storefront_name}' not found in database for game {darkadia_game.game_name}")
+                if not platform:
+                    logger.warning(f"Platform '{platform_name}' not found in database for game {darkadia_game.game_name}")
+                    return
+                
+                # Look up storefront by name (optional) - only if not already resolved
+                if not storefront and storefront_name:
+                    storefront = self.session.exec(
+                        select(Storefront).where(Storefront.name == storefront_name)
+                    ).first()
+                    
+                    if not storefront:
+                        logger.warning(f"Storefront '{storefront_name}' not found in database for game {darkadia_game.game_name}")
+            
+            if not platform:
+                logger.warning(f"No platform available for game {darkadia_game.game_name}")
+                return
             
             # Check if association already exists
             existing_association = self.session.exec(
@@ -497,7 +644,7 @@ class DarkadiaImportService(ImportSourceService):
             ).first()
             
             if existing_association:
-                logger.debug(f"Platform association already exists for {darkadia_game.game_name} on {platform_name}")
+                logger.debug(f"Platform association already exists for {darkadia_game.game_name} on {platform.display_name}")
                 return
             
             # Create the association
@@ -511,7 +658,7 @@ class DarkadiaImportService(ImportSourceService):
             )
             
             self.session.add(user_game_platform)
-            logger.info(f"🎮 [Darkadia Service] Created platform association: {darkadia_game.game_name} on {platform_name} ({storefront_name or 'No storefront'})")
+            logger.info(f"🎮 [Darkadia Service] Created platform association: {darkadia_game.game_name} on {platform.display_name} ({storefront.display_name if storefront else 'No storefront'})")
             
         except Exception as e:
             logger.error(f"Error creating platform association for {darkadia_game.game_name}: {str(e)}")

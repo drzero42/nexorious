@@ -14,6 +14,7 @@ from ....core.security import get_current_user
 from ....models.user import User
 from ....models.import_job import ImportJob, ImportStatus, ImportType, JobType
 from ....services.import_sources.darkadia import create_darkadia_import_service
+from ....services.platform_resolution import create_platform_resolution_service
 from ...schemas.import_schemas import (
     VerificationResponse,
     LibraryPreviewResponse,
@@ -33,7 +34,13 @@ from ...schemas.darkadia import (
     DarkadiaConfigRequest,
     DarkadiaConfigResponse,
     DarkadiaVerificationRequest,
-    DarkadiaUploadResponse
+    DarkadiaUploadResponse,
+    DarkadiaResolutionSummary
+)
+from ....api.schemas.platform import (
+    PendingResolutionsListResponse,
+    BulkPlatformResolutionRequest,
+    BulkPlatformResolutionResponse
 )
 
 router = APIRouter()
@@ -919,4 +926,153 @@ async def cancel_darkadia_job(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel job"
+        )
+
+
+# Platform Resolution Endpoints for Darkadia
+
+@router.get("/platform-resolution/summary", response_model=DarkadiaResolutionSummary)
+async def get_darkadia_resolution_summary(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> DarkadiaResolutionSummary:
+    """
+    Get a summary of platform resolution status for user's Darkadia imports.
+    
+    Provides an overview of pending platform resolutions, affected games,
+    and resolution suggestions available for the user.
+    """
+    try:
+        resolution_service = create_platform_resolution_service(session)
+        
+        # Get pending resolutions
+        pending_resolutions, total_pending = await resolution_service.get_pending_resolutions(
+            user_id=current_user.id,
+            page=1,
+            per_page=100  # Get all for summary
+        )
+        
+        # Calculate summary statistics
+        total_affected_games = sum(pr.affected_games_count for pr in pending_resolutions)
+        
+        # Get most common unresolved platforms
+        platform_counts = {}
+        suggested_count = 0
+        
+        for pr in pending_resolutions:
+            platform_name = pr.original_platform_name
+            if platform_name not in platform_counts:
+                platform_counts[platform_name] = {
+                    "name": platform_name,
+                    "affected_games": pr.affected_games_count,
+                    "has_suggestions": len(pr.resolution_data.suggestions) > 0
+                }
+            
+            if pr.resolution_data.suggestions:
+                suggested_count += 1
+        
+        # Sort by affected games count
+        most_common = sorted(
+            platform_counts.values(),
+            key=lambda x: x["affected_games"],
+            reverse=True
+        )[:5]
+        
+        return DarkadiaResolutionSummary(
+            total_pending_resolutions=total_pending,
+            total_affected_games=total_affected_games,
+            most_common_unresolved=most_common,
+            suggested_resolutions_available=suggested_count,
+            recent_resolutions=[]  # TODO: Add recent resolutions tracking
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting resolution summary for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get platform resolution summary"
+        )
+
+
+@router.get("/platform-resolution/pending", response_model=PendingResolutionsListResponse)
+async def get_pending_darkadia_resolutions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
+) -> PendingResolutionsListResponse:
+    """
+    Get pending platform resolutions for Darkadia imports.
+    
+    Returns a paginated list of unresolved platforms from the user's
+    Darkadia CSV imports that require manual resolution.
+    """
+    try:
+        resolution_service = create_platform_resolution_service(session)
+        
+        pending_resolutions, total = await resolution_service.get_pending_resolutions(
+            user_id=current_user.id,
+            page=page,
+            per_page=per_page
+        )
+        
+        # Calculate pages
+        pages = (total + per_page - 1) // per_page
+        
+        return PendingResolutionsListResponse(
+            pending_resolutions=pending_resolutions,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting pending resolutions for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get pending platform resolutions"
+        )
+
+
+@router.post("/platform-resolution/bulk-resolve", response_model=BulkPlatformResolutionResponse)
+async def bulk_resolve_darkadia_platforms(
+    request: BulkPlatformResolutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> BulkPlatformResolutionResponse:
+    """
+    Bulk resolve multiple platform mappings for Darkadia imports.
+    
+    Efficiently handles multiple platform resolutions at once,
+    useful when users have many unknown platforms to resolve
+    from their CSV imports.
+    """
+    try:
+        resolution_service = create_platform_resolution_service(session)
+        
+        # Convert request to dict format expected by service
+        resolutions_data = []
+        for resolution in request.resolutions:
+            resolutions_data.append({
+                "import_id": resolution.import_id,
+                "resolved_platform_id": resolution.resolved_platform_id,
+                "resolved_storefront_id": resolution.resolved_storefront_id,
+                "user_notes": resolution.user_notes
+            })
+        
+        result = await resolution_service.bulk_resolve_platforms(
+            resolutions=resolutions_data,
+            user_id=current_user.id
+        )
+        
+        logger.info(f"Bulk resolved {result.successful_resolutions}/{result.total_processed} platforms for user {current_user.id}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error bulk resolving platforms for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to bulk resolve platforms"
         )

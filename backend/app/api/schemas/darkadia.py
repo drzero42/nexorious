@@ -74,6 +74,7 @@ class DarkadiaLibraryPreview(BaseModel):
     total_games_estimate: int = Field(..., description="Estimated total number of games")
     preview_games: List[DarkadiaGamePreview] = Field(..., description="Preview of first few games")
     file_info: Dict[str, Any] = Field(..., description="Information about the CSV file")
+    platform_analysis: Dict[str, Any] = Field(..., description="Platform analysis including resolution status")
 
 
 class DarkadiaGameResponse(BaseModel):
@@ -147,7 +148,52 @@ class DarkadiaGamesBulkUnignoreResponse(BaseModel):
     total_processed: int = Field(..., description="Total number of Darkadia games processed")
     successful_unignores: int = Field(..., description="Number of games successfully unignored")
     failed_unignores: int = Field(..., description="Number of games that failed to unignore")
-    errors: List[str] = Field(default=[], description="List of error messages for failed unignores")
+
+
+# Platform Resolution Schemas for Darkadia Import
+
+class DarkadiaPlatformStatus(BaseModel):
+    """Schema for platform resolution status in Darkadia imports."""
+    name: str = Field(..., description="Original platform name from CSV")
+    games_count: int = Field(..., description="Number of games using this platform")
+    is_known: bool = Field(..., description="Whether platform is in the mappings")
+    mapped_name: Optional[str] = Field(None, description="Mapped platform name if available")
+    suggested_mapping: Optional[str] = Field(None, description="Suggested mapping from fuzzy matching")
+    resolution_status: str = Field(..., description="Status: 'resolved', 'pending', 'suggested'")
+    suggestions: List[Dict[str, Any]] = Field(default_factory=list, description="Platform suggestions from resolution service")
+
+
+class DarkadiaPlatformAnalysis(BaseModel):
+    """Schema for complete platform analysis in Darkadia imports."""
+    platform_stats: List[DarkadiaPlatformStatus] = Field(..., description="Status of all platforms found")
+    unknown_platforms: List[str] = Field(..., description="List of unknown platform names")
+    unknown_storefronts: List[str] = Field(..., description="List of unknown storefront names")
+    platform_suggestions: Dict[str, Any] = Field(..., description="Suggestions for unknown platforms")
+    total_platforms: int = Field(..., description="Total number of unique platforms")
+    unknown_platform_count: int = Field(..., description="Number of unknown platforms")
+    known_platform_count: int = Field(..., description="Number of known platforms")
+
+
+class DarkadiaImportWithPlatformStatus(BaseModel):
+    """Enhanced import response with platform resolution status."""
+    message: str = Field(..., description="Status message about the import")
+    imported_count: int = Field(..., description="Number of games imported")
+    skipped_count: int = Field(..., description="Number of games skipped")
+    auto_matched_count: int = Field(..., description="Number of games auto-matched to IGDB")
+    total_games: int = Field(..., description="Total number of games in CSV")
+    errors: List[str] = Field(default=[], description="List of errors encountered during import")
+    platform_analysis: DarkadiaPlatformAnalysis = Field(..., description="Platform resolution analysis")
+    pending_resolutions: int = Field(..., description="Number of platforms requiring user resolution")
+    auto_resolved_platforms: int = Field(..., description="Number of platforms automatically resolved")
+
+
+class DarkadiaResolutionSummary(BaseModel):
+    """Summary of platform resolution status for a user's imports."""
+    total_pending_resolutions: int = Field(..., description="Total unresolved platforms")
+    total_affected_games: int = Field(..., description="Total games affected by unresolved platforms")
+    most_common_unresolved: List[Dict[str, Any]] = Field(..., description="Most common unresolved platforms")
+    suggested_resolutions_available: int = Field(..., description="Number of platforms with suggestions")
+    recent_resolutions: List[Dict[str, Any]] = Field(..., description="Recently resolved platforms")
 
 
 class DarkadiaGamesBulkUnmatchResponse(BaseModel):
