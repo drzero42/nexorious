@@ -89,7 +89,7 @@ class TestCompleteImportToSyncWorkflow:
         session.commit()
         
         # Step 2: Verify games appear in unmatched list
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 2
@@ -139,7 +139,7 @@ class TestCompleteImportToSyncWorkflow:
                 assert match_data["game"]["igdb_title"] == igdb_game.title
         
         # Step 5: Verify games appear in matched list
-        response = client.get("/api/import/sources/steam/games?status=matched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=matched", headers=auth_headers)
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 2
@@ -169,7 +169,7 @@ class TestCompleteImportToSyncWorkflow:
         assert bulk_data["failed_operations"] == 0
         
         # Step 9: Verify all games are now synced
-        response = client.get("/api/import/sources/steam/games?status=synced", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=synced", headers=auth_headers)
         assert_api_success(response, 200)
         data = response.json()
         assert data["total"] == 2
@@ -209,7 +209,7 @@ class TestCompleteImportToSyncWorkflow:
         session.commit()
         
         # Step 1: Verify all games are unmatched
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 3
         
@@ -221,12 +221,12 @@ class TestCompleteImportToSyncWorkflow:
         assert ignore_data["ignored"] is True
         
         # Step 3: Verify game moved to ignored list
-        response = client.get("/api/import/sources/steam/games?status=ignored", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=ignored", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 1
         
         # Step 4: Verify unmatched count decreased
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 2
         
@@ -237,12 +237,12 @@ class TestCompleteImportToSyncWorkflow:
         assert ignore_data["ignored"] is False
         
         # Step 6: Verify game returned to unmatched list
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 3
         
         # Step 7: Verify ignored list is empty
-        response = client.get("/api/import/sources/steam/games?status=ignored", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=ignored", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 0
     
@@ -460,7 +460,7 @@ class TestAutoMatchingWorkflows:
         session.commit()
         
         # Step 1: Verify initial state
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 3  # Only unmatched games
         
@@ -557,7 +557,7 @@ class TestBulkOperationsWorkflows:
         session.commit()
         
         # Step 1: Verify initial matched games count
-        response = client.get("/api/import/sources/steam/games?status=matched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=matched", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 2
         
@@ -571,7 +571,7 @@ class TestBulkOperationsWorkflows:
         assert bulk_data["failed_operations"] == 0
         
         # Step 3: Verify games moved to synced status
-        response = client.get("/api/import/sources/steam/games?status=synced", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=synced", headers=auth_headers)
         assert_api_success(response, 200)
         assert response.json()["total"] == 2
         
@@ -738,14 +738,14 @@ class TestPerformanceAndScalabilityWorkflows:
             assert_api_success(response, 200)
         
         # Test filtering ignored games
-        response = client.get("/api/import/sources/steam/games?status=ignored", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=ignored", headers=auth_headers)
         assert_api_success(response, 200)
         
         data = response.json()
         assert data["total"] == 10  # Every 10th of 100 games
         
         # Test filtering unmatched games
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         assert_api_success(response, 200)
         
         data = response.json()

@@ -96,7 +96,7 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/import/sources/steam/games?status=unmatched", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=unmatched", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -125,7 +125,7 @@ class TestSteamGamesListEndpoint:
         session.add(steam_game2)
         session.commit()
         
-        response = client.get("/api/import/sources/steam/games?status=ignored", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=ignored", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -192,7 +192,7 @@ class TestSteamGamesListEndpoint:
     
     def test_list_steam_games_invalid_status_filter(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test invalid status filter returns 422."""
-        response = client.get("/api/import/sources/steam/games?status=invalid", headers=auth_headers)
+        response = client.get("/api/import/sources/steam/games?status_filter=invalid", headers=auth_headers)
         
         # Should return validation error for invalid status filter
         assert response.status_code == 422

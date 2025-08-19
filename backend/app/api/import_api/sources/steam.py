@@ -276,7 +276,7 @@ async def list_steam_games(
     steam_service = Depends(get_steam_service),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
-    status: Optional[str] = Query(default=None, pattern="^(unmatched|matched|ignored|synced)$", description="Filter by status: unmatched, matched, ignored, synced"),
+    status_filter: Optional[str] = Query(default=None, pattern="^(unmatched|matched|ignored|synced)$", description="Filter by status: unmatched, matched, ignored, synced"),
     search: Optional[str] = Query(default=None, description="Search game names")
 ) -> ImportGamesList:
     """List imported Steam games with filtering."""
@@ -285,7 +285,7 @@ async def list_steam_games(
             user_id=current_user.id,
             offset=offset,
             limit=limit,
-            status_filter=status,
+            status_filter=status_filter,
             search=search
         )
         
@@ -304,7 +304,9 @@ async def list_steam_games(
                     "updated_at": game.updated_at
                 } for game in games
             ],
-            total=total
+            total=total,
+            offset=offset,
+            limit=limit
         )
     except Exception as e:
         logger.error(f"Error listing Steam games for user {current_user.id}: {str(e)}")

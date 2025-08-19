@@ -34,6 +34,13 @@ class DarkadiaGame(SQLModel, table=True):
         description="All CSV row data as JSON"
     )
     
+    # Store transformation metadata (platform mappings, validation results, etc.)
+    transformation_data_json: str = Field(
+        default="{}",
+        sa_column=Column("transformation_data", JSON),
+        description="Transformation metadata as JSON"
+    )
+    
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
@@ -59,6 +66,22 @@ class DarkadiaGame(SQLModel, table=True):
         """Get a specific field from CSV data."""
         csv_data = self.get_csv_data()
         return csv_data.get(field_name, default)
+    
+    def get_transformation_data(self) -> Dict[str, Any]:
+        """Get transformation data as a dictionary."""
+        try:
+            return json.loads(self.transformation_data_json or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_transformation_data(self, value: Dict[str, Any]) -> None:
+        """Set transformation data from a dictionary."""
+        self.transformation_data_json = json.dumps(value)
+    
+    def get_transformation_field(self, field_name: str, default: Any = None) -> Any:
+        """Get a specific field from transformation data."""
+        transform_data = self.get_transformation_data()
+        return transform_data.get(field_name, default)
     
     @property
     def platforms(self) -> str:
