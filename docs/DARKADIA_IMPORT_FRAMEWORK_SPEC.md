@@ -1359,11 +1359,11 @@ class PlatformResolutionTests:
 5. Add import status and progress tracking endpoints
 
 **Acceptance Criteria**:
-- [ ] File upload endpoint handles multipart/form-data securely
-- [ ] Preview endpoint shows accurate platform mapping status
-- [ ] Import can be triggered and tracked via API
-- [ ] Background job processing works correctly
-- [ ] Error handling provides clear user guidance
+- [x] File upload endpoint handles multipart/form-data securely
+- [x] Preview endpoint shows accurate platform mapping status
+- [x] Import can be triggered and tracked via API
+- [x] Background job processing works correctly
+- [x] Error handling provides clear user guidance
 
 #### Task 5: Enhanced Data Transformation
 **Priority**: High  

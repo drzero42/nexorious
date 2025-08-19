@@ -2,23 +2,27 @@
 Darkadia CSV import endpoints using the new import framework.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from sqlmodel import Session
 from typing import Annotated, Optional, Dict, Any
 import logging
 from pathlib import Path
+from datetime import datetime, timezone
 
 from ....core.database import get_session
 from ....core.security import get_current_user
 from ....models.user import User
+from ....models.import_job import ImportJob, ImportStatus, ImportType, JobType
 from ....services.import_sources.darkadia import create_darkadia_import_service
 from ...schemas.import_schemas import (
-    SourceConfigResponse,
-    VerificationRequest,
     VerificationResponse,
     LibraryPreviewResponse,
     ImportGamesList,
+    ImportGameResponse,
     ImportStartResponse,
+    ImportJobResponse,
+    ImportJobsListResponse,
+    ImportJobCancelResponse,
     GameMatchRequest,
     GameMatchResponse,
     GameSyncResponse,
@@ -36,6 +40,69 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def process_darkadia_import_background(job_id: str, user_id: str, session: Session):
+    """Background task to process Darkadia CSV import with job tracking."""
+    darkadia_service = create_darkadia_import_service(session)
+    
+    try:
+        # Get the job
+        job = session.get(ImportJob, job_id)
+        if not job:
+            logger.error(f"Import job {job_id} not found")
+            return
+        
+        # Update job status to running
+        job.status = ImportStatus.PROCESSING
+        job.started_at = datetime.now(timezone.utc)
+        job.progress = 0
+        session.add(job)
+        session.commit()
+        
+        logger.info(f"Starting background import for job {job_id}, user {user_id}")
+        
+        # Create progress callback to update job
+        def update_progress(progress_percent: int):
+            """Update job progress in database."""
+            try:
+                job_refresh = session.get(ImportJob, job_id)
+                if job_refresh:
+                    job_refresh.progress = progress_percent
+                    session.add(job_refresh)
+                    session.commit()
+            except Exception as e:
+                logger.error(f"Error updating progress for job {job_id}: {e}")
+        
+        # Process the import with progress tracking
+        result = await darkadia_service.import_library(user_id, progress_callback=update_progress)
+        
+        # Update job with results
+        job.status = ImportStatus.COMPLETED
+        job.progress = 100
+        job.total_items = result.total_games
+        job.processed_items = result.imported_count + result.skipped_count
+        job.successful_items = result.imported_count
+        job.failed_items = len(result.errors)
+        job.set_errors(result.errors)
+        job.completed_at = datetime.now(timezone.utc)
+        
+        session.add(job)
+        session.commit()
+        
+        logger.info(f"Completed import job {job_id}: {result.imported_count} imported, {result.skipped_count} skipped")
+        
+    except Exception as e:
+        logger.error(f"Import job {job_id} failed: {str(e)}")
+        
+        # Update job with error
+        job = session.get(ImportJob, job_id)
+        if job:
+            job.status = ImportStatus.FAILED
+            job.error_message = str(e)
+            job.completed_at = datetime.now(timezone.utc)
+            session.add(job)
+            session.commit()
+
+
 def get_darkadia_service(session: Annotated[Session, Depends(get_session)]):
     """Dependency to get Darkadia import service."""
     return create_darkadia_import_service(session)
@@ -43,8 +110,7 @@ def get_darkadia_service(session: Annotated[Session, Depends(get_session)]):
 
 @router.get("/availability")
 async def get_darkadia_availability(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user)]
 ) -> Dict[str, Any]:
     """
     Check if Darkadia import feature is available for the current user.
@@ -138,7 +204,6 @@ async def upload_darkadia_csv(
         content = await file.read()
         
         # Create a temporary file to store the upload
-        import tempfile
         import hashlib
         import time
         
@@ -156,7 +221,7 @@ async def upload_darkadia_csv(
         temp_file.chmod(0o600)  # Read/write for owner only
         
         # Set configuration with temp file path
-        config = await darkadia_service.set_config(current_user.id, {
+        await darkadia_service.set_config(current_user.id, {
             "csv_file_path": str(temp_file)
         })
         
@@ -246,14 +311,14 @@ async def verify_darkadia_config(
         return VerificationResponse(
             is_valid=is_valid,
             error_message=error_message,
-            verification_data=verification_data or {}
+            additional_data=verification_data or {}
         )
     except Exception as e:
         logger.error(f"Error verifying Darkadia config for user {current_user.id}: {str(e)}")
         return VerificationResponse(
             is_valid=False,
             error_message=f"Verification failed: {str(e)}",
-            verification_data={}
+            additional_data={}
         )
 
 
@@ -286,31 +351,59 @@ async def get_darkadia_library_preview(
 
 @router.post("/import", response_model=ImportStartResponse)
 async def trigger_darkadia_import(
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
     darkadia_service = Depends(get_darkadia_service)
 ) -> ImportStartResponse:
-    """Trigger Darkadia CSV import to staging table."""
+    """Trigger Darkadia CSV import to staging table with background processing."""
     try:
-        result = await darkadia_service.import_library(current_user.id)
+        # Validate configuration before creating job
+        config = await darkadia_service.get_config(current_user.id)
+        if not config.is_configured or not config.is_verified:
+            raise ValueError("Darkadia CSV file not configured or verified")
+        
+        # Create import job
+        job = ImportJob(
+            user_id=current_user.id,
+            import_type=ImportType.DARKADIA,
+            job_type=JobType.LIBRARY_IMPORT,
+            source="darkadia",
+            status=ImportStatus.PENDING,
+            total_items=0,  # Will be updated when processing starts
+            progress=0
+        )
+        
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        
+        # Start background processing
+        background_tasks.add_task(
+            process_darkadia_import_background,
+            job.id,
+            current_user.id,
+            session
+        )
+        
+        logger.info(f"Started Darkadia import job {job.id} for user {current_user.id}")
         
         return ImportStartResponse(
-            message="Import completed successfully",
-            imported_count=result.imported_count,
-            skipped_count=result.skipped_count,
-            auto_matched_count=result.auto_matched_count,
-            total_games=result.total_games,
-            errors=result.errors
+            message="Import started successfully. Check job status for progress.",
+            job_id=job.id,
+            started=True
         )
+        
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Error importing library for user {current_user.id}: {str(e)}")
+        logger.error(f"Error starting import for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to import library"
+            detail="Failed to start import"
         )
 
 
@@ -335,18 +428,18 @@ async def list_darkadia_games(
         
         return ImportGamesList(
             games=[
-                {
-                    "id": game.id,
-                    "external_id": game.external_id,
-                    "name": game.name,
-                    "igdb_id": game.igdb_id,
-                    "igdb_title": game.igdb_title,
-                    "game_id": game.game_id,
-                    "user_game_id": game.user_game_id,
-                    "ignored": game.ignored,
-                    "created_at": game.created_at,
-                    "updated_at": game.updated_at
-                }
+                ImportGameResponse(
+                    id=game.id,
+                    external_id=game.external_id,
+                    name=game.name,
+                    igdb_id=game.igdb_id,
+                    igdb_title=game.igdb_title,
+                    game_id=game.game_id,
+                    user_game_id=game.user_game_id,
+                    ignored=game.ignored,
+                    created_at=game.created_at,
+                    updated_at=game.updated_at
+                )
                 for game in games
             ],
             total=total_count,
@@ -374,18 +467,18 @@ async def match_darkadia_game(
         
         return GameMatchResponse(
             message="Game matched successfully" if request.igdb_id else "Game match cleared",
-            game={
-                "id": game.id,
-                "external_id": game.external_id,
-                "name": game.name,
-                "igdb_id": game.igdb_id,
-                "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
-                "user_game_id": game.user_game_id,
-                "ignored": game.ignored,
-                "created_at": game.created_at,
-                "updated_at": game.updated_at
-            }
+            game=ImportGameResponse(
+                id=game.id,
+                external_id=game.external_id,
+                name=game.name,
+                igdb_id=game.igdb_id,
+                igdb_title=game.igdb_title,
+                game_id=game.game_id,
+                user_game_id=game.user_game_id,
+                ignored=game.ignored,
+                created_at=game.created_at,
+                updated_at=game.updated_at
+            )
         )
     except ValueError as e:
         raise HTTPException(
@@ -424,18 +517,18 @@ async def auto_match_darkadia_game(
             if game:
                 return GameMatchResponse(
                     message=f"Game auto-matched successfully with confidence {result.confidence_score:.2f}",
-                    game={
-                        "id": game.id,
-                        "external_id": game.external_id,
-                        "name": game.name,
-                        "igdb_id": game.igdb_id,
-                        "igdb_title": game.igdb_title,
-                        "game_id": game.game_id,
-                        "user_game_id": game.user_game_id,
-                        "ignored": game.ignored,
-                        "created_at": game.created_at,
-                        "updated_at": game.updated_at
-                    }
+                    game=ImportGameResponse(
+                        id=game.id,
+                        external_id=game.external_id,
+                        name=game.name,
+                        igdb_id=game.igdb_id,
+                        igdb_title=game.igdb_title,
+                        game_id=game.game_id,
+                        user_game_id=game.user_game_id,
+                        ignored=game.ignored,
+                        created_at=game.created_at,
+                        updated_at=game.updated_at
+                    )
                 )
         
         raise HTTPException(
@@ -516,18 +609,18 @@ async def sync_darkadia_game(
         
         return GameSyncResponse(
             message=f"Game {result.action.replace('_', ' ')} successfully",
-            game={
-                "id": game.id,
-                "external_id": game.external_id,
-                "name": game.name,
-                "igdb_id": game.igdb_id,
-                "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
-                "user_game_id": game.user_game_id,
-                "ignored": game.ignored,
-                "created_at": game.created_at,
-                "updated_at": game.updated_at
-            },
+            game=ImportGameResponse(
+                id=game.id,
+                external_id=game.external_id,
+                name=game.name,
+                igdb_id=game.igdb_id,
+                igdb_title=game.igdb_title,
+                game_id=game.game_id,
+                user_game_id=game.user_game_id,
+                ignored=game.ignored,
+                created_at=game.created_at,
+                updated_at=game.updated_at
+            ),
             user_game_id=result.user_game_id,
             action=result.action
         )
@@ -582,18 +675,18 @@ async def ignore_darkadia_game(
         
         return GameIgnoreResponse(
             message=f"Game {'ignored' if game.ignored else 'unignored'} successfully",
-            game={
-                "id": game.id,
-                "external_id": game.external_id,
-                "name": game.name,
-                "igdb_id": game.igdb_id,
-                "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
-                "user_game_id": game.user_game_id,
-                "ignored": game.ignored,
-                "created_at": game.created_at,
-                "updated_at": game.updated_at
-            },
+            game=ImportGameResponse(
+                id=game.id,
+                external_id=game.external_id,
+                name=game.name,
+                igdb_id=game.igdb_id,
+                igdb_title=game.igdb_title,
+                game_id=game.game_id,
+                user_game_id=game.user_game_id,
+                ignored=game.ignored,
+                created_at=game.created_at,
+                updated_at=game.updated_at
+            ),
             ignored=game.ignored
         )
     except ValueError as e:
@@ -654,4 +747,176 @@ async def unmatch_all_darkadia_games(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unmatch games"
+        )
+
+
+# Job status and tracking endpoints
+@router.get("/jobs", response_model=ImportJobsListResponse)
+async def list_darkadia_jobs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    job_status: Optional[str] = Query(default=None, alias="status")
+) -> ImportJobsListResponse:
+    """List Darkadia import jobs with filtering and pagination."""
+    try:
+        # Build query
+        from sqlmodel import select, desc
+        query = select(ImportJob).where(
+            ImportJob.user_id == current_user.id,
+            ImportJob.source == "darkadia"
+        )
+        
+        # Apply status filter
+        if job_status:
+            query = query.where(ImportJob.status == job_status)
+        
+        # Get total count
+        count_query = select(ImportJob).where(
+            ImportJob.user_id == current_user.id,
+            ImportJob.source == "darkadia"
+        )
+        if job_status:
+            count_query = count_query.where(ImportJob.status == job_status)
+        
+        total = len(session.exec(count_query).all())
+        
+        # Apply pagination and ordering
+        query = query.order_by(desc(ImportJob.created_at)).offset(offset).limit(limit)
+        jobs = session.exec(query).all()
+        
+        return ImportJobsListResponse(
+            jobs=[
+                ImportJobResponse(
+                    id=job.id,
+                    source=job.source or "darkadia",
+                    job_type=job.job_type.value if job.job_type else "library_import",
+                    status=job.status.value,
+                    progress=job.progress,
+                    total_items=job.total_items,
+                    processed_items=job.processed_items,
+                    successful_items=job.successful_items,
+                    failed_items=job.failed_items,
+                    created_at=job.created_at,
+                    started_at=job.started_at,
+                    completed_at=job.completed_at,
+                    error_message=job.error_message,
+                    metadata=job.get_metadata()
+                )
+                for job in jobs
+            ],
+            total=total,
+            offset=offset,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error listing jobs for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list jobs"
+        )
+
+
+@router.get("/jobs/{job_id}", response_model=ImportJobResponse)
+async def get_darkadia_job(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> ImportJobResponse:
+    """Get specific Darkadia import job status."""
+    try:
+        from sqlmodel import select
+        
+        job = session.exec(
+            select(ImportJob).where(
+                ImportJob.id == job_id,
+                ImportJob.user_id == current_user.id,
+                ImportJob.source == "darkadia"
+            )
+        ).first()
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Import job not found"
+            )
+        
+        return ImportJobResponse(
+            id=job.id,
+            source=job.source or "darkadia",
+            job_type=job.job_type.value if job.job_type else "library_import",
+            status=job.status.value,
+            progress=job.progress,
+            total_items=job.total_items,
+            processed_items=job.processed_items,
+            successful_items=job.successful_items,
+            failed_items=job.failed_items,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error_message=job.error_message,
+            metadata=job.get_metadata()
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job {job_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get job status"
+        )
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=ImportJobCancelResponse)
+async def cancel_darkadia_job(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> ImportJobCancelResponse:
+    """Cancel a running Darkadia import job."""
+    try:
+        from sqlmodel import select
+        
+        job = session.exec(
+            select(ImportJob).where(
+                ImportJob.id == job_id,
+                ImportJob.user_id == current_user.id,
+                ImportJob.source == "darkadia"
+            )
+        ).first()
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Import job not found"
+            )
+        
+        if job.status not in [ImportStatus.PENDING, ImportStatus.PROCESSING]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot cancel job in status: {job.status}"
+            )
+        
+        # Update job status to cancelled
+        job.status = ImportStatus.CANCELLED
+        job.completed_at = datetime.now(timezone.utc)
+        session.add(job)
+        session.commit()
+        
+        logger.info(f"Cancelled import job {job_id} for user {current_user.id}")
+        
+        return ImportJobCancelResponse(
+            message="Import job cancelled successfully",
+            job_id=job.id,
+            cancelled=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling job {job_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel job"
         )
