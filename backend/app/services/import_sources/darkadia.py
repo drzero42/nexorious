@@ -22,12 +22,14 @@ from .base import (
 )
 from ...models.user import User
 from ...models.darkadia_game import DarkadiaGame
-from ...models.user_game import UserGame, PlayStatus, OwnershipStatus
+from ...models.user_game import UserGame, PlayStatus, OwnershipStatus, UserGamePlatform
 from ...models.game import Game
 from ...models.darkadia_import import DarkadiaImport
+from ...models.platform import Platform, Storefront
 from ...security.file_upload_validator import SecureFileUploadValidator
 from ...security.csv_sanitizer import CSVSanitizer
 from ...services.igdb import IGDBService
+from .darkadia_transformer import DarkadiaTransformationPipeline
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -47,6 +49,7 @@ class DarkadiaImportService(ImportSourceService):
         self.file_validator = SecureFileUploadValidator()
         self.csv_parser = DarkadiaCSVParser()
         self.data_mapper = DarkadiaDataMapper()
+        self.transformer = DarkadiaTransformationPipeline()
     
     def _get_user_darkadia_config(self, user: User) -> dict:
         """Get user's Darkadia configuration from preferences."""
@@ -310,7 +313,7 @@ class DarkadiaImportService(ImportSourceService):
         }
     
     async def import_library(self, user_id: str, progress_callback: Optional[Callable[[int], None]] = None) -> ImportResult:
-        """Import CSV data into staging table."""
+        """Import CSV data into staging table using enhanced transformation pipeline."""
         user = self.session.get(User, user_id)
         if not user:
             raise ValueError(f"User {user_id} not found")
@@ -326,75 +329,58 @@ class DarkadiaImportService(ImportSourceService):
         try:
             # Parse the CSV file
             games_data = await self.csv_parser.parse_csv(Path(csv_file_path))
+            logger.info(f"Parsed {len(games_data)} rows from CSV file")
             
+            # Transform data through enhanced pipeline
+            transformed_data, transform_context = await self.transformer.transform(games_data)
+            logger.info(f"Transformation completed: {transform_context.successful_rows}/{transform_context.total_rows} rows processed successfully")
+            
+            # Process in memory-aware batches
             imported_count = 0
             skipped_count = 0
             errors = []
+            batch_size = 100
+            total_games = len(transformed_data)
             
-            # Import games in batches with progress tracking
-            total_games = len(games_data)
-            for i, game_data in enumerate(games_data):
-                try:
-                    # Update progress every 10 games
-                    if progress_callback and i % 10 == 0:
-                        progress_percent = int((i / total_games) * 100)
-                        progress_callback(progress_percent)
-                    
-                    # Sanitize all CSV data
-                    sanitized_data = {}
-                    for key, value in game_data.items():
-                        sanitized_data[key] = self.csv_sanitizer.sanitize_cell(value)
-                    
-                    # Check if game already exists (based on external_id)
-                    external_id = str(i + 1)  # Use row number as external ID
-                    existing_game = self.session.exec(
-                        select(DarkadiaGame).where(
-                            and_(
-                                DarkadiaGame.user_id == user_id,
-                                DarkadiaGame.external_id == external_id
-                            )
-                        )
-                    ).first()
-                    
-                    if existing_game:
-                        skipped_count += 1
-                        continue
-                    
-                    # Create new staging game record
-                    darkadia_game = DarkadiaGame(
-                        user_id=user_id,
-                        external_id=external_id,
-                        game_name=sanitized_data.get("Name", "Unknown Game"),
-                        ignored=False
-                    )
-                    
-                    # Store all CSV data as JSON
-                    darkadia_game.set_csv_data(sanitized_data)
-                    
-                    self.session.add(darkadia_game)
-                    imported_count += 1
-                    
-                    # Commit in batches of 100
-                    if imported_count % 100 == 0:
-                        self.session.commit()
-                        
-                except Exception as e:
-                    logger.error(f"Error importing game {i+1}: {str(e)}")
-                    errors.append(f"Row {i+1}: {str(e)}")
-                    continue
+            # Process games in batches
+            for batch_start in range(0, total_games, batch_size):
+                batch_end = min(batch_start + batch_size, total_games)
+                batch = transformed_data[batch_start:batch_end]
+                
+                # Update progress
+                if progress_callback:
+                    progress_percent = int((batch_start / total_games) * 100)
+                    progress_callback(progress_percent)
+                
+                # Process batch
+                batch_imported, batch_skipped, batch_errors = await self._process_batch(
+                    batch, user_id, batch_start
+                )
+                
+                imported_count += batch_imported
+                skipped_count += batch_skipped
+                errors.extend(batch_errors)
+                
+                # Commit after each batch
+                self.session.commit()
+                logger.debug(f"Processed batch {batch_start}-{batch_end}: {batch_imported} imported, {batch_skipped} skipped")
             
             # Final progress update
             if progress_callback:
                 progress_callback(100)
             
-            # Final commit
-            self.session.commit()
+            # Add transformation issues to errors
+            for issue in transform_context.issues:
+                if issue.severity == 'error':
+                    errors.append(f"Row {issue.row_index + 1 if issue.row_index is not None else '?'}: {issue.message}")
+            
+            logger.info(f"Import completed: {imported_count} imported, {skipped_count} skipped, {len(errors)} errors")
             
             return ImportResult(
                 imported_count=imported_count,
                 skipped_count=skipped_count,
                 auto_matched_count=0,  # Matching happens in separate step
-                total_games=len(games_data),
+                total_games=total_games,
                 errors=errors
             )
             
@@ -402,6 +388,134 @@ class DarkadiaImportService(ImportSourceService):
             logger.error(f"Error importing library for user {user_id}: {str(e)}")
             self.session.rollback()
             raise ValueError(f"Import failed: {str(e)}")
+    
+    async def _process_batch(self, batch: List[Dict[str, Any]], user_id: str, 
+                           batch_start_index: int) -> Tuple[int, int, List[str]]:
+        """Process a batch of transformed games."""
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+        
+        for i, game_data in enumerate(batch):
+            try:
+                # Generate external_id (use actual row number from original CSV)
+                external_id = str(batch_start_index + i + 1)
+                
+                # Check if game already exists
+                existing_game = self.session.exec(
+                    select(DarkadiaGame).where(
+                        and_(
+                            DarkadiaGame.user_id == user_id,
+                            DarkadiaGame.external_id == external_id
+                        )
+                    )
+                ).first()
+                
+                if existing_game:
+                    skipped_count += 1
+                    continue
+                
+                # Create new staging game record
+                darkadia_game = DarkadiaGame(
+                    user_id=user_id,
+                    external_id=external_id,
+                    game_name=game_data.get("Name", "Unknown Game"),
+                    ignored=False
+                )
+                
+                # Store original and transformed CSV data
+                original_data = {k: v for k, v in game_data.items() if not k.startswith('_')}
+                darkadia_game.set_csv_data(original_data)
+                
+                # Store additional transformation metadata if present
+                transformation_metadata = {}
+                for key, value in game_data.items():
+                    if key.startswith('_'):
+                        transformation_metadata[key] = value
+                
+                if transformation_metadata:
+                    darkadia_game.set_transformation_data(transformation_metadata)
+                
+                self.session.add(darkadia_game)
+                imported_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing game {batch_start_index + i + 1}: {str(e)}")
+                errors.append(f"Row {batch_start_index + i + 1}: {str(e)}")
+                continue
+        
+        return imported_count, skipped_count, errors
+    
+    async def _create_platform_association(self, user_game: UserGame, 
+                                         darkadia_game: DarkadiaGame,
+                                         csv_data: Dict[str, Any]) -> None:
+        """Create UserGamePlatform association from Darkadia copy data."""
+        try:
+            # Get transformed platform/storefront data if available
+            transform_data = darkadia_game.get_transformation_data()
+            
+            # Use transformed values if available, otherwise fall back to original
+            platform_name = transform_data.get('_mapped_platform') or csv_data.get('Copy platform', '').strip()
+            storefront_name = transform_data.get('_mapped_storefront') or csv_data.get('Copy source', '').strip()
+            
+            # Handle "Copy source other" fallback
+            if not storefront_name or storefront_name.lower() in ['other', '']:
+                storefront_name = csv_data.get('Copy source other', '').strip()
+            
+            if not platform_name:
+                logger.warning(f"No platform information available for game {darkadia_game.game_name}")
+                return
+            
+            # Look up platform by name
+            platform = self.session.exec(
+                select(Platform).where(Platform.name == platform_name)
+            ).first()
+            
+            if not platform:
+                logger.warning(f"Platform '{platform_name}' not found in database for game {darkadia_game.game_name}")
+                return
+            
+            # Look up storefront by name (optional)
+            storefront = None
+            if storefront_name:
+                storefront = self.session.exec(
+                    select(Storefront).where(Storefront.name == storefront_name)
+                ).first()
+                
+                if not storefront:
+                    logger.warning(f"Storefront '{storefront_name}' not found in database for game {darkadia_game.game_name}")
+            
+            # Check if association already exists
+            existing_association = self.session.exec(
+                select(UserGamePlatform).where(
+                    and_(
+                        UserGamePlatform.user_game_id == user_game.id,
+                        UserGamePlatform.platform_id == platform.id,
+                        UserGamePlatform.storefront_id == (storefront.id if storefront else None)
+                    )
+                )
+            ).first()
+            
+            if existing_association:
+                logger.debug(f"Platform association already exists for {darkadia_game.game_name} on {platform_name}")
+                return
+            
+            # Create the association
+            user_game_platform = UserGamePlatform(
+                user_game_id=user_game.id,
+                platform_id=platform.id,
+                storefront_id=storefront.id if storefront else None,
+                is_available=True,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            
+            self.session.add(user_game_platform)
+            logger.info(f"🎮 [Darkadia Service] Created platform association: {darkadia_game.game_name} on {platform_name} ({storefront_name or 'No storefront'})")
+            
+        except Exception as e:
+            logger.error(f"Error creating platform association for {darkadia_game.game_name}: {str(e)}")
+            # Don't fail the sync for platform association errors
     
     async def list_games(self, 
                         user_id: str, 
@@ -685,6 +799,9 @@ class DarkadiaImportService(ImportSourceService):
                 action = "created_new"
                 logger.info(f"🎮 [Darkadia Service] Created new UserGame {user_game.id}")
                 
+                # Create UserGamePlatform association from copy data
+                await self._create_platform_association(user_game, darkadia_game, csv_data)
+                
                 # Create DarkadiaImport record for extended metadata
                 darkadia_import = DarkadiaImport(
                     user_id=user_id,
@@ -745,8 +862,8 @@ class DarkadiaImportService(ImportSourceService):
             )
     
     def _resolve_play_status(self, played_flags: Dict[str, bool]) -> PlayStatus:
-        """Resolve play status from Darkadia boolean flags using weighted decision matrix."""
-        # Priority order (highest to lowest)
+        """Resolve play status from Darkadia boolean flags with correct mapping."""
+        # Simple priority resolution based on Darkadia's design
         if played_flags.get("dominated", False):
             return PlayStatus.DOMINATED
         elif played_flags.get("mastered", False):
@@ -754,11 +871,11 @@ class DarkadiaImportService(ImportSourceService):
         elif played_flags.get("finished", False):
             return PlayStatus.COMPLETED
         elif played_flags.get("shelved", False):
-            return PlayStatus.SHELVED
+            return PlayStatus.DROPPED  # Shelved = permanently abandoned in Darkadia
         elif played_flags.get("playing", False):
             return PlayStatus.IN_PROGRESS
         elif played_flags.get("played", False):
-            return PlayStatus.COMPLETED
+            return PlayStatus.SHELVED  # Played but not finished = paused/backlog
         else:
             return PlayStatus.NOT_STARTED
     

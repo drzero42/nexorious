@@ -1378,11 +1378,11 @@ class PlatformResolutionTests:
 5. Implement batch processing with memory management
 
 **Acceptance Criteria**:
-- [ ] Boolean flag conflicts resolved intelligently
-- [ ] Invalid data handled with appropriate fallbacks
-- [ ] Platform mapping provides suggestions for unknown platforms
-- [ ] Physical copy metadata preserved in JSONB format
-- [ ] Large CSV files processed without memory issues
+- [x] Boolean flag conflicts resolved intelligently
+- [x] Invalid data handled with appropriate fallbacks
+- [x] Platform mapping provides suggestions for unknown platforms
+- [x] Physical copy metadata preserved in JSONB format
+- [x] Large CSV files processed without memory issues
 
 #### Task 6: Platform Resolution System
 **Priority**: High  
