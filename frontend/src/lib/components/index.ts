@@ -26,6 +26,11 @@ export { default as ImportGameTable } from './ImportGameTable.svelte';
 export { default as ImportStatsOverview } from './ImportStatsOverview.svelte';
 export { default as ImportConfigurationSection } from './ImportConfigurationSection.svelte';
 
+// Darkadia CSV Import components
+export { default as DarkadiaFileUpload } from './DarkadiaFileUpload.svelte';
+export { default as DarkadiaGameCard } from './DarkadiaGameCard.svelte';
+export { default as DarkadiaGamesTable } from './DarkadiaGamesTable.svelte';
+
 // Game addition workflow components
 export { default as GameSearchStep } from './GameSearchStep.svelte';
 export { default as GameConfirmStep } from './GameConfirmStep.svelte';

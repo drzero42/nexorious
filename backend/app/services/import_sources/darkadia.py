@@ -532,16 +532,14 @@ class DarkadiaImportService(ImportSourceService):
                 except Exception as e:
                     logger.warning(f"Failed to generate suggestions for platform '{original_platform_name}': {str(e)}")
             
-            # Create DarkadiaImport record - this requires a UserGame first
-            # For now, we'll create a placeholder that can be associated later during sync
+            # Create DarkadiaImport record - this can be created before UserGame exists
             darkadia_import = DarkadiaImport(
                 user_id=user_id,
                 user_game_id=None,  # Will be set during sync when UserGame is created
-                csv_row_number=int(darkadia_game.external_id),
+                batch_id=darkadia_game.id,  # Use darkadia_game.id as batch identifier
+                csv_file_hash=hashlib.md5(json.dumps(game_data, sort_keys=True).encode()).hexdigest(),
                 original_platform_name=original_platform_name,
-                platform_resolved=platform_resolved,
-                import_batch_id=darkadia_game.id,  # Use darkadia_game.id as batch identifier
-                csv_file_hash=hashlib.md5(json.dumps(game_data, sort_keys=True).encode()).hexdigest()
+                platform_resolved=platform_resolved
             )
             
             # Set original CSV data and platform resolution data
@@ -565,7 +563,7 @@ class DarkadiaImportService(ImportSourceService):
                 select(DarkadiaImport).where(
                     and_(
                         DarkadiaImport.user_id == user_game.user_id,
-                        DarkadiaImport.csv_row_number == int(darkadia_game.external_id),
+                        DarkadiaImport.batch_id == darkadia_game.id,
                         DarkadiaImport.platform_resolved == True
                     )
                 )

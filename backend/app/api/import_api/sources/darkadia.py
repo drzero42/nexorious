@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from sqlmodel import Session
 from typing import Annotated, Optional, Dict, Any
 import logging
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -45,6 +46,49 @@ from ....api.schemas.platform import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _cleanup_temp_file(user_id: str, session: Session) -> None:
+    """Clean up temporary CSV file for the user after successful import."""
+    try:
+        from ....models.user import User
+        
+        # Get user and their Darkadia configuration
+        user = session.get(User, user_id)
+        if not user:
+            logger.warning(f"User {user_id} not found during cleanup")
+            return
+        
+        preferences = user.preferences or {}
+        darkadia_config = preferences.get("darkadia", {})
+        csv_file_path = darkadia_config.get("csv_file_path")
+        
+        if csv_file_path and Path(csv_file_path).exists():
+            # Delete the temporary file
+            Path(csv_file_path).unlink()
+            logger.info(f"Deleted temporary CSV file: {csv_file_path}")
+            
+            # Clear the file path from user configuration
+            darkadia_config.pop("csv_file_path", None)
+            darkadia_config.pop("file_hash", None)
+            darkadia_config.pop("file_exists", None)
+            
+            # Update user preferences
+            preferences["darkadia"] = darkadia_config
+            user.preferences_json = json.dumps(preferences) if preferences else None
+            user.updated_at = datetime.now(timezone.utc)
+            
+            session.add(user)
+            session.commit()
+            
+            logger.info(f"Cleared Darkadia configuration for user {user_id}")
+        else:
+            logger.debug(f"No temporary file to cleanup for user {user_id}")
+            
+    except Exception as e:
+        logger.error(f"Error during file cleanup for user {user_id}: {str(e)}")
+        session.rollback()
+        raise
 
 
 async def process_darkadia_import_background(job_id: str, user_id: str, session: Session):
@@ -94,6 +138,14 @@ async def process_darkadia_import_background(job_id: str, user_id: str, session:
         
         session.add(job)
         session.commit()
+        
+        # Clean up uploaded CSV file after successful import
+        try:
+            await _cleanup_temp_file(user_id, session)
+            logger.info(f"Cleaned up temporary CSV file for user {user_id}")
+        except Exception as cleanup_error:
+            logger.warning(f"Failed to cleanup temporary file for user {user_id}: {cleanup_error}")
+            # Don't fail the job if cleanup fails
         
         logger.info(f"Completed import job {job_id}: {result.imported_count} imported, {result.skipped_count} skipped")
         
@@ -213,14 +265,15 @@ async def upload_darkadia_csv(
         # Create a temporary file to store the upload
         import hashlib
         import time
+        from ....core.config import settings
         
         file_hash = hashlib.sha256(content).hexdigest()[:16]
         timestamp = int(time.time())
         safe_filename = f"darkadia_{current_user.id}_{timestamp}_{file_hash}.csv"
         
-        # Create temp directory if it doesn't exist
-        temp_dir = Path("/tmp/nexorious_uploads")
-        temp_dir.mkdir(exist_ok=True)
+        # Create temp directory if it doesn't exist (using configurable path)
+        temp_dir = Path(settings.temp_storage_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
         temp_file = temp_dir / safe_filename
         
         # Write file
