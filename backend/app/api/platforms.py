@@ -2,10 +2,11 @@
 Platform and storefront management endpoints (admin-only).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Request
 from sqlmodel import Session, select, func
 from datetime import datetime, timezone
 from typing import Annotated, Optional
+import logging
 
 from ..core.database import get_session
 from ..core.security import get_current_admin_user, get_current_user
@@ -28,17 +29,33 @@ from ..api.schemas.platform import (
     PlatformDefaultMapping,
     UpdatePlatformDefaultRequest,
     PlatformStorefrontsResponse,
-    PlatformStorefrontAssociationResponse
+    PlatformStorefrontAssociationResponse,
+    # Platform Resolution schemas
+    PlatformSuggestionsRequest,
+    PlatformSuggestionsResponse,
+    PlatformResolutionRequest,
+    BulkPlatformResolutionRequest,
+    BulkPlatformResolutionResponse,
+    PendingResolutionsListResponse
 )
 from ..api.schemas.common import SuccessResponse
 from ..services.logo_service import LogoService, logo_service
+from ..services.platform_resolution import create_platform_resolution_service
+from ..core.rate_limiting import rate_limit_suggestions, rate_limit_resolution, rate_limit_bulk_resolution
+from ..core.audit_logging import audit, get_client_ip, get_user_agent
 
 router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
+logger = logging.getLogger(__name__)
 
 
 def get_logo_service() -> LogoService:
     """Dependency to get the logo service instance."""
     return logo_service
+
+
+def get_platform_resolution_service(session: Annotated[Session, Depends(get_session)]):
+    """Dependency to get platform resolution service instance."""
+    return create_platform_resolution_service(session)
 
 
 # Platform endpoints
@@ -981,3 +998,267 @@ async def seed_platforms_and_storefronts(
         total_changes=result["total"],
         message=message
     )
+
+
+# Platform Resolution endpoints
+@router.post("/resolution/suggestions", response_model=PlatformSuggestionsResponse)
+@rate_limit_suggestions
+async def get_platform_suggestions(
+    request: PlatformSuggestionsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service = Depends(get_platform_resolution_service),
+    http_request: Request = None
+) -> PlatformSuggestionsResponse:
+    """
+    Get fuzzy matching suggestions for unknown platform and storefront names.
+    
+    This endpoint helps users resolve unknown platforms found during CSV imports
+    by providing ranked suggestions based on fuzzy matching against existing
+    platforms and storefronts.
+    """
+    client_ip = get_client_ip(http_request) if http_request else None
+    
+    try:
+        # Input validation and sanitization is already handled in the service
+        suggestions = await resolution_service.suggest_platform_matches(
+            unknown_platform_name=request.unknown_platform_name,
+            unknown_storefront_name=request.unknown_storefront_name,
+            min_confidence=request.min_confidence,
+            max_suggestions=request.max_suggestions
+        )
+        
+        # Audit log successful suggestion request
+        audit.log_platform_suggestion(
+            user_id=current_user.id,
+            unknown_platform_name=request.unknown_platform_name,
+            suggestions_count=suggestions.total_platform_suggestions,
+            request_ip=client_ip,
+            min_confidence=request.min_confidence
+        )
+        
+        return suggestions
+    except Exception as e:
+        logger.error(f"Error getting platform suggestions for user {current_user.id}: {str(e)}")
+        
+        # Audit log failure
+        audit.log_invalid_input(
+            user_id=current_user.id,
+            operation_name="platform_suggestions",
+            invalid_input=request.unknown_platform_name,
+            request_ip=client_ip
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get platform suggestions"
+        )
+
+
+@router.get("/resolution/pending", response_model=PendingResolutionsListResponse)
+async def get_pending_platform_resolutions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service = Depends(get_platform_resolution_service),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
+) -> PendingResolutionsListResponse:
+    """
+    Get pending platform resolutions for the current user.
+    
+    Returns a paginated list of unresolved platforms from CSV imports
+    that require user attention for proper platform mapping.
+    """
+    try:
+        pending_resolutions, total = await resolution_service.get_pending_resolutions(
+            user_id=current_user.id,
+            page=page,
+            per_page=per_page
+        )
+        
+        # Calculate pages
+        pages = (total + per_page - 1) // per_page
+        
+        return PendingResolutionsListResponse(
+            pending_resolutions=pending_resolutions,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
+    except Exception as e:
+        logger.error(f"Error getting pending resolutions for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get pending platform resolutions"
+        )
+
+
+@router.post("/resolution/resolve")
+@rate_limit_resolution
+async def resolve_platform(
+    request: PlatformResolutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service = Depends(get_platform_resolution_service),
+    http_request: Request = None
+):
+    """
+    Resolve a single platform mapping.
+    
+    Maps an unknown platform from a CSV import to an existing platform
+    and optionally to a storefront. This updates the import record
+    to mark the platform as resolved.
+    """
+    client_ip = get_client_ip(http_request) if http_request else None
+    
+    try:
+        result = await resolution_service.resolve_platform(
+            import_id=request.import_id,
+            user_id=current_user.id,
+            resolved_platform_id=request.resolved_platform_id,
+            resolved_storefront_id=request.resolved_storefront_id,
+            user_notes=request.user_notes
+        )
+        
+        # Get original platform name for audit logging
+        original_platform_name = "unknown"
+        if hasattr(result, 'resolved_platform') and result.resolved_platform:
+            original_platform_name = result.resolved_platform.display_name
+        
+        # Audit log the resolution attempt
+        audit.log_platform_resolution(
+            user_id=current_user.id,
+            import_id=request.import_id,
+            original_platform_name=original_platform_name,
+            resolved_platform_id=request.resolved_platform_id,
+            resolved_storefront_id=request.resolved_storefront_id,
+            success=result.success,
+            error_message=result.error_message,
+            request_ip=client_ip
+        )
+        
+        if not result.success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.error_message or "Failed to resolve platform"
+            )
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving platform for user {current_user.id}: {str(e)}")
+        
+        # Audit log the failure
+        audit.log_platform_resolution(
+            user_id=current_user.id,
+            import_id=request.import_id,
+            original_platform_name="unknown",
+            resolved_platform_id=request.resolved_platform_id,
+            resolved_storefront_id=request.resolved_storefront_id,
+            success=False,
+            error_message=str(e),
+            request_ip=client_ip
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resolve platform"
+        )
+
+
+@router.post("/resolution/bulk-resolve", response_model=BulkPlatformResolutionResponse)
+@rate_limit_bulk_resolution
+async def bulk_resolve_platforms(
+    request: BulkPlatformResolutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service = Depends(get_platform_resolution_service),
+    http_request: Request = None
+) -> BulkPlatformResolutionResponse:
+    """
+    Resolve multiple platform mappings in a single operation.
+    
+    Efficiently handles multiple platform resolutions at once,
+    useful for users who have many unknown platforms to resolve
+    from their CSV imports.
+    """
+    client_ip = get_client_ip(http_request) if http_request else None
+    
+    try:
+        # Convert request to dict format expected by service
+        resolutions_data = []
+        for resolution in request.resolutions:
+            resolutions_data.append({
+                "import_id": resolution.import_id,
+                "resolved_platform_id": resolution.resolved_platform_id,
+                "resolved_storefront_id": resolution.resolved_storefront_id,
+                "user_notes": resolution.user_notes
+            })
+        
+        result = await resolution_service.bulk_resolve_platforms(
+            resolutions=resolutions_data,
+            user_id=current_user.id
+        )
+        
+        # Audit log bulk resolution
+        audit.log_bulk_resolution(
+            user_id=current_user.id,
+            total_processed=result.total_processed,
+            successful_count=result.successful_resolutions,
+            failed_count=result.failed_resolutions,
+            request_ip=client_ip
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error bulk resolving platforms for user {current_user.id}: {str(e)}")
+        
+        # Audit log failure
+        audit.log_bulk_resolution(
+            user_id=current_user.id,
+            total_processed=len(request.resolutions),
+            successful_count=0,
+            failed_count=len(request.resolutions),
+            request_ip=client_ip
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to bulk resolve platforms"
+        )
+
+
+@router.post("/resolution/populate-suggestions/{import_id}")
+async def populate_platform_suggestions(
+    import_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service = Depends(get_platform_resolution_service),
+    min_confidence: float = Query(default=0.6, ge=0.0, le=1.0, description="Minimum confidence for suggestions")
+):
+    """
+    Populate platform suggestions for a specific import record.
+    
+    This endpoint can be used to generate and cache platform suggestions
+    for import records that don't have suggestions yet, or to regenerate
+    suggestions with different confidence thresholds.
+    """
+    try:
+        success = await resolution_service.populate_platform_suggestions(
+            import_id=import_id,
+            user_id=current_user.id,
+            min_confidence=min_confidence
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Import record not found or no platform name to resolve"
+            )
+        
+        return {"message": "Platform suggestions populated successfully", "success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error populating suggestions for import {import_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to populate platform suggestions"
+        )
