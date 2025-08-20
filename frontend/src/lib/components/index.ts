@@ -31,6 +31,11 @@ export { default as DarkadiaFileUpload } from './DarkadiaFileUpload.svelte';
 export { default as DarkadiaGameCard } from './DarkadiaGameCard.svelte';
 export { default as DarkadiaGamesTable } from './DarkadiaGamesTable.svelte';
 
+// Platform Resolution components
+export { default as PlatformResolutionModal } from './PlatformResolutionModal.svelte';
+export { default as PlatformMappingRow } from './PlatformMappingRow.svelte';
+export { default as PlatformSuggestionCard } from './PlatformSuggestionCard.svelte';
+
 // Game addition workflow components
 export { default as GameSearchStep } from './GameSearchStep.svelte';
 export { default as GameConfirmStep } from './GameConfirmStep.svelte';

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal } from '$lib/components';
+  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, PlatformResolutionModal } from '$lib/components';
   import { darkadia, ui } from '$lib/stores';
+  import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
     DarkadiaGameResponse, 
     DarkadiaGamesListResponse,
@@ -34,6 +35,10 @@
   let batchProcessingActive = $state(false);
   let processingTimeout: NodeJS.Timeout | null = $state(null);
   let isCancelling = $state(false);
+
+  // Platform resolution state
+  let showPlatformResolutionModal = $state(false);
+  let pendingPlatformResolutions = $state(0);
 
   onMount(async () => {
     console.log('🔄 [DARKADIA-PAGE] onMount started - initializing Darkadia data...');
@@ -85,7 +90,7 @@
     try {
       // First, update counts by loading all games data
       console.log('📡 [IGNORE-REFRESH] Loading all games for count update...');
-      const allGames = await darkadia.listDarkadiaGames(0, 1000);
+      const allGames = await darkadia.listDarkadiaGames(0, 100);
       updateCounts(allGames); // We don't need the returned arrays here, just count updates
       
       // Then refresh the current tab with search filter preserved
@@ -105,8 +110,8 @@
       isRefreshing = true;
       
       // Load all games to get counts
-      console.log('📡 [LOAD-GAMES] Calling darkadia.listDarkadiaGames(0, 1000)...');
-      const allGames = await darkadia.listDarkadiaGames(0, 1000);
+      console.log('📡 [LOAD-GAMES] Calling darkadia.listDarkadiaGames(0, 100)...');
+      const allGames = await darkadia.listDarkadiaGames(0, 100);
       console.log('📨 [LOAD-GAMES] API Response:', {
         total: allGames.total,
         gamesCount: allGames.games.length,
@@ -160,17 +165,17 @@
       
       if (activeTab === 'needs-attention') {
         const [unmatched, matched] = await Promise.all([
-          darkadia.listDarkadiaGames(0, 1000, 'unmatched', searchTerm || undefined),
-          darkadia.listDarkadiaGames(0, 1000, 'matched', searchTerm || undefined)
+          darkadia.listDarkadiaGames(0, 100, 'unmatched', searchTerm || undefined),
+          darkadia.listDarkadiaGames(0, 100, 'matched', searchTerm || undefined)
         ]);
         
         unmatchedGames = unmatched.games;
         matchedGames = matched.games;
       } else if (activeTab === 'ignored') {
-        const ignored = await darkadia.listDarkadiaGames(0, 1000, 'ignored', searchTerm || undefined);
+        const ignored = await darkadia.listDarkadiaGames(0, 100, 'ignored', searchTerm || undefined);
         ignoredGames = ignored.games;
       } else if (activeTab === 'in-sync') {
-        const synced = await darkadia.listDarkadiaGames(0, 1000, 'synced', searchTerm || undefined);
+        const synced = await darkadia.listDarkadiaGames(0, 100, 'synced', searchTerm || undefined);
         inSyncGames = synced.games;
       }
     } catch (error) {
@@ -419,9 +424,18 @@
   }
 
   // Upload handlers
-  function handleUploadComplete(result: DarkadiaUploadResponse) {
+  async function handleUploadComplete(result: DarkadiaUploadResponse) {
     console.log('Upload completed:', result);
     ui.showSuccess(`Successfully uploaded ${result.total_games} games from your Darkadia CSV`);
+    
+    // Check for pending platform resolutions (but don't auto-show modal)
+    try {
+      const resolutions = await platforms.getPendingResolutions(1, 1);
+      pendingPlatformResolutions = resolutions.total;
+      console.log('🔄 [PAGE] Fetched fresh resolution count from backend:', resolutions.total);
+    } catch (error) {
+      console.warn('Failed to check for pending platform resolutions:', error);
+    }
     
     // Switch to needs attention tab after successful upload/import
     setTimeout(async () => {
@@ -433,6 +447,44 @@
     console.error('Upload error:', error);
     ui.showError(`Upload failed: ${error}`);
   }
+
+  // Platform resolution handlers
+  function handleOpenPlatformResolution() {
+    showPlatformResolutionModal = true;
+  }
+
+  function handleClosePlatformResolution() {
+    console.log('🔒 [PAGE] Closing platform resolution modal');
+    showPlatformResolutionModal = false;
+  }
+
+  function handlePlatformResolutionsComplete(resolvedCount: number) {
+    console.log('📥 [PAGE] handlePlatformResolutionsComplete called with resolvedCount:', resolvedCount);
+    console.log('📊 [PAGE] Current pendingPlatformResolutions before update:', pendingPlatformResolutions);
+    
+    ui.showSuccess(`Successfully resolved ${resolvedCount} platform${resolvedCount === 1 ? '' : 's'}`);
+    
+    // Update pending count and refresh data if needed
+    pendingPlatformResolutions = Math.max(0, pendingPlatformResolutions - resolvedCount);
+    
+    console.log('📊 [PAGE] New pendingPlatformResolutions after update:', pendingPlatformResolutions);
+    
+    // If all resolutions are complete, refresh the data
+    if (pendingPlatformResolutions === 0) {
+      console.log('🔄 [PAGE] All resolutions complete, refreshing data in 1 second');
+      setTimeout(async () => {
+        await loadDarkadiaGames();
+      }, 1000);
+    }
+  }
+
+  // Debug platform resolution button visibility
+  $effect(() => {
+    console.log('🎯 [PAGE] Platform resolution button visibility check:', {
+      pendingCount: pendingPlatformResolutions,
+      shouldShow: pendingPlatformResolutions > 0
+    });
+  });
 
   // Reactive search using proper Svelte 5 dependency tracking
   $effect(() => {
@@ -474,6 +526,15 @@
         activeTab = 'upload';
       } else {
         console.log('🎮 [DARKADIA-PAGE] Games found, showing appropriate tab');
+        
+        // Check for pending platform resolutions
+        try {
+          const resolutions = await platforms.getPendingResolutions(1, 1);
+          pendingPlatformResolutions = resolutions.total;
+          console.log(`🔗 [DARKADIA-PAGE] Found ${pendingPlatformResolutions} pending platform resolutions`);
+        } catch (error) {
+          console.warn('Failed to check for pending platform resolutions on init:', error);
+        }
       }
     } catch (error) {
       // No games imported yet, show upload tab
@@ -561,6 +622,19 @@
                 {/if}
               </button>
             {/if}
+            
+            {#if pendingPlatformResolutions > 0}
+              <button
+                onclick={handleOpenPlatformResolution}
+                class="btn-secondary"
+                title="Resolve unknown platforms from CSV import"
+              >
+                <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Resolve Platforms ({pendingPlatformResolutions})
+              </button>
+            {/if}
           {/if}
         </div>
       </div>
@@ -580,7 +654,7 @@
     {:else}
       <!-- Stats Overview -->
       {#if hasAnyGames}
-        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <div class="bg-white overflow-hidden shadow rounded-lg">
             <div class="p-5">
               <div class="flex items-center">
@@ -660,6 +734,32 @@
               </div>
             </div>
           </div>
+
+          {#if pendingPlatformResolutions > 0}
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+              <div class="p-5">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <span class="text-2xl">🔗</span>
+                  </div>
+                  <div class="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt class="text-sm font-medium text-gray-500 truncate">Platform Issues</dt>
+                      <dd class="text-lg font-medium text-gray-900">{pendingPlatformResolutions}</dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-yellow-50 px-5 py-3">
+                <button
+                  onclick={handleOpenPlatformResolution}
+                  class="text-xs font-medium text-yellow-800 hover:text-yellow-900 underline"
+                >
+                  Resolve Now →
+                </button>
+              </div>
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -852,6 +952,25 @@
                         Unmatch All
                       {/if}
                     </button>
+                    
+                    <!-- Platform Resolution Button -->
+                    {#if pendingPlatformResolutions > 0}
+                      <button
+                        onclick={() => {
+                          console.log('🎯 [PAGE] Platform resolution button clicked. Current count:', pendingPlatformResolutions);
+                          handleOpenPlatformResolution();
+                        }}
+                        class="btn-secondary text-purple-600 hover:text-purple-700 border-purple-300 hover:border-purple-400"
+                      >
+                        <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        Resolve Platforms
+                        <span class="ml-2 bg-purple-100 text-purple-600 py-0.5 px-2 rounded-full text-xs font-medium">
+                          {pendingPlatformResolutions}
+                        </span>
+                      </button>
+                    {/if}
                   </div>
                 </div>
               </div>
@@ -1038,4 +1157,11 @@
   onClose={handleBatchModalClose}
   onCancel={handleBatchCancel}
   isCancelling={isCancelling}
+/>
+
+<!-- Platform Resolution Modal -->
+<PlatformResolutionModal
+  isOpen={showPlatformResolutionModal}
+  onClose={handleClosePlatformResolution}
+  onResolutionsComplete={handlePlatformResolutionsComplete}
 />

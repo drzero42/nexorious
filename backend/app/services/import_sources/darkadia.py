@@ -605,8 +605,8 @@ class DarkadiaImportService(ImportSourceService):
                     storefront_name = csv_data.get('Copy source other', '').strip()
                 
                 if not platform_name:
-                    logger.warning(f"No platform information available for game {darkadia_game.game_name}")
-                    return
+                    logger.info(f"No platform information available for game {darkadia_game.game_name}")
+                    platform_name = "Unknown Platform"  # Use default for tracking
                 
                 # Look up platform by name
                 platform = self.session.exec(
@@ -614,8 +614,8 @@ class DarkadiaImportService(ImportSourceService):
                 ).first()
                 
                 if not platform:
-                    logger.warning(f"Platform '{platform_name}' not found in database for game {darkadia_game.game_name}")
-                    return
+                    logger.info(f"Platform '{platform_name}' pending resolution for game {darkadia_game.game_name}")
+                    # Don't return - continue to create association with NULL platform_id
                 
                 # Look up storefront by name (optional) - only if not already resolved
                 if not storefront and storefront_name:
@@ -626,37 +626,41 @@ class DarkadiaImportService(ImportSourceService):
                     if not storefront:
                         logger.warning(f"Storefront '{storefront_name}' not found in database for game {darkadia_game.game_name}")
             
-            if not platform:
-                logger.warning(f"No platform available for game {darkadia_game.game_name}")
-                return
+            # Platform may be None for unresolved platforms - this is now allowed
             
             # Check if association already exists
             existing_association = self.session.exec(
                 select(UserGamePlatform).where(
                     and_(
                         UserGamePlatform.user_game_id == user_game.id,
-                        UserGamePlatform.platform_id == platform.id,
+                        UserGamePlatform.platform_id == (platform.id if platform else None),
                         UserGamePlatform.storefront_id == (storefront.id if storefront else None)
                     )
                 )
             ).first()
             
             if existing_association:
-                logger.debug(f"Platform association already exists for {darkadia_game.game_name} on {platform.display_name}")
+                platform_name_display = platform.display_name if platform else f"Unresolved ({platform_name})"
+                logger.debug(f"Platform association already exists for {darkadia_game.game_name} on {platform_name_display}")
                 return
             
             # Create the association
             user_game_platform = UserGamePlatform(
                 user_game_id=user_game.id,
-                platform_id=platform.id,
+                platform_id=platform.id if platform else None,
                 storefront_id=storefront.id if storefront else None,
+                original_platform_name=platform_name if not platform else None,
                 is_available=True,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
             )
             
             self.session.add(user_game_platform)
-            logger.info(f"🎮 [Darkadia Service] Created platform association: {darkadia_game.game_name} on {platform.display_name} ({storefront.display_name if storefront else 'No storefront'})")
+            
+            if platform:
+                logger.info(f"🎮 [Darkadia Service] Created platform association: {darkadia_game.game_name} on {platform.display_name} ({storefront.display_name if storefront else 'No storefront'})")
+            else:
+                logger.info(f"🎮 [Darkadia Service] Created unresolved platform association: {darkadia_game.game_name} for '{platform_name}' ({storefront.display_name if storefront else 'No storefront'})")
             
         except Exception as e:
             logger.error(f"Error creating platform association for {darkadia_game.game_name}: {str(e)}")

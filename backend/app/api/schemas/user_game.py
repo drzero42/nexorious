@@ -75,13 +75,14 @@ class ProgressUpdateRequest(BaseModel):
 class UserGamePlatformResponse(BaseModel, TimestampMixin):
     """Response schema for user game platform association."""
     id: str
-    platform_id: str
+    platform_id: Optional[str]
     storefront_id: Optional[str]
-    platform: PlatformResponse
+    platform: Optional[PlatformResponse]
     storefront: Optional[StorefrontResponse]
     store_game_id: Optional[str]
     store_url: Optional[str]
     is_available: bool
+    original_platform_name: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
 

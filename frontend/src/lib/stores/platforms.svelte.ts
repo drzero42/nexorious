@@ -1,5 +1,14 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import type {
+  PlatformSuggestionsRequest,
+  PlatformSuggestionsResponse,
+  PlatformResolutionRequest,
+  BulkPlatformResolutionRequest,
+  BulkPlatformResolutionResponse,
+  PendingResolutionsListResponse,
+  PlatformResolutionResult
+} from '$lib/types/platform-resolution';
 
 export interface Platform {
   id: string;
@@ -556,6 +565,193 @@ function createPlatformsStore() {
     // Clear error
     clearError: () => {
       state = { ...state, error: null };
+    },
+
+    // Platform Resolution Methods
+
+    // Get fuzzy matching suggestions for unknown platform names
+    getSuggestions: async (request: PlatformSuggestionsRequest): Promise<PlatformSuggestionsResponse> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/suggestions`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get platform suggestions';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Get pending platform resolutions for the current user
+    getPendingResolutions: async (page: number = 1, perPage: number = 20): Promise<PendingResolutionsListResponse> => {
+      try {
+        const response = await apiCall(
+          `${config.apiUrl}/platforms/resolution/pending?page=${page}&per_page=${perPage}`
+        );
+        
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch pending platform resolutions';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Resolve a single platform mapping
+    resolvePlatform: async (request: PlatformResolutionRequest): Promise<PlatformResolutionResult> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/resolve`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        const result = await response.json();
+        
+        // If the resolution was successful and a platform was created, add it to our store
+        if (result.success && result.resolved_platform) {
+          // Check if we already have this platform in our store
+          const existingPlatform = state.platforms.find(p => p.id === result.resolved_platform.id);
+          if (!existingPlatform) {
+            // Add the new platform to our store (it was likely just created)
+            const newPlatform: Platform = {
+              ...result.resolved_platform,
+              is_active: true,
+              source: 'custom',
+              storefronts: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            state = {
+              ...state,
+              platforms: [...state.platforms, newPlatform]
+            };
+          }
+        }
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to resolve platform';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Resolve multiple platforms in a bulk operation
+    bulkResolvePlatforms: async (request: BulkPlatformResolutionRequest): Promise<BulkPlatformResolutionResponse> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/bulk-resolve`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        const result = await response.json();
+        
+        // Add any newly created platforms to our store
+        const newPlatforms: Platform[] = [];
+        for (const resolutionResult of result.results) {
+          if (resolutionResult.success && resolutionResult.resolved_platform) {
+            const existingPlatform = state.platforms.find(p => p.id === resolutionResult.resolved_platform!.id);
+            if (!existingPlatform) {
+              const newPlatform: Platform = {
+                ...resolutionResult.resolved_platform,
+                is_active: true,
+                source: 'custom',
+                storefronts: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              newPlatforms.push(newPlatform);
+            }
+          }
+        }
+        
+        if (newPlatforms.length > 0) {
+          state = {
+            ...state,
+            platforms: [...state.platforms, ...newPlatforms]
+          };
+        }
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to bulk resolve platforms';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Populate platform suggestions for a specific import record
+    populateSuggestions: async (importId: string, minConfidence: number = 0.6): Promise<void> => {
+      try {
+        await apiCall(
+          `${config.apiUrl}/platforms/resolution/populate-suggestions/${importId}?min_confidence=${minConfidence}`,
+          { method: 'POST' }
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to populate platform suggestions';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Create platform from resolution UI (extends existing createPlatform with resolution context)
+    createPlatformFromResolution: async (
+      platformData: PlatformCreateRequest,
+      importId?: string
+    ): Promise<Platform> => {
+      // Create the platform first
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      state = { ...state, isLoading: true, error: null };
+
+      try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...platformData,
+          icon_url: platformData.icon_url?.trim() || undefined
+        };
+
+        const response = await apiCall(`${config.apiUrl}/platforms/`, {
+          method: 'POST',
+          body: JSON.stringify(cleanedData),
+        });
+        
+        const platform: Platform = await response.json();
+
+        state = {
+          ...state,
+          platforms: [...state.platforms, platform],
+          isLoading: false
+        };
+
+        // If we have an import ID, automatically resolve it to the new platform
+        if (importId) {
+          try {
+            await apiCall(`${config.apiUrl}/platforms/resolution/resolve`, {
+              method: 'POST',
+              body: JSON.stringify({
+                import_id: importId,
+                resolved_platform_id: platform.id,
+                user_notes: `Auto-resolved to newly created platform: ${platform.display_name}`
+              }),
+            });
+          } catch (error) {
+            // Log error but don't throw - platform was created successfully
+            console.warn('Platform created but auto-resolution failed:', error);
+          }
+        }
+
+        return platform;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create platform from resolution';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
     },
 
     // Test helper - only use in tests
