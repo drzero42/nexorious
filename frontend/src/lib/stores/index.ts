@@ -92,3 +92,10 @@ export type {
   TagsState
 } from './tags.svelte';
 
+// Darkadia store
+export { darkadia } from './darkadia.svelte';
+export type { 
+  DarkadiaState,
+  DarkadiaGameStatusFilter
+} from './darkadia.svelte';
+

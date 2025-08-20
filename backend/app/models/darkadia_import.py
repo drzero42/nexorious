@@ -17,7 +17,7 @@ class DarkadiaImport(SQLModel, table=True):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
-    user_game_id: str = Field(foreign_key="user_games.id", index=True)
+    user_game_id: Optional[str] = Field(default=None, foreign_key="user_games.id", index=True)
     
     # Import batch tracking
     batch_id: str = Field(index=True, description="Unique identifier for the import batch")

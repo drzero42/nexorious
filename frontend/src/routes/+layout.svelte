@@ -3,7 +3,6 @@
   import { auth } from '$lib/stores';
   import { platforms, type Storefront } from '$lib/stores/platforms.svelte';
   import { ToastContainer } from '$lib/components';
-  import { steamAvailability } from '$lib/stores/steam-availability.svelte';
   import { buildIconUrl } from '$lib/utils/icon-utils';
   import { onMount } from 'svelte';
   
@@ -50,15 +49,6 @@
           // Don't block app loading if platforms fail to load
         }
 
-        // Check Steam availability for sidebar navigation
-        console.log('🔄 [LAYOUT] Checking Steam availability for navigation...');
-        try {
-          await steamAvailability.checkAvailability();
-          console.log('✅ [LAYOUT] Steam availability check completed');
-        } catch (error) {
-          console.error('❌ [LAYOUT] Failed to check Steam availability:', error);
-          // Don't block app loading if availability check fails
-        }
       }
     }
   });
@@ -134,35 +124,42 @@
                     Import
                   </div>
                   <ul role="list" class="-mx-2 mt-2 space-y-1">
-                    {#if steamAvailability.isAvailable}
-                      <li>
-                        <a
-                          href="/import/steam"
-                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                        >
-                          {#if steamIconUrl}
-                            <img 
-                              src="{steamIconUrl}" 
-                              alt="Steam icon" 
-                              class="w-5 h-5"
-                              loading="lazy"
-                              onerror={(e) => {
-                                const img = e.target as HTMLImageElement;
-                                const fallback = img.nextElementSibling as HTMLElement;
-                                if (img && fallback) {
-                                  img.style.display = 'none';
-                                  fallback.style.display = 'inline';
-                                }
-                              }}
-                            />
-                            <span class="text-lg hidden">🔥</span>
-                          {:else}
-                            <span class="text-lg">🔥</span>
-                          {/if}
-                          Steam Library
-                        </a>
-                      </li>
-                    {/if}
+                    <li>
+                      <a
+                        href="/import/steam"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                      >
+                        {#if steamIconUrl}
+                          <img 
+                            src="{steamIconUrl}" 
+                            alt="Steam icon" 
+                            class="w-5 h-5"
+                            loading="lazy"
+                            onerror={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              const fallback = img.nextElementSibling as HTMLElement;
+                              if (img && fallback) {
+                                img.style.display = 'none';
+                                fallback.style.display = 'inline';
+                              }
+                            }}
+                          />
+                          <span class="text-lg hidden">🔥</span>
+                        {:else}
+                          <span class="text-lg">🔥</span>
+                        {/if}
+                        Steam Library
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/import/darkadia"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                      >
+                        <span class="text-lg">📊</span>
+                        Darkadia CSV
+                      </a>
+                    </li>
                     
                     <!-- Future import sources will go here -->
                     <!-- 
@@ -371,36 +368,44 @@
                           Import
                         </div>
                         <ul role="list" class="-mx-2 mt-2 space-y-1">
-                          {#if steamAvailability.isAvailable}
-                            <li>
-                              <a
-                                href="/import/steam"
-                                onclick={closeMobileMenu}
-                                class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                              >
-                                {#if steamIconUrl}
-                                  <img 
-                                    src="{steamIconUrl}" 
-                                    alt="Steam icon" 
-                                    class="w-5 h-5"
-                                    loading="lazy"
-                                    onerror={(e) => {
-                                      const img = e.target as HTMLImageElement;
-                                      const fallback = img.nextElementSibling as HTMLElement;
-                                      if (img && fallback) {
-                                        img.style.display = 'none';
-                                        fallback.style.display = 'inline';
-                                      }
-                                    }}
-                                  />
-                                  <span class="text-lg hidden">🔥</span>
-                                {:else}
-                                  <span class="text-lg">🔥</span>
-                                {/if}
-                                Steam Library
-                              </a>
-                            </li>
-                          {/if}
+                          <li>
+                            <a
+                              href="/import/steam"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                            >
+                              {#if steamIconUrl}
+                                <img 
+                                  src="{steamIconUrl}" 
+                                  alt="Steam icon" 
+                                  class="w-5 h-5"
+                                  loading="lazy"
+                                  onerror={(e) => {
+                                    const img = e.target as HTMLImageElement;
+                                    const fallback = img.nextElementSibling as HTMLElement;
+                                    if (img && fallback) {
+                                      img.style.display = 'none';
+                                      fallback.style.display = 'inline';
+                                    }
+                                  }}
+                                />
+                                <span class="text-lg hidden">🔥</span>
+                              {:else}
+                                <span class="text-lg">🔥</span>
+                              {/if}
+                              Steam Library
+                            </a>
+                          </li>
+                          <li>
+                            <a
+                              href="/import/darkadia"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                            >
+                              <span class="text-lg">📊</span>
+                              Darkadia CSV
+                            </a>
+                          </li>
                           
                           <!-- Future import sources will go here -->
                         </ul>

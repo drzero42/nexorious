@@ -70,6 +70,10 @@ class Settings(BaseSettings):
         default="storage",
         description="Path for local file storage"
     )
+    temp_storage_dir: Optional[str] = Field(
+        default="/tmp/nexorious_uploads",
+        description="Directory for temporary file uploads and processing"
+    )
     
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { tags, type Tag } from '$lib/stores';
@@ -86,7 +87,7 @@
   });
 
   // Load tags when component mounts
-  $effect(() => {
+  onMount(() => {
     if (tags.value.tags.length === 0 && !tags.value.isLoading) {
       tags.fetchTags();
     }

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard, SteamGamesTable, BatchProgressModal } from '$lib/components';
-  import { steam, ui, auth } from '$lib/stores';
+  import { steam, ui } from '$lib/stores';
   import { steamGames, type SteamGameResponse, type SteamGamesListResponse } from '$lib/stores/steam-games.svelte';
   import { steamAvailability } from '$lib/stores/steam-availability.svelte';
   import type { SteamUserInfo } from '$lib/stores';
@@ -751,26 +751,6 @@
 </svelte:head>
 
 <RouteGuard requireAuth={true}>
-  {#if auth.value.user?.preferences?.ui?.steam_games_visible === false}
-    <!-- Steam Games Disabled Message -->
-    <div class="space-y-6">
-      <div class="text-center py-16">
-        <span class="text-6xl">🔥</span>
-        <h1 class="mt-4 text-3xl font-bold text-gray-900">Steam Games Disabled</h1>
-        <p class="mt-2 text-lg text-gray-600">
-          The Steam Games feature has been disabled in your profile settings.
-        </p>
-        <div class="mt-6">
-          <a 
-            href="/profile" 
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            Go to Profile Settings
-          </a>
-        </div>
-      </div>
-    </div>
-  {:else}
   <div class="space-y-6">
     <!-- Header -->
     <div>
@@ -1792,7 +1772,6 @@
     {/if}
 
   </div>
-  {/if}
 </RouteGuard>
 
 <!-- Batch Progress Modal -->
