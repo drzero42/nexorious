@@ -1465,11 +1465,15 @@ class PlatformResolutionTests:
 5. Add clear guidance for resolution decisions
 
 **Acceptance Criteria**:
-- [ ] Unknown platforms displayed with affected game counts
-- [ ] Suggestions shown with confidence indicators
-- [ ] Users can resolve multiple platforms at once
-- [ ] Platform creation integrated into resolution flow
-- [ ] Clear guidance helps users make decisions
+- [x] Unknown platforms displayed with affected game counts
+- [x] Suggestions shown with confidence indicators
+- [x] Users can resolve multiple platforms at once
+- [x] Platform creation integrated into resolution flow
+- [x] Clear guidance helps users make decisions
+- [x] Individual platform skip functionality working and persistent
+- [x] Platform resolution count updates reactively in UI
+- [x] Modal-based resolution workflow prevents blocking CSV import
+- [x] Platform resolution is optional (non-blocking import flow)
 
 #### Task 9: Import Management Integration
 **Priority**: Medium  
