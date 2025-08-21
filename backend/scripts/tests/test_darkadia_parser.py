@@ -180,13 +180,43 @@ class TestDarkadiaCSVParser:
         assert platform_info['media'] == 'Digital'
         assert platform_info['label'] == 'Steam Edition'
     
-    def test_extract_platform_info_empty(self, parser):
-        """Test platform information extraction with empty platform."""
+    def test_extract_platform_info_empty_platform_with_storefront(self, parser):
+        """Test platform information extraction with empty platform but valid storefront."""
         row = {'Copy platform': '', 'Copy source': 'Steam'}
         
         platform_info = parser._extract_platform_info(row)
         
+        # Should create a copy entry that needs platform resolution
+        assert platform_info is not None
+        assert platform_info['platform'] is None  # No platform specified
+        assert platform_info['storefront'] == 'Steam'
+        assert platform_info['copy_identifier'] == 'str:Steam'
+        assert platform_info['is_real_copy'] is True
+        assert platform_info['requires_storefront_resolution'] is False  # Has storefront already
+    
+    def test_extract_platform_info_completely_empty(self, parser):
+        """Test platform information extraction with no copy data at all."""
+        row = {'Copy platform': '', 'Copy source': '', 'Copy source other': '', 'Platforms': ''}
+        
+        platform_info = parser._extract_platform_info(row)
+        
+        # Should return None when no platform data exists
         assert platform_info is None
+    
+    def test_extract_platform_info_fallback_platforms(self, parser):
+        """Test platform information extraction with fallback platforms field."""
+        row = {'Copy platform': '', 'Copy source': '', 'Copy source other': '', 'Platforms': 'PC (Windows), PlayStation 5'}
+        
+        platform_info = parser._extract_platform_info(row)
+        
+        # Should create fallback entry for first platform
+        assert platform_info is not None
+        assert platform_info['platform'] == 'PC (Windows)'
+        assert platform_info['storefront'] is None
+        assert platform_info['copy_identifier'] == 'fallback:PC (Windows)'
+        assert platform_info['is_real_copy'] is False
+        assert platform_info['requires_storefront_resolution'] is True
+        assert platform_info['fallback_platform_names'] == ['PC (Windows)', 'PlayStation 5']
     
     @pytest.mark.asyncio
     async def test_invalid_ratings_cleaned(self, parser):

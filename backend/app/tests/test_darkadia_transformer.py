@@ -311,8 +311,8 @@ class TestMappingStage:
         assert len(warnings) > 0
     
     @pytest.mark.asyncio
-    async def test_default_storefront_for_platform(self, mapping_stage, sample_row):
-        """Test default storefront assignment for platforms."""
+    async def test_no_default_storefront_when_empty(self, mapping_stage, sample_row):
+        """Test that no default storefront is assigned when none specified - user must choose."""
         context = TransformationContext()
         
         test_row = sample_row.copy()
@@ -325,7 +325,7 @@ class TestMappingStage:
         
         assert len(result) == 1
         assert result[0]['_mapped_platform'] == 'PC (Windows)'
-        assert result[0]['_mapped_storefront'] == 'Steam'  # Default for PC
+        assert result[0]['_mapped_storefront'] is None  # No default - user must choose
 
 
 class TestPersistenceStage:

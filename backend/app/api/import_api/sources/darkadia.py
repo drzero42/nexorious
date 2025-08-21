@@ -501,7 +501,9 @@ async def list_darkadia_games(
                     updated_at=game.updated_at,
                     platform_resolved=game.platform_resolved,
                     original_platform_name=game.original_platform_name,
-                    platform_resolution_status=game.platform_resolution_status
+                    platform_resolution_status=game.platform_resolution_status,
+                    platform_name=game.platform_name,
+                    storefront_name=game.storefront_name
                 )
                 for game in games
             ],

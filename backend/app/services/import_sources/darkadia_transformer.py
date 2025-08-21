@@ -421,14 +421,28 @@ class MappingStage(TransformationStage):
         """Map platform and storefront values for a single row."""
         mapped_row = row.copy()
         
-        # Map Copy platform
+        # Map Copy platform, with fallback to Platforms field for zero-copy games
         original_platform = row.get('Copy platform', '').strip()
+        
         if original_platform:
+            # Has copy platform data
             mapped_platform = await self._map_platform(
                 original_platform, context, row_index
             )
             mapped_row['_mapped_platform'] = mapped_platform
             mapped_row['_original_platform'] = original_platform
+        else:
+            # No copy platform - try fallback to Platforms field
+            platforms_field = row.get('Platforms', '').strip()
+            if platforms_field:
+                # Take first platform from comma-separated list
+                first_platform = platforms_field.split(',')[0].strip()
+                if first_platform:
+                    mapped_platform = await self._map_platform(
+                        first_platform, context, row_index
+                    )
+                    mapped_row['_mapped_platform'] = mapped_platform
+                    mapped_row['_original_platform'] = first_platform
         
         # Map Copy source (with fallback to "Copy source other")
         original_source = row.get('Copy source', '').strip()
@@ -493,11 +507,11 @@ class MappingStage(TransformationStage):
     
     async def _map_storefront(self, storefront_name: str, platform_name: str,
                              context: TransformationContext,
-                             row_index: int) -> str:
+                             row_index: int) -> Optional[str]:
         """Map storefront name to known storefront."""
         if not storefront_name:
-            # Use default storefront for platform
-            return self.PLATFORM_DEFAULT_STOREFRONTS.get(platform_name, 'Physical')
+            # No storefront data - user needs to choose, don't default to Physical
+            return None
         
         # Direct mapping
         if storefront_name in self.STOREFRONT_MAPPINGS:
@@ -529,8 +543,8 @@ class MappingStage(TransformationStage):
             storefront_name, None, row_index
         )
         
-        # Use default storefront for platform
-        return self.PLATFORM_DEFAULT_STOREFRONTS.get(platform_name, 'Physical')
+        # Unknown storefront - user needs to resolve, don't default to Physical
+        return None
 
 
 class PersistenceStage(TransformationStage):

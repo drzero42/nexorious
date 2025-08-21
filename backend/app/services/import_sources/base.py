@@ -37,6 +37,8 @@ class ImportGame:
     platform_resolved: Optional[bool] = None
     original_platform_name: Optional[str] = None
     platform_resolution_status: Optional[str] = None
+    platform_name: Optional[str] = None  # Resolved/mapped platform name
+    storefront_name: Optional[str] = None  # Resolved/mapped storefront name
 
 
 @dataclass

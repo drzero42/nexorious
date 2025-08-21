@@ -40,51 +40,101 @@ This specification outlines the integration of Darkadia CSV import functionality
 
 ### Database Design Strategy
 
-#### Recommended Approach: Hybrid Storage Model
+#### Copy-Centric Approach: One-to-Many Relationship Model
 
-**Core Data → Existing Tables:**
+The copy-based architecture requires a fundamentally different database design where **multiple copies of the same game** create **multiple platform/storefront associations**.
+
+**Core Data Flow:**
 ```sql
--- Primary game data flows to established tables
-user_games: rating, notes, play_status, acquired_date, ownership_status
-user_game_platforms: platform associations, storefront mappings
+-- IGDB game data (consolidated across all copies)
 games: IGDB integration, core game metadata
+
+-- Single user game entry per unique game (regardless of copy count)  
+user_games: rating, notes, play_status, acquired_date, ownership_status
+
+-- Multiple platform associations (one per copy)
+user_game_platforms: platform associations, storefront mappings, copy metadata
+  - Multiple entries per user_game when game has multiple copies
+  - Each entry represents one specific copy with its own platform/storefront
+
+-- Import tracking per copy (one-to-one with user_game_platforms)
+darkadia_imports: Original CSV data, resolution status per copy
 ```
 
-**Extended Data → New Darkadia Table:**
+**Updated Darkadia Import Table:**
 ```sql
 CREATE TABLE darkadia_imports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id),
-    user_game_id UUID NOT NULL REFERENCES user_games(id),
+    user_game_id UUID REFERENCES user_games(id), -- Nullable until sync
+    user_game_platform_id UUID REFERENCES user_game_platforms(id), -- Links to specific copy
     
-    -- Original CSV data preservation
-    csv_row_number INTEGER,
+    -- Copy identification (multiple rows per game possible)
+    csv_row_number INTEGER NOT NULL,
+    game_name VARCHAR(500) NOT NULL, -- For consolidation before user_game creation
+    copy_identifier VARCHAR(200), -- Combination of platform+storefront+metadata
+    
+    -- Original CSV data preservation  
     original_csv_data JSONB NOT NULL,
     
-    -- Darkadia-specific boolean flags (preserved for reference)
-    darkadia_played BOOLEAN,
-    darkadia_playing BOOLEAN, 
-    darkadia_finished BOOLEAN,
-    darkadia_mastered BOOLEAN,
-    darkadia_dominated BOOLEAN,
-    darkadia_shelved BOOLEAN,
+    -- Darkadia-specific boolean flags (preserved per copy)
+    darkadia_played BOOLEAN DEFAULT FALSE,
+    darkadia_playing BOOLEAN DEFAULT FALSE, 
+    darkadia_finished BOOLEAN DEFAULT FALSE,
+    darkadia_mastered BOOLEAN DEFAULT FALSE,
+    darkadia_dominated BOOLEAN DEFAULT FALSE,
+    darkadia_shelved BOOLEAN DEFAULT FALSE,
     
-    -- Physical copy metadata
+    -- Copy-specific metadata (rich physical copy data)
     copy_metadata JSONB,
     
-    -- Platform resolution tracking
+    -- Platform/Storefront resolution tracking (per copy)
     original_platform_name VARCHAR(200),
-    original_storefront_name VARCHAR(200),
+    original_storefront_name VARCHAR(200), 
+    fallback_platform_name VARCHAR(200), -- From "Platforms" field when no copy data
     platform_resolved BOOLEAN DEFAULT FALSE,
     storefront_resolved BOOLEAN DEFAULT FALSE,
+    requires_storefront_resolution BOOLEAN DEFAULT FALSE, -- Copy has platform but no storefront
     
-    -- Import tracking
-    import_batch_id UUID,
+    -- Resolution workflow tracking
+    platform_resolution_method VARCHAR(50), -- 'auto', 'user', 'admin', 'fallback'
+    storefront_resolution_method VARCHAR(50),
+    resolution_data JSONB, -- Stores suggestions, confidence scores, etc.
+    
+    -- Import batch tracking
+    import_batch_id UUID NOT NULL,
     import_timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    csv_file_hash VARCHAR(64),
+    csv_file_hash VARCHAR(64) NOT NULL,
     
-    UNIQUE(user_id, user_game_id)
+    -- Indexes for performance
+    INDEX idx_darkadia_user_batch (user_id, import_batch_id),
+    INDEX idx_darkadia_game_name (game_name),
+    INDEX idx_darkadia_resolution (platform_resolved, storefront_resolved),
+    
+    -- Unique constraint per CSV row
+    UNIQUE(user_id, csv_row_number, import_batch_id)
 );
+```
+
+**Copy Consolidation Strategy:**
+```sql
+-- Multiple darkadia_imports entries with same game_name get consolidated into:
+-- 1. Single games entry (IGDB matched)
+-- 2. Single user_games entry (user's overall relationship to game)  
+-- 3. Multiple user_game_platforms entries (one per copy with unique platform/storefront)
+-- 4. darkadia_imports entries updated to link to their respective user_game_platforms
+
+-- Example for "The Witcher 3" with Steam + PlayStation copies:
+user_games: 
+  id=uuid1, game_id=witcher3_igdb, user_rating=5, play_status=completed
+
+user_game_platforms:
+  id=uuid2, user_game_id=uuid1, platform_id=pc_windows, storefront_id=steam, is_physical=false
+  id=uuid3, user_game_id=uuid1, platform_id=ps4, storefront_id=psn_store, is_physical=false
+
+darkadia_imports:
+  id=uuid4, user_game_id=uuid1, user_game_platform_id=uuid2, original_platform_name="PC"
+  id=uuid5, user_game_id=uuid1, user_game_platform_id=uuid3, original_platform_name="PlayStation 4"
 ```
 
 #### Key Architectural Decisions
@@ -146,6 +196,247 @@ graph TD
    - Integrates with existing platform/storefront tables
    - Uses established admin creation workflows
    - Maintains data integrity constraints
+
+---
+
+## Copy-Based Platform/Storefront Architecture
+
+### Overview
+
+Darkadia's data model differs significantly from other import sources in how it handles platform and storefront associations. Understanding this architecture is crucial for proper data transformation and user experience design.
+
+### Darkadia Copy Model
+
+In Darkadia, games can exist in multiple scenarios:
+
+1. **Game with 0 Copies**: The game entry exists but has no physical/digital copies
+2. **Game with 1 Copy**: The game has exactly one copy (physical or digital)  
+3. **Game with Multiple Copies**: The game has multiple copies across different platforms/storefronts
+
+**Critical Insight**: When a game has multiple copies in Darkadia, each copy appears as a **separate CSV row** with the same game name but different copy-specific metadata.
+
+### CSV Field Structure
+
+```
+Name,Platforms,Copy platform,Copy source,Copy source other,Copy media,... (other fields)
+"The Witcher 3","PC, PlayStation 4","PC","Steam","","Digital",...
+"The Witcher 3","PC, PlayStation 4","PlayStation 4","PlayStation Store","","Digital",...
+"Portal 2","PC","","","","",... (no copy data)
+```
+
+**Key Fields for Platform/Storefront Resolution**:
+- `Platforms`: Generic platform field (comma-separated list)
+- `Copy platform`: Specific platform for this copy instance
+- `Copy source`: Standard storefront name (Steam, Epic, etc.)
+- `Copy source other`: Custom storefront name when Copy source is "Other"
+- `Copy media`: Physical vs Digital indicator
+
+### Platform/Storefront Precedence Rules
+
+The transformation logic follows these precedence rules:
+
+#### Rule 1: Zero Copies (No Copy Data)
+```
+IF Copy platform is empty/null AND Copy source is empty/null:
+  - Use "Platforms" field as fallback
+  - Create single platform association
+  - Storefront = null (requires user resolution)
+  - Mark as "storefront_resolution_required"
+```
+
+#### Rule 2: One or More Copies (Has Copy Data)  
+```
+IF Copy platform has value OR Copy source has value:
+  - IGNORE "Platforms" field completely
+  - Use "Copy platform" for platform resolution
+  - Use "Copy source"/"Copy source other" for storefront resolution
+  - Create platform/storefront association for this specific copy
+```
+
+#### Rule 3: Multiple CSV Rows = Multiple Copies
+```
+Same game name with different copy data:
+  - Consolidate into single game entry
+  - Create multiple platform/storefront associations
+  - Preserve copy-specific metadata for each association
+```
+
+### Copy Consolidation Logic
+
+When processing CSV data, the system must detect and consolidate multiple copies of the same game:
+
+```python
+class CopyConsolidationProcessor:
+    """Consolidates multiple CSV rows for the same game into unified structure."""
+    
+    def consolidate_game_copies(self, csv_rows: List[Dict]) -> List[ConsolidatedGame]:
+        game_groups = self._group_by_game_name(csv_rows)
+        
+        consolidated_games = []
+        for game_name, rows in game_groups.items():
+            # Determine if rows represent copies or separate games
+            if self._are_same_game_different_copies(rows):
+                consolidated_games.append(self._merge_game_copies(rows))
+            else:
+                # Treat as separate games (may have similar names)
+                for row in rows:
+                    consolidated_games.append(self._create_single_game(row))
+        
+        return consolidated_games
+    
+    def _merge_game_copies(self, rows: List[Dict]) -> ConsolidatedGame:
+        """Merge multiple CSV rows into single game with multiple copies."""
+        base_game = self._extract_base_game_data(rows[0])  # Use first row for base data
+        copies = []
+        
+        for row in rows:
+            copy_data = self._extract_copy_data(row)
+            if copy_data.has_copy_info():  # Has platform or storefront data
+                copies.append(copy_data)
+        
+        # If no copies have platform/storefront data, use fallback logic
+        if not copies:
+            fallback_copy = self._create_fallback_copy(base_game)
+            copies.append(fallback_copy)
+        
+        return ConsolidatedGame(
+            base_data=base_game,
+            copies=copies,
+            requires_storefront_resolution=any(c.storefront is None for c in copies)
+        )
+```
+
+### Platform/Storefront Resolution Workflow
+
+#### For Platform Resolution:
+1. **Extract platform name** from `Copy platform` (preferred) or `Platforms` (fallback)
+2. **Check known mappings** in platform mapping table
+3. **Generate suggestions** using fuzzy matching if unknown
+4. **Track resolution status** in database
+
+#### For Storefront Resolution:
+1. **Extract storefront name** from `Copy source` or `Copy source other`
+2. **Check known mappings** in storefront mapping table  
+3. **Generate suggestions** based on platform context
+4. **Handle "Other" storefronts** by prompting for custom name
+5. **Track resolution status** in database
+
+### Database Storage Strategy
+
+The copy-centric model maps to Nexorious tables as follows:
+
+```sql
+-- Single game entry
+games: IGDB-matched game data
+
+-- Single user game entry  
+user_games: User's relationship to the game (rating, notes, play status)
+
+-- Multiple platform associations (one per copy)
+user_game_platforms: Platform/storefront combinations
+  - user_game_id -> links to user_games
+  - platform_id -> resolved platform
+  - storefront_id -> resolved storefront  
+  - is_physical -> from Copy media field
+  - metadata -> copy-specific data (label, condition, etc.)
+
+-- Import tracking per copy
+darkadia_imports: 
+  - Maps to user_game_platforms entries
+  - Tracks original copy platform/storefront names
+  - Stores resolution status per copy
+```
+
+### Copy Metadata Preservation
+
+Each copy contains rich metadata that must be preserved:
+
+```json
+{
+  "copy_metadata": {
+    "label": "Copy label field",
+    "release": "Copy Release field", 
+    "media": "Copy media field",
+    "media_other": "Copy media other field",
+    "purchase_date": "Copy purchase date field",
+    "box_info": {
+      "has_box": "Copy box field",
+      "box_condition": "Copy box condition field", 
+      "box_notes": "Copy box notes field"
+    },
+    "manual_info": {
+      "has_manual": "Copy manual field",
+      "manual_condition": "Copy manual condition field",
+      "manual_notes": "Copy manual notes field"
+    },
+    "completeness": {
+      "is_complete": "Copy complete field",
+      "complete_notes": "Copy complete notes field"
+    }
+  },
+  "resolution_metadata": {
+    "original_platform_name": "PC",
+    "original_storefront_name": "Steam",
+    "resolution_method": "auto_matched",
+    "resolution_confidence": 0.95
+  }
+}
+```
+
+### Storefront Resolution Requirements
+
+Unlike platforms, storefronts are more tightly coupled to platforms and require special handling:
+
+#### Unknown Storefront Detection
+```python
+def detect_unknown_storefronts(copy_data: CopyData) -> List[UnknownStorefront]:
+    """Detect storefronts that need resolution."""
+    unknown = []
+    
+    storefront_name = copy_data.source or copy_data.source_other
+    if not storefront_name:
+        return unknown
+    
+    # Check if storefront is mapped
+    if storefront_name not in STOREFRONT_MAPPINGS:
+        platform_name = copy_data.platform
+        unknown.append(UnknownStorefront(
+            name=storefront_name,
+            platform_context=platform_name,
+            suggestion_confidence=0.0
+        ))
+    
+    return unknown
+```
+
+#### Platform-Contextual Storefront Suggestions
+```python
+def suggest_storefronts_for_platform(unknown_storefront: str, platform: str) -> List[StorefrontSuggestion]:
+    """Generate storefront suggestions based on platform context."""
+    
+    # Get valid storefronts for this platform
+    valid_storefronts = get_storefronts_for_platform(platform)
+    
+    # Fuzzy match against valid options
+    suggestions = []
+    for storefront in valid_storefronts:
+        confidence = fuzzy_match(unknown_storefront, storefront.name)
+        if confidence > 0.6:
+            suggestions.append(StorefrontSuggestion(
+                storefront_id=storefront.id,
+                name=storefront.name,
+                confidence=confidence,
+                reason=f"Common storefront for {platform}"
+            ))
+    
+    return sorted(suggestions, key=lambda s: s.confidence, reverse=True)
+```
+
+#### Required User Resolution Cases
+1. **Missing Storefront**: Copy has platform but no storefront data
+2. **Unknown Storefront**: Storefront name not in mapping tables
+3. **Ambiguous Storefront**: Multiple high-confidence matches
+4. **Platform-Storefront Mismatch**: Storefront not available on specified platform
 
 ---
 
@@ -1298,21 +1589,26 @@ class PlatformResolutionTests:
 
 #### Task 1: Database Foundation
 **Priority**: Critical  
-**Estimated Time**: 3-5 days  
+**Estimated Time**: 4-6 days (Extended for copy-based architecture)  
 **Dependencies**: None
 
 **Subtasks**:
-1. Create `darkadia_imports` table migration with all required fields
-2. Implement `DarkadiaImport` SQLModel with relationships
-3. Add database indexes for performance (user_id, batch_id, file_hash)
-4. Update `ImportType` enum to include `DARKADIA`
-5. Test migration with sample data
+1. Create `darkadia_imports` table migration with copy-based fields
+2. Add `user_game_platform_id` field to link to specific copy associations
+3. Add `copy_identifier` field for consolidation logic
+4. Add storefront resolution fields (`original_storefront_name`, `storefront_resolved`, `requires_storefront_resolution`)
+5. Add copy consolidation indexes (game_name, platform/storefront resolution status)
+6. Implement `DarkadiaImport` SQLModel with updated relationships
+7. Update `ImportType` enum to include `DARKADIA`
+8. Test migration with sample multi-copy data
 
 **Acceptance Criteria**:
 - [x] Migration runs successfully on dev and test databases
-- [x] All model relationships work correctly
-- [x] Indexes improve query performance for large datasets
-- [x] Can store and retrieve JSONB metadata
+- [x] All model relationships work correctly (including user_game_platforms)
+- [x] Copy consolidation indexes improve performance for game name grouping
+- [x] Storefront resolution fields properly track unknown storefronts
+- [x] Can store and retrieve JSONB metadata per copy
+- [x] Database supports multiple copies per game efficiently
 
 #### Task 2: Security Implementation
 **Priority**: Critical  
@@ -1334,22 +1630,29 @@ class PlatformResolutionTests:
 
 #### Task 3: Core Import Service
 **Priority**: Critical  
-**Estimated Time**: 5-7 days  
+**Estimated Time**: 6-8 days (Extended for copy consolidation)  
 **Dependencies**: Task 1, Task 2
 
 **Subtasks**:
 1. Create `DarkadiaImportService` extending `ImportSourceService`
-2. Implement CSV parsing with existing darkadia parser integration
-3. Add enhanced data transformation pipeline with validation stages
-4. Implement platform/storefront resolution with fallback handling
-5. Add IGDB integration with rate limiting
+2. Implement CSV parsing with copy consolidation detection
+3. Add copy-based precedence rules (copy platform vs generic platform)
+4. Implement storefront extraction from "Copy source" and "Copy source other" fields
+5. Add enhanced data transformation pipeline with copy consolidation stages
+6. Implement platform/storefront resolution with copy-specific fallback handling
+7. Add IGDB integration with rate limiting
+8. Handle multiple CSV rows for same game (copy consolidation)
 
 **Acceptance Criteria**:
 - [x] Service implements all required `ImportSourceService` methods
-- [x] Can successfully parse and import sample CSV files
+- [x] Can successfully parse and import sample CSV files with multiple copies
+- [x] Copy consolidation correctly groups CSV rows by game name
+- [x] Platform/storefront precedence rules correctly ignore generic platforms when copy data exists
+- [x] Storefront resolution handles unknown storefronts gracefully  
 - [x] Platform resolution handles unknown platforms gracefully
 - [x] IGDB matching works with rate limiting
-- [x] Import process is idempotent (can be re-run safely)
+- [x] Import process is idempotent (can be re-run safely with copy data)
+- [x] Multiple user_game_platform associations created for multi-copy games
 
 ### High Priority Tasks (Core Functionality)
 
@@ -1372,29 +1675,45 @@ class PlatformResolutionTests:
 - [x] Background job processing works correctly
 - [x] Error handling provides clear user guidance
 
-#### Task 5: Enhanced Data Transformation ✅ **COMPLETED**
+#### Task 5: Enhanced Data Transformation ✅ **COMPLETED** ⚠️ **REQUIRES EXTENSION**
 **Priority**: High  
-**Estimated Time**: 3-5 days  
+**Estimated Time**: 3-5 days (Original) + 2-3 days (Copy consolidation extension)
 **Dependencies**: Task 3
 
-**Subtasks**:
+**Original Subtasks** ✅:
 1. ✅ Implement weighted boolean flag resolution system
 2. ✅ Add comprehensive validation with recovery strategies
 3. ✅ Create platform/storefront mapping with fuzzy matching
 4. ✅ Add copy metadata processing for physical games
 5. ✅ Implement batch processing with memory management
 
-**Acceptance Criteria**:
+**Additional Subtasks Required for Copy-Based Architecture**:
+6. **TODO**: Implement copy consolidation processor for multiple CSV rows per game
+7. **TODO**: Add game name grouping and duplicate detection logic
+8. **TODO**: Create copy-specific metadata extraction (label, condition, box info)
+9. **TODO**: Implement storefront mapping from "Copy source" fields
+10. **TODO**: Add precedence logic (copy data overrides generic platform data)
+
+**Original Acceptance Criteria**:
 - [x] Boolean flag conflicts resolved intelligently
 - [x] Invalid data handled with appropriate fallbacks
 - [x] Platform mapping provides suggestions for unknown platforms
 - [x] Physical copy metadata preserved in JSONB format
 - [x] Large CSV files processed without memory issues
 
-#### Task 6: Platform Resolution System ✅ **COMPLETED**
+**Additional Acceptance Criteria**:
+- [ ] Copy consolidation correctly merges multiple CSV rows for same game
+- [ ] Storefront mapping handles "Copy source" and "Copy source other" fields
+- [ ] Copy-specific metadata preserved per platform association
+- [ ] Precedence rules correctly favor copy data over generic platform data
+- [ ] Zero-copy games handled with fallback to generic platform field
+
+#### Task 6: Platform Resolution System ✅ **COMPLETED** (Copy-based architecture compatible)
 **Priority**: High  
 **Estimated Time**: 4-6 days  
 **Dependencies**: Task 4
+
+**Note**: This system works with copy-based architecture where platform resolution is applied per copy rather than per game. Copy-specific platforms take precedence over generic "Platforms" field.
 
 **Subtasks**:
 1. ✅ Create unknown platform detection and tracking
@@ -1486,24 +1805,39 @@ class PlatformResolutionTests:
 - ✅ **Mobile-Responsive Design** working across all device sizes
 - ✅ **Comprehensive Error Handling** with clear user feedback and retry capabilities
 
-#### Task 9: Import Management Integration
+#### Task 9: Import Management Integration ⚠️ **REQUIRES EXTENSION**
 **Priority**: Medium  
-**Estimated Time**: 3-4 days  
-**Dependencies**: Task 7, Task 8
+**Estimated Time**: 3-4 days (Original) + 2-3 days (Copy-based extension)
+**Dependencies**: Task 7, Task 8, Task 13 (Copy Consolidation), Task 15 (Storefront Resolution UI)
 
-**Subtasks**:
+**Original Subtasks**:
 1. Integrate with existing game list components
 2. ✅ Add platform resolution status indicators
 3. Enhance filters for Darkadia-specific fields
 4. Implement virtual scrolling for large datasets
 5. Add Darkadia-specific bulk operations
 
-**Acceptance Criteria**:
+**Additional Subtasks for Copy-Based Architecture**:
+6. **TODO**: Display copy count per game in game lists
+7. **TODO**: Add storefront resolution status indicators alongside platform status
+8. **TODO**: Show multiple platform/storefront associations per game
+9. **TODO**: Add filters for storefront resolution status
+10. **TODO**: Handle copy-specific bulk operations (resolve storefronts per copy)
+11. **TODO**: Display copy metadata in expanded game views
+
+**Original Acceptance Criteria**:
 - [x] Game lists show platform resolution status clearly
 - [ ] Filters work for platform, storefront, and resolution status
 - [ ] Large game lists (1000+) perform smoothly
 - [ ] Bulk operations handle Darkadia-specific actions
 - [ ] UI consistent with existing import framework
+
+**Additional Acceptance Criteria**:
+- [ ] Copy count visible for multi-copy games
+- [ ] Storefront resolution status clearly displayed per copy
+- [ ] Multiple platform/storefront associations shown without UI clutter
+- [ ] Copy-specific bulk operations work efficiently
+- [ ] Copy metadata accessible but not overwhelming in UI
 
 **Implementation Details (Partial)**:
 - ✅ **Platform Resolution Status Indicators** with comprehensive backend and frontend integration
@@ -1573,17 +1907,92 @@ class PlatformResolutionTests:
 - [ ] Import works well on slower mobile connections
 - [ ] Consistent experience across mobile platforms
 
+### New Tasks for Copy-Based Architecture
+
+#### Task 13: Copy Consolidation System
+**Priority**: Critical  
+**Estimated Time**: 4-5 days  
+**Dependencies**: Task 3
+
+**Subtasks**:
+1. Implement game name grouping for duplicate detection
+2. Create `CopyConsolidationProcessor` class for merging CSV rows
+3. Add logic to detect same game vs different games with similar names
+4. Handle zero-copy scenarios (fallback to generic "Platforms" field)
+5. Handle multiple-copy scenarios (create multiple platform associations)
+6. Implement copy-specific metadata preservation per association
+7. Add copy identifier generation for tracking individual copies
+8. Create consolidated game structure for downstream processing
+
+**Acceptance Criteria**:
+- [ ] Multiple CSV rows with same game name correctly identified as copies
+- [ ] Games without copy data fall back to generic platform field
+- [ ] Copy-specific metadata preserved for each platform association
+- [ ] Copy consolidation handles edge cases (empty names, special characters)
+- [ ] Performance acceptable for large CSV files with many multi-copy games
+- [ ] Copy identifiers uniquely identify each copy within a game
+
+#### Task 14: Storefront Resolution System
+**Priority**: High  
+**Estimated Time**: 5-6 days  
+**Dependencies**: Task 6 (Platform Resolution System)
+
+**Subtasks**:
+1. Create unknown storefront detection and tracking system
+2. Implement `StorefrontResolutionService` with platform-contextual suggestions
+3. Add storefront suggestion endpoints to API
+4. Create storefront fuzzy matching with platform constraints
+5. Handle "Other" storefronts with custom name resolution
+6. Track storefront resolution status in database
+7. Add bulk storefront resolution operations
+8. Implement platform-storefront compatibility validation
+
+**Acceptance Criteria**:
+- [ ] Unknown storefronts detected from "Copy source" fields
+- [ ] Storefront suggestions filtered by platform compatibility
+- [ ] Custom storefronts from "Copy source other" handled properly
+- [ ] Storefront resolution status tracked per copy
+- [ ] Bulk operations allow resolving multiple storefronts efficiently
+- [ ] Platform-storefront mismatches prevented or flagged
+
+#### Task 15: Storefront Resolution UI
+**Priority**: Medium  
+**Estimated Time**: 4-5 days  
+**Dependencies**: Task 14
+
+**Subtasks**:
+1. Create storefront mapping interface component
+2. Display platform-contextual storefront suggestions
+3. Handle missing storefront cases (platform but no storefront data)
+4. Add bulk storefront resolution operations to UI
+5. Integrate storefront resolution with existing platform resolution workflow
+6. Show storefront resolution status indicators in game lists
+7. Add custom storefront creation flow for "Other" storefronts
+8. Implement storefront resolution progress tracking
+
+**Acceptance Criteria**:
+- [ ] Storefront resolution interface intuitive and user-friendly
+- [ ] Platform context clearly shown for each storefront suggestion
+- [ ] Missing storefront cases handled with clear guidance
+- [ ] Bulk operations work smoothly for multiple storefronts
+- [ ] Integration with platform resolution doesn't create workflow confusion
+- [ ] Storefront status visible in game cards and tables
+- [ ] Custom storefront creation integrated seamlessly
+
 ### Dependencies and Timeline
 
 ```
-Timeline: 8-10 weeks total
+Timeline: 12-14 weeks total (Extended for copy-based architecture)
 
 ✅ Week 1-2: Foundation Tasks (1, 2, 3) - COMPLETED
-✅ Week 3-4: Core API & Transformation (4, 5, 6) - COMPLETED
+✅ Week 3-4: Core API & Transformation (4, 5, 6) - COMPLETED  
 ✅ Week 5: User Interface - File Upload Interface (Task 7) - COMPLETED
 Week 6: User Interface (8, 9) - IN PROGRESS
-Week 7-8: Testing & Integration
-Week 9-10: Performance & Polish (10, 11, 12)
+Week 7-8: Copy-Based Architecture (13, 5 extension) - NEW
+Week 9-10: Storefront Resolution (14, 15) - NEW  
+Week 11: Import Management Extension (9 extension) - NEW
+Week 12-13: Testing & Integration (updated for new features)
+Week 13-14: Performance & Polish (10, 11, 12)
 ```
 
 **Critical Dependencies**:
@@ -1592,6 +2001,11 @@ Week 9-10: Performance & Polish (10, 11, 12)
 - Task 3 (Service) must complete before Task 4 (API)
 - Task 4 (API) must complete before Task 7 (File Upload UI)
 - Task 6 (Platform Resolution) must complete before Task 8 (Platform UI)
+- **Task 13 (Copy Consolidation) must complete before Task 5 extension**
+- **Task 3 (Service) must complete before Task 13 (Copy Consolidation)**
+- **Task 6 (Platform Resolution) must complete before Task 14 (Storefront Resolution)**
+- **Task 14 (Storefront Resolution) must complete before Task 15 (Storefront UI)**
+- **Task 13 & 15 must complete before Task 9 extension**
 
 **Resource Requirements**:
 - 1 Backend Developer (Tasks 1-6)

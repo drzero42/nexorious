@@ -55,6 +55,21 @@
   }
 
   function getPlatformStatusDisplay(): { label: string; color: string; icon: string; tooltip: string } | null {
+    // If we have resolved platform/storefront names, show those clearly
+    if (game.platform_name || game.storefront_name) {
+      const parts = [];
+      if (game.platform_name) parts.push(game.platform_name);
+      if (game.storefront_name) parts.push(game.storefront_name);
+      
+      return {
+        label: parts.join(' - '),  // Use " - " separator for better clarity
+        color: 'bg-green-100 text-green-600 border-green-200',
+        icon: '✅',
+        tooltip: `Resolved: ${game.platform_name ? 'Platform: ' + game.platform_name : ''}${game.platform_name && game.storefront_name ? ', ' : ''}${game.storefront_name ? 'Storefront: ' + game.storefront_name : ''}`
+      };
+    }
+    
+    // Fall back to resolution status indicators for unresolved platforms/storefronts
     if (!game.platform_resolution_status && !game.original_platform_name) {
       return null;
     }
@@ -68,11 +83,12 @@
           tooltip: `Platform resolved: ${game.original_platform_name}` 
         };
       case 'pending':
+      case 'mapped':
         return { 
-          label: `Unknown: ${game.original_platform_name}`, 
+          label: `Needs Resolution: ${game.original_platform_name}`, 
           color: 'bg-yellow-100 text-yellow-600 border-yellow-200', 
           icon: '⚠️', 
-          tooltip: `Platform needs resolution: ${game.original_platform_name}` 
+          tooltip: `Platform/storefront needs resolution: ${game.original_platform_name}` 
         };
       case 'ignored':
         return { 
@@ -92,10 +108,10 @@
         // If we have a platform name but no status, assume pending
         if (game.original_platform_name) {
           return { 
-            label: `Platform: ${game.original_platform_name}`, 
-            color: 'bg-gray-100 text-gray-600 border-gray-200', 
-            icon: '📱', 
-            tooltip: `Original platform: ${game.original_platform_name}` 
+            label: `Needs Resolution: ${game.original_platform_name}`, 
+            color: 'bg-yellow-100 text-yellow-600 border-yellow-200', 
+            icon: '⚠️', 
+            tooltip: `Platform/storefront needs resolution: ${game.original_platform_name}` 
           };
         }
         return null;
