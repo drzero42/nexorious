@@ -54,7 +54,56 @@
     }
   }
 
+  function getPlatformStatusDisplay(): { label: string; color: string; icon: string; tooltip: string } | null {
+    if (!game.platform_resolution_status && !game.original_platform_name) {
+      return null;
+    }
+    
+    switch (game.platform_resolution_status) {
+      case 'resolved':
+        return { 
+          label: game.original_platform_name || 'Platform', 
+          color: 'bg-green-100 text-green-600 border-green-200', 
+          icon: '✅', 
+          tooltip: `Platform resolved: ${game.original_platform_name}` 
+        };
+      case 'pending':
+        return { 
+          label: `Unknown: ${game.original_platform_name}`, 
+          color: 'bg-yellow-100 text-yellow-600 border-yellow-200', 
+          icon: '⚠️', 
+          tooltip: `Platform needs resolution: ${game.original_platform_name}` 
+        };
+      case 'ignored':
+        return { 
+          label: 'Platform Ignored', 
+          color: 'bg-gray-100 text-gray-600 border-gray-200', 
+          icon: '🚫', 
+          tooltip: `Platform resolution was ignored: ${game.original_platform_name || 'Unknown'}` 
+        };
+      case 'conflict':
+        return { 
+          label: `Multiple Matches`, 
+          color: 'bg-red-100 text-red-600 border-red-200', 
+          icon: '❌', 
+          tooltip: `Multiple platform matches found: ${game.original_platform_name}` 
+        };
+      default:
+        // If we have a platform name but no status, assume pending
+        if (game.original_platform_name) {
+          return { 
+            label: `Platform: ${game.original_platform_name}`, 
+            color: 'bg-gray-100 text-gray-600 border-gray-200', 
+            icon: '📱', 
+            tooltip: `Original platform: ${game.original_platform_name}` 
+          };
+        }
+        return null;
+    }
+  }
+
   const status = $derived(getStatusDisplay());
+  const platformStatus = $derived(getPlatformStatusDisplay());
   const canSync = $derived(game.igdb_id && !game.game_id && !game.ignored);
   const canMatch = $derived(!game.igdb_id && !game.ignored);
   const canIgnore = $derived(!game.ignored);
@@ -143,10 +192,22 @@
           {/if}
         </div>
         
-        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {status.color} flex-shrink-0">
-          <span class="mr-1">{status.icon}</span>
-          {status.label}
-        </span>
+        <div class="flex flex-col space-y-1 items-end">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {status.color} flex-shrink-0">
+            <span class="mr-1">{status.icon}</span>
+            {status.label}
+          </span>
+          
+          {#if platformStatus}
+            <span 
+              class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium {platformStatus.color} flex-shrink-0"
+              title={platformStatus.tooltip}
+            >
+              <span class="mr-1">{platformStatus.icon}</span>
+              {platformStatus.label}
+            </span>
+          {/if}
+        </div>
       </div>
 
       <div class="space-y-1 text-xs text-gray-500">

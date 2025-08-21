@@ -673,7 +673,16 @@ class DarkadiaImportService(ImportSourceService):
                         status_filter: Optional[str] = None,
                         search: Optional[str] = None) -> Tuple[List[ImportGame], int]:
         """List imported games with filtering and pagination."""
-        query = select(DarkadiaGame).where(DarkadiaGame.user_id == user_id)
+        # Join DarkadiaGame with DarkadiaImport to get platform resolution data
+        query = select(DarkadiaGame, DarkadiaImport).where(
+            DarkadiaGame.user_id == user_id
+        ).outerjoin(
+            DarkadiaImport, 
+            and_(
+                DarkadiaImport.user_id == DarkadiaGame.user_id,
+                DarkadiaImport.batch_id == DarkadiaGame.id
+            )
+        )
         
         # Apply status filter
         if status_filter == "unmatched":
@@ -694,11 +703,30 @@ class DarkadiaImportService(ImportSourceService):
         total_count = len(self.session.exec(query).all())
         
         # Apply pagination
-        games = self.session.exec(query.offset(offset).limit(limit)).all()
+        results = self.session.exec(query.offset(offset).limit(limit)).all()
         
         # Convert to ImportGame objects
         import_games = []
-        for game in games:
+        for result in results:
+            game, darkadia_import = result
+            
+            # Determine platform resolution status
+            platform_resolved = None
+            original_platform_name = None
+            platform_resolution_status = None
+            
+            if darkadia_import:
+                platform_resolved = darkadia_import.platform_resolved
+                original_platform_name = darkadia_import.original_platform_name
+                
+                # Determine status based on resolution data
+                if darkadia_import.platform_resolved:
+                    platform_resolution_status = "resolved"
+                elif darkadia_import.original_platform_name:
+                    resolution_data = darkadia_import.get_platform_resolution_data()
+                    status = resolution_data.get("status", "pending")
+                    platform_resolution_status = status
+                
             import_games.append(ImportGame(
                 id=game.id,
                 external_id=game.external_id,
@@ -708,7 +736,10 @@ class DarkadiaImportService(ImportSourceService):
                 game_id=game.game_id,
                 ignored=game.ignored,
                 created_at=game.created_at,
-                updated_at=game.updated_at
+                updated_at=game.updated_at,
+                platform_resolved=platform_resolved,
+                original_platform_name=original_platform_name,
+                platform_resolution_status=platform_resolution_status
             ))
         
         return import_games, total_count
