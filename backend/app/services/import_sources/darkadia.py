@@ -490,6 +490,7 @@ class DarkadiaImportService(ImportSourceService):
         try:
             # Get platform data from transformation metadata
             platforms_data = game_data.get('_platforms', [])
+            logger.debug(f"Processing {darkadia_game.game_name}: Found {len(platforms_data)} platform entries in _platforms metadata")
             
             if not platforms_data:
                 # No platform data - check if we have fallback platform info
@@ -504,18 +505,20 @@ class DarkadiaImportService(ImportSourceService):
                         original_storefront_name=None,
                         copy_identifier='fallback',
                         csv_row_number=game_data.get('_csv_row_number', row_index + 1),
-                        is_fallback=True
+                        is_fallback=True,
+                        platform_data=None
                     )
                 return
             
             # Create DarkadiaImport records for each platform/copy
             for platform_data in platforms_data:
-                original_platform_name = platform_data.get('platform', '').strip()
-                original_storefront_name = (
-                    platform_data.get('storefront', '').strip() or 
-                    platform_data.get('storefront_other', '').strip()
-                )
+                # Use the original platform name for tracking, not the mapped name
+                original_platform_name = platform_data.get('original_platform', '').strip()
+                # Use the original storefront name for tracking, not the mapped name
+                original_storefront_name = platform_data.get('original_storefront', '').strip()
                 copy_identifier = platform_data.get('copy_identifier', 'unknown')
+                
+                logger.debug(f"Processing platform data for {darkadia_game.game_name} - Platform: {original_platform_name}, Storefront: {original_storefront_name}, Copy: {copy_identifier}")
                 
                 # Only create record if we have platform or storefront data
                 if original_platform_name or original_storefront_name:
@@ -525,7 +528,8 @@ class DarkadiaImportService(ImportSourceService):
                         original_storefront_name=original_storefront_name,
                         copy_identifier=copy_identifier,
                         csv_row_number=game_data.get('_csv_row_number', row_index + 1),
-                        is_fallback=False
+                        is_fallback=False,
+                        platform_data=platform_data
                     )
                     
         except Exception as e:
@@ -539,7 +543,8 @@ class DarkadiaImportService(ImportSourceService):
         original_storefront_name: Optional[str],
         copy_identifier: str,
         csv_row_number: int,
-        is_fallback: bool
+        is_fallback: bool,
+        platform_data: Optional[Dict[str, Any]] = None
     ) -> None:
         """Create a single DarkadiaImport record during import phase."""
         try:
@@ -548,34 +553,39 @@ class DarkadiaImportService(ImportSourceService):
             resolved_platform_id = None
             resolved_storefront_id = None
             
-            # Try to resolve platform
-            if original_platform_name:
-                # Check transformation data for mapped platform
+            # Get mapped platform name from platform_data or transformation data
+            mapped_platform_name = None
+            mapped_storefront_name = None
+            
+            if platform_data:
+                # Use mapped names from the platform_data (preferred)
+                mapped_platform_name = platform_data.get('platform')
+                mapped_storefront_name = platform_data.get('storefront')
+            else:
+                # Fallback to transformation data (for fallback platforms)
                 transform_data = darkadia_game.get_transformation_data()
-                mapped_platform = transform_data.get('_mapped_platform') if transform_data else None
-                
-                if mapped_platform:
-                    # Look up the mapped platform in the database
-                    platform = self.session.exec(
-                        select(Platform).where(Platform.name == mapped_platform)
-                    ).first()
-                    if platform:
-                        resolved_platform_id = platform.id
-                        platform_resolved = True
+                if transform_data:
+                    mapped_platform_name = transform_data.get('_mapped_platform')
+                    mapped_storefront_name = transform_data.get('_mapped_storefront')
+            
+            # Try to resolve platform
+            if mapped_platform_name:
+                # Look up the mapped platform in the database
+                platform = self.session.exec(
+                    select(Platform).where(Platform.name == mapped_platform_name)
+                ).first()
+                if platform:
+                    resolved_platform_id = platform.id
+                    platform_resolved = True
             
             # Try to resolve storefront
-            if original_storefront_name:
-                # Check transformation data for mapped storefront
-                transform_data = darkadia_game.get_transformation_data()
-                mapped_storefront = transform_data.get('_mapped_storefront') if transform_data else None
-                
-                if mapped_storefront:
-                    # Look up the mapped storefront in the database
-                    storefront = self.session.exec(
-                        select(Storefront).where(Storefront.name == mapped_storefront)
-                    ).first()
-                    if storefront:
-                        resolved_storefront_id = storefront.id
+            if mapped_storefront_name:
+                # Look up the mapped storefront in the database
+                storefront = self.session.exec(
+                    select(Storefront).where(Storefront.name == mapped_storefront_name)
+                ).first()
+                if storefront:
+                    resolved_storefront_id = storefront.id
             
             # Create the DarkadiaImport record
             darkadia_import = DarkadiaImport(

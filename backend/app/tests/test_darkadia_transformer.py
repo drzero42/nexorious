@@ -231,11 +231,11 @@ class TestMappingStage:
         context = TransformationContext()
         
         test_cases = [
-            ('Steam', 'Steam'),
-            ('Epic', 'Epic Games Store'),
-            ('GOG', 'GOG'),
-            ('PlayStation Store', 'PlayStation Store'),
-            ('PSN', 'PlayStation Store')
+            ('Steam', 'steam'),
+            ('Epic', 'epic-games-store'),
+            ('GOG', 'gog'),
+            ('PlayStation Store', 'playstation-store'),
+            ('PSN', 'playstation-store')
         ]
         
         for input_storefront, expected in test_cases:
@@ -262,7 +262,7 @@ class TestMappingStage:
         result = await mapping_stage.process([test_row], context)
         
         assert len(result) == 1
-        assert result[0]['_mapped_storefront'] == 'GOG'
+        assert result[0]['_mapped_storefront'] == 'gog'
         assert result[0]['_original_storefront'] == 'GOG'  # Should use the 'other' field
     
     @pytest.mark.asyncio
@@ -485,7 +485,7 @@ class TestDarkadiaTransformationPipeline:
         assert game1['Name'] == 'The Witcher 3: Wild Hunt'
         assert game1['_resolved_play_status'] == PlayStatus.COMPLETED.value
         assert game1['_mapped_platform'] == 'PC (Windows)'
-        assert game1['_mapped_storefront'] == 'Steam'
+        assert game1['_mapped_storefront'] == 'steam'
         assert game1['Rating'] == 4.5
         
         # Check second game transformation
@@ -493,7 +493,7 @@ class TestDarkadiaTransformationPipeline:
         assert game2['Name'] == 'Cyberpunk 2077'
         assert game2['_resolved_play_status'] == PlayStatus.DROPPED.value  # Shelved = Dropped
         assert game2['_mapped_platform'] == 'PlayStation 4'
-        assert game2['_mapped_storefront'] == 'PlayStation Store'  # PSN mapped
+        assert game2['_mapped_storefront'] == 'playstation-store'  # PSN mapped to database name
         assert game2['Rating'] == 3.0
     
     @pytest.mark.asyncio
@@ -586,10 +586,94 @@ class TestDarkadiaTransformationPipeline:
         assert len(transformed_data) == 50
         assert context.total_rows == 50
         assert context.successful_rows == 50
+    
+    @pytest.mark.asyncio
+    async def test_platforms_metadata_creation(self, pipeline):
+        """Test that _platforms metadata is correctly created from transformation data."""
+        sample_data = [
+            {
+                "Name": "Test Game with Copy Data",
+                "Copy platform": "PC",
+                "Copy source": "Steam",
+                "Copy media": "Digital",
+                "Copy label": "GOTY Edition",
+                "Copy Release": "2024",
+                "Played": True,
+                "Rating": "4.5"
+            },
+            {
+                "Name": "Test Game with Other Source",
+                "Copy platform": "PlayStation 4", 
+                "Copy source": "Other",
+                "Copy source other": "PSN",
+                "Copy media": "Digital",
+                "Played": False,
+                "Rating": ""
+            },
+            {
+                "Name": "Test Game with Fallback Platform",
+                "Platforms": "Xbox One, PC",
+                "Played": True,
+                "Rating": "3.0"
+            }
+        ]
         
-        # Verify some transformations are correct
-        assert all(game['_resolved_play_status'] is not None for game in transformed_data)
-        assert all(game['_mapped_platform'] is not None for game in transformed_data)
+        result, context = await pipeline.transform(sample_data)
+        
+        # Test game 1: Should have copy data with platform and storefront
+        game1 = result[0]
+        assert '_platforms' in game1
+        platforms1 = game1['_platforms']
+        assert len(platforms1) == 1
+        platform1 = platforms1[0]
+        assert platform1['platform'] == 'PC (Windows)'  # Should be mapped
+        assert platform1['original_platform'] == 'PC'
+        assert platform1['storefront'] == 'steam'  # Should be mapped to database name
+        assert platform1['original_storefront'] == 'Steam'
+        assert platform1['is_real_copy'] == True
+        assert platform1['copy_identifier'] == 'plt:PC|str:Steam'
+        
+        # Test game 2: Should handle "Other" storefront with fallback to Copy source other
+        game2 = result[1]
+        assert '_platforms' in game2
+        platforms2 = game2['_platforms']
+        assert len(platforms2) == 1
+        platform2 = platforms2[0]
+        assert platform2['platform'] == 'PlayStation 4'  # Should be mapped
+        assert platform2['original_platform'] == 'PlayStation 4'
+        assert platform2['storefront'] == 'playstation-store'  # PSN should map to playstation-store database name
+        assert platform2['original_storefront'] == 'PSN'
+        assert platform2['is_real_copy'] == True
+        
+        # Test game 3: Should have fallback platform data
+        game3 = result[2]
+        assert '_platforms' in game3
+        platforms3 = game3['_platforms']
+        assert len(platforms3) == 2  # Should create entries for both Xbox One and PC
+        
+        # Check first fallback platform (Xbox One)
+        xbox_platform = platforms3[0]
+        assert xbox_platform['platform'] == 'Xbox One'  # Should be mapped (first platform gets mapping)
+        assert xbox_platform['original_platform'] == 'Xbox One'
+        assert xbox_platform['storefront'] is None
+        assert xbox_platform['original_storefront'] is None
+        assert xbox_platform['is_real_copy'] == False
+        assert xbox_platform['requires_storefront_resolution'] == True
+        assert xbox_platform['copy_identifier'] == 'fallback:Xbox One'
+        
+        # Check second fallback platform (PC)
+        pc_platform = platforms3[1] 
+        assert pc_platform['platform'] == 'PC'  # Original name (only first platform gets mapping)
+        assert pc_platform['original_platform'] == 'PC'
+        assert pc_platform['storefront'] is None
+        assert pc_platform['original_storefront'] is None
+        assert pc_platform['is_real_copy'] == False
+        assert pc_platform['requires_storefront_resolution'] == True
+        assert pc_platform['copy_identifier'] == 'fallback:PC'
+        
+        # Verify all games have _platforms metadata now
+        assert all('_platforms' in game for game in result)
+        assert context.successful_rows == 3
 
 
 if __name__ == "__main__":

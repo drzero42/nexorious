@@ -352,41 +352,41 @@ class MappingStage(TransformationStage):
         'Android': 'Android',
     }
     
-    # Storefront mappings
+    # Storefront mappings - map CSV storefront names to database names (not display names)
     STOREFRONT_MAPPINGS = {
-        'Steam': 'Steam',
-        'Epic Games Store': 'Epic Games Store',
-        'Epic': 'Epic Games Store',
-        'GOG': 'GOG',
-        'PlayStation Store': 'PlayStation Store',
-        'PSN': 'PlayStation Store',  # Add PSN mapping
-        'Nintendo eShop': 'Nintendo eShop',
-        'Microsoft Store': 'Microsoft Store',
-        'Humble Bundle': 'Humble Bundle',
-        'Origin': 'Origin/EA App',
-        'EA App': 'Origin/EA App',
-        'Apple App Store': 'Apple App Store',
-        'Google Play Store': 'Google Play Store',
-        'Physical': 'Physical',
-        'Gamestop': 'Physical',
-        'Best Buy': 'Physical',
-        'Amazon': 'Physical',
-        'Other': 'Physical',
+        'Steam': 'steam',
+        'Epic Games Store': 'epic-games-store',
+        'Epic': 'epic-games-store',
+        'GOG': 'gog',
+        'PlayStation Store': 'playstation-store',
+        'PSN': 'playstation-store',  # Add PSN mapping
+        'Nintendo eShop': 'nintendo-eshop',
+        'Microsoft Store': 'microsoft-store',
+        'Humble Bundle': 'humble-bundle',
+        'Origin': 'origin-ea-app',
+        'EA App': 'origin-ea-app',
+        'Apple App Store': 'apple-app-store',
+        'Google Play Store': 'google-play-store',
+        'Physical': 'physical',
+        'Gamestop': 'physical',
+        'Best Buy': 'physical',
+        'Amazon': 'physical',
+        'Other': 'physical',
     }
     
-    # Default storefronts for platforms
+    # Default storefronts for platforms - using database names
     PLATFORM_DEFAULT_STOREFRONTS = {
-        'PC (Windows)': 'Steam',
-        'PlayStation 4': 'PlayStation Store',
-        'PlayStation 5': 'PlayStation Store',
-        'PlayStation 3': 'PlayStation Store',
-        'Xbox Series X/S': 'Microsoft Store',
-        'Xbox One': 'Microsoft Store',
-        'Xbox 360': 'Microsoft Store',
-        'Nintendo Switch': 'Nintendo eShop',
-        'Nintendo Wii': 'Nintendo eShop',
-        'iOS': 'Apple App Store',
-        'Android': 'Google Play Store',
+        'PC (Windows)': 'steam',
+        'PlayStation 4': 'playstation-store',
+        'PlayStation 5': 'playstation-store',
+        'PlayStation 3': 'playstation-store',
+        'Xbox Series X/S': 'microsoft-store',
+        'Xbox One': 'microsoft-store',
+        'Xbox 360': 'microsoft-store',
+        'Nintendo Switch': 'nintendo-eshop',
+        'Nintendo Wii': 'nintendo-eshop',
+        'iOS': 'apple-app-store',
+        'Android': 'google-play-store',
     }
     
     def get_stage_name(self) -> str:
@@ -591,6 +591,15 @@ class PersistenceStage(TransformationStage):
         if copy_metadata:
             prepared_row['_copy_metadata'] = copy_metadata
         
+        # CRITICAL: Create _platforms metadata from transformation data
+        # This is what the import process expects to find!
+        platforms_data = self._create_platforms_metadata(row, context, row_index)
+        if platforms_data:
+            prepared_row['_platforms'] = platforms_data
+            logger.debug(f"Row {row_index + 1}: Created _platforms metadata with {len(platforms_data)} platform(s)")
+        else:
+            logger.warning(f"Row {row_index + 1}: No _platforms metadata created for {row.get('Name', 'Unknown Game')}")
+        
         # Ensure rating is properly formatted
         if prepared_row.get('Rating') is not None:
             try:
@@ -646,6 +655,110 @@ class PersistenceStage(TransformationStage):
                 metadata[key] = str(value).strip()
         
         return metadata if metadata else None
+    
+    def _create_platforms_metadata(self, row: Dict[str, Any], 
+                                   context: TransformationContext, 
+                                   row_index: int) -> List[Dict[str, Any]]:
+        """
+        Create _platforms metadata array from transformed row data.
+        This is the critical missing piece that consolidates platform/storefront 
+        information into the structure expected by the import process.
+        """
+        platforms = []
+        
+        # Extract platform and storefront data from transformation results
+        mapped_platform = row.get('_mapped_platform')
+        original_platform = row.get('_original_platform')
+        mapped_storefront = row.get('_mapped_storefront') 
+        original_storefront = row.get('_original_storefront')
+        
+        # Get original CSV copy data
+        copy_platform = row.get('Copy platform', '').strip()
+        copy_source = row.get('Copy source', '').strip()
+        copy_source_other = row.get('Copy source other', '').strip()
+        
+        
+        # Rule 1: Has copy data (platform or storefront) - this is a real copy
+        if copy_platform or copy_source or copy_source_other:
+            # Generate copy identifier for tracking
+            copy_id_parts = []
+            if copy_platform:
+                copy_id_parts.append(f"plt:{copy_platform}")
+            if copy_source:
+                copy_id_parts.append(f"str:{copy_source}")
+            elif copy_source_other:
+                copy_id_parts.append(f"str:{copy_source_other}")
+            copy_identifier = "|".join(copy_id_parts) if copy_id_parts else "copy:main"
+            
+            # Determine final storefront value (prioritize Copy source over Copy source other)
+            final_original_storefront = copy_source or copy_source_other
+            # Need to handle the case where Copy source is "Other" and we should use Copy source other
+            if copy_source == "Other" and copy_source_other:
+                final_original_storefront = copy_source_other
+            final_mapped_storefront = mapped_storefront if original_storefront == final_original_storefront else None
+            
+            # Determine if storefront resolution is required
+            requires_storefront_resolution = bool(copy_platform and not final_original_storefront)
+            
+            platform_entry = {
+                'platform': mapped_platform or copy_platform,
+                'original_platform': copy_platform,
+                'storefront': final_mapped_storefront,
+                'original_storefront': final_original_storefront,
+                'media': row.get('Copy media', '').strip(),
+                'media_other': row.get('Copy media other', '').strip(),
+                'label': row.get('Copy label', '').strip(),
+                'release': row.get('Copy Release', '').strip(),
+                'purchase_date': row.get('Copy purchase date'),
+                'copy_identifier': copy_identifier,
+                'is_real_copy': True,
+                'requires_storefront_resolution': requires_storefront_resolution,
+                'metadata': {
+                    'box': row.get('Copy box', '').strip(),
+                    'box_condition': row.get('Copy box condition', '').strip(),
+                    'box_notes': row.get('Copy box notes', '').strip(),
+                    'manual': row.get('Copy manual', '').strip(),
+                    'manual_condition': row.get('Copy manual condition', '').strip(),
+                    'manual_notes': row.get('Copy manual notes', '').strip(),
+                    'complete': row.get('Copy complete', '').strip(),
+                    'complete_notes': row.get('Copy complete notes', '').strip(),
+                }
+            }
+            platforms.append(platform_entry)
+        
+        # Rule 2: No copy data - check for fallback platforms field
+        elif row.get('Platforms', '').strip():
+            fallback_platforms = row.get('Platforms', '').strip()
+            # Parse comma-separated platforms and create fallback entries
+            platform_names = [p.strip() for p in fallback_platforms.split(',') if p.strip()]
+            
+            for i, platform_name in enumerate(platform_names):
+                # Try to get mapped version of this platform
+                # (Note: transformation only maps the first platform, so others use original names)
+                final_platform = mapped_platform if i == 0 else platform_name
+                
+                fallback_entry = {
+                    'platform': final_platform,
+                    'original_platform': platform_name,
+                    'storefront': None,
+                    'original_storefront': None,
+                    'media': 'Digital',  # Assume digital for fallback
+                    'media_other': '',
+                    'label': '',
+                    'release': '',
+                    'purchase_date': None,
+                    'copy_identifier': f"fallback:{platform_name}",
+                    'is_real_copy': False,
+                    'requires_storefront_resolution': True,  # Always true for fallback
+                    'metadata': {}
+                }
+                platforms.append(fallback_entry)
+        
+        # Rule 3: No platform data at all - this should not happen for valid games
+        else:
+            logger.warning(f"Row {row_index + 1}: No platform data found for {row.get('Name', 'Unknown Game')}")
+        
+        return platforms
 
 
 class DarkadiaTransformationPipeline:
