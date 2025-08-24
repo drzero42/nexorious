@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scripts.darkadia.parser import DarkadiaCSVParser
 from scripts.darkadia.api_client import NexoriousAPIClient
 from scripts.darkadia.merge_strategies import MergeStrategy, InteractiveMerger, OverwriteMerger, PreserveMerger
+from app.services.import_sources.copy_consolidation import CopyConsolidationProcessor
 
 console = Console()
 
@@ -117,10 +118,54 @@ async def run_import(
     games_data = await parser.parse_csv(csv_file)
     console.print(f"✓ Found {len(games_data)} games in CSV")
     
-    # Phase 2: Group duplicates
-    console.print("\n[cyan]Phase 2: Grouping duplicates...[/cyan]")
-    unique_games = await parser.group_duplicates(games_data)
-    console.print(f"✓ Identified {len(unique_games)} unique games")
+    # Phase 2: Consolidate copy data
+    console.print("\n[cyan]Phase 2: Consolidating game copies...[/cyan]")
+    consolidation_processor = CopyConsolidationProcessor()
+    consolidated_games = consolidation_processor.consolidate_games(games_data)
+    
+    # Convert consolidated games back to dictionary format for compatibility with mergers
+    unique_games = []
+    for consolidated_game in consolidated_games:
+        # Create base game dictionary from consolidated base data
+        game_dict = consolidated_game.base_data.copy()
+        
+        # Add platform metadata in the format expected by mergers
+        platforms_metadata = []
+        for copy in consolidated_game.copies:
+            platform_entry = {
+                'platform': copy.platform,
+                'original_platform': copy.platform,
+                'storefront': copy.storefront,
+                'original_storefront': copy.storefront or copy.storefront_other,
+                'media': copy.media,
+                'label': copy.label,
+                'release': copy.release,
+                'purchase_date': copy.purchase_date,
+                'copy_identifier': copy.copy_identifier,
+                'is_real_copy': copy.is_real_copy,
+                'requires_storefront_resolution': copy.requires_storefront_resolution,
+                'metadata': {
+                    'box': copy.box,
+                    'box_condition': copy.box_condition,
+                    'box_notes': copy.box_notes,
+                    'manual': copy.manual,
+                    'manual_condition': copy.manual_condition,
+                    'manual_notes': copy.manual_notes,
+                    'complete': copy.complete,
+                    'complete_notes': copy.complete_notes,
+                }
+            }
+            platforms_metadata.append(platform_entry)
+        
+        game_dict['_platforms'] = platforms_metadata
+        unique_games.append(game_dict)
+    
+    # Log consolidation statistics
+    stats = consolidation_processor.get_consolidation_stats()
+    console.print(f"✓ Identified {len(unique_games)} unique games from {len(games_data)} rows")
+    if stats['consolidated_games'] > 0:
+        console.print(f"✓ Consolidated {stats['consolidated_games']} multi-copy games")
+    console.print(f"✓ Total copies across all games: {stats['total_copies']}")
     
     # Phase 3: Setup API client
     console.print("\n[cyan]Phase 3: Connecting to API...[/cyan]")

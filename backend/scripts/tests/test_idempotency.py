@@ -84,7 +84,6 @@ class TestImportIdempotency:
         """Create a mock parser that returns consistent data."""
         parser = MagicMock(spec=DarkadiaCSVParser)
         parser.parse_csv.return_value = sample_csv_data
-        parser.group_duplicates.return_value = sample_csv_data  # No duplicates in sample
         return parser
     
     @pytest.mark.asyncio
