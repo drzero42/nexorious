@@ -7,7 +7,14 @@ import type {
   BulkPlatformResolutionRequest,
   BulkPlatformResolutionResponse,
   PendingResolutionsListResponse,
-  PlatformResolutionResult
+  PlatformResolutionResult,
+  StorefrontSuggestionsRequest,
+  StorefrontSuggestionsResponse,
+  StorefrontResolutionRequest,
+  BulkStorefrontResolutionRequest,
+  BulkStorefrontResolutionResponse,
+  PendingStorefrontsListResponse,
+  StorefrontResolutionResult
 } from '$lib/types/platform-resolution';
 
 export interface Platform {
@@ -749,6 +756,180 @@ function createPlatformsStore() {
         return platform;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create platform from resolution';
+        state = { ...state, isLoading: false, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Storefront Resolution Methods (Task 15)
+
+    // Get fuzzy matching suggestions for unknown storefront names with platform context
+    getStorefrontSuggestions: async (request: StorefrontSuggestionsRequest): Promise<StorefrontSuggestionsResponse> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/storefront-suggestions`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get storefront suggestions';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Get pending storefront resolutions for the current user
+    getPendingStorefrontResolutions: async (page: number = 1, perPage: number = 20): Promise<PendingStorefrontsListResponse> => {
+      try {
+        const response = await apiCall(
+          `${config.apiUrl}/platforms/resolution/pending-storefronts?page=${page}&per_page=${perPage}`
+        );
+        
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch pending storefront resolutions';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Resolve a single storefront mapping
+    resolveStorefront: async (request: StorefrontResolutionRequest): Promise<StorefrontResolutionResult> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/resolve-storefront`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        const result = await response.json();
+        
+        // If the resolution was successful and a storefront was created, add it to our store
+        if (result.success && result.resolved_storefront) {
+          // Check if we already have this storefront in our store
+          const existingStorefront = state.storefronts.find(s => s.id === result.resolved_storefront.id);
+          if (!existingStorefront) {
+            // Add the new storefront to our store (it was likely just created)
+            const newStorefront: Storefront = {
+              ...result.resolved_storefront,
+              is_active: true,
+              source: 'custom',
+              base_url: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            state = {
+              ...state,
+              storefronts: [...state.storefronts, newStorefront]
+            };
+          }
+        }
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to resolve storefront';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Resolve multiple storefronts in a bulk operation
+    bulkResolveStorefronts: async (request: BulkStorefrontResolutionRequest): Promise<BulkStorefrontResolutionResponse> => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/platforms/resolution/bulk-resolve-storefronts`, {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        
+        const result = await response.json();
+        
+        // Add any newly created storefronts to our store
+        const newStorefronts: Storefront[] = [];
+        for (const resolutionResult of result.results) {
+          if (resolutionResult.success && resolutionResult.resolved_storefront) {
+            const existingStorefront = state.storefronts.find(s => s.id === resolutionResult.resolved_storefront!.id);
+            if (!existingStorefront) {
+              const newStorefront: Storefront = {
+                ...resolutionResult.resolved_storefront,
+                is_active: true,
+                source: 'custom',
+                base_url: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              newStorefronts.push(newStorefront);
+            }
+          }
+        }
+        
+        if (newStorefronts.length > 0) {
+          state = {
+            ...state,
+            storefronts: [...state.storefronts, ...newStorefronts]
+          };
+        }
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to bulk resolve storefronts';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    // Create storefront from resolution UI (extends existing createStorefront with resolution context)
+    createStorefrontFromResolution: async (
+      storefrontData: StorefrontCreateRequest,
+      importId?: string
+    ): Promise<Storefront> => {
+      // Create the storefront first
+      if (!auth.value.user?.isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      state = { ...state, isLoading: true, error: null };
+
+      try {
+        // Clean the data - convert empty strings to undefined for optional URL fields
+        const cleanedData = {
+          ...storefrontData,
+          icon_url: storefrontData.icon_url?.trim() || undefined,
+          base_url: storefrontData.base_url?.trim() || undefined
+        };
+
+        const response = await apiCall(`${config.apiUrl}/storefronts/`, {
+          method: 'POST',
+          body: JSON.stringify(cleanedData),
+        });
+        
+        const storefront: Storefront = await response.json();
+
+        state = {
+          ...state,
+          storefronts: [...state.storefronts, storefront],
+          isLoading: false
+        };
+
+        // If we have an import ID, automatically resolve it to the new storefront
+        if (importId) {
+          try {
+            await apiCall(`${config.apiUrl}/platforms/resolution/resolve-storefront`, {
+              method: 'POST',
+              body: JSON.stringify({
+                import_id: importId,
+                resolved_storefront_id: storefront.id,
+                user_notes: `Auto-resolved to newly created storefront: ${storefront.display_name}`
+              }),
+            });
+          } catch (error) {
+            // Log error but don't throw - storefront was created successfully
+            console.warn('Storefront created but auto-resolution failed:', error);
+          }
+        }
+
+        return storefront;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create storefront from resolution';
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
