@@ -12,7 +12,7 @@ from sqlmodel import Session, select, and_, or_
 import json
 import re
 
-from ..models.platform import Platform, Storefront
+from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.darkadia_import import DarkadiaImport
 from ..models.user import User
 from ..utils.fuzzy_match import calculate_fuzzy_confidence
@@ -540,6 +540,258 @@ class PlatformResolutionService:
         except Exception as e:
             logger.error(f"Error populating suggestions for import {import_id}: {str(e)}")
             return False
+
+    async def get_storefronts_for_platform(self, platform_id: str) -> List[Storefront]:
+        """
+        Get all valid storefronts for a specific platform.
+        
+        Args:
+            platform_id: ID of the platform
+            
+        Returns:
+            List of storefronts associated with the platform
+        """
+        storefronts = self.session.exec(
+            select(Storefront)
+            .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+            .where(PlatformStorefront.platform_id == platform_id)
+            .where(Storefront.is_active == True)
+            .order_by(Storefront.display_name)
+        ).all()
+        
+        return storefronts
+
+    async def suggest_storefront_matches_for_platform(
+        self,
+        unknown_storefront_name: str,
+        platform_id: str,
+        min_confidence: float = 0.6,
+        max_suggestions: int = 5
+    ) -> List[StorefrontSuggestion]:
+        """
+        Get platform-contextual storefront suggestions.
+        
+        Args:
+            unknown_storefront_name: The unknown storefront name
+            platform_id: Platform context for suggestions
+            min_confidence: Minimum confidence threshold
+            max_suggestions: Maximum number of suggestions
+            
+        Returns:
+            List of StorefrontSuggestion objects
+        """
+        clean_name = self.sanitize_platform_name(unknown_storefront_name)
+        if not clean_name:
+            return []
+        
+        # First, try to get platform-specific storefronts
+        platform_storefronts = await self.get_storefronts_for_platform(platform_id)
+        
+        suggestions = []
+        
+        # Calculate confidence for platform-specific storefronts (higher priority)
+        for storefront in platform_storefronts:
+            name_confidence = calculate_fuzzy_confidence(clean_name, storefront.name)
+            display_confidence = calculate_fuzzy_confidence(clean_name, storefront.display_name)
+            confidence = max(name_confidence, display_confidence)
+            
+            if confidence >= min_confidence:
+                # Boost confidence for platform-compatible storefronts
+                boosted_confidence = min(1.0, confidence * 1.1)
+                
+                match_type = "exact" if boosted_confidence >= 0.95 else "fuzzy" if boosted_confidence >= 0.8 else "partial"
+                reason = f"Compatible with platform - {match_type} match"
+                
+                suggestion = StorefrontSuggestion(
+                    storefront_id=storefront.id,
+                    storefront_name=storefront.name,
+                    storefront_display_name=storefront.display_name,
+                    confidence=boosted_confidence,
+                    match_type=match_type,
+                    reason=reason
+                )
+                suggestions.append((boosted_confidence, suggestion))
+        
+        # If we don't have enough platform-specific suggestions, add general suggestions
+        if len(suggestions) < max_suggestions:
+            general_suggestions = await self._get_storefront_suggestions(
+                clean_name, min_confidence, max_suggestions * 2
+            )
+            
+            # Filter out already suggested storefronts
+            suggested_ids = {s[1].storefront_id for s in suggestions}
+            
+            for general_suggestion in general_suggestions:
+                if general_suggestion.storefront_id not in suggested_ids:
+                    # Lower confidence for non-platform-specific suggestions
+                    adjusted_confidence = general_suggestion.confidence * 0.9
+                    general_suggestion.confidence = adjusted_confidence
+                    general_suggestion.reason = f"General match - may require platform verification"
+                    suggestions.append((adjusted_confidence, general_suggestion))
+                    
+                    if len(suggestions) >= max_suggestions:
+                        break
+        
+        # Sort by confidence and return
+        suggestions.sort(key=lambda x: x[0], reverse=True)
+        return [suggestion for _, suggestion in suggestions[:max_suggestions]]
+
+    async def validate_platform_storefront_compatibility(
+        self, 
+        platform_id: str, 
+        storefront_id: str
+    ) -> bool:
+        """
+        Check if a platform-storefront combination is valid.
+        
+        Args:
+            platform_id: ID of the platform
+            storefront_id: ID of the storefront
+            
+        Returns:
+            True if compatible, False otherwise
+        """
+        association = self.session.exec(
+            select(PlatformStorefront).where(
+                and_(
+                    PlatformStorefront.platform_id == platform_id,
+                    PlatformStorefront.storefront_id == storefront_id
+                )
+            )
+        ).first()
+        
+        return association is not None
+
+    async def detect_unknown_storefronts(
+        self,
+        user_id: str,
+        batch_id: Optional[str] = None
+    ) -> List[str]:
+        """
+        Detect unknown storefronts in user's imports.
+        
+        Args:
+            user_id: ID of the user
+            batch_id: Optional batch ID to limit search
+            
+        Returns:
+            List of unknown storefront names
+        """
+        query = select(DarkadiaImport.original_storefront_name).where(
+            and_(
+                DarkadiaImport.user_id == user_id,
+                DarkadiaImport.original_storefront_name.isnot(None),
+                DarkadiaImport.storefront_resolved == False
+            )
+        )
+        
+        if batch_id:
+            query = query.where(DarkadiaImport.batch_id == batch_id)
+        
+        results = self.session.exec(query.distinct()).all()
+        return [name for name in results if name and name.strip()]
+
+    async def resolve_storefront(
+        self,
+        import_id: str,
+        user_id: str,
+        resolved_storefront_id: str,
+        user_notes: Optional[str] = None
+    ) -> bool:
+        """
+        Resolve a storefront for a specific import record.
+        
+        Args:
+            import_id: ID of the DarkadiaImport record
+            user_id: ID of the user (for security)
+            resolved_storefront_id: ID of storefront to resolve to
+            user_notes: Optional user notes
+            
+        Returns:
+            True if resolution was successful
+        """
+        # Get the import record
+        import_record = self.session.get(DarkadiaImport, import_id)
+        if not import_record or import_record.user_id != user_id:
+            return False
+        
+        # Validate storefront exists and is active
+        storefront = self.session.get(Storefront, resolved_storefront_id)
+        if not storefront or not storefront.is_active:
+            return False
+        
+        try:
+            # Update the import record
+            import_record.resolved_storefront_id = resolved_storefront_id
+            import_record.storefront_resolved = True
+            import_record.updated_at = datetime.now(timezone.utc)
+            
+            # Update resolution data
+            resolution_data = import_record.get_platform_resolution_data()
+            resolution_data.update({
+                "storefront_status": "resolved",
+                "resolved_storefront_id": resolved_storefront_id,
+                "storefront_resolution_timestamp": datetime.now(timezone.utc).isoformat(),
+                "storefront_resolution_method": "manual",
+                "storefront_user_notes": user_notes
+            })
+            import_record.set_platform_resolution_data(resolution_data)
+            
+            self.session.add(import_record)
+            self.session.commit()
+            
+            logger.info(f"Resolved storefront for import {import_id}: storefront={resolved_storefront_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error resolving storefront for import {import_id}: {str(e)}")
+            self.session.rollback()
+            return False
+
+    async def bulk_resolve_storefronts(
+        self,
+        resolutions: List[Dict[str, Any]],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """
+        Resolve multiple storefronts in a bulk operation.
+        
+        Args:
+            resolutions: List of {import_id, storefront_id, user_notes} dictionaries
+            user_id: ID of the user
+            
+        Returns:
+            Dictionary with success count, failed count, and errors
+        """
+        successful_count = 0
+        failed_count = 0
+        errors = []
+        
+        for resolution in resolutions:
+            try:
+                success = await self.resolve_storefront(
+                    import_id=resolution.get("import_id"),
+                    user_id=user_id,
+                    resolved_storefront_id=resolution.get("storefront_id"),
+                    user_notes=resolution.get("user_notes")
+                )
+                
+                if success:
+                    successful_count += 1
+                else:
+                    failed_count += 1
+                    errors.append(f"Failed to resolve storefront for import {resolution.get('import_id')}")
+                    
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Error resolving import {resolution.get('import_id')}: {str(e)}")
+        
+        return {
+            "total_processed": len(resolutions),
+            "successful_resolutions": successful_count,
+            "failed_resolutions": failed_count,
+            "errors": errors
+        }
 
 
 def create_platform_resolution_service(session: Session) -> PlatformResolutionService:

@@ -252,11 +252,13 @@ class DarkadiaImportService(ImportSourceService):
             raise ValueError(f"Failed to preview CSV file: {str(e)}")
     
     async def _analyze_platforms(self, games_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Analyze platform data from CSV to detect unknown platforms and provide resolution suggestions."""
+        """Analyze platform and storefront data from CSV to detect unknown entries and provide resolution suggestions."""
         platform_stats = {}
+        storefront_stats = {}
         unknown_platforms = set()
         unknown_storefronts = set() 
         platform_suggestions = {}
+        storefront_suggestions = {}
         
         # Reset mapper's tracking sets
         self.data_mapper.unknown_platforms = set()
@@ -277,8 +279,11 @@ class DarkadiaImportService(ImportSourceService):
             if copy_platform and str(copy_platform).strip() and str(copy_platform) != "nan":
                 platform_name = str(copy_platform).strip()
                 await self._process_platform_name(platform_name, platform_stats, unknown_platforms, platform_suggestions)
+            
+            # Extract storefront information from Copy source fields
+            await self._process_storefront_data(game_data, storefront_stats, unknown_storefronts)
         
-        # Include platforms detected by the mapper
+        # Include platforms/storefronts detected by the mapper
         unknown_platforms.update(self.data_mapper.unknown_platforms)
         unknown_storefronts.update(self.data_mapper.unknown_storefronts)
         
@@ -302,14 +307,39 @@ class DarkadiaImportService(ImportSourceService):
                         "storefront_suggestions": []
                     }
         
+        # Generate suggestions for unknown storefronts
+        for unknown_storefront in unknown_storefronts:
+            if unknown_storefront not in storefront_suggestions:
+                try:
+                    # Try to find general storefront suggestions
+                    suggestions_response = await self.platform_resolution_service.suggest_platform_matches(
+                        unknown_platform_name="",  # Empty platform name
+                        unknown_storefront_name=unknown_storefront,
+                        min_confidence=0.6,
+                        max_suggestions=3
+                    )
+                    storefront_suggestions[unknown_storefront] = {
+                        "storefront_suggestions": [s.model_dump() for s in suggestions_response.storefront_suggestions]
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to generate suggestions for storefront '{unknown_storefront}': {str(e)}")
+                    storefront_suggestions[unknown_storefront] = {
+                        "storefront_suggestions": []
+                    }
+        
         return {
             "platform_stats": list(platform_stats.values()),
+            "storefront_stats": list(storefront_stats.values()),
             "unknown_platforms": list(unknown_platforms),
             "unknown_storefronts": list(unknown_storefronts),
             "platform_suggestions": platform_suggestions,
+            "storefront_suggestions": storefront_suggestions,
             "total_platforms": len(platform_stats),
+            "total_storefronts": len(storefront_stats),
             "unknown_platform_count": len(unknown_platforms),
-            "known_platform_count": len(platform_stats) - len(unknown_platforms)
+            "unknown_storefront_count": len(unknown_storefronts),
+            "known_platform_count": len(platform_stats) - len(unknown_platforms),
+            "known_storefront_count": len(storefront_stats) - len(unknown_storefronts)
         }
     
     async def _process_platform_name(
@@ -340,6 +370,59 @@ class DarkadiaImportService(ImportSourceService):
         # Track unknown platforms for resolution
         if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
             unknown_platforms.add(platform_name)
+
+    async def _process_storefront_data(
+        self,
+        game_data: Dict[str, Any],
+        storefront_stats: Dict[str, Any],
+        unknown_storefronts: set
+    ):
+        """Process storefront data from CSV game entry."""
+        # Extract storefront from Copy source field
+        copy_source = game_data.get("Copy source", "")
+        copy_source_other = game_data.get("Copy source other", "")
+        
+        # Determine the actual storefront name
+        storefront_name = ""
+        if copy_source and str(copy_source).strip() and str(copy_source) != "nan":
+            copy_source = str(copy_source).strip()
+            if copy_source.lower() == "other" and copy_source_other:
+                # Use the "other" field when Copy source is "Other"
+                storefront_name = str(copy_source_other).strip()
+            else:
+                storefront_name = copy_source
+        
+        if not storefront_name:
+            return
+        
+        # Track storefront statistics
+        if storefront_name not in storefront_stats:
+            # Check if storefront exists in database
+            is_known = storefront_name in self.data_mapper.STOREFRONT_MAPPINGS if hasattr(self.data_mapper, 'STOREFRONT_MAPPINGS') else False
+            mapped_name = self.data_mapper.STOREFRONT_MAPPINGS.get(storefront_name) if hasattr(self.data_mapper, 'STOREFRONT_MAPPINGS') else None
+            
+            # Try to map using data mapper
+            suggested_mapping = None
+            if hasattr(self.data_mapper, '_map_storefront_name'):
+                try:
+                    suggested_mapping = self.data_mapper._map_storefront_name(storefront_name)
+                except:
+                    pass
+            
+            storefront_stats[storefront_name] = {
+                "name": storefront_name,
+                "games_count": 0,
+                "is_known": is_known,
+                "mapped_name": mapped_name,
+                "suggested_mapping": suggested_mapping,
+                "resolution_status": "resolved" if is_known or suggested_mapping else "pending"
+            }
+        
+        storefront_stats[storefront_name]["games_count"] += 1
+        
+        # Track unknown storefronts for resolution
+        if not storefront_stats[storefront_name]["is_known"] and not storefront_stats[storefront_name]["suggested_mapping"]:
+            unknown_storefronts.add(storefront_name)
     
     async def import_library(self, user_id: str, progress_callback: Optional[Callable[[int], None]] = None) -> ImportResult:
         """Import CSV data into staging table using enhanced transformation pipeline."""
