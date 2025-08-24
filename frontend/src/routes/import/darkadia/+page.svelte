@@ -855,7 +855,10 @@
                 <div class="ml-4">
                   <h3 class="text-lg font-medium text-gray-900">Export Your Collection</h3>
                   <p class="text-gray-600 mt-1">
-                    In Darkadia, navigate to your game collection and look for an "Export" or "Download" option. Choose CSV format.
+                    In Darkadia:
+                    <br />1. Login to your account
+                    <br />2. Go to Settings → Extras
+                    <br />3. Click the Download button to export your collection as CSV
                   </p>
                 </div>
               </div>
