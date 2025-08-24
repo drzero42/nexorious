@@ -1974,29 +1974,40 @@ class PlatformResolutionTests:
 - ✅ **Comprehensive Testing** with 11 test cases covering all functionality
 - ✅ **Quality Assurance** with all 926 existing tests passing
 
-#### Task 15: Storefront Resolution UI
+#### Task 15: Storefront Resolution UI ✅ **COMPLETED**
 **Priority**: Medium  
-**Estimated Time**: 4-5 days  
+**Estimated Time**: 4-5 days (**Actual**: 1 day)  
 **Dependencies**: Task 14
 
 **Subtasks**:
-1. Create storefront mapping interface component
-2. Display platform-contextual storefront suggestions
-3. Handle missing storefront cases (platform but no storefront data)
-4. Add bulk storefront resolution operations to UI
-5. Integrate storefront resolution with existing platform resolution workflow
-6. Show storefront resolution status indicators in game lists
-7. Add custom storefront creation flow for "Other" storefronts
-8. Implement storefront resolution progress tracking
+1. ✅ Create storefront mapping interface component
+2. ✅ Display platform-contextual storefront suggestions
+3. ✅ Handle missing storefront cases (platform but no storefront data)
+4. ✅ Add bulk storefront resolution operations to UI
+5. ✅ Integrate storefront resolution with existing platform resolution workflow
+6. ✅ Show storefront resolution status indicators in game lists
+7. ✅ Add custom storefront creation flow for "Other" storefronts
+8. ✅ Implement storefront resolution progress tracking
 
 **Acceptance Criteria**:
-- [ ] Storefront resolution interface intuitive and user-friendly
-- [ ] Platform context clearly shown for each storefront suggestion
-- [ ] Missing storefront cases handled with clear guidance
-- [ ] Bulk operations work smoothly for multiple storefronts
-- [ ] Integration with platform resolution doesn't create workflow confusion
-- [ ] Storefront status visible in game cards and tables
-- [ ] Custom storefront creation integrated seamlessly
+- [x] Storefront resolution interface intuitive and user-friendly
+- [x] Platform context clearly shown for each storefront suggestion
+- [x] Missing storefront cases handled with clear guidance
+- [x] Bulk operations work smoothly for multiple storefronts
+- [x] Integration with platform resolution doesn't create workflow confusion
+- [x] Storefront status visible in game cards and tables
+- [x] Custom storefront creation integrated seamlessly
+
+**Implementation Details**: ✅ **COMPLETED**
+- ✅ **StorefrontSuggestionCard Component** with confidence levels, platform context, and visual indicators
+- ✅ **StorefrontMappingRow Component** for interactive storefront mapping with create/skip options
+- ✅ **Enhanced PlatformResolutionModal** with dedicated storefronts tab alongside platforms
+- ✅ **Extended Platforms Store** with 5 new storefront API methods (suggestions, resolution, bulk operations)
+- ✅ **Updated DarkadiaGameCard** with separate platform (green/yellow) and storefront (blue/orange) status badges
+- ✅ **Platform-Contextual Intelligence** showing only compatible storefronts (Steam for PC, PSN for PlayStation)
+- ✅ **Non-blocking Workflow** allowing users to skip storefront resolution without blocking import
+- ✅ **Comprehensive Testing** with TypeScript checks passing (0 errors) and all existing tests maintained
+- ✅ **Visual Design System** with clear color separation and confidence indicators
 
 ### Dependencies and Timeline
 
