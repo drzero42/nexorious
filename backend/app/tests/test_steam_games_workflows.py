@@ -117,7 +117,7 @@ class TestCompleteImportToSyncWorkflow:
         # Create mock IGDB service with proper return values for each game
         mock_igdb_service = AsyncMock()
         
-        def mock_factory(session):
+        def mock_factory(session, igdb_service=None):
             from ..services.steam_games import SteamGamesService
             return SteamGamesService(session, igdb_service=mock_igdb_service)
         

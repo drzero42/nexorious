@@ -11,7 +11,8 @@ from ....core.database import get_session
 from ....core.security import get_current_user
 from ....models.user import User
 from ....services.import_sources.steam import create_steam_import_service
-from ...dependencies import verify_steam_games_enabled
+from ....services.igdb import IGDBService
+from ...dependencies import verify_steam_games_enabled, get_igdb_service_dependency
 from ...schemas.import_schemas import (
     SourceConfigResponse,
     VerificationRequest,
@@ -38,9 +39,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def get_steam_service(session: Annotated[Session, Depends(get_session)]):
+def get_steam_service(
+    session: Annotated[Session, Depends(get_session)],
+    igdb_service: Annotated[IGDBService, Depends(get_igdb_service_dependency)]
+):
     """Dependency to get Steam import service."""
-    return create_steam_import_service(session)
+    return create_steam_import_service(session, igdb_service)
 
 
 @router.get("/availability")

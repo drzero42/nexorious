@@ -1726,6 +1726,6 @@ class SteamGamesService:
 
 
 # Factory function for creating service instances
-def create_steam_games_service(session: Session) -> SteamGamesService:
+def create_steam_games_service(session: Session, igdb_service: Optional[IGDBService] = None) -> SteamGamesService:
     """Factory function to create a SteamGamesService instance."""
-    return SteamGamesService(session)
+    return SteamGamesService(session, igdb_service=igdb_service)

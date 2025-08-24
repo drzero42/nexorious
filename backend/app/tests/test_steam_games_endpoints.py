@@ -12,6 +12,8 @@ from ..models.steam_game import SteamGame
 from ..models.game import Game
 from .integration_test_utils import (
     client_fixture as client,
+    client_with_mock_igdb_fixture as client_with_mock_igdb,
+    mock_igdb_service_fixture as mock_igdb_service,
     session_fixture as session,
     test_user_fixture as test_user,
     auth_headers_fixture as auth_headers,
@@ -258,13 +260,13 @@ class TestSteamGamesImportEndpoint:
 class TestSteamGameMatchEndpoint:
     """Test PUT /api/import/sources/steam/games/{steam_game_id}/match endpoint."""
     
-    def test_match_steam_game_success(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+    def test_match_steam_game_success(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test successfully matching Steam game to IGDB game."""
         # Create a test game in the main collection
         test_game = Game(
             title="Counter-Strike: Global Offensive",
             description="Tactical FPS game",
-            igdb_id="1234"
+            igdb_id="12345"
         )
         session.add(test_game)
         
@@ -278,9 +280,9 @@ class TestSteamGameMatchEndpoint:
         session.add(steam_game)
         session.commit()
         
-        # Match the Steam game to the IGDB game
-        match_data = {"igdb_id": "1234"}
-        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
+        # Match the Steam game to the IGDB game (using mock's default IGDB ID)
+        match_data = {"igdb_id": "12345"}
+        response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
@@ -288,18 +290,18 @@ class TestSteamGameMatchEndpoint:
         data = response.json()
         assert "matched successfully" in data["message"]
         assert data["game"]["id"] == steam_game.id
-        assert data["game"]["igdb_id"] == "1234"
+        assert data["game"]["igdb_id"] == "12345"
         assert data["game"]["external_id"] == "730"
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.igdb_id == "1234"
+        assert steam_game.igdb_id == "12345"
     
-    def test_match_steam_game_update_existing(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+    def test_match_steam_game_update_existing(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test updating existing IGDB match on Steam game."""
-        # Create test games
-        test_game1 = Game(title="Game 1", igdb_id="1111")
-        test_game2 = Game(title="Game 2", igdb_id="2222")
+        # Create test games (using mock-supported IGDB IDs)
+        test_game1 = Game(title="Game 1", igdb_id="100")
+        test_game2 = Game(title="Game 2", igdb_id="200")
         session.add(test_game1)
         session.add(test_game2)
         
@@ -308,26 +310,26 @@ class TestSteamGameMatchEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id="1111",
+            igdb_id="100",
             ignored=False
         )
         session.add(steam_game)
         session.commit()
         
         # Update the match
-        match_data = {"igdb_id": "2222"}
-        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
+        match_data = {"igdb_id": "200"}
+        response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Game matched successfully"
-        assert data["game"]["igdb_id"] == "2222"
+        assert data["game"]["igdb_id"] == "200"
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.igdb_id == "2222"
+        assert steam_game.igdb_id == "200"
     
     def test_match_steam_game_clear_existing(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test clearing existing IGDB match from Steam game."""
@@ -419,7 +421,7 @@ class TestSteamGameMatchEndpoint:
         assert_api_error(response, 404)
         assert "Steam game not found or access denied" in response.json()["error"]
     
-    def test_match_steam_game_valid_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], test_game):
+    def test_match_steam_game_valid_igdb_id(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], test_game):
         """Test matching Steam game to a valid IGDB ID succeeds."""
         # Create Steam game
         steam_game = SteamGame(
@@ -433,7 +435,7 @@ class TestSteamGameMatchEndpoint:
         
         # Match to valid IGDB ID (using test_game fixture)
         match_data = {"igdb_id": test_game.igdb_id}
-        response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
+        response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
@@ -468,7 +470,7 @@ class TestSteamGameMatchEndpoint:
         mock_igdb_service.get_game_by_id.return_value = mock_game_data
         
         # Patch the factory function to inject our mock IGDB service
-        def mock_factory(session):
+        def mock_factory(session, igdb_service=None):
             return SteamGamesService(session, igdb_service=mock_igdb_service)
         
         with patch('app.services.import_sources.steam.create_steam_games_service', side_effect=mock_factory):
