@@ -31,6 +31,7 @@ from ...security.csv_sanitizer import CSVSanitizer
 from ...services.igdb import IGDBService
 from ...services.platform_resolution import create_platform_resolution_service
 from .darkadia_transformer import DarkadiaTransformationPipeline
+from .copy_consolidation import CopyConsolidationProcessor, ConsolidatedGame
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -51,6 +52,7 @@ class DarkadiaImportService(ImportSourceService):
         self.csv_parser = DarkadiaCSVParser()
         self.data_mapper = DarkadiaDataMapper()
         self.transformer = DarkadiaTransformationPipeline()
+        self.consolidation_processor = CopyConsolidationProcessor()
         self.platform_resolution_service = create_platform_resolution_service(session)
     
     def _get_user_darkadia_config(self, user: User) -> dict:
@@ -358,21 +360,25 @@ class DarkadiaImportService(ImportSourceService):
             games_data = await self.csv_parser.parse_csv(Path(csv_file_path))
             logger.info(f"Parsed {len(games_data)} rows from CSV file")
             
-            # Transform data through enhanced pipeline
-            transformed_data, transform_context = await self.transformer.transform(games_data)
-            logger.info(f"Transformation completed: {transform_context.successful_rows}/{transform_context.total_rows} rows processed successfully")
+            # Consolidate copies for games with multiple rows
+            consolidated_games = self.consolidation_processor.consolidate_games(games_data)
+            logger.info(f"Copy consolidation completed: {len(consolidated_games)} unique games from {len(games_data)} rows")
             
-            # Process in memory-aware batches
+            # Log consolidation stats
+            stats = self.consolidation_processor.get_consolidation_stats()
+            logger.info(f"Consolidation stats: {stats}")
+            
+            # Process consolidated games in batches
             imported_count = 0
             skipped_count = 0
             errors = []
-            batch_size = 100
-            total_games = len(transformed_data)
+            batch_size = 50  # Smaller batches since each game may have multiple copies
+            total_games = len(consolidated_games)
             
             # Process games in batches
             for batch_start in range(0, total_games, batch_size):
                 batch_end = min(batch_start + batch_size, total_games)
-                batch = transformed_data[batch_start:batch_end]
+                batch = consolidated_games[batch_start:batch_end]
                 
                 # Update progress
                 if progress_callback:
@@ -380,7 +386,7 @@ class DarkadiaImportService(ImportSourceService):
                     progress_callback(progress_percent)
                 
                 # Process batch
-                batch_imported, batch_skipped, batch_errors = await self._process_batch(
+                batch_imported, batch_skipped, batch_errors = await self._process_consolidated_batch(
                     batch, user_id, batch_start
                 )
                 
@@ -395,11 +401,6 @@ class DarkadiaImportService(ImportSourceService):
             # Final progress update
             if progress_callback:
                 progress_callback(100)
-            
-            # Add transformation issues to errors
-            for issue in transform_context.issues:
-                if issue.severity == 'error':
-                    errors.append(f"Row {issue.row_index + 1 if issue.row_index is not None else '?'}: {issue.message}")
             
             logger.info(f"Import completed: {imported_count} imported, {skipped_count} skipped, {len(errors)} errors")
             
@@ -479,6 +480,150 @@ class DarkadiaImportService(ImportSourceService):
                 continue
         
         return imported_count, skipped_count, errors
+    
+    async def _process_consolidated_batch(self, batch: List[ConsolidatedGame], user_id: str, 
+                                        batch_start_index: int) -> Tuple[int, int, List[str]]:
+        """Process a batch of consolidated games."""
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+        
+        for i, consolidated_game in enumerate(batch):
+            try:
+                # Generate external_id based on game name hash for consistency
+                external_id = f"game_{abs(hash(consolidated_game.name)) % 1000000}"
+                
+                # Check if game already exists
+                existing_game = self.session.exec(
+                    select(DarkadiaGame).where(
+                        and_(
+                            DarkadiaGame.user_id == user_id,
+                            DarkadiaGame.external_id == external_id
+                        )
+                    )
+                ).first()
+                
+                if existing_game:
+                    skipped_count += 1
+                    continue
+                
+                # Create new staging game record
+                darkadia_game = DarkadiaGame(
+                    user_id=user_id,
+                    external_id=external_id,
+                    game_name=consolidated_game.name,
+                    ignored=False
+                )
+                
+                # Store consolidated base data as CSV data
+                darkadia_game.set_csv_data(consolidated_game.base_data)
+                
+                self.session.add(darkadia_game)
+                self.session.flush()  # Get the DarkadiaGame ID
+                
+                # Create DarkadiaImport records for each copy
+                await self._create_darkadia_import_records_for_consolidated_game(
+                    darkadia_game, consolidated_game
+                )
+                
+                imported_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing consolidated game {consolidated_game.name}: {str(e)}")
+                errors.append(f"Game '{consolidated_game.name}': {str(e)}")
+                continue
+        
+        return imported_count, skipped_count, errors
+    
+    async def _create_darkadia_import_records_for_consolidated_game(
+        self, 
+        darkadia_game: DarkadiaGame, 
+        consolidated_game: ConsolidatedGame
+    ) -> None:
+        """Create DarkadiaImport records for a consolidated game with multiple copies."""
+        try:
+            for copy_data in consolidated_game.copies:
+                # Create a DarkadiaImport record for each copy
+                darkadia_import = DarkadiaImport(
+                    user_id=darkadia_game.user_id,
+                    game_name=darkadia_game.game_name,
+                    csv_row_number=copy_data.csv_row_number,
+                    copy_identifier=copy_data.copy_identifier,
+                    batch_id=darkadia_game.id,
+                    csv_file_hash="",  # Will be set during actual import
+                    import_timestamp=datetime.now(timezone.utc),
+                    
+                    # Original CSV data - store the base data merged with copy-specific data
+                    original_csv_data_json=json.dumps({
+                        **consolidated_game.base_data,
+                        'Copy platform': copy_data.platform or '',
+                        'Copy source': copy_data.storefront or '',
+                        'Copy source other': copy_data.storefront_other or '',
+                        'Copy media': copy_data.media,
+                        'Copy label': copy_data.label,
+                        'Copy Release': copy_data.release,
+                        'Copy purchase date': copy_data.purchase_date,
+                        'Copy box': copy_data.box,
+                        'Copy box condition': copy_data.box_condition,
+                        'Copy box notes': copy_data.box_notes,
+                        'Copy manual': copy_data.manual,
+                        'Copy manual condition': copy_data.manual_condition,
+                        'Copy manual notes': copy_data.manual_notes,
+                        'Copy complete': copy_data.complete,
+                        'Copy complete notes': copy_data.complete_notes
+                    }),
+                    
+                    # Boolean flags from consolidated base data
+                    played=bool(consolidated_game.base_data.get('Played', False)),
+                    playing=bool(consolidated_game.base_data.get('Playing', False)),
+                    finished=bool(consolidated_game.base_data.get('Finished', False)),
+                    mastered=bool(consolidated_game.base_data.get('Mastered', False)),
+                    dominated=bool(consolidated_game.base_data.get('Dominated', False)),
+                    shelved=bool(consolidated_game.base_data.get('Shelved', False)),
+                    
+                    # Platform/storefront resolution tracking
+                    original_platform_name=copy_data.platform,
+                    original_storefront_name=copy_data.storefront or copy_data.storefront_other,
+                    fallback_platform_name=copy_data.platform if not copy_data.is_real_copy else None,
+                    platform_resolved=False,  # Will be resolved later
+                    storefront_resolved=False,  # Will be resolved later
+                    requires_storefront_resolution=copy_data.requires_storefront_resolution,
+                    
+                    # Copy metadata
+                    physical_copy_data_json=json.dumps({
+                        'media': copy_data.media,
+                        'label': copy_data.label,
+                        'release': copy_data.release,
+                        'purchase_date': copy_data.purchase_date,
+                        'box': copy_data.box,
+                        'box_condition': copy_data.box_condition,
+                        'box_notes': copy_data.box_notes,
+                        'manual': copy_data.manual,
+                        'manual_condition': copy_data.manual_condition,
+                        'manual_notes': copy_data.manual_notes,
+                        'complete': copy_data.complete,
+                        'complete_notes': copy_data.complete_notes
+                    }) if any([copy_data.box, copy_data.manual, copy_data.complete]) else None,
+                    
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
+                )
+                
+                # Set platform resolution data
+                resolution_data = {
+                    "status": "pending",
+                    "is_fallback": not copy_data.is_real_copy,
+                    "requires_storefront_resolution": copy_data.requires_storefront_resolution,
+                    "copy_identifier": copy_data.copy_identifier
+                }
+                darkadia_import.set_platform_resolution_data(resolution_data)
+                
+                self.session.add(darkadia_import)
+                
+            logger.debug(f"Created {len(consolidated_game.copies)} DarkadiaImport records for {darkadia_game.game_name}")
+            
+        except Exception as e:
+            logger.error(f"Error creating DarkadiaImport records for {darkadia_game.game_name}: {str(e)}")
     
     async def _create_darkadia_import_records_for_import(
         self, 
