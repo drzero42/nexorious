@@ -64,6 +64,10 @@ export interface DarkadiaGameResponse {
   original_platform_name?: string;
   platform_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
   platform_name?: string;
+  
+  // Storefront resolution fields
+  original_storefront_name?: string;
+  storefront_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
   storefront_name?: string;
 }
 

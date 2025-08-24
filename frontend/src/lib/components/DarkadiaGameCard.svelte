@@ -55,21 +55,17 @@
   }
 
   function getPlatformStatusDisplay(): { label: string; color: string; icon: string; tooltip: string } | null {
-    // If we have resolved platform/storefront names, show those clearly
-    if (game.platform_name || game.storefront_name) {
-      const parts = [];
-      if (game.platform_name) parts.push(game.platform_name);
-      if (game.storefront_name) parts.push(game.storefront_name);
-      
+    // If we have resolved platform name, show it
+    if (game.platform_name) {
       return {
-        label: parts.join(' - '),  // Use " - " separator for better clarity
+        label: game.platform_name,
         color: 'bg-green-100 text-green-600 border-green-200',
         icon: '✅',
-        tooltip: `Resolved: ${game.platform_name ? 'Platform: ' + game.platform_name : ''}${game.platform_name && game.storefront_name ? ', ' : ''}${game.storefront_name ? 'Storefront: ' + game.storefront_name : ''}`
+        tooltip: `Platform resolved: ${game.platform_name}`
       };
     }
     
-    // Fall back to resolution status indicators for unresolved platforms/storefronts
+    // Fall back to resolution status indicators for unresolved platforms
     if (!game.platform_resolution_status && !game.original_platform_name) {
       return null;
     }
@@ -88,7 +84,7 @@
           label: `Needs Resolution: ${game.original_platform_name}`, 
           color: 'bg-yellow-100 text-yellow-600 border-yellow-200', 
           icon: '⚠️', 
-          tooltip: `Platform/storefront needs resolution: ${game.original_platform_name}` 
+          tooltip: `Platform needs resolution: ${game.original_platform_name}` 
         };
       case 'ignored':
         return { 
@@ -111,7 +107,67 @@
             label: `Needs Resolution: ${game.original_platform_name}`, 
             color: 'bg-yellow-100 text-yellow-600 border-yellow-200', 
             icon: '⚠️', 
-            tooltip: `Platform/storefront needs resolution: ${game.original_platform_name}` 
+            tooltip: `Platform needs resolution: ${game.original_platform_name}` 
+          };
+        }
+        return null;
+    }
+  }
+
+  function getStorefrontStatusDisplay(): { label: string; color: string; icon: string; tooltip: string } | null {
+    // If we have resolved storefront name, show it
+    if (game.storefront_name) {
+      return {
+        label: game.storefront_name,
+        color: 'bg-blue-100 text-blue-600 border-blue-200',
+        icon: '🏪',
+        tooltip: `Storefront resolved: ${game.storefront_name}`
+      };
+    }
+    
+    // Fall back to storefront resolution status indicators
+    if (!game.storefront_resolution_status && !game.original_storefront_name) {
+      return null;
+    }
+    
+    switch (game.storefront_resolution_status) {
+      case 'resolved':
+        return { 
+          label: game.original_storefront_name || 'Storefront', 
+          color: 'bg-blue-100 text-blue-600 border-blue-200', 
+          icon: '🏪', 
+          tooltip: `Storefront resolved: ${game.original_storefront_name}` 
+        };
+      case 'pending':
+      case 'mapped':
+        return { 
+          label: `Needs Resolution: ${game.original_storefront_name}`, 
+          color: 'bg-orange-100 text-orange-600 border-orange-200', 
+          icon: '⚠️', 
+          tooltip: `Storefront needs resolution: ${game.original_storefront_name}` 
+        };
+      case 'ignored':
+        return { 
+          label: 'Storefront Ignored', 
+          color: 'bg-gray-100 text-gray-600 border-gray-200', 
+          icon: '🚫', 
+          tooltip: `Storefront resolution was ignored: ${game.original_storefront_name || 'Unknown'}` 
+        };
+      case 'conflict':
+        return { 
+          label: `Multiple Matches`, 
+          color: 'bg-red-100 text-red-600 border-red-200', 
+          icon: '❌', 
+          tooltip: `Multiple storefront matches found: ${game.original_storefront_name}` 
+        };
+      default:
+        // If we have a storefront name but no status, assume pending
+        if (game.original_storefront_name) {
+          return { 
+            label: `Needs Resolution: ${game.original_storefront_name}`, 
+            color: 'bg-orange-100 text-orange-600 border-orange-200', 
+            icon: '⚠️', 
+            tooltip: `Storefront needs resolution: ${game.original_storefront_name}` 
           };
         }
         return null;
@@ -120,6 +176,7 @@
 
   const status = $derived(getStatusDisplay());
   const platformStatus = $derived(getPlatformStatusDisplay());
+  const storefrontStatus = $derived(getStorefrontStatusDisplay());
   const canSync = $derived(game.igdb_id && !game.game_id && !game.ignored);
   const canMatch = $derived(!game.igdb_id && !game.ignored);
   const canIgnore = $derived(!game.ignored);
@@ -221,6 +278,16 @@
             >
               <span class="mr-1">{platformStatus.icon}</span>
               {platformStatus.label}
+            </span>
+          {/if}
+          
+          {#if storefrontStatus}
+            <span 
+              class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium {storefrontStatus.color} flex-shrink-0"
+              title={storefrontStatus.tooltip}
+            >
+              <span class="mr-1">{storefrontStatus.icon}</span>
+              {storefrontStatus.label}
             </span>
           {/if}
         </div>

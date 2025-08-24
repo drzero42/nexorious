@@ -3,9 +3,11 @@
   import { ui } from '$lib/stores';
   import type { 
     PlatformResolutionUIState,
+    StorefrontResolutionUIState,
     ResolutionAction
   } from '$lib/types/platform-resolution';
   import PlatformMappingRow from './PlatformMappingRow.svelte';
+  import StorefrontMappingRow from './StorefrontMappingRow.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -29,12 +31,26 @@
   });
 
   // Tab state
-  let activeTab = $state<'overview' | 'resolve'>('overview');
+  let activeTab = $state<'overview' | 'resolve' | 'storefronts'>('overview');
   
   // Pagination state
   let currentPage = $state(1);
   let totalPages = $state(1);
   let totalResolutions = $state(0);
+
+  // Storefront resolution state
+  let storefrontModalState = $state<StorefrontResolutionUIState>({
+    isOpen: false,
+    isLoading: false,
+    pendingResolutions: [],
+    selectedResolutions: new Set(),
+    bulkOperationInProgress: false
+  });
+
+  // Storefront pagination state
+  let storefrontCurrentPage = $state(1);
+  let storefrontTotalPages = $state(1);
+  let storefrontTotalResolutions = $state(0);
 
   // Derived states
   const hasResolutions = $derived(modalState.pendingResolutions.length > 0);
@@ -43,11 +59,20 @@
     hasResolutions && modalState.selectedResolutions.size === modalState.pendingResolutions.length
   );
 
+  // Storefront derived states
+  const hasStorefrontResolutions = $derived(storefrontModalState.pendingResolutions.length > 0);
+  const hasStorefrontSelections = $derived(storefrontModalState.selectedResolutions.size > 0);
+  const allStorefrontsSelected = $derived(
+    hasStorefrontResolutions && storefrontModalState.selectedResolutions.size === storefrontModalState.pendingResolutions.length
+  );
+
   // Actions queue for bulk operations
   let pendingActions = $state<ResolutionAction[]>([]);
+  let storefrontPendingActions = $state<ResolutionAction[]>([]);
   
   // Track successful resolutions for proper callback
   let successfulResolutions = $state(0);
+  let successfulStorefrontResolutions = $state(0);
 
   // Initialize modal when opened
   $effect(() => {
@@ -55,11 +80,16 @@
       console.log('🚪 [RESOLUTION-MODAL] Modal opening - will fetch fresh data from backend');
       console.log('⚠️ [RESOLUTION-MODAL] Any previously skipped platforms will reappear!');
       pendingActions = []; // Clear any stale actions when modal opens
+      storefrontPendingActions = []; // Clear storefront actions
       successfulResolutions = 0; // Reset counter when modal opens
+      successfulStorefrontResolutions = 0; // Reset storefront counter
       modalState.isOpen = true;
+      storefrontModalState.isOpen = true;
       loadPendingResolutions();
+      loadPendingStorefrontResolutions();
     } else if (!isOpen && modalState.isOpen) {
       modalState.isOpen = false;
+      storefrontModalState.isOpen = false;
     }
   });
 
@@ -97,6 +127,43 @@
       ui.showError(modalState.error);
     } finally {
       modalState.isLoading = false;
+    }
+  }
+
+  async function loadPendingStorefrontResolutions() {
+    if (storefrontModalState.isLoading) return;
+
+    console.log('🔄 [RESOLUTION-MODAL] Loading pending storefront resolutions from backend...');
+    storefrontModalState.isLoading = true;
+    delete storefrontModalState.error;
+
+    try {
+      const response = await platforms.getPendingStorefrontResolutions(storefrontCurrentPage, 20);
+      
+      console.log('📥 [RESOLUTION-MODAL] Loaded storefront resolutions from backend:', {
+        count: response.pending_resolutions.length,
+        total: response.total,
+        importIds: response.pending_resolutions.map(r => r.import_id)
+      });
+      
+      storefrontModalState.pendingResolutions = response.pending_resolutions;
+      storefrontTotalPages = response.pages;
+      storefrontTotalResolutions = response.total;
+      
+      console.log('📊 [RESOLUTION-MODAL] Storefront modal state updated with backend data');
+      
+      // Reset selections when loading new data
+      storefrontModalState.selectedResolutions.clear();
+      
+      // If we have storefront resolutions, switch to storefronts tab
+      if (hasStorefrontResolutions && activeTab === 'overview') {
+        activeTab = 'storefronts';
+      }
+    } catch (error) {
+      storefrontModalState.error = error instanceof Error ? error.message : 'Failed to load pending storefront resolutions';
+      ui.showError(storefrontModalState.error);
+    } finally {
+      storefrontModalState.isLoading = false;
     }
   }
 
@@ -338,29 +405,264 @@
     ui.showInfo(`Skipped ${selectedIds.length} platform resolutions`);
   }
 
+  // Storefront Resolution Handlers
+
+  function handleStorefrontSelectAll() {
+    if (allStorefrontsSelected) {
+      storefrontModalState.selectedResolutions.clear();
+    } else {
+      storefrontModalState.selectedResolutions = new Set(
+        storefrontModalState.pendingResolutions.map(r => r.import_id)
+      );
+    }
+  }
+
+  function handleStorefrontSelectionChange(importId: string, selected: boolean) {
+    if (selected) {
+      storefrontModalState.selectedResolutions.add(importId);
+    } else {
+      storefrontModalState.selectedResolutions.delete(importId);
+    }
+  }
+
+  function handleStorefrontResolutionAction(action: ResolutionAction) {
+    console.log('📥 [RESOLUTION-MODAL] Received storefront action:', {
+      type: action.type,
+      import_id: action.import_id,
+      currentPendingCount: storefrontPendingActions.length,
+      currentResolutionsCount: storefrontModalState.pendingResolutions.length
+    });
+    
+    // Handle skip actions by persisting to backend
+    if (action.type === 'skip') {
+      console.log('⏭️ [RESOLUTION-MODAL] Storefront skip action - persisting to backend');
+      handleStorefrontSkipPersistence(action);
+    } else {
+      // Queue and apply resolve/create actions
+      storefrontPendingActions.push(action);
+      console.log('📋 [RESOLUTION-MODAL] Added to storefrontPendingActions. New length:', storefrontPendingActions.length);
+      console.log('🚀 [RESOLUTION-MODAL] Applying non-skip storefront action');
+      applyStorefrontSingleAction(action);
+    }
+  }
+
+  async function handleStorefrontSkipPersistence(action: ResolutionAction) {
+    try {
+      console.log('📡 [RESOLUTION-MODAL] Calling backend API to persist storefront skip for import:', action.import_id);
+      
+      // Mark as resolved with null storefront in backend
+      await platforms.resolveStorefront({
+        import_id: action.import_id,
+        user_notes: action.user_notes || 'Storefront resolution skipped by user'
+      });
+      
+      console.log('✅ [RESOLUTION-MODAL] Storefront skip persisted to backend successfully');
+      
+      // Remove from UI after successful backend update
+      storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+        r => r.import_id !== action.import_id
+      );
+      
+      storefrontTotalResolutions -= 1;
+      successfulStorefrontResolutions += 1; // Count as resolved
+      
+      console.log('📊 [RESOLUTION-MODAL] UI updated after storefront backend persistence - resolutions:', storefrontTotalResolutions, 'successful:', successfulStorefrontResolutions);
+      
+      ui.showInfo('Storefront resolution skipped');
+      
+    } catch (error) {
+      console.error('❌ [RESOLUTION-MODAL] Failed to persist storefront skip to backend:', error);
+      ui.showError('Failed to skip storefront resolution');
+    }
+  }
+
+  async function applyStorefrontSingleAction(action: ResolutionAction) {
+    try {
+      if (action.type === 'resolve' && action.storefront_id) {
+        await platforms.resolveStorefront({
+          import_id: action.import_id,
+          resolved_storefront_id: action.storefront_id,
+          user_notes: action.user_notes
+        });
+        
+        ui.showSuccess('Storefront resolved successfully');
+        
+        // Remove from pending resolutions
+        storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+          r => r.import_id !== action.import_id
+        );
+        
+        storefrontTotalResolutions -= 1;
+        
+      } else if (action.type === 'create' && action.storefront_data) {
+        const newStorefront = await platforms.createStorefrontFromResolution(
+          action.storefront_data,
+          action.import_id
+        );
+        
+        ui.showSuccess(`Created and resolved storefront: ${newStorefront.display_name}`);
+        
+        // Remove from pending resolutions
+        storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+          r => r.import_id !== action.import_id
+        );
+        
+        storefrontTotalResolutions -= 1;
+      }
+      
+      // Remove from selections if it was selected
+      storefrontModalState.selectedResolutions.delete(action.import_id);
+      
+      // Remove the successfully applied action from storefrontPendingActions
+      storefrontPendingActions = storefrontPendingActions.filter(a => a.import_id !== action.import_id);
+      
+      // Increment successful resolutions counter
+      successfulStorefrontResolutions += 1;
+      
+      console.log('✅ [RESOLUTION-MODAL] Single storefront resolved successfully. Total successful:', successfulStorefrontResolutions);
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to apply storefront resolution';
+      ui.showError(errorMsg);
+    }
+  }
+
+  async function applyStorefrontBulkActions() {
+    if (storefrontPendingActions.length === 0) return;
+
+    storefrontModalState.bulkOperationInProgress = true;
+    
+    try {
+      const resolveActions = storefrontPendingActions.filter(a => a.type === 'resolve');
+      let result: any = null;
+      
+      if (resolveActions.length > 0) {
+        const bulkRequest = {
+          resolutions: resolveActions.map(action => ({
+            import_id: action.import_id,
+            ...(action.storefront_id && { resolved_storefront_id: action.storefront_id }),
+            ...(action.user_notes && { user_notes: action.user_notes })
+          }))
+        };
+        
+        result = await platforms.bulkResolveStorefronts(bulkRequest);
+        
+        console.log('📊 [RESOLUTION-MODAL] Storefront bulk results:', {
+          total: result.total_processed,
+          successful: result.successful_resolutions,
+          failed: result.failed_resolutions
+        });
+        
+        ui.showSuccess(
+          `Bulk storefront operation completed: ${result.successful_resolutions} resolved, ${result.failed_resolutions} failed`
+        );
+        
+        // Remove successfully resolved items
+        const successfulImportIds = result.results
+          .filter((r: any) => r.success)
+          .map((r: any) => r.import_id);
+        
+        storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+          r => !successfulImportIds.includes(r.import_id)
+        );
+        
+        storefrontTotalResolutions -= successfulImportIds.length;
+        
+        // Update successful resolutions counter
+        successfulStorefrontResolutions += result.successful_resolutions;
+      }
+      
+      // Handle individual create actions (storefronts don't have bulk create API)
+      const createActions = storefrontPendingActions.filter(a => a.type === 'create');
+      let createSuccessCount = 0;
+      for (const action of createActions) {
+        if (action.storefront_data) {
+          try {
+            await platforms.createStorefrontFromResolution(
+              action.storefront_data,
+              action.import_id
+            );
+            
+            storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+              r => r.import_id !== action.import_id
+            );
+            
+            storefrontTotalResolutions -= 1;
+            createSuccessCount += 1;
+          } catch (error) {
+            console.error('Failed to create storefront:', error);
+          }
+        }
+      }
+      
+      // Update counter with create successes
+      successfulStorefrontResolutions += createSuccessCount;
+      
+      // Clear selections and actions
+      storefrontModalState.selectedResolutions.clear();
+      storefrontPendingActions = [];
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to apply bulk storefront actions';
+      ui.showError(errorMsg);
+    } finally {
+      storefrontModalState.bulkOperationInProgress = false;
+    }
+  }
+
+  function skipSelectedStorefrontResolutions() {
+    const selectedIds = Array.from(storefrontModalState.selectedResolutions);
+    console.log('⏭️ [RESOLUTION-MODAL] Bulk storefront skip clicked for', selectedIds.length, 'storefronts');
+    
+    // Remove selected resolutions from the list (skip them)
+    storefrontModalState.pendingResolutions = storefrontModalState.pendingResolutions.filter(
+      r => !selectedIds.includes(r.import_id)
+    );
+    console.log('✅ [RESOLUTION-MODAL] Removed storefront from list. New count:', storefrontModalState.pendingResolutions.length);
+    
+    storefrontTotalResolutions -= selectedIds.length;
+    storefrontModalState.selectedResolutions.clear();
+    
+    console.log('📊 [RESOLUTION-MODAL] After bulk storefront skip - storefrontTotalResolutions:', storefrontTotalResolutions);
+    ui.showInfo(`Skipped ${selectedIds.length} storefront resolutions`);
+  }
+
+  async function handleStorefrontPageChange(page: number) {
+    if (page < 1 || page > storefrontTotalPages) return;
+    
+    storefrontCurrentPage = page;
+    await loadPendingStorefrontResolutions();
+  }
+
   function handleClose() {
-    // Check if there are unsaved actions
-    if (pendingActions.length > 0) {
+    // Check if there are unsaved actions (platforms or storefronts)
+    const totalPendingActions = pendingActions.length + storefrontPendingActions.length;
+    if (totalPendingActions > 0) {
       const confirmed = confirm(
-        `You have ${pendingActions.length} pending resolution actions. Close without applying them?`
+        `You have ${totalPendingActions} pending resolution actions. Close without applying them?`
       );
       if (!confirmed) return;
     }
     
     // Call final callback if there were successful resolutions during this session
-    if (onResolutionsComplete && successfulResolutions > 0) {
-      console.log('🔒 [RESOLUTION-MODAL] Modal closing with', successfulResolutions, 'successful resolutions in session');
-      console.log('⚠️ [RESOLUTION-MODAL] UI state will be lost - skipped platforms will reappear next time!');
-      console.log('🔄 [RESOLUTION-MODAL] Calling final onResolutionsComplete with total session count:', successfulResolutions);
-      onResolutionsComplete(successfulResolutions);
+    const totalSuccessful = successfulResolutions + successfulStorefrontResolutions;
+    if (onResolutionsComplete && totalSuccessful > 0) {
+      console.log('🔒 [RESOLUTION-MODAL] Modal closing with', totalSuccessful, 'successful resolutions in session');
+      console.log('⚠️ [RESOLUTION-MODAL] UI state will be lost - skipped items will reappear next time!');
+      console.log('🔄 [RESOLUTION-MODAL] Calling final onResolutionsComplete with total session count:', totalSuccessful);
+      onResolutionsComplete(totalSuccessful);
     }
     
     // Clean up state
     modalState.selectedResolutions.clear();
+    storefrontModalState.selectedResolutions.clear();
     pendingActions = [];
+    storefrontPendingActions = [];
     successfulResolutions = 0; // Reset counter
+    successfulStorefrontResolutions = 0; // Reset storefront counter
     activeTab = 'overview';
     currentPage = 1;
+    storefrontCurrentPage = 1;
     
     onClose();
   }
@@ -383,10 +685,15 @@
         <div class="flex items-center justify-between">
           <h2 class="text-xl font-semibold text-gray-900 flex items-center">
             <span class="text-2xl mr-3">🔗</span>
-            Platform Resolution Required
+            Platform & Storefront Resolution Required
             {#if totalResolutions > 0}
-              <span class="ml-3 bg-yellow-100 text-yellow-800 py-1 px-3 rounded-full text-sm font-medium">
-                {totalResolutions} unresolved
+              <span class="ml-3 bg-yellow-100 text-yellow-800 py-1 px-3 rounded-full text-xs font-medium">
+                {totalResolutions} platforms
+              </span>
+            {/if}
+            {#if storefrontTotalResolutions > 0}
+              <span class="ml-2 bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-medium">
+                {storefrontTotalResolutions} storefronts
               </span>
             {/if}
           </h2>
@@ -402,9 +709,15 @@
           </button>
         </div>
 
-        {#if totalResolutions > 0}
+        {#if totalResolutions > 0 || storefrontTotalResolutions > 0}
           <p class="text-sm text-gray-600 mt-2">
-            Your CSV import contains platform names that don't match our known platforms. 
+            {#if totalResolutions > 0 && storefrontTotalResolutions > 0}
+              Your CSV import contains platform and storefront names that don't match our known entries.
+            {:else if totalResolutions > 0}
+              Your CSV import contains platform names that don't match our known platforms.
+            {:else}
+              Your CSV import contains storefront names that don't match our known storefronts.
+            {/if}
             Review and resolve them below to continue.
           </p>
         {/if}
@@ -433,6 +746,21 @@
             {#if hasResolutions}
               <span class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-xs font-medium">
                 {modalState.pendingResolutions.length}
+              </span>
+            {/if}
+          </button>
+          <button
+            onclick={() => activeTab = 'storefronts'}
+            disabled={!hasStorefrontResolutions}
+            class="px-6 py-3 text-sm font-medium border-b-2 {activeTab === 'storefronts' 
+              ? 'border-blue-500 text-blue-600' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} 
+              {!hasStorefrontResolutions ? 'opacity-50 cursor-not-allowed' : ''}"
+          >
+            Resolve Storefronts
+            {#if hasStorefrontResolutions}
+              <span class="ml-2 bg-blue-100 text-blue-600 py-0.5 px-2 rounded-full text-xs font-medium">
+                {storefrontModalState.pendingResolutions.length}
               </span>
             {/if}
           </button>
@@ -653,6 +981,123 @@
               {/if}
             </div>
           </div>
+        {:else if activeTab === 'storefronts'}
+          <!-- Storefronts Tab -->
+          <div class="flex flex-col min-h-0 h-full">
+            <!-- Bulk Actions Bar -->
+            {#if hasStorefrontResolutions}
+              <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={allStorefrontsSelected}
+                        onchange={handleStorefrontSelectAll}
+                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span class="ml-2 text-sm text-gray-700">
+                        Select all ({storefrontModalState.pendingResolutions.length})
+                      </span>
+                    </label>
+                    
+                    {#if hasStorefrontSelections}
+                      <span class="text-sm text-gray-600">
+                        {storefrontModalState.selectedResolutions.size} selected
+                      </span>
+                    {/if}
+                  </div>
+
+                  <div class="flex items-center space-x-2">
+                    {#if storefrontPendingActions.length > 0}
+                      <button
+                        onclick={applyStorefrontBulkActions}
+                        disabled={storefrontModalState.bulkOperationInProgress}
+                        class="btn-primary disabled:opacity-50"
+                      >
+                        {#if storefrontModalState.bulkOperationInProgress}
+                          <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Applying...
+                        {:else}
+                          Apply {storefrontPendingActions.length} Actions
+                        {/if}
+                      </button>
+                    {/if}
+                    
+                    {#if hasStorefrontSelections}
+                      <button
+                        onclick={skipSelectedStorefrontResolutions}
+                        class="btn-secondary text-gray-600 hover:text-gray-800"
+                      >
+                        Skip Selected
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            <!-- Resolution List -->
+            <div class="flex-1">
+              {#if hasStorefrontResolutions}
+                <div class="divide-y divide-gray-200">
+                  {#each storefrontModalState.pendingResolutions as resolution (resolution.import_id)}
+                    <StorefrontMappingRow
+                      {resolution}
+                      selected={storefrontModalState.selectedResolutions.has(resolution.import_id)}
+                      onSelectionChange={(selected) => handleStorefrontSelectionChange(resolution.import_id, selected)}
+                      onResolutionAction={handleStorefrontResolutionAction}
+                    />
+                  {/each}
+                </div>
+
+                <!-- Pagination -->
+                {#if storefrontTotalPages > 1}
+                  <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                    <div class="flex items-center justify-between">
+                      <p class="text-sm text-gray-700">
+                        Showing page {storefrontCurrentPage} of {storefrontTotalPages} 
+                        ({storefrontTotalResolutions} total storefront resolutions)
+                      </p>
+                      
+                      <div class="flex items-center space-x-2">
+                        <button
+                          onclick={() => handleStorefrontPageChange(storefrontCurrentPage - 1)}
+                          disabled={storefrontCurrentPage <= 1}
+                          class="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        
+                        <span class="text-sm text-gray-500">
+                          {storefrontCurrentPage} / {storefrontTotalPages}
+                        </span>
+                        
+                        <button
+                          onclick={() => handleStorefrontPageChange(storefrontCurrentPage + 1)}
+                          disabled={storefrontCurrentPage >= storefrontTotalPages}
+                          class="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {/if}
+              {:else}
+                <div class="text-center py-12">
+                  <span class="text-6xl">🎉</span>
+                  <h3 class="mt-4 text-lg font-medium text-gray-900">All Storefronts Resolved!</h3>
+                  <p class="mt-2 text-sm text-gray-500">
+                    All storefront resolutions have been completed.
+                  </p>
+                </div>
+              {/if}
+            </div>
+          </div>
         {/if}
       </div>
 
@@ -660,19 +1105,25 @@
       <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
         <div class="flex justify-between items-center">
           <div class="text-sm text-gray-600">
-            {#if totalResolutions > 0}
-              {totalResolutions} platform{totalResolutions === 1 ? '' : 's'} need resolution
+            {#if totalResolutions > 0 || storefrontTotalResolutions > 0}
+              {#if totalResolutions > 0 && storefrontTotalResolutions > 0}
+                {totalResolutions} platform{totalResolutions === 1 ? '' : 's'} and {storefrontTotalResolutions} storefront{storefrontTotalResolutions === 1 ? '' : 's'} need resolution
+              {:else if totalResolutions > 0}
+                {totalResolutions} platform{totalResolutions === 1 ? '' : 's'} need resolution
+              {:else}
+                {storefrontTotalResolutions} storefront{storefrontTotalResolutions === 1 ? '' : 's'} need resolution
+              {/if}
             {:else}
-              All platforms resolved
+              All platforms and storefronts resolved
             {/if}
           </div>
           
           <div class="flex space-x-3">
             <button onclick={handleClose} class="btn-secondary">
-              {totalResolutions > 0 ? 'Close & Skip Remaining' : 'Close'}
+              {totalResolutions > 0 || storefrontTotalResolutions > 0 ? 'Close & Skip Remaining' : 'Close'}
             </button>
             
-            {#if totalResolutions === 0}
+            {#if totalResolutions === 0 && storefrontTotalResolutions === 0}
               <button onclick={handleClose} class="btn-primary">
                 Continue Import
               </button>
