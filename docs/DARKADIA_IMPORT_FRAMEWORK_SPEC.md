@@ -1941,28 +1941,38 @@ class PlatformResolutionTests:
 - ✅ **Performance Validated** with 1200 rows processed in 0.01 seconds
 - ✅ **Database Integration** creating multiple DarkadiaImport records per consolidated game
 
-#### Task 14: Storefront Resolution System
+#### Task 14: Storefront Resolution System ✅ **COMPLETED**
 **Priority**: High  
-**Estimated Time**: 5-6 days  
+**Estimated Time**: 5-6 days (**Actual**: 1 day)  
 **Dependencies**: Task 6 (Platform Resolution System)
 
 **Subtasks**:
-1. Create unknown storefront detection and tracking system
-2. Implement `StorefrontResolutionService` with platform-contextual suggestions
-3. Add storefront suggestion endpoints to API
-4. Create storefront fuzzy matching with platform constraints
-5. Handle "Other" storefronts with custom name resolution
-6. Track storefront resolution status in database
-7. Add bulk storefront resolution operations
-8. Implement platform-storefront compatibility validation
+1. ✅ Create unknown storefront detection and tracking system
+2. ✅ Implement `StorefrontResolutionService` with platform-contextual suggestions
+3. ✅ Add storefront suggestion endpoints to API
+4. ✅ Create storefront fuzzy matching with platform constraints
+5. ✅ Handle "Other" storefronts with custom name resolution
+6. ✅ Track storefront resolution status in database
+7. ✅ Add bulk storefront resolution operations
+8. ✅ Implement platform-storefront compatibility validation
 
 **Acceptance Criteria**:
-- [ ] Unknown storefronts detected from "Copy source" fields
-- [ ] Storefront suggestions filtered by platform compatibility
-- [ ] Custom storefronts from "Copy source other" handled properly
-- [ ] Storefront resolution status tracked per copy
-- [ ] Bulk operations allow resolving multiple storefronts efficiently
-- [ ] Platform-storefront mismatches prevented or flagged
+- [x] Unknown storefronts detected from "Copy source" fields
+- [x] Storefront suggestions filtered by platform compatibility
+- [x] Custom storefronts from "Copy source other" handled properly
+- [x] Storefront resolution status tracked per copy
+- [x] Bulk operations allow resolving multiple storefronts efficiently
+- [x] Platform-storefront mismatches prevented or flagged
+
+**Implementation Details**: ✅ **COMPLETED**
+- ✅ **Database Schema Updates** with `resolved_storefront_id` field and Alembic migration
+- ✅ **Extended PlatformResolutionService** with 6 new storefront-specific methods
+- ✅ **Enhanced Import Processing** in DarkadiaImportService with storefront extraction
+- ✅ **Comprehensive API Endpoints** including suggestions, resolution, bulk operations, and compatibility checks
+- ✅ **Platform-Contextual Intelligence** with confidence boosting for compatible storefronts
+- ✅ **Custom "Other" Storefront Handling** from "Copy source other" field
+- ✅ **Comprehensive Testing** with 11 test cases covering all functionality
+- ✅ **Quality Assurance** with all 926 existing tests passing
 
 #### Task 15: Storefront Resolution UI
 **Priority**: Medium  

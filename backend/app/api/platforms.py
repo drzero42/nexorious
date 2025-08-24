@@ -36,13 +36,23 @@ from ..api.schemas.platform import (
     PlatformResolutionRequest,
     BulkPlatformResolutionRequest,
     BulkPlatformResolutionResponse,
-    PendingResolutionsListResponse
+    PendingResolutionsListResponse,
+    # Storefront Resolution schemas
+    StorefrontSuggestionsRequest,
+    StorefrontSuggestionsResponse,
+    PendingStorefrontResolution,
+    StorefrontResolutionRequest,
+    BulkStorefrontResolutionRequest,
+    StorefrontResolutionResult,
+    BulkStorefrontResolutionResponse,
+    PendingStorefrontsListResponse,
+    StorefrontCompatibilityRequest,
+    StorefrontCompatibilityResponse
 )
 from ..api.schemas.common import SuccessResponse
 from ..services.logo_service import LogoService, logo_service
-from ..services.platform_resolution import create_platform_resolution_service
+from ..services.platform_resolution import create_platform_resolution_service, PlatformResolutionService
 from ..core.rate_limiting import rate_limit_suggestions, rate_limit_resolution, rate_limit_bulk_resolution
-from ..core.audit_logging import audit, get_client_ip, get_user_agent
 
 router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
 logger = logging.getLogger(__name__)
@@ -1261,4 +1271,316 @@ async def populate_platform_suggestions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to populate platform suggestions"
+        )
+
+
+# Storefront Resolution Endpoints
+
+@router.post("/resolution/storefront-suggestions", response_model=StorefrontSuggestionsResponse)
+@rate_limit_suggestions
+async def get_storefront_suggestions(
+    request: StorefrontSuggestionsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)],
+    http_request: Request
+):
+    """
+    Get platform-contextual suggestions for unknown storefronts.
+    
+    This endpoint provides fuzzy matching suggestions for unknown storefront names,
+    optionally filtered by platform compatibility. When a platform_id is provided,
+    suggestions will be prioritized based on platform-storefront associations.
+    """
+    try:
+        suggestions = []
+        platform = None
+        
+        if request.platform_id:
+            # Get platform-contextual suggestions
+            platform = session.get(Platform, request.platform_id)
+            if platform:
+                suggestions = await resolution_service.suggest_storefront_matches_for_platform(
+                    unknown_storefront_name=request.unknown_storefront_name,
+                    platform_id=request.platform_id,
+                    min_confidence=request.min_confidence,
+                    max_suggestions=request.max_suggestions
+                )
+        
+        if not suggestions:
+            # Fall back to general storefront suggestions
+            suggestions_response = await resolution_service.suggest_platform_matches(
+                unknown_platform_name="",  # Empty platform name
+                unknown_storefront_name=request.unknown_storefront_name,
+                min_confidence=request.min_confidence,
+                max_suggestions=request.max_suggestions
+            )
+            suggestions = suggestions_response.storefront_suggestions
+        
+        return StorefrontSuggestionsResponse(
+            unknown_storefront_name=request.unknown_storefront_name,
+            platform_id=request.platform_id,
+            platform_name=platform.display_name if platform else None,
+            storefront_suggestions=suggestions,
+            total_suggestions=len(suggestions),
+            is_platform_contextual=bool(request.platform_id and platform)
+        )
+    except Exception as e:
+        logger.error(f"Error getting storefront suggestions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get storefront suggestions"
+        )
+
+
+@router.get("/resolution/pending-storefronts", response_model=PendingStorefrontsListResponse)
+async def get_pending_storefront_resolutions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)],
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page")
+):
+    """
+    Get pending storefront resolutions for the current user.
+    
+    Returns a paginated list of unresolved storefronts that need manual resolution.
+    Each entry includes the original storefront name, affected games, and platform context.
+    """
+    try:
+        # Get unknown storefronts from user's imports
+        unknown_storefronts = await resolution_service.detect_unknown_storefronts(
+            user_id=current_user.id
+        )
+        
+        # Convert to pending storefront resolutions format
+        pending_storefronts = []
+        
+        for storefront_name in unknown_storefronts:
+            # Get imports with this storefront name to build context
+            from sqlmodel import select, and_
+            from ..models.darkadia_import import DarkadiaImport
+            
+            imports = session.exec(
+                select(DarkadiaImport).where(
+                    and_(
+                        DarkadiaImport.user_id == current_user.id,
+                        DarkadiaImport.original_storefront_name == storefront_name,
+                        DarkadiaImport.storefront_resolved == False
+                    )
+                ).limit(10)  # Limit for performance
+            ).all()
+            
+            if imports:
+                affected_games = list(set(imp.game_name for imp in imports if imp.game_name))
+                platform_context = imports[0].original_platform_name if imports else None
+                
+                pending_storefront = PendingStorefrontResolution(
+                    import_id=imports[0].id,  # Use first import as representative
+                    user_id=current_user.id,
+                    original_storefront_name=storefront_name,
+                    original_platform_name=platform_context,
+                    affected_games_count=len(affected_games),
+                    affected_games=affected_games[:5],  # Limit for display
+                    platform_context=platform_context,
+                    created_at=imports[0].created_at
+                )
+                pending_storefronts.append(pending_storefront)
+        
+        # Apply pagination
+        total = len(pending_storefronts)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_storefronts = pending_storefronts[start_idx:end_idx]
+        
+        pages = (total + per_page - 1) // per_page
+        
+        return PendingStorefrontsListResponse(
+            pending_storefronts=paginated_storefronts,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages
+        )
+    except Exception as e:
+        logger.error(f"Error getting pending storefront resolutions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get pending storefront resolutions"
+        )
+
+
+@router.post("/resolution/resolve-storefront", response_model=StorefrontResolutionResult)
+@rate_limit_resolution
+async def resolve_storefront(
+    resolution_request: StorefrontResolutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)],
+    http_request: Request
+):
+    """
+    Resolve a single storefront for an import record.
+    
+    This endpoint resolves an unknown storefront by mapping it to an existing 
+    storefront in the database. The resolution is stored and tracked for the user.
+    """
+    try:
+        success = await resolution_service.resolve_storefront(
+            import_id=resolution_request.import_id,
+            user_id=current_user.id,
+            resolved_storefront_id=resolution_request.resolved_storefront_id,
+            user_notes=resolution_request.user_notes
+        )
+        
+        if not success:
+            return StorefrontResolutionResult(
+                import_id=resolution_request.import_id,
+                success=False,
+                error_message="Failed to resolve storefront - import not found or access denied"
+            )
+        
+        # Get the resolved storefront details for response
+        resolved_storefront = session.get(Storefront, resolution_request.resolved_storefront_id)
+        
+        return StorefrontResolutionResult(
+            import_id=resolution_request.import_id,
+            success=True,
+            resolved_storefront=resolved_storefront,
+            error_message=None
+        )
+    except Exception as e:
+        logger.error(f"Error resolving storefront: {str(e)}")
+        return StorefrontResolutionResult(
+            import_id=resolution_request.import_id,
+            success=False,
+            error_message=f"Resolution failed: {str(e)}"
+        )
+
+
+@router.post("/resolution/bulk-resolve-storefronts", response_model=BulkStorefrontResolutionResponse)
+@rate_limit_bulk_resolution
+async def bulk_resolve_storefronts(
+    bulk_request: BulkStorefrontResolutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)],
+    http_request: Request
+):
+    """
+    Resolve multiple storefronts in a single bulk operation.
+    
+    This endpoint allows efficient resolution of multiple unknown storefronts
+    at once, providing detailed results for each resolution attempt.
+    """
+    try:
+        # Convert request to format expected by service
+        resolutions_data = [
+            {
+                "import_id": res.import_id,
+                "storefront_id": res.resolved_storefront_id,
+                "user_notes": res.user_notes
+            }
+            for res in bulk_request.resolutions
+        ]
+        
+        # Call the bulk resolution service
+        bulk_result = await resolution_service.bulk_resolve_storefronts(
+            resolutions=resolutions_data,
+            user_id=current_user.id
+        )
+        
+        # Convert results to proper response format
+        results = []
+        for resolution, resolution_data in zip(bulk_request.resolutions, resolutions_data):
+            if resolution_data.get("import_id") in [r.split(":")[0] for r in bulk_result.get("errors", [])]:
+                # This resolution failed
+                error_msg = next((e for e in bulk_result["errors"] if e.startswith(resolution_data["import_id"])), "Unknown error")
+                result = StorefrontResolutionResult(
+                    import_id=resolution.import_id,
+                    success=False,
+                    error_message=error_msg
+                )
+            else:
+                # This resolution succeeded
+                resolved_storefront = session.get(Storefront, resolution.resolved_storefront_id)
+                result = StorefrontResolutionResult(
+                    import_id=resolution.import_id,
+                    success=True,
+                    resolved_storefront=resolved_storefront
+                )
+            results.append(result)
+        
+        return BulkStorefrontResolutionResponse(
+            total_processed=bulk_result["total_processed"],
+            successful_resolutions=bulk_result["successful_resolutions"],
+            failed_resolutions=bulk_result["failed_resolutions"],
+            results=results,
+            errors=bulk_result["errors"]
+        )
+    except Exception as e:
+        logger.error(f"Error in bulk storefront resolution: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to perform bulk storefront resolution"
+        )
+
+
+@router.post("/compatibility/check", response_model=StorefrontCompatibilityResponse)
+async def check_platform_storefront_compatibility(
+    compatibility_request: StorefrontCompatibilityRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """
+    Check if a platform-storefront combination is valid.
+    
+    This endpoint validates whether a given storefront is compatible with
+    a specific platform based on the platform-storefront association table.
+    """
+    try:
+        # Get platform and storefront details
+        platform = session.get(Platform, compatibility_request.platform_id)
+        storefront = session.get(Storefront, compatibility_request.storefront_id)
+        
+        if not platform:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Platform not found"
+            )
+        
+        if not storefront:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Storefront not found"
+            )
+        
+        # Check compatibility
+        is_compatible = await resolution_service.validate_platform_storefront_compatibility(
+            platform_id=compatibility_request.platform_id,
+            storefront_id=compatibility_request.storefront_id
+        )
+        
+        message = (
+            f"{storefront.display_name} is compatible with {platform.display_name}"
+            if is_compatible
+            else f"{storefront.display_name} is not associated with {platform.display_name}"
+        )
+        
+        return StorefrontCompatibilityResponse(
+            platform_id=platform.id,
+            platform_name=platform.display_name,
+            storefront_id=storefront.id,
+            storefront_name=storefront.display_name,
+            is_compatible=is_compatible,
+            message=message
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking platform-storefront compatibility: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check compatibility"
         )

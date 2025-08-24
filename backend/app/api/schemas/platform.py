@@ -360,3 +360,91 @@ class PendingResolutionsListResponse(BaseModel):
     page: int = Field(default=1, description="Current page number")
     per_page: int = Field(default=20, description="Items per page")
     pages: int = Field(default=1, description="Total number of pages")
+
+
+# Storefront Resolution Schemas
+
+class StorefrontSuggestionsRequest(BaseModel):
+    """Request schema for getting platform-contextual storefront suggestions."""
+    unknown_storefront_name: str = Field(..., min_length=1, max_length=200, description="Unknown storefront name to find suggestions for")
+    platform_id: Optional[str] = Field(None, description="Platform context for suggestions")
+    min_confidence: float = Field(default=0.6, ge=0.0, le=1.0, description="Minimum confidence threshold for suggestions")
+    max_suggestions: int = Field(default=5, ge=1, le=20, description="Maximum number of suggestions to return")
+
+
+class StorefrontSuggestionsResponse(BaseModel):
+    """Response schema for platform-contextual storefront suggestions."""
+    unknown_storefront_name: str = Field(description="Original unknown storefront name")
+    platform_id: Optional[str] = Field(None, description="Platform context used for suggestions")
+    platform_name: Optional[str] = Field(None, description="Platform name for context")
+    storefront_suggestions: List[StorefrontSuggestion] = Field(description="Storefront suggestions")
+    total_suggestions: int = Field(description="Total number of suggestions")
+    is_platform_contextual: bool = Field(description="Whether suggestions are filtered by platform compatibility")
+
+
+class PendingStorefrontResolution(BaseModel):
+    """A pending storefront resolution from CSV import."""
+    import_id: str = Field(description="DarkadiaImport record ID")
+    user_id: str = Field(description="User ID who owns the import")
+    original_storefront_name: str = Field(description="Original storefront name from CSV")
+    original_platform_name: Optional[str] = Field(None, description="Original platform name for context")
+    affected_games_count: int = Field(ge=1, description="Number of games affected by this storefront")
+    affected_games: List[str] = Field(description="Names of affected games (for display)")
+    platform_context: Optional[str] = Field(None, description="Platform context for storefront resolution")
+    created_at: datetime = Field(description="When this resolution was identified")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StorefrontResolutionRequest(BaseModel):
+    """Request schema for resolving a storefront."""
+    import_id: str = Field(description="DarkadiaImport record ID to resolve")
+    resolved_storefront_id: str = Field(description="ID of storefront to resolve to")
+    user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
+
+
+class BulkStorefrontResolutionRequest(BaseModel):
+    """Request schema for bulk storefront resolution."""
+    resolutions: List[StorefrontResolutionRequest] = Field(..., min_length=1, max_length=50, description="List of storefront resolutions")
+
+
+class StorefrontResolutionResult(BaseModel):
+    """Result of a single storefront resolution."""
+    import_id: str = Field(description="DarkadiaImport record ID")
+    success: bool = Field(description="Whether resolution was successful")
+    resolved_storefront: Optional[StorefrontResponse] = Field(None, description="Resolved storefront details")
+    error_message: Optional[str] = Field(None, description="Error message if resolution failed")
+
+
+class BulkStorefrontResolutionResponse(BaseModel):
+    """Response schema for bulk storefront resolution."""
+    total_processed: int = Field(description="Total resolutions processed")
+    successful_resolutions: int = Field(description="Number of successful resolutions")
+    failed_resolutions: int = Field(description="Number of failed resolutions")
+    results: List[StorefrontResolutionResult] = Field(description="Individual resolution results")
+    errors: List[str] = Field(default_factory=list, description="General errors during bulk operation")
+
+
+class PendingStorefrontsListResponse(BaseModel):
+    """Response schema for listing pending storefront resolutions."""
+    pending_storefronts: List[PendingStorefrontResolution] = Field(description="List of pending storefront resolutions")
+    total: int = Field(description="Total number of pending storefront resolutions")
+    page: int = Field(default=1, description="Current page number")
+    per_page: int = Field(default=20, description="Items per page")
+    pages: int = Field(default=1, description="Total number of pages")
+
+
+class StorefrontCompatibilityRequest(BaseModel):
+    """Request schema for checking platform-storefront compatibility."""
+    platform_id: str = Field(description="ID of the platform")
+    storefront_id: str = Field(description="ID of the storefront")
+
+
+class StorefrontCompatibilityResponse(BaseModel):
+    """Response schema for platform-storefront compatibility check."""
+    platform_id: str = Field(description="ID of the platform")
+    platform_name: str = Field(description="Name of the platform")
+    storefront_id: str = Field(description="ID of the storefront")
+    storefront_name: str = Field(description="Name of the storefront")
+    is_compatible: bool = Field(description="Whether the platform-storefront combination is valid")
+    message: str = Field(description="Explanation of compatibility status")
