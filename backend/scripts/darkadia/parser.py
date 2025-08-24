@@ -97,6 +97,10 @@ class DarkadiaCSVParser:
             # Convert to list of dictionaries
             games_data = df.to_dict('records')
             
+            # Add CSV row number for tracking (1-indexed, accounting for header)
+            for i, game_data in enumerate(games_data):
+                game_data['_csv_row_number'] = i + 2  # +2 because 1-indexed and skip header
+            
             console.print(f"Successfully parsed {len(games_data)} rows")
             
             if self.validation_errors:
@@ -244,16 +248,12 @@ class DarkadiaCSVParser:
         unique_games = []
         
         for normalized_name, group in game_groups.items():
-            if len(group) == 1:
-                # Single game, no merging needed
-                unique_games.append(group[0])
-            else:
-                # Multiple rows for same game - merge them
-                merged_game = await self._merge_game_group(group)
-                unique_games.append(merged_game)
-                
-                if self.verbose:
-                    console.print(f"Merged {len(group)} rows for game: {group[0]['Name']}")
+            # Always process through merge logic to extract platform info
+            merged_game = await self._merge_game_group(group)
+            unique_games.append(merged_game)
+            
+            if len(group) > 1 and self.verbose:
+                console.print(f"Merged {len(group)} rows for game: {group[0]['Name']}")
         
         console.print(f"✓ Grouped into {len(unique_games)} unique games")
         return unique_games
@@ -293,7 +293,16 @@ class DarkadiaCSVParser:
         for row in group:
             platform_info = self._extract_platform_info(row)
             if platform_info:
-                platforms.append(platform_info)
+                # Handle fallback platforms with multiple entries
+                if not platform_info.get('is_real_copy', True) and platform_info.get('fallback_platform_names'):
+                    # Create separate entries for each fallback platform
+                    for platform_name in platform_info['fallback_platform_names']:
+                        fallback_copy = platform_info.copy()
+                        fallback_copy['platform'] = platform_name
+                        fallback_copy['copy_identifier'] = f"fallback:{platform_name}"
+                        platforms.append(fallback_copy)
+                else:
+                    platforms.append(platform_info)
         
         # Store platform information in merged record
         merged['_platforms'] = platforms
@@ -327,32 +336,77 @@ class DarkadiaCSVParser:
         return merged
     
     def _extract_platform_info(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract platform information from a CSV row."""
+        """Extract platform information from a CSV row following copy-based precedence rules."""
         
-        platform = row.get('Copy platform', '').strip()
-        if not platform or platform == 'nan':
-            return None
+        copy_platform = row.get('Copy platform', '').strip()
+        copy_source = row.get('Copy source', '').strip()
+        copy_source_other = row.get('Copy source other', '').strip()
         
-        return {
-            'platform': platform,
-            'storefront': row.get('Copy source', '').strip(),
-            'storefront_other': row.get('Copy source other', '').strip(),
-            'media': row.get('Copy media', '').strip(),
-            'media_other': row.get('Copy media other', '').strip(),
-            'label': row.get('Copy label', '').strip(),
-            'release': row.get('Copy Release', '').strip(),
-            'purchase_date': row.get('Copy purchase date'),
-            'metadata': {
-                'box': row.get('Copy box', '').strip(),
-                'box_condition': row.get('Copy box condition', '').strip(),
-                'box_notes': row.get('Copy box notes', '').strip(),
-                'manual': row.get('Copy manual', '').strip(),
-                'manual_condition': row.get('Copy manual condition', '').strip(),
-                'manual_notes': row.get('Copy manual notes', '').strip(),
-                'complete': row.get('Copy complete', '').strip(),
-                'complete_notes': row.get('Copy complete notes', '').strip(),
+        # Rule 1: Has copy data (platform or storefront) - this is a real copy
+        if copy_platform or copy_source or copy_source_other:
+            # Generate copy identifier for tracking
+            copy_id_parts = []
+            if copy_platform:
+                copy_id_parts.append(f"plt:{copy_platform}")
+            if copy_source:
+                copy_id_parts.append(f"str:{copy_source}")
+            elif copy_source_other:
+                copy_id_parts.append(f"str:{copy_source_other}")
+            copy_identifier = "|".join(copy_id_parts) if copy_id_parts else None
+            
+            # Determine if storefront resolution is required
+            final_storefront = copy_source or copy_source_other
+            requires_storefront_resolution = bool(copy_platform and not final_storefront)
+            
+            return {
+                'platform': copy_platform or None,
+                'storefront': copy_source,
+                'storefront_other': copy_source_other,
+                'media': row.get('Copy media', '').strip(),
+                'media_other': row.get('Copy media other', '').strip(),
+                'label': row.get('Copy label', '').strip(),
+                'release': row.get('Copy Release', '').strip(),
+                'purchase_date': row.get('Copy purchase date'),
+                'copy_identifier': copy_identifier,
+                'is_real_copy': True,
+                'requires_storefront_resolution': requires_storefront_resolution,
+                'metadata': {
+                    'box': row.get('Copy box', '').strip(),
+                    'box_condition': row.get('Copy box condition', '').strip(),
+                    'box_notes': row.get('Copy box notes', '').strip(),
+                    'manual': row.get('Copy manual', '').strip(),
+                    'manual_condition': row.get('Copy manual condition', '').strip(),
+                    'manual_notes': row.get('Copy manual notes', '').strip(),
+                    'complete': row.get('Copy complete', '').strip(),
+                    'complete_notes': row.get('Copy complete notes', '').strip(),
+                }
             }
-        }
+        
+        # Rule 2: No copy data - check for fallback platforms field
+        fallback_platforms = row.get('Platforms', '').strip()
+        if fallback_platforms:
+            # Parse comma-separated platforms and create fallback entries
+            platform_names = [p.strip() for p in fallback_platforms.split(',') if p.strip()]
+            if platform_names:
+                # Return data for the first platform (will create separate entries for multiple)
+                return {
+                    'platform': platform_names[0],
+                    'storefront': None,
+                    'storefront_other': None,
+                    'media': 'Digital',  # Assume digital for fallback
+                    'media_other': '',
+                    'label': '',
+                    'release': '',
+                    'purchase_date': None,
+                    'copy_identifier': f"fallback:{platform_names[0]}",
+                    'is_real_copy': False,
+                    'requires_storefront_resolution': True,  # Always true for fallback
+                    'fallback_platform_names': platform_names,  # Store all platforms
+                    'metadata': {}
+                }
+        
+        # Rule 3: No platform data at all
+        return None
     
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of validation results."""

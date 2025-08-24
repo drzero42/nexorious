@@ -8,7 +8,7 @@ suggestions and resolution tracking for unknown platforms.
 import logging
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
-from sqlmodel import Session, select
+from sqlmodel import Session, select, and_, or_
 import json
 import re
 
@@ -220,42 +220,70 @@ class PlatformResolutionService:
         per_page: int = 20
     ) -> Tuple[List[PendingPlatformResolution], int]:
         """
-        Get pending platform resolutions for a user.
+        Get pending platform and storefront resolutions for a user.
         
         Returns:
             Tuple of (pending_resolutions, total_count)
         """
-        # Query DarkadiaImport records with unresolved platforms
+        # Query DarkadiaImport records with unresolved platforms or storefronts
         query = select(DarkadiaImport).where(
             DarkadiaImport.user_id == user_id,
-            DarkadiaImport.platform_resolved == False,
-            DarkadiaImport.original_platform_name.isnot(None)
+            and_(
+                or_(
+                    # Unresolved platform
+                    and_(
+                        DarkadiaImport.platform_resolved == False,
+                        DarkadiaImport.original_platform_name.isnot(None)
+                    ),
+                    # Unresolved storefront (has original storefront but no resolved storefront)
+                    and_(
+                        DarkadiaImport.original_storefront_name.isnot(None),
+                        DarkadiaImport.resolved_storefront_id.is_(None)
+                    )
+                )
+            )
         )
         
-        # Get total count
+        # Get all import records
         all_imports = self.session.exec(query).all()
         
-        # Group by original platform name to avoid duplicates
-        platform_groups: Dict[str, List[DarkadiaImport]] = {}
+        # Group by combination of platform + storefront to avoid duplicates
+        resolution_groups: Dict[str, List[DarkadiaImport]] = {}
         for import_record in all_imports:
-            if import_record.original_platform_name:
-                key = import_record.original_platform_name.lower().strip()
-                if key not in platform_groups:
-                    platform_groups[key] = []
-                platform_groups[key].append(import_record)
+            # Create a composite key from platform and storefront
+            platform_part = import_record.original_platform_name or ""
+            storefront_part = import_record.original_storefront_name or ""
+            key = f"{platform_part.lower().strip()}|{storefront_part.lower().strip()}"
+            
+            if key not in resolution_groups:
+                resolution_groups[key] = []
+            resolution_groups[key].append(import_record)
         
         # Convert to pending resolutions
         pending_resolutions = []
         
-        for platform_name, import_records in platform_groups.items():
+        for resolution_key, import_records in resolution_groups.items():
             # Use the first import record as representative
             representative = import_records[0]
+            
+            # Skip if neither platform nor storefront needs resolution
+            needs_platform_resolution = (
+                representative.original_platform_name and 
+                not representative.platform_resolved
+            )
+            needs_storefront_resolution = (
+                representative.original_storefront_name and 
+                not representative.resolved_storefront_id
+            )
+            
+            if not (needs_platform_resolution or needs_storefront_resolution):
+                continue
             
             # Get affected games
             affected_games = []
             for record in import_records:
-                csv_data = record.get_original_csv_data()
-                game_name = csv_data.get("Name", "Unknown Game")
+                # Get game name from DarkadiaImport's game_name field
+                game_name = record.game_name or "Unknown Game"
                 if game_name not in affected_games:
                     affected_games.append(game_name)
             
@@ -266,13 +294,16 @@ class PlatformResolutionService:
                 resolution_data = {
                     "status": "pending",
                     "original_name": representative.original_platform_name,
+                    "original_storefront_name": representative.original_storefront_name,
                     "suggestions": [],
                     "storefront_suggestions": [],
                     "resolved_platform_id": None,
                     "resolved_storefront_id": None,
                     "resolution_timestamp": None,
                     "resolution_method": None,
-                    "user_notes": None
+                    "user_notes": None,
+                    "needs_platform_resolution": needs_platform_resolution,
+                    "needs_storefront_resolution": needs_storefront_resolution
                 }
                 representative.set_platform_resolution_data(resolution_data)
                 self.session.add(representative)
@@ -282,7 +313,7 @@ class PlatformResolutionService:
                 import_id=representative.id,
                 user_id=user_id,
                 original_platform_name=representative.original_platform_name,
-                original_storefront_name=None,  # TODO: Add storefront tracking
+                original_storefront_name=representative.original_storefront_name,
                 affected_games_count=len(affected_games),
                 affected_games=affected_games[:10],  # Limit for display
                 resolution_data=PlatformResolutionData(**resolution_data),

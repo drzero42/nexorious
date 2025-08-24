@@ -18,6 +18,12 @@ class DarkadiaImport(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     user_game_id: Optional[str] = Field(default=None, foreign_key="user_games.id", index=True)
+    user_game_platform_id: Optional[str] = Field(default=None, foreign_key="user_game_platforms.id", index=True)
+    
+    # Copy identification and consolidation
+    csv_row_number: int = Field(description="Original CSV row number for tracking")
+    game_name: str = Field(max_length=500, index=True, description="Game name for consolidation grouping")
+    copy_identifier: Optional[str] = Field(default=None, max_length=200, description="Unique identifier for this copy")
     
     # Import batch tracking
     batch_id: str = Field(index=True, description="Unique identifier for the import batch")
@@ -48,7 +54,11 @@ class DarkadiaImport(SQLModel, table=True):
     
     # Platform resolution tracking
     original_platform_name: Optional[str] = Field(default=None, max_length=200)
+    original_storefront_name: Optional[str] = Field(default=None, max_length=200)
+    fallback_platform_name: Optional[str] = Field(default=None, max_length=200, description="From generic Platforms field when no copy data")
     platform_resolved: bool = Field(default=False, index=True)
+    storefront_resolved: bool = Field(default=False, index=True)
+    requires_storefront_resolution: bool = Field(default=False, description="Copy has platform but no storefront")
     platform_resolution_data_json: str = Field(
         default="{}",
         sa_column=Column("platform_resolution_data", JSON),
@@ -62,12 +72,13 @@ class DarkadiaImport(SQLModel, table=True):
     # Relationships
     user: "User" = Relationship(back_populates="darkadia_imports")
     user_game: "UserGame" = Relationship(back_populates="darkadia_imports")
+    user_game_platform: "UserGamePlatform" = Relationship()
     
-    # Unique constraint to prevent duplicate imports
+    # Unique constraint per CSV row (allows multiple rows per game for different copies)
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "user_game_id", "batch_id",
-            name="uq_darkadia_imports_user_game_batch"
+            "user_id", "csv_row_number", "batch_id",
+            name="uq_darkadia_imports_user_row_batch"
         ),
         {"extend_existing": True},
     )
@@ -111,4 +122,4 @@ class DarkadiaImport(SQLModel, table=True):
 
 # Import forward references
 from .user import User
-from .user_game import UserGame
+from .user_game import UserGame, UserGamePlatform

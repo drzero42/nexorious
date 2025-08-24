@@ -25,3 +25,7 @@ Matched games should show both the Steam title and the IGDB title of the match t
 Ensure the following logic is followed everywhere.
 When removing the last platform/storefront, change ownership to No Longer Owned. If adding a platform/storefront to a UserGame change ownership to Owned.
 Only actually delete a UserGame if the user deletes it.
+
+## Darkadia CSV should be resetable
+There should be a button to remove all Darkadia data - resetting it as if no CSV was uploaded.
+It should start by unsyncing, and then clearing the users data in the DarkadiaGames table.

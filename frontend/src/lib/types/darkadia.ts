@@ -58,6 +58,13 @@ export interface DarkadiaGameResponse {
   ignored: boolean;
   created_at: Date;
   updated_at: Date;
+  
+  // Platform resolution fields
+  platform_resolved?: boolean;
+  original_platform_name?: string;
+  platform_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
+  platform_name?: string;
+  storefront_name?: string;
 }
 
 export interface DarkadiaGamesListResponse {

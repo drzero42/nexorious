@@ -256,6 +256,9 @@
                 Status
               </th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Platform
+              </th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 IGDB Match
               </th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -312,6 +315,43 @@
                     <span class="mr-1">{statusConfig.icon}</span>
                     {statusConfig.label}
                   </span>
+                </td>
+
+                <!-- Platform Status -->
+                <td class="px-4 py-4 whitespace-nowrap">
+                  {#if game.platform_resolution_status || game.original_platform_name}
+                    {@const platformStatus = game.platform_resolution_status}
+                    {@const platformName = game.original_platform_name}
+                    
+                    {#if platformStatus === 'resolved'}
+                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-green-100 text-green-600 border-green-200" title="Platform resolved: {platformName}">
+                        <span class="mr-1">✅</span>
+                        {platformName}
+                      </span>
+                    {:else if platformStatus === 'pending'}
+                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-yellow-100 text-yellow-600 border-yellow-200" title="Platform needs resolution: {platformName}">
+                        <span class="mr-1">⚠️</span>
+                        {platformName || 'Unknown'}
+                      </span>
+                    {:else if platformStatus === 'ignored'}
+                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" title="Platform resolution ignored">
+                        <span class="mr-1">🚫</span>
+                        Ignored
+                      </span>
+                    {:else if platformStatus === 'conflict'}
+                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-red-100 text-red-600 border-red-200" title="Multiple platform matches: {platformName}">
+                        <span class="mr-1">❌</span>
+                        Conflict
+                      </span>
+                    {:else if platformName}
+                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" title="Original platform: {platformName}">
+                        <span class="mr-1">📱</span>
+                        {platformName}
+                      </span>
+                    {/if}
+                  {:else}
+                    <span class="text-gray-400 text-xs">No platform</span>
+                  {/if}
                 </td>
 
                 <!-- IGDB Match -->

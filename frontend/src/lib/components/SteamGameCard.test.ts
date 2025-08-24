@@ -33,7 +33,8 @@ describe('SteamGameCard', () => {
     it('displays creation date', () => {
       render(SteamGameCard, { game: baseSteamGame });
 
-      expect(screen.getByText(/Added: 10\/01\/2025/)).toBeInTheDocument();
+      const expectedDate = new Date('2025-01-10T10:00:00Z').toLocaleDateString();
+      expect(screen.getByText(`Added: ${expectedDate}`)).toBeInTheDocument();
     });
 
     it('displays updated date when different from creation date', () => {
@@ -44,8 +45,12 @@ describe('SteamGameCard', () => {
 
       render(SteamGameCard, { game: updatedGame });
 
-      expect(screen.getByText(/Added: 10\/01\/2025/)).toBeInTheDocument();
-      expect(screen.getByText(/Updated: 12\/01\/2025/)).toBeInTheDocument();
+      const createdDate = new Date('2025-01-10T10:00:00Z').toLocaleDateString();
+      const updatedDate = new Date('2025-01-12T15:30:00Z').toLocaleDateString();
+      
+      expect(screen.getByText((content) => {
+        return content.includes(`Added: ${createdDate}`) && content.includes(`Updated: ${updatedDate}`);
+      })).toBeInTheDocument();
     });
 
     it('does not display updated date when same as creation date', () => {

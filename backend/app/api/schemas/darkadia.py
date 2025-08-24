@@ -89,6 +89,11 @@ class DarkadiaGameResponse(BaseModel):
     ignored: bool = Field(..., description="Whether user has marked this game as ignored")
     created_at: datetime = Field(..., description="When the Darkadia game was imported")
     updated_at: datetime = Field(..., description="When the Darkadia game was last updated")
+    
+    # Platform resolution fields
+    platform_resolved: Optional[bool] = Field(None, description="Whether platform has been resolved")
+    original_platform_name: Optional[str] = Field(None, description="Original platform name from CSV")
+    platform_resolution_status: Optional[str] = Field(None, description="Platform resolution status: resolved, pending, ignored, conflict")
 
 
 class DarkadiaGamesListResponse(BaseModel):

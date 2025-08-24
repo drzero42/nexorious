@@ -40,7 +40,7 @@
   });
 
   // Reference to the create form element for auto-scrolling
-  let createFormRef: HTMLElement;
+  let createFormRef = $state<HTMLElement | undefined>();
 
   // Suggestions from resolution data
   const suggestions = $derived(resolution.resolution_data.suggestions || []);

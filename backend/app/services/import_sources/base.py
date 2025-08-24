@@ -32,6 +32,13 @@ class ImportGame:
     ignored: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    
+    # Platform resolution fields (primarily used by Darkadia import)
+    platform_resolved: Optional[bool] = None
+    original_platform_name: Optional[str] = None
+    platform_resolution_status: Optional[str] = None
+    platform_name: Optional[str] = None  # Resolved/mapped platform name
+    storefront_name: Optional[str] = None  # Resolved/mapped storefront name
 
 
 @dataclass
