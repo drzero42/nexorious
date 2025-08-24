@@ -303,121 +303,196 @@ def test_user_game_fixture(session: Session, test_user: User, test_game: Game) -
     return user_game
 
 
+# IGDB Mock Helper Functions
+
+def _create_game_metadata(igdb_id: str, title: str, genre: str, **overrides) -> GameMetadata:
+    """Create consistent GameMetadata for mocks."""
+    base_data = {
+        "igdb_id": igdb_id,
+        "title": title,
+        "igdb_slug": title.lower().replace(" ", "-"),
+        "description": f"A {genre.lower()} game",
+        "genre": genre,
+        "developer": f"{genre} Developer",
+        "publisher": f"{genre} Publisher",
+        "release_date": "2023-01-01",
+        "cover_art_url": f"https://example.com/cover-{igdb_id}.jpg",
+        "hastily": 10,
+        "normally": 15,
+        "completely": 20
+    }
+    base_data.update(overrides)
+    return GameMetadata(**base_data)
+
+
+def _get_predefined_game_data():
+    """Get predefined game data for consistent testing."""
+    return {
+        "12345": {"title": "Test Game", "genre": "Action"},
+        "100": {"title": "The Legend of Zelda", "genre": "Adventure", "developer": "Nintendo", "publisher": "Nintendo"},
+        "200": {"title": "Elden Ring", "genre": "RPG", "developer": "FromSoftware", "publisher": "Bandai Namco"},
+        "300": {"title": "Apex Legends", "genre": "Shooter", "developer": "Respawn", "publisher": "EA"},
+        "400": {"title": "Cyberpunk 2077", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"},
+        "500": {"title": "The Witcher 3", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"}
+    }
+
+
 @pytest.fixture(name="mock_igdb_service")
 def mock_igdb_service_fixture():
-    """Create a mock IGDB service for testing."""
+    """Create an improved mock IGDB service for testing."""
     mock_service = MagicMock(spec=IGDBService)
+    game_data = _get_predefined_game_data()
     
-    # Mock search_games method
-    mock_service.search_games.return_value = [
-        GameMetadata(
-            igdb_id="12345",
-            title="Test Game",
-            igdb_slug="test-game",
-            description="A test game",
-            genre="Action",
-            developer="Test Developer",
-            publisher="Test Publisher",
-            release_date="2023-01-01",
-            cover_art_url="https://example.com/cover.jpg",
-            hastily=10,
-            normally=15,
-            completely=20
-        )
-    ]
-    
-    # Mock get_game_by_id method with different data based on igdb_id
-    def mock_get_game_by_id(igdb_id: str) -> GameMetadata:
-        game_data_map = {
-            "12345": {
-                "title": "Test Game",
-                "genre": "Action",
-                "developer": "Test Developer",
-                "publisher": "Test Publisher"
-            },
-            "100": {
-                "title": "Zelda",
-                "genre": "Adventure", 
-                "developer": "Nintendo",
-                "publisher": "Nintendo"
-            },
-            "200": {
-                "title": "Elden Ring",
-                "genre": "RPG",
-                "developer": "FromSoftware", 
-                "publisher": "Bandai Namco"
-            },
-            "300": {
-                "title": "Apex Legends",
-                "genre": "Shooter",
-                "developer": "Respawn",
-                "publisher": "EA"
-            }
-        }
+    # Dynamic search that responds to actual query content
+    def mock_search_games(query: str, limit: int = 10, **kwargs):
+        results = []
+        query_lower = query.lower()
         
-        data = game_data_map.get(igdb_id, game_data_map["12345"])
-        return GameMetadata(
-            igdb_id=igdb_id,
-            title=data["title"],
-            igdb_slug=data["title"].lower().replace(" ", "-"),
-            description=f"A {data['genre'].lower()} game",
-            genre=data["genre"],
-            developer=data["developer"],
-            publisher=data["publisher"],
-            release_date="2023-01-01",
-            cover_art_url="https://example.com/cover.jpg",
-            hastily=10,
-            normally=15,
-            completely=20
-        )
+        # Smart matching based on query content
+        if "zelda" in query_lower:
+            data = game_data["100"].copy()
+            data.pop("title", None)  # Remove to avoid duplicate
+            data.pop("genre", None)  # Remove to avoid duplicate
+            results.append(_create_game_metadata("100", game_data["100"]["title"], game_data["100"]["genre"], **data))
+        elif "elden" in query_lower:
+            data = game_data["200"].copy()
+            data.pop("title", None)
+            data.pop("genre", None)
+            results.append(_create_game_metadata("200", game_data["200"]["title"], game_data["200"]["genre"], **data))
+        elif "apex" in query_lower:
+            data = game_data["300"].copy()
+            data.pop("title", None)
+            data.pop("genre", None)
+            results.append(_create_game_metadata("300", game_data["300"]["title"], game_data["300"]["genre"], **data))
+        elif "cyberpunk" in query_lower:
+            data = game_data["400"].copy()
+            data.pop("title", None)
+            data.pop("genre", None)
+            results.append(_create_game_metadata("400", game_data["400"]["title"], game_data["400"]["genre"], **data))
+        elif "witcher" in query_lower:
+            data = game_data["500"].copy()
+            data.pop("title", None)
+            data.pop("genre", None)
+            results.append(_create_game_metadata("500", game_data["500"]["title"], game_data["500"]["genre"], **data))
+        else:
+            # Default fallback - use query as title if it contains "Test Game", otherwise create generic
+            if "test game" in query_lower:
+                results.append(_create_game_metadata("12345", query, "Action"))
+            else:
+                results.append(_create_game_metadata("12345", f"Test Game: {query}", "Action"))
+        
+        return results[:limit]
+    
+    mock_service.search_games.side_effect = mock_search_games
+    
+    # Improved get_game_by_id with better data coverage
+    def mock_get_game_by_id(igdb_id: str) -> GameMetadata:
+        data = game_data.get(igdb_id, game_data["12345"]).copy()
+        title = data.pop("title")
+        genre = data.pop("genre")
+        return _create_game_metadata(igdb_id, title, genre, **data)
     
     mock_service.get_game_by_id.side_effect = mock_get_game_by_id
     
-    # Mock refresh_game_metadata method
-    mock_service.refresh_game_metadata.return_value = GameMetadata(
-        igdb_id="12345",
-        title="Test Game",
-        igdb_slug="test-game",
-        description="A test game",
-        genre="Action",
-        developer="Test Developer",
-        publisher="Test Publisher",
-        release_date="2023-01-01",
-        cover_art_url="https://example.com/cover.jpg",
-        hastily=10,
-        normally=15,
-        completely=20
-    )
+    # Smart refresh_game_metadata that uses existing game data
+    def mock_refresh_game_metadata(game: Game) -> GameMetadata:
+        if game.igdb_id and game.igdb_id in game_data:
+            data = game_data[game.igdb_id].copy()
+            title = data.pop("title")
+            genre = data.pop("genre")
+            return _create_game_metadata(game.igdb_id, title, genre, **data)
+        else:
+            # Return enhanced version of existing game data
+            return _create_game_metadata(
+                game.igdb_id or "12345",
+                game.title or "Enhanced Test Game",
+                game.genre or "Action",
+                description=f"Enhanced description for {game.title or 'test game'}"
+            )
     
-    # Mock populate_missing_metadata method
-    mock_service.populate_missing_metadata.return_value = GameMetadata(
-        igdb_id="12345",
-        title="Test Game",
-        igdb_slug="test-game",
-        description="A test game",
-        genre="Action",
-        developer="Test Developer",
-        publisher="Test Publisher",
-        release_date="2023-01-01",
-        cover_art_url="https://example.com/cover.jpg",
-        hastily=10,
-        normally=15,
-        completely=20
-    )
+    mock_service.refresh_game_metadata.side_effect = mock_refresh_game_metadata
     
-    # Mock get_metadata_completeness method
-    mock_service.get_metadata_completeness.return_value = {
-        "completeness_percentage": 75.0,
-        "missing_essential": ["cover_art_url"],
-        "missing_optional": ["rating_average"],
-        "total_fields": 10,
-        "filled_fields": 7
-    }
+    # Smart populate_missing_metadata that actually populates missing fields
+    def mock_populate_missing_metadata(game: Game) -> GameMetadata:
+        igdb_id = game.igdb_id or "12345"
+        data = game_data.get(igdb_id, game_data["12345"]).copy()
+        
+        # Use existing game data as base, fill in missing fields
+        title = game.title or data.pop("title")
+        genre = game.genre or data.pop("genre") 
+        
+        return _create_game_metadata(
+            igdb_id,
+            title,
+            genre,
+            developer=game.developer or data.get("developer", f"{genre} Developer"),
+            publisher=game.publisher or data.get("publisher", f"{genre} Publisher"),
+            description=game.description or f"A {genre.lower()} game"
+        )
     
-    # Mock download_and_store_cover_art method
-    mock_service.download_and_store_cover_art.return_value = "/local/path/cover.jpg"
+    mock_service.populate_missing_metadata.side_effect = mock_populate_missing_metadata
+    
+    # Dynamic metadata completeness calculation
+    def mock_get_metadata_completeness(game: Game):
+        essential_fields = ["title", "genre", "developer", "publisher"]
+        optional_fields = ["description", "release_date", "cover_art_url", "rating_average"]
+        
+        filled_essential = sum(1 for field in essential_fields if getattr(game, field, None))
+        filled_optional = sum(1 for field in optional_fields if getattr(game, field, None))
+        total_filled = filled_essential + filled_optional
+        total_fields = len(essential_fields) + len(optional_fields)
+        
+        missing_essential = [field for field in essential_fields if not getattr(game, field, None)]
+        missing_optional = [field for field in optional_fields if not getattr(game, field, None)]
+        
+        return {
+            "completeness_percentage": (total_filled / total_fields) * 100,
+            "missing_essential": missing_essential,
+            "missing_optional": missing_optional,
+            "total_fields": total_fields,
+            "filled_fields": total_filled
+        }
+    
+    mock_service.get_metadata_completeness.side_effect = mock_get_metadata_completeness
+    
+    # Mock download_and_store_cover_art with realistic paths
+    def mock_download_and_store_cover_art(cover_url: str, game_title: str):
+        safe_title = game_title.lower().replace(" ", "_").replace(":", "")
+        return f"/local/storage/covers/{safe_title}_cover.jpg"
+    
+    mock_service.download_and_store_cover_art.side_effect = mock_download_and_store_cover_art
     
     return mock_service
+
+
+@pytest.fixture(name="configurable_mock_igdb")
+def configurable_mock_igdb_fixture():
+    """Mock IGDB service with configurable responses for advanced testing."""
+    def create_mock(search_results=None, should_raise=None, custom_behavior=None):
+        mock_service = MagicMock(spec=IGDBService)
+        
+        if should_raise:
+            for method_name, exception in should_raise.items():
+                getattr(mock_service, method_name).side_effect = exception
+            return mock_service
+            
+        if search_results:
+            mock_service.search_games.return_value = search_results
+        else:
+            mock_service.search_games.return_value = [
+                _create_game_metadata("default", "Default Game", "Action")
+            ]
+        
+        if custom_behavior:
+            for method_name, behavior in custom_behavior.items():
+                if callable(behavior):
+                    getattr(mock_service, method_name).side_effect = behavior
+                else:
+                    getattr(mock_service, method_name).return_value = behavior
+        
+        return mock_service
+    
+    return create_mock
 
 
 @pytest.fixture(name="client_with_mock_igdb")

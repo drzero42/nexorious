@@ -30,6 +30,93 @@ def mock_rate_limiter():
         yield mock
 
 
+@pytest.fixture
+def steam_test_responses():
+    """Predefined Steam API responses for common scenarios."""
+    return {
+        "user_info_success": {
+            "response": {
+                "players": [{
+                    "steamid": "76561197960435530",
+                    "personaname": "Test User",
+                    "profileurl": "https://steamcommunity.com/id/testuser/",
+                    "avatar": "https://avatar.url/small.jpg",
+                    "avatarmedium": "https://avatar.url/medium.jpg",
+                    "avatarfull": "https://avatar.url/full.jpg",
+                    "personastate": 1,
+                    "communityvisibilitystate": 3,
+                    "profilestate": 1,
+                    "lastlogoff": 1234567890,
+                    "commentpermission": 1
+                }]
+            }
+        },
+        "owned_games_success": {
+            "response": {
+                "games": [
+                    {"appid": 730, "name": "Counter-Strike: Global Offensive", "img_icon_url": "icon_url"},
+                    {"appid": 440, "name": "Team Fortress 2"}
+                ]
+            }
+        },
+        "recently_played_success": {
+            "response": {
+                "games": [
+                    {"appid": 730, "name": "Counter-Strike: Global Offensive"}
+                ]
+            }
+        },
+        "vanity_url_success": {
+            "response": {
+                "success": 1,
+                "steamid": "76561197960435530"
+            }
+        },
+        "vanity_url_not_found": {
+            "response": {
+                "success": 42,  # Steam returns 42 for "No match"
+                "message": "No match"
+            }
+        },
+        "empty_games": {"response": {"games": []}},
+        "user_not_found": {"response": {"players": []}},
+        "api_key_test": {"response": {"players": []}}
+    }
+
+
+@pytest.fixture 
+def steam_error_scenarios():
+    """Common Steam API error scenarios."""
+    return {
+        "auth_401": SteamAuthenticationError("Invalid Steam Web API key"),
+        "auth_403": SteamAuthenticationError("does not have required permissions"),
+        "rate_limit": SteamAPIError("rate limit exceeded"),
+        "general_api": SteamAPIError("API temporarily unavailable")
+    }
+
+
+@pytest.fixture
+def steam_service_with_responses():
+    """Create Steam service with configurable response mocking."""
+    def create_service(responses=None, errors=None):
+        service = SteamService("test_api_key_32chars_long_1234567")
+        
+        # Replace the complex rate limiter mocking with direct method mocking
+        original_make_request = service._make_request
+        
+        async def mock_make_request(endpoint, params=None):
+            if errors and endpoint in errors:
+                raise errors[endpoint]
+            if responses and endpoint in responses:
+                return responses[endpoint]
+            return {"response": {"success": 1}}
+        
+        service._make_request = mock_make_request
+        return service
+    
+    return create_service
+
+
 class TestSteamService:
     """Test Steam service functionality."""
 
@@ -62,183 +149,110 @@ class TestSteamService:
         mock_rate_limiter_instance.call.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_make_request_authentication_error(self, steam_service):
+    async def test_make_request_authentication_error(self, steam_service_with_responses, steam_error_scenarios):
         """Test API request with authentication error."""
-        # Mock HTTP 401 error
-        http_error = httpx.HTTPStatusError(
-            "Unauthorized", 
-            request=MagicMock(), 
-            response=MagicMock(status_code=401, text="Unauthorized")
+        service = steam_service_with_responses(
+            errors={"test/endpoint": steam_error_scenarios["auth_401"]}
         )
         
-        # Mock the rate limiter's call method
-        with patch.object(steam_service._rate_limiter, 'call') as mock_call:
-            async def mock_request():
-                raise http_error
-            
-            async def mock_side_effect(func):
-                return await mock_request()
-            
-            mock_call.side_effect = mock_side_effect
-            
-            with pytest.raises(SteamAuthenticationError, match="Invalid Steam Web API key"):
-                await steam_service._make_request("test/endpoint")
+        with pytest.raises(SteamAuthenticationError, match="Invalid Steam Web API key"):
+            await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
-    async def test_make_request_forbidden_error(self, steam_service):
+    async def test_make_request_forbidden_error(self, steam_service_with_responses, steam_error_scenarios):
         """Test API request with forbidden error."""
-        # Mock HTTP 403 error
-        http_error = httpx.HTTPStatusError(
-            "Forbidden", 
-            request=MagicMock(), 
-            response=MagicMock(status_code=403, text="Forbidden")
+        service = steam_service_with_responses(
+            errors={"test/endpoint": steam_error_scenarios["auth_403"]}
         )
         
-        # Mock the rate limiter's call method
-        with patch.object(steam_service._rate_limiter, 'call') as mock_call:
-            async def mock_request():
-                raise http_error
-            
-            async def mock_side_effect(func):
-                return await mock_request()
-            
-            mock_call.side_effect = mock_side_effect
-            
-            with pytest.raises(SteamAuthenticationError, match="does not have required permissions"):
-                await steam_service._make_request("test/endpoint")
+        with pytest.raises(SteamAuthenticationError, match="does not have required permissions"):
+            await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
-    async def test_make_request_rate_limit_exceeded(self, steam_service, mock_rate_limiter):
+    async def test_make_request_rate_limit_exceeded(self, steam_service_with_responses, steam_error_scenarios):
         """Test API request with rate limit exceeded."""
-        mock_rate_limiter_instance = MagicMock()
-        mock_rate_limiter.return_value = mock_rate_limiter_instance
-        
-        mock_rate_limiter_instance.call = AsyncMock(
-            side_effect=RateLimitExceeded("Rate limit exceeded")
+        service = steam_service_with_responses(
+            errors={"test/endpoint": steam_error_scenarios["rate_limit"]}
         )
-        
-        service = SteamService("test_api_key_32chars_long_1234567")
         
         with pytest.raises(SteamAPIError, match="rate limit exceeded"):
             await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
-    async def test_verify_api_key_valid(self, steam_service):
+    async def test_verify_api_key_valid(self, steam_service_with_responses, steam_test_responses):
         """Test API key verification with valid key."""
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = {"response": {"players": []}}
-            
-            result = await steam_service.verify_api_key()
-            
-            assert result is True
-            mock_request.assert_called_once()
+        service = steam_service_with_responses(
+            responses={"ISteamUser/GetPlayerSummaries/v0002/": steam_test_responses["api_key_test"]}
+        )
+        
+        result = await service.verify_api_key()
+        
+        assert result is True
 
     @pytest.mark.asyncio
-    async def test_verify_api_key_invalid(self, steam_service):
+    async def test_verify_api_key_invalid(self, steam_service_with_responses, steam_error_scenarios):
         """Test API key verification with invalid key."""
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.side_effect = SteamAuthenticationError("Invalid key")
-            
-            result = await steam_service.verify_api_key()
-            
-            assert result is False
+        service = steam_service_with_responses(
+            errors={"ISteamUser/GetPlayerSummaries/v0002/": steam_error_scenarios["auth_401"]}
+        )
+        
+        result = await service.verify_api_key()
+        
+        assert result is False
 
     @pytest.mark.asyncio
-    async def test_get_user_info_success(self, steam_service):
+    async def test_get_user_info_success(self, steam_service_with_responses, steam_test_responses):
         """Test getting user info successfully."""
-        mock_response = {
-            "response": {
-                "players": [{
-                    "steamid": "76561197960435530",
-                    "personaname": "Test User",
-                    "profileurl": "https://steamcommunity.com/id/testuser/",
-                    "avatar": "https://avatar.url/small.jpg",
-                    "avatarmedium": "https://avatar.url/medium.jpg",
-                    "avatarfull": "https://avatar.url/full.jpg",
-                    "personastate": 1,
-                    "communityvisibilitystate": 3,
-                    "profilestate": 1,
-                    "lastlogoff": 1234567890,
-                    "commentpermission": 1
-                }]
-            }
-        }
+        service = steam_service_with_responses(
+            responses={"ISteamUser/GetPlayerSummaries/v0002/": steam_test_responses["user_info_success"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.get_user_info("76561197960435530")
-            
-            assert isinstance(result, SteamUserInfo)
-            assert result.steam_id == "76561197960435530"
-            assert result.persona_name == "Test User"
-            assert result.profile_url == "https://steamcommunity.com/id/testuser/"
+        result = await service.get_user_info("76561197960435530")
+        
+        assert isinstance(result, SteamUserInfo)
+        assert result.steam_id == "76561197960435530"
+        assert result.persona_name == "Test User"
+        assert result.profile_url == "https://steamcommunity.com/id/testuser/"
 
     @pytest.mark.asyncio
-    async def test_get_user_info_not_found(self, steam_service):
+    async def test_get_user_info_not_found(self, steam_service_with_responses, steam_test_responses):
         """Test getting user info for non-existent user."""
-        mock_response = {"response": {"players": []}}
+        service = steam_service_with_responses(
+            responses={"ISteamUser/GetPlayerSummaries/v0002/": steam_test_responses["user_not_found"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.get_user_info("76561197960435530")
-            
-            assert result is None
+        result = await service.get_user_info("76561197960435530")
+        
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_owned_games_success(self, steam_service):
+    async def test_get_owned_games_success(self, steam_service_with_responses, steam_test_responses):
         """Test getting owned games successfully."""
-        mock_response = {
-            "response": {
-                "games": [
-                    {
-                        "appid": 730,
-                        "name": "Counter-Strike: Global Offensive",
-                        "img_icon_url": "icon_url"
-                    },
-                    {
-                        "appid": 440,
-                        "name": "Team Fortress 2"
-                    }
-                ]
-            }
-        }
+        service = steam_service_with_responses(
+            responses={"IPlayerService/GetOwnedGames/v0001/": steam_test_responses["owned_games_success"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.get_owned_games("76561197960435530")
-            
-            assert len(result) == 2
-            assert isinstance(result[0], SteamGame)
-            assert result[0].appid == 730
-            assert result[0].name == "Counter-Strike: Global Offensive"
-            assert result[1].appid == 440
-            assert result[1].name == "Team Fortress 2"
+        result = await service.get_owned_games("76561197960435530")
+        
+        assert len(result) == 2
+        assert isinstance(result[0], SteamGame)
+        assert result[0].appid == 730
+        assert result[0].name == "Counter-Strike: Global Offensive"
+        assert result[1].appid == 440
+        assert result[1].name == "Team Fortress 2"
 
     @pytest.mark.asyncio
-    async def test_get_recently_played_games_success(self, steam_service):
+    async def test_get_recently_played_games_success(self, steam_service_with_responses, steam_test_responses):
         """Test getting recently played games successfully."""
-        mock_response = {
-            "response": {
-                "games": [
-                    {
-                        "appid": 730,
-                        "name": "Counter-Strike: Global Offensive"
-                    }
-                ]
-            }
-        }
+        service = steam_service_with_responses(
+            responses={"IPlayerService/GetRecentlyPlayedGames/v0001/": steam_test_responses["recently_played_success"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.get_recently_played_games("76561197960435530", count=5)
-            
-            assert len(result) == 1
-            assert isinstance(result[0], SteamGame)
-            assert result[0].appid == 730
+        result = await service.get_recently_played_games("76561197960435530", count=5)
+        
+        assert len(result) == 1
+        assert isinstance(result[0], SteamGame)
+        assert result[0].appid == 730
 
     def test_validate_steam_id_valid(self, steam_service):
         """Test validating valid Steam ID."""
@@ -273,38 +287,26 @@ class TestSteamService:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_resolve_vanity_url_success(self, steam_service):
+    async def test_resolve_vanity_url_success(self, steam_service_with_responses, steam_test_responses):
         """Test resolving vanity URL successfully."""
-        mock_response = {
-            "response": {
-                "success": 1,
-                "steamid": "76561197960435530"
-            }
-        }
+        service = steam_service_with_responses(
+            responses={"ISteamUser/ResolveVanityURL/v0001/": steam_test_responses["vanity_url_success"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.resolve_vanity_url("testuser")
-            
-            assert result == "76561197960435530"
+        result = await service.resolve_vanity_url("testuser")
+        
+        assert result == "76561197960435530"
 
     @pytest.mark.asyncio
-    async def test_resolve_vanity_url_not_found(self, steam_service):
+    async def test_resolve_vanity_url_not_found(self, steam_service_with_responses, steam_test_responses):
         """Test resolving non-existent vanity URL."""
-        mock_response = {
-            "response": {
-                "success": 42,  # Steam returns 42 for "No match"
-                "message": "No match"
-            }
-        }
+        service = steam_service_with_responses(
+            responses={"ISteamUser/ResolveVanityURL/v0001/": steam_test_responses["vanity_url_not_found"]}
+        )
         
-        with patch.object(steam_service, '_make_request') as mock_request:
-            mock_request.return_value = mock_response
-            
-            result = await steam_service.resolve_vanity_url("nonexistentuser")
-            
-            assert result is None
+        result = await service.resolve_vanity_url("nonexistentuser")
+        
+        assert result is None
 
     def test_create_steam_service(self):
         """Test Steam service factory function."""

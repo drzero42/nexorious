@@ -43,19 +43,56 @@ class MockIGDBResult:
 
 @pytest.fixture
 def mock_steam_service():
-    """Create a mock Steam service."""
+    """Create an improved mock Steam service."""
     mock = Mock()
     mock.get_owned_games = AsyncMock()
+    mock.verify_api_key = AsyncMock(return_value=True)
+    mock.get_user_info = AsyncMock()
     return mock
 
 
 @pytest.fixture
 def mock_igdb_service():
-    """Create a mock IGDB service."""
+    """Create an improved mock IGDB service."""
     mock = Mock()
     mock.search_games = AsyncMock()
     mock.get_game_by_id = AsyncMock()
+    mock.populate_missing_metadata = AsyncMock()
+    mock.refresh_game_metadata = AsyncMock()
     return mock
+
+
+@pytest.fixture
+def configurable_steam_service():
+    """Create Steam service with configurable responses."""
+    def create_mock(owned_games=None, should_raise=None):
+        mock = Mock()
+        
+        if should_raise:
+            mock.get_owned_games = AsyncMock(side_effect=should_raise)
+            mock.verify_api_key = AsyncMock(side_effect=should_raise)
+        else:
+            # Default owned games if not specified
+            if owned_games is None:
+                owned_games = [
+                    MockSteamGame(730, "Counter-Strike: Global Offensive", 1200),
+                    MockSteamGame(440, "Team Fortress 2", 500)
+                ]
+            
+            mock.get_owned_games = AsyncMock(return_value=owned_games)
+            mock.verify_api_key = AsyncMock(return_value=True)
+        
+        return mock
+    
+    return create_mock
+
+
+class MockSteamGame:
+    """Helper class for mocking Steam game objects."""
+    def __init__(self, appid, name, playtime_forever=0):
+        self.appid = appid
+        self.name = name
+        self.playtime_forever = playtime_forever
 
 
 @pytest.fixture
@@ -81,17 +118,12 @@ def sample_steam_config():
 @pytest.fixture
 def sample_steam_games_data():
     """Sample Steam games data from Steam Web API."""
-    # Create mock objects that behave like Steam game objects
-    class MockSteamGame:
-        def __init__(self, appid, name, playtime_forever):
-            self.appid = appid
-            self.name = name
-            self.playtime_forever = playtime_forever
-    
     return [
         MockSteamGame(730, "Counter-Strike: Global Offensive", 1200),
         MockSteamGame(440, "Team Fortress 2", 500),
-        MockSteamGame(570, "Dota 2", 2400)
+        MockSteamGame(570, "Dota 2", 2400),
+        MockSteamGame(271590, "Grand Theft Auto V", 800),
+        MockSteamGame(292030, "The Witcher 3: Wild Hunt", 1500)
     ]
 
 
@@ -215,8 +247,8 @@ class TestSteamLibraryImport:
         
         # Verify result
         assert isinstance(result, ImportResult)
-        assert result.imported_count == 3
-        assert result.total_games == 3
+        assert result.imported_count == 5
+        assert result.total_games == 5
         assert len(result.errors) == 0
         
         # Verify Steam games were created in database
@@ -224,9 +256,9 @@ class TestSteamLibraryImport:
             select(SteamGame).where(SteamGame.user_id == test_user.id)
         ).all()
         
-        assert len(steam_games) == 3
+        assert len(steam_games) == 5
         steam_appids = {game.steam_appid for game in steam_games}
-        assert steam_appids == {730, 440, 570}
+        assert steam_appids == {730, 440, 570, 271590, 292030}
     
     @pytest.mark.asyncio
     async def test_import_steam_library_without_auto_matching(
@@ -247,16 +279,16 @@ class TestSteamLibraryImport:
         )
         
         # Verify result
-        assert result.imported_count == 3
+        assert result.imported_count == 5
         assert result.auto_matched_count == 0
-        assert result.total_games == 3
+        assert result.total_games == 5
         
         # Verify Steam games were created without IGDB IDs
         steam_games = steam_games_service.session.exec(
             select(SteamGame).where(SteamGame.user_id == test_user.id)
         ).all()
         
-        assert len(steam_games) == 3
+        assert len(steam_games) == 5
         assert all(game.igdb_id is None for game in steam_games)
     
     @pytest.mark.asyncio
