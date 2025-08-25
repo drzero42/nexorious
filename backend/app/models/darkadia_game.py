@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 import uuid
 import json
+from ..utils.json_serialization import safe_json_dumps
 
 
 class DarkadiaGame(SQLModel, table=True):
@@ -60,7 +61,7 @@ class DarkadiaGame(SQLModel, table=True):
     
     def set_csv_data(self, value: Dict[str, Any]) -> None:
         """Set CSV data from a dictionary."""
-        self.csv_data_json = json.dumps(value)
+        self.csv_data_json = safe_json_dumps(value)
     
     def get_csv_field(self, field_name: str, default: Any = None) -> Any:
         """Get a specific field from CSV data."""
@@ -76,7 +77,7 @@ class DarkadiaGame(SQLModel, table=True):
     
     def set_transformation_data(self, value: Dict[str, Any]) -> None:
         """Set transformation data from a dictionary."""
-        self.transformation_data_json = json.dumps(value)
+        self.transformation_data_json = safe_json_dumps(value)
     
     def get_transformation_field(self, field_name: str, default: Any = None) -> Any:
         """Get a specific field from transformation data."""

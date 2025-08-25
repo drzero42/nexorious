@@ -8,10 +8,13 @@ and preventing duplicate game entries.
 
 import logging
 import hashlib
+import pandas as pd
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from collections import defaultdict
+
+from ...utils.data_extraction import safe_extract_string, safe_extract_date_string, safe_extract_numeric
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +132,7 @@ class CopyConsolidationProcessor:
         game_groups = defaultdict(list)
         
         for row in csv_data:
-            game_name = row.get('Name', '').strip()
+            game_name = safe_extract_string(row.get('Name'))
             if not game_name:
                 logger.warning(f"Skipping row {row.get('_csv_row_number', '?')} with empty game name")
                 continue
@@ -198,26 +201,23 @@ class CopyConsolidationProcessor:
         # Remove CSV-specific metadata that shouldn't be merged
         merged_data.pop('_csv_row_number', None)
         
-        if len(rows) == 1:
-            return merged_data
-        
         # Apply merging rules for conflicting data
         
         # Rating: Take highest value
         ratings = [row.get('Rating') for row in rows 
-                  if row.get('Rating') is not None and str(row.get('Rating')).strip()]
+                  if row.get('Rating') is not None and safe_extract_string(row.get('Rating'))]
         if ratings:
             try:
-                numeric_ratings = [float(r) for r in ratings if str(r).replace('.', '').isdigit()]
+                numeric_ratings = [float(r) for r in ratings if r is not None and str(r).replace('.', '').isdigit()]
                 if numeric_ratings:
-                    merged_data['Rating'] = max(numeric_ratings)
+                    merged_data['Rating'] = float(max(numeric_ratings))  # Ensure it's a Python float
             except (ValueError, TypeError):
                 pass  # Keep original value
         
         # Dates: Take most recent (Added date)
         dates = []
         for row in rows:
-            date_str = row.get('Added', '').strip()
+            date_str = safe_extract_date_string(row.get('Added'))
             if date_str and date_str != 'nan':
                 try:
                     # Try to parse date for comparison
@@ -237,6 +237,10 @@ class CopyConsolidationProcessor:
             # Use the most recent date string
             most_recent_date = max(dates, key=lambda x: x[0])[1]
             merged_data['Added'] = most_recent_date
+        
+        # Ensure Added field is always a string, not a Timestamp
+        if 'Added' in merged_data:
+            merged_data['Added'] = safe_extract_date_string(merged_data['Added'])
         
         # Boolean fields: OR logic (true if any row is true)
         boolean_fields = ['Loved', 'Owned', 'Played', 'Playing', 'Finished', 
@@ -261,7 +265,7 @@ class CopyConsolidationProcessor:
         # Notes: Concatenate unique non-empty values
         notes = []
         for row in rows:
-            note = row.get('Notes', '').strip()
+            note = safe_extract_string(row.get('Notes'))
             if note and note not in notes and note != 'nan':
                 notes.append(note)
         
@@ -270,7 +274,30 @@ class CopyConsolidationProcessor:
         elif not merged_data.get('Notes'):
             merged_data['Notes'] = ''
         
-        return merged_data
+        # Final cleanup: ensure all values are JSON-serializable
+        json_safe_data = {}
+        for key, value in merged_data.items():
+            # Check if this is a date-related field by name or type
+            is_date_field = (
+                'date' in key.lower() or 
+                'added' in key.lower() or
+                isinstance(value, (pd.Timestamp, datetime))
+            )
+            
+            if is_date_field:
+                # Date fields should be strings
+                json_safe_data[key] = safe_extract_date_string(value)
+            elif key == 'Rating':
+                # Rating should be a Python float or None
+                json_safe_data[key] = safe_extract_numeric(value)
+            elif isinstance(value, pd.Timestamp) or pd.isna(value):
+                # Any other pandas Timestamp or NA values should be converted to string
+                json_safe_data[key] = safe_extract_string(value)
+            else:
+                # Keep other values as-is (they should already be JSON-serializable)
+                json_safe_data[key] = value
+        
+        return json_safe_data
     
     def _extract_copy_data(self, row: Dict[str, Any], csv_row_number: int) -> List[CopyData]:
         """
@@ -283,9 +310,9 @@ class CopyConsolidationProcessor:
         Returns:
             List of CopyData objects (usually one, but can be multiple for fallback platforms)
         """
-        copy_platform = row.get('Copy platform', '').strip()
-        copy_source = row.get('Copy source', '').strip()
-        copy_source_other = row.get('Copy source other', '').strip()
+        copy_platform = safe_extract_string(row.get('Copy platform'))
+        copy_source = safe_extract_string(row.get('Copy source'))
+        copy_source_other = safe_extract_string(row.get('Copy source other'))
         
         # Rule 1: Has copy data (platform or storefront) - this is a real copy
         if copy_platform or copy_source or copy_source_other:
@@ -299,7 +326,7 @@ class CopyConsolidationProcessor:
             
             # Generate copy identifier
             copy_identifier = self._generate_copy_identifier(
-                copy_platform, final_storefront, row.get('Copy media', '').strip()
+                copy_platform, final_storefront, safe_extract_string(row.get('Copy media'))
             )
             
             # Determine if storefront resolution is required
@@ -309,26 +336,26 @@ class CopyConsolidationProcessor:
                 platform=copy_platform if copy_platform else None,
                 storefront=copy_source if copy_source and copy_source != "Other" else None,
                 storefront_other=copy_source_other if copy_source_other else None,
-                media=row.get('Copy media', '').strip(),
+                media=safe_extract_string(row.get('Copy media')),
                 copy_identifier=copy_identifier,
                 csv_row_number=csv_row_number,
                 is_real_copy=True,
                 requires_storefront_resolution=requires_storefront_resolution,
                 
                 # Copy-specific fields
-                label=row.get('Copy label', '').strip(),
-                release=row.get('Copy Release', '').strip(),
-                purchase_date=row.get('Copy purchase date'),
+                label=safe_extract_string(row.get('Copy label')),
+                release=safe_extract_string(row.get('Copy Release')),
+                purchase_date=safe_extract_date_string(row.get('Copy purchase date')),
                 
                 # Physical copy metadata
-                box=row.get('Copy box', '').strip(),
-                box_condition=row.get('Copy box condition', '').strip(),
-                box_notes=row.get('Copy box notes', '').strip(),
-                manual=row.get('Copy manual', '').strip(),
-                manual_condition=row.get('Copy manual condition', '').strip(),
-                manual_notes=row.get('Copy manual notes', '').strip(),
-                complete=row.get('Copy complete', '').strip(),
-                complete_notes=row.get('Copy complete notes', '').strip(),
+                box=safe_extract_string(row.get('Copy box')),
+                box_condition=safe_extract_string(row.get('Copy box condition')),
+                box_notes=safe_extract_string(row.get('Copy box notes')),
+                manual=safe_extract_string(row.get('Copy manual')),
+                manual_condition=safe_extract_string(row.get('Copy manual condition')),
+                manual_notes=safe_extract_string(row.get('Copy manual notes')),
+                complete=safe_extract_string(row.get('Copy complete')),
+                complete_notes=safe_extract_string(row.get('Copy complete notes')),
             )
             
             return [copy_data]
@@ -346,13 +373,13 @@ class CopyConsolidationProcessor:
         Returns:
             List of CopyData objects for fallback platforms
         """
-        platforms_field = row.get('Platforms', '').strip()
+        platforms_field = safe_extract_string(row.get('Platforms'))
         if not platforms_field:
-            logger.warning(f"Row {row.get('_csv_row_number', '?')}: No platform data found for {row.get('Name', 'Unknown Game')}")
+            logger.warning(f"Row {row.get('_csv_row_number', '?')}: No platform data found for {safe_extract_string(row.get('Name'), 'Unknown Game')}")
             return []
         
         # Parse comma-separated platforms
-        platform_names = [p.strip() for p in platforms_field.split(',') if p.strip()]
+        platform_names = [safe_extract_string(p) for p in platforms_field.split(',') if safe_extract_string(p)]
         
         fallback_copies = []
         for i, platform_name in enumerate(platform_names):
@@ -407,7 +434,7 @@ class CopyConsolidationProcessor:
         
         return f"{base_id}#{hash_suffix}"
     
-    def get_consolidation_stats(self) -> Dict[str, int]:
+    def get_consolidation_stats(self) -> Dict[str, Any]:
         """Get statistics about the consolidation process."""
         return {
             'processed_games': self.processed_games,

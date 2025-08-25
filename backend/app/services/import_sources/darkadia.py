@@ -32,6 +32,7 @@ from ...services.igdb import IGDBService
 from ...services.platform_resolution import create_platform_resolution_service
 from .darkadia_transformer import DarkadiaTransformationPipeline
 from .copy_consolidation import CopyConsolidationProcessor, ConsolidatedGame
+from ...utils.json_serialization import safe_json_dumps, log_serialization_debug, enhanced_safe_json_dumps
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -598,8 +599,21 @@ class DarkadiaImportService(ImportSourceService):
                     ignored=False
                 )
                 
-                # Store consolidated base data as CSV data
-                darkadia_game.set_csv_data(consolidated_game.base_data)
+                # Store consolidated base data as CSV data (with enhanced debug logging)
+                logger.debug(f"About to set CSV data for game '{consolidated_game.name}'")
+                log_serialization_debug(consolidated_game.base_data, f"base_data for game '{consolidated_game.name}'")
+                
+                # Use enhanced serialization for setting CSV data to catch any remaining issues
+                try:
+                    darkadia_game.set_csv_data(consolidated_game.base_data)
+                    logger.debug(f"Successfully set CSV data for game '{consolidated_game.name}'")
+                except Exception as csv_data_error:
+                    logger.error(f"Failed to set CSV data for game '{consolidated_game.name}': {csv_data_error}")
+                    # Try with enhanced safe conversion first
+                    from ...utils.json_serialization import make_json_serializable
+                    safe_base_data = make_json_serializable(consolidated_game.base_data)
+                    darkadia_game.set_csv_data(safe_base_data)
+                    logger.warning(f"Used enhanced conversion for CSV data for game '{consolidated_game.name}'")
                 
                 self.session.add(darkadia_game)
                 self.session.flush()  # Get the DarkadiaGame ID
@@ -626,6 +640,32 @@ class DarkadiaImportService(ImportSourceService):
         """Create DarkadiaImport records for a consolidated game with multiple copies."""
         try:
             for copy_data in consolidated_game.copies:
+                # Enhanced debug logging for copy data serialization issues
+                copy_data_dict = {
+                    'platform': copy_data.platform,
+                    'storefront': copy_data.storefront,
+                    'storefront_other': copy_data.storefront_other,
+                    'media': copy_data.media,
+                    'label': copy_data.label,
+                    'release': copy_data.release,
+                    'purchase_date': copy_data.purchase_date,
+                    'box': copy_data.box,
+                    'box_condition': copy_data.box_condition,
+                    'box_notes': copy_data.box_notes,
+                    'manual': copy_data.manual,
+                    'manual_condition': copy_data.manual_condition,
+                    'manual_notes': copy_data.manual_notes,
+                    'complete': copy_data.complete,
+                    'complete_notes': copy_data.complete_notes
+                }
+                
+                logger.debug(f"Processing copy '{copy_data.copy_identifier}' for game '{darkadia_game.game_name}'")
+                log_serialization_debug(copy_data_dict, f"copy_data for game '{darkadia_game.game_name}' copy '{copy_data.copy_identifier}'")
+                
+                # Additional debug: check the specific fields that might contain Timestamps
+                logger.debug(f"Copy purchase_date type: {type(copy_data.purchase_date)} = {copy_data.purchase_date}")
+                logger.debug(f"Copy release type: {type(copy_data.release)} = {copy_data.release}")
+                
                 # Create a DarkadiaImport record for each copy
                 darkadia_import = DarkadiaImport(
                     user_id=darkadia_game.user_id,
@@ -637,7 +677,8 @@ class DarkadiaImportService(ImportSourceService):
                     import_timestamp=datetime.now(timezone.utc),
                     
                     # Original CSV data - store the base data merged with copy-specific data
-                    original_csv_data_json=json.dumps({
+                    # Use enhanced safe JSON dumps with better error handling and debugging
+                    original_csv_data_json=enhanced_safe_json_dumps({
                         **consolidated_game.base_data,
                         'Copy platform': copy_data.platform or '',
                         'Copy source': copy_data.storefront or '',
@@ -654,7 +695,7 @@ class DarkadiaImportService(ImportSourceService):
                         'Copy manual notes': copy_data.manual_notes,
                         'Copy complete': copy_data.complete,
                         'Copy complete notes': copy_data.complete_notes
-                    }),
+                    }, context=f"original_csv_data for game '{darkadia_game.game_name}' copy '{copy_data.copy_identifier}'"),
                     
                     # Boolean flags from consolidated base data
                     played=bool(consolidated_game.base_data.get('Played', False)),
@@ -673,7 +714,7 @@ class DarkadiaImportService(ImportSourceService):
                     requires_storefront_resolution=copy_data.requires_storefront_resolution,
                     
                     # Copy metadata
-                    physical_copy_data_json=json.dumps({
+                    physical_copy_data_json=safe_json_dumps({
                         'media': copy_data.media,
                         'label': copy_data.label,
                         'release': copy_data.release,
