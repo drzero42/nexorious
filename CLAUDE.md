@@ -150,6 +150,7 @@ npm run test   # Must pass (all 778 tests)
 #### Backend Changes  
 ```bash
 uv run alembic upgrade head  # After pulling changes
+uv run ruff check . # Check for common errors and problems
 uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverage
 ```
 
