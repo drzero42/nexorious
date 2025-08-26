@@ -3,7 +3,7 @@ Tagging system models for game organization and categorization.
 """
 
 from sqlmodel import SQLModel, Field, Relationship, UniqueConstraint
-from pydantic import PrivateAttr, ConfigDict
+from pydantic import PrivateAttr
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
@@ -29,9 +29,6 @@ class Tag(SQLModel, table=True):
     def game_count(self) -> Optional[int]:
         """Computed field that returns the game count."""
         return self._game_count
-    
-    # Model configuration
-    model_config = ConfigDict(from_attributes=True)
     
     # Relationships
     user: "User" = Relationship(back_populates="tags")
