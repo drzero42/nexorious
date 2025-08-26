@@ -104,7 +104,7 @@ async def list_platforms(
         # Query associated storefronts for this platform
         storefront_query = (
             select(Storefront)
-            .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+            .join(PlatformStorefront)
             .where(PlatformStorefront.platform_id == platform.id)
             .where(Storefront.is_active == True)  # Only include active storefronts
             .order_by(Storefront.display_name)
@@ -167,7 +167,7 @@ async def get_platform_storefronts(
     # Query for associated storefronts via the junction table
     query = (
         select(Storefront)
-        .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+        .join(PlatformStorefront)
         .where(PlatformStorefront.platform_id == platform_id)
     )
     
@@ -184,7 +184,7 @@ async def get_platform_storefronts(
         platform_id=platform.id,
         platform_name=platform.name,
         platform_display_name=platform.display_name,
-        storefronts=storefronts,
+        storefronts=[StorefrontResponse.model_validate(sf) for sf in storefronts],
         total_storefronts=len(storefronts)
     )
 
