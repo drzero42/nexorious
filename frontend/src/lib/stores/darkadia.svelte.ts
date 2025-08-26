@@ -791,6 +791,74 @@ function createDarkadiaStore() {
       }
     },
 
+    async resetImport(): Promise<void> {
+      const wasLoading = state.isLoading;
+      state = { 
+        ...state, 
+        isLoading: true, 
+        error: null 
+      };
+
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/reset`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.resetImport();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to reset Darkadia import');
+        }
+
+        const result = await response.json();
+        
+        // Reset all local state to initial values
+        state = {
+          games: [],
+          total: 0,
+          isLoading: false,
+          isUploading: false,
+          isImporting: false,
+          isAutoMatching: false,
+          isSyncing: false,
+          isUnignoringAll: false,
+          isUnmatchingAll: false,
+          uploadState: initialUploadState,
+          config: null,
+          previewData: null,
+          filters: initialFilters,
+          stats: initialStats,
+          activeBatchSession: null,
+          isBatchProcessing: false,
+          error: null,
+          lastRefresh: new Date()
+        };
+        
+        // Show success message with details
+        ui.showSuccess(
+          `Reset completed: ${result.unsynced_games} games removed from collection, ` +
+          `${result.deleted_games} staging games deleted, ` +
+          `${result.deleted_imports} import records cleared`
+        );
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to reset Darkadia import';
+        state = { 
+          ...state, 
+          isLoading: wasLoading,
+          error: errorMessage 
+        };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
     async unmatchAllGames(): Promise<DarkadiaGamesBulkUnmatchResponse> {
       state = { ...state, isUnmatchingAll: true, error: null };
 

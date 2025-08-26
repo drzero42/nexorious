@@ -870,6 +870,9 @@ class DarkadiaImportService(ImportSourceService):
                 game_name=darkadia_game.game_name,
                 csv_row_number=csv_row_number,
                 copy_identifier=copy_identifier,
+                batch_id=darkadia_game.id,  # Set batch_id to DarkadiaGame ID
+                csv_file_hash="",  # Will be set during actual import
+                import_timestamp=datetime.now(timezone.utc),
                 original_platform_name=original_platform_name,
                 original_storefront_name=original_storefront_name,
                 platform_resolved=platform_resolved,
@@ -1763,6 +1766,97 @@ class DarkadiaImportService(ImportSourceService):
             failed_operations=0,
             errors=[]
         )
+    
+    async def reset_import(self, user_id: str) -> Dict[str, Any]:
+        """
+        Complete reset of Darkadia import data.
+        
+        Unsyncs all synced games, deletes all import data, clears configuration,
+        and removes uploaded CSV file. Returns the system to pre-import state.
+        """
+        try:
+            logger.info(f"🔄 [Darkadia Reset] Starting complete reset for user {user_id}")
+            
+            # Statistics to return
+            stats = {
+                "deleted_games": 0,
+                "unsynced_games": 0, 
+                "deleted_imports": 0,
+                "config_cleared": False,
+                "file_deleted": False
+            }
+            
+            # Step 1: Unsync all synced games (this removes UserGame records but preserves DarkadiaGame records)
+            logger.info("🔄 [Darkadia Reset] Step 1: Unsyncing all games...")
+            unsync_result = await self.unsync_all_games(user_id)
+            stats["unsynced_games"] = unsync_result.successful_operations
+            logger.info(f"🔄 [Darkadia Reset] Unsynced {stats['unsynced_games']} games")
+            
+            # Step 2: Delete all DarkadiaImport records for this user
+            logger.info("🔄 [Darkadia Reset] Step 2: Deleting DarkadiaImport records...")
+            darkadia_imports = self.session.exec(
+                select(DarkadiaImport).where(DarkadiaImport.user_id == user_id)
+            ).all()
+            
+            for darkadia_import in darkadia_imports:
+                self.session.delete(darkadia_import)
+            
+            stats["deleted_imports"] = len(darkadia_imports)
+            logger.info(f"🔄 [Darkadia Reset] Deleted {stats['deleted_imports']} import records")
+            
+            # Step 3: Delete all DarkadiaGame records for this user
+            logger.info("🔄 [Darkadia Reset] Step 3: Deleting DarkadiaGame records...")
+            darkadia_games = self.session.exec(
+                select(DarkadiaGame).where(DarkadiaGame.user_id == user_id)
+            ).all()
+            
+            for darkadia_game in darkadia_games:
+                self.session.delete(darkadia_game)
+            
+            stats["deleted_games"] = len(darkadia_games)
+            logger.info(f"🔄 [Darkadia Reset] Deleted {stats['deleted_games']} staging games")
+            
+            # Step 4: Clear user Darkadia configuration
+            logger.info("🔄 [Darkadia Reset] Step 4: Clearing user configuration...")
+            user = self.session.get(User, user_id)
+            if user:
+                preferences = user.preferences or {}
+                darkadia_config = preferences.get("darkadia", {})
+                csv_file_path = darkadia_config.get("csv_file_path")
+                
+                # Clear Darkadia configuration
+                if "darkadia" in preferences:
+                    del preferences["darkadia"]
+                    # Always use "{}" as the default instead of None to respect the NOT NULL constraint
+                    user.preferences_json = json.dumps(preferences) if preferences else "{}"
+                    user.updated_at = datetime.now(timezone.utc)
+                    self.session.add(user)
+                    stats["config_cleared"] = True
+                    logger.info("🔄 [Darkadia Reset] Cleared user configuration")
+                
+                # Step 5: Delete CSV file if it exists
+                if csv_file_path and Path(csv_file_path).exists():
+                    try:
+                        Path(csv_file_path).unlink()
+                        stats["file_deleted"] = True
+                        logger.info(f"🔄 [Darkadia Reset] Deleted CSV file: {csv_file_path}")
+                    except Exception as file_error:
+                        logger.warning(f"🔄 [Darkadia Reset] Failed to delete CSV file {csv_file_path}: {file_error}")
+            
+            # Commit all changes
+            self.session.commit()
+            
+            logger.info(f"🔄 [Darkadia Reset] Reset completed successfully: {stats}")
+            
+            return {
+                "message": "Darkadia import reset completed successfully",
+                **stats
+            }
+            
+        except Exception as e:
+            logger.error(f"🔄 [Darkadia Reset] Error during reset for user {user_id}: {str(e)}")
+            self.session.rollback()
+            raise ValueError(f"Failed to reset Darkadia import: {str(e)}")
 
 
 def create_darkadia_import_service(session: Session) -> DarkadiaImportService:

@@ -36,7 +36,8 @@ from ...schemas.darkadia import (
     DarkadiaConfigResponse,
     DarkadiaVerificationRequest,
     DarkadiaUploadResponse,
-    DarkadiaResolutionSummary
+    DarkadiaResolutionSummary,
+    DarkadiaResetResponse
 )
 from ....api.schemas.platform import (
     PendingResolutionsListResponse,
@@ -1133,4 +1134,52 @@ async def bulk_resolve_darkadia_platforms(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to bulk resolve platforms"
+        )
+
+
+@router.delete("/reset", response_model=DarkadiaResetResponse)
+async def reset_darkadia_import(
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> DarkadiaResetResponse:
+    """
+    Complete reset of Darkadia import data.
+    
+    This will:
+    1. Remove all synced games from the main collection
+    2. Delete all Darkadia staging games
+    3. Delete all import tracking records
+    4. Clear user configuration
+    5. Delete uploaded CSV file
+    
+    WARNING: This action cannot be undone. All Darkadia import data will be permanently deleted.
+    """
+    try:
+        logger.info(f"🔄 Starting Darkadia import reset for user {current_user.id}")
+        
+        # Perform the reset
+        result = await darkadia_service.reset_import(current_user.id)
+        
+        logger.info(f"🔄 Darkadia import reset completed for user {current_user.id}: {result}")
+        
+        return DarkadiaResetResponse(
+            message=result["message"],
+            deleted_games=result["deleted_games"],
+            unsynced_games=result["unsynced_games"],
+            deleted_imports=result["deleted_imports"],
+            config_cleared=result["config_cleared"],
+            file_deleted=result["file_deleted"]
+        )
+        
+    except ValueError as e:
+        logger.warning(f"🔄 Reset validation error for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"🔄 Error resetting Darkadia import for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset Darkadia import"
         )

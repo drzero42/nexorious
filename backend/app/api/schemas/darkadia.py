@@ -225,3 +225,13 @@ class DarkadiaGameAutoMatchSingleResponse(BaseModel):
     game: DarkadiaGameResponse = Field(..., description="Updated Darkadia game information")
     matched: bool = Field(..., description="Whether the game was successfully auto-matched")
     confidence: Optional[float] = Field(None, description="Matching confidence score if matched")
+
+
+class DarkadiaResetResponse(BaseModel):
+    """Response schema for complete Darkadia import reset operation."""
+    message: str = Field(..., description="Status message about the reset operation")
+    deleted_games: int = Field(..., description="Number of staging games deleted")
+    unsynced_games: int = Field(..., description="Number of games removed from main collection")
+    deleted_imports: int = Field(..., description="Number of import records deleted")
+    config_cleared: bool = Field(..., description="Whether user configuration was cleared")
+    file_deleted: bool = Field(..., description="Whether CSV file was deleted from filesystem")

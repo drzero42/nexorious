@@ -40,6 +40,9 @@
   let showPlatformResolutionModal = $state(false);
   let pendingPlatformResolutions = $state(0);
 
+  // Reset confirmation state
+  let showResetModal = $state(false);
+
   // Initialize Darkadia data when auth is ready
   let hasInitialized = $state(false);
   
@@ -552,6 +555,27 @@
       isLoading = false;
     }
   }
+
+  // Reset handlers
+  function handleOpenResetModal() {
+    showResetModal = true;
+  }
+
+  function handleCloseResetModal() {
+    showResetModal = false;
+  }
+
+  async function handleConfirmReset() {
+    try {
+      await darkadia.resetImport();
+      showResetModal = false;
+      
+      // Refresh the data after reset
+      await initializeDarkadiaData();
+    } catch (error) {
+      console.error('Failed to reset Darkadia import:', error);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -642,6 +666,18 @@
                 Resolve Platforms ({pendingPlatformResolutions})
               </button>
             {/if}
+
+            <!-- Reset Button -->
+            <button
+              onclick={handleOpenResetModal}
+              class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              title="Reset all Darkadia import data"
+            >
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Reset Import
+            </button>
           {/if}
         </div>
       </div>
@@ -1175,3 +1211,71 @@
   onClose={handleClosePlatformResolution}
   onResolutionsComplete={handlePlatformResolutionsComplete}
 />
+
+<!-- Reset Confirmation Modal -->
+{#if showResetModal}
+  <div 
+    class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" 
+    onclick={handleCloseResetModal}
+    onkeydown={(e) => e.key === 'Escape' && handleCloseResetModal()}
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="reset-modal-title"
+    tabindex="-1"
+  >
+    <div 
+      class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" 
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="document"
+    >
+      <div class="mt-3">
+        <!-- Warning Icon -->
+        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+          <svg class="h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.268 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        </div>
+        
+        <!-- Title -->
+        <h3 id="reset-modal-title" class="text-lg font-semibold text-gray-900 text-center mb-2">
+          Reset Darkadia Import
+        </h3>
+        
+        <!-- Warning Message -->
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+          <div class="text-sm text-red-800">
+            <p class="font-medium mb-2">⚠️ This action cannot be undone!</p>
+            <p class="mb-2">This will permanently:</p>
+            <ul class="list-disc list-inside space-y-1 text-xs">
+              <li>Remove all synced games from your collection</li>
+              <li>Delete all Darkadia staging games</li>
+              <li>Clear all import tracking records</li>
+              <li>Reset your Darkadia configuration</li>
+              <li>Delete your uploaded CSV file</li>
+            </ul>
+          </div>
+        </div>
+        
+        <!-- Buttons -->
+        <div class="flex gap-3">
+          <button
+            onclick={handleCloseResetModal}
+            class="flex-1 btn-secondary"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleConfirmReset}
+            class="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+          >
+            <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Yes, Reset Import
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
