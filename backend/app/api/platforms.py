@@ -571,7 +571,7 @@ async def get_platform_default_storefront(
         platform_id=platform.id,
         platform_name=platform.name,
         platform_display_name=platform.display_name,
-        default_storefront=default_storefront
+        default_storefront=StorefrontResponse.model_validate(default_storefront) if default_storefront is not None else None
     )
 
 
@@ -622,7 +622,7 @@ async def update_platform_default_storefront(
         platform_id=platform.id,
         platform_name=platform.name,
         platform_display_name=platform.display_name,
-        default_storefront=default_storefront
+        default_storefront=StorefrontResponse.model_validate(default_storefront) if default_storefront is not None else None
     )
 
 

@@ -3,6 +3,7 @@ Tag API schemas for request/response validation.
 """
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic_core import PydanticCustomError
 from typing import Optional, List
 from datetime import datetime
 import re
@@ -39,11 +40,17 @@ class TagCreateRequest(BaseModel):
     def validate_name(cls, v):
         """Validate tag name."""
         if not v or not v.strip():
-            raise ValueError('Tag name cannot be empty')
+            raise PydanticCustomError(
+                'value_error',
+                'Tag name cannot be empty'
+            )
         # Remove extra whitespace and normalize
         v = v.strip()
         if len(v) > 100:
-            raise ValueError('Tag name cannot exceed 100 characters')
+            raise PydanticCustomError(
+                'value_error',
+                'Tag name cannot exceed 100 characters'
+            )
         return v
 
     @field_validator('color')
@@ -51,7 +58,10 @@ class TagCreateRequest(BaseModel):
     def validate_color(cls, v):
         """Validate hex color format."""
         if v and not re.match(r'^#[0-9A-Fa-f]{6}$', v):
-            raise ValueError('Color must be a valid hex color code (e.g., #FF0000)')
+            raise PydanticCustomError(
+                'value_error',
+                'Color must be a valid hex color code (e.g., #FF0000)'
+            )
         return v.upper() if v else "#6B7280"
 
     @field_validator('description')
@@ -63,7 +73,10 @@ class TagCreateRequest(BaseModel):
             if not v:  # Empty string after strip
                 return None
             if len(v) > 500:
-                raise ValueError('Description cannot exceed 500 characters')
+                raise PydanticCustomError(
+                    'value_error',
+                    'Description cannot exceed 500 characters'
+                )
         return v
 
 
@@ -84,11 +97,17 @@ class TagUpdateRequest(BaseModel):
         """Validate tag name."""
         if v is not None:
             if not v or not v.strip():
-                raise ValueError('Tag name cannot be empty')
+                raise PydanticCustomError(
+                    'value_error',
+                    'Tag name cannot be empty'
+                )
             # Remove extra whitespace and normalize
             v = v.strip()
             if len(v) > 100:
-                raise ValueError('Tag name cannot exceed 100 characters')
+                raise PydanticCustomError(
+                    'value_error',
+                    'Tag name cannot exceed 100 characters'
+                )
         return v
 
     @field_validator('color')
@@ -96,7 +115,10 @@ class TagUpdateRequest(BaseModel):
     def validate_color(cls, v):
         """Validate hex color format."""
         if v is not None and not re.match(r'^#[0-9A-Fa-f]{6}$', v):
-            raise ValueError('Color must be a valid hex color code (e.g., #FF0000)')
+            raise PydanticCustomError(
+                'value_error',
+                'Color must be a valid hex color code (e.g., #FF0000)'
+            )
         return v.upper() if v else None
 
     @field_validator('description')
@@ -108,7 +130,10 @@ class TagUpdateRequest(BaseModel):
             if not v:  # Empty string after strip
                 return None
             if len(v) > 500:
-                raise ValueError('Description cannot exceed 500 characters')
+                raise PydanticCustomError(
+                    'value_error',
+                    'Description cannot exceed 500 characters'
+                )
         return v
 
 
@@ -132,9 +157,15 @@ class TagAssignRequest(BaseModel):
     def validate_tag_ids(cls, v):
         """Validate tag IDs list."""
         if not v:
-            raise ValueError('At least one tag ID is required')
+            raise PydanticCustomError(
+                'value_error',
+                'At least one tag ID is required'
+            )
         if len(v) > 50:  # Reasonable limit
-            raise ValueError('Cannot assign more than 50 tags at once')
+            raise PydanticCustomError(
+                'value_error',
+                'Cannot assign more than 50 tags at once'
+            )
         # Remove duplicates while preserving order
         seen = set()
         unique_ids = []
@@ -155,9 +186,15 @@ class TagRemoveRequest(BaseModel):
     def validate_tag_ids(cls, v):
         """Validate tag IDs list."""
         if not v:
-            raise ValueError('At least one tag ID is required')
+            raise PydanticCustomError(
+                'value_error',
+                'At least one tag ID is required'
+            )
         if len(v) > 50:  # Reasonable limit
-            raise ValueError('Cannot remove more than 50 tags at once')
+            raise PydanticCustomError(
+                'value_error',
+                'Cannot remove more than 50 tags at once'
+            )
         # Remove duplicates while preserving order
         seen = set()
         unique_ids = []
@@ -179,9 +216,15 @@ class BulkTagOperationRequest(BaseModel):
     def validate_user_game_ids(cls, v):
         """Validate user game IDs list."""
         if not v:
-            raise ValueError('At least one game ID is required')
+            raise PydanticCustomError(
+                'value_error',
+                'At least one game ID is required'
+            )
         if len(v) > 100:  # Reasonable limit
-            raise ValueError('Cannot operate on more than 100 games at once')
+            raise PydanticCustomError(
+                'value_error',
+                'Cannot operate on more than 100 games at once'
+            )
         return list(set(v))  # Remove duplicates
 
     @field_validator('tag_ids')
@@ -189,9 +232,15 @@ class BulkTagOperationRequest(BaseModel):
     def validate_tag_ids(cls, v):
         """Validate tag IDs list."""
         if not v:
-            raise ValueError('At least one tag ID is required')
+            raise PydanticCustomError(
+                'value_error',
+                'At least one tag ID is required'
+            )
         if len(v) > 50:  # Reasonable limit
-            raise ValueError('Cannot operate on more than 50 tags at once')
+            raise PydanticCustomError(
+                'value_error',
+                'Cannot operate on more than 50 tags at once'
+            )
         return list(set(v))  # Remove duplicates
 
 

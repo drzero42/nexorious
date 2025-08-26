@@ -3,6 +3,7 @@ Platform and storefront-related schemas for API requests and responses.
 """
 
 from pydantic import BaseModel, Field, HttpUrl, ConfigDict, field_validator
+from pydantic_core import PydanticCustomError
 from typing import Optional, List, Literal
 from datetime import datetime
 from .common import TimestampMixin
@@ -34,9 +35,10 @@ class PlatformCreateRequest(BaseModel):
             HttpUrl(v)
             return v
         except Exception:
-            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
-        
-        return v
+            raise PydanticCustomError(
+                'value_error',
+                'Icon URL must be a valid URL or a relative path starting with /static/'
+            )
 
 
 class PlatformUpdateRequest(BaseModel):
@@ -64,9 +66,10 @@ class PlatformUpdateRequest(BaseModel):
             HttpUrl(v)
             return v
         except Exception:
-            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
-        
-        return v
+            raise PydanticCustomError(
+                'value_error',
+                'Icon URL must be a valid URL or a relative path starting with /static/'
+            )
 
 
 class PlatformResponse(BaseModel, TimestampMixin):
@@ -110,9 +113,10 @@ class StorefrontCreateRequest(BaseModel):
             HttpUrl(v)
             return v
         except Exception:
-            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
-        
-        return v
+            raise PydanticCustomError(
+                'value_error',
+                'Icon URL must be a valid URL or a relative path starting with /static/'
+            )
 
 
 class StorefrontUpdateRequest(BaseModel):
@@ -140,9 +144,10 @@ class StorefrontUpdateRequest(BaseModel):
             HttpUrl(v)
             return v
         except Exception:
-            raise ValueError('Icon URL must be a valid URL or a relative path starting with /static/')
-        
-        return v
+            raise PydanticCustomError(
+                'value_error',
+                'Icon URL must be a valid URL or a relative path starting with /static/'
+            )
 
 
 class StorefrontResponse(BaseModel, TimestampMixin):
