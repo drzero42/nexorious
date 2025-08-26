@@ -6,7 +6,7 @@ from alembic import command
 from alembic.config import Config
 
 # Import all models to ensure they are registered with SQLModel
-from ..models import *
+from ..models import *  # noqa: F403
 
 logger = logging.getLogger(__name__)
 
