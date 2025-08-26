@@ -6,7 +6,7 @@ import API structure, integrating with existing batch session infrastructure.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select, and_
+from sqlmodel import Session, select, and_, col
 from typing import Annotated, List
 import logging
 
@@ -26,6 +26,7 @@ from ...schemas.batch import (
     BatchStatusResponse,
     BatchCancelResponse
 )
+from ...schemas.steam import SteamGameResponse
 
 router = APIRouter(prefix="/batch", tags=["Steam Batch Import"])
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ async def start_batch_auto_match(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                col(SteamGame.igdb_id).is_(None),  # No IGDB match yet
                 SteamGame.ignored == False    # Not ignored by user
             )
         )
@@ -144,9 +145,9 @@ async def process_next_auto_match_batch(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                SteamGame.igdb_id.is_(None),
+                col(SteamGame.igdb_id).is_(None),
                 SteamGame.ignored == False,
-                ~SteamGame.id.in_(batch_session.processed_item_ids)  # Exclude already processed
+                col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)
         
@@ -197,13 +198,13 @@ async def process_next_auto_match_batch(
         
         # Get updated games data for response
         updated_games_query = select(SteamGame).where(
-            SteamGame.id.in_(game_ids)
+            col(SteamGame.id).in_(game_ids)
         )
         updated_games = db_session.exec(updated_games_query).all()
         
         # Convert to response format using the original Steam schema field names
         current_batch_items = [
-            {
+            SteamGameResponse.model_validate({
                 "id": game.id,
                 "steam_appid": game.steam_appid,  # Keep original field name for schema compatibility
                 "game_name": game.game_name,  # Keep original field name for schema compatibility
@@ -214,7 +215,7 @@ async def process_next_auto_match_batch(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            }
+            })
             for game in updated_games
         ]
         
@@ -275,8 +276,8 @@ async def start_batch_sync(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                SteamGame.igdb_id.is_not(None),  # Has IGDB match
-                SteamGame.game_id.is_(None),     # Not yet synced to collection
+                col(SteamGame.igdb_id).is_not(None),  # Has IGDB match
+                col(SteamGame.game_id).is_(None),     # Not yet synced to collection
                 SteamGame.ignored == False       # Not ignored by user
             )
         )
@@ -361,10 +362,10 @@ async def process_next_sync_batch(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                SteamGame.igdb_id.is_not(None),
-                SteamGame.game_id.is_(None),
+                col(SteamGame.igdb_id).is_not(None),
+                col(SteamGame.game_id).is_(None),
                 SteamGame.ignored == False,
-                ~SteamGame.id.in_(batch_session.processed_item_ids)  # Exclude already processed
+                col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)
         
@@ -421,13 +422,13 @@ async def process_next_sync_batch(
         
         # Get updated games data for response
         updated_games_query = select(SteamGame).where(
-            SteamGame.id.in_(game_ids)
+            col(SteamGame.id).in_(game_ids)
         )
         updated_games = db_session.exec(updated_games_query).all()
         
         # Convert to response format using the original Steam schema field names
         current_batch_items = [
-            {
+            SteamGameResponse.model_validate({
                 "id": game.id,
                 "steam_appid": game.steam_appid,  # Keep original field name for schema compatibility
                 "game_name": game.game_name,  # Keep original field name for schema compatibility  
@@ -438,7 +439,7 @@ async def process_next_sync_batch(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            }
+            })
             for game in updated_games
         ]
         
@@ -579,7 +580,7 @@ async def cancel_batch_session(
 
 def _create_batch_response(
     batch_session, 
-    current_batch_items: List[dict], 
+    current_batch_items: List[SteamGameResponse], 
     message: str
 ) -> BatchNextResponse:
     """Helper function to create a consistent batch response."""
