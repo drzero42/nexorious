@@ -289,42 +289,6 @@ class TestSecureFileUploadValidator:
             if result.file_path:
                 SecureFileUploadValidator.cleanup_temp_file(result.file_path)
     
-    @pytest.mark.asyncio  
-    async def test_mime_type_detection(self):
-        """Test MIME type detection (when python-magic is available)."""
-        # Create content that looks like CSV
-        csv_content = self.create_valid_csv_content()
-        upload_file = self.create_mock_upload_file("test.csv", csv_content, "text/csv")
-        
-        # Test with python-magic available
-        with patch('app.security.file_upload_validator.MAGIC_AVAILABLE', True):
-            # Import the validator module and patch magic directly
-            import app.security.file_upload_validator as validator_module
-            mock_magic = Mock()
-            mock_magic.from_buffer.return_value = 'text/plain'
-            
-            # Temporarily add magic to the module
-            original_magic = getattr(validator_module, 'magic', None)
-            validator_module.magic = mock_magic
-            try:
-                result = await SecureFileUploadValidator.validate_upload(upload_file, "test_user")
-                assert result.mime_type == 'text/plain', "Should detect MIME type"
-            finally:
-                # Restore original state
-                if original_magic is not None:
-                    validator_module.magic = original_magic
-                elif hasattr(validator_module, 'magic'):
-                    delattr(validator_module, 'magic')
-        
-        # Test with python-magic not available
-        with patch('app.security.file_upload_validator.MAGIC_AVAILABLE', False):
-            result = await SecureFileUploadValidator.validate_upload(upload_file, "test_user")
-            assert any("Advanced MIME type detection not available" in warning for warning in result.warnings), \
-                "Should warn about missing python-magic"
-        
-        if result.file_path:
-            SecureFileUploadValidator.cleanup_temp_file(result.file_path)
-    
     @pytest.mark.asyncio
     async def test_no_file_provided(self):
         """Test handling when no file is provided."""

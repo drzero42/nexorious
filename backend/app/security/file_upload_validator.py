@@ -26,14 +26,6 @@ from typing import Optional, List, Tuple
 from dataclasses import dataclass, field
 from fastapi import UploadFile
 
-# Try to import python-magic, fall back to basic detection if not available
-try:
-    import magic
-    MAGIC_AVAILABLE = True
-except ImportError:
-    MAGIC_AVAILABLE = False
-    logging.warning("python-magic not available, using basic MIME type validation")
-
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -178,29 +170,14 @@ class SecureFileUploadValidator:
             # 5. Generate file hash for deduplication and integrity
             result.file_hash = hashlib.sha256(content).hexdigest()
             
-            # 6. Detect actual MIME type using python-magic (content-based detection)
-            if MAGIC_AVAILABLE:
-                try:
-                    result.mime_type = magic.from_buffer(content, mime=True)
-                    if result.mime_type not in SecureFileUploadValidator.ALLOWED_MIME_TYPES:
-                        result.errors.append(f"File content type mismatch: detected {result.mime_type}, expected CSV")
-                        logger.warning(f"MIME type mismatch for user {user_id}: claimed={file.content_type}, detected={result.mime_type}")
-                        return result
-                except Exception as e:
-                    logger.warning(f"Could not detect MIME type: {e}")
-                    result.warnings.append("Could not verify file type")
-            else:
-                result.warnings.append("Advanced MIME type detection not available")
-                # Fall back to basic content type validation (already done above)
-            
-            # 7. Validate encoding and detect charset
+            # 6. Validate encoding and detect charset
             encoding_result = SecureFileUploadValidator._detect_and_validate_encoding(content)
             if not encoding_result[0]:
                 result.errors.extend(encoding_result[2])
                 return result
             result.detected_encoding = encoding_result[1]
             
-            # 8. Validate CSV structure
+            # 7. Validate CSV structure
             csv_validation = SecureFileUploadValidator._validate_csv_structure(content, result.detected_encoding)
             if not csv_validation[0]:
                 result.errors.extend(csv_validation[3])
@@ -209,7 +186,7 @@ class SecureFileUploadValidator:
             result.row_count = csv_validation[1]
             result.column_count = csv_validation[2]
             
-            # 9. Create secure temporary file
+            # 8. Create secure temporary file
             secure_temp_file = SecureFileUploadValidator._create_secure_temp_file(
                 content, user_id, result.file_hash, temp_dir
             )
