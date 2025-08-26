@@ -77,7 +77,7 @@
     </div>
    {/if}
 
-   <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-6">
+   <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-6" data-testid="login-form">
     <div>
      <label for="username" class="form-label">
       Username
@@ -92,6 +92,8 @@
       placeholder="Enter your username"
       class="form-input"
       disabled={isLoading}
+      data-testid="login-username"
+      data-playwright="username-field"
      />
     </div>
 
@@ -108,6 +110,8 @@
       placeholder="Enter your password"
       class="form-input"
       disabled={isLoading}
+      data-testid="login-password"
+      data-playwright="password-field"
      />
     </div>
 
@@ -116,6 +120,8 @@
       type="submit"
       disabled={isLoading}
       class="flex w-full justify-center rounded-md bg-primary-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+      data-testid="login-submit"
+      data-playwright="login-button"
      >
       {#if isLoading}
        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

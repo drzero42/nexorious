@@ -242,6 +242,8 @@
               <button
                 onclick={() => auth.logout()}
                 class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                data-testid="logout-button"
+                data-playwright="logout-button"
               >
                 <span class="text-lg">↪️</span>
                 Logout
@@ -472,6 +474,8 @@
                     <button
                       onclick={() => { auth.logout(); closeMobileMenu(); }}
                       class="group -mx-2 flex w-full gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                      data-testid="logout-button-mobile"
+                      data-playwright="logout-button-mobile"
                     >
                       <span class="text-lg">↪️</span>
                       Sign out

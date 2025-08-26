@@ -138,6 +138,7 @@ uv run pytest scripts/tests/ -v
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
 - **Alembic Migrations**: Always read `docs/alembic-migrations-guide.md` before creating or modifying database migrations
 - **Svelte Components**: Always read `docs/svelte5-syntax-guide.md` before writing or modifying Svelte components
+- **Playwright Automation**: Always read `docs/playwright-automation-guide.md` before working with Playwright MCP for browser automation
 
 ### Required After Code Changes
 
