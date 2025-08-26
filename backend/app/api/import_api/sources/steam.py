@@ -19,6 +19,7 @@ from ...schemas.import_schemas import (
     VerificationResponse,
     LibraryPreviewResponse,
     ImportGamesList,
+    ImportGameResponse,
     ImportStartResponse,
     GameMatchRequest,
     GameMatchResponse,
@@ -215,7 +216,8 @@ async def verify_steam_config(
         logger.error(f"Error verifying Steam config for user {current_user.id}: {str(e)}")
         return SteamVerificationResponse(
             is_valid=False,
-            error_message="Verification failed due to an unexpected error"
+            error_message="Verification failed due to an unexpected error",
+            steam_user_info=None
         )
 
 
@@ -241,7 +243,8 @@ async def resolve_vanity_url(
         logger.error(f"Error resolving vanity URL for user {current_user.id}: {str(e)}")
         return SteamVanityResolveResponse(
             success=False,
-            error_message="Failed to resolve vanity URL"
+            error_message="Failed to resolve vanity URL",
+            steam_id=None
         )
 
 
@@ -295,7 +298,7 @@ async def list_steam_games(
         
         return ImportGamesList(
             games=[
-                {
+                ImportGameResponse.model_validate({
                     "id": game.id,
                     "external_id": game.external_id,
                     "name": game.name,
@@ -306,7 +309,7 @@ async def list_steam_games(
                     "ignored": game.ignored,
                     "created_at": game.created_at,
                     "updated_at": game.updated_at
-                } for game in games
+                }) for game in games
             ],
             total=total,
             offset=offset,
@@ -361,7 +364,7 @@ async def match_steam_game(
         
         return GameMatchResponse(
             message="Game matched successfully" if request.igdb_id else "Game match cleared",
-            game={
+            game=ImportGameResponse.model_validate({
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
@@ -372,7 +375,7 @@ async def match_steam_game(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            }
+            })
         )
     except FileNotFoundError as e:
         raise HTTPException(
@@ -416,7 +419,7 @@ async def auto_match_steam_game(
             if game:
                 return GameMatchResponse(
                     message=f"Game auto-matched successfully with confidence {result.confidence_score:.2f}",
-                    game={
+                    game=ImportGameResponse.model_validate({
                         "id": game.id,
                         "external_id": game.external_id,
                         "name": game.name,
@@ -427,7 +430,7 @@ async def auto_match_steam_game(
                         "ignored": game.ignored,
                         "created_at": game.created_at,
                         "updated_at": game.updated_at
-                    }
+                    })
                 )
         
         raise HTTPException(
@@ -484,7 +487,7 @@ async def sync_steam_game(
         
         return GameSyncResponse(
             message="Game synced to collection successfully",
-            game={
+            game=ImportGameResponse.model_validate({
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
@@ -495,7 +498,7 @@ async def sync_steam_game(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            },
+            }),
             user_game_id=result.user_game_id,
             action=result.action
         )
@@ -537,7 +540,7 @@ async def unsync_steam_game(
         
         return GameSyncResponse(
             message="Game removed from collection successfully",
-            game={
+            game=ImportGameResponse.model_validate({
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
@@ -548,7 +551,7 @@ async def unsync_steam_game(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            },
+            }),
             user_game_id=None,
             action="removed"
         )
@@ -578,7 +581,7 @@ async def toggle_ignore_steam_game(
         
         return GameIgnoreResponse(
             message=f"Game {'ignored' if game.ignored else 'unignored'} successfully",
-            game={
+            game=ImportGameResponse.model_validate({
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
@@ -589,7 +592,7 @@ async def toggle_ignore_steam_game(
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
-            },
+            }),
             ignored=game.ignored
         )
         
