@@ -76,7 +76,7 @@ async def _cleanup_temp_file(user_id: str, session: Session) -> None:
             
             # Update user preferences
             preferences["darkadia"] = darkadia_config
-            user.preferences_json = json.dumps(preferences) if preferences else None
+            user.preferences_json = json.dumps(preferences) if preferences else "{}"
             user.updated_at = datetime.now(timezone.utc)
             
             session.add(user)
@@ -543,7 +543,12 @@ async def match_darkadia_game(
                 user_game_id=game.user_game_id,
                 ignored=game.ignored,
                 created_at=game.created_at,
-                updated_at=game.updated_at
+                updated_at=game.updated_at,
+                platform_resolved=game.platform_resolved,
+                original_platform_name=game.original_platform_name,
+                platform_resolution_status=game.platform_resolution_status,
+                platform_name=game.platform_name,
+                storefront_name=game.storefront_name
             )
         )
     except ValueError as e:
@@ -593,7 +598,12 @@ async def auto_match_darkadia_game(
                         user_game_id=game.user_game_id,
                         ignored=game.ignored,
                         created_at=game.created_at,
-                        updated_at=game.updated_at
+                        updated_at=game.updated_at,
+                        platform_resolved=game.platform_resolved,
+                        original_platform_name=game.original_platform_name,
+                        platform_resolution_status=game.platform_resolution_status,
+                        platform_name=game.platform_name,
+                        storefront_name=game.storefront_name
                     )
                 )
         
@@ -685,7 +695,12 @@ async def sync_darkadia_game(
                 user_game_id=game.user_game_id,
                 ignored=game.ignored,
                 created_at=game.created_at,
-                updated_at=game.updated_at
+                updated_at=game.updated_at,
+                platform_resolved=game.platform_resolved,
+                original_platform_name=game.original_platform_name,
+                platform_resolution_status=game.platform_resolution_status,
+                platform_name=game.platform_name,
+                storefront_name=game.storefront_name
             ),
             user_game_id=result.user_game_id,
             action=result.action
@@ -751,7 +766,12 @@ async def ignore_darkadia_game(
                 user_game_id=game.user_game_id,
                 ignored=game.ignored,
                 created_at=game.created_at,
-                updated_at=game.updated_at
+                updated_at=game.updated_at,
+                platform_resolved=game.platform_resolved,
+                original_platform_name=game.original_platform_name,
+                platform_resolution_status=game.platform_resolution_status,
+                platform_name=game.platform_name,
+                storefront_name=game.storefront_name
             ),
             ignored=game.ignored
         )
