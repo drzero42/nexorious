@@ -981,7 +981,7 @@ async def get_storefront_usage_stats(
 async def seed_platforms_and_storefronts(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
-    version: Annotated[str, Query(default="1.0.0", description="Version string for tracking when data was added")]
+    version: Annotated[str, Query(description="Version string for tracking when data was added")] = "1.0.0"
 ):
     """
     Load official platforms, storefronts, and their default mappings into the database.
