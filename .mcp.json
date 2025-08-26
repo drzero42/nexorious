@@ -5,8 +5,8 @@
       "args": ["-y", "@upstash/context7-mcp@latest"]
     },
     "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp@latest"]
+      "command": "mcp-server-playwright",
+      "args": ["--browser", "firefox", "--user-data-dir", "/tmp/playwright-mcp-profile"]
     }
   }
 }

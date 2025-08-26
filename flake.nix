@@ -41,6 +41,7 @@
 
           # Playwright
           playwright-test
+          playwright-mcp
         ];
 
         shellHook = ''
