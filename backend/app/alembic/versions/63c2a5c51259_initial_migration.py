@@ -1,19 +1,19 @@
-"""Initial database schema with all models
+"""Initial migration
 
-Revision ID: fe03cebb9830
+Revision ID: 63c2a5c51259
 Revises: 
-Create Date: 2025-08-20 13:44:02.247760
+Create Date: 2025-08-26 09:16:42.752594
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import sqlmodel
+import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'fe03cebb9830'
+revision: str = '63c2a5c51259'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -257,38 +257,6 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_wishlists_game_id'), ['game_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_wishlists_user_id'), ['user_id'], unique=False)
 
-    op.create_table('darkadia_imports',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('batch_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('csv_file_hash', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
-    sa.Column('import_timestamp', sa.DateTime(), nullable=False),
-    sa.Column('original_csv_data', sa.JSON(), nullable=True),
-    sa.Column('played', sa.Boolean(), nullable=False),
-    sa.Column('playing', sa.Boolean(), nullable=False),
-    sa.Column('finished', sa.Boolean(), nullable=False),
-    sa.Column('mastered', sa.Boolean(), nullable=False),
-    sa.Column('dominated', sa.Boolean(), nullable=False),
-    sa.Column('shelved', sa.Boolean(), nullable=False),
-    sa.Column('physical_copy_data', sa.JSON(), nullable=True),
-    sa.Column('original_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
-    sa.Column('platform_resolved', sa.Boolean(), nullable=False),
-    sa.Column('platform_resolution_data', sa.JSON(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'user_game_id', 'batch_id', name='uq_darkadia_imports_user_game_batch')
-    )
-    with op.batch_alter_table('darkadia_imports', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_darkadia_imports_batch_id'), ['batch_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_darkadia_imports_import_timestamp'), ['import_timestamp'], unique=False)
-        batch_op.create_index(batch_op.f('ix_darkadia_imports_platform_resolved'), ['platform_resolved'], unique=False)
-        batch_op.create_index(batch_op.f('ix_darkadia_imports_user_game_id'), ['user_game_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_darkadia_imports_user_id'), ['user_id'], unique=False)
-
     op.create_table('platform_storefronts',
     sa.Column('platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -301,11 +269,12 @@ def upgrade() -> None:
     op.create_table('user_game_platforms',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('store_game_id', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('store_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('is_available', sa.Boolean(), nullable=False),
+    sa.Column('original_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['platform_id'], ['platforms.id'], ),
@@ -332,12 +301,69 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_user_game_tags_tag_id'), ['tag_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_user_game_tags_user_game_id'), ['user_game_id'], unique=False)
 
+    op.create_table('darkadia_imports',
+    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('user_game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('user_game_platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('csv_row_number', sa.Integer(), nullable=False),
+    sa.Column('game_name', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
+    sa.Column('copy_identifier', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
+    sa.Column('batch_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('csv_file_hash', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+    sa.Column('import_timestamp', sa.DateTime(), nullable=False),
+    sa.Column('original_csv_data', sa.JSON(), nullable=True),
+    sa.Column('played', sa.Boolean(), nullable=False),
+    sa.Column('playing', sa.Boolean(), nullable=False),
+    sa.Column('finished', sa.Boolean(), nullable=False),
+    sa.Column('mastered', sa.Boolean(), nullable=False),
+    sa.Column('dominated', sa.Boolean(), nullable=False),
+    sa.Column('shelved', sa.Boolean(), nullable=False),
+    sa.Column('physical_copy_data', sa.JSON(), nullable=True),
+    sa.Column('original_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
+    sa.Column('original_storefront_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
+    sa.Column('fallback_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
+    sa.Column('platform_resolved', sa.Boolean(), nullable=False),
+    sa.Column('storefront_resolved', sa.Boolean(), nullable=False),
+    sa.Column('resolved_storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('requires_storefront_resolution', sa.Boolean(), nullable=False),
+    sa.Column('platform_resolution_data', sa.JSON(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['resolved_storefront_id'], ['storefronts.id'], ),
+    sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
+    sa.ForeignKeyConstraint(['user_game_platform_id'], ['user_game_platforms.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_id', 'csv_row_number', 'copy_identifier', 'batch_id', name='uq_darkadia_imports_user_row_copy_batch')
+    )
+    with op.batch_alter_table('darkadia_imports', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_batch_id'), ['batch_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_game_name'), ['game_name'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_import_timestamp'), ['import_timestamp'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_platform_resolved'), ['platform_resolved'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_storefront_resolved'), ['storefront_resolved'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_user_game_id'), ['user_game_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_user_game_platform_id'), ['user_game_platform_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_darkadia_imports_user_id'), ['user_id'], unique=False)
+
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
+    with op.batch_alter_table('darkadia_imports', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_user_id'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_user_game_platform_id'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_user_game_id'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_storefront_resolved'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_platform_resolved'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_import_timestamp'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_game_name'))
+        batch_op.drop_index(batch_op.f('ix_darkadia_imports_batch_id'))
+
+    op.drop_table('darkadia_imports')
     with op.batch_alter_table('user_game_tags', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_user_game_tags_user_game_id'))
         batch_op.drop_index(batch_op.f('ix_user_game_tags_tag_id'))
@@ -349,14 +375,6 @@ def downgrade() -> None:
 
     op.drop_table('user_game_platforms')
     op.drop_table('platform_storefronts')
-    with op.batch_alter_table('darkadia_imports', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_darkadia_imports_user_id'))
-        batch_op.drop_index(batch_op.f('ix_darkadia_imports_user_game_id'))
-        batch_op.drop_index(batch_op.f('ix_darkadia_imports_platform_resolved'))
-        batch_op.drop_index(batch_op.f('ix_darkadia_imports_import_timestamp'))
-        batch_op.drop_index(batch_op.f('ix_darkadia_imports_batch_id'))
-
-    op.drop_table('darkadia_imports')
     with op.batch_alter_table('wishlists', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_wishlists_user_id'))
         batch_op.drop_index(batch_op.f('ix_wishlists_game_id'))
