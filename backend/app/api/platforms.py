@@ -3,7 +3,7 @@ Platform and storefront management endpoints (admin-only).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Request
-from sqlmodel import Session, select, func, or_, desc
+from sqlmodel import Session, select, func, or_, desc, col, asc
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 import logging
@@ -645,7 +645,7 @@ async def list_storefronts(
         query = query.where(Storefront.source == source)
     
     # Order by source (official first) then by display name
-    query = query.order_by(Storefront.source.desc(), Storefront.display_name)
+    query = query.order_by(desc(Storefront.source), Storefront.display_name)
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -659,7 +659,7 @@ async def list_storefronts(
     pages = (total + per_page - 1) // per_page
     
     return StorefrontListResponse(
-        storefronts=storefronts,
+        storefronts=[StorefrontResponse.model_validate(sf) for sf in storefronts],
         total=total,
         page=page,
         per_page=per_page,
@@ -898,25 +898,25 @@ async def get_platform_usage_stats(
     # Query platform usage statistics
     query = (
         select(
-            Platform.id.label("platform_id"),
-            Platform.name.label("platform_name"),
-            Platform.display_name.label("platform_display_name"),
-            func.count(UserGamePlatform.id).label("usage_count")
+            col(Platform.id).label("platform_id"),
+            col(Platform.name).label("platform_name"),
+            col(Platform.display_name).label("platform_display_name"),
+            func.count(col(UserGamePlatform.id)).label("usage_count")
         )
         .select_from(Platform)
-        .outerjoin(UserGamePlatform, Platform.id == UserGamePlatform.platform_id)
+        .outerjoin(UserGamePlatform)
         .group_by(Platform.id, Platform.name, Platform.display_name)
-        .order_by(func.count(UserGamePlatform.id).desc(), Platform.display_name)
+        .order_by(func.count(col(UserGamePlatform.id)).desc(), Platform.display_name)
     )
     
     results = session.exec(query).all()
     
     platform_stats = [
         PlatformUsageStats(
-            platform_id=row.platform_id,
-            platform_name=row.platform_name,
-            platform_display_name=row.platform_display_name,
-            usage_count=row.usage_count
+            platform_id=row[0],
+            platform_name=row[1],
+            platform_display_name=row[2],
+            usage_count=row[3]
         )
         for row in results
     ]
@@ -943,25 +943,25 @@ async def get_storefront_usage_stats(
     # Query storefront usage statistics
     query = (
         select(
-            Storefront.id.label("storefront_id"),
-            Storefront.name.label("storefront_name"),
-            Storefront.display_name.label("storefront_display_name"),
-            func.count(UserGamePlatform.id).label("usage_count")
+            col(Storefront.id).label("storefront_id"),
+            col(Storefront.name).label("storefront_name"),
+            col(Storefront.display_name).label("storefront_display_name"),
+            func.count(col(UserGamePlatform.id)).label("usage_count")
         )
         .select_from(Storefront)
-        .outerjoin(UserGamePlatform, Storefront.id == UserGamePlatform.storefront_id)
+        .outerjoin(UserGamePlatform)
         .group_by(Storefront.id, Storefront.name, Storefront.display_name)
-        .order_by(func.count(UserGamePlatform.id).desc(), Storefront.display_name)
+        .order_by(func.count(col(UserGamePlatform.id)).desc(), Storefront.display_name)
     )
     
     results = session.exec(query).all()
     
     storefront_stats = [
         StorefrontUsageStats(
-            storefront_id=row.storefront_id,
-            storefront_name=row.storefront_name,
-            storefront_display_name=row.storefront_display_name,
-            usage_count=row.usage_count
+            storefront_id=row[0],
+            storefront_name=row[1],
+            storefront_display_name=row[2],
+            usage_count=row[3]
         )
         for row in results
     ]
@@ -981,7 +981,7 @@ async def get_storefront_usage_stats(
 async def seed_platforms_and_storefronts(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
-    version: Optional[str] = Query(default="1.0.0", description="Version string for tracking when data was added")
+    version: Annotated[str, Query(default="1.0.0", description="Version string for tracking when data was added")]
 ):
     """
     Load official platforms, storefronts, and their default mappings into the database.
@@ -1031,7 +1031,7 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
         platform_storefronts = session.exec(
             select(PlatformStorefront)
             .where(PlatformStorefront.storefront_id == storefront.id)
-            .order_by(PlatformStorefront.created_at.asc())  # Oldest association first
+            .order_by(asc(PlatformStorefront.created_at))  # Oldest association first
         ).all()
         
         if platform_storefronts:
@@ -1068,7 +1068,7 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
         ps_platform = session.exec(
             select(Platform)
             .where(func.lower(Platform.name).like('%playstation%'))
-            .order_by(Platform.name.desc())  # PS5 > PS4 > PS3
+            .order_by(desc(Platform.name))  # PS5 > PS4 > PS3
         ).first()
         if ps_platform:
             return ps_platform.name
@@ -1079,7 +1079,7 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
         xbox_platform = session.exec(
             select(Platform)
             .where(func.lower(Platform.name).like('%xbox%'))
-            .order_by(Platform.name.desc())
+            .order_by(desc(Platform.name))
         ).first()
         if xbox_platform:
             return xbox_platform.name
@@ -1090,7 +1090,7 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
         nintendo_platform = session.exec(
             select(Platform)
             .where(func.lower(Platform.name).like('%nintendo%'))
-            .order_by(Platform.name.desc())
+            .order_by(desc(Platform.name))
         ).first()
         if nintendo_platform:
             return nintendo_platform.name
@@ -1482,12 +1482,12 @@ async def get_pending_storefront_resolutions(
                 platform_context = imports[0].original_platform_name if imports else None
                 
                 # Create resolution data for this storefront
-                resolution_data = StorefrontResolutionData(
-                    status="pending",
-                    original_name=storefront_name,
-                    suggestions=[],  # Will be populated on demand
-                    platform_context=platform_context
-                )
+                resolution_data = StorefrontResolutionData.model_validate({
+                    "status": "pending",
+                    "original_name": storefront_name,
+                    "suggestions": [],  # Will be populated on demand
+                    "platform_context": platform_context
+                })
                 
                 pending_storefront = PendingStorefrontResolution(
                     import_id=imports[0].id,  # Use first import as representative
@@ -1554,11 +1554,11 @@ async def resolve_storefront(
         )
         
         if not success:
-            return StorefrontResolutionResult(
-                import_id=resolution_request.import_id,
-                success=False,
-                error_message="Failed to resolve storefront - import not found or access denied"
-            )
+            return StorefrontResolutionResult.model_validate({
+                "import_id": resolution_request.import_id,
+                "success": False,
+                "error_message": "Failed to resolve storefront - import not found or access denied"
+            })
         
         # Get the resolved storefront details for response
         resolved_storefront = session.get(Storefront, resolution_request.resolved_storefront_id)
@@ -1566,7 +1566,7 @@ async def resolve_storefront(
         return StorefrontResolutionResult(
             import_id=resolution_request.import_id,
             success=True,
-            resolved_storefront=resolved_storefront,
+            resolved_storefront=StorefrontResponse.model_validate(resolved_storefront) if resolved_storefront else None,
             error_message=None
         )
     except Exception as e:
@@ -1574,6 +1574,7 @@ async def resolve_storefront(
         return StorefrontResolutionResult(
             import_id=resolution_request.import_id,
             success=False,
+            resolved_storefront=None,
             error_message=f"Resolution failed: {str(e)}"
         )
 
@@ -1618,6 +1619,7 @@ async def bulk_resolve_storefronts(
                 result = StorefrontResolutionResult(
                     import_id=resolution.import_id,
                     success=False,
+                    resolved_storefront=None,
                     error_message=error_msg
                 )
             else:
@@ -1626,7 +1628,8 @@ async def bulk_resolve_storefronts(
                 result = StorefrontResolutionResult(
                     import_id=resolution.import_id,
                     success=True,
-                    resolved_storefront=resolved_storefront
+                    resolved_storefront=StorefrontResponse.model_validate(resolved_storefront) if resolved_storefront else None,
+                    error_message=None
                 )
             results.append(result)
         
