@@ -3,7 +3,7 @@ Core import management endpoints for cross-source operations.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select, desc
+from sqlmodel import Session, select, desc, col
 from typing import Annotated, Optional, List
 from datetime import datetime, timezone
 import logging
@@ -13,6 +13,7 @@ from ...core.security import get_current_user
 from ...models.user import User
 from ...models.import_job import ImportJob, ImportStatus, ImportType
 from ..schemas.import_schemas import (
+    ImportSourceInfo,
     ImportSourcesResponse,
     ImportJobsListResponse, 
     ImportJobResponse,
@@ -32,7 +33,7 @@ async def list_import_sources(
     
     # TODO: This will be dynamically populated as we add more sources
     # For now, we'll start with Steam as the first implementation
-    sources = [
+    source_data = [
         {
             "name": "steam",
             "display_name": "Steam",
@@ -53,6 +54,9 @@ async def list_import_sources(
         #     "status": "coming_soon"
         # }
     ]
+    
+    # Convert dictionaries to ImportSourceInfo instances
+    sources = [ImportSourceInfo(**source) for source in source_data]
     
     return ImportSourcesResponse(sources=sources)
 
@@ -105,7 +109,8 @@ async def list_import_jobs(
                 created_at=job.created_at,
                 started_at=job.started_at,
                 completed_at=job.completed_at,
-                error_message=job.error_message
+                error_message=job.error_message,
+                metadata=job.get_metadata()
             ) for job in jobs
         ],
         total=total,
@@ -149,7 +154,7 @@ async def get_import_job(
         started_at=job.started_at,
         completed_at=job.completed_at,
         error_message=job.error_message,
-        metadata=job.metadata if hasattr(job, 'metadata') else {}
+        metadata=job.get_metadata()
     )
 
 
@@ -210,7 +215,7 @@ async def get_import_history(
     # Build query for completed jobs only
     query = select(ImportJob).where(
         ImportJob.user_id == current_user.id,
-        ImportJob.status.in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
+        col(ImportJob.status).in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
     )
     
     if source:
@@ -219,7 +224,7 @@ async def get_import_history(
     # Get total count
     count_query = select(ImportJob).where(
         ImportJob.user_id == current_user.id,
-        ImportJob.status.in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
+        col(ImportJob.status).in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
     )
     if source:
         count_query = count_query.where(ImportJob.source == source)
@@ -245,7 +250,8 @@ async def get_import_history(
                 created_at=job.created_at,
                 started_at=job.started_at,
                 completed_at=job.completed_at,
-                error_message=job.error_message
+                error_message=job.error_message,
+                metadata=job.get_metadata()
             ) for job in jobs
         ],
         total=total,
