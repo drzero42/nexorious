@@ -76,11 +76,11 @@ class DarkadiaImport(SQLModel, table=True):
     user_game_platform: "UserGamePlatform" = Relationship()
     resolved_storefront: Optional["Storefront"] = Relationship()
     
-    # Unique constraint per CSV row (allows multiple rows per game for different copies)
+    # Unique constraint per CSV row and copy (allows multiple copies per CSV row)
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "csv_row_number", "batch_id",
-            name="uq_darkadia_imports_user_row_batch"
+            "user_id", "csv_row_number", "copy_identifier", "batch_id",
+            name="uq_darkadia_imports_user_row_copy_batch"
         ),
         {"extend_existing": True},
     )

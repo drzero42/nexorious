@@ -736,9 +736,17 @@ class DarkadiaImportService(ImportSourceService):
                 # Set platform resolution data
                 resolution_data = {
                     "status": "pending",
+                    "original_name": copy_data.platform or "",
                     "is_fallback": not copy_data.is_real_copy,
                     "requires_storefront_resolution": copy_data.requires_storefront_resolution,
-                    "copy_identifier": copy_data.copy_identifier
+                    "copy_identifier": copy_data.copy_identifier,
+                    "suggestions": [],
+                    "storefront_suggestions": [],
+                    "resolved_platform_id": None,
+                    "resolved_storefront_id": None,
+                    "resolution_timestamp": None,
+                    "resolution_method": None,
+                    "user_notes": None
                 }
                 darkadia_import.set_platform_resolution_data(resolution_data)
                 
@@ -875,8 +883,16 @@ class DarkadiaImportService(ImportSourceService):
             # Set resolution data
             resolution_data = {
                 "status": "resolved" if platform_resolved else "pending",
+                "original_name": original_platform_name or "",
                 "is_fallback": is_fallback,
-                "requires_storefront_resolution": bool(original_storefront_name and not resolved_storefront_id)
+                "requires_storefront_resolution": bool(original_storefront_name and not resolved_storefront_id),
+                "suggestions": [],
+                "storefront_suggestions": [],
+                "resolved_platform_id": resolved_platform_id,
+                "resolved_storefront_id": resolved_storefront_id,
+                "resolution_timestamp": None,
+                "resolution_method": "auto" if platform_resolved else None,
+                "user_notes": None
             }
             darkadia_import.set_platform_resolution_data(resolution_data)
             
@@ -1141,26 +1157,9 @@ class DarkadiaImportService(ImportSourceService):
                         status_filter: Optional[str] = None,
                         search: Optional[str] = None) -> Tuple[List[ImportGame], int]:
         """List imported games with filtering and pagination."""
-        # Join DarkadiaGame with DarkadiaImport to get platform resolution data
-        # Also join with UserGamePlatform, Platform, and Storefront to get resolved names
-        query = select(DarkadiaGame, DarkadiaImport, UserGamePlatform, Platform, Storefront).where(
-            DarkadiaGame.user_id == user_id
-        ).outerjoin(
-            DarkadiaImport, 
-            and_(
-                DarkadiaImport.user_id == DarkadiaGame.user_id,
-                DarkadiaImport.game_name == DarkadiaGame.game_name
-            )
-        ).outerjoin(
-            UserGamePlatform,
-            DarkadiaImport.user_game_platform_id == UserGamePlatform.id
-        ).outerjoin(
-            Platform,
-            UserGamePlatform.platform_id == Platform.id
-        ).outerjoin(
-            Storefront,
-            UserGamePlatform.storefront_id == Storefront.id
-        )
+        
+        # Start with DarkadiaGame query
+        query = select(DarkadiaGame).where(DarkadiaGame.user_id == user_id)
         
         # Apply status filter
         if status_filter == "unmatched":
@@ -1177,16 +1176,23 @@ class DarkadiaImportService(ImportSourceService):
             search_term = f"%{search.lower()}%"
             query = query.where(func.lower(DarkadiaGame.game_name).like(search_term))
         
-        # Get total count
-        total_count = len(self.session.exec(query).all())
+        # Get total count and games
+        games = self.session.exec(query.offset(offset).limit(limit)).all()
+        total_count = self.session.exec(select(func.count()).select_from(query.subquery())).first()
         
-        # Apply pagination
-        results = self.session.exec(query.offset(offset).limit(limit)).all()
+        logger.info(f"Successfully fetched {len(games)} games out of {total_count} total for user {user_id}")
         
         # Convert to ImportGame objects
         import_games = []
-        for result in results:
-            game, darkadia_import, user_game_platform, platform, storefront = result
+        for game in games:
+            # Get first DarkadiaImport for this game to avoid duplicates
+            darkadia_import = self.session.exec(
+                select(DarkadiaImport)
+                .where(DarkadiaImport.user_id == user_id)
+                .where(DarkadiaImport.game_name == game.game_name)
+                .order_by(DarkadiaImport.created_at.asc())
+                .limit(1)
+            ).first()
             
             # Determine platform resolution status and names
             platform_resolved = None
@@ -1200,10 +1206,17 @@ class DarkadiaImportService(ImportSourceService):
                 original_platform_name = darkadia_import.original_platform_name
                 
                 # Get resolved platform and storefront names from relationships
-                if platform:
-                    platform_name = platform.name
-                if storefront:
-                    storefront_name = storefront.name
+                if darkadia_import.user_game_platform_id:
+                    user_game_platform = self.session.get(UserGamePlatform, darkadia_import.user_game_platform_id)
+                    if user_game_platform:
+                        if user_game_platform.platform_id:
+                            platform = self.session.get(Platform, user_game_platform.platform_id)
+                            if platform:
+                                platform_name = platform.name
+                        if user_game_platform.storefront_id:
+                            storefront = self.session.get(Storefront, user_game_platform.storefront_id)
+                            if storefront:
+                                storefront_name = storefront.name
                 
                 # Determine status based on resolution data
                 if darkadia_import.platform_resolved:

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,7 +36,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
+
+# Debug confirmation message
+logger.debug("=== DEBUG LOGGING IS ENABLED ===")
+logger.info(f"Application started with log level: {logging.getLevelName(logger.getEffectiveLevel())}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,6 +75,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add global validation error handler
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body = await request.body()
+    logger.error(f"=== Validation Error ===")
+    logger.error(f"URL: {request.url}")
+    logger.error(f"Method: {request.method}")
+    logger.error(f"Errors: {exc.errors()}")
+    logger.error(f"Body received: {body.decode() if body else 'No body'}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body) if hasattr(exc, 'body') else None}
+    )
 
 # Include API routers
 app.include_router(auth_router, prefix="/api")

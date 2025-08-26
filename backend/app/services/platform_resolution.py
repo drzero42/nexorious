@@ -308,12 +308,30 @@ class PlatformResolutionService:
                 representative.set_platform_resolution_data(resolution_data)
                 self.session.add(representative)
                 self.session.commit()
+            else:
+                # Defensive code: ensure required fields exist in existing resolution data
+                if 'original_name' not in resolution_data:
+                    resolution_data['original_name'] = representative.original_platform_name or ""
+                if 'suggestions' not in resolution_data:
+                    resolution_data['suggestions'] = []
+                if 'storefront_suggestions' not in resolution_data:
+                    resolution_data['storefront_suggestions'] = []
+                if 'resolved_platform_id' not in resolution_data:
+                    resolution_data['resolved_platform_id'] = None
+                if 'resolved_storefront_id' not in resolution_data:
+                    resolution_data['resolved_storefront_id'] = None
+                if 'resolution_timestamp' not in resolution_data:
+                    resolution_data['resolution_timestamp'] = None
+                if 'resolution_method' not in resolution_data:
+                    resolution_data['resolution_method'] = None
+                if 'user_notes' not in resolution_data:
+                    resolution_data['user_notes'] = None
             
             pending_resolution = PendingPlatformResolution(
                 import_id=representative.id,
                 user_id=user_id,
-                original_platform_name=representative.original_platform_name,
-                original_storefront_name=representative.original_storefront_name,
+                original_platform_name=representative.original_platform_name or "",
+                original_storefront_name=representative.original_storefront_name or "",
                 affected_games_count=len(affected_games),
                 affected_games=affected_games[:10],  # Limit for display
                 resolution_data=PlatformResolutionData(**resolution_data),
@@ -792,6 +810,75 @@ class PlatformResolutionService:
             "failed_resolutions": failed_count,
             "errors": errors
         }
+
+    async def auto_resolve_high_confidence_storefronts(
+        self,
+        pending_resolutions: List[Any],
+        confidence_threshold: float = 0.95
+    ) -> List[Any]:
+        """
+        Automatically resolve storefronts with high confidence matches.
+        
+        Args:
+            pending_resolutions: List of PendingStorefrontResolution objects
+            confidence_threshold: Minimum confidence to auto-resolve (default 0.95)
+            
+        Returns:
+            Updated list with auto-resolved items marked appropriately
+        """
+        updated_resolutions = []
+        
+        for resolution in pending_resolutions:
+            try:
+                # Get storefront suggestions for this resolution
+                suggestions = await self.suggest_storefront_matches_for_platform(
+                    unknown_storefront_name=resolution.original_storefront_name,
+                    platform_id=resolution.platform_id if hasattr(resolution, 'platform_id') else None,
+                    min_confidence=confidence_threshold,
+                    max_suggestions=1  # We only need the best match
+                )
+                
+                if suggestions and suggestions[0].confidence >= confidence_threshold:
+                    best_suggestion = suggestions[0]
+                    
+                    # Auto-resolve this storefront
+                    success = await self.resolve_storefront(
+                        import_id=resolution.import_id,
+                        user_id=resolution.user_id,
+                        resolved_storefront_id=best_suggestion.storefront_id,
+                        user_notes=f"Auto-resolved: {best_suggestion.reason} (confidence: {int(best_suggestion.confidence * 100)}%)"
+                    )
+                    
+                    if success:
+                        # Update resolution data to show it was auto-resolved
+                        resolution.resolution_data.status = "resolved"
+                        resolution.resolution_data.resolved_storefront_id = best_suggestion.storefront_id
+                        resolution.resolution_data.resolution_method = "auto"
+                        resolution.resolution_data.resolution_timestamp = datetime.now(timezone.utc).isoformat()
+                        resolution.resolution_data.user_notes = f"Auto-resolved: {best_suggestion.reason} (confidence: {int(best_suggestion.confidence * 100)}%)"
+                        
+                        logger.info(f"Auto-resolved storefront '{resolution.original_storefront_name}' to '{best_suggestion.storefront_display_name}' with confidence {best_suggestion.confidence:.2f}")
+                        continue  # Skip adding to updated_resolutions since it's resolved
+                
+                # If not auto-resolved, populate suggestions for manual resolution
+                if not hasattr(resolution.resolution_data, 'suggestions') or not resolution.resolution_data.suggestions:
+                    general_suggestions = await self._get_storefront_suggestions(
+                        unknown_name=resolution.original_storefront_name,
+                        min_confidence=0.6,
+                        max_suggestions=5
+                    )
+                    
+                    resolution.resolution_data.suggestions = [s.model_dump() for s in general_suggestions]
+                    resolution.resolution_data.status = "suggested" if general_suggestions else "pending"
+                
+                updated_resolutions.append(resolution)
+                
+            except Exception as e:
+                logger.error(f"Error in auto-resolution for storefront '{resolution.original_storefront_name}': {str(e)}")
+                # On error, keep the resolution in the list for manual handling
+                updated_resolutions.append(resolution)
+        
+        return updated_resolutions
 
 
 def create_platform_resolution_service(session: Session) -> PlatformResolutionService:

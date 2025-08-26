@@ -3,7 +3,7 @@ Platform and storefront management endpoints (admin-only).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Request
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, or_
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 import logging
@@ -40,6 +40,7 @@ from ..api.schemas.platform import (
     # Storefront Resolution schemas
     StorefrontSuggestionsRequest,
     StorefrontSuggestionsResponse,
+    StorefrontResolutionData,
     PendingStorefrontResolution,
     StorefrontResolutionRequest,
     BulkStorefrontResolutionRequest,
@@ -52,10 +53,10 @@ from ..api.schemas.platform import (
 from ..api.schemas.common import SuccessResponse
 from ..services.logo_service import LogoService, logo_service
 from ..services.platform_resolution import create_platform_resolution_service, PlatformResolutionService
-from ..core.rate_limiting import rate_limit_suggestions, rate_limit_resolution, rate_limit_bulk_resolution
+from ..core.audit_logging import get_client_ip, audit
 
 router = APIRouter(prefix="/platforms", tags=["Platforms & Storefronts"])
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def get_logo_service() -> LogoService:
@@ -1010,14 +1011,103 @@ async def seed_platforms_and_storefronts(
     )
 
 
+def get_default_platform_for_storefront(session: Session, storefront_name: str) -> str:
+    """
+    Get the default platform for a given storefront name.
+    Returns the first associated platform or a sensible default.
+    """
+    # Try to find the storefront by name (case-insensitive)
+    storefront = session.exec(
+        select(Storefront).where(
+            or_(
+                func.lower(Storefront.name) == storefront_name.lower(),
+                func.lower(Storefront.display_name) == storefront_name.lower()
+            )
+        )
+    ).first()
+    
+    if storefront:
+        # Get platforms associated with this storefront
+        platform_storefronts = session.exec(
+            select(PlatformStorefront)
+            .where(PlatformStorefront.storefront_id == storefront.id)
+            .order_by(PlatformStorefront.created_at.asc())  # Oldest association first
+        ).all()
+        
+        if platform_storefronts:
+            # Get the first associated platform
+            platform = session.get(Platform, platform_storefronts[0].platform_id)
+            if platform:
+                logger.debug(f"Found platform '{platform.name}' for storefront '{storefront_name}'")
+                return platform.name
+    
+    # Fallback: Check for common patterns in storefront name
+    storefront_lower = storefront_name.lower()
+    
+    # PC storefronts
+    pc_keywords = ['steam', 'epic', 'gog', 'origin', 'uplay', 'ubisoft', 
+                   'humble', 'itch', 'gamersgate', 'battle.net']
+    if any(keyword in storefront_lower for keyword in pc_keywords):
+        # Try to find PC (Windows) platform
+        pc_platform = session.exec(
+            select(Platform).where(
+                or_(
+                    func.lower(Platform.name) == 'pc (windows)',
+                    func.lower(Platform.name) == 'pc-windows',
+                    func.lower(Platform.name) == 'windows'
+                )
+            )
+        ).first()
+        if pc_platform:
+            return pc_platform.name
+        return "PC (Windows)"
+    
+    # PlayStation storefronts
+    if 'playstation' in storefront_lower or 'sony' in storefront_lower:
+        # Find the latest PlayStation platform
+        ps_platform = session.exec(
+            select(Platform)
+            .where(func.lower(Platform.name).like('%playstation%'))
+            .order_by(Platform.name.desc())  # PS5 > PS4 > PS3
+        ).first()
+        if ps_platform:
+            return ps_platform.name
+    
+    # Xbox storefronts
+    if 'xbox' in storefront_lower or 'microsoft' in storefront_lower:
+        # Find the latest Xbox platform
+        xbox_platform = session.exec(
+            select(Platform)
+            .where(func.lower(Platform.name).like('%xbox%'))
+            .order_by(Platform.name.desc())
+        ).first()
+        if xbox_platform:
+            return xbox_platform.name
+    
+    # Nintendo storefronts
+    if 'nintendo' in storefront_lower or 'eshop' in storefront_lower:
+        # Find the latest Nintendo platform
+        nintendo_platform = session.exec(
+            select(Platform)
+            .where(func.lower(Platform.name).like('%nintendo%'))
+            .order_by(Platform.name.desc())
+        ).first()
+        if nintendo_platform:
+            return nintendo_platform.name
+    
+    # Default fallback
+    logger.debug(f"No specific platform found for storefront '{storefront_name}', defaulting to 'PC (Windows)'")
+    return "PC (Windows)"
+
+
 # Platform Resolution endpoints
 @router.post("/resolution/suggestions", response_model=PlatformSuggestionsResponse)
-@rate_limit_suggestions
 async def get_platform_suggestions(
     request: PlatformSuggestionsRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    resolution_service = Depends(get_platform_resolution_service),
-    http_request: Request = None
+    http_request: Request,
+    resolution_service: Annotated[PlatformResolutionService, Depends(get_platform_resolution_service)],
+    session: Annotated[Session, Depends(get_session)]
 ) -> PlatformSuggestionsResponse:
     """
     Get fuzzy matching suggestions for unknown platform and storefront names.
@@ -1026,12 +1116,30 @@ async def get_platform_suggestions(
     by providing ranked suggestions based on fuzzy matching against existing
     platforms and storefronts.
     """
+    # Add comprehensive debug logging
+    logger.debug(f"=== Platform Suggestions Request ===")
+    logger.debug(f"Request type: {type(request)}")
+    logger.debug(f"Request data: {request.model_dump() if hasattr(request, 'model_dump') else request}")
+    logger.debug(f"HTTP Request type: {type(http_request)}")
+    logger.debug(f"HTTP Request available: {http_request is not None}")
+    
     client_ip = get_client_ip(http_request) if http_request else None
+    logger.debug(f"Client IP: {client_ip}")
     
     try:
+        # Handle empty platform names by getting default platform for storefront
+        platform_name = request.unknown_platform_name
+        if not platform_name and request.unknown_storefront_name:
+            platform_name = get_default_platform_for_storefront(session, request.unknown_storefront_name)
+            logger.debug(f"Resolved empty platform name to '{platform_name}' for storefront '{request.unknown_storefront_name}'")
+        elif not platform_name:
+            # No platform name and no storefront name - use default fallback
+            platform_name = "PC (Windows)"
+            logger.debug(f"Using fallback platform name '{platform_name}' for empty platform and storefront names")
+        
         # Input validation and sanitization is already handled in the service
         suggestions = await resolution_service.suggest_platform_matches(
-            unknown_platform_name=request.unknown_platform_name,
+            unknown_platform_name=platform_name,
             unknown_storefront_name=request.unknown_storefront_name,
             min_confidence=request.min_confidence,
             max_suggestions=request.max_suggestions
@@ -1040,7 +1148,7 @@ async def get_platform_suggestions(
         # Audit log successful suggestion request
         audit.log_platform_suggestion(
             user_id=current_user.id,
-            unknown_platform_name=request.unknown_platform_name,
+            unknown_platform_name=platform_name,
             suggestions_count=suggestions.total_platform_suggestions,
             request_ip=client_ip,
             min_confidence=request.min_confidence
@@ -1048,13 +1156,14 @@ async def get_platform_suggestions(
         
         return suggestions
     except Exception as e:
-        logger.error(f"Error getting platform suggestions for user {current_user.id}: {str(e)}")
+        logger.error(f"Error in platform suggestions: {type(e).__name__}: {str(e)}")
+        logger.error(f"Full exception: {e}", exc_info=True)
         
         # Audit log failure
         audit.log_invalid_input(
             user_id=current_user.id,
             operation_name="platform_suggestions",
-            invalid_input=request.unknown_platform_name,
+            invalid_input=platform_name if 'platform_name' in locals() else request.unknown_platform_name,
             request_ip=client_ip
         )
         
@@ -1103,12 +1212,11 @@ async def get_pending_platform_resolutions(
 
 
 @router.post("/resolution/resolve")
-@rate_limit_resolution
 async def resolve_platform(
     request: PlatformResolutionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    resolution_service = Depends(get_platform_resolution_service),
-    http_request: Request = None
+    http_request: Request,
+    resolution_service = Depends(get_platform_resolution_service)
 ):
     """
     Resolve a single platform mapping.
@@ -1176,12 +1284,11 @@ async def resolve_platform(
 
 
 @router.post("/resolution/bulk-resolve", response_model=BulkPlatformResolutionResponse)
-@rate_limit_bulk_resolution
 async def bulk_resolve_platforms(
     request: BulkPlatformResolutionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    resolution_service = Depends(get_platform_resolution_service),
-    http_request: Request = None
+    http_request: Request,
+    resolution_service = Depends(get_platform_resolution_service)
 ) -> BulkPlatformResolutionResponse:
     """
     Resolve multiple platform mappings in a single operation.
@@ -1277,7 +1384,6 @@ async def populate_platform_suggestions(
 # Storefront Resolution Endpoints
 
 @router.post("/resolution/storefront-suggestions", response_model=StorefrontSuggestionsResponse)
-@rate_limit_suggestions
 async def get_storefront_suggestions(
     request: StorefrontSuggestionsRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1375,6 +1481,14 @@ async def get_pending_storefront_resolutions(
                 affected_games = list(set(imp.game_name for imp in imports if imp.game_name))
                 platform_context = imports[0].original_platform_name if imports else None
                 
+                # Create resolution data for this storefront
+                resolution_data = StorefrontResolutionData(
+                    status="pending",
+                    original_name=storefront_name,
+                    suggestions=[],  # Will be populated on demand
+                    platform_context=platform_context
+                )
+                
                 pending_storefront = PendingStorefrontResolution(
                     import_id=imports[0].id,  # Use first import as representative
                     user_id=current_user.id,
@@ -1383,9 +1497,16 @@ async def get_pending_storefront_resolutions(
                     affected_games_count=len(affected_games),
                     affected_games=affected_games[:5],  # Limit for display
                     platform_context=platform_context,
+                    resolution_data=resolution_data,
                     created_at=imports[0].created_at
                 )
                 pending_storefronts.append(pending_storefront)
+        
+        # Apply auto-resolution for high confidence matches
+        pending_storefronts = await resolution_service.auto_resolve_high_confidence_storefronts(
+            pending_storefronts,
+            confidence_threshold=0.95
+        )
         
         # Apply pagination
         total = len(pending_storefronts)
@@ -1396,7 +1517,7 @@ async def get_pending_storefront_resolutions(
         pages = (total + per_page - 1) // per_page
         
         return PendingStorefrontsListResponse(
-            pending_storefronts=paginated_storefronts,
+            pending_resolutions=paginated_storefronts,
             total=total,
             page=page,
             per_page=per_page,
@@ -1411,7 +1532,6 @@ async def get_pending_storefront_resolutions(
 
 
 @router.post("/resolution/resolve-storefront", response_model=StorefrontResolutionResult)
-@rate_limit_resolution
 async def resolve_storefront(
     resolution_request: StorefrontResolutionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1459,7 +1579,6 @@ async def resolve_storefront(
 
 
 @router.post("/resolution/bulk-resolve-storefronts", response_model=BulkStorefrontResolutionResponse)
-@rate_limit_bulk_resolution
 async def bulk_resolve_storefronts(
     bulk_request: BulkStorefrontResolutionRequest,
     current_user: Annotated[User, Depends(get_current_user)],

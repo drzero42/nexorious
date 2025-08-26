@@ -290,6 +290,18 @@ class PlatformResolutionData(BaseModel):
     user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
 
 
+class StorefrontResolutionData(BaseModel):
+    """Storefront resolution data structure for JSONB storage."""
+    status: Literal["pending", "suggested", "resolved", "failed"] = Field(description="Resolution status")
+    original_name: str = Field(description="Original storefront name from CSV")
+    suggestions: List[StorefrontSuggestion] = Field(default_factory=list, description="Storefront suggestions")
+    resolved_storefront_id: Optional[str] = Field(None, description="ID of resolved storefront")
+    resolution_timestamp: Optional[datetime] = Field(None, description="When resolution was completed")
+    resolution_method: Optional[Literal["auto", "manual", "admin_created"]] = Field(None, description="How resolution was completed")
+    user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
+    platform_context: Optional[str] = Field(None, description="Platform context for resolution")
+
+
 class PendingPlatformResolution(BaseModel):
     """A pending platform resolution from CSV import."""
     import_id: str = Field(description="DarkadiaImport record ID")
@@ -306,7 +318,7 @@ class PendingPlatformResolution(BaseModel):
 
 class PlatformSuggestionsRequest(BaseModel):
     """Request schema for getting platform suggestions."""
-    unknown_platform_name: str = Field(..., min_length=1, max_length=200, description="Unknown platform name to find suggestions for")
+    unknown_platform_name: str = Field(..., min_length=0, max_length=200, description="Unknown platform name to find suggestions for")
     unknown_storefront_name: Optional[str] = Field(None, max_length=200, description="Unknown storefront name to find suggestions for")
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0, description="Minimum confidence threshold for suggestions")
     max_suggestions: int = Field(default=5, ge=1, le=20, description="Maximum number of suggestions to return")
@@ -391,6 +403,7 @@ class PendingStorefrontResolution(BaseModel):
     affected_games_count: int = Field(ge=1, description="Number of games affected by this storefront")
     affected_games: List[str] = Field(description="Names of affected games (for display)")
     platform_context: Optional[str] = Field(None, description="Platform context for storefront resolution")
+    resolution_data: StorefrontResolutionData = Field(description="Resolution status and suggestions")
     created_at: datetime = Field(description="When this resolution was identified")
     
     model_config = ConfigDict(from_attributes=True)
@@ -427,7 +440,7 @@ class BulkStorefrontResolutionResponse(BaseModel):
 
 class PendingStorefrontsListResponse(BaseModel):
     """Response schema for listing pending storefront resolutions."""
-    pending_storefronts: List[PendingStorefrontResolution] = Field(description="List of pending storefront resolutions")
+    pending_resolutions: List[PendingStorefrontResolution] = Field(description="List of pending storefront resolutions")
     total: int = Field(description="Total number of pending storefront resolutions")
     page: int = Field(default=1, description="Current page number")
     per_page: int = Field(default=20, description="Items per page")
