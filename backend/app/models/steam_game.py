@@ -4,9 +4,16 @@ Steam games models for Steam library management and sync.
 
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import UniqueConstraint
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 import uuid
+
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .game import Game
 
 
 class SteamGame(SQLModel, table=True):
@@ -35,6 +42,3 @@ class SteamGame(SQLModel, table=True):
     )
 
 
-# Import forward references
-from .user import User
-from .game import Game

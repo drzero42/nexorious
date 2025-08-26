@@ -3,7 +3,6 @@ Tests for IGDB platform data caching and retrieval functionality.
 """
 
 import pytest
-import json
 from unittest.mock import AsyncMock
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
@@ -13,8 +12,7 @@ from app.main import app
 from app.core.database import get_session
 from app.core.security import get_current_user
 from app.api.dependencies import get_igdb_service_dependency
-from app.services.igdb import GameMetadata, IGDBService, IGDB_PLATFORM_MAPPING
-from app.models.game import Game
+from app.services.igdb import GameMetadata, IGDB_PLATFORM_MAPPING
 
 
 @pytest.fixture

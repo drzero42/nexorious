@@ -8,6 +8,13 @@ from datetime import datetime, date, timezone
 from decimal import Decimal
 import uuid
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user_game import UserGame
+    from .wishlist import Wishlist
+
 
 class Game(SQLModel, table=True):
     """Game model with comprehensive metadata and IGDB integration."""
@@ -66,6 +73,3 @@ class GameAlias(SQLModel, table=True):
     game: Game = Relationship(back_populates="aliases")
 
 
-# Import forward references
-from .user_game import UserGame
-from .wishlist import Wishlist

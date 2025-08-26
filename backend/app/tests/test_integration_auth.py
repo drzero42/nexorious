@@ -3,18 +3,12 @@ Integration tests for authentication endpoints.
 Tests all auth endpoints with proper request/response validation.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
-from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
 from ..models.user import User, UserSession
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    auth_headers_fixture as auth_headers,
     create_test_user_data,
     assert_api_error,
     assert_api_success,
@@ -153,7 +147,7 @@ class TestAuthRefreshEndpoint:
     def test_refresh_expired_token(self, client: TestClient, session: Session):
         """Test refresh with expired token."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        register_and_login_user(client, user_data)
         
         # Get user and create expired session
         user = session.exec(select(User).where(User.username == user_data["username"])).first()

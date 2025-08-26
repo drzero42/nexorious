@@ -5,7 +5,7 @@ Provides common fixtures, helpers, and test client setup.
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 from typing import Dict, Any, Optional
 from unittest.mock import MagicMock
@@ -13,7 +13,7 @@ from datetime import date
 
 from ..main import app
 from ..core.database import get_session
-from ..core.security import get_current_user, create_access_token
+from ..core.security import create_access_token
 from ..models.user import User
 from ..models.game import Game
 from ..models.platform import Platform, Storefront

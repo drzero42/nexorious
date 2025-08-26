@@ -4,12 +4,9 @@ Steam Web API service for library import and game metadata.
 
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta, timezone
-import asyncio
 from dataclasses import dataclass
 
 import httpx
-from rapidfuzz import fuzz, process
 
 from app.utils.rate_limiter import (
     RateLimitConfig, 
@@ -235,7 +232,7 @@ class SteamService:
         """Validate Steam ID format (64-bit Steam ID)."""
         try:
             # Steam ID should be a 17-digit number starting with 7656119
-            steam_id_int = int(steam_id)
+            int(steam_id)
             return len(steam_id) == 17 and steam_id.startswith("7656119")
         except ValueError:
             return False

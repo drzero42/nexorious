@@ -3,14 +3,12 @@ Tests for Steam Games feature disable functionality.
 """
 
 import pytest
-import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
 from ..main import app
 from ..core.database import get_session
-from ..models.user import User
 from ..models.platform import Platform, Storefront
 
 

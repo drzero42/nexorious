@@ -6,9 +6,6 @@ different copies of the same game.
 """
 
 import pytest
-from unittest.mock import Mock
-from datetime import datetime
-from typing import List, Dict, Any
 
 from app.services.import_sources.copy_consolidation import (
     CopyConsolidationProcessor, 
@@ -128,9 +125,9 @@ class TestCopyConsolidationProcessor:
         assert len(game.copies) == 1
         assert game.copies[0].platform == 'PC'
         assert game.copies[0].storefront == 'Steam'
-        assert game.copies[0].is_real_copy == True
+        assert game.copies[0].is_real_copy
         assert game.base_data['Rating'] == 4.5
-        assert game.base_data['Finished'] == True
+        assert game.base_data['Finished']
     
     def test_consolidate_multi_copy_game(self, processor, sample_multi_copy_data):
         """Test consolidating a game with multiple copies."""
@@ -156,8 +153,8 @@ class TestCopyConsolidationProcessor:
         
         # Check merged base data (should use highest rating, OR logic for booleans)
         assert game.base_data['Rating'] == 4.5  # max of 4.0 and 4.5
-        assert game.base_data['Played'] == True  # True OR False
-        assert game.base_data['Playing'] == True  # False OR True
+        assert game.base_data['Played']  # True OR False
+        assert game.base_data['Playing']  # False OR True
         
         # Check that both row numbers are tracked
         assert 1 in game.csv_row_numbers
@@ -175,8 +172,8 @@ class TestCopyConsolidationProcessor:
         
         # Check that all copies are fallback copies
         for copy in game.copies:
-            assert copy.is_real_copy == False
-            assert copy.requires_storefront_resolution == True
+            assert not copy.is_real_copy
+            assert copy.requires_storefront_resolution
             assert copy.media == 'Digital'  # Default for fallback
         
         # Check platform names
@@ -251,9 +248,9 @@ class TestCopyConsolidationProcessor:
         ]
         
         merged = processor._merge_base_data(rows)
-        assert merged['Played'] == True   # False OR True
-        assert merged['Finished'] == True # True OR False
-        assert merged['Loved'] == False   # False OR False
+        assert merged['Played']   # False OR True
+        assert merged['Finished'] # True OR False
+        assert not merged['Loved']   # False OR False
     
     def test_merge_base_data_notes(self, processor):
         """Test notes concatenation."""
@@ -289,8 +286,8 @@ class TestCopyConsolidationProcessor:
         assert copy.storefront == 'Steam'
         assert copy.media == 'Digital'
         assert copy.label == 'GOTY Edition'
-        assert copy.is_real_copy == True
-        assert copy.requires_storefront_resolution == False
+        assert copy.is_real_copy
+        assert not copy.requires_storefront_resolution
     
     def test_extract_copy_data_storefront_other(self, processor):
         """Test extraction when using 'Copy source other' field."""
@@ -305,7 +302,7 @@ class TestCopyConsolidationProcessor:
         copy_list = processor._extract_copy_data(row, 1)
         copy = copy_list[0]
         
-        assert copy.storefront == None  # 'Other' should be None
+        assert copy.storefront is None  # 'Other' should be None
         assert copy.storefront_other == 'Custom Storefront'
     
     def test_extract_copy_data_no_copy(self, processor):
@@ -334,8 +331,8 @@ class TestCopyConsolidationProcessor:
         copy = copy_list[0]
         
         assert copy.platform == 'PC'
-        assert copy.storefront == None
-        assert copy.requires_storefront_resolution == True
+        assert copy.storefront is None
+        assert copy.requires_storefront_resolution
     
     def test_create_fallback_copies(self, processor):
         """Test creation of fallback copies."""
@@ -354,8 +351,8 @@ class TestCopyConsolidationProcessor:
         
         # All should be fallback copies
         for copy in fallback_copies:
-            assert copy.is_real_copy == False
-            assert copy.requires_storefront_resolution == True
+            assert not copy.is_real_copy
+            assert copy.requires_storefront_resolution
             assert copy.media == 'Digital'
     
     def test_create_fallback_copies_empty_platforms(self, processor):
@@ -372,7 +369,7 @@ class TestCopyConsolidationProcessor:
             {'Name': 'Single Game', 'Copy platform': 'PC', '_csv_row_number': 3}
         ]
         
-        consolidated_games = processor.consolidate_games(mixed_data)
+        processor.consolidate_games(mixed_data)
         stats = processor.get_consolidation_stats()
         
         assert stats['processed_games'] == 2  # Two unique games
@@ -388,7 +385,7 @@ class TestCopyConsolidationProcessor:
             media='Digital', copy_identifier='test', csv_row_number=1, is_real_copy=True
         )
         game_with_real = ConsolidatedGame('Test', {}, [real_copy], [1])
-        assert game_with_real.has_real_copies() == True
+        assert game_with_real.has_real_copies()
         
         # Game with only fallback copies
         fallback_copy = CopyData(
@@ -396,7 +393,7 @@ class TestCopyConsolidationProcessor:
             media='Digital', copy_identifier='fallback:PC', csv_row_number=1, is_real_copy=False
         )
         game_with_fallback = ConsolidatedGame('Test', {}, [fallback_copy], [1])
-        assert game_with_fallback.has_real_copies() == False
+        assert not game_with_fallback.has_real_copies()
     
     def test_get_copy_count_method(self):
         """Test the get_copy_count method of ConsolidatedGame."""
@@ -490,7 +487,7 @@ class TestCopyConsolidationIntegration:
         assert len(zelda.copies) == 1
         assert zelda.copies[0].media == 'Physical'
         assert zelda.copies[0].box == 'Perfect'
-        assert zelda.base_data['Mastered'] == True
+        assert zelda.base_data['Mastered']
         
         # Check Portal (fallback platforms)
         assert len(portal.copies) == 2  # PC and Xbox 360

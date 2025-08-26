@@ -65,7 +65,7 @@ def main():
         print(f"🌱 Seeding official data for version {args.version}...")
         result = seed_all_official_data(session, args.version)
         
-        print(f"✅ Seeding completed:")
+        print("✅ Seeding completed:")
         print(f"  Platforms: {result['platforms']}")
         print(f"  Storefronts: {result['storefronts']}")
         print(f"  Total: {result['total']}")

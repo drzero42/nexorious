@@ -4,7 +4,6 @@ Test logo management functionality including upload, delete, and file handling.
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
 from io import BytesIO
 from PIL import Image
@@ -12,17 +11,6 @@ from fastapi.testclient import TestClient
 
 from ..services.logo_service import LogoService
 from ..models.platform import Platform, Storefront
-from .integration_test_utils import (
-    client_with_logo_service_fixture as client_with_logo_service,
-    session_fixture as session,
-    admin_user_fixture as admin_user,
-    admin_headers_fixture as admin_headers,
-    test_platform_fixture as test_platform,
-    test_storefront_fixture as test_storefront,
-    test_logo_service_fixture as test_logo_service,
-    assert_api_success,
-    assert_api_error
-)
 
 
 @pytest.fixture(name="client")

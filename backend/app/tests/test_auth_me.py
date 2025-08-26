@@ -10,7 +10,6 @@ from sqlmodel.pool import StaticPool
 
 from ..main import app
 from ..core.database import get_session
-from ..models.user import User
 
 
 # Test database setup

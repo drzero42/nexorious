@@ -9,12 +9,10 @@ import logging
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from sqlmodel import Session, select, and_, or_
-import json
 import re
 
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.darkadia_import import DarkadiaImport
-from ..models.user import User
 from ..utils.fuzzy_match import calculate_fuzzy_confidence
 from ..api.schemas.platform import (
     PlatformSuggestion,
@@ -125,7 +123,7 @@ class PlatformResolutionService:
         
         # Query all active platforms
         platforms = self.session.exec(
-            select(Platform).where(Platform.is_active == True)
+            select(Platform).where(Platform.is_active)
         ).all()
         
         suggestions = []
@@ -174,7 +172,7 @@ class PlatformResolutionService:
         
         # Query all active storefronts
         storefronts = self.session.exec(
-            select(Storefront).where(Storefront.is_active == True)
+            select(Storefront).where(Storefront.is_active)
         ).all()
         
         suggestions = []
@@ -232,7 +230,7 @@ class PlatformResolutionService:
                 or_(
                     # Unresolved platform
                     and_(
-                        DarkadiaImport.platform_resolved == False,
+                        not DarkadiaImport.platform_resolved,
                         DarkadiaImport.original_platform_name.isnot(None)
                     ),
                     # Unresolved storefront (has original storefront but no resolved storefront)
@@ -573,7 +571,7 @@ class PlatformResolutionService:
             select(Storefront)
             .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
             .where(PlatformStorefront.platform_id == platform_id)
-            .where(Storefront.is_active == True)
+            .where(Storefront.is_active)
             .order_by(Storefront.display_name)
         ).all()
         
@@ -644,7 +642,7 @@ class PlatformResolutionService:
                     # Lower confidence for non-platform-specific suggestions
                     adjusted_confidence = general_suggestion.confidence * 0.9
                     general_suggestion.confidence = adjusted_confidence
-                    general_suggestion.reason = f"General match - may require platform verification"
+                    general_suggestion.reason = "General match - may require platform verification"
                     suggestions.append((adjusted_confidence, general_suggestion))
                     
                     if len(suggestions) >= max_suggestions:
@@ -699,7 +697,7 @@ class PlatformResolutionService:
             and_(
                 DarkadiaImport.user_id == user_id,
                 DarkadiaImport.original_storefront_name.isnot(None),
-                DarkadiaImport.storefront_resolved == False
+                not DarkadiaImport.storefront_resolved
             )
         )
         

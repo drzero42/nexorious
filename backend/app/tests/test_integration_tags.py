@@ -3,25 +3,14 @@ Integration tests for tag API endpoints.
 Tests all tag HTTP endpoints with authentication, validation, and proper request/response handling.
 """
 
-import pytest
-import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict
 
 from ..models.tag import Tag, UserGameTag
 from ..models.user import User
-from ..models.game import Game
 from ..models.user_game import UserGame
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    admin_user_fixture as admin_user,
-    auth_headers_fixture as auth_headers,
-    admin_headers_fixture as admin_headers,
-    test_game_fixture as test_game,
-    test_user_game_fixture as test_user_game,
     assert_api_error,
     assert_api_success,
     register_and_login_user,
@@ -310,7 +299,7 @@ class TestTagGetEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        user1_headers = register_and_login_user(client, user1_data)
+        register_and_login_user(client, user1_data)
         user2_headers = register_and_login_user(client, user2_data)
         
         # Get user IDs
@@ -392,7 +381,7 @@ class TestTagUpdateEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        user1_headers = register_and_login_user(client, user1_data)
+        register_and_login_user(client, user1_data)
         user2_headers = register_and_login_user(client, user2_data)
         
         # Get user1 ID
@@ -478,7 +467,7 @@ class TestTagDeleteEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        user1_headers = register_and_login_user(client, user1_data)
+        register_and_login_user(client, user1_data)
         user2_headers = register_and_login_user(client, user2_data)
         
         # Get user1 ID

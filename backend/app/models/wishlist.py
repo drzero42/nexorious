@@ -6,6 +6,13 @@ from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime, timezone
 import uuid
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .game import Game
+
 
 class Wishlist(SQLModel, table=True):
     """Wishlist model for tracking games users want to purchase."""
@@ -27,6 +34,3 @@ class Wishlist(SQLModel, table=True):
     )
 
 
-# Import forward references
-from .user import User
-from .game import Game

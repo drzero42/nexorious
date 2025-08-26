@@ -3,11 +3,9 @@ Tests for seed data fixtures and seeding functionality.
 Tests all seed data functions including platforms, storefronts, and platform-storefront associations.
 """
 
-import pytest
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict
 from unittest.mock import patch
-import logging
 from fastapi.testclient import TestClient
 
 from ..models.platform import Platform, Storefront
@@ -22,8 +20,6 @@ from ..seed_data.platforms import OFFICIAL_PLATFORMS
 from ..seed_data.storefronts import OFFICIAL_STOREFRONTS
 from ..seed_data.platform_storefront_associations import PLATFORM_STOREFRONT_ASSOCIATIONS
 from .integration_test_utils import (
-    session_fixture as session,
-    client_fixture as client,
     create_test_user_data,
     register_and_login_user
 )
@@ -251,7 +247,7 @@ class TestSeedAllOfficialData:
     def test_seed_all_data_idempotent(self, session: Session):
         """Test that complete seeding process is idempotent."""
         # First seed
-        result1 = seed_all_official_data(session, "1.0.0")
+        seed_all_official_data(session, "1.0.0")
         
         # Second seed
         result2 = seed_all_official_data(session, "1.0.0")
@@ -337,7 +333,7 @@ class TestSeedDataEdgeCases:
     def test_seed_with_different_versions(self, session: Session):
         """Test seeding with different version strings."""
         # Seed with version 1.0.0
-        result1 = seed_all_official_data(session, "1.0.0")
+        seed_all_official_data(session, "1.0.0")
         
         # Seed again with version 2.0.0
         result2 = seed_all_official_data(session, "2.0.0")

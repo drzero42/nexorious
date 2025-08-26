@@ -7,7 +7,6 @@ from sqlmodel import Session, select, and_, func, or_, col
 from datetime import datetime, timezone
 from typing import Annotated, Optional, List
 import logging
-from rapidfuzz import fuzz
 from decimal import Decimal
 
 from ..core.database import get_session
@@ -22,7 +21,6 @@ from ..api.schemas.user_game import (
     ProgressUpdateRequest,
     UserGamePlatformCreateRequest,
     UserGameResponse,
-    UserGameListRequest,
     UserGameListResponse,
     UserGamePlatformResponse,
     BulkStatusUpdateRequest,
@@ -43,8 +41,6 @@ def _rank_user_games_by_fuzzy_match(user_games: List[UserGame], query: str, thre
     """Rank user games by fuzzy matching similarity to query."""
     if not user_games or not query.strip():
         return user_games
-    
-    query_lower = query.lower().strip()
     
     # Calculate similarity scores for each user game using shared fuzzy matching logic
     from app.utils.fuzzy_match import calculate_fuzzy_confidence
@@ -276,16 +272,16 @@ async def get_collection_stats(
     
     # Games by status
     status_counts = {}
-    for status in PlayStatus:
+    for play_status in PlayStatus:
         count = session.exec(
             select(func.count()).where(
                 and_(
                     UserGame.user_id == current_user.id,
-                    UserGame.play_status == status
+                    UserGame.play_status == play_status
                 )
             )
         ).one()
-        status_counts[status] = count
+        status_counts[play_status] = count
     
     # Platform counts (only if there are games)
     if total_games > 0:

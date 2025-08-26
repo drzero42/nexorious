@@ -10,7 +10,7 @@ import json
 import logging
 import pandas as pd
 from datetime import datetime, date
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
@@ -394,7 +394,7 @@ def enhanced_safe_json_dumps(data: Any, context: str = "", **kwargs) -> str:
                 try:
                     analysis = deep_debug_serialization_issues(data, context or "failed_data")
                     logger.error(f"Final analysis: {analysis}")
-                except:
+                except Exception:
                     logger.error("Could not perform final analysis due to additional errors")
             
             raise ValueError(f"Cannot serialize data to JSON{' for ' + context if context else ''}: {str(fallback_error)}")

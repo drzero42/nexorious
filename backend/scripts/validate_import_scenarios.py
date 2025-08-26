@@ -7,22 +7,18 @@ Darkadia CSV import system to ensure the existing APIs are robust enough.
 """
 
 import asyncio
-import json
 import sys
 import uuid
-from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 import httpx
 from rich.console import Console
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # Add the parent directory to the path so we can import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import settings
 
 console = Console()
 

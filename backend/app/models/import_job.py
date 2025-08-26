@@ -9,6 +9,12 @@ from enum import Enum
 import uuid
 import json
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+
 
 class ImportType(str, Enum):
     """Import type enumeration."""
@@ -99,5 +105,3 @@ class ImportJob(SQLModel, table=True):
         self.error_log = json.dumps(value)
 
 
-# Import forward references
-from .user import User

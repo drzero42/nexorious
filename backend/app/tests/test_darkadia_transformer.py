@@ -6,16 +6,13 @@ and batch processing functionality.
 """
 
 import pytest
-from typing import Dict, Any, List
-from datetime import datetime
 
 from app.services.import_sources.darkadia_transformer import (
     DarkadiaTransformationPipeline,
     ValidationStage,
     MappingStage,
     PersistenceStage,
-    TransformationContext,
-    ValidationIssue
+    TransformationContext
 )
 from app.models.user_game import PlayStatus
 
@@ -80,10 +77,10 @@ class TestValidationStage:
         
         assert len(result) == 1
         row = result[0]
-        assert row['Loved'] == True
-        assert row['Played'] == True 
-        assert row['Playing'] == True  # 2 converts to True
-        assert row['Finished'] == False  # invalid converts to False
+        assert row['Loved']
+        assert row['Played'] 
+        assert row['Playing']  # 2 converts to True
+        assert not row['Finished']  # invalid converts to False
         
         # Should have warnings for unusual conversions
         warnings = [issue for issue in context.issues if issue.severity == 'warning']
@@ -105,8 +102,8 @@ class TestValidationStage:
         
         assert len(result) == 1
         row = result[0]
-        assert row['Playing'] == False  # Should be corrected
-        assert row['Shelved'] == True
+        assert not row['Playing']  # Should be corrected
+        assert row['Shelved']
         
         # Should have warning about impossible combination
         warnings = [issue for issue in context.issues if 'Playing' in issue.message and 'Shelved' in issue.message]
@@ -129,9 +126,9 @@ class TestValidationStage:
         
         assert len(result) == 1
         row = result[0]
-        assert row['Dominated'] == True
-        assert row['Mastered'] == True  # Should be auto-corrected
-        assert row['Finished'] == True  # Should be auto-corrected
+        assert row['Dominated']
+        assert row['Mastered']  # Should be auto-corrected
+        assert row['Finished']  # Should be auto-corrected
         
         # Should have warnings about auto-correction
         warnings = [issue for issue in context.issues if issue.severity == 'warning']
@@ -526,8 +523,8 @@ class TestDarkadiaTransformationPipeline:
         # Check the valid game was processed with corrections
         game = transformed_data[0]
         assert game['Name'] == 'Valid Game'
-        assert game['Playing'] == False  # Corrected from impossible combination
-        assert game['Shelved'] == True
+        assert not game['Playing']  # Corrected from impossible combination
+        assert game['Shelved']
         assert game['Rating'] is None  # Out of range rating cleared
         assert game['Added'] is None   # Invalid date cleared
         
@@ -630,7 +627,7 @@ class TestDarkadiaTransformationPipeline:
         assert platform1['original_platform'] == 'PC'
         assert platform1['storefront'] == 'steam'  # Should be mapped to database name
         assert platform1['original_storefront'] == 'Steam'
-        assert platform1['is_real_copy'] == True
+        assert platform1['is_real_copy']
         assert platform1['copy_identifier'] == 'plt:PC|str:Steam'
         
         # Test game 2: Should handle "Other" storefront with fallback to Copy source other
@@ -643,7 +640,7 @@ class TestDarkadiaTransformationPipeline:
         assert platform2['original_platform'] == 'PlayStation 4'
         assert platform2['storefront'] == 'playstation-store'  # PSN should map to playstation-store database name
         assert platform2['original_storefront'] == 'PSN'
-        assert platform2['is_real_copy'] == True
+        assert platform2['is_real_copy']
         
         # Test game 3: Should have fallback platform data
         game3 = result[2]
@@ -657,8 +654,8 @@ class TestDarkadiaTransformationPipeline:
         assert xbox_platform['original_platform'] == 'Xbox One'
         assert xbox_platform['storefront'] is None
         assert xbox_platform['original_storefront'] is None
-        assert xbox_platform['is_real_copy'] == False
-        assert xbox_platform['requires_storefront_resolution'] == True
+        assert not xbox_platform['is_real_copy']
+        assert xbox_platform['requires_storefront_resolution']
         assert xbox_platform['copy_identifier'] == 'fallback:Xbox One'
         
         # Check second fallback platform (PC)
@@ -667,8 +664,8 @@ class TestDarkadiaTransformationPipeline:
         assert pc_platform['original_platform'] == 'PC'
         assert pc_platform['storefront'] is None
         assert pc_platform['original_storefront'] is None
-        assert pc_platform['is_real_copy'] == False
-        assert pc_platform['requires_storefront_resolution'] == True
+        assert not pc_platform['is_real_copy']
+        assert pc_platform['requires_storefront_resolution']
         assert pc_platform['copy_identifier'] == 'fallback:PC'
         
         # Verify all games have _platforms metadata now

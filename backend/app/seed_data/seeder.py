@@ -4,7 +4,7 @@ Seeding functions for platforms and storefronts with conflict resolution.
 
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 from sqlmodel import Session, select
 import logging
 

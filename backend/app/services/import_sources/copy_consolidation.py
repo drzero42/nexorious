@@ -246,10 +246,10 @@ class CopyConsolidationProcessor:
         boolean_fields = ['Loved', 'Owned', 'Played', 'Playing', 'Finished', 
                          'Mastered', 'Dominated', 'Shelved']
         
-        for field in boolean_fields:
+        for field_name in boolean_fields:
             values = []
             for row in rows:
-                value = row.get(field, False)
+                value = row.get(field_name, False)
                 # Handle various boolean representations
                 if isinstance(value, bool):
                     values.append(value)
@@ -260,7 +260,7 @@ class CopyConsolidationProcessor:
                 else:
                     values.append(False)
             
-            merged_data[field] = any(values)
+            merged_data[field_name] = any(values)
         
         # Notes: Concatenate unique non-empty values
         notes = []

@@ -2,7 +2,6 @@
 Tests for data extraction utilities.
 """
 
-import pytest
 import pandas as pd
 from datetime import datetime
 from app.utils.data_extraction import (

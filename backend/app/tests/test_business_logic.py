@@ -3,7 +3,6 @@ Unit tests for business logic functions across the application.
 Tests core utility functions, data processing, and business rules.
 """
 
-import pytest
 from unittest.mock import patch
 
 from app.services.igdb import IGDBService, GameMetadata

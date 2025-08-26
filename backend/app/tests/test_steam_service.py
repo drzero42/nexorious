@@ -4,7 +4,6 @@ Tests for Steam Web API service.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
 from app.services.steam import (
     SteamService, 
@@ -14,7 +13,6 @@ from app.services.steam import (
     SteamUserInfo,
     SteamGame
 )
-from app.utils.rate_limiter import RateLimitExceeded
 
 
 @pytest.fixture
@@ -102,7 +100,6 @@ def steam_service_with_responses():
         service = SteamService("test_api_key_32chars_long_1234567")
         
         # Replace the complex rate limiter mocking with direct method mocking
-        original_make_request = service._make_request
         
         async def mock_make_request(endpoint, params=None):
             if errors and endpoint in errors:

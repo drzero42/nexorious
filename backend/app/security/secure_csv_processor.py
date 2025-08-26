@@ -24,7 +24,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
-import resource
 
 logger = logging.getLogger(__name__)
 

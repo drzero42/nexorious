@@ -11,10 +11,9 @@ Reference:
 """
 
 import pytest
-import logging
-from typing import List, Dict, Any
+from typing import List
 
-from app.security.csv_sanitizer import CSVSanitizer, SanitizationStats
+from app.security.csv_sanitizer import CSVSanitizer
 
 
 class TestCSVSanitizer:

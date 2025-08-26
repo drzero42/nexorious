@@ -3,30 +3,16 @@ Integration tests for user games endpoints.
 Tests all user games API endpoints with proper request/response validation.
 """
 
-import pytest
 import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict
 
 from ..models.user_game import UserGame, UserGamePlatform
 from ..models.user import User
 from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    admin_user_fixture as admin_user,
-    auth_headers_fixture as auth_headers,
-    admin_headers_fixture as admin_headers,
-    test_game_fixture as test_game,
-    test_platform_fixture as test_platform,
-    test_storefront_fixture as test_storefront,
-    test_storefront_2_fixture as test_storefront_2,
-    test_user_game_fixture as test_user_game,
-    mock_igdb_service_fixture as mock_igdb_service,
-    client_with_mock_igdb_fixture as client_with_mock_igdb,
     create_test_user_game_data,
     assert_api_error,
     assert_api_success,

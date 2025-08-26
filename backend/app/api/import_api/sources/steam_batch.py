@@ -11,7 +11,6 @@ from typing import Annotated, List
 import logging
 
 from ....core.database import get_session
-from ....core.security import get_current_user
 from ...dependencies import verify_steam_games_enabled
 from ....models.user import User
 from ....models.steam_game import SteamGame
@@ -58,7 +57,7 @@ async def start_batch_auto_match(
             and_(
                 SteamGame.user_id == current_user.id,
                 col(SteamGame.igdb_id).is_(None),  # No IGDB match yet
-                SteamGame.ignored == False    # Not ignored by user
+                SteamGame.ignored.is_(False)    # Not ignored by user
             )
         )
         unmatched_games = db_session.exec(unmatched_games_query).all()
@@ -146,7 +145,7 @@ async def process_next_auto_match_batch(
             and_(
                 SteamGame.user_id == current_user.id,
                 col(SteamGame.igdb_id).is_(None),
-                SteamGame.ignored == False,
+                SteamGame.ignored.is_(False),
                 col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)
@@ -278,7 +277,7 @@ async def start_batch_sync(
                 SteamGame.user_id == current_user.id,
                 col(SteamGame.igdb_id).is_not(None),  # Has IGDB match
                 col(SteamGame.game_id).is_(None),     # Not yet synced to collection
-                SteamGame.ignored == False       # Not ignored by user
+                SteamGame.ignored.is_(False)       # Not ignored by user
             )
         )
         matched_games = db_session.exec(matched_games_query).all()
@@ -364,7 +363,7 @@ async def process_next_sync_batch(
                 SteamGame.user_id == current_user.id,
                 col(SteamGame.igdb_id).is_not(None),
                 col(SteamGame.game_id).is_(None),
-                SteamGame.ignored == False,
+                SteamGame.ignored.is_(False),
                 col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)

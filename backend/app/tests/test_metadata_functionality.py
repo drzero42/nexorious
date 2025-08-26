@@ -4,7 +4,6 @@ Tests for metadata population and refresh functionality.
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import date
 
 from app.services.igdb import IGDBService, GameMetadata
 from app.services.storage import StorageService
@@ -220,8 +219,8 @@ class TestStorageService:
             
             with patch('pathlib.Path.exists', return_value=False):
                 with patch.object(storage_service, '_validate_image_file', return_value=True):
-                    with patch('builtins.open', mock_open()) as mock_file:
-                        with patch('os.rename') as mock_rename:
+                    with patch('builtins.open', mock_open()):
+                        with patch('os.rename'):
                             result = await storage_service.download_and_store_cover_art("12345", "https://example.com/cover.jpg")
                             
                             assert result == "/static/cover_art/12345.jpg"

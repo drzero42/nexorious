@@ -6,15 +6,10 @@ import pytest
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
-import uuid
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
 from ..models.game import Game
-from .integration_test_utils import (
-    session_fixture as session,
-    test_user_fixture as test_user
-)
 
 
 class TestSteamGameModel:
@@ -349,7 +344,7 @@ class TestSteamGameModel:
             select(SteamGame).where(
                 SteamGame.user_id == test_user.id,
                 SteamGame.igdb_id.is_(None),
-                SteamGame.ignored == False
+                not SteamGame.ignored
             )
         ).all()
         assert len(unmatched) == 1
@@ -361,7 +356,7 @@ class TestSteamGameModel:
                 SteamGame.user_id == test_user.id,
                 SteamGame.igdb_id.isnot(None),
                 SteamGame.game_id.is_(None),
-                SteamGame.ignored == False
+                not SteamGame.ignored
             )
         ).all()
         assert len(matched) == 1
@@ -371,7 +366,7 @@ class TestSteamGameModel:
         ignored = session.exec(
             select(SteamGame).where(
                 SteamGame.user_id == test_user.id,
-                SteamGame.ignored == True
+                SteamGame.ignored
             )
         ).all()
         assert len(ignored) == 1

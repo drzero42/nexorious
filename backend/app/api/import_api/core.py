@@ -4,14 +4,14 @@ Core import management endpoints for cross-source operations.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, desc, col
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional
 from datetime import datetime, timezone
 import logging
 
 from ...core.database import get_session
 from ...core.security import get_current_user
 from ...models.user import User
-from ...models.import_job import ImportJob, ImportStatus, ImportType
+from ...models.import_job import ImportJob, ImportStatus
 from ..schemas.import_schemas import (
     ImportSourceInfo,
     ImportSourcesResponse,

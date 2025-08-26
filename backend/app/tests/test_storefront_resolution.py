@@ -4,7 +4,7 @@ Tests for storefront resolution functionality.
 
 import pytest
 from unittest.mock import AsyncMock, Mock
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.models.platform import Platform, Storefront, PlatformStorefront
 from app.models.darkadia_import import DarkadiaImport
@@ -225,7 +225,6 @@ class TestStorefrontResolution:
         mock_session.exec.return_value.all.return_value = []
         
         # Mock fuzzy matching utility
-        from app.utils.fuzzy_match import calculate_fuzzy_confidence
         import app.utils.fuzzy_match
         original_function = app.utils.fuzzy_match.calculate_fuzzy_confidence
         app.utils.fuzzy_match.calculate_fuzzy_confidence = Mock(return_value=0.8)

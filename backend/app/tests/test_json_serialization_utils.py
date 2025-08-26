@@ -12,7 +12,6 @@ import pandas as pd
 from datetime import datetime, date
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Dict, List
 
 from app.utils.json_serialization import (
     PandasJSONEncoder,

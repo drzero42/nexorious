@@ -8,6 +8,12 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user_game import UserGamePlatform
+
 
 class Platform(SQLModel, table=True):
     """Platform model for gaming platforms (Windows, PlayStation, Xbox, Nintendo Switch, etc.)."""
@@ -73,5 +79,3 @@ class PlatformStorefront(SQLModel, table=True):
     )
 
 
-# Import forward references
-from .user_game import UserGamePlatform

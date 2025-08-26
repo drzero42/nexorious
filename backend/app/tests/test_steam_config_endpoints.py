@@ -9,13 +9,8 @@ from sqlmodel import Session
 import json
 
 from app.models.user import User
-from app.services.steam import SteamUserInfo, SteamAuthenticationError, SteamAPIError
+from app.services.steam import SteamUserInfo
 from app.tests.integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    auth_headers_fixture as auth_headers,
-    steam_dependencies_fixture as steam_dependencies,
     assert_api_error,
     assert_api_success
 )

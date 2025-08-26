@@ -3,11 +3,9 @@ Tests for Darkadia CSV Parser module.
 """
 
 import pytest
-import asyncio
 from pathlib import Path
 import tempfile
 import csv
-from datetime import datetime
 
 from scripts.darkadia.parser import DarkadiaCSVParser
 

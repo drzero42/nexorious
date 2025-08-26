@@ -80,7 +80,7 @@ app.add_middleware(
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     body = await request.body()
-    logger.error(f"=== Validation Error ===")
+    logger.error("=== Validation Error ===")
     logger.error(f"URL: {request.url}")
     logger.error(f"Method: {request.method}")
     logger.error(f"Errors: {exc.errors()}")

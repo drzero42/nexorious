@@ -6,10 +6,9 @@ to Nexorious data models, including platform/storefront mapping
 and play status conversion.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from enum import Enum
-import re
 
 import pandas as pd
 from rich.console import Console

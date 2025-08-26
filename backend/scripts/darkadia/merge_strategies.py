@@ -7,7 +7,7 @@ when importing games that already exist in the user's collection.
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ from enum import Enum
 
 from rich.console import Console
 from rich.table import Table
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Prompt
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from .api_client import NexoriousAPIClient, APIException
@@ -460,7 +460,7 @@ class InteractiveMerger(MergeStrategy):
         csv_platforms = csv_game.get('platforms', [])
         
         if csv_platforms:
-            console.print(f"\n[bold cyan]Platform Changes:[/bold cyan]")
+            console.print("\n[bold cyan]Platform Changes:[/bold cyan]")
             console.print(f"  Current platforms: {len(existing_platforms)}")
             for platform in existing_platforms:
                 console.print(f"    • {platform.get('platform_name', 'Unknown')} ({platform.get('storefront_name', 'Unknown')})")

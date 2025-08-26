@@ -4,7 +4,7 @@ User game collection-related schemas for API requests and responses.
 
 from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from typing import Optional, List
-from datetime import date, datetime
+from datetime import date
 from enum import Enum
 from .common import TimestampMixin
 from .game import GameResponse

@@ -9,6 +9,14 @@ from datetime import datetime, timezone
 import uuid
 import json
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .user_game import UserGame, UserGamePlatform
+    from .platform import Storefront
+
 
 class DarkadiaImport(SQLModel, table=True):
     """Darkadia import model for storing CSV import data with extended metadata."""
@@ -122,7 +130,3 @@ class DarkadiaImport(SQLModel, table=True):
         self.platform_resolution_data_json = json.dumps(value)
 
 
-# Import forward references
-from .user import User
-from .user_game import UserGame, UserGamePlatform
-from .platform import Storefront

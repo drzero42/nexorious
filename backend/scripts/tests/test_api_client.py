@@ -3,8 +3,7 @@ Tests for Nexorious API Client module.
 """
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import httpx
 
 from scripts.darkadia.api_client import NexoriousAPIClient, APIException

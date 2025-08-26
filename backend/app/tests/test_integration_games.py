@@ -3,28 +3,14 @@ Integration tests for games endpoints.
 Tests all games API endpoints with proper request/response validation.
 """
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-from unittest.mock import MagicMock, patch
-from typing import Dict, Any
+from sqlmodel import Session
+from typing import Dict
 
 from ..models.game import Game, GameAlias
-from ..models.user import User
-from ..services.igdb import GameMetadata, TwitchAuthError, IGDBError
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    admin_user_fixture as admin_user,
-    auth_headers_fixture as auth_headers,
-    admin_headers_fixture as admin_headers,
-    test_game_fixture as test_game,
-    mock_igdb_service_fixture as mock_igdb_service,
-    client_with_mock_igdb_fixture as client_with_mock_igdb,
     assert_api_error,
-    assert_api_success,
-    register_and_login_user
+    assert_api_success
 )
 
 

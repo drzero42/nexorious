@@ -7,20 +7,17 @@ from sqlmodel import Session, select, or_, and_, func, col
 from datetime import datetime, timezone, date
 from decimal import Decimal
 import json
-import re
 import logging
 from typing import Annotated, Optional, List
-from rapidfuzz import fuzz
 
 from ..core.database import get_session
-from ..core.security import get_current_user, get_current_admin_user
+from ..core.security import get_current_user
 from ..models.user import User
 from ..models.game import Game, GameAlias
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.game import (
     GameResponse,
-    GameSearchRequest,
     GameListResponse,
     GameAliasCreateRequest,
     GameAliasResponse,
@@ -33,12 +30,11 @@ from ..api.schemas.game import (
     MetadataRefreshResponse,
     MetadataPopulateRequest,
     MetadataPopulateResponse,
-    MetadataComparisonResponse,
     BulkMetadataRequest,
     BulkMetadataResponse,
     BulkCoverArtDownloadRequest
 )
-from ..api.schemas.common import SuccessResponse, PaginationParams
+from ..api.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/games", tags=["Games"])
 logger = logging.getLogger(__name__)
@@ -67,8 +63,6 @@ def _rank_games_by_fuzzy_match(games: List[Game], query: str, threshold: float =
     """Rank games by fuzzy matching similarity to query."""
     if not games or not query.strip():
         return games
-    
-    query_lower = query.lower().strip()
     
     # Calculate similarity scores for each game using shared fuzzy matching logic
     from app.utils.fuzzy_match import calculate_fuzzy_confidence
@@ -1077,7 +1071,7 @@ async def bulk_download_cover_art(
                 
                 result["success"] = True
                 result["fields"] = ["cover_art_url"]
-                result["message"] = f"Cover art downloaded successfully"
+                result["message"] = "Cover art downloaded successfully"
                 successful_operations += 1
             else:
                 result["message"] = "Failed to download cover art"

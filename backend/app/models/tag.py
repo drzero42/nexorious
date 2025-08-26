@@ -8,6 +8,13 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .user_game import UserGame
+
 
 class Tag(SQLModel, table=True):
     """Tag model for user-defined game categorization."""
@@ -62,6 +69,3 @@ class UserGameTag(SQLModel, table=True):
     )
 
 
-# Import forward references
-from .user import User
-from .user_game import UserGame

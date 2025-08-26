@@ -3,7 +3,7 @@ Tests for IGDB service functionality including fuzzy matching.
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from app.services.igdb import IGDBService, GameMetadata, TwitchAuthError, IGDBError
 
 
@@ -111,7 +111,7 @@ class TestIGDBService:
                     GameMetadata(igdb_id="1", title="Test Game")
                 ]
                 
-                result = await service.search_games("test", limit=10)
+                await service.search_games("test", limit=10)
                 
                 # Verify fuzzy matching was called
                 mock_rank.assert_called_once()

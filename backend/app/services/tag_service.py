@@ -12,9 +12,7 @@ from ..models.tag import Tag, UserGameTag
 from ..models.user_game import UserGame
 from ..api.schemas.tag import (
     TagCreateRequest, 
-    TagUpdateRequest, 
-    TagResponse,
-    TagUsageStatsResponse
+    TagUpdateRequest
 )
 
 logger = logging.getLogger(__name__)

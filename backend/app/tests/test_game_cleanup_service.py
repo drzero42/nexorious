@@ -2,8 +2,6 @@
 Tests for the game cleanup service.
 """
 
-import pytest
-from datetime import date
 from sqlmodel import Session, select
 
 from ..services.game_cleanup import cleanup_unreferenced_game, get_unreferenced_games, cleanup_multiple_games
@@ -11,10 +9,6 @@ from ..models.game import Game, GameAlias
 from ..models.user_game import UserGame, OwnershipStatus, PlayStatus
 from ..models.wishlist import Wishlist
 from ..models.user import User
-from .integration_test_utils import (
-    session_fixture as session,
-    test_user_fixture as user
-)
 
 
 class TestGameCleanupService:

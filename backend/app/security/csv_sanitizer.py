@@ -16,7 +16,7 @@ import re
 import html
 import logging
 from typing import Any, List, Pattern, Dict, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 

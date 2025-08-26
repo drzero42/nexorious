@@ -4,7 +4,7 @@ Tag management API endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session
-from typing import Annotated, List
+from typing import Annotated
 import logging
 
 from ..core.database import get_session
@@ -282,7 +282,7 @@ async def bulk_remove_tags(
             total_removed += removed_count
         
         return {
-            "message": f"Successfully completed bulk tag removal",
+            "message": "Successfully completed bulk tag removal",
             "total_removed_associations": total_removed,
             "games_processed": len(request.user_game_ids),
             "tags_per_game": len(request.tag_ids)
@@ -515,7 +515,7 @@ async def bulk_assign_tags(
             total_created += len(associations)
         
         return {
-            "message": f"Successfully completed bulk tag assignment",
+            "message": "Successfully completed bulk tag assignment",
             "total_new_associations": total_created,
             "games_processed": len(request.user_game_ids),
             "tags_per_game": len(request.tag_ids)

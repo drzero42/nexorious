@@ -4,8 +4,7 @@ Tests model validation, relationships, constraints, and database operations.
 """
 
 import pytest
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import Session, SQLModel, create_engine, select, and_
 from sqlmodel.pool import StaticPool
 from sqlalchemy.exc import IntegrityError

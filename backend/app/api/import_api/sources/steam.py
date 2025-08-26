@@ -14,9 +14,6 @@ from ....services.import_sources.steam import create_steam_import_service
 from ....services.igdb import IGDBService
 from ...dependencies import verify_steam_games_enabled, get_igdb_service_dependency
 from ...schemas.import_schemas import (
-    SourceConfigResponse,
-    VerificationRequest,
-    VerificationResponse,
     LibraryPreviewResponse,
     ImportGamesList,
     ImportGameResponse,

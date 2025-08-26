@@ -3,20 +3,12 @@ Integration tests for admin user management endpoints.
 Tests all admin user management endpoints with proper request/response validation.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 from typing import Dict
 
 from ..models.user import User, UserSession
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    admin_user_fixture as admin_user,
-    auth_headers_fixture as auth_headers,
-    admin_headers_fixture as admin_headers,
-    create_test_user_data,
     assert_api_error,
     assert_api_success,
 )

@@ -13,7 +13,6 @@ Reference:
 import pytest
 import tempfile
 import csv
-import io
 import asyncio
 import time
 from pathlib import Path
@@ -23,9 +22,7 @@ from app.security.secure_csv_processor import (
     SecureCSVProcessor, 
     ProcessingLimits,
     ProcessingStats,
-    ProcessingTimeoutError,
     RowLimitExceededError,
-    CellSizeExceededError,
     MemoryLimitExceededError,
     ChunkLimitExceededError
 )
@@ -257,7 +254,7 @@ class TestSecureCSVProcessor:
             assert len(processed_rows) >= 2, "Should process at least valid rows"
             
             # Check statistics for any skipped rows
-            stats = processor.get_processing_stats()
+            processor.get_processing_stats()
             # Note: In this case, rows shouldn't actually be skipped since the data is valid
             
         finally:

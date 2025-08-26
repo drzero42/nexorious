@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.darkadia.parser import DarkadiaCSVParser
 from scripts.darkadia.api_client import NexoriousAPIClient
-from scripts.darkadia.merge_strategies import MergeStrategy, InteractiveMerger, OverwriteMerger, PreserveMerger
+from scripts.darkadia.merge_strategies import InteractiveMerger, OverwriteMerger, PreserveMerger
 from app.services.import_sources.copy_consolidation import CopyConsolidationProcessor
 
 console = Console()

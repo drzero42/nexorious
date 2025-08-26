@@ -6,12 +6,11 @@ including error categorization, detailed messages, and troubleshooting guidance.
 """
 
 import pytest
-from unittest.mock import Mock, patch
-from datetime import datetime
+from unittest.mock import Mock
 from pathlib import Path
 
 from scripts.darkadia.merge_strategies import (
-    ErrorCategory, ImportError, MergeStrategy, InteractiveMerger,
+    ErrorCategory, ImportError, InteractiveMerger,
     OverwriteMerger, PreserveMerger
 )
 from scripts.darkadia.api_client import APIException, NexoriousAPIClient

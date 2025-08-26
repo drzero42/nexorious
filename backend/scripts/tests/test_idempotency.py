@@ -6,11 +6,9 @@ identical results without creating duplicates or unintended side effects.
 """
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from pathlib import Path
 import tempfile
-import json
 from datetime import datetime
 
 from scripts.darkadia.merge_strategies import InteractiveMerger, OverwriteMerger, PreserveMerger

@@ -5,16 +5,11 @@ This module handles parsing and validation of Darkadia CSV export files,
 including duplicate detection and data consolidation.
 """
 
-import asyncio
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
-from datetime import datetime, date
-import uuid
+from typing import List, Dict, Any
 
 import pandas as pd
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-from rapidfuzz import fuzz
 
 from .mapper import DarkadiaDataMapper
 

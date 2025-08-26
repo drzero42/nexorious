@@ -14,12 +14,11 @@ import pytest
 import tempfile
 import csv
 import io
-import sys
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
 from fastapi import UploadFile
-from app.security.file_upload_validator import SecureFileUploadValidator, FileValidationResult
+from app.security.file_upload_validator import SecureFileUploadValidator
 
 
 class TestSecureFileUploadValidator:

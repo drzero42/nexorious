@@ -1,7 +1,6 @@
 """
 Tests for the shared fuzzy matching utility.
 """
-import pytest
 from app.utils.fuzzy_match import calculate_fuzzy_confidence
 
 

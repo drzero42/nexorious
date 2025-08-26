@@ -3,16 +3,14 @@ Unit tests for SteamGamesService.
 """
 
 import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from sqlmodel import Session, select
-from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
 from ..models.game import Game
-from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
+from ..models.user_game import UserGame, OwnershipStatus
 from ..models.platform import Platform, Storefront
 from ..services.steam_games import (
     SteamGamesService,
@@ -26,10 +24,6 @@ from ..services.steam_games import (
 )
 from ..services.steam import SteamAuthenticationError, SteamAPIError, SteamGame as SteamGameData
 from ..services.igdb import IGDBError
-from .integration_test_utils import (
-    session_fixture as session,
-    test_user_fixture as test_user
-)
 
 
 class MockIGDBResult:

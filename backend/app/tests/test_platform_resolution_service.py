@@ -3,19 +3,10 @@ Tests for the Platform Resolution Service.
 """
 
 import pytest
-from sqlmodel import Session
-from unittest.mock import AsyncMock, MagicMock
 
 from app.services.platform_resolution import PlatformResolutionService
 from app.models.platform import Platform, Storefront
-from app.models.darkadia_import import DarkadiaImport
-from app.models.user import User
 from app.api.schemas.platform import PlatformSuggestion, StorefrontSuggestion
-from .integration_test_utils import (
-    session_fixture as session,
-    test_platform_fixture as test_platform,
-    test_storefront_fixture as test_storefront,
-)
 
 
 @pytest.fixture

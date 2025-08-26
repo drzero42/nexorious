@@ -3,27 +3,16 @@ Integration tests for platforms endpoints.
 Tests all platforms and storefronts API endpoints with proper request/response validation.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict
 
 from ..models.platform import Platform, Storefront, PlatformStorefront
-from ..models.user import User
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    admin_user_fixture as admin_user,
-    auth_headers_fixture as auth_headers,
-    admin_headers_fixture as admin_headers,
-    test_platform_fixture as test_platform,
-    test_storefront_fixture as test_storefront,
     create_test_platform_data,
     create_test_storefront_data,
     assert_api_error,
-    assert_api_success,
-    register_and_login_user
+    assert_api_success
 )
 
 

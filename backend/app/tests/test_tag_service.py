@@ -4,7 +4,6 @@ Tests all CRUD operations, user isolation, validation, and edge cases.
 """
 
 import pytest
-from datetime import datetime, timezone
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from unittest.mock import Mock
@@ -15,7 +14,7 @@ from ..models.game import Game
 from ..models.user_game import UserGame
 from ..services.tag_service import TagService
 from ..api.schemas.tag import TagCreateRequest, TagUpdateRequest
-from .integration_test_utils import create_test_game, create_test_games
+from .integration_test_utils import create_test_games
 
 
 @pytest.fixture(name="service_session")

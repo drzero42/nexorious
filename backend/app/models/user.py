@@ -9,6 +9,18 @@ from pydantic import computed_field
 import uuid
 import json
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user_game import UserGame
+    from .tag import Tag
+    from .wishlist import Wishlist
+    from .import_job import ImportJob
+    from .steam_game import SteamGame
+    from .darkadia_game import DarkadiaGame
+    from .darkadia_import import DarkadiaImport
+
 
 class User(SQLModel, table=True):
     """User model for authentication and profile data."""
@@ -65,11 +77,3 @@ class UserSession(SQLModel, table=True):
     user: User = Relationship(back_populates="sessions")
 
 
-# Import forward references
-from .user_game import UserGame
-from .tag import Tag
-from .wishlist import Wishlist
-from .import_job import ImportJob
-from .steam_game import SteamGame
-from .darkadia_game import DarkadiaGame
-from .darkadia_import import DarkadiaImport

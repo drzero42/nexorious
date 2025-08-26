@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 import httpx
 from igdb.wrapper import IGDBWrapper
-from rapidfuzz import fuzz
 
 from app.core.config import settings
 from app.services.storage import storage_service
@@ -353,7 +352,7 @@ class IGDBService:
         if not games or not query.strip():
             return games
         
-        query_lower = query.lower().strip()
+        query.lower().strip()
         
         # Calculate similarity scores for each game using shared fuzzy matching logic
         from app.utils.fuzzy_match import calculate_fuzzy_confidence

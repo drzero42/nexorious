@@ -9,8 +9,8 @@ where non-JSON-serializable objects (particularly pandas Timestamps) are hiding.
 import json
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass, asdict, is_dataclass
+from typing import Any, Dict, List
+from dataclasses import asdict, is_dataclass
 import logging
 
 # Configure logging for detailed debugging
@@ -201,7 +201,7 @@ def enhanced_pandas_safe_converter(data: Any) -> Any:
     if hasattr(data, '__dict__') and not isinstance(data, (str, int, float, bool)):
         try:
             return enhanced_pandas_safe_converter(data.__dict__)
-        except:
+        except Exception:
             # If __dict__ fails, try string conversion
             return str(data)
     
@@ -225,18 +225,18 @@ def debug_data_structure(data: Any, name: str = "data"):
     print(f"DEBUG ANALYSIS: {name}")
     print(f"{'='*60}")
     
-    print(f"\n1. BASIC INFO:")
+    print("\n1. BASIC INFO:")
     print(f"   Type: {type(data)}")
     print(f"   Length: {len(data) if hasattr(data, '__len__') else 'N/A'}")
     
-    print(f"\n2. TYPE ANALYSIS:")
+    print("\n2. TYPE ANALYSIS:")
     types = deep_type_analysis(data, name)
     for type_info in types[:20]:  # Show first 20 for readability
         print(f"   {type_info}")
     if len(types) > 20:
         print(f"   ... and {len(types) - 20} more entries")
     
-    print(f"\n3. JSON SERIALIZATION PROBLEMS:")
+    print("\n3. JSON SERIALIZATION PROBLEMS:")
     problems = find_json_problematic_fields(data, name)
     if not problems:
         print("   ✓ No JSON serialization problems found!")
@@ -247,14 +247,14 @@ def debug_data_structure(data: Any, name: str = "data"):
             print(f"       Type: {problem['type']}")
             print(f"       Value: {problem['value'][:100]}...")
     
-    print(f"\n4. STANDARD JSON TEST:")
+    print("\n4. STANDARD JSON TEST:")
     try:
         json.dumps(data)
         print("   ✓ Standard json.dumps() works!")
     except Exception as e:
         print(f"   ✗ Standard json.dumps() fails: {e}")
     
-    print(f"\n5. ENHANCED CONVERSION TEST:")
+    print("\n5. ENHANCED CONVERSION TEST:")
     try:
         converted = enhanced_pandas_safe_converter(data)
         json.dumps(converted)

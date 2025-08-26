@@ -6,7 +6,6 @@ import pytest
 import asyncio
 import time
 from unittest.mock import AsyncMock, patch, MagicMock
-from typing import List
 
 from app.services.igdb import IGDBService, IGDBError
 from app.utils.rate_limiter import RateLimitConfig, RateLimitExceeded

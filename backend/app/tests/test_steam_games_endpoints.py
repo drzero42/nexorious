@@ -11,14 +11,6 @@ from ..models.user import User
 from ..models.steam_game import SteamGame
 from ..models.game import Game
 from .integration_test_utils import (
-    client_fixture as client,
-    client_with_mock_igdb_fixture as client_with_mock_igdb,
-    mock_igdb_service_fixture as mock_igdb_service,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    auth_headers_fixture as auth_headers,
-    test_game_fixture as test_game,
-    steam_dependencies_fixture as steam_dependencies,
     assert_api_success,
     assert_api_error
 )
@@ -74,7 +66,7 @@ class TestSteamGamesListEndpoint:
         games = sorted(data["games"], key=lambda g: g["name"])
         assert games[0]["external_id"] == "730"
         assert games[0]["name"] == "Counter-Strike: Global Offensive"
-        assert games[0]["ignored"] == False
+        assert not games[0]["ignored"]
         assert games[0]["igdb_id"] is None
         assert games[0]["game_id"] is None
     
@@ -105,7 +97,7 @@ class TestSteamGamesListEndpoint:
         assert data["total"] == 1
         assert len(data["games"]) == 1
         assert data["games"][0]["external_id"] == "730"
-        assert data["games"][0]["ignored"] == False
+        assert not data["games"][0]["ignored"]
     
     def test_list_steam_games_status_filter_ignored(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test filtering Steam games by ignored status."""
@@ -134,7 +126,7 @@ class TestSteamGamesListEndpoint:
         assert data["total"] == 1
         assert len(data["games"]) == 1
         assert data["games"][0]["external_id"] == "440"
-        assert data["games"][0]["ignored"] == True
+        assert data["games"][0]["ignored"]
     
     def test_list_steam_games_search(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test searching Steam games by name."""
@@ -529,12 +521,12 @@ class TestSteamGameIgnoreEndpoint:
         data = response.json()
         assert data["message"] == "Game ignored successfully"
         assert data["game"]["id"] == steam_game.id
-        assert data["game"]["ignored"] == True
-        assert data["ignored"] == True
+        assert data["game"]["ignored"]
+        assert data["ignored"]
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.ignored == True
+        assert steam_game.ignored
     
     def test_ignore_steam_game_success_true_to_false(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test successfully un-ignoring a Steam game (True -> False)."""
@@ -555,12 +547,12 @@ class TestSteamGameIgnoreEndpoint:
         data = response.json()
         assert data["message"] == "Game unignored successfully"
         assert data["game"]["id"] == steam_game.id
-        assert data["game"]["ignored"] == False
-        assert data["ignored"] == False
+        assert not data["game"]["ignored"]
+        assert not data["ignored"]
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.ignored == False
+        assert not steam_game.ignored
     
     def test_ignore_steam_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test ignoring non-existent Steam game returns 404."""
@@ -593,7 +585,7 @@ class TestSteamGameIgnoreEndpoint:
         
         # Verify database was not changed
         session.refresh(steam_game)
-        assert steam_game.ignored == False
+        assert not steam_game.ignored
     
     def test_ignore_steam_game_without_auth(self, client: TestClient, session: Session, test_user: User):
         """Test that ignoring Steam game requires authentication."""
@@ -613,7 +605,7 @@ class TestSteamGameIgnoreEndpoint:
         
         # Verify database was not changed
         session.refresh(steam_game)
-        assert steam_game.ignored == False
+        assert not steam_game.ignored
     
     def test_ignore_steam_game_updates_timestamp(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test that ignoring Steam game updates the updated_at timestamp."""
@@ -900,7 +892,7 @@ class TestSteamGamesBulkSyncEndpoint:
             )
         ).first()
         assert platform_association is not None
-        assert platform_association.is_available == True
+        assert platform_association.is_available
     
     def test_bulk_sync_steam_games_idempotent(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test that bulk sync is idempotent and can be run multiple times."""
@@ -994,5 +986,5 @@ class TestSteamGamesBulkSyncEndpoint:
         session.refresh(existing_user_game)
         assert existing_user_game.ownership_status == OwnershipStatus.BORROWED  # Should remain unchanged
         assert existing_user_game.play_status == PlayStatus.COMPLETED  # Should remain unchanged
-        assert existing_user_game.is_loved == True  # Should remain unchanged
+        assert existing_user_game.is_loved  # Should remain unchanged
         assert existing_user_game.hours_played == 50  # Should remain unchanged

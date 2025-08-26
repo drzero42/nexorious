@@ -6,10 +6,9 @@ endpoints, providing consistent data structures for batched operations.
 """
 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
-from ...models.batch_session import BatchOperationType, BatchSessionStatus
 from .steam import SteamGameResponse
 
 

@@ -2,20 +2,10 @@
 Tests for fuzzy search functionality in games API.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
-from app.main import app
-from app.core.database import get_session
 from app.models.game import Game
 from app.models.user import User
-from app.core.security import get_password_hash
-from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    auth_headers_fixture as auth_headers,
-)
 import uuid
 
 
@@ -62,7 +52,7 @@ class TestFuzzySearchAPI:
         # Test regular search (no fuzzy matching)
         response = client.get("/api/games/?q=witcher", headers=auth_headers)
         assert response.status_code == 200
-        regular_results = response.json()
+        response.json()
         
         # Test fuzzy search
         response = client.get("/api/games/?q=witcher&fuzzy_threshold=0.6", headers=auth_headers)

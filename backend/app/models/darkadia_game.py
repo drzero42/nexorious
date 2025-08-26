@@ -10,6 +10,13 @@ import uuid
 import json
 from ..utils.json_serialization import safe_json_dumps
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .game import Game
+
 
 class DarkadiaGame(SQLModel, table=True):
     """Darkadia game model for staging CSV import data before sync to collection."""
@@ -117,6 +124,3 @@ class DarkadiaGame(SQLModel, table=True):
         }
 
 
-# Import forward references
-from .user import User
-from .game import Game

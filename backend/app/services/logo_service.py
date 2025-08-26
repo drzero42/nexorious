@@ -4,7 +4,6 @@ Logo management service for platforms and storefronts.
 Handles logo file upload, validation, storage, and cleanup operations.
 """
 
-import os
 import shutil
 import mimetypes
 from pathlib import Path

@@ -7,9 +7,7 @@ and retry logic.
 """
 
 import asyncio
-from typing import Dict, Any, List, Optional, Union
-from datetime import datetime
-import json
+from typing import Dict, Any, List, Optional
 
 import httpx
 from rich.console import Console
@@ -273,7 +271,7 @@ class NexoriousAPIClient:
                 try:
                     error_data = response.json()
                     error_msg += f" - {error_data.get('detail', 'Unknown error')}"
-                except:
+                except Exception:
                     error_msg += f" - {response.text}"
                 
                 raise APIException(error_msg, response.status_code)
@@ -306,7 +304,7 @@ class NexoriousAPIClient:
                 try:
                     error_data = response.json()
                     error_msg += f" - {error_data.get('detail', 'Unknown error')}"
-                except:
+                except Exception:
                     error_msg += f" - {response.text}"
                 
                 raise APIException(error_msg, response.status_code)
@@ -319,7 +317,7 @@ class NexoriousAPIClient:
         try:
             response = await self.client.get(f"{self.base_url}/health")
             return response.status_code == 200
-        except:
+        except Exception:
             return False
     
     async def search_games(self, query: str, fuzzy_threshold: float = 0.8) -> List[Dict[str, Any]]:
@@ -452,14 +450,14 @@ class NexoriousAPIClient:
                 # Parse response data for detailed error information
                 try:
                     error_data = response.json()
-                except:
+                except Exception:
                     error_data = {"detail": response.text}
                 
                 # Add context to error data
                 error_data['game_title'] = game_record.get('title', 'Unknown')
                 error_data['operation'] = 'create_user_game'
                 
-                error_msg = f"Failed to create user game"
+                error_msg = "Failed to create user game"
                 raise APIException(error_msg, response.status_code, error_data)
                 
         except httpx.RequestError as e:
@@ -501,7 +499,7 @@ class NexoriousAPIClient:
                 # Parse response data for detailed error information
                 try:
                     error_data = response.json()
-                except:
+                except Exception:
                     error_data = {"detail": response.text}
                 
                 # Add context to error data
@@ -509,7 +507,7 @@ class NexoriousAPIClient:
                 error_data['operation'] = 'update_user_game'
                 error_data['payload_fields'] = list(payload.keys())
                 
-                error_msg = f"Failed to update user game"
+                error_msg = "Failed to update user game"
                 raise APIException(error_msg, response.status_code, error_data)
                 
         except httpx.RequestError as e:
@@ -823,7 +821,7 @@ class NexoriousAPIClient:
                     # Create detailed APIException with response data
                     try:
                         error_data = response.json()
-                    except:
+                    except Exception:
                         error_data = {"detail": response.text}
                     
                     # Add context to error data

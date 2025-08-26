@@ -106,7 +106,7 @@ async def list_platforms(
             select(Storefront)
             .join(PlatformStorefront)
             .where(PlatformStorefront.platform_id == platform.id)
-            .where(Storefront.is_active == True)  # Only include active storefronts
+            .where(Storefront.is_active)  # Only include active storefronts
             .order_by(Storefront.display_name)
         )
         
@@ -1117,7 +1117,7 @@ async def get_platform_suggestions(
     platforms and storefronts.
     """
     # Add comprehensive debug logging
-    logger.debug(f"=== Platform Suggestions Request ===")
+    logger.debug("=== Platform Suggestions Request ===")
     logger.debug(f"Request type: {type(request)}")
     logger.debug(f"Request data: {request.model_dump() if hasattr(request, 'model_dump') else request}")
     logger.debug(f"HTTP Request type: {type(http_request)}")
@@ -1472,7 +1472,7 @@ async def get_pending_storefront_resolutions(
                     and_(
                         DarkadiaImport.user_id == current_user.id,
                         DarkadiaImport.original_storefront_name == storefront_name,
-                        DarkadiaImport.storefront_resolved == False
+                        DarkadiaImport.storefront_resolved.is_(False)
                     )
                 ).limit(10)  # Limit for performance
             ).all()

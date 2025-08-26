@@ -10,6 +10,16 @@ from decimal import Decimal
 from enum import Enum
 import uuid
 
+# Import forward references
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .user import User
+    from .game import Game
+    from .platform import Platform, Storefront
+    from .tag import UserGameTag
+    from .darkadia_import import DarkadiaImport
+
 
 class OwnershipStatus(str, Enum):
     """Ownership status enumeration."""
@@ -93,9 +103,3 @@ class UserGamePlatform(SQLModel, table=True):
     )
 
 
-# Import forward references
-from .user import User
-from .game import Game
-from .platform import Platform, Storefront
-from .tag import UserGameTag
-from .darkadia_import import DarkadiaImport

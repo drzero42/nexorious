@@ -28,7 +28,6 @@ from ...models.darkadia_import import DarkadiaImport
 from ...models.platform import Platform, Storefront
 from ...security.file_upload_validator import SecureFileUploadValidator
 from ...security.csv_sanitizer import CSVSanitizer
-from ...services.igdb import IGDBService
 from ...services.platform_resolution import create_platform_resolution_service
 from .darkadia_transformer import DarkadiaTransformationPipeline
 from .copy_consolidation import CopyConsolidationProcessor, ConsolidatedGame
@@ -407,7 +406,7 @@ class DarkadiaImportService(ImportSourceService):
             if hasattr(self.data_mapper, '_map_storefront_name'):
                 try:
                     suggested_mapping = self.data_mapper._map_storefront_name(storefront_name)
-                except:
+                except Exception:
                     pass
             
             storefront_stats[storefront_name] = {
@@ -947,7 +946,7 @@ class DarkadiaImportService(ImportSourceService):
             original_storefront_name = platform_data.get('storefront', '').strip() or platform_data.get('storefront_other', '').strip()
             copy_identifier = platform_data.get('copy_identifier')
             is_real_copy = platform_data.get('is_real_copy', True)
-            requires_storefront_resolution = platform_data.get('requires_storefront_resolution', False)
+            platform_data.get('requires_storefront_resolution', False)
             
             # Get transformed platform/storefront data if available
             transform_data = darkadia_game.get_transformation_data()
@@ -977,9 +976,8 @@ class DarkadiaImportService(ImportSourceService):
                         storefront_name = mapped_storefront
             
             # Get fallback platform name for tracking
-            fallback_platform_name = None
             if not is_real_copy:
-                fallback_platform_name = platform_name
+                pass
             
             # Look up platform by name (using mapped name)
             platform = None
@@ -1108,7 +1106,7 @@ class DarkadiaImportService(ImportSourceService):
                 storefront_resolved=bool(user_game_platform.storefront_id),
                 requires_storefront_resolution=platform_data.get('requires_storefront_resolution', False),
                 platform_resolution_data_json=await self._generate_platform_resolution_data(
-                    original_platform_name, bool(user_game_platform.platform_id)
+                    platform_data.get('platform'), bool(user_game_platform.platform_id)
                 ),
                 
                 created_at=datetime.now(timezone.utc),
@@ -1166,13 +1164,13 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(DarkadiaGame.igdb_id == None)
+            query = query.where(DarkadiaGame.igdb_id is None)
         elif status_filter == "matched":
-            query = query.where(DarkadiaGame.igdb_id != None)
+            query = query.where(DarkadiaGame.igdb_id is not None)
         elif status_filter == "ignored":
-            query = query.where(DarkadiaGame.ignored == True)
+            query = query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
-            query = query.where(DarkadiaGame.game_id != None)
+            query = query.where(DarkadiaGame.game_id is not None)
         
         # Apply search filter
         if search:
@@ -1343,8 +1341,8 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id == None,
-                    DarkadiaGame.ignored == False
+                    DarkadiaGame.igdb_id is None,
+                    not DarkadiaGame.ignored
                 )
             )
         ).all()
@@ -1479,7 +1477,7 @@ class DarkadiaImportService(ImportSourceService):
                 except (ValueError, TypeError):
                     pass
                 
-                logger.info(f"🎮 [Darkadia Service] Creating new UserGame relationship")
+                logger.info("🎮 [Darkadia Service] Creating new UserGame relationship")
                 user_game = UserGame(
                     user_id=user_id,
                     game_id=game.id,
@@ -1555,9 +1553,9 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id != None,
-                    DarkadiaGame.game_id == None,  # Not yet synced
-                    DarkadiaGame.ignored == False
+                    DarkadiaGame.igdb_id is not None,
+                    DarkadiaGame.game_id is None,  # Not yet synced
+                    not DarkadiaGame.ignored
                 )
             )
         ).all()
@@ -1646,7 +1644,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.game_id != None
+                    DarkadiaGame.game_id is not None
                 )
             )
         ).all()
@@ -1718,7 +1716,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.ignored == True
+                    DarkadiaGame.ignored
                 )
             )
         ).all()
@@ -1745,7 +1743,7 @@ class DarkadiaImportService(ImportSourceService):
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id != None
+                    DarkadiaGame.igdb_id is not None
                 )
             )
         ).all()

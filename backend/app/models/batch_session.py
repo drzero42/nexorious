@@ -6,7 +6,7 @@ like auto-matching and syncing Steam games in small batches with progress feedba
 """
 
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 from enum import Enum
 from dataclasses import dataclass, field
 import uuid

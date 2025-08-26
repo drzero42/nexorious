@@ -7,7 +7,7 @@ for proper idempotency and conflict resolution behavior.
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from pathlib import Path
 from datetime import datetime
 import json
@@ -16,7 +16,7 @@ import tempfile
 from scripts.darkadia.merge_strategies import (
     MergeStrategy, InteractiveMerger, OverwriteMerger, PreserveMerger
 )
-from scripts.darkadia.api_client import NexoriousAPIClient, APIException
+from scripts.darkadia.api_client import NexoriousAPIClient
 from rich.console import Console
 
 

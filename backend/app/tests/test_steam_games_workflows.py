@@ -3,25 +3,18 @@ Integration tests for complete Steam Games workflows.
 """
 
 import pytest
-import asyncio
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict
 from unittest.mock import AsyncMock, patch
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
 from ..models.game import Game
-from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
-from ..models.platform import Platform, Storefront
+from ..models.user_game import UserGame, OwnershipStatus, PlayStatus
 from ..services.steam_games import SteamGamesService, create_steam_games_service
 from ..services.steam import SteamGame as SteamGameData
 from .integration_test_utils import (
-    client_fixture as client,
-    session_fixture as session,
-    test_user_fixture as test_user,
-    auth_headers_fixture as auth_headers,
-    steam_dependencies_fixture as steam_dependencies,
     assert_api_success,
     assert_api_error
 )
@@ -118,7 +111,6 @@ class TestCompleteImportToSyncWorkflow:
         mock_igdb_service = AsyncMock()
         
         def mock_factory(session, igdb_service=None):
-            from ..services.steam_games import SteamGamesService
             return SteamGamesService(session, igdb_service=mock_igdb_service)
         
         with patch('app.services.import_sources.steam.create_steam_games_service', side_effect=mock_factory):

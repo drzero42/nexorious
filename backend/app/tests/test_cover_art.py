@@ -3,7 +3,7 @@ Tests for cover art download and storage functionality.
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
@@ -15,7 +15,7 @@ from app.main import app
 from app.core.database import get_session
 from app.core.security import get_current_user
 from app.api.dependencies import get_igdb_service_dependency
-from app.services.igdb import GameMetadata, IGDBService
+from app.services.igdb import GameMetadata
 from app.models.game import Game
 from app.models.user import User
 

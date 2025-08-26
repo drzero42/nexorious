@@ -326,11 +326,11 @@ class SteamImportService(ImportSourceService):
         # Apply status filter
         if status_filter:
             if status_filter == "unmatched":
-                query = query.where(and_(SteamGame.igdb_id.is_(None), SteamGame.ignored == False))
+                query = query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
             elif status_filter == "matched":
-                query = query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), SteamGame.ignored == False))
+                query = query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "ignored":
-                query = query.where(SteamGame.ignored == True)
+                query = query.where(SteamGame.ignored)
             elif status_filter == "synced":
                 query = query.where(SteamGame.game_id.isnot(None))
         
@@ -343,11 +343,11 @@ class SteamImportService(ImportSourceService):
         count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
         if status_filter:
             if status_filter == "unmatched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), SteamGame.ignored == False))
+                count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
             elif status_filter == "matched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), SteamGame.ignored == False))
+                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "ignored":
-                count_query = count_query.where(SteamGame.ignored == True)
+                count_query = count_query.where(SteamGame.ignored)
             elif status_filter == "synced":
                 count_query = count_query.where(SteamGame.game_id.isnot(None))
         if search:

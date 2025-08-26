@@ -6,11 +6,8 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional
-import hashlib
 import httpx
-from datetime import datetime
 import tempfile
-import mimetypes
 from PIL import Image
 
 from app.core.config import settings
@@ -97,7 +94,7 @@ class StorageService:
         """Validate URL format."""
         try:
             return url.startswith(('http://', 'https://')) and len(url) > 10
-        except:
+        except Exception:
             return False
     
     def _validate_image_file(self, file_path: Path) -> bool:

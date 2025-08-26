@@ -3,8 +3,7 @@ Tests for How Long to Beat integration functionality.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 import json
 
 from app.services.igdb import IGDBService, GameMetadata, map_igdb_time_to_beat_to_db_fields

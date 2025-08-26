@@ -10,9 +10,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime, timezone, date
-from decimal import Decimal, InvalidOperation
-import re
+from datetime import datetime
 
 from ...models.user_game import PlayStatus
 from ...security.csv_sanitizer import CSVSanitizer
@@ -168,10 +166,10 @@ class ValidationStage(TransformationStage):
         bool_fields = ['Loved', 'Owned', 'Played', 'Playing', 'Finished', 
                       'Mastered', 'Dominated', 'Shelved']
         
-        for field in bool_fields:
-            original_value = validated_row.get(field, '')
-            validated_row[field] = self._validate_boolean(
-                original_value, field, context, row_index
+        for field_name in bool_fields:
+            original_value = validated_row.get(field_name, '')
+            validated_row[field_name] = self._validate_boolean(
+                original_value, field_name, context, row_index
             )
         
         # Validate boolean flag combinations
@@ -651,11 +649,11 @@ class PersistenceStage(TransformationStage):
         ]
         
         metadata = {}
-        for field in copy_fields:
-            value = row.get(field, '')
+        for field_name in copy_fields:
+            value = row.get(field_name, '')
             if value and str(value).strip():
                 # Use simplified field name as key
-                key = field.replace('Copy ', '').lower().replace(' ', '_')
+                key = field_name.replace('Copy ', '').lower().replace(' ', '_')
                 metadata[key] = str(value).strip()
         
         return metadata if metadata else None
@@ -672,7 +670,7 @@ class PersistenceStage(TransformationStage):
         
         # Extract platform and storefront data from transformation results
         mapped_platform = row.get('_mapped_platform')
-        original_platform = row.get('_original_platform')
+        row.get('_original_platform')
         mapped_storefront = row.get('_mapped_storefront') 
         original_storefront = row.get('_original_storefront')
         

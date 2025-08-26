@@ -12,7 +12,7 @@ from app.main import app
 from app.core.database import get_session
 from app.core.security import get_current_user
 from app.api.dependencies import get_igdb_service_dependency
-from app.services.igdb import GameMetadata, IGDBService, TwitchAuthError, IGDBError
+from app.services.igdb import GameMetadata, TwitchAuthError, IGDBError
 
 
 @pytest.fixture
