@@ -3,7 +3,7 @@ Platform and storefront management endpoints (admin-only).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Request
-from sqlmodel import Session, select, func, or_
+from sqlmodel import Session, select, func, or_, desc
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 import logging
@@ -88,7 +88,7 @@ async def list_platforms(
         query = query.where(Platform.source == source)
     
     # Order by source (official first) then by display name
-    query = query.order_by(Platform.source.desc(), Platform.display_name)
+    query = query.order_by(desc(Platform.source), Platform.display_name)
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
