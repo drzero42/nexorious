@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, PlatformResolutionModal } from '$lib/components';
-  import { darkadia, ui } from '$lib/stores';
+  import { darkadia, ui, auth } from '$lib/stores';
   import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
     DarkadiaGameResponse, 
@@ -40,9 +40,16 @@
   let showPlatformResolutionModal = $state(false);
   let pendingPlatformResolutions = $state(0);
 
-  onMount(async () => {
-    console.log('🔄 [DARKADIA-PAGE] onMount started - initializing Darkadia data...');
-    await initializeDarkadiaData();
+  // Initialize Darkadia data when auth is ready
+  let hasInitialized = $state(false);
+  
+  $effect(() => {
+    // Only run when we have a valid authenticated user
+    if (auth.value.user && !hasInitialized) {
+      console.log('🔄 [DARKADIA-PAGE] Auth ready, initializing Darkadia data...');
+      hasInitialized = true;
+      initializeDarkadiaData();
+    }
   });
 
   onDestroy(() => {

@@ -33,6 +33,13 @@
     expanded: false
   });
 
+  // Create local reactive state for mutable suggestion data
+  // This prevents ownership mutation warnings when updating suggestions
+  let localResolutionData = $state({
+    suggestions: resolution.resolution_data.suggestions || [],
+    status: resolution.resolution_data.status || 'pending'
+  });
+
   // Storefront creation form data
   let createFormData: StorefrontCreationFormData = $state({
     name: '',
@@ -44,8 +51,8 @@
   // Reference to the create form element for auto-scrolling
   let createFormRef = $state<HTMLElement | undefined>();
 
-  // Suggestions from resolution data
-  const suggestions = $derived(resolution.resolution_data.suggestions || []);
+  // Suggestions from local resolution data  
+  const suggestions = $derived(localResolutionData.suggestions);
   const hasSuggestions = $derived(suggestions.length > 0);
   const bestSuggestion = $derived(suggestions[0]); // Suggestions are sorted by confidence
 
@@ -62,7 +69,7 @@
 
   // Initialize suggestions on mount if not already loaded
   onMount(async () => {
-    if (!hasSuggestions && resolution.resolution_data.status === 'pending') {
+    if (!hasSuggestions && localResolutionData.status === 'pending') {
       await loadSuggestions();
     }
   });
@@ -81,9 +88,9 @@
         max_suggestions: 5
       });
 
-      // Update the resolution data with suggestions
-      resolution.resolution_data.suggestions = response.storefront_suggestions;
-      resolution.resolution_data.status = response.storefront_suggestions.length > 0 ? 'suggested' : 'pending';
+      // Update the local resolution data with suggestions (no ownership warnings)
+      localResolutionData.suggestions = response.storefront_suggestions;
+      localResolutionData.status = response.storefront_suggestions.length > 0 ? 'suggested' : 'pending';
 
     } catch (error) {
       console.error('Failed to load storefront suggestions:', error);
@@ -274,11 +281,19 @@
 
         <!-- Status Badge -->
         <div class="flex items-center space-x-2">
-          {#if resolution.resolution_data.status === 'suggested' && hasSuggestions}
+          {#if localResolutionData.status === 'resolved'}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              {#if resolution.resolution_data.resolution_method === 'auto'}
+                🤖 Auto-Resolved
+              {:else}
+                ✅ Resolved
+              {/if}
+            </span>
+          {:else if localResolutionData.status === 'suggested' && hasSuggestions}
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
               {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'}
             </span>
-          {:else if resolution.resolution_data.status === 'pending'}
+          {:else if localResolutionData.status === 'pending'}
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
               Needs Resolution
             </span>
@@ -304,7 +319,22 @@
 
       <!-- Quick Actions (always visible) -->
       <div class="flex items-center space-x-2 mt-3">
-        {#if bestSuggestion && !rowState.showCreateForm}
+        {#if localResolutionData.status === 'resolved'}
+          <!-- Show resolved status with resolution info -->
+          <div class="inline-flex items-center px-3 py-1.5 text-xs text-green-700 bg-green-50 rounded-md">
+            <svg class="w-3 h-3 mr-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            {#if resolution.resolution_data.resolution_method === 'auto'}
+              Auto-resolved
+            {:else}
+              Manually resolved
+            {/if}
+            {#if resolution.resolution_data.user_notes}
+              • {resolution.resolution_data.user_notes}
+            {/if}
+          </div>
+        {:else if bestSuggestion && !rowState.showCreateForm}
           <button
             onclick={() => handleUseSuggestion(bestSuggestion)}
             disabled={rowState.isResolving}
@@ -323,22 +353,24 @@
           </button>
         {/if}
 
-        <button
-          onclick={handleShowCreateForm}
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Create New
-        </button>
+        {#if localResolutionData.status !== 'resolved'}
+          <button
+            onclick={handleShowCreateForm}
+            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Create New
+          </button>
 
-        <button
-          onclick={handleSkipResolution}
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          Skip
-        </button>
+          <button
+            onclick={handleSkipResolution}
+            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Skip
+          </button>
+        {/if}
       </div>
 
       <!-- Expanded Content -->
@@ -403,7 +435,7 @@
                 {/each}
               </div>
             </div>
-          {:else if resolution.resolution_data.status !== 'pending'}
+          {:else if localResolutionData.status !== 'pending'}
             <div class="text-center py-4">
               <p class="text-sm text-gray-500">No similar storefronts found</p>
               <p class="text-xs text-gray-400 mt-1">Consider creating a new storefront</p>

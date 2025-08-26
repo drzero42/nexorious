@@ -25,6 +25,14 @@
     onResolutionAction 
   }: Props = $props();
 
+  // Create local reactive state for mutable suggestion data
+  // This prevents ownership mutation warnings when updating suggestions
+  let localResolutionData = $state({
+    suggestions: resolution.resolution_data.suggestions || [],
+    storefront_suggestions: resolution.resolution_data.storefront_suggestions || [],
+    status: resolution.resolution_data.status || 'pending'
+  });
+
   // Component state
   let rowState: PlatformMappingRowState = $state({
     isLoadingSuggestions: false,
@@ -42,8 +50,8 @@
   // Reference to the create form element for auto-scrolling
   let createFormRef = $state<HTMLElement | undefined>();
 
-  // Suggestions from resolution data
-  const suggestions = $derived(resolution.resolution_data.suggestions || []);
+  // Suggestions from local resolution data (prevents ownership mutations)
+  const suggestions = $derived(localResolutionData.suggestions);
   const hasSuggestions = $derived(suggestions.length > 0);
   const bestSuggestion = $derived(suggestions[0]); // Suggestions are sorted by confidence
 
@@ -60,7 +68,7 @@
 
   // Initialize suggestions on mount if not already loaded
   onMount(async () => {
-    if (!hasSuggestions && resolution.resolution_data.status === 'pending') {
+    if (!hasSuggestions && localResolutionData.status === 'pending') {
       await loadSuggestions();
     }
   });
@@ -71,20 +79,24 @@
     rowState.isLoadingSuggestions = true;
 
     try {
-      const response = await platforms.getSuggestions({
+      const requestData = {
         unknown_platform_name: resolution.original_platform_name,
-        ...(resolution.original_storefront_name && { unknown_storefront_name: resolution.original_storefront_name }),
+        ...(resolution.original_storefront_name && { 
+          unknown_storefront_name: resolution.original_storefront_name 
+        }),
         min_confidence: 0.6,
         max_suggestions: 5
-      });
+      };
+      
+      const response = await platforms.getSuggestions(requestData);
 
-      // Update the resolution data with suggestions
-      resolution.resolution_data.suggestions = response.platform_suggestions;
-      resolution.resolution_data.storefront_suggestions = response.storefront_suggestions;
-      resolution.resolution_data.status = response.platform_suggestions.length > 0 ? 'suggested' : 'pending';
+      // Update the local resolution data with suggestions (no ownership warnings)
+      localResolutionData.suggestions = response.platform_suggestions;
+      localResolutionData.storefront_suggestions = response.storefront_suggestions;
+      localResolutionData.status = response.platform_suggestions.length > 0 ? 'suggested' : 'pending';
 
     } catch (error) {
-      console.error('Failed to load suggestions:', error);
+      console.error('Failed to load platform suggestions:', error);
       ui.showError('Failed to load platform suggestions');
     } finally {
       rowState.isLoadingSuggestions = false;
@@ -251,11 +263,11 @@
 
         <!-- Status Badge -->
         <div class="flex items-center space-x-2">
-          {#if resolution.resolution_data.status === 'suggested' && hasSuggestions}
+          {#if localResolutionData.status === 'suggested' && hasSuggestions}
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
               {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'}
             </span>
-          {:else if resolution.resolution_data.status === 'pending'}
+          {:else if localResolutionData.status === 'pending'}
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
               Needs Resolution
             </span>
@@ -362,7 +374,7 @@
                 {/each}
               </div>
             </div>
-          {:else if resolution.resolution_data.status !== 'pending'}
+          {:else if localResolutionData.status !== 'pending'}
             <div class="text-center py-4">
               <p class="text-sm text-gray-500">No similar platforms found</p>
               <p class="text-xs text-gray-400 mt-1">Consider creating a new platform</p>
