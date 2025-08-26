@@ -1227,7 +1227,7 @@
       class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" 
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
-      role="document"
+      role="presentation"
     >
       <div class="mt-3">
         <!-- Warning Icon -->
