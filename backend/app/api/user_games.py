@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional, List
 import logging
 from rapidfuzz import fuzz
+from decimal import Decimal
 
 from ..core.database import get_session
 from ..core.security import get_current_user
@@ -143,18 +144,18 @@ async def list_user_games(
         filters.append(UserGame.is_loved == is_loved)
     
     if rating_min is not None:
-        filters.append(UserGame.personal_rating >= rating_min)
+        filters.append(col(UserGame.personal_rating) >= rating_min)
     
     if rating_max is not None:
-        filters.append(UserGame.personal_rating <= rating_max)
+        filters.append(col(UserGame.personal_rating) <= rating_max)
     
     if has_notes is not None:
         if has_notes:
-            filters.append(UserGame.personal_notes.is_not(None))
+            filters.append(col(UserGame.personal_notes).is_not(None))
             filters.append(UserGame.personal_notes != "")
         else:
             filters.append(or_(
-                UserGame.personal_notes.is_(None),
+                col(UserGame.personal_notes).is_(None),
                 UserGame.personal_notes == ""
             ))
     
@@ -178,7 +179,7 @@ async def list_user_games(
         query = query.join(Game)
         query = query.where(or_(
             col(Game.title).icontains(q),
-            and_(UserGame.personal_notes.is_not(None), col(UserGame.personal_notes).icontains(q))
+            and_(col(UserGame.personal_notes).is_not(None), col(UserGame.personal_notes).icontains(q))
         ))
     
     if fuzzy_search_mode:
@@ -190,7 +191,11 @@ async def list_user_games(
         all_user_games = session.exec(query).all()
         
         # Apply fuzzy matching
-        fuzzy_user_games = _rank_user_games_by_fuzzy_match(all_user_games, q, fuzzy_threshold)
+        fuzzy_user_games = _rank_user_games_by_fuzzy_match(
+            list(all_user_games),  # Convert Sequence to List
+            q or "",               # Provide default empty string
+            fuzzy_threshold or 0.6 # Provide default threshold
+        )
         
         # Apply pagination to fuzzy results
         total = len(fuzzy_user_games)
@@ -201,7 +206,7 @@ async def list_user_games(
         pages = (total + per_page - 1) // per_page
         
         return UserGameListResponse(
-            user_games=user_games,
+            user_games=[UserGameResponse.model_validate(ug) for ug in user_games],
             total=total,
             page=page,
             per_page=per_page,
@@ -220,6 +225,9 @@ async def list_user_games(
     if need_game_join and not already_joined_game:
         query = query.join(Game)
     
+    # Ensure sort_by has a value
+    sort_by = sort_by or "created_at"
+    
     # Determine the sort field
     if sort_by in game_sort_fields:
         # Sort by Game model fields
@@ -230,9 +238,9 @@ async def list_user_games(
     
     # Apply sort order
     if sort_order == "desc":
-        query = query.order_by(sort_field.desc())
+        query = query.order_by(col(sort_field).desc())
     else:
-        query = query.order_by(sort_field.asc())
+        query = query.order_by(col(sort_field).asc())
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -246,7 +254,7 @@ async def list_user_games(
     pages = (total + per_page - 1) // per_page
     
     return UserGameListResponse(
-        user_games=user_games,
+        user_games=[UserGameResponse.model_validate(ug) for ug in user_games],
         total=total,
         page=page,
         per_page=per_page,
@@ -294,14 +302,14 @@ async def get_collection_stats(
     # Rating distribution (only if there are games)
     if total_games > 0:
         rating_counts = session.exec(
-            select(UserGame.personal_rating, func.count()).
+            select(col(UserGame.personal_rating), func.count()).
             where(
                 and_(
                     UserGame.user_id == current_user.id,
-                    UserGame.personal_rating.is_not(None)
+                    col(UserGame.personal_rating).is_not(None)
                 )
             ).
-            group_by(UserGame.personal_rating)
+            group_by(col(UserGame.personal_rating))
         ).all()
     else:
         rating_counts = []
@@ -318,11 +326,11 @@ async def get_collection_stats(
     # Average rating (only if there are games)
     if total_games > 0:
         avg_rating_result = session.exec(
-            select(func.avg(UserGame.personal_rating)).
+            select(func.avg(col(UserGame.personal_rating))).
             where(
                 and_(
                     UserGame.user_id == current_user.id,
-                    UserGame.personal_rating.is_not(None)
+                    col(UserGame.personal_rating).is_not(None)
                 )
             )
         ).one()
@@ -352,12 +360,12 @@ async def get_collection_stats(
     genre_stats = {}
     if total_games > 0:
         genre_data = session.exec(
-            select(Game.genre, func.count()).
+            select(col(Game.genre), func.count()).
             join(UserGame).
             where(UserGame.user_id == current_user.id).
-            group_by(Game.genre)
+            group_by(col(Game.genre))
         ).all()
-        genre_stats = {genre: count for genre, count in genre_data}
+        genre_stats = {genre: count for genre, count in genre_data if genre is not None}
     
     return CollectionStatsResponse(
         total_games=total_games,
@@ -387,7 +395,7 @@ async def bulk_update_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                UserGame.id.in_(bulk_data.user_game_ids),
+                col(UserGame.id).in_(bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -402,11 +410,11 @@ async def bulk_update_user_games(
         updated = False
         
         if bulk_data.play_status is not None:
-            user_game.play_status = bulk_data.play_status
+            user_game.play_status = PlayStatus(bulk_data.play_status.value)
             updated = True
         
         if bulk_data.personal_rating is not None:
-            user_game.personal_rating = bulk_data.personal_rating
+            user_game.personal_rating = Decimal(str(bulk_data.personal_rating))
             updated = True
         
         if bulk_data.is_loved is not None:
@@ -414,7 +422,7 @@ async def bulk_update_user_games(
             updated = True
         
         if bulk_data.ownership_status is not None:
-            user_game.ownership_status = bulk_data.ownership_status
+            user_game.ownership_status = OwnershipStatus(bulk_data.ownership_status.value)
             updated = True
         
         if updated:
@@ -445,7 +453,7 @@ async def bulk_delete_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                UserGame.id.in_(bulk_data.user_game_ids),
+                col(UserGame.id).in_(bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -499,7 +507,7 @@ async def bulk_add_platforms_to_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                UserGame.id.in_(bulk_data.user_game_ids),
+                col(UserGame.id).in_(bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -513,7 +521,7 @@ async def bulk_add_platforms_to_user_games(
     platform_ids = {assoc.platform_id for assoc in bulk_data.platform_associations}
     storefront_ids = {assoc.storefront_id for assoc in bulk_data.platform_associations if assoc.storefront_id}
     
-    platforms = session.exec(select(Platform).where(Platform.id.in_(platform_ids))).all()
+    platforms = session.exec(select(Platform).where(col(Platform.id).in_(platform_ids))).all()
     if len(platforms) != len(platform_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -521,7 +529,7 @@ async def bulk_add_platforms_to_user_games(
         )
     
     if storefront_ids:
-        storefronts = session.exec(select(Storefront).where(Storefront.id.in_(storefront_ids))).all()
+        storefronts = session.exec(select(Storefront).where(col(Storefront.id).in_(storefront_ids))).all()
         if len(storefronts) != len(storefront_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -579,7 +587,7 @@ async def bulk_remove_platforms_from_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                UserGame.id.in_(bulk_data.user_game_ids),
+                col(UserGame.id).in_(bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -593,8 +601,8 @@ async def bulk_remove_platforms_from_user_games(
     platform_associations = session.exec(
         select(UserGamePlatform).where(
             and_(
-                UserGamePlatform.id.in_(bulk_data.platform_association_ids),
-                UserGamePlatform.user_game_id.in_(found_game_ids)
+                col(UserGamePlatform.id).in_(bulk_data.platform_association_ids),
+                col(UserGamePlatform.user_game_id).in_(found_game_ids)
             )
         )
     ).all()
@@ -694,10 +702,10 @@ async def add_game_to_collection(
     new_user_game = UserGame(
         user_id=current_user.id,
         game_id=user_game_data.game_id,
-        ownership_status=user_game_data.ownership_status,
-        personal_rating=user_game_data.personal_rating,
+        ownership_status=OwnershipStatus(user_game_data.ownership_status.value),
+        personal_rating=Decimal(str(user_game_data.personal_rating)) if user_game_data.personal_rating is not None else None,
         is_loved=user_game_data.is_loved,
-        play_status=user_game_data.play_status,
+        play_status=PlayStatus(user_game_data.play_status.value),
         hours_played=user_game_data.hours_played,
         personal_notes=user_game_data.personal_notes,
         acquired_date=user_game_data.acquired_date
@@ -812,7 +820,7 @@ async def update_game_progress(
         )
     
     # Update progress fields
-    user_game.play_status = progress_data.play_status
+    user_game.play_status = PlayStatus(progress_data.play_status.value)
     
     if progress_data.hours_played is not None:
         user_game.hours_played = progress_data.hours_played
