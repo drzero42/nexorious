@@ -6,6 +6,7 @@
     ],
     "python.analysis.autoSearchPaths": true,
     "python.analysis.autoImportCompletions": true,
+    "python.analysis.ignore": ["*"],
     "python.linting.enabled": true,
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": false,
