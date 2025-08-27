@@ -126,7 +126,7 @@ uv run pytest scripts/tests/ -v
 > **Always ask questions if you are uncertain about something!**
 
 ### Essential Workflow
-1. **Planning**: Read `docs/PRD.md` and `docs/TASK_BREAKDOWN.md` before starting work
+1. **Planning**: Read `docs/PRD.md` before starting work
 2. **Branching**: Create feature branch with task name when working on tasks
 3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
