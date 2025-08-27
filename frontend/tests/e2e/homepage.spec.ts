@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { TestHelpers, TEST_ADMIN } from '../helpers/test-fixtures';
+import { TestHelpers } from '../helpers/test-fixtures';
+import { TEST_ADMIN } from '../auth.setup';
 
 test.describe('Homepage', () => {
   let helpers: TestHelpers;

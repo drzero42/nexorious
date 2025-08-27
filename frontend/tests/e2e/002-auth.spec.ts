@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
-import { TestHelpers, TEST_ADMIN } from '../helpers/test-fixtures';
-
-test.describe.configure({ mode: 'serial' });
+import { TestHelpers } from '../helpers/test-fixtures';
+import { TEST_ADMIN } from '../auth.setup';
 
 test.describe('Authentication Flow', () => {
   let helpers: TestHelpers;
 
   test.beforeEach(async ({ page }) => {
     helpers = new TestHelpers(page);
-    // Don't clear session data - we want to maintain auth state
-    // Admin user should already exist from setup tests
+    // Admin user already exists from auth.setup.ts
+    // Clear session for each test to test login functionality
+    await helpers.clearSession();
   });
 
   test('should display login form correctly', async ({ page }) => {
@@ -97,8 +97,12 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should redirect authenticated users away from login page', async ({ page }) => {
-    // First login
-    await helpers.loginAsAdmin();
+    // First login using the admin credentials (admin already exists from auth.setup.ts)
+    await page.goto('/login');
+    await page.getByLabel('Username').fill(TEST_ADMIN.username);
+    await page.getByLabel('Password').fill(TEST_ADMIN.password);
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await expect(page).toHaveURL('/games');
     
     // Now try to visit login page while authenticated
     await page.goto('/login');
@@ -110,8 +114,11 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should logout successfully', async ({ page }) => {
-    // First login
-    await helpers.loginAsAdmin();
+    // First login using existing admin credentials
+    await page.goto('/login');
+    await page.getByLabel('Username').fill(TEST_ADMIN.username);
+    await page.getByLabel('Password').fill(TEST_ADMIN.password);
+    await page.getByRole('button', { name: 'Sign In' }).click();
     await expect(page).toHaveURL('/games');
     
     // Click user menu
@@ -129,8 +136,11 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should maintain login state across page reloads', async ({ page }) => {
-    // Login first
-    await helpers.loginAsAdmin();
+    // Login using existing admin credentials
+    await page.goto('/login');
+    await page.getByLabel('Username').fill(TEST_ADMIN.username);
+    await page.getByLabel('Password').fill(TEST_ADMIN.password);
+    await page.getByRole('button', { name: 'Sign In' }).click();
     await expect(page).toHaveURL('/games');
     
     // Reload the page
@@ -171,8 +181,11 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should handle session expiration gracefully', async ({ page }) => {
-    // Login first
-    await helpers.loginAsAdmin();
+    // Login using existing admin credentials
+    await page.goto('/login');
+    await page.getByLabel('Username').fill(TEST_ADMIN.username);
+    await page.getByLabel('Password').fill(TEST_ADMIN.password);
+    await page.getByRole('button', { name: 'Sign In' }).click();
     await expect(page).toHaveURL('/games');
     
     // Clear tokens to simulate expiration
