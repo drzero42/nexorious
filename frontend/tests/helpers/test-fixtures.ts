@@ -13,52 +13,6 @@ export class TestHelpers {
   // NOTE: Admin setup is now handled by auth.setup.ts
   // This method is removed to avoid conflicts with global auth setup
 
-  /**
-   * Login with test admin credentials
-   * Admin credentials are imported from auth.setup.ts for consistency
-   */
-  async loginAsAdmin(): Promise<void> {
-    const { TEST_ADMIN } = await import('../auth.setup');
-    
-    await this.page.goto('/login');
-    
-    // Wait for login page to load
-    await expect(this.page.getByRole('heading', { name: 'Welcome Back' })).toBeVisible();
-
-    // Fill in credentials
-    await this.page.getByLabel('Username').fill(TEST_ADMIN.username);
-    await this.page.getByLabel('Password').fill(TEST_ADMIN.password);
-
-    // Submit form
-    await this.page.getByRole('button', { name: 'Sign In' }).click();
-
-    // Wait for successful login and redirect
-    await expect(this.page).toHaveURL('/games');
-  }
-
-  /**
-   * Complete login flow (setup is now handled by auth.setup.ts)
-   */
-  async setupAndLogin(): Promise<void> {
-    // Admin is already created by auth.setup.ts, just login
-    await this.loginAsAdmin();
-  }
-
-  /**
-   * Logout the current user
-   */
-  async logout(): Promise<void> {
-    const { TEST_ADMIN } = await import('../auth.setup');
-    
-    // Click user menu in sidebar
-    await this.page.getByRole('button', { name: TEST_ADMIN.username }).click();
-    
-    // Click logout
-    await this.page.getByRole('menuitem', { name: 'Logout' }).click();
-    
-    // Verify redirect to login page
-    await expect(this.page).toHaveURL('/login');
-  }
 
   /**
    * Check if setup is needed by visiting the homepage
@@ -87,22 +41,6 @@ export class TestHelpers {
     await this.page.waitForSelector(selector, { state: 'visible', timeout });
   }
 
-  /**
-   * Check if current user is authenticated by looking for user menu
-   */
-  async isAuthenticated(): Promise<boolean> {
-    const { TEST_ADMIN } = await import('../auth.setup');
-    
-    try {
-      await this.page.getByRole('button', { name: TEST_ADMIN.username }).waitFor({ 
-        state: 'visible', 
-        timeout: 2000 
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
 
   /**
    * Navigate to a specific app section (requires authentication)
@@ -120,23 +58,6 @@ export class TestHelpers {
     await expect(this.page).toHaveURL(new RegExp(`/${section}`));
   }
 
-  /**
-   * Clear all cookies and localStorage to reset session
-   */
-  async clearSession(): Promise<void> {
-    await this.page.context().clearCookies();
-    try {
-      await this.page.evaluate(() => {
-        if (typeof Storage !== 'undefined') {
-          if (localStorage) localStorage.clear();
-          if (sessionStorage) sessionStorage.clear();
-        }
-      });
-    } catch (error) {
-      // Ignore localStorage/sessionStorage errors in test environment
-      console.warn('Could not clear storage:', error);
-    }
-  }
 
   // Game Management Helper Methods
 

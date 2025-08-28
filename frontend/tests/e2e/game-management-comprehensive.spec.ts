@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { TestHelpers } from '../helpers/test-fixtures';
-import { TEST_ADMIN } from '../auth.setup';
 import { TestGameFactory, TestScenarios, GameAssertions } from '../helpers/test-data';
 
 test.describe('Comprehensive Game Management', () => {
@@ -8,11 +7,6 @@ test.describe('Comprehensive Game Management', () => {
 
   test.beforeEach(async ({ page }) => {
     helpers = new TestHelpers(page);
-    // Ensure we're authenticated (depends on auth tests completing first)
-    const isAuth = await helpers.isAuthenticated();
-    if (!isAuth) {
-      await helpers.loginAsAdmin();
-    }
     
     // Reset test data counters for predictable naming
     TestGameFactory.reset();

@@ -14,7 +14,11 @@ from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
 from .api.tags import router as tags_router
 from .api.import_api import router as import_router
-from .services.batch_session_manager import startup_batch_session_manager, shutdown_batch_session_manager
+from .services.batch_session_manager import (
+    startup_batch_session_manager,
+    shutdown_batch_session_manager,
+)
+
 
 # Configure logging
 def get_log_level(level_str: str) -> int:
@@ -24,29 +28,33 @@ def get_log_level(level_str: str) -> int:
         "INFO": logging.INFO,
         "WARNING": logging.WARNING,
         "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL
+        "CRITICAL": logging.CRITICAL,
     }
     return level_map.get(level_str.upper(), logging.INFO)
+
 
 # Set log level based on configuration
 log_level = get_log_level(settings.log_level)
 
 logging.basicConfig(
-    level=log_level,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 logger = logging.getLogger("uvicorn.error")
 
 # Debug confirmation message
 logger.debug("=== DEBUG LOGGING IS ENABLED ===")
-logger.info(f"Application started with log level: {logging.getLevelName(logger.getEffectiveLevel())}")
+logger.info(
+    f"Application started with log level: {logging.getLevelName(logger.getEffectiveLevel())}"
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for FastAPI app"""
     # Startup
     logger.info("Starting up Nexorious Game Collection Management Service")
+    logger.debug(f"Using database {settings.database_url}")
     run_alembic_migrations()
     logger.info("Database initialized")
     await startup_batch_session_manager()
@@ -57,6 +65,7 @@ async def lifespan(app: FastAPI):
     await shutdown_batch_session_manager()
     logger.info("Batch session manager shutdown completed")
 
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
@@ -64,7 +73,7 @@ app = FastAPI(
     description="A self-hostable web application for managing personal video game collections",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -76,6 +85,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Add global validation error handler
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -85,11 +95,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     logger.error(f"Method: {request.method}")
     logger.error(f"Errors: {exc.errors()}")
     logger.error(f"Body received: {body.decode() if body else 'No body'}")
-    
+
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": str(exc.body) if hasattr(exc, 'body') else None}
+        content={
+            "detail": exc.errors(),
+            "body": str(exc.body) if hasattr(exc, "body") else None,
+        },
     )
+
 
 # Include API routers
 app.include_router(auth_router, prefix="/api")
@@ -103,7 +117,9 @@ app.include_router(import_router, prefix="/api")
 if settings.storage_path:
     cover_art_path = os.path.join(settings.storage_path, "cover_art")
     os.makedirs(cover_art_path, exist_ok=True)
-    app.mount("/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art")
+    app.mount(
+        "/static/cover_art", StaticFiles(directory=cover_art_path), name="cover_art"
+    )
 
 # Mount static files for logos
 logos_path = "static/logos"
@@ -118,8 +134,9 @@ async def root():
         "message": f"Welcome to {settings.app_name}",
         "version": settings.app_version,
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
+
 
 @app.get("/health")
 async def health_check():
@@ -127,8 +144,9 @@ async def health_check():
     return {
         "status": "healthy",
         "service": settings.app_name,
-        "version": settings.app_version
+        "version": settings.app_version,
     }
+
 
 # Exception handlers
 @app.exception_handler(HTTPException)
@@ -136,19 +154,17 @@ async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent JSON response"""
     response = JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "status_code": exc.status_code
-        }
+        content={"error": exc.detail, "status_code": exc.status_code},
     )
-    
+
     # Ensure CORS headers are included in error responses
     origin = request.headers.get("origin")
     if origin and origin in settings.cors_origins:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
-    
+
     return response
+
 
 @app.exception_handler(Exception)
 async def internal_server_error_handler(request, exc: Exception):
@@ -156,29 +172,23 @@ async def internal_server_error_handler(request, exc: Exception):
     # Don't handle HTTPExceptions here - they should be handled by the HTTPException handler
     if isinstance(exc, HTTPException):
         raise exc
-    
+
     logger.error(f"Internal server error: {exc}")
     response = JSONResponse(
         status_code=500,
-        content={
-            "error": f"Internal server error: {str(exc)}",
-            "status_code": 500
-        }
+        content={"error": f"Internal server error: {str(exc)}", "status_code": 500},
     )
-    
+
     # Ensure CORS headers are included in error responses
     origin = request.headers.get("origin")
     if origin and origin in settings.cors_origins:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
-    
+
     return response
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.debug
-    )
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.debug)

@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-from typing import Optional
+from pydantic import Field, field_validator
+from typing import Optional, Union
 
 
 class Settings(BaseSettings):
@@ -28,10 +28,21 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     
     # CORS
-    cors_origins: list[str] = Field(
-        default=["http://localhost:5173", "http://localhost:3000"],
-        description="Allowed CORS origins"
+    cors_origins: Union[str, list[str]] = Field(
+        default=["http://localhost:5173"],
+        description="Allowed CORS origins (comma-separated string or list)"
     )
+    
+    @field_validator('cors_origins', mode='after')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS_ORIGINS from comma-separated string if provided as string"""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(',') if origin.strip()]
+        elif isinstance(v, list):
+            return v
+        else:
+            return ["http://localhost:5173"]
     
     # External APIs
     igdb_client_id: Optional[str] = Field(
@@ -75,7 +86,11 @@ class Settings(BaseSettings):
         description="Directory for temporary file uploads and processing"
     )
     
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        case_sensitive=False,
+        env_parse_none_str='none'
+    )
 
 
 settings = Settings()

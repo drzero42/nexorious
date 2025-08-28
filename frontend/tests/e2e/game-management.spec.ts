@@ -1,17 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { TestHelpers } from '../helpers/test-fixtures';
-import { TEST_ADMIN } from '../auth.setup';
 
 test.describe('Game Management Flow', () => {
   let helpers: TestHelpers;
 
   test.beforeEach(async ({ page }) => {
     helpers = new TestHelpers(page);
-    // Ensure we're authenticated (depends on auth tests completing first)
-    const isAuth = await helpers.isAuthenticated();
-    if (!isAuth) {
-      await helpers.loginAsAdmin();
-    }
   });
 
   test('should display games collection page correctly', async ({ page }) => {
