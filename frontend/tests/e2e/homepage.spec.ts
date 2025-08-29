@@ -64,14 +64,14 @@ test.describe('Homepage', () => {
     await page.goto('/');
     
     // Test Add Game link
-    await page.getByRole('link', { name: /Add Game/ }).click();
+    await page.getByRole('link', { name: /Add Game/ }).first().click();
     await expect(page).toHaveURL('/games/add');
     
     // Go back to homepage  
     await page.goto('/');
     
     // Test Dashboard link
-    await page.getByRole('link', { name: /Dashboard/ }).click();
+    await page.getByRole('link', { name: /Dashboard/ }).first().click();
     await expect(page).toHaveURL('/dashboard');
   });
 
