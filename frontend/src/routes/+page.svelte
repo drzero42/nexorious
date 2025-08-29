@@ -10,8 +10,14 @@
    if (!auth.value.user) {
      isCheckingAuth = true;
      
+     // Set a fallback timeout to ensure redirect happens even if API is slow
+     const fallbackTimeout = setTimeout(() => {
+       goto('/login');
+     }, 2000);
+     
      try {
        const setupStatus = await auth.checkSetupStatus();
+       clearTimeout(fallbackTimeout);
        
        if (setupStatus.needs_setup) {
          // Redirect to initial admin setup
@@ -21,6 +27,7 @@
          goto('/login');
        }
      } catch (error) {
+       clearTimeout(fallbackTimeout);
        console.error('Failed to check setup status:', error);
        // Default to login page on error
        goto('/login');

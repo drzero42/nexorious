@@ -51,6 +51,9 @@
 
       }
     }
+    
+    // Signal that SvelteKit hydration is complete for Playwright tests
+    document.body.classList.add("started");
   });
   
   function closeMobileMenu() {
@@ -73,7 +76,7 @@
         <!-- Logo/Brand -->
         <div class="flex h-16 shrink-0 items-center border-b border-gray-600">
           <a href="/" class="flex items-center space-x-2">
-            <h1 class="text-xl font-bold text-white">Nexorious</h1>
+            <div class="text-xl font-bold text-white">Nexorious</div>
           </a>
         </div>
         
@@ -277,7 +280,7 @@
         <!-- Mobile Logo -->
         <div class="flex flex-1">
           <a href="/" class="flex items-center">
-            <h1 class="text-lg font-bold text-gray-900">Nexorious</h1>
+            <div class="text-lg font-bold text-gray-900">Nexorious</div>
           </a>
         </div>
 
@@ -315,7 +318,7 @@
               <!-- Mobile Logo -->
               <div class="flex h-16 shrink-0 items-center border-b border-gray-600">
                 <a href="/" class="flex items-center space-x-2">
-                  <h1 class="text-xl font-bold text-white">Nexorious</h1>
+                  <div class="text-xl font-bold text-white">Nexorious</div>
                 </a>
               </div>
               
@@ -504,7 +507,7 @@
         <div class="flex justify-between items-center py-6 md:justify-start md:space-x-10">
           <div class="flex justify-start lg:w-0 lg:flex-1">
             <a href="/" class="flex items-center">
-              <h1 class="text-xl font-bold text-gray-900">Nexorious</h1>
+              <div class="text-xl font-bold text-gray-900">Nexorious</div>
             </a>
           </div>
           <div class="md:flex items-center justify-end md:flex-1 lg:w-0">

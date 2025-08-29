@@ -37,7 +37,7 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
-    // Auth setup project - runs first, creates admin user and saves auth state
+    // Auth setup project - runs first, creates both admin and regular users
     {
       name: 'auth-setup',
       testMatch: 'tests/auth.setup.ts',
@@ -45,11 +45,10 @@ export default defineConfig({
       use: {
         ...devices['Desktop Firefox'],
         baseURL: 'http://localhost:15173',
-        // No storageState - auth-setup saves but doesn't load
       },
     },
 
-    // Main test project - depend on auth being complete
+    // Main test project - each test logs in with needed credentials
     {
       name: 'firefox',
       testIgnore: [/.*\.setup\.ts/],
@@ -57,7 +56,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Firefox'],
         baseURL: 'http://localhost:15173',
-        storageState: './playwright/.auth/admin.json'
+        // No storageState - tests login explicitly as needed
       },
     },
 

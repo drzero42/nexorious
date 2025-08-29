@@ -13,6 +13,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('Game Creation Workflows', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should navigate to add game page correctly', async ({ page }) => {
       await helpers.navigateToAddGame();
       
@@ -63,6 +67,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('Game Management UI', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should navigate to games collection page', async ({ page }) => {
       await page.goto('/games');
       
@@ -120,6 +128,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('UI Navigation and Structure', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should navigate between main sections', async ({ page }) => {
       // Test navigation between games and add game pages
       await page.goto('/games');
@@ -157,6 +169,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('Form Interactions', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should handle search form state changes', async ({ page }) => {
       await helpers.navigateToAddGame();
       
@@ -206,6 +222,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('UI Accessibility', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should have proper form elements', async ({ page }) => {
       await helpers.navigateToAddGame();
       
@@ -240,6 +260,10 @@ test.describe('Comprehensive Game Management', () => {
   });
 
   test.describe('Collection View Controls', () => {
+    test.beforeEach(async ({ page }) => {
+      await helpers.loginAsRegularUser();
+    });
+    
     test('should display view toggle controls', async ({ page }) => {
       await page.goto('/games');
       
