@@ -14,7 +14,13 @@ export const load: PageLoad = async ({ params }) => {
     console.log('[PAGE LOAD] Successfully loaded game data');
   } catch (error) {
     console.error('[PAGE LOAD] Failed to load game during page load:', error);
-    // Don't throw here - let the component handle the error state
+    
+    // If it's a "not found" error, throw a proper 404
+    if (error instanceof Error && error.message.includes('not found in collection')) {
+      throw new Error('Game not found', { cause: { status: 404 } });
+    }
+    
+    // For other errors, let the component handle the error state
     // This allows the component to show appropriate error messages
   }
   

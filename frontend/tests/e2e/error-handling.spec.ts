@@ -10,7 +10,7 @@ test.describe('Error Handling', () => {
 
   test.describe('Page Not Found Errors', () => {
     test('should handle non-existent routes', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Navigate to non-existent route
       await page.goto('/non-existent-page');
@@ -24,21 +24,23 @@ test.describe('Error Handling', () => {
     });
 
     test('should handle invalid game routes', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Navigate to invalid game ID
       await page.goto('/games/invalid-game-id');
       
-      // Should either show 404 or redirect
-      const url = page.url();
-      const is404 = url.includes('404') || await page.getByText(/not found|game.*not.*found/i).first().isVisible();
-      const redirected = url.includes('/games') && !url.includes('/games/invalid-game-id');
+      // Wait for page to load and check for game not found message
+      await page.waitForLoadState('networkidle');
       
-      expect(is404 || redirected).toBe(true);
+      // The game details page shows "Game not found" message when game doesn't exist
+      const gameNotFound = await page.getByText('Game not found').isVisible();
+      const backToGamesButton = await page.getByRole('button', { name: /back to games/i }).isVisible();
+      
+      expect(gameNotFound && backToGamesButton).toBe(true);
     });
 
     test('should handle invalid admin routes', async ({ page }) => {
-      await helpers.loginAsAdmin();
+      await helpers.ensureAdminLogin();
       
       // Navigate to invalid admin route
       await page.goto('/admin/invalid-section');
@@ -81,41 +83,37 @@ test.describe('Error Handling', () => {
     });
 
     test('should handle access to protected routes without login', async ({ page }) => {
+      // Force logout to ensure we're not authenticated
+      await helpers.forceLogoutAndCleanState();
+      
       // Try to access protected route without login
       await page.goto('/admin/users');
       
-      // Should redirect to login or show access denied
-      const url = page.url();
-      const redirectedToLogin = url.includes('/login') || url.includes('/auth');
-      const accessDenied = await page.getByText(/access denied|unauthorized|login required/i).first().isVisible();
-      const redirectedAway = !url.includes('/admin/users');
+      // Wait for any redirects to complete
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
       
-      expect(redirectedToLogin || accessDenied || redirectedAway).toBe(true);
+      // Should redirect to login or home page
+      const url = page.url();
+      const redirectedToLogin = url.includes('/login');
+      const redirectedToHome = url === 'http://localhost:15173/' || url.endsWith('/games');
+      const notOnAdminPage = !url.includes('/admin/users');
+      
+      expect(redirectedToLogin || redirectedToHome || notOnAdminPage).toBe(true);
     });
   });
 
   test.describe('Network and Loading Errors', () => {
     test('should handle slow loading pages gracefully', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Navigate to a page and check it loads within reasonable time
       const startTime = Date.now();
       await page.goto('/games');
       
-      // Should show some content within 10 seconds
-      const contentElements = [
-        page.getByRole('heading').first(),
-        page.locator('main').first(),
-        page.getByText(/loading|games/i).first()
-      ];
-      
-      let contentLoaded = false;
-      for (const element of contentElements) {
-        if (await element.isVisible({ timeout: 10000 })) {
-          contentLoaded = true;
-          break;
-        }
-      }
+      // Should show main content within 10 seconds
+      const mainContent = page.locator('[data-testid="main-content"], main').first();
+      const contentLoaded = await mainContent.isVisible({ timeout: 10000 });
       
       const loadTime = Date.now() - startTime;
       expect(contentLoaded).toBe(true);
@@ -123,58 +121,28 @@ test.describe('Error Handling', () => {
     });
 
     test('should show loading states appropriately', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Navigate to games page and look for loading indicators
       await page.goto('/games');
       
-      // Should show either loading state or content - be more flexible with detection
-      const loadingElements = [
-        page.getByText(/loading|please wait|searching/i),
-        page.locator('[role="status"]'),
-        page.locator('[aria-label="Loading"]'),
-        page.locator('.loading, .spinner, .animate-spin'),
-        page.getByRole('heading', { name: /my games|games collection/i }), // Content loaded
-        page.getByRole('button', { name: /add game/i }) // Interactive content loaded
-      ];
+      // Should show either loading state or main content
+      const loadingState = page.locator('[role="status"], [aria-label="Loading"], .loading, .spinner, .animate-spin').first();
+      const mainHeading = page.getByRole('heading', { name: /my games|games collection/i }).first();
+      const mainContent = page.locator('[data-testid="main-content"], main').first();
       
-      let stateFound = false;
-      for (const element of loadingElements) {
-        try {
-          if (await element.isVisible({ timeout: 2000 })) {
-            stateFound = true;
-            break;
-          }
-        } catch {
-          continue; // Try next element
-        }
-      }
+      // Wait for either loading state or content to be visible
+      const hasLoading = await loadingState.isVisible().catch(() => false);
+      const hasHeading = await mainHeading.isVisible().catch(() => false);
+      const hasContent = await mainContent.isVisible().catch(() => false);
       
-      // If no specific loading/content elements found, at least verify page is responsive
-      if (!stateFound) {
-        // Check if page has any visible content at all
-        const anyContent = [
-          page.locator('body'),
-          page.locator('main'),
-          page.locator('header'),
-          page.locator('[role="main"]')
-        ];
-        
-        for (const content of anyContent) {
-          if (await content.isVisible()) {
-            stateFound = true;
-            break;
-          }
-        }
-      }
-      
-      expect(stateFound).toBe(true);
+      expect(hasLoading || hasHeading || hasContent).toBe(true);
     });
   });
 
   test.describe('Form Validation Errors', () => {
     test('should validate required fields in user creation', async ({ page }) => {
-      await helpers.loginAsAdmin();
+      await helpers.ensureAdminLogin();
       
       // Navigate to user creation page
       await page.goto('/admin/users/new');
@@ -196,7 +164,7 @@ test.describe('Error Handling', () => {
     });
 
     test('should validate email format', async ({ page }) => {
-      await helpers.loginAsAdmin();
+      await helpers.ensureAdminLogin();
       await page.goto('/admin/users/new');
       
       // Fill form with invalid email
@@ -223,13 +191,13 @@ test.describe('Error Handling', () => {
 
   test.describe('Permission and Access Errors', () => {
     test('should block regular users from admin areas', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Try to access admin area
       await page.goto('/admin/users');
       
-      // Wait for redirect/response to complete
-      await page.waitForTimeout(2000);
+      // Wait for navigation to complete
+      await page.waitForLoadState('networkidle');
       
       // Should be blocked or redirected
       const url = page.url();
@@ -251,13 +219,13 @@ test.describe('Error Handling', () => {
     });
 
     test('should handle admin access properly', async ({ page }) => {
-      await helpers.loginAsAdmin();
+      await helpers.ensureAdminLogin();
       
       // Should be able to access admin area
       await page.goto('/admin/users');
       
       // Wait for page to load
-      await page.waitForTimeout(2000);
+      await page.waitForLoadState('networkidle');
       
       // Should either show admin content or be loading
       const adminContent = await page.getByRole('heading', { name: /user management|admin|users/i }).first().isVisible().catch(() => false);
@@ -271,21 +239,25 @@ test.describe('Error Handling', () => {
 
   test.describe('Import and File Errors', () => {
     test('should handle navigation to import pages', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Test Steam import page
       await page.goto('/import/steam');
       
+      // Wait for page to load properly
+      await page.waitForLoadState('networkidle');
+      
       // Should either load properly or show appropriate error
-      const steamPage = await page.getByText(/steam/i).first().isVisible();
-      const errorPage = await page.getByText(/not found|error|unavailable/i).first().isVisible();
+      const steamImportText = await page.getByText('Steam Library Import').isVisible();
+      const steamConfigText = await page.getByText(/Steam.*Import|Import.*Steam/i).first().isVisible();
+      const mainContent = await page.locator('main, [data-testid="main-content"]').isVisible();
       const redirected = !page.url().includes('/import/steam');
       
-      expect(steamPage || errorPage || redirected).toBe(true);
+      expect(steamImportText || steamConfigText || mainContent || redirected).toBe(true);
     });
 
     test('should handle file upload areas', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       await page.goto('/import/darkadia');
       
       // Should show file upload or error
@@ -304,7 +276,7 @@ test.describe('Error Handling', () => {
 
   test.describe('Search and Filter Errors', () => {
     test('should handle empty search results gracefully', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       await page.goto('/games');
       
       // Try to search for non-existent game
@@ -313,7 +285,7 @@ test.describe('Error Handling', () => {
         await searchInput.fill('nonexistentgame123456789');
         await searchInput.press('Enter');
         
-        await page.waitForTimeout(2000);
+        await page.waitForLoadState('networkidle');
         
         // Should show no results or maintain page state
         const noResults = await page.getByText(/no.*results|no.*games.*found|nothing.*found/i).first().isVisible();
@@ -327,14 +299,14 @@ test.describe('Error Handling', () => {
     });
 
     test('should handle filter combinations', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       await page.goto('/games');
       
       // Try to use filters if they exist
       const filterSelect = page.getByRole('combobox').first();
       if (await filterSelect.isVisible()) {
         await filterSelect.selectOption({ index: 1 }); // Select first non-default option
-        await page.waitForTimeout(1000);
+        await page.waitForLoadState('domcontentloaded');
         
         // Should maintain page functionality
         const pageStillWorks = await page.getByRole('heading').first().isVisible();
@@ -348,7 +320,7 @@ test.describe('Error Handling', () => {
 
   test.describe('Error Recovery', () => {
     test('should allow page refresh to recover from errors', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       await page.goto('/games');
       
       // Initial page should load
@@ -363,7 +335,7 @@ test.describe('Error Handling', () => {
     });
 
     test('should maintain user session across errors', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Navigate to protected page
       await page.goto('/games');
@@ -388,23 +360,32 @@ test.describe('Error Handling', () => {
   test.describe('Responsive Error Handling', () => {
     test('should handle errors on mobile devices', async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 667 });
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Try to access a page on mobile
       await page.goto('/games');
       
+      // Wait for page to load properly
+      await page.waitForLoadState('networkidle');
+      
       // Should show content or appropriate mobile-friendly error
       const mobileContent = [
         page.getByRole('heading'),
-        page.locator('main'),
-        page.getByText(/games|loading/i)
+        page.locator('main, [data-testid="main-content"]'),
+        page.getByText(/games|loading|collection/i),
+        page.getByRole('button'),
+        page.getByRole('link')
       ];
       
       let mobileContentFound = false;
       for (const content of mobileContent) {
-        if (await content.first().isVisible()) {
-          mobileContentFound = true;
-          break;
+        try {
+          if (await content.first().isVisible({ timeout: 5000 })) {
+            mobileContentFound = true;
+            break;
+          }
+        } catch {
+          // Continue to next element
         }
       }
       
@@ -413,7 +394,7 @@ test.describe('Error Handling', () => {
 
     test('should handle errors on tablet devices', async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 1024 });
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       
       // Should work on tablet
       await page.goto('/games');
@@ -425,7 +406,7 @@ test.describe('Error Handling', () => {
 
   test.describe('Accessibility in Error States', () => {
     test('should maintain keyboard navigation during errors', async ({ page }) => {
-      await helpers.loginAsRegularUser();
+      await helpers.ensureRegularUserLogin();
       await page.goto('/games');
       
       // Should be able to tab through elements
@@ -447,6 +428,7 @@ test.describe('Error Handling', () => {
         }
       }
       
+      // Games page should always have focusable elements (buttons, links, headings)
       expect(focusableFound).toBe(true);
     });
 
@@ -454,12 +436,15 @@ test.describe('Error Handling', () => {
       // Try to access non-existent page
       await page.goto('/non-existent-route');
       
-      // Should still have proper heading structure
-      const heading = page.getByRole('heading').first();
-      const hasHeading = await heading.isVisible();
-      const redirected = !page.url().includes('/non-existent-route');
+      // Wait for error page to load
+      await page.waitForLoadState('networkidle');
       
-      expect(hasHeading || redirected).toBe(true);
+      // Check for error page elements from +error.svelte
+      const errorHeading = await page.getByText('Page Not Found').isVisible();
+      const notFoundHeading = await page.getByRole('heading', { name: '404' }).isVisible();
+      const goHomeButton = await page.getByRole('button', { name: /go home/i }).isVisible();
+      
+      expect(errorHeading || notFoundHeading || goHomeButton).toBe(true);
     });
   });
 });

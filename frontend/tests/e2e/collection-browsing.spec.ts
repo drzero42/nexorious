@@ -6,7 +6,8 @@ test.describe('Collection Browsing', () => {
 
   test.beforeEach(async ({ page }) => {
     helpers = new TestHelpers(page);
-    await helpers.loginAsRegularUser();
+    // Use optimized login that only logs in if needed
+    await helpers.ensureRegularUserLogin();
   });
 
   test.describe('Games Collection Page', () => {
@@ -23,26 +24,15 @@ test.describe('Collection Browsing', () => {
       await page.goto('/games');
       
       // Should show main content
-      const mainContent = page.locator('main, .content, .container').first();
+      const mainContent = page.locator('[data-testid="main-content"], main').first();
       await expect(mainContent).toBeVisible();
       
-      // Should have some games-related content
-      const gamesContent = [
-        page.getByText(/games/i),
-        page.getByText(/collection/i),
-        page.getByRole('button'),
-        page.getByRole('link')
-      ];
+      // Should have games page specific content
+      const gamesPageContent = page.locator('[data-testid="games-page-content"]').first();
+      const hasGamesPage = await gamesPageContent.isVisible();
+      const hasHeading = await page.getByRole('heading').first().isVisible();
       
-      let contentFound = false;
-      for (const content of gamesContent) {
-        if (await content.first().isVisible()) {
-          contentFound = true;
-          break;
-        }
-      }
-      
-      expect(contentFound).toBe(true);
+      expect(hasGamesPage || hasHeading).toBe(true);
     });
 
     test('should show add game functionality', async ({ page }) => {
@@ -109,7 +99,7 @@ test.describe('Collection Browsing', () => {
           
           // Try clicking it
           await toggle.first().click();
-          await page.waitForTimeout(500);
+          await page.waitForLoadState('domcontentloaded');
           break;
         }
       }
@@ -143,7 +133,7 @@ test.describe('Collection Browsing', () => {
           
           // Try typing in it
           await search.first().fill('test search');
-          await page.waitForTimeout(500);
+          await page.waitForLoadState('domcontentloaded');
           break;
         }
       }
@@ -341,8 +331,12 @@ test.describe('Collection Browsing', () => {
       // Should be able to tab through elements
       await page.keyboard.press('Tab');
       
-      // Should have focusable elements or at least page should be loaded
-      const pageLoaded = await page.locator('main, .content, body').first().isVisible();
+      // Should have page loaded with proper structure - check for main content and heading
+      const mainContentVisible = await page.locator('[data-testid="main-content"]').isVisible();
+      const gamesPageVisible = await page.locator('[data-testid="games-page-content"]').isVisible();
+      const headingVisible = await page.getByRole('heading').first().isVisible();
+      const pageLoaded = mainContentVisible && (gamesPageVisible || headingVisible);
+      
       expect(pageLoaded).toBe(true);
     });
 

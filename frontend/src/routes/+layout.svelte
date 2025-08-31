@@ -494,7 +494,7 @@
 
     <!-- Main content -->
     <div class="lg:pl-72">
-      <main class="py-10">
+      <main class="py-10" data-testid="main-content">
         <div class="px-4 sm:px-6 lg:px-8">
           {@render children?.()}
         </div>
@@ -519,7 +519,7 @@
       </div>
     </header>
     
-    <main class="flex-1">
+    <main class="flex-1" data-testid="main-content">
       <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {@render children?.()}
       </div>

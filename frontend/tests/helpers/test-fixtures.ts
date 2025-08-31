@@ -28,9 +28,7 @@ export class TestHelpers {
    */
   async checkSetupStatus(): Promise<'setup' | 'login' | 'authenticated'> {
     await this.page.goto('/');
-    
-    // Wait a moment for any redirects to complete
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForLoadState('networkidle');
     
     const currentUrl = this.page.url();
     
@@ -56,30 +54,21 @@ export class TestHelpers {
   async waitForPageStable(timeout: number = 3000): Promise<void> {
     // Wait for network to be idle and page to load
     await this.page.waitForLoadState('networkidle', { timeout });
-    
-    // Additional small wait to ensure dynamic content loads
-    await this.page.waitForTimeout(500);
   }
 
   /**
    * Wait for loading spinners to disappear
    */
   async waitForLoadingComplete(timeout: number = 10000): Promise<void> {
-    const spinners = [
-      this.page.locator('[role="status"][aria-label="Loading"]'),
-      this.page.locator('.animate-spin'),
-      this.page.getByText(/loading/i)
-    ];
-
-    for (const spinner of spinners) {
-      try {
-        if (await spinner.isVisible()) {
-          await spinner.waitFor({ state: 'hidden', timeout });
-        }
-      } catch {
-        // Ignore timeout - spinner might not be present
-        continue;
+    // Use a single comprehensive selector
+    const loadingElements = this.page.locator('[role="status"], [aria-label*="Loading"], .animate-spin, .loading');
+    
+    try {
+      if (await loadingElements.first().isVisible({ timeout: 1000 })) {
+        await loadingElements.first().waitFor({ state: 'hidden', timeout });
       }
+    } catch {
+      // Ignore if no loading elements found
     }
   }
 
@@ -244,35 +233,86 @@ export class TestHelpers {
   // Authentication Helper Methods
 
   /**
+   * Fast API-based login that bypasses UI interactions
+   * Much faster than UI login for when we just need auth tokens
+   */
+  async fastApiLogin(username: string, password: string): Promise<void> {
+    try {
+      // Use the page context to make API request with proper CORS handling
+      const response = await this.page.request.post('http://localhost:8001/api/auth/login', {
+        data: {
+          username: username,
+          password: password
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok()) {
+        const loginData = await response.json();
+        
+        // Get user profile to complete the auth state
+        const userResponse = await this.page.request.get('http://localhost:8001/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${loginData.access_token}`
+          }
+        });
+
+        if (userResponse.ok()) {
+          const user = await userResponse.json();
+          
+          // Set localStorage auth state to match frontend auth store
+          const authState = {
+            user: {
+              ...user,
+              isAdmin: user.is_admin
+            },
+            accessToken: loginData.access_token,
+            refreshToken: loginData.refresh_token,
+            isLoading: false,
+            error: null
+          };
+
+          // Store auth state in browser localStorage
+          await this.page.evaluate((authData) => {
+            localStorage.setItem('auth', JSON.stringify(authData));
+          }, authState);
+
+          console.log('✅ Fast API login successful with localStorage');
+          
+          // Navigate to games to ensure we're in the right place
+          await this.page.goto('/games');
+          await this.page.waitForLoadState('networkidle');
+        } else {
+          throw new Error('Failed to fetch user profile');
+        }
+      } else {
+        throw new Error(`API login failed: ${response.status()}`);
+      }
+    } catch (error) {
+      console.warn('Fast API login failed, falling back to UI login:', error);
+      await this.loginAsRegularUser();
+    }
+  }
+
+  /**
    * Force logout of any existing user and clear all authentication state
    * This prevents browser context sharing issues between tests
    */
   async forceLogoutAndCleanState(): Promise<void> {
     try {
-      // Try to find and click logout button first
-      const logoutSelectors = [
-        'button:has-text("↪️ Logout")',
-        'button:has-text("Logout")',
-        'button:has-text("Sign Out")', 
-        '[aria-label*="logout" i]',
-        '[aria-label*="sign out" i]'
-      ];
+      // Go to homepage and wait for load
+      await this.page.goto('/');
+      await this.page.waitForLoadState('networkidle');
       
-      let loggedOut = false;
-      for (const selector of logoutSelectors) {
-        try {
-          await this.page.goto('/'); // Go to home first to see logout button
-          await this.page.waitForTimeout(1000); // Wait for page load
-          
-          if (await this.page.locator(selector).isVisible({ timeout: 2000 })) {
-            await this.page.locator(selector).click();
-            loggedOut = true;
-            await this.page.waitForTimeout(1000); // Wait for logout to complete
-            break;
-          }
-        } catch {
-          continue;
-        }
+      // Try to click logout button if present
+      const logoutButton = this.page.locator('button:has-text("↪️ Logout"), button:has-text("Logout"), button:has-text("Sign Out")');
+      const loggedOut = await logoutButton.first().isVisible({ timeout: 2000 });
+      
+      if (loggedOut) {
+        await logoutButton.first().click();
+        await this.page.waitForLoadState('networkidle');
       }
       
       // Always clear storage manually to be absolutely sure
@@ -294,9 +334,8 @@ export class TestHelpers {
    */
   async verifyRegularUserLogin(): Promise<void> {
     await this.page.goto('/');
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForLoadState('networkidle');
     
-    // Should see the regular user's profile indicator
     // Check that we don't see admin-specific elements
     const hasAdminMenu = await this.page.getByText('Administration').isVisible().catch(() => false);
     
@@ -305,6 +344,61 @@ export class TestHelpers {
     }
     
     console.log('✅ Verified: Logged in as regular user (no admin privileges)');
+  }
+
+  /**
+   * Optimized login that only performs auth if we're not already logged in as regular user
+   * This avoids expensive logout/login cycles when tests can share auth state
+   */
+  async ensureRegularUserLogin(): Promise<void> {
+    // Quick check: are we already authenticated as regular user?
+    try {
+      await this.page.goto('/games');
+      await this.page.waitForLoadState('networkidle');
+      
+      // Check if we're on the login page (not authenticated)
+      if (this.page.url().includes('/login')) {
+        console.log('Not authenticated - performing fast API login');
+        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
+        return;
+      }
+      
+      // Wait a bit for the layout to fully render and check for admin elements
+      await this.page.waitForTimeout(1000);
+      
+      // Check multiple admin-specific elements to improve detection reliability
+      const adminElements = [
+        this.page.getByText('Administration').first(),
+        this.page.getByText('Admin Dashboard').first(), 
+        this.page.getByText('Manage Users').first(),
+        this.page.getByText('Manage Platforms').first()
+      ];
+      
+      let hasAdminPrivileges = false;
+      for (const element of adminElements) {
+        try {
+          if (await element.isVisible({ timeout: 2000 })) {
+            hasAdminPrivileges = true;
+            break;
+          }
+        } catch {
+          // Element not found, continue checking
+        }
+      }
+      
+      if (hasAdminPrivileges) {
+        console.log('Logged in as admin - switching to regular user');
+        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
+        return;
+      }
+      
+      // We're already logged in as regular user - no action needed
+      console.log('✅ Already authenticated as regular user - skipping login');
+      
+    } catch (error) {
+      console.warn('Auth check failed, falling back to UI login:', error);
+      await this.loginAsRegularUser();
+    }
   }
 
   /**
@@ -331,12 +425,64 @@ export class TestHelpers {
       await this.page.waitForURL('/games', { timeout: 15000 });
     } catch (error) {
       console.warn('Regular user login may have redirected to different page than expected');
-      // Wait a moment for any redirect to complete
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForLoadState('networkidle');
     }
     
     // Verify we're actually logged in as the regular user
     await this.verifyRegularUserLogin();
+  }
+
+  /**
+   * Optimized admin login that only performs auth if we're not already logged in as admin
+   */
+  async ensureAdminLogin(): Promise<void> {
+    try {
+      await this.page.goto('/games');
+      await this.page.waitForLoadState('networkidle');
+      
+      // Check if we're on the login page (not authenticated)
+      if (this.page.url().includes('/login')) {
+        console.log('Not authenticated - performing fast admin API login');
+        await this.fastApiLogin(TEST_CREDENTIALS.admin.username, TEST_CREDENTIALS.admin.password);
+        return;
+      }
+      
+      // Wait a bit for the layout to fully render and check for admin elements
+      await this.page.waitForTimeout(1000);
+      
+      // Check multiple admin-specific elements to improve detection reliability
+      const adminElements = [
+        this.page.getByText('Administration').first(),
+        this.page.getByText('Admin Dashboard').first(), 
+        this.page.getByText('Manage Users').first(),
+        this.page.getByText('Manage Platforms').first()
+      ];
+      
+      let hasAdminPrivileges = false;
+      for (const element of adminElements) {
+        try {
+          if (await element.isVisible({ timeout: 2000 })) {
+            hasAdminPrivileges = true;
+            break;
+          }
+        } catch {
+          // Element not found, continue checking
+        }
+      }
+      
+      if (!hasAdminPrivileges) {
+        console.log('Logged in as regular user - switching to admin');
+        await this.fastApiLogin(TEST_CREDENTIALS.admin.username, TEST_CREDENTIALS.admin.password);
+        return;
+      }
+      
+      // We're already logged in as admin - no action needed
+      console.log('✅ Already authenticated as admin user - skipping login');
+      
+    } catch (error) {
+      console.warn('Admin auth check failed, falling back to UI login:', error);
+      await this.loginAsAdmin();
+    }
   }
 
   /**
@@ -359,8 +505,7 @@ export class TestHelpers {
         await this.page.waitForURL('/games', { timeout: 15000 });
       } catch (error) {
         console.warn('Admin login may have redirected to different page than expected');
-        // Wait a moment for any redirect to complete
-        await this.page.waitForTimeout(2000);
+        await this.page.waitForLoadState('networkidle');
       }
     } else if (status === 'authenticated') {
       // Already logged in, just navigate to games
@@ -415,7 +560,7 @@ export class TestHelpers {
       await this.page.getByRole('button', { name: /resolve|convert/i }).click();
       
       // Wait for resolution to complete
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForLoadState('networkidle');
     }
   }
 
@@ -479,7 +624,7 @@ export class TestHelpers {
       });
       
       // Wait for upload processing
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForLoadState('networkidle');
     }
   }
 
@@ -529,7 +674,7 @@ export class TestHelpers {
       await this.page.getByRole('button', { name: /confirm|yes/i }).click();
       
       // Wait for reset to complete
-      await this.page.waitForTimeout(1000);
+      await this.page.waitForLoadState('domcontentloaded');
     }
   }
 

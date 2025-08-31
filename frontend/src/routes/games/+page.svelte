@@ -647,7 +647,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
 </svelte:head>
 
 <RouteGuard requireAuth={true}>
-<div class="space-y-6">
+<div class="space-y-6" data-testid="games-page-content">
  <!-- Real-time Update Indicator -->
  {#if hasOptimisticUpdates || isBulkProcessing}
   <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
