@@ -12,6 +12,11 @@ test.describe('Comprehensive Game Management', () => {
     TestGameFactory.reset();
   });
 
+  test.afterEach(async () => {
+    // Clean up any games created during tests
+    await helpers.cleanupCreatedGames();
+  });
+
   test.describe('Game Creation Workflows', () => {
     test.beforeEach(async ({ page }) => {
       await helpers.loginAsRegularUser();
@@ -103,14 +108,15 @@ test.describe('Comprehensive Game Management', () => {
     });
 
     test('should access game detail route structure', async ({ page }) => {
-      // Test that game detail routes are properly structured
-      // Since we can't create actual games without API setup,
-      // we'll test route accessibility
+      // Create a test game to ensure we have data to test navigation with
+      const userGameId = await helpers.createGameForTestData({
+        title: 'Test Route Structure Game',
+        description: 'Game for testing route structure and navigation'
+      });
       
       await page.goto('/games');
       
       // Check if any games exist in the list to click on
-      // If not, just verify the games page loads
       const gameCards = page.locator('[data-testid*="game"], .game-card, [class*="game"]');
       const cardCount = await gameCards.count();
       
@@ -118,11 +124,29 @@ test.describe('Comprehensive Game Management', () => {
         // Click on first game to test detail navigation
         await gameCards.first().click();
         
-        // Should navigate to a game detail page
-        await expect(page).toHaveURL(/\/games\/[^/]+$/);
+        // Should navigate to a game detail page with UUID pattern
+        await expect(page).toHaveURL(/\/games\/[a-f0-9\-]{36}$/);
       } else {
-        // No games to click on, which is expected in test environment
-        await expect(page.getByRole('heading', { name: /my games|games collection/i })).toBeVisible();
+        // If UI doesn't show games, navigate directly using the created game ID
+        await page.goto(`/games/${userGameId}`);
+        await expect(page).toHaveURL(`/games/${userGameId}`);
+        
+        // Should show game content
+        const content = [
+          page.getByRole('heading'),
+          page.locator('main'),
+          page.getByText(/Test Route Structure Game/i)
+        ];
+        
+        let contentFound = false;
+        for (const element of content) {
+          if (await element.first().isVisible()) {
+            contentFound = true;
+            break;
+          }
+        }
+        
+        expect(contentFound).toBe(true);
       }
     });
   });

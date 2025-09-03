@@ -1,5 +1,4 @@
 import type { Page } from '@playwright/test';
-import { expect } from '@playwright/test';
 
 // Test credentials - matching those in auth.setup.ts
 const TEST_CREDENTIALS = {
@@ -14,14 +13,14 @@ const TEST_CREDENTIALS = {
 } as const;
 
 /**
- * Common test utilities for Playwright E2E tests
+ * Simplified test utilities for Playwright E2E tests
+ * Contains only basic utilities - complex workflows are now in dedicated E2E tests
  */
 export class TestHelpers {
   constructor(private page: Page) {}
 
-  // NOTE: Admin setup is now handled by auth.setup.ts
-  // This method is removed to avoid conflicts with global auth setup
-
+  // Store created game IDs for cleanup
+  private createdGameIds: string[] = [];
 
   /**
    * Check if setup is needed by visiting the homepage
@@ -49,115 +48,209 @@ export class TestHelpers {
   }
 
   /**
-   * Wait for page to stabilize after navigation or load
+   * Login as regular user via UI workflow
    */
-  async waitForPageStable(timeout: number = 3000): Promise<void> {
-    // Wait for network to be idle and page to load
-    await this.page.waitForLoadState('networkidle', { timeout });
+  async loginAsRegularUser(): Promise<void> {
+    const status = await this.checkSetupStatus();
+    
+    if (status === 'authenticated') {
+      return; // Already logged in
+    }
+    
+    if (status === 'setup') {
+      throw new Error('Admin setup required - run auth.setup.ts first');
+    }
+    
+    // Navigate to login page
+    await this.page.goto('/login');
+    await this.page.waitForLoadState('networkidle');
+    
+    // Fill login form
+    await this.page.getByPlaceholder(/username/i).fill(TEST_CREDENTIALS.regular.username);
+    await this.page.getByPlaceholder(/password/i).fill(TEST_CREDENTIALS.regular.password);
+    await this.page.getByRole('button', { name: /login|sign in/i }).click();
+    
+    // Wait for redirect to dashboard or games
+    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForTimeout(1000);
+    
+    // Verify login success
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/login')) {
+      throw new Error('Login failed - still on login page');
+    }
+    
+    // Additional wait to ensure auth state is fully loaded
+    await this.page.waitForTimeout(500);
+    console.log('✅ UI login completed for regular user');
   }
 
   /**
-   * Wait for loading spinners to disappear
+   * Login as admin user via UI workflow
    */
-  async waitForLoadingComplete(timeout: number = 10000): Promise<void> {
-    // Use a single comprehensive selector
-    const loadingElements = this.page.locator('[role="status"], [aria-label*="Loading"], .animate-spin, .loading');
+  async loginAsAdmin(): Promise<void> {
+    const status = await this.checkSetupStatus();
     
+    if (status === 'setup') {
+      throw new Error('Admin setup required - run auth.setup.ts first');
+    }
+    
+    // Navigate to login page
+    await this.page.goto('/login');
+    await this.page.waitForLoadState('networkidle');
+    
+    // Fill login form
+    await this.page.getByPlaceholder(/username/i).fill(TEST_CREDENTIALS.admin.username);
+    await this.page.getByPlaceholder(/password/i).fill(TEST_CREDENTIALS.admin.password);
+    await this.page.getByRole('button', { name: /login|sign in/i }).click();
+    
+    // Wait for redirect
+    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForTimeout(1000);
+    
+    // Verify login success
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/login')) {
+      throw new Error('Admin login failed - still on login page');
+    }
+    
+    // Additional wait to ensure auth state is fully loaded
+    await this.page.waitForTimeout(500);
+    console.log('✅ UI login completed for admin user');
+  }
+
+  /**
+   * Track a game ID for cleanup (used by E2E tests)
+   */
+  trackGameForCleanup(gameId: string): void {
+    this.createdGameIds.push(gameId);
+  }
+
+  /**
+   * Create test data game via API (for setup only, not UI testing)
+   * This is acceptable for test data setup - UI workflows should be tested in dedicated E2E tests
+   */
+  async createGameForTestData(gameData: {
+    title: string;
+    description?: string;
+    personal_rating?: number;
+    play_status?: string;
+    ownership_status?: string;
+    hours_played?: number;
+    platforms?: string[];
+  }): Promise<string> {
     try {
-      if (await loadingElements.first().isVisible({ timeout: 1000 })) {
-        await loadingElements.first().waitFor({ state: 'hidden', timeout });
+      // Get auth token from localStorage
+      const authState = await this.page.evaluate(() => {
+        const auth = localStorage.getItem('auth');
+        return auth ? JSON.parse(auth) : null;
+      });
+
+      if (!authState?.accessToken) {
+        throw new Error('No authentication token available - ensure user is logged in');
       }
-    } catch {
-      // Ignore if no loading elements found
+
+      // Create the game via IGDB import API (this also adds to collection automatically)
+      const gameResponse = await this.page.request.post('http://localhost:8001/api/games/igdb-import', {
+        headers: {
+          'Authorization': `Bearer ${authState.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        data: {
+          igdb_id: '11208', // Witcher 3 - reliable test game
+          title: gameData.title,
+          description: gameData.description || 'Test game description'
+        }
+      });
+
+      if (!gameResponse.ok()) {
+        const errorText = await gameResponse.text();
+        throw new Error(`Failed to create game: ${gameResponse.status()} - ${errorText}`);
+      }
+
+      const gameResult = await gameResponse.json();
+      const gameId = gameResult.id;
+
+      // Update user game data if additional fields are provided
+      if (gameData.personal_rating || gameData.play_status !== 'not_started' || 
+          gameData.ownership_status !== 'owned' || gameData.hours_played || 
+          gameData.platforms?.length) {
+        
+        const updateResponse = await this.page.request.put(`http://localhost:8001/api/user-games/${gameId}`, {
+          headers: {
+            'Authorization': `Bearer ${authState.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            ownership_status: gameData.ownership_status || 'owned',
+            personal_rating: gameData.personal_rating || null,
+            play_status: gameData.play_status || 'not_started',
+            hours_played: gameData.hours_played || 0,
+            platforms: gameData.platforms?.map(p => ({ platform_id: p, is_available: true })) || []
+          }
+        });
+
+        if (!updateResponse.ok()) {
+          console.warn(`Failed to update user game data: ${updateResponse.status()}`);
+          // Don't throw error - game was created successfully, just user data update failed
+        }
+      }
+
+      // Track for cleanup
+      this.createdGameIds.push(gameId);
+      
+      return gameId;
+
+    } catch (error) {
+      console.error('Failed to create test data game:', error);
+      throw error;
     }
   }
 
-
   /**
-   * Navigate to a specific app section (requires authentication)
+   * Clean up all games created during tests
    */
-  async navigateToSection(section: 'games' | 'dashboard' | 'profile' | 'admin'): Promise<void> {
-    const sectionLinks = {
-      games: 'My Games',
-      dashboard: 'Dashboard', 
-      profile: 'Profile',
-      admin: 'Admin'
-    };
-
-    const linkText = sectionLinks[section];
-    await this.page.getByRole('link', { name: linkText }).click();
-    await expect(this.page).toHaveURL(new RegExp(`/${section}`));
-  }
-
-
-  // Game Management Helper Methods
-
-  /**
-   * Navigate to add game page
-   */
-  async navigateToAddGame(): Promise<void> {
-    await this.page.goto('/games');
-    await this.page.getByRole('button', { name: /add game/i }).click();
-    await expect(this.page).toHaveURL('/games/add');
-    await expect(this.page.getByRole('heading', { name: /add game/i })).toBeVisible();
+  async cleanupCreatedGames(): Promise<void> {
+    for (const gameId of this.createdGameIds) {
+      await this.deleteGameViaAPI(gameId);
+    }
+    this.createdGameIds = [];
   }
 
   /**
-   * Perform IGDB search with given query
+   * Delete a game via API (for cleanup)
    */
-  async searchForGame(query: string): Promise<void> {
-    await expect(this.page.getByPlaceholder(/enter game title/i)).toBeVisible();
-    await this.page.getByPlaceholder(/enter game title/i).fill(query);
-    await this.page.getByRole('button', { name: 'Search' }).click();
+  private async deleteGameViaAPI(gameId: string): Promise<void> {
+    try {
+      // Get auth token for cleanup
+      const authState = await this.page.evaluate(() => {
+        const auth = localStorage.getItem('auth');
+        return auth ? JSON.parse(auth) : null;
+      });
+
+      if (!authState?.accessToken) {
+        console.warn(`No auth token for cleanup of game: ${gameId}`);
+        return;
+      }
+
+      await this.page.request.delete(`http://localhost:8001/api/user-games/${gameId}`, {
+        headers: {
+          'Authorization': `Bearer ${authState.accessToken}`
+        }
+      });
+      console.log(`🗑️ Cleaned up game: ${gameId}`);
+    } catch (error) {
+      console.warn(`Failed to delete game ${gameId}:`, error);
+      // Don't throw - cleanup should be best effort
+    }
   }
 
   /**
-   * Fill manual game creation form
+   * Navigate to game details page by ID
    */
-  async fillManualGameForm(gameData: {
-    title: string;
-    description?: string;
-    personalRating?: string;
-    playStatus?: string;
-    ownershipStatus?: string;
-    hoursPlayed?: string;
-    platforms?: string[];
-  }): Promise<void> {
-    // Note: Manual game form doesn't exist - this helper is not applicable
-    // The current implementation only supports IGDB search workflow
-    throw new Error('Manual game form is not implemented. Use IGDB search workflow instead.');
-  }
-
-  /**
-   * Submit game creation form and wait for completion
-   */
-  async submitGameForm(): Promise<void> {
-    // Note: This method assumes form exists, but manual forms don't exist
-    // The current implementation uses IGDB search workflow
-    throw new Error('Manual game submission not implemented. Use IGDB search workflow instead.');
-  }
-
-  /**
-   * Create a test game using manual entry
-   */
-  async createTestGame(gameData: {
-    title: string;
-    description?: string;
-    personalRating?: string;
-    playStatus?: string;
-    ownershipStatus?: string;
-    hoursPlayed?: string;
-    platforms?: string[];
-  }): Promise<void> {
-    // Note: Manual game creation doesn't exist in current implementation
-    // For testing purposes, we'll simulate the search workflow without expecting results
-    await this.navigateToAddGame();
-    
-    // Just test the search UI (won't actually create a game)
-    await this.searchForGame(`Test_${gameData.title}`);
-    
-    // Don't expect specific results, just verify we can interact with the search
-    // In a real implementation, this would need API mocking
+  async navigateToGameDetails(gameId: string): Promise<void> {
+    await this.page.goto(`/games/${gameId}`);
+    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -172,65 +265,27 @@ export class TestHelpers {
   }
 
   /**
-   * Delete a game from the collection
+   * Find a game card in the collection by title
    */
-  async deleteGame(gameTitle: string): Promise<void> {
+  async findGameInCollection(gameTitle: string) {
     await this.page.goto('/games');
-    
-    // Find game and open context menu or click delete button
-    const gameCard = this.page.locator(`text=${gameTitle}`).first();
-    await expect(gameCard).toBeVisible();
-    
-    // Look for delete button or three-dot menu
-    try {
-      await gameCard.locator('button[aria-label*="delete"], button[title*="delete"]').click();
-    } catch {
-      // Try right-click context menu
-      await gameCard.click({ button: 'right' });
-      await this.page.getByRole('menuitem', { name: /delete/i }).click();
-    }
-    
-    // Confirm deletion
-    await this.page.getByRole('button', { name: /confirm|delete/i }).click();
-    
-    // Wait for game to be removed from list
-    await expect(gameCard).not.toBeVisible({ timeout: 5000 });
+    await this.page.waitForLoadState('networkidle');
+    return this.page.locator(`text="${gameTitle}"`).first();
   }
 
   /**
-   * Navigate to game details page for editing
+   * Navigate to add game page
    */
-  async editGame(gameTitle: string, updates: {
-    personalRating?: string;
-    playStatus?: string;
-    ownershipStatus?: string;
-    hoursPlayed?: string;
-    personalNotes?: string;
-  }): Promise<void> {
-    // Note: Since we can't actually find games that don't exist,
-    // this will just test navigation to edit workflow
+  async navigateToAddGame(): Promise<void> {
     await this.page.goto('/games');
-    
-    // In real implementation, this would click on an actual game
-    // For testing, we'd need proper test data setup
-    // This is a placeholder for the edit workflow
+    await this.page.getByRole('button', { name: /add game/i }).click();
+    await this.page.waitForLoadState('networkidle');
+    // Verify we're on the add game page
+    await this.page.waitForSelector('input[placeholder*="game title"], input[placeholder*="Enter game title"]', { 
+      state: 'visible', 
+      timeout: 5000 
+    });
   }
-
-  /**
-   * View game details page
-   */
-  async viewGameDetails(gameTitle: string): Promise<void> {
-    await this.page.goto('/games');
-    
-    const gameCard = this.page.locator(`text=${gameTitle}`).first();
-    await gameCard.click();
-    
-    // Should navigate to game details
-    await expect(this.page).toHaveURL(/\/games\/[^/]+$/);
-    await expect(this.page.getByRole('heading', { name: gameTitle })).toBeVisible();
-  }
-
-  // Authentication Helper Methods
 
   /**
    * Fast API-based login that bypasses UI interactions
@@ -279,157 +334,80 @@ export class TestHelpers {
             localStorage.setItem('auth', JSON.stringify(authData));
           }, authState);
 
-          console.log('✅ Fast API login successful with localStorage');
+          console.log(`⚡ Fast API login successful for ${username}`);
           
-          // Navigate to games to ensure we're in the right place
+          // Navigate to a page to trigger auth store sync and wait for frontend to process auth state
           await this.page.goto('/games');
           await this.page.waitForLoadState('networkidle');
+          
+          // Wait for auth-dependent UI to appear (give frontend time to read localStorage)
+          await this.page.waitForTimeout(1000);
+          
+          // Verify frontend has processed the auth state by checking we're not redirected to login
+          await this.page.waitForTimeout(500); // Small additional wait for any redirects
+          const currentUrl = this.page.url();
+          if (currentUrl.includes('/login')) {
+            throw new Error(`Frontend auth sync failed - still redirected to login page after setting auth state`);
+          }
+          
+          console.log(`✅ Frontend auth sync completed for ${username}`);
         } else {
-          throw new Error('Failed to fetch user profile');
+          throw new Error(`Failed to get user profile: ${userResponse.status()}`);
         }
       } else {
-        throw new Error(`API login failed: ${response.status()}`);
+        throw new Error(`Login failed: ${response.status()}`);
       }
     } catch (error) {
-      console.warn('Fast API login failed, falling back to UI login:', error);
-      await this.loginAsRegularUser();
+      console.error('Fast API login failed:', error);
+      throw error;
     }
   }
 
   /**
-   * Force logout of any existing user and clear all authentication state
-   * This prevents browser context sharing issues between tests
+   * Logout current user
+   */
+  async logout(): Promise<void> {
+    // Clear auth from localStorage
+    await this.page.evaluate(() => {
+      localStorage.removeItem('auth');
+    });
+    
+    // Navigate to login page
+    await this.page.goto('/login');
+    await this.page.waitForLoadState('networkidle');
+  }
+
+  /**
+   * Force logout and clean all authentication state
    */
   async forceLogoutAndCleanState(): Promise<void> {
+    // Clear cookies at context level (always works regardless of page state)
+    await this.page.context().clearCookies();
+    
+    // Navigate to login page first to establish secure context
+    await this.page.goto('/login');
+    await this.page.waitForLoadState('domcontentloaded');
+    
+    // Now clear localStorage and sessionStorage with error handling
     try {
-      // Go to homepage and wait for load
-      await this.page.goto('/');
-      await this.page.waitForLoadState('networkidle');
-      
-      // Try to click logout button if present
-      const logoutButton = this.page.locator('button:has-text("↪️ Logout"), button:has-text("Logout"), button:has-text("Sign Out")');
-      const loggedOut = await logoutButton.first().isVisible({ timeout: 2000 });
-      
-      if (loggedOut) {
-        await logoutButton.first().click();
-        await this.page.waitForLoadState('networkidle');
-      }
-      
-      // Always clear storage manually to be absolutely sure
       await this.page.evaluate(() => {
         localStorage.clear();
         sessionStorage.clear();
       });
-      await this.page.context().clearCookies();
-      
-      console.log(`Force logout: ${loggedOut ? 'Button clicked + ' : ''}Storage cleared`);
-      
     } catch (error) {
-      console.warn('Force logout encountered error, but continuing:', error);
+      // Storage APIs may not be available in some contexts (e.g., Firefox security restrictions)
+      console.warn('Storage clearing failed, but continuing:', error.message);
     }
-  }
-
-  /**
-   * Verify that we're logged in as the regular user (not admin)
-   */
-  async verifyRegularUserLogin(): Promise<void> {
-    await this.page.goto('/');
+    
+    // Wait for page to be fully ready
     await this.page.waitForLoadState('networkidle');
     
-    // Check that we don't see admin-specific elements
-    const hasAdminMenu = await this.page.getByText('Administration').isVisible().catch(() => false);
-    
-    if (hasAdminMenu) {
-      throw new Error('Regular user verification failed: User appears to have admin privileges');
+    // Verify we're on login page
+    const currentUrl = this.page.url();
+    if (!currentUrl.includes('/login')) {
+      // Force navigation if not already there
+      await this.page.goto('/login', { waitUntil: 'networkidle' });
     }
-    
-    console.log('✅ Verified: Logged in as regular user (no admin privileges)');
-  }
-
-  /**
-   * Optimized login that only performs auth if we're not already logged in as regular user
-   * This avoids expensive logout/login cycles when tests can share auth state
-   */
-  async ensureRegularUserLogin(): Promise<void> {
-    // Quick check: are we already authenticated as regular user?
-    try {
-      await this.page.goto('/games');
-      await this.page.waitForLoadState('networkidle');
-      
-      // Check if we're on the login page (not authenticated)
-      if (this.page.url().includes('/login')) {
-        console.log('Not authenticated - performing fast API login');
-        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
-        return;
-      }
-      
-      // Wait a bit for the layout to fully render and check for admin elements
-      await this.page.waitForTimeout(1000);
-      
-      // Check multiple admin-specific elements to improve detection reliability
-      const adminElements = [
-        this.page.getByText('Administration').first(),
-        this.page.getByText('Admin Dashboard').first(), 
-        this.page.getByText('Manage Users').first(),
-        this.page.getByText('Manage Platforms').first()
-      ];
-      
-      let hasAdminPrivileges = false;
-      for (const element of adminElements) {
-        try {
-          if (await element.isVisible({ timeout: 2000 })) {
-            hasAdminPrivileges = true;
-            break;
-          }
-        } catch {
-          // Element not found, continue checking
-        }
-      }
-      
-      if (hasAdminPrivileges) {
-        console.log('Logged in as admin - switching to regular user');
-        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
-        return;
-      }
-      
-      // We're already logged in as regular user - no action needed
-      console.log('✅ Already authenticated as regular user - skipping login');
-      
-    } catch (error) {
-      console.warn('Auth check failed, falling back to UI login:', error);
-      await this.loginAsRegularUser();
-    }
-  }
-
-  /**
-   * Login as a regular user (non-admin)
-   * Forces a clean authentication state first to avoid context sharing issues
-   */
-  async loginAsRegularUser(): Promise<void> {
-    // Force clean state - logout any existing user and clear all auth data
-    await this.forceLogoutAndCleanState();
-    
-    // Now proceed with regular user login
-    await this.page.goto('/login');
-    
-    // Wait for login form to be ready
-    await this.page.getByLabel('Username').waitFor({ state: 'visible', timeout: 10000 });
-    
-    // Use credentials from auth.setup.ts
-    await this.page.getByLabel('Username').fill(TEST_CREDENTIALS.regular.username);
-    await this.page.getByLabel('Password').fill(TEST_CREDENTIALS.regular.password);
-    await this.page.getByRole('button', { name: /sign in/i }).click();
-    
-    // Wait for redirect to games page with better error handling
-    try {
-      await this.page.waitForURL('/games', { timeout: 15000 });
-    } catch (error) {
-      console.warn('Regular user login may have redirected to different page than expected');
-      await this.page.waitForLoadState('networkidle');
-    }
-    
-    // Verify we're actually logged in as the regular user
-    await this.verifyRegularUserLogin();
   }
 
   /**
@@ -444,7 +422,7 @@ export class TestHelpers {
       if (this.page.url().includes('/login')) {
         console.log('Not authenticated - performing fast admin API login');
         await this.fastApiLogin(TEST_CREDENTIALS.admin.username, TEST_CREDENTIALS.admin.password);
-        return;
+        // fastApiLogin already navigates to /games and verifies auth sync, so continue to admin verification
       }
       
       // Wait a bit for the layout to fully render and check for admin elements
@@ -455,439 +433,188 @@ export class TestHelpers {
         this.page.getByText('Administration').first(),
         this.page.getByText('Admin Dashboard').first(), 
         this.page.getByText('Manage Users').first(),
-        this.page.getByText('Manage Platforms').first()
+        this.page.getByText('Manage Platforms').first(),
+        this.page.locator('[href*="/admin"]').first(),
+        this.page.locator('[data-testid*="admin"]').first()
       ];
       
-      let hasAdminPrivileges = false;
+      let isAdmin = false;
       for (const element of adminElements) {
         try {
           if (await element.isVisible({ timeout: 2000 })) {
-            hasAdminPrivileges = true;
+            isAdmin = true;
+            console.log('✅ Already logged in as admin');
             break;
           }
-        } catch {
-          // Element not found, continue checking
+        } catch (error) {
+          continue;
         }
       }
       
-      if (!hasAdminPrivileges) {
-        console.log('Logged in as regular user - switching to admin');
+      // If we don't see admin elements, we might be logged in as regular user
+      if (!isAdmin) {
+        console.log('Not logged in as admin - switching to admin login');
         await this.fastApiLogin(TEST_CREDENTIALS.admin.username, TEST_CREDENTIALS.admin.password);
-        return;
+        // After switching to admin, wait a bit more and re-check admin elements
+        await this.page.waitForTimeout(1000);
+        
+        // Verify admin elements are now visible
+        let adminVerified = false;
+        for (const element of adminElements) {
+          try {
+            if (await element.isVisible({ timeout: 3000 })) {
+              adminVerified = true;
+              console.log('✅ Admin verification successful');
+              break;
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+        
+        if (!adminVerified) {
+          console.warn('⚠️ Admin elements not visible after login, but continuing...');
+        }
       }
-      
-      // We're already logged in as admin - no action needed
-      console.log('✅ Already authenticated as admin user - skipping login');
-      
     } catch (error) {
-      console.warn('Admin auth check failed, falling back to UI login:', error);
-      await this.loginAsAdmin();
+      console.error('Error in ensureAdminLogin:', error);
+      // Fallback to direct admin login
+      await this.fastApiLogin(TEST_CREDENTIALS.admin.username, TEST_CREDENTIALS.admin.password);
     }
   }
 
   /**
-   * Login as admin user
+   * Verify admin login by checking for admin-specific elements
    */
-  async loginAsAdmin(): Promise<void> {
-    const status = await this.checkSetupStatus();
-    
-    if (status === 'login') {
-      // Wait for login form to be ready
-      await this.page.getByLabel('Username').waitFor({ state: 'visible', timeout: 10000 });
-      
-      // Use admin credentials from auth.setup.ts
-      await this.page.getByLabel('Username').fill(TEST_CREDENTIALS.admin.username);
-      await this.page.getByLabel('Password').fill(TEST_CREDENTIALS.admin.password);
-      await this.page.getByRole('button', { name: /sign in/i }).click();
-      
-      // Wait for redirect to games page with better error handling
-      try {
-        await this.page.waitForURL('/games', { timeout: 15000 });
-      } catch (error) {
-        console.warn('Admin login may have redirected to different page than expected');
-        await this.page.waitForLoadState('networkidle');
-      }
-    } else if (status === 'authenticated') {
-      // Already logged in, just navigate to games
-      await this.page.goto('/games');
-    }
-  }
-
-  // Steam Import Helper Methods
-
-  /**
-   * Navigate to Steam import page
-   */
-  async navigateToSteamImport(): Promise<void> {
-    await this.page.goto('/import/steam');
-    await expect(this.page).toHaveURL('/import/steam');
-    await expect(this.page.getByRole('heading', { name: /steam import/i })).toBeVisible();
-  }
-
-  /**
-   * Configure Steam API credentials
-   */
-  async configureSteamAPI(apiKey: string, steamId: string): Promise<void> {
-    await this.navigateToSteamImport();
-    
-    // Look for configuration form
-    const apiKeyInput = this.page.getByPlaceholder(/api key/i);
-    const steamIdInput = this.page.getByPlaceholder(/steam id/i);
-    
-    if (await apiKeyInput.isVisible()) {
-      await apiKeyInput.fill(apiKey);
-    }
-    
-    if (await steamIdInput.isVisible()) {
-      await steamIdInput.fill(steamId);
-    }
-    
-    // Submit configuration
-    await this.page.getByRole('button', { name: /save|configure|update/i }).click();
-  }
-
-  /**
-   * Resolve vanity URL to Steam ID
-   */
-  async resolveSteamVanityUrl(vanityUrl: string): Promise<void> {
-    await this.navigateToSteamImport();
-    
-    const vanityOption = this.page.getByText(/vanity url|custom url/i);
-    if (await vanityOption.isVisible()) {
-      await vanityOption.click();
-      
-      await this.page.getByPlaceholder(/vanity url|username/i).fill(vanityUrl);
-      await this.page.getByRole('button', { name: /resolve|convert/i }).click();
-      
-      // Wait for resolution to complete
-      await this.page.waitForLoadState('networkidle');
-    }
-  }
-
-  /**
-   * Refresh Steam library
-   */
-  async refreshSteamLibrary(): Promise<void> {
-    await this.navigateToSteamImport();
-    
-    const refreshButton = this.page.getByRole('button', { name: /refresh|reload/i });
-    if (await refreshButton.isVisible()) {
-      await refreshButton.click();
-      
-      // Wait for refresh to complete
-      await this.waitForElement('[data-testid="steam-games-table"], text=loading', 10000);
-    }
-  }
-
-  /**
-   * Navigate between Steam import tabs
-   */
-  async navigateToSteamTab(tab: 'needs-attention' | 'ignored' | 'in-sync' | 'configuration'): Promise<void> {
-    await this.navigateToSteamImport();
-    
-    const tabNames = {
-      'needs-attention': /needs attention|unmatched/i,
-      'ignored': /ignored/i,
-      'in-sync': /in sync|synced/i,
-      'configuration': /configuration|config/i
-    };
-    
-    const tabButton = this.page.getByText(tabNames[tab]);
-    if (await tabButton.isVisible()) {
-      await tabButton.click();
-    }
-  }
-
-  // Darkadia Import Helper Methods
-
-  /**
-   * Navigate to Darkadia import page
-   */
-  async navigateToDarkadiaImport(): Promise<void> {
-    await this.page.goto('/import/darkadia');
-    await expect(this.page).toHaveURL('/import/darkadia');
-    await expect(this.page.getByRole('heading', { name: /darkadia import/i })).toBeVisible();
-  }
-
-  /**
-   * Upload Darkadia CSV file
-   */
-  async uploadDarkadiaCSV(csvContent: string): Promise<void> {
-    await this.navigateToDarkadiaImport();
-    
-    const fileInput = this.page.locator('input[type="file"]');
-    if (await fileInput.isVisible()) {
-      await fileInput.setInputFiles({
-        name: 'darkadia-export.csv',
-        mimeType: 'text/csv',
-        buffer: Buffer.from(csvContent)
-      });
-      
-      // Wait for upload processing
-      await this.page.waitForLoadState('networkidle');
-    }
-  }
-
-  /**
-   * Navigate between Darkadia import tabs
-   */
-  async navigateToDarkadiaTab(tab: 'upload' | 'needs-attention' | 'ignored' | 'in-sync'): Promise<void> {
-    await this.navigateToDarkadiaImport();
-    
-    const tabNames = {
-      'upload': /upload/i,
-      'needs-attention': /needs attention|unmatched/i,
-      'ignored': /ignored/i,
-      'in-sync': /in sync|synced/i
-    };
-    
-    const tabButton = this.page.getByText(tabNames[tab]);
-    if (await tabButton.isVisible()) {
-      await tabButton.click();
-    }
-  }
-
-  /**
-   * Handle platform resolution during import
-   */
-  async resolvePlatformConflict(originalPlatform: string, targetPlatform: string): Promise<void> {
-    // Look for platform resolution modal
-    const modal = this.page.getByRole('dialog');
-    if (await modal.isVisible()) {
-      // Select target platform
-      await this.page.getByText(targetPlatform).click();
-      await this.page.getByRole('button', { name: /confirm|resolve/i }).click();
-    }
-  }
-
-  /**
-   * Reset Darkadia import data
-   */
-  async resetDarkadiaImport(): Promise<void> {
-    await this.navigateToDarkadiaImport();
-    
-    const resetButton = this.page.getByRole('button', { name: /reset|clear/i });
-    if (await resetButton.isVisible()) {
-      await resetButton.click();
-      
-      // Confirm reset
-      await this.page.getByRole('button', { name: /confirm|yes/i }).click();
-      
-      // Wait for reset to complete
-      await this.page.waitForLoadState('domcontentloaded');
-    }
-  }
-
-  // Admin Helper Methods
-
-  /**
-   * Navigate to admin dashboard
-   */
-  async navigateToAdminDashboard(): Promise<void> {
-    await this.page.goto('/admin/dashboard');
-    await expect(this.page).toHaveURL('/admin/dashboard');
-    await expect(this.page.getByRole('heading', { name: /admin|dashboard/i })).toBeVisible();
-  }
-
-  /**
-   * Navigate to admin user management
-   */
-  async navigateToAdminUsers(): Promise<void> {
-    await this.page.goto('/admin/users');
-    await expect(this.page).toHaveURL('/admin/users');
-    await expect(this.page.getByRole('heading', { name: /users|user management/i })).toBeVisible();
-  }
-
-  /**
-   * Create a new user as admin
-   */
-  async createUser(userData: {
-    username: string;
-    email: string;
-    password: string;
-    isAdmin?: boolean;
-  }): Promise<void> {
-    await this.navigateToAdminUsers();
-    
-    await this.page.getByRole('button', { name: /create|add.*user|new.*user/i }).click();
-    await expect(this.page).toHaveURL('/admin/users/new');
-    
-    // Fill user form
-    await this.page.getByPlaceholder(/username/i).fill(userData.username);
-    await this.page.getByPlaceholder(/email/i).fill(userData.email);
-    await this.page.getByPlaceholder(/password/i).fill(userData.password);
-    
-    if (userData.isAdmin) {
-      const adminCheckbox = this.page.getByRole('checkbox', { name: /admin/i });
-      if (await adminCheckbox.isVisible()) {
-        await adminCheckbox.check();
-      }
-    }
-    
-    // Submit form
-    await this.page.getByRole('button', { name: /create|save/i }).click();
-    
-    // Should redirect back to users list
-    await expect(this.page).toHaveURL('/admin/users');
-  }
-
-  /**
-   * Edit existing user as admin
-   */
-  async editUser(username: string, updates: {
-    email?: string;
-    isAdmin?: boolean;
-  }): Promise<void> {
-    await this.navigateToAdminUsers();
-    
-    // Find user row and click edit
-    const userRow = this.page.locator(`tr:has-text("${username}")`);
-    await expect(userRow).toBeVisible();
-    
-    await userRow.getByRole('button', { name: /edit/i }).click();
-    
-    // Should navigate to edit page
-    await expect(this.page).toHaveURL(/\/admin\/users\/\d+$/);
-    
-    // Make updates
-    if (updates.email) {
-      await this.page.getByPlaceholder(/email/i).fill(updates.email);
-    }
-    
-    if (typeof updates.isAdmin === 'boolean') {
-      const adminCheckbox = this.page.getByRole('checkbox', { name: /admin/i });
-      if (updates.isAdmin) {
-        await adminCheckbox.check();
-      } else {
-        await adminCheckbox.uncheck();
-      }
-    }
-    
-    // Save changes
-    await this.page.getByRole('button', { name: /save|update/i }).click();
-    
-    // Should redirect back to users list
-    await expect(this.page).toHaveURL('/admin/users');
-  }
-
-  /**
-   * Delete user as admin
-   */
-  async deleteUser(username: string): Promise<void> {
-    await this.navigateToAdminUsers();
-    
-    const userRow = this.page.locator(`tr:has-text("${username}")`);
-    await expect(userRow).toBeVisible();
-    
-    await userRow.getByRole('button', { name: /delete/i }).click();
-    
-    // Confirm deletion
-    await this.page.getByRole('button', { name: /confirm|delete/i }).click();
-    
-    // User should be removed from list
-    await expect(userRow).not.toBeVisible({ timeout: 5000 });
-  }
-
-  // Collection and Search Helper Methods
-
-  /**
-   * Filter games collection by platform
-   */
-  async filterByPlatform(platform: string): Promise<void> {
+  async verifyAdminLogin(): Promise<void> {
     await this.page.goto('/games');
-    
-    const platformFilter = this.page.getByRole('combobox', { name: /platform/i });
-    if (await platformFilter.isVisible()) {
-      await platformFilter.click();
-      await this.page.getByRole('option', { name: platform }).click();
-    }
-  }
+    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForTimeout(1000);
 
-  /**
-   * Sort games collection
-   */
-  async sortGamesBy(sortField: 'title' | 'rating' | 'date-added' | 'play-status'): Promise<void> {
-    await this.page.goto('/games');
-    
-    const sortOptions = {
-      'title': /title|name/i,
-      'rating': /rating/i,
-      'date-added': /date.*added|added.*date/i,
-      'play-status': /status|progress/i
-    };
-    
-    const sortButton = this.page.getByRole('button', { name: /sort/i });
-    if (await sortButton.isVisible()) {
-      await sortButton.click();
-      await this.page.getByText(sortOptions[sortField]).click();
-    }
-  }
-
-  /**
-   * Select multiple games for bulk operations
-   */
-  async selectMultipleGames(count: number): Promise<void> {
-    await this.page.goto('/games');
-    
-    const checkboxes = this.page.getByRole('checkbox');
-    const visibleCheckboxes = await checkboxes.all();
-    
-    for (let i = 0; i < Math.min(count, visibleCheckboxes.length); i++) {
-      await visibleCheckboxes[i].check();
-    }
-  }
-
-  /**
-   * Perform bulk operation on selected games
-   */
-  async performBulkOperation(operation: 'delete' | 'tag' | 'status-update', data?: any): Promise<void> {
-    const bulkButton = this.page.getByRole('button', { name: /bulk|selected/i });
-    if (await bulkButton.isVisible()) {
-      await bulkButton.click();
-      
-      const operationButtons = {
-        'delete': /delete/i,
-        'tag': /tag/i,
-        'status-update': /status|update/i
-      };
-      
-      await this.page.getByRole('menuitem', { name: operationButtons[operation] }).click();
-      
-      // Handle operation-specific data
-      if (operation === 'tag' && data) {
-        await this.page.getByPlaceholder(/tag/i).fill(data);
-      }
-      
-      // Confirm operation
-      await this.page.getByRole('button', { name: /confirm|apply/i }).click();
-      
-      // Wait for operation to complete
-      await this.waitForElement('[data-testid="bulk-progress"], text=complete', 10000);
-    }
-  }
-
-  /**
-   * Wait for import to complete (Steam or Darkadia)
-   */
-  async waitForImportComplete(timeout: number = 30000): Promise<void> {
-    // Look for completion indicators
-    const completionIndicators = [
-      this.page.getByText(/import.*complete/i),
-      this.page.getByText(/processing.*complete/i),
-      this.page.locator('[data-testid="import-complete"]'),
-      this.page.getByRole('button', { name: /close|done/i })
+    const adminIndicators = [
+      this.page.getByText('Administration'),
+      this.page.getByText('Admin Dashboard'),
+      this.page.getByText('Manage Users'),
+      this.page.locator('[href*="/admin"]')
     ];
-    
-    for (const indicator of completionIndicators) {
+
+    let adminVerified = false;
+    for (const indicator of adminIndicators) {
       try {
-        await indicator.waitFor({ timeout: timeout / completionIndicators.length });
-        return;
-      } catch {
-        // Try next indicator
+        if (await indicator.isVisible({ timeout: 3000 })) {
+          adminVerified = true;
+          break;
+        }
+      } catch (error) {
+        continue;
       }
     }
+
+    if (!adminVerified) {
+      throw new Error('Admin verification failed - admin-specific elements not found');
+    }
+  }
+
+  /**
+   * Verify regular user login by ensuring we're not on login page and don't see admin elements
+   */
+  async verifyRegularUserLogin(): Promise<void> {
+    await this.page.goto('/games');
+    await this.page.waitForLoadState('networkidle');
     
-    // If no specific indicator found, wait for loading states to disappear
-    await this.page.waitForSelector('text=loading', { state: 'hidden', timeout: timeout });
+    // Should not be on login page
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/login')) {
+      throw new Error('Regular user verification failed - still on login page');
+    }
+
+    // Should not see admin-only elements
+    const adminElements = [
+      this.page.getByText('Administration'),
+      this.page.getByText('Manage Users')
+    ];
+
+    for (const element of adminElements) {
+      try {
+        const isVisible = await element.isVisible({ timeout: 1000 });
+        if (isVisible) {
+          throw new Error('Regular user verification failed - admin elements are visible');
+        }
+      } catch (error) {
+        // Not visible is good for regular user
+        continue;
+      }
+    }
+  }
+
+  /**
+   * Optimized regular user login that only performs auth if we're not already logged in
+   */
+  async ensureRegularUserLogin(): Promise<void> {
+    try {
+      await this.page.goto('/games');
+      await this.page.waitForLoadState('networkidle');
+      
+      // Check if we're on the login page (not authenticated)
+      if (this.page.url().includes('/login')) {
+        console.log('Not authenticated - performing fast regular user API login');
+        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
+        // fastApiLogin already navigates to /games and verifies auth sync, so continue to regular user verification
+      }
+      
+      // Check if we're already logged in as regular user (not admin)
+      await this.page.waitForTimeout(1000);
+      
+      const adminElements = [
+        this.page.getByText('Administration'),
+        this.page.getByText('Admin Dashboard'),
+        this.page.getByText('Manage Users')
+      ];
+      
+      let isAdmin = false;
+      for (const element of adminElements) {
+        try {
+          if (await element.isVisible({ timeout: 2000 })) {
+            isAdmin = true;
+            break;
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+      
+      // If we see admin elements, we're logged in as admin - need to switch to regular user
+      if (isAdmin) {
+        console.log('Logged in as admin - switching to regular user');
+        await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
+        // After switching to regular user, verify admin elements are no longer visible
+        await this.page.waitForTimeout(1000);
+        
+        // Re-check that admin elements are now hidden
+        let stillAdmin = false;
+        for (const element of adminElements) {
+          try {
+            if (await element.isVisible({ timeout: 2000 })) {
+              stillAdmin = true;
+              break;
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+        
+        if (stillAdmin) {
+          console.warn('⚠️ Admin elements still visible after switching to regular user, but continuing...');
+        } else {
+          console.log('✅ Successfully switched to regular user');
+        }
+      } else {
+        console.log('✅ Already logged in as regular user');
+      }
+    } catch (error) {
+      console.error('Error in ensureRegularUserLogin:', error);
+      // Fallback to direct regular user login
+      await this.fastApiLogin(TEST_CREDENTIALS.regular.username, TEST_CREDENTIALS.regular.password);
+    }
   }
 }

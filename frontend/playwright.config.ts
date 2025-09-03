@@ -1,12 +1,67 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
 
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Generate unique temporary file path for test database
 export const tempDbPath = path.join('/tmp', `nexorious_test_${Date.now()}.db`);
+
+/**
+ * Read environment variables from backend/.env file
+ */
+function readBackendEnv(key: string): string | undefined {
+  const backendEnvPath = path.join(__dirname, '../backend/.env');
+  
+  if (!fs.existsSync(backendEnvPath)) {
+    return undefined;
+  }
+  
+  try {
+    const envContent = fs.readFileSync(backendEnvPath, 'utf8');
+    const lines = envContent.split('\n');
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith(`${key}=`)) {
+        return trimmedLine.split('=')[1];
+      }
+    }
+  } catch (error) {
+    console.warn(`Failed to read backend .env file: ${error}`);
+  }
+  
+  return undefined;
+}
+
+/**
+ * Get IGDB credentials from environment or backend/.env file
+ * Priority: 1. Environment variables, 2. backend/.env file, 3. Fail
+ */
+function getIGDBCredentials(): { clientId: string; clientSecret: string } {
+  const clientId = process.env.IGDB_CLIENT_ID || readBackendEnv('IGDB_CLIENT_ID');
+  const clientSecret = process.env.IGDB_CLIENT_SECRET || readBackendEnv('IGDB_CLIENT_SECRET');
+  
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'IGDB credentials not found. Please set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET ' +
+      'environment variables or ensure they are present in backend/.env file.'
+    );
+  }
+  
+  console.log('✅ IGDB credentials found for E2E tests');
+  return { clientId, clientSecret };
+}
+
+// Validate IGDB credentials before test configuration
+const { clientId, clientSecret } = getIGDBCredentials();
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -94,19 +149,22 @@ export default defineConfig({
   /* Run both backend and frontend servers before starting the tests */
   webServer: [
     {
-      command: `cd ../backend && DATABASE_URL="sqlite:///${tempDbPath}" SECRET_KEY=test-secret-key CORS_ORIGINS="http://localhost:15173" uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 --log-level warning --workers 1`,
+      command: `cd ../backend && uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 --log-level warning --workers 1`,
       port: 8001,
       reuseExistingServer: !process.env.CI,
       env: {
-        // Configure frontend to use test backend
+        // Database configuration for testing
+        DATABASE_URL: `sqlite:///${tempDbPath}`,
+        SECRET_KEY: 'test-secret-key',
         CORS_ORIGINS: 'http://localhost:15173',
+        // IGDB API credentials for real API integration
+        IGDB_CLIENT_ID: clientId,
+        IGDB_CLIENT_SECRET: clientSecret,
         // SQLite optimizations for testing
         PRAGMA_SYNCHRONOUS: 'OFF',
         PRAGMA_JOURNAL_MODE: 'MEMORY'
       },
       timeout: 60000, // 1 minute for backend to start (reduced from 2 minutes)
-      // Use health check for faster readiness detection
-      healthCheck: 'http://localhost:8001/health',
     },
     {
       command: 'npm run dev -- --port 15173',

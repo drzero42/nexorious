@@ -9,15 +9,27 @@ test.describe('Game Details', () => {
     await helpers.loginAsRegularUser();
   });
 
+  test.afterEach(async () => {
+    // Clean up any games created during tests
+    await helpers.cleanupCreatedGames();
+  });
+
   test.describe('Game Details Page Navigation', () => {
     test('should navigate to game details from collection', async ({ page }) => {
+      // Create a test game first
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Navigation Game',
+        description: 'Game for testing navigation to details page'
+      });
+      
       await page.goto('/games');
       
-      // Look for a game link to click on
+      // Look for the created game link
       const gameLinks = [
+        page.locator(`a[href*="/games/${gameId}"]`),
         page.locator('a[href*="/games/"]').first(),
         page.locator('.game-card a, .game-item a').first(),
-        page.getByRole('link').filter({ hasText: /game/i }).first()
+        page.getByRole('link').filter({ hasText: /Test Navigation Game/i }).first()
       ];
       
       let navigatedToDetails = false;
@@ -25,25 +37,30 @@ test.describe('Game Details', () => {
         if (await link.isVisible()) {
           await link.click();
           
-          // Should navigate to a game details page
+          // Should navigate to a game details page with UUID pattern
           const url = page.url();
-          if (url.match(/\/games\/[^/]+$/)) {
+          if (url.match(/\/games\/[a-f0-9\-]{36}$/)) {
             navigatedToDetails = true;
             break;
           }
         }
       }
       
-      // If no games available, test the URL pattern directly
+      // If still no navigation, go directly to the created game
       if (!navigatedToDetails) {
-        await page.goto('/games/1');
-        await expect(page).toHaveURL(/\/games\/\d+/);
+        await page.goto(`/games/${gameId}`);
+        await expect(page).toHaveURL(`/games/${gameId}`);
       }
     });
 
     test('should display game details page structure', async ({ page }) => {
-      // Navigate to a game details page (using ID 1 as example)
-      await page.goto('/games/1');
+      // Create a test game and navigate to its details page
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Structure Game',
+        description: 'Game for testing page structure'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should show main content area
       const mainContent = [
@@ -65,7 +82,8 @@ test.describe('Game Details', () => {
     });
 
     test('should handle invalid game ID gracefully', async ({ page }) => {
-      await page.goto('/games/999999');
+      // Use an invalid UUID format to test error handling
+      await page.goto('/games/invalid-uuid-12345');
       
       // Should handle error gracefully
       const errorHandling = [
@@ -85,7 +103,7 @@ test.describe('Game Details', () => {
       // Should either show error or redirect
       if (!errorFound) {
         const url = page.url();
-        const redirected = !url.includes('/games/999999');
+        const redirected = !url.includes('/games/invalid-uuid-12345');
         expect(redirected).toBe(true);
       }
     });
@@ -93,7 +111,12 @@ test.describe('Game Details', () => {
 
   test.describe('Game Information Display', () => {
     test('should display basic game information', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Info Game',
+        description: 'Game for testing information display'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should show some kind of game information
       const gameInfo = [
@@ -116,7 +139,12 @@ test.describe('Game Details', () => {
     });
 
     test('should display game title', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Title Game',
+        description: 'Game for testing title display'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should show game title in some form
       const gameTitle = page.getByRole('heading').first();
@@ -124,7 +152,12 @@ test.describe('Game Details', () => {
     });
 
     test('should show game metadata if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Metadata Game',
+        description: 'Game for testing metadata display'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for common metadata fields
       const metadataElements = [
@@ -148,7 +181,12 @@ test.describe('Game Details', () => {
     });
 
     test('should display cover art if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Cover Art Game',
+        description: 'Game for testing cover art display'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for game cover art
       const coverArt = [
@@ -174,7 +212,12 @@ test.describe('Game Details', () => {
     });
 
     test('should show game description if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Description Game',
+        description: 'This is a detailed description for testing the description display functionality on the game details page.'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for game description or summary
       const descriptionElements = [
@@ -201,7 +244,15 @@ test.describe('Game Details', () => {
 
   test.describe('Personal Data and Interaction', () => {
     test('should show personal game data sections', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Personal Data Game',
+        description: 'Game for testing personal data sections',
+        personal_rating: 4,
+        play_status: 'in_progress',
+        hours_played: 10
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for personal data sections
       const personalDataElements = [
@@ -225,7 +276,12 @@ test.describe('Game Details', () => {
     });
 
     test('should show editable fields if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Editable Fields Game',
+        description: 'Game for testing editable fields'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for editable elements
       const editableElements = [
@@ -249,7 +305,12 @@ test.describe('Game Details', () => {
     });
 
     test('should allow basic interactions if forms exist', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Interaction Game',
+        description: 'Game for testing form interactions'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Try to interact with any forms that exist
       const interactiveElements = [
@@ -279,7 +340,12 @@ test.describe('Game Details', () => {
 
   test.describe('Game Actions and Management', () => {
     test('should show game management options', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Management Game',
+        description: 'Game for testing management options'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for game management buttons or links
       const managementOptions = [
@@ -302,7 +368,12 @@ test.describe('Game Details', () => {
     });
 
     test('should handle edit functionality if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Edit Functionality Game',
+        description: 'Game for testing edit functionality'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for edit button
       const editButton = [
@@ -340,7 +411,13 @@ test.describe('Game Details', () => {
     });
 
     test('should show platform information if available', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Platform Game',
+        description: 'Game for testing platform display',
+        platforms: ['PC (Windows)', 'Steam']
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for platform-related information
       const platformElements = [
@@ -364,7 +441,12 @@ test.describe('Game Details', () => {
 
   test.describe('Navigation and Back Actions', () => {
     test('should allow navigation back to games list', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Navigation Back Game',
+        description: 'Game for testing back navigation'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Look for back navigation
       const backNavigation = [
@@ -394,17 +476,27 @@ test.describe('Game Details', () => {
     });
 
     test('should maintain proper URL structure', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test URL Structure Game',
+        description: 'Game for testing URL structure'
+      });
       
-      // Should have proper game detail URL
-      await expect(page).toHaveURL(/\/games\/\d+/);
+      await page.goto(`/games/${gameId}`);
+      
+      // Should have proper game detail URL with UUID pattern
+      await expect(page).toHaveURL(/\/games\/[a-f0-9\-]{36}/);
     });
   });
 
   test.describe('Responsive Design and Accessibility', () => {
     test('should work on mobile devices', async ({ page }) => {
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Mobile Game',
+        description: 'Game for testing mobile responsive design'
+      });
+      
       await page.setViewportSize({ width: 375, height: 667 });
-      await page.goto('/games/1');
+      await page.goto(`/games/${gameId}`);
       
       // Should show content on mobile
       const mobileContent = [
@@ -425,8 +517,13 @@ test.describe('Game Details', () => {
     });
 
     test('should work on tablet devices', async ({ page }) => {
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Tablet Game',
+        description: 'Game for testing tablet responsive design'
+      });
+      
       await page.setViewportSize({ width: 768, height: 1024 });
-      await page.goto('/games/1');
+      await page.goto(`/games/${gameId}`);
       
       // Should display properly on tablet
       const heading = page.getByRole('heading').first();
@@ -434,7 +531,12 @@ test.describe('Game Details', () => {
     });
 
     test('should have proper heading structure', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Heading Structure Game',
+        description: 'Game for testing heading structure'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should have at least one heading
       const heading = page.getByRole('heading');
@@ -442,7 +544,12 @@ test.describe('Game Details', () => {
     });
 
     test('should be keyboard navigable', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Keyboard Navigation Game',
+        description: 'Game for testing keyboard navigation'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should be able to tab through elements
       await page.keyboard.press('Tab');
@@ -471,9 +578,14 @@ test.describe('Game Details', () => {
 
   test.describe('Performance and Loading', () => {
     test('should load within reasonable time', async ({ page }) => {
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Performance Game',
+        description: 'Game for testing load performance'
+      });
+      
       const startTime = Date.now();
       
-      await page.goto('/games/1');
+      await page.goto(`/games/${gameId}`);
       
       // Should show content within 5 seconds
       const content = [
@@ -496,7 +608,12 @@ test.describe('Game Details', () => {
     });
 
     test('should handle page refresh', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Refresh Game',
+        description: 'Game for testing page refresh functionality'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Initial load
       const heading = page.getByRole('heading').first();
@@ -507,13 +624,14 @@ test.describe('Game Details', () => {
       
       // Should still work after refresh
       await expect(heading).toBeVisible();
-      await expect(page).toHaveURL(/\/games\/\d+/);
+      await expect(page).toHaveURL(/\/games\/[a-f0-9\-]{36}/);
     });
   });
 
   test.describe('Error States and Edge Cases', () => {
     test('should handle games that might not exist', async ({ page }) => {
-      await page.goto('/games/999999');
+      // Use a properly formatted but non-existent UUID
+      await page.goto('/games/00000000-0000-0000-0000-000000000000');
       
       // Should handle gracefully with either error page or redirect
       const errorHandling = [
@@ -532,13 +650,18 @@ test.describe('Game Details', () => {
       // Should either show error or redirect appropriately
       if (!errorDisplayed) {
         const url = page.url();
-        const redirected = !url.includes('/games/999999');
+        const redirected = !url.includes('/games/00000000-0000-0000-0000-000000000000');
         expect(redirected).toBe(true);
       }
     });
 
     test('should maintain authentication during game viewing', async ({ page }) => {
-      await page.goto('/games/1');
+      const gameId = await helpers.createGameForTestData({
+        title: 'Test Auth Game',
+        description: 'Game for testing authentication persistence'
+      });
+      
+      await page.goto(`/games/${gameId}`);
       
       // Should not redirect to login
       const url = page.url();

@@ -338,24 +338,37 @@ test.describe('Admin User Management', () => {
   });
 
   test.describe('Authorization and Security', () => {
-    test('should require admin privileges', async ({ page }) => {
-      // Test with regular user
+    test('should require admin privileges', async ({ page, context }) => {
+      // Create a completely fresh context to avoid admin state from beforeEach
       const regularHelpers = new TestHelpers(page);
-      await regularHelpers.loginAsRegularUser();
       
+      // Force a complete clean state - clear everything
+      await page.goto('/');
+      await regularHelpers.forceLogoutAndCleanState();
+      
+      // Login as regular user using API to be sure
+      await regularHelpers.fastApiLogin('e2e-user', 'e2e-user-password-123');
+      
+      // Navigate to admin page
       await page.goto('/admin/users');
       
-      // Wait a moment for any redirects to complete
-      await page.waitForTimeout(2000);
+      // Wait for any redirects to complete - RouteGuard should redirect away
+      await page.waitForURL(url => !url.toString().includes('/admin/users'), { timeout: 10000 });
       
-      // Should redirect to home page ('/') for non-admin users
-      const currentUrl = page.url();
-      const redirectedToHome = currentUrl.endsWith('/') || currentUrl.includes('/games');
-      const notOnAdminPage = !currentUrl.includes('/admin/users');
-      const accessDenied = await page.getByText(/access denied|not authorized|forbidden/i).first().isVisible();
+      // Verify we were redirected away from admin page
+      const finalUrl = page.url();
+      expect(finalUrl).not.toContain('/admin/users');
       
-      // RouteGuard should redirect non-admin users to home page
-      expect(redirectedToHome || notOnAdminPage || accessDenied).toBe(true);
+      // Verify we ended up on a safe page (home, dashboard, or games)
+      const validDestinations = ['/', '/dashboard', '/games'];
+      const isValidDestination = validDestinations.some(dest => 
+        finalUrl.endsWith(dest) || finalUrl.includes(dest)
+      );
+      expect(isValidDestination).toBe(true);
+      
+      // Should not see admin-specific content
+      const adminHeading = page.getByRole('heading', { name: /user management/i });
+      await expect(adminHeading).not.toBeVisible();
     });
 
     test('should maintain admin authentication', async ({ page }) => {

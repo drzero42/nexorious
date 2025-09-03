@@ -113,7 +113,15 @@ export class GameAdditionService {
     const addRequest: UserGameCreateRequest = {
       game_id: createdGame.id,
       ownership_status: gameData.ownership_status as OwnershipStatus || OwnershipStatus.OWNED,
-      ...(platformData.length > 0 && { platforms: platformData.map(p => p.platform_id) })
+      ...(platformData.length > 0 && { 
+        platforms: platformData.map(p => ({
+          platform_id: p.platform_id,
+          storefront_id: p.storefront_id || null,
+          store_game_id: p.store_game_id || null,
+          store_url: p.store_url || null,
+          is_available: p.is_available
+        }))
+      })
     };
     
     try {

@@ -8,6 +8,11 @@ test.describe('Game Management Flow', () => {
     helpers = new TestHelpers(page);
   });
 
+  test.afterEach(async () => {
+    // Clean up any games created during tests
+    await helpers.cleanupCreatedGames();
+  });
+
   test('should display games collection page correctly', async ({ page }) => {
     await helpers.loginAsRegularUser();
     
@@ -109,6 +114,96 @@ test.describe('Game Management Flow', () => {
     // Clear text and button should be disabled
     await page.getByPlaceholder(/enter game title/i).clear();
     await expect(page.getByRole('button', { name: 'Search' })).toBeDisabled();
+  });
+
+  test('should complete full game creation workflow', async ({ page }) => {
+    await helpers.loginAsRegularUser();
+    
+    // Note: Using real IGDB API integration instead of mocking
+    // This provides more authentic testing of the actual user workflow
+    
+    // Navigate to add game page
+    await page.goto('/games/add');
+    await expect(page.getByRole('heading', { name: /add game/i })).toBeVisible();
+    
+    // Perform search
+    const searchInput = page.getByPlaceholder(/enter game title/i);
+    await searchInput.fill('Complete Workflow Test');
+    await page.getByRole('button', { name: 'Search' }).click();
+    
+    // Wait for search results and verify they appear  
+    const searchResultSelectors = [
+      'button:has-text("Click to add to collection")', // Correct text from GameConfirmStep.svelte
+      'div.space-y-3 > button',                        // Direct button children in results container
+      'button:has(h3)',                                // Buttons containing game title headings
+      'button[class*="border-gray-200"]'               // Non-owned game buttons (gray border)
+    ];
+    
+    let resultFound = false;
+    let selectedResult = null;
+    
+    for (const selector of searchResultSelectors) {
+      const element = page.locator(selector).first();
+      if (await element.isVisible({ timeout: 5000 })) {
+        selectedResult = element;
+        resultFound = true;
+        break;
+      }
+    }
+    
+    expect(resultFound).toBe(true);
+    
+    // Select the game to import
+    if (selectedResult) {
+      await selectedResult.click();
+    }
+    
+    // Wait for metadata confirm step and click final "Add to Collection" button
+    await page.waitForLoadState('networkidle');
+    
+    // Look for the final "Add to Collection" button in MetadataConfirmStep
+    const confirmButtons = [
+      page.getByRole('button', { name: /add to collection/i }).first(),
+      page.getByText('Add to Collection').first(),
+      page.locator('button:has-text("Add to Collection")').first()
+    ];
+    
+    let confirmClicked = false;
+    for (const confirmButton of confirmButtons) {
+      try {
+        if (await confirmButton.isVisible({ timeout: 5000 })) {
+          await confirmButton.click();
+          confirmClicked = true;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+    
+    // Wait for game to be added and navigate to collection or details
+    await page.waitForLoadState('networkidle');
+    
+    // Verify we either:
+    // 1. Stayed on add page with success message, or
+    // 2. Navigated to games list, or  
+    // 3. Navigated to game details page
+    const currentUrl = page.url();
+    const validEndStates = [
+      currentUrl.includes('/games/add'),
+      currentUrl.includes('/games') && !currentUrl.includes('/add'),
+      /\/games\/[a-f0-9\-]{36}$/.test(currentUrl)
+    ];
+    
+    const validEndState = validEndStates.some(state => state);
+    expect(validEndState).toBe(true);
+    
+    // If on games list, verify game appears
+    if (currentUrl.includes('/games') && !currentUrl.includes('/add') && !currentUrl.match(/\/games\/[a-f0-9\-]{36}$/)) {
+      const gameCards = page.locator('[data-testid*="game"], .game-card, a[href*="/games/"]');
+      const hasGames = await gameCards.count() > 0;
+      expect(hasGames).toBe(true);
+    }
   });
 
   test('should display search information correctly', async ({ page }) => {

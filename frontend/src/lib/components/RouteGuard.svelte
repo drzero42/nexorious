@@ -71,9 +71,13 @@
       const authState = auth.value;
       
       if (requireAuth && !authState.user) {
+        isAuthorized = false;
         goto(redirectTo);
       } else if (requireAdmin && (!authState.user || !authState.user.isAdmin)) {
+        isAuthorized = false;
         goto('/');
+      } else if ((requireAuth && authState.user) || (requireAdmin && authState.user?.isAdmin)) {
+        isAuthorized = true;
       }
     }
   });

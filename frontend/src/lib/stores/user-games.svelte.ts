@@ -150,13 +150,21 @@ export interface UserGame {
   updated_at: string;
 }
 
+export interface UserGamePlatformCreateRequest {
+  platform_id: string;
+  storefront_id?: string | null;
+  store_game_id?: string | null;
+  store_url?: string | null;
+  is_available: boolean;
+}
+
 export interface UserGameCreateRequest {
   game_id: string;
   ownership_status?: OwnershipStatus;
   is_physical?: boolean;
   physical_location?: string;
   acquired_date?: string;
-  platforms?: string[];
+  platforms?: UserGamePlatformCreateRequest[];
 }
 
 export interface UserGameUpdateRequest {

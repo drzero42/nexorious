@@ -31,12 +31,7 @@
   }));
 
   onMount(async () => {
-    // Check if user is admin
-    if (!auth.value.user?.isAdmin) {
-      goto('/dashboard');
-      return;
-    }
-
+    // RouteGuard handles admin authorization, just fetch data
     try {
       await admin.fetchUsers();
     } catch (err) {
