@@ -80,6 +80,7 @@ test.describe('Import Workflows', () => {
   test.describe('Darkadia Import Page', () => {
     test('should navigate to Darkadia import page', async ({ page }) => {
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       await expect(page).toHaveURL('/import/darkadia');
       
       // Should show Darkadia CSV Import heading
@@ -88,6 +89,7 @@ test.describe('Import Workflows', () => {
 
     test('should display Darkadia page content', async ({ page }) => {
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       
       // Should show main page content
       const mainContent = page.locator('main, .content, .container').first();
@@ -100,6 +102,7 @@ test.describe('Import Workflows', () => {
 
     test('should display upload information', async ({ page }) => {
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       
       // Should show upload-related content
       const uploadContent = [
@@ -121,6 +124,7 @@ test.describe('Import Workflows', () => {
 
     test('should have proper page title', async ({ page }) => {
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       
       // Should have Darkadia Import title
       await expect(page).toHaveTitle(/Darkadia Import/);
@@ -129,11 +133,13 @@ test.describe('Import Workflows', () => {
     test.skip('should handle CSV file upload', async ({ page }) => {
       // Skip - file upload functionality may require specific setup
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
     });
 
     test.skip('should validate CSV format', async ({ page }) => {
       // Skip - complex validation logic testing
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
     });
   });
 
@@ -145,6 +151,7 @@ test.describe('Import Workflows', () => {
       
       // Navigate to Darkadia import
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       await expect(page.getByRole('heading', { name: /darkadia csv import/i })).toBeVisible();
     });
 
@@ -177,10 +184,11 @@ test.describe('Import Workflows', () => {
       await expect(page).toHaveURL('/import/steam');
       
       await page.goto('/import/darkadia');
+      await page.waitForLoadState('networkidle');
       await expect(page).toHaveURL('/import/darkadia');
       
       // Should not redirect to login
-      await expect(page).not.toHaveURL('/login');
+      expect(new URL(page.url()).pathname).not.toBe('/login');
     });
   });
 
@@ -190,7 +198,7 @@ test.describe('Import Workflows', () => {
       
       // Should either show 404 or redirect
       const url = page.url();
-      const is404 = url.includes('404') || await page.getByText(/not found|404/i).isVisible();
+      const is404 = url.includes('404') || await page.getByText(/not found|404/i).first().isVisible();
       const redirected = !url.includes('/import/nonexistent');
       
       // Either should be 404 or redirected

@@ -260,17 +260,27 @@ test.describe('Error Handling', () => {
       await helpers.ensureRegularUserLogin();
       await page.goto('/import/darkadia');
       
-      // Should show file upload or error
-      const fileUpload = page.locator('input[type="file"]').first();
-      const uploadArea = page.getByText(/upload|drag.*drop|csv/i).first();
+      // Wait for page to load properly
+      await page.waitForLoadState('networkidle');
+      
+      // Check for file upload functionality using selectors that match actual component behavior
+      const fileInputExists = page.locator('input[type="file"]').first();
+      const uploadHeading = page.getByText('Upload Darkadia CSV').first();
+      const uploadInstructions = page.getByText('Click here or drag and drop your Darkadia export file');
+      const csvFileInfo = page.getByText('Only CSV files are accepted');
+      const uploadButton = page.locator('[role="button"][aria-label="Upload CSV file"]');
       const errorState = page.getByText(/error|unavailable|not found/i).first();
       
-      const hasUpload = await fileUpload.isVisible();
-      const hasUploadArea = await uploadArea.isVisible();
+      // Check for various indicators of working upload area
+      const hasFileInput = await fileInputExists.count() > 0; // File input exists in DOM (even if hidden)
+      const hasUploadHeading = await uploadHeading.isVisible();
+      const hasUploadInstructions = await uploadInstructions.isVisible();
+      const hasCsvInfo = await csvFileInfo.isVisible();
+      const hasUploadButton = await uploadButton.isVisible();
       const hasError = await errorState.isVisible();
       const redirected = !page.url().includes('/import/darkadia');
       
-      expect(hasUpload || hasUploadArea || hasError || redirected).toBe(true);
+      expect(hasFileInput || hasUploadHeading || hasUploadInstructions || hasCsvInfo || hasUploadButton || hasError || redirected).toBe(true);
     });
   });
 

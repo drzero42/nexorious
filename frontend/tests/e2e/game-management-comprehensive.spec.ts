@@ -117,15 +117,31 @@ test.describe('Comprehensive Game Management', () => {
       await page.goto('/games');
       
       // Check if any games exist in the list to click on
-      const gameCards = page.locator('[data-testid*="game"], .game-card, [class*="game"]');
+      // Use reliable data-testid selector (now added to both grid and list view)
+      // Fallback to role/tabindex selectors for backwards compatibility
+      const gameCards = page.locator('[data-testid="game-card"], [role="button"], tbody tr[tabindex="0"]');
       const cardCount = await gameCards.count();
       
       if (cardCount > 0) {
+        console.log(`Found ${cardCount} game cards, clicking on the first one...`);
+        
+        // Wait for the element to be visible and clickable
+        await gameCards.first().waitFor({ state: 'visible' });
+        
         // Click on first game to test detail navigation
         await gameCards.first().click();
         
+        // Wait for navigation to complete
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(1000);
+        
+        // Debug: Log current URL for troubleshooting
+        const currentUrl = page.url();
+        const pathname = new URL(currentUrl).pathname;
+        console.log(`After clicking game card: URL = ${currentUrl}, pathname = ${pathname}`);
+        
         // Should navigate to a game detail page with UUID pattern
-        await expect(page).toHaveURL(/\/games\/[a-f0-9\-]{36}$/);
+        await expect(new URL(page.url()).pathname).toMatch(/^\/games\/[a-f0-9\-]{36}$/);
       } else {
         // If UI doesn't show games, navigate directly using the created game ID
         await page.goto(`/games/${userGameId}`);
