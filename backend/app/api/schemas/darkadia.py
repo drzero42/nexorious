@@ -94,6 +94,12 @@ class DarkadiaGameResponse(BaseModel):
     platform_resolved: Optional[bool] = Field(None, description="Whether platform has been resolved")
     original_platform_name: Optional[str] = Field(None, description="Original platform name from CSV")
     platform_resolution_status: Optional[str] = Field(None, description="Platform resolution status: resolved, pending, ignored, conflict")
+    platform_name: Optional[str] = Field(None, description="Resolved platform name")
+    
+    # Storefront resolution fields  
+    original_storefront_name: Optional[str] = Field(None, description="Original storefront name from CSV")
+    storefront_resolution_status: Optional[str] = Field(None, description="Storefront resolution status: resolved, pending, ignored, conflict")
+    storefront_name: Optional[str] = Field(None, description="Resolved storefront name")
 
 
 class DarkadiaGamesListResponse(BaseModel):
@@ -235,3 +241,38 @@ class DarkadiaResetResponse(BaseModel):
     deleted_imports: int = Field(..., description="Number of import records deleted")
     config_cleared: bool = Field(..., description="Whether user configuration was cleared")
     file_deleted: bool = Field(..., description="Whether CSV file was deleted from filesystem")
+
+
+# Platform/Storefront Resolution Summary Schemas
+
+class DarkadiaResolutionMappingInfo(BaseModel):
+    """Schema for a single platform/storefront mapping."""
+    original: str = Field(..., description="Original name from CSV")
+    mapped: str = Field(..., description="Resolved/mapped name")
+    game_count: int = Field(..., description="Number of games affected by this mapping")
+
+
+class DarkadiaResolutionSummaryResponse(BaseModel):
+    """Response schema for platform/storefront resolution summary."""
+    platforms: List[DarkadiaResolutionMappingInfo] = Field(..., description="Platform mappings")
+    storefronts: List[DarkadiaResolutionMappingInfo] = Field(..., description="Storefront mappings")
+
+
+class DarkadiaUpdateMappingRequest(BaseModel):
+    """Request to update a single platform/storefront mapping."""
+    original_name: str = Field(..., description="Original name to update")
+    new_mapped_name: str = Field(..., description="New mapped name")
+    mapping_type: str = Field(..., description="Type of mapping: 'platform' or 'storefront'")
+
+
+class DarkadiaUpdateMappingsRequest(BaseModel):
+    """Request to update multiple platform/storefront mappings."""
+    mappings: List[DarkadiaUpdateMappingRequest] = Field(..., description="List of mappings to update")
+
+
+class DarkadiaUpdateMappingsResponse(BaseModel):
+    """Response schema for updating platform/storefront mappings."""
+    message: str = Field(..., description="Status message")
+    updated_mappings: int = Field(..., description="Number of mappings updated")
+    affected_games: int = Field(..., description="Total number of games affected by updates")
+    errors: List[str] = Field(default=[], description="Any errors encountered")

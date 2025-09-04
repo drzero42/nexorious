@@ -184,9 +184,10 @@ export interface ProgressUpdateRequest {
 
 export interface UserGamePlatformCreateRequest {
   platform_id: string;
-  storefront_id?: string;
-  store_game_id?: string;
-  store_url?: string;
+  storefront_id?: string | null;
+  store_game_id?: string | null;
+  store_url?: string | null;
+  is_available: boolean;
 }
 
 export interface UserGameFilters {

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { admin, auth } from '$lib/stores';
-  import { goto } from '$app/navigation';
+  import { admin } from '$lib/stores';
   import { RouteGuard } from '$lib/components';
   import type { AdminUser } from '$lib/stores/admin.svelte';
 

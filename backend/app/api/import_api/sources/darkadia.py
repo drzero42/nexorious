@@ -37,7 +37,10 @@ from ...schemas.darkadia import (
     DarkadiaVerificationRequest,
     DarkadiaUploadResponse,
     DarkadiaResolutionSummary,
-    DarkadiaResetResponse
+    DarkadiaResetResponse,
+    DarkadiaResolutionSummaryResponse,
+    DarkadiaUpdateMappingsRequest,
+    DarkadiaUpdateMappingsResponse
 )
 from ....api.schemas.platform import (
     PendingResolutionsListResponse,
@@ -504,6 +507,8 @@ async def list_darkadia_games(
                     original_platform_name=game.original_platform_name,
                     platform_resolution_status=game.platform_resolution_status,
                     platform_name=game.platform_name,
+                    original_storefront_name=game.original_storefront_name,
+                    storefront_resolution_status=game.storefront_resolution_status,
                     storefront_name=game.storefront_name
                 )
                 for game in games
@@ -548,6 +553,8 @@ async def match_darkadia_game(
                 original_platform_name=game.original_platform_name,
                 platform_resolution_status=game.platform_resolution_status,
                 platform_name=game.platform_name,
+                original_storefront_name=game.original_storefront_name,
+                storefront_resolution_status=game.storefront_resolution_status,
                 storefront_name=game.storefront_name
             )
         )
@@ -603,6 +610,8 @@ async def auto_match_darkadia_game(
                         original_platform_name=game.original_platform_name,
                         platform_resolution_status=game.platform_resolution_status,
                         platform_name=game.platform_name,
+                        original_storefront_name=game.original_storefront_name,
+                        storefront_resolution_status=game.storefront_resolution_status,
                         storefront_name=game.storefront_name
                     )
                 )
@@ -700,6 +709,8 @@ async def sync_darkadia_game(
                 original_platform_name=game.original_platform_name,
                 platform_resolution_status=game.platform_resolution_status,
                 platform_name=game.platform_name,
+                original_storefront_name=game.original_storefront_name,
+                storefront_resolution_status=game.storefront_resolution_status,
                 storefront_name=game.storefront_name
             ),
             user_game_id=result.user_game_id,
@@ -771,6 +782,8 @@ async def ignore_darkadia_game(
                 original_platform_name=game.original_platform_name,
                 platform_resolution_status=game.platform_resolution_status,
                 platform_name=game.platform_name,
+                original_storefront_name=game.original_storefront_name,
+                storefront_resolution_status=game.storefront_resolution_status,
                 storefront_name=game.storefront_name
             ),
             ignored=game.ignored
@@ -1202,4 +1215,206 @@ async def reset_darkadia_import(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset Darkadia import"
+        )
+
+
+# Platform/Storefront Resolution Review Endpoints
+
+@router.get("/resolution-summary", response_model=DarkadiaResolutionSummaryResponse)
+async def get_resolution_summary(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> DarkadiaResolutionSummaryResponse:
+    """
+    Get summary of platform and storefront mappings for user's Darkadia imports.
+    
+    Returns all original → mapped name pairs along with count of affected games,
+    allowing users to see what was auto-matched and make corrections.
+    """
+    try:
+        from sqlmodel import select, func
+        from ....models.darkadia_import import DarkadiaImport
+        from ....models.platform import Platform, Storefront
+        
+        # Get platform mappings
+        platform_query = (
+            select(
+                DarkadiaImport.original_platform_name,
+                Platform.name.label('platform_name'),
+                func.count(DarkadiaImport.id).label('game_count')
+            )
+            .outerjoin(Platform, DarkadiaImport.user_game_platform_id == Platform.id)
+            .where(
+                DarkadiaImport.user_id == current_user.id,
+                DarkadiaImport.original_platform_name.is_not(None)
+            )
+            .group_by(DarkadiaImport.original_platform_name, Platform.name)
+        )
+        
+        platform_results = session.exec(platform_query).all()
+        
+        # Get storefront mappings
+        storefront_query = (
+            select(
+                DarkadiaImport.original_storefront_name,
+                Storefront.name.label('storefront_name'),
+                func.count(DarkadiaImport.id).label('game_count')
+            )
+            .outerjoin(Storefront, DarkadiaImport.resolved_storefront_id == Storefront.id)
+            .where(
+                DarkadiaImport.user_id == current_user.id,
+                DarkadiaImport.original_storefront_name.is_not(None)
+            )
+            .group_by(DarkadiaImport.original_storefront_name, Storefront.name)
+        )
+        
+        storefront_results = session.exec(storefront_query).all()
+        
+        # Process platform mappings - show ALL entries, but use proper mapped values
+        platforms = []
+        for result in platform_results:
+            platforms.append({
+                "original": result.original_platform_name,
+                "mapped": result.platform_name or "Unmapped",  # Show "Unmapped" instead of original name
+                "game_count": result.game_count
+            })
+        
+        # Process storefront mappings - show ALL entries, but use proper mapped values  
+        storefronts = []
+        for result in storefront_results:
+            storefronts.append({
+                "original": result.original_storefront_name,
+                "mapped": result.storefront_name or "Unmapped",  # Show "Unmapped" instead of original name
+                "game_count": result.game_count
+            })
+        
+        logger.info(f"Retrieved resolution summary for user {current_user.id}: {len(platforms)} platforms, {len(storefronts)} storefronts")
+        
+        return DarkadiaResolutionSummaryResponse(
+            platforms=platforms,
+            storefronts=storefronts
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting resolution summary for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get resolution summary"
+        )
+
+
+@router.post("/update-mappings", response_model=DarkadiaUpdateMappingsResponse)
+async def update_mappings(
+    request: DarkadiaUpdateMappingsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+) -> DarkadiaUpdateMappingsResponse:
+    """
+    Update platform and storefront mappings for user's Darkadia imports.
+    
+    Allows users to change what platforms/storefronts their original CSV names
+    are mapped to, affecting all games that use those original names.
+    """
+    try:
+        from sqlmodel import select
+        from ....models.darkadia_import import DarkadiaImport
+        from ....models.platform import Platform, Storefront
+        from ....models.user_game import UserGamePlatform
+        
+        updated_mappings = 0
+        affected_games = 0
+        errors = []
+        
+        for mapping in request.mappings:
+            try:
+                if mapping.mapping_type == "platform":
+                    # Find the target platform
+                    platform = session.exec(
+                        select(Platform).where(Platform.name == mapping.new_mapped_name)
+                    ).first()
+                    
+                    if not platform:
+                        errors.append(f"Platform '{mapping.new_mapped_name}' not found")
+                        continue
+                    
+                    # Update DarkadiaImport records
+                    imports = session.exec(
+                        select(DarkadiaImport).where(
+                            DarkadiaImport.user_id == current_user.id,
+                            DarkadiaImport.original_platform_name == mapping.original_name
+                        )
+                    ).all()
+                    
+                    games_updated = 0
+                    for import_record in imports:
+                        # Update platform resolution data if we have a user_game_platform
+                        if import_record.user_game_platform_id:
+                            user_platform = session.get(UserGamePlatform, import_record.user_game_platform_id)
+                            if user_platform:
+                                user_platform.platform_id = platform.id
+                                session.add(user_platform)
+                                games_updated += 1
+                    
+                    affected_games += games_updated
+                    
+                elif mapping.mapping_type == "storefront":
+                    # Find the target storefront
+                    storefront = session.exec(
+                        select(Storefront).where(Storefront.name == mapping.new_mapped_name)
+                    ).first()
+                    
+                    if not storefront:
+                        errors.append(f"Storefront '{mapping.new_mapped_name}' not found")
+                        continue
+                    
+                    # Update DarkadiaImport records
+                    imports = session.exec(
+                        select(DarkadiaImport).where(
+                            DarkadiaImport.user_id == current_user.id,
+                            DarkadiaImport.original_storefront_name == mapping.original_name
+                        )
+                    ).all()
+                    
+                    games_updated = 0
+                    for import_record in imports:
+                        import_record.resolved_storefront_id = storefront.id
+                        session.add(import_record)
+                        
+                        # Also update user_game_platform storefront if exists
+                        if import_record.user_game_platform_id:
+                            user_platform = session.get(UserGamePlatform, import_record.user_game_platform_id)
+                            if user_platform:
+                                user_platform.storefront_id = storefront.id
+                                session.add(user_platform)
+                        games_updated += 1
+                    
+                    affected_games += games_updated
+                else:
+                    errors.append(f"Unknown mapping type: {mapping.mapping_type}")
+                    continue
+                
+                updated_mappings += 1
+                
+            except Exception as mapping_error:
+                logger.error(f"Error updating mapping {mapping.original_name} -> {mapping.new_mapped_name}: {str(mapping_error)}")
+                errors.append(f"Failed to update {mapping.original_name}: {str(mapping_error)}")
+        
+        # Commit all changes
+        session.commit()
+        
+        logger.info(f"Updated {updated_mappings} mappings for user {current_user.id}, affecting {affected_games} games")
+        
+        return DarkadiaUpdateMappingsResponse(
+            message=f"Updated {updated_mappings} mappings, affecting {affected_games} games",
+            updated_mappings=updated_mappings,
+            affected_games=affected_games,
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.error(f"Error updating mappings for user {current_user.id}: {str(e)}")
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update mappings"
         )

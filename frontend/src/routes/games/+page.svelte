@@ -558,6 +558,7 @@ async function applyBulkAddPlatforms() {
         // Add platform without storefront
         platformAssociations.push({
           platform_id: platformId,
+          is_available: true,
           ...(storeUrl && { store_url: storeUrl })
         });
       } else {
@@ -566,6 +567,7 @@ async function applyBulkAddPlatforms() {
           platformAssociations.push({
             platform_id: platformId,
             storefront_id: storefrontId,
+            is_available: true,
             ...(storeUrl && { store_url: storeUrl })
           });
         }

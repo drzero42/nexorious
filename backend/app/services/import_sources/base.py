@@ -38,6 +38,10 @@ class ImportGame:
     original_platform_name: Optional[str] = None
     platform_resolution_status: Optional[str] = None
     platform_name: Optional[str] = None  # Resolved/mapped platform name
+    
+    # Storefront resolution fields (primarily used by Darkadia import)
+    original_storefront_name: Optional[str] = None
+    storefront_resolution_status: Optional[str] = None
     storefront_name: Optional[str] = None  # Resolved/mapped storefront name
 
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, PlatformResolutionModal } from '$lib/components';
+  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, PlatformResolutionModal, ResolutionSummaryModal } from '$lib/components';
   import { darkadia, ui, auth } from '$lib/stores';
   import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
@@ -39,6 +39,9 @@
   // Platform resolution state
   let showPlatformResolutionModal = $state(false);
   let pendingPlatformResolutions = $state(0);
+  
+  // Resolution summary modal state
+  let showResolutionSummaryModal = $state(false);
 
   // Reset confirmation state
   let showResetModal = $state(false);
@@ -576,6 +579,20 @@
       console.error('Failed to reset Darkadia import:', error);
     }
   }
+
+  // Resolution summary handlers
+  function handleOpenResolutionSummary() {
+    showResolutionSummaryModal = true;
+  }
+
+  function handleCloseResolutionSummary() {
+    showResolutionSummaryModal = false;
+  }
+
+  async function handleMappingsUpdated() {
+    // Refresh game data after mappings are updated
+    await loadDarkadiaGames();
+  }
 </script>
 
 <svelte:head>
@@ -666,6 +683,18 @@
                 Resolve Platforms ({pendingPlatformResolutions})
               </button>
             {/if}
+
+            <!-- Resolution Summary Button -->
+            <button
+              onclick={handleOpenResolutionSummary}
+              class="btn-secondary"
+              title="Review platform and storefront mappings"
+            >
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+              Review Mappings
+            </button>
 
             <!-- Reset Button -->
             <button
@@ -1203,6 +1232,13 @@
   onClose={handleBatchModalClose}
   onCancel={handleBatchCancel}
   isCancelling={isCancelling}
+/>
+
+<!-- Resolution Summary Modal -->
+<ResolutionSummaryModal
+  show={showResolutionSummaryModal}
+  onClose={handleCloseResolutionSummary}
+  onMappingsUpdated={handleMappingsUpdated}
 />
 
 <!-- Platform Resolution Modal -->

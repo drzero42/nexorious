@@ -193,6 +193,36 @@ export interface DarkadiaResolutionSummary {
   recent_resolutions: Array<Record<string, any>>;
 }
 
+// Platform/Storefront Resolution Summary Types
+
+export interface DarkadiaResolutionMappingInfo {
+  original: string;
+  mapped: string;
+  game_count: number;
+}
+
+export interface DarkadiaResolutionSummaryResponse {
+  platforms: DarkadiaResolutionMappingInfo[];
+  storefronts: DarkadiaResolutionMappingInfo[];
+}
+
+export interface DarkadiaUpdateMappingRequest {
+  original_name: string;
+  new_mapped_name: string;
+  mapping_type: 'platform' | 'storefront';
+}
+
+export interface DarkadiaUpdateMappingsRequest {
+  mappings: DarkadiaUpdateMappingRequest[];
+}
+
+export interface DarkadiaUpdateMappingsResponse {
+  message: string;
+  updated_mappings: number;
+  affected_games: number;
+  errors: string[];
+}
+
 // Frontend-specific types
 
 export interface DarkadiaUploadState {

@@ -5,7 +5,7 @@ Platform and storefront management endpoints (admin-only).
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Request
 from sqlmodel import Session, select, func, or_, desc, col, asc
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 import logging
 
 from ..core.database import get_session
@@ -67,6 +67,43 @@ def get_logo_service() -> LogoService:
 def get_platform_resolution_service(session: Annotated[Session, Depends(get_session)]):
     """Dependency to get platform resolution service instance."""
     return create_platform_resolution_service(session)
+
+
+# Simple platform/storefront list endpoints for dropdowns
+@router.get("/simple-list", response_model=List[str])
+async def list_platform_names(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    active_only: bool = Query(default=True, description="Show only active platforms")
+) -> List[str]:
+    """Get simple list of platform names for dropdowns."""
+    query = select(Platform.name)
+    if active_only:
+        query = query.where(Platform.is_active)
+    
+    # Order by display name for user-friendly sorting
+    query = query.order_by(Platform.display_name)
+    
+    platform_names = session.exec(query).all()
+    return list(platform_names)
+
+
+@router.get("/storefronts/simple-list", response_model=List[str])
+async def list_storefront_names(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    active_only: bool = Query(default=True, description="Show only active storefronts")
+) -> List[str]:
+    """Get simple list of storefront names for dropdowns."""
+    query = select(Storefront.name)
+    if active_only:
+        query = query.where(Storefront.is_active)
+    
+    # Order by display name for user-friendly sorting
+    query = query.order_by(Storefront.display_name)
+    
+    storefront_names = session.exec(query).all()
+    return list(storefront_names)
 
 
 # Platform endpoints

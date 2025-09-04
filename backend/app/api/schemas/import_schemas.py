@@ -115,6 +115,10 @@ class ImportGameResponse(BaseModel):
     original_platform_name: Optional[str] = Field(None, description="Original platform name from CSV")
     platform_resolution_status: Optional[str] = Field(None, description="Platform resolution status: resolved, pending, ignored, conflict")
     platform_name: Optional[str] = Field(None, description="Resolved/mapped platform name")
+    
+    # Storefront resolution fields (primarily used by Darkadia import)
+    original_storefront_name: Optional[str] = Field(None, description="Original storefront name from CSV")
+    storefront_resolution_status: Optional[str] = Field(None, description="Storefront resolution status: resolved, pending, ignored, conflict")
     storefront_name: Optional[str] = Field(None, description="Resolved/mapped storefront name")
 
 

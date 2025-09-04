@@ -15,7 +15,10 @@ import type {
   DarkadiaGameSyncResponse,
   DarkadiaGameIgnoreResponse,
   DarkadiaGamesBulkUnignoreResponse,
-  DarkadiaGamesBulkUnmatchResponse
+  DarkadiaGamesBulkUnmatchResponse,
+  DarkadiaResolutionSummaryResponse,
+  DarkadiaUpdateMappingsRequest,
+  DarkadiaUpdateMappingsResponse
 } from '$lib/types/darkadia';
 
 export type DarkadiaGameStatusFilter = 'unmatched' | 'matched' | 'ignored' | 'synced';
@@ -888,6 +891,68 @@ function createDarkadiaStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to unmatch all games';
         state = { ...state, isUnmatchingAll: false, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    // Platform/Storefront Resolution Methods
+    async getResolutionSummary(): Promise<DarkadiaResolutionSummaryResponse> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/resolution-summary`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getResolutionSummary();
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to get resolution summary');
+        }
+
+        const result = await response.json() as DarkadiaResolutionSummaryResponse;
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get resolution summary';
+        state = { ...state, error: errorMessage };
+        throw error;
+      }
+    },
+
+    async updateMappings(request: DarkadiaUpdateMappingsRequest): Promise<DarkadiaUpdateMappingsResponse> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/update-mappings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify(request)
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.updateMappings(request);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to update mappings');
+        }
+
+        const result = await response.json() as DarkadiaUpdateMappingsResponse;
+        ui.showSuccess(result.message);
+        
+        // Refresh games list to reflect changes
+        await this.listDarkadiaGames();
+        
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update mappings';
+        state = { ...state, error: errorMessage };
         ui.showError(errorMessage);
         throw error;
       }

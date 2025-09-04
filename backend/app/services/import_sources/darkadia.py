@@ -1201,10 +1201,13 @@ class DarkadiaImportService(ImportSourceService):
             platform_resolution_status = None
             platform_name = None
             storefront_name = None
+            original_storefront_name = None
+            storefront_resolution_status = None
             
             if darkadia_import:
                 platform_resolved = darkadia_import.platform_resolved
                 original_platform_name = darkadia_import.original_platform_name
+                original_storefront_name = darkadia_import.original_storefront_name
                 
                 # Get resolved platform and storefront names from relationships
                 if darkadia_import.user_game_platform_id:
@@ -1226,6 +1229,12 @@ class DarkadiaImportService(ImportSourceService):
                     resolution_data = darkadia_import.get_platform_resolution_data()
                     status = resolution_data.get("status", "pending")
                     platform_resolution_status = status
+                
+                # Determine storefront resolution status
+                if darkadia_import.storefront_resolved:
+                    storefront_resolution_status = "resolved"
+                elif original_storefront_name:
+                    storefront_resolution_status = "mapped" if storefront_name else "pending"
             else:
                 # No DarkadiaImport record - try to get data from DarkadiaGame
                 transform_data = game.get_transformation_data()
@@ -1239,8 +1248,11 @@ class DarkadiaImportService(ImportSourceService):
                 # Get original names from CSV data
                 if csv_data:
                     original_platform_name = csv_data.get('Copy platform', '').strip() or csv_data.get('Platforms', '').strip()
+                    original_storefront_name = csv_data.get('Copy storefront', '').strip() or csv_data.get('Storefronts', '').strip()
                     if original_platform_name:
                         platform_resolution_status = "mapped" if platform_name else "pending"
+                    if original_storefront_name:
+                        storefront_resolution_status = "mapped" if storefront_name else "pending"
             
             import_games.append(ImportGame(
                 id=game.id,
@@ -1256,6 +1268,8 @@ class DarkadiaImportService(ImportSourceService):
                 original_platform_name=original_platform_name,
                 platform_resolution_status=platform_resolution_status,
                 platform_name=platform_name,
+                original_storefront_name=original_storefront_name,
+                storefront_resolution_status=storefront_resolution_status,
                 storefront_name=storefront_name
             ))
         
@@ -1290,7 +1304,15 @@ class DarkadiaImportService(ImportSourceService):
             game_id=game.game_id,
             ignored=game.ignored,
             created_at=game.created_at,
-            updated_at=game.updated_at
+            updated_at=game.updated_at,
+            # Fields specific to the main list_games method, not available here
+            platform_resolved=None,
+            original_platform_name=None,
+            platform_resolution_status=None,
+            platform_name=None,
+            original_storefront_name=None,
+            storefront_resolution_status=None,
+            storefront_name=None
         )
     
     async def auto_match_game(self, user_id: str, game_id: str) -> MatchResult:
@@ -1683,7 +1705,15 @@ class DarkadiaImportService(ImportSourceService):
             game_id=darkadia_game.game_id,
             ignored=darkadia_game.ignored,
             created_at=darkadia_game.created_at,
-            updated_at=darkadia_game.updated_at
+            updated_at=darkadia_game.updated_at,
+            # Fields specific to the main list_games method, not available here
+            platform_resolved=None,
+            original_platform_name=None,
+            platform_resolution_status=None,
+            platform_name=None,
+            original_storefront_name=None,
+            storefront_resolution_status=None,
+            storefront_name=None
         )
     
     async def ignore_game(self, user_id: str, game_id: str) -> ImportGame:
@@ -1707,7 +1737,15 @@ class DarkadiaImportService(ImportSourceService):
             game_id=game.game_id,
             ignored=game.ignored,
             created_at=game.created_at,
-            updated_at=game.updated_at
+            updated_at=game.updated_at,
+            # Fields specific to the main list_games method, not available here
+            platform_resolved=None,
+            original_platform_name=None,
+            platform_resolution_status=None,
+            platform_name=None,
+            original_storefront_name=None,
+            storefront_resolution_status=None,
+            storefront_name=None
         )
     
     async def unignore_all_games(self, user_id: str) -> BulkOperationResult:

@@ -227,7 +227,8 @@
         // If no storefronts selected, add platform without storefront
         if (selectedStorefronts.size === 0) {
           const platformData: UserGamePlatformCreateRequest = {
-            platform_id: platformId
+            platform_id: platformId,
+            is_available: true
           };
 
           // Only include optional fields if they have values
@@ -242,7 +243,8 @@
           for (const storefrontId of selectedStorefronts) {
             const platformData: UserGamePlatformCreateRequest = {
               platform_id: platformId,
-              storefront_id: storefrontId
+              storefront_id: storefrontId,
+              is_available: true
             };
 
             // Only include optional fields if they have values
