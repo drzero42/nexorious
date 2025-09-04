@@ -1041,6 +1041,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
       onkeydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
       tabindex="0"
       role="button"
+      data-testid="game-card"
       aria-label="{isBulkSelectionMode ? 'Select ' + userGame.game.title : 'View details for ' + userGame.game.title}"
       class="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-all duration-300 {isBulkSelectionMode ? 'cursor-pointer' : 'cursor-pointer'} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {selectedGameIds.has(userGame.id) ? 'ring-2 ring-primary-500' : ''} {isBulkSelectionMode ? 'hover:ring-2 hover:ring-primary-300' : ''} {recentlyUpdatedGameIds.has(userGame.id) ? 'ring-2 ring-green-400 shadow-lg bg-green-50' : ''}"
      >
@@ -1217,6 +1218,7 @@ function handleSelectionChange(event: CustomEvent<{ selectedAssociationIds: Set<
          }}
          onkeydown={(e) => e.key === 'Enter' && handleGameClick(userGame.id)}
          tabindex="0"
+         data-testid="game-card"
          class="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50 transition-all duration-300 {selectedGameIds.has(userGame.id) ? 'bg-primary-50' : ''} {isBulkSelectionMode ? 'hover:bg-primary-50' : ''} {recentlyUpdatedGameIds.has(userGame.id) ? 'bg-green-50 ring-1 ring-green-200' : ''}"
         >
          <td class="whitespace-nowrap py-4 pl-4 pr-2 text-sm sm:pl-6">
