@@ -476,7 +476,7 @@ async def list_darkadia_games(
     current_user: Annotated[User, Depends(get_current_user)],
     darkadia_service = Depends(get_darkadia_service),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=100, ge=1),
     status_filter: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None)
 ) -> ImportGamesList:
@@ -855,7 +855,7 @@ async def list_darkadia_jobs(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=100, ge=1),
     job_status: Optional[str] = Query(default=None, alias="status")
 ) -> ImportJobsListResponse:
     """List Darkadia import jobs with filtering and pagination."""
@@ -1232,26 +1232,154 @@ async def get_resolution_summary(
     allowing users to see what was auto-matched and make corrections.
     """
     try:
-        from sqlmodel import select, func
-        from ....models.darkadia_import import DarkadiaImport
-        from ....models.platform import Platform, Storefront
+        logger.info(f"🔍 [DEBUG] Starting resolution summary for user {current_user.id}")
+        logger.info(f"🔍 [DEBUG] Attempting imports...")
         
-        # Get platform mappings
-        platform_query = (
-            select(
-                DarkadiaImport.original_platform_name,
-                Platform.name.label('platform_name'),
-                func.count(DarkadiaImport.id).label('game_count')
-            )
-            .outerjoin(Platform, DarkadiaImport.user_game_platform_id == Platform.id)
-            .where(
-                DarkadiaImport.user_id == current_user.id,
-                DarkadiaImport.original_platform_name.is_not(None)
-            )
-            .group_by(DarkadiaImport.original_platform_name, Platform.name)
-        )
+        try:
+            from sqlmodel import select, func
+            logger.info(f"🔍 [DEBUG] ✅ SQLModel imports successful")
+        except Exception as import_err:
+            logger.error(f"🔍 [DEBUG] ❌ SQLModel import failed: {import_err}")
+            raise
+            
+        try:
+            from ....models.darkadia_import import DarkadiaImport
+            logger.info(f"🔍 [DEBUG] ✅ DarkadiaImport import successful")
+        except Exception as import_err:
+            logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport import failed: {import_err}")
+            raise
+            
+        try:
+            from ....models.platform import Platform, Storefront
+            logger.info(f"🔍 [DEBUG] ✅ Platform/Storefront imports successful")
+        except Exception as import_err:
+            logger.error(f"🔍 [DEBUG] ❌ Platform/Storefront import failed: {import_err}")
+            raise
+            
+        try:
+            from ....models.user_game import UserGamePlatform
+            logger.info(f"🔍 [DEBUG] ✅ UserGamePlatform import successful")
+        except Exception as import_err:
+            logger.error(f"🔍 [DEBUG] ❌ UserGamePlatform import failed: {import_err}")
+            raise
         
-        platform_results = session.exec(platform_query).all()
+        logger.info(f"🔍 [DEBUG] All imports successful, proceeding with queries")
+        
+        # First, let's check what DarkadiaImport records exist
+        try:
+            logger.info(f"🔍 [DEBUG] Executing total imports count query...")
+            total_imports = session.exec(
+                select(func.count(DarkadiaImport.id))
+                .where(DarkadiaImport.user_id == current_user.id)
+            ).one()
+            logger.info(f"🔍 [DEBUG] ✅ Total DarkadiaImport records for user: {total_imports}")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Total imports query failed: {query_err}")
+            raise
+        
+        try:
+            logger.info(f"🔍 [DEBUG] Executing imports with platform names query...")
+            imports_with_platforms = session.exec(
+                select(func.count(DarkadiaImport.id))
+                .where(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.original_platform_name.is_not(None)
+                )
+            ).one()
+            logger.info(f"🔍 [DEBUG] ✅ Imports with platform names: {imports_with_platforms}")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Imports with platform names query failed: {query_err}")
+            raise
+        
+        try:
+            logger.info(f"🔍 [DEBUG] Executing imports with user_game_platform_id query...")
+            imports_with_platform_ids = session.exec(
+                select(func.count(DarkadiaImport.id))
+                .where(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.user_game_platform_id.is_not(None)
+                )
+            ).one()
+            logger.info(f"🔍 [DEBUG] ✅ Imports with user_game_platform_id set: {imports_with_platform_ids}")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Imports with user_game_platform_id query failed: {query_err}")
+            raise
+        
+        try:
+            logger.info(f"🔍 [DEBUG] Executing imports with resolved_platform_id query...")
+            logger.info(f"🔍 [DEBUG] Checking if DarkadiaImport.resolved_platform_id exists...")
+            
+            # Check if resolved_platform_id exists on the model
+            if not hasattr(DarkadiaImport, 'resolved_platform_id'):
+                logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport.resolved_platform_id field does not exist!")
+                logger.info(f"🔍 [DEBUG] Available DarkadiaImport fields: {dir(DarkadiaImport)}")
+                raise AttributeError("resolved_platform_id field does not exist on DarkadiaImport model")
+            
+            imports_with_resolved_platform_ids = session.exec(
+                select(func.count(DarkadiaImport.id))
+                .where(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.resolved_platform_id.is_not(None)
+                )
+            ).one()
+            logger.info(f"🔍 [DEBUG] ✅ Imports with resolved_platform_id set: {imports_with_resolved_platform_ids}")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Imports with resolved_platform_id query failed: {query_err}")
+            raise
+        
+        try:
+            logger.info(f"🔍 [DEBUG] Executing imports with resolved_storefront_id query...")
+            
+            # Check if resolved_storefront_id exists on the model
+            if not hasattr(DarkadiaImport, 'resolved_storefront_id'):
+                logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport.resolved_storefront_id field does not exist!")
+                raise AttributeError("resolved_storefront_id field does not exist on DarkadiaImport model")
+            
+            imports_with_resolved_storefront_ids = session.exec(
+                select(func.count(DarkadiaImport.id))
+                .where(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.resolved_storefront_id.is_not(None)
+                )
+            ).one()
+            logger.info(f"🔍 [DEBUG] ✅ Imports with resolved_storefront_id set: {imports_with_resolved_storefront_ids}")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Imports with resolved_storefront_id query failed: {query_err}")
+            raise
+        
+        # Get platform mappings - use resolved_platform_id for import-phase records
+        try:
+            logger.info(f"🔍 [DEBUG] Building platform query...")
+            platform_query = (
+                select(
+                    DarkadiaImport.original_platform_name,
+                    Platform.name.label('platform_name'),
+                    func.count(DarkadiaImport.id).label('game_count')
+                )
+                .outerjoin(Platform, DarkadiaImport.resolved_platform_id == Platform.id)
+                .where(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.original_platform_name.is_not(None)
+                )
+                .group_by(DarkadiaImport.original_platform_name, Platform.name)
+            )
+            logger.info(f"🔍 [DEBUG] ✅ Platform query built successfully")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Platform query building failed: {query_err}")
+            raise
+        
+        try:
+            logger.info(f"🔍 [DEBUG] Platform query SQL: {platform_query}")
+            logger.info(f"🔍 [DEBUG] Executing platform query...")
+            platform_results = session.exec(platform_query).all()
+            logger.info(f"🔍 [DEBUG] ✅ Platform query returned {len(platform_results)} results")
+        except Exception as query_err:
+            logger.error(f"🔍 [DEBUG] ❌ Platform query execution failed: {query_err}")
+            logger.error(f"🔍 [DEBUG] Query was: {platform_query}")
+            raise
+        
+        for i, result in enumerate(platform_results):
+            logger.info(f"🔍 [DEBUG] Platform result {i}: original='{result.original_platform_name}', mapped='{result.platform_name}', count={result.game_count}")
         
         # Get storefront mappings
         storefront_query = (
@@ -1268,32 +1396,46 @@ async def get_resolution_summary(
             .group_by(DarkadiaImport.original_storefront_name, Storefront.name)
         )
         
+        logger.info(f"🔍 [DEBUG] Storefront query SQL: {storefront_query}")
         storefront_results = session.exec(storefront_query).all()
+        logger.info(f"🔍 [DEBUG] Storefront query returned {len(storefront_results)} results")
+        
+        for i, result in enumerate(storefront_results):
+            logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{result.original_storefront_name}', mapped='{result.storefront_name}', count={result.game_count}")
         
         # Process platform mappings - show ALL entries, but use proper mapped values
         platforms = []
         for result in platform_results:
-            platforms.append({
+            mapped_value = result.platform_name or "Unmapped"
+            platform_entry = {
                 "original": result.original_platform_name,
-                "mapped": result.platform_name or "Unmapped",  # Show "Unmapped" instead of original name
+                "mapped": mapped_value,  # Show "Unmapped" instead of original name
                 "game_count": result.game_count
-            })
+            }
+            platforms.append(platform_entry)
+            logger.info(f"🔍 [DEBUG] Processed platform: {platform_entry}")
         
         # Process storefront mappings - show ALL entries, but use proper mapped values  
         storefronts = []
         for result in storefront_results:
-            storefronts.append({
+            mapped_value = result.storefront_name or "Unmapped"
+            storefront_entry = {
                 "original": result.original_storefront_name,
-                "mapped": result.storefront_name or "Unmapped",  # Show "Unmapped" instead of original name
+                "mapped": mapped_value,  # Show "Unmapped" instead of original name
                 "game_count": result.game_count
-            })
+            }
+            storefronts.append(storefront_entry)
+            logger.info(f"🔍 [DEBUG] Processed storefront: {storefront_entry}")
         
+        logger.info(f"🔍 [DEBUG] Final response: {len(platforms)} platforms, {len(storefronts)} storefronts")
         logger.info(f"Retrieved resolution summary for user {current_user.id}: {len(platforms)} platforms, {len(storefronts)} storefronts")
         
-        return DarkadiaResolutionSummaryResponse(
+        response = DarkadiaResolutionSummaryResponse(
             platforms=platforms,
             storefronts=storefronts
         )
+        logger.info(f"🔍 [DEBUG] Response object created: {response}")
+        return response
         
     except Exception as e:
         logger.error(f"Error getting resolution summary for user {current_user.id}: {str(e)}")

@@ -103,7 +103,7 @@
     try {
       // First, update counts by loading all games data
       console.log('📡 [IGNORE-REFRESH] Loading all games for count update...');
-      const allGames = await darkadia.listDarkadiaGames(0, 100);
+      const allGames = await darkadia.listDarkadiaGames(0, 100000);
       updateCounts(allGames); // We don't need the returned arrays here, just count updates
       
       // Then refresh the current tab with search filter preserved
@@ -123,8 +123,8 @@
       isRefreshing = true;
       
       // Load all games to get counts
-      console.log('📡 [LOAD-GAMES] Calling darkadia.listDarkadiaGames(0, 100)...');
-      const allGames = await darkadia.listDarkadiaGames(0, 100);
+      console.log('📡 [LOAD-GAMES] Calling darkadia.listDarkadiaGames(0, 100000)...');
+      const allGames = await darkadia.listDarkadiaGames(0, 100000);
       console.log('📨 [LOAD-GAMES] API Response:', {
         total: allGames.total,
         gamesCount: allGames.games.length,
@@ -178,17 +178,17 @@
       
       if (activeTab === 'needs-attention') {
         const [unmatched, matched] = await Promise.all([
-          darkadia.listDarkadiaGames(0, 100, 'unmatched', searchTerm || undefined),
-          darkadia.listDarkadiaGames(0, 100, 'matched', searchTerm || undefined)
+          darkadia.listDarkadiaGames(0, 100000, 'unmatched', searchTerm || undefined),
+          darkadia.listDarkadiaGames(0, 100000, 'matched', searchTerm || undefined)
         ]);
         
         unmatchedGames = unmatched.games;
         matchedGames = matched.games;
       } else if (activeTab === 'ignored') {
-        const ignored = await darkadia.listDarkadiaGames(0, 100, 'ignored', searchTerm || undefined);
+        const ignored = await darkadia.listDarkadiaGames(0, 100000, 'ignored', searchTerm || undefined);
         ignoredGames = ignored.games;
       } else if (activeTab === 'in-sync') {
-        const synced = await darkadia.listDarkadiaGames(0, 100, 'synced', searchTerm || undefined);
+        const synced = await darkadia.listDarkadiaGames(0, 100000, 'synced', searchTerm || undefined);
         inSyncGames = synced.games;
       }
     } catch (error) {
@@ -232,7 +232,10 @@
   }
 
   async function handleBatchAutoMatch() {
+    console.log('🎯 [BATCH-AUTO-MATCH] Function called, unmatchedCount:', unmatchedCount);
+    
     if (unmatchedCount === 0) {
+      console.log('❌ [BATCH-AUTO-MATCH] No unmatched games to process');
       ui.showInfo('No unmatched games found to auto-match.');
       return;
     }
@@ -242,28 +245,44 @@
       `This will process games in small batches and you can cancel at any time.`
     );
     
-    if (!confirmed) return;
+    if (!confirmed) {
+      console.log('⏹️ [BATCH-AUTO-MATCH] User cancelled operation');
+      return;
+    }
 
     try {
       console.log('🚀 [BATCH-AUTO-MATCH] Starting batch auto-match process...');
       
       // Start the batch session
       const session = await darkadia.startBatchAutoMatch();
+      console.log('📋 [BATCH-AUTO-MATCH] Session response:', session);
       
-      if (!session.session_id) {
-        // No games to process
+      if (!session) {
+        console.error('❌ [BATCH-AUTO-MATCH] No session object returned');
+        ui.showError('Failed to start auto-match: No session returned');
         return;
       }
+      
+      if (!session.session_id) {
+        console.error('❌ [BATCH-AUTO-MATCH] Session missing session_id:', session);
+        ui.showError('Failed to start auto-match: Invalid session ID');
+        return;
+      }
+      
+      console.log('✅ [BATCH-AUTO-MATCH] Valid session received, showing modal');
       
       // Show progress modal
       showBatchModal = true;
       batchProcessingActive = true;
+      
+      console.log('🎬 [BATCH-AUTO-MATCH] Modal state set - showBatchModal:', showBatchModal, 'batchProcessingActive:', batchProcessingActive);
       
       // Start interval-based batch processing
       startBatchProcessing(session.session_id, 'auto_match');
       
     } catch (error) {
       console.error('❌ [BATCH-AUTO-MATCH] Error during batch auto-match:', error);
+      ui.showError(`Failed to start auto-match: ${error instanceof Error ? error.message : 'Unknown error'}`);
       batchProcessingActive = false;
     }
   }
@@ -337,8 +356,8 @@
       
       console.log(`🔄 [BATCH-${operationType.toUpperCase()}] Processing next batch...`);
       
-      // Process next batch (Note: These endpoints may need to be implemented)
-      // For now, we'll simulate the processing
+      // Process next batch using the real batch endpoint
+      await darkadia.processBatchNext(sessionId);
       
       // Check for cancellation again after batch processing, before UI refresh
       if (!batchProcessingActive || isCancelling) {
@@ -1232,6 +1251,7 @@
   onClose={handleBatchModalClose}
   onCancel={handleBatchCancel}
   isCancelling={isCancelling}
+  store="darkadia"
 />
 
 <!-- Resolution Summary Modal -->
