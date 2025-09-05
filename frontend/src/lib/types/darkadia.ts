@@ -47,6 +47,16 @@ export interface DarkadiaLibraryPreview {
   platform_analysis: Record<string, any>;
 }
 
+export interface DarkadiaPlatformInfo {
+  original_platform_name?: string;
+  original_storefront_name?: string;
+  resolved_platform_name?: string;
+  resolved_storefront_name?: string;
+  platform_resolution_status: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
+  storefront_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
+  copy_identifier?: string;
+}
+
 export interface DarkadiaGameResponse {
   id: string;
   external_id: string;
@@ -59,13 +69,14 @@ export interface DarkadiaGameResponse {
   created_at: Date;
   updated_at: Date;
   
-  // Platform resolution fields
+  // Multi-platform support
+  platforms: DarkadiaPlatformInfo[];
+  
+  // Legacy single platform fields (for backward compatibility)
   platform_resolved?: boolean;
   original_platform_name?: string;
   platform_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
   platform_name?: string;
-  
-  // Storefront resolution fields
   original_storefront_name?: string;
   storefront_resolution_status?: 'resolved' | 'pending' | 'mapped' | 'ignored' | 'conflict';
   storefront_name?: string;

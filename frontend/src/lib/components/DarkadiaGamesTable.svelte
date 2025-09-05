@@ -3,7 +3,7 @@
   import { darkadia } from '$lib/stores/darkadia.svelte';
   import { auth } from '$lib/stores/auth.svelte';
   import IGDBSearchWidget from './steam/IGDBSearchWidget.svelte';
-  import type { DarkadiaGameResponse } from '$lib/types/darkadia';
+  import type { DarkadiaGameResponse, DarkadiaPlatformInfo } from '$lib/types/darkadia';
   
   interface Props {
     title: string;
@@ -168,6 +168,18 @@
     return loadingGames.has(gameId);
   }
 
+  function formatPlatformDisplay(platform: DarkadiaPlatformInfo): string {
+    // Prioritize resolved names over original names
+    const platformName = platform.resolved_platform_name || platform.original_platform_name || 'Unknown Platform';
+    const storefrontName = platform.resolved_storefront_name || platform.original_storefront_name;
+    
+    if (storefrontName) {
+      return `${platformName} (${storefrontName})`;
+    } else {
+      return platformName;
+    }
+  }
+
   const matchingGame = $derived(
     matchingGameId ? games.find(g => g.id === matchingGameId) : null
   );
@@ -318,39 +330,48 @@
                 </td>
 
                 <!-- Platform Status -->
-                <td class="px-4 py-4 whitespace-nowrap">
-                  {#if game.platform_resolution_status || game.original_platform_name}
-                    {@const platformStatus = game.platform_resolution_status}
-                    {@const platformName = game.original_platform_name}
-                    
-                    {#if platformStatus === 'resolved'}
-                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-green-100 text-green-600 border-green-200" title="Platform resolved: {platformName}">
-                        <span class="mr-1">✅</span>
-                        {platformName}
-                      </span>
-                    {:else if platformStatus === 'pending'}
-                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-yellow-100 text-yellow-600 border-yellow-200" title="Platform needs resolution: {platformName}">
-                        <span class="mr-1">⚠️</span>
-                        {platformName || 'Unknown'}
-                      </span>
-                    {:else if platformStatus === 'ignored'}
-                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" title="Platform resolution ignored">
-                        <span class="mr-1">🚫</span>
-                        Ignored
-                      </span>
-                    {:else if platformStatus === 'conflict'}
-                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-red-100 text-red-600 border-red-200" title="Multiple platform matches: {platformName}">
-                        <span class="mr-1">❌</span>
-                        Conflict
-                      </span>
-                    {:else if platformName}
-                      <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" title="Original platform: {platformName}">
-                        <span class="mr-1">📱</span>
-                        {platformName}
-                      </span>
-                    {/if}
+                <td class="px-4 py-4">
+                  {#if game.platforms && game.platforms.length > 0}
+                    <div class="flex flex-wrap gap-1">
+                      {#each game.platforms as platform}
+                        {@const displayName = formatPlatformDisplay(platform)}
+                        {@const status = platform.platform_resolution_status}
+                        
+                        {#if status === 'resolved'}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-green-100 text-green-600 border-green-200" 
+                                title="Platform resolved: {displayName}">
+                            <span class="mr-1">✅</span>
+                            {displayName}
+                          </span>
+                        {:else if status === 'pending'}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-yellow-100 text-yellow-600 border-yellow-200" 
+                                title="Platform needs resolution: {displayName}">
+                            <span class="mr-1">⚠️</span>
+                            {displayName}
+                          </span>
+                        {:else if status === 'ignored'}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" 
+                                title="Platform resolution ignored">
+                            <span class="mr-1">🚫</span>
+                            Ignored
+                          </span>
+                        {:else if status === 'conflict'}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-red-100 text-red-600 border-red-200" 
+                                title="Multiple platform matches: {displayName}">
+                            <span class="mr-1">❌</span>
+                            Conflict
+                          </span>
+                        {:else}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-gray-100 text-gray-600 border-gray-200" 
+                                title="Original platform: {displayName}">
+                            <span class="mr-1">📱</span>
+                            {displayName}
+                          </span>
+                        {/if}
+                      {/each}
+                    </div>
                   {:else}
-                    <span class="text-gray-400 text-xs">No platform</span>
+                    <span class="text-gray-400 text-xs">No platforms</span>
                   {/if}
                 </td>
 

@@ -1,17 +1,23 @@
 <script lang="ts">
   import { steamGames } from '$lib/stores/steam-games.svelte';
+  import { darkadia } from '$lib/stores/darkadia.svelte';
   
   interface Props {
     isOpen: boolean;
     onClose: () => void;
     onCancel?: () => void;
     isCancelling?: boolean;
+    store?: 'steam' | 'darkadia';
   }
 
-  let { isOpen = false, onClose, onCancel, isCancelling = false }: Props = $props();
+  let { isOpen = false, onClose, onCancel, isCancelling = false, store = 'steam' }: Props = $props();
 
-  // Get batch session from store
-  const batchSession = $derived(steamGames.value.activeBatchSession);
+  // Get batch session from the appropriate store
+  const batchSession = $derived(
+    store === 'darkadia' 
+      ? darkadia.value.activeBatchSession 
+      : steamGames.value.activeBatchSession
+  );
   const isProcessing = $derived(batchSession?.isProcessing || false);
 
   // Reactive values for progress display
@@ -46,7 +52,11 @@
     if (!confirmed) return;
 
     try {
-      await steamGames.cancelBatchOperation(batchSession.sessionId);
+      if (store === 'darkadia') {
+        await darkadia.cancelBatchSession(batchSession.sessionId);
+      } else {
+        await steamGames.cancelBatchOperation(batchSession.sessionId);
+      }
       onCancel?.();
       onClose();
     } catch (error) {
@@ -57,7 +67,11 @@
   // Handle close when complete
   function handleClose() {
     if (isComplete) {
-      steamGames.clearBatchSession();
+      if (store === 'darkadia') {
+        darkadia.clearBatchSession();
+      } else {
+        steamGames.clearBatchSession();
+      }
     }
     onClose();
   }

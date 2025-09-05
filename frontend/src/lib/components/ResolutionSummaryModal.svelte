@@ -34,6 +34,23 @@
   const hasChanges = $derived(
     platformMappings.size > 0 || storefrontMappings.size > 0
   );
+  
+  // Debug reactive statements
+  $effect(() => {
+    if (resolutionData) {
+      console.log('🔍 [FRONTEND-DEBUG] Resolution data changed, analyzing dropdown values...');
+      
+      resolutionData.platforms?.forEach((platform, index) => {
+        const computedValue = platformMappings.get(platform.original) ?? (platform.mapped !== 'Unmapped' ? platform.mapped : '');
+        console.log(`🔍 [FRONTEND-DEBUG] Platform ${index} dropdown value: original="${platform.original}", mapped="${platform.mapped}", computedValue="${computedValue}"`);
+      });
+      
+      resolutionData.storefronts?.forEach((storefront, index) => {
+        const computedValue = storefrontMappings.get(storefront.original) ?? (storefront.mapped !== 'Unmapped' ? storefront.mapped : '');
+        console.log(`🔍 [FRONTEND-DEBUG] Storefront ${index} dropdown value: original="${storefront.original}", mapped="${storefront.mapped}", computedValue="${computedValue}"`);
+      });
+    }
+  });
 
   // Load resolution summary when modal opens
   $effect(() => {
@@ -71,6 +88,22 @@
       }
 
       resolutionData = await response.json();
+      
+      if (resolutionData) {
+        console.log('🔍 [FRONTEND-DEBUG] Resolution data loaded:', resolutionData);
+        console.log('🔍 [FRONTEND-DEBUG] Platform count:', resolutionData.platforms?.length || 0);
+        console.log('🔍 [FRONTEND-DEBUG] Storefront count:', resolutionData.storefronts?.length || 0);
+        
+        // Log each platform mapping
+        resolutionData.platforms?.forEach((platform, index) => {
+          console.log(`🔍 [FRONTEND-DEBUG] Platform ${index}: original="${platform.original}", mapped="${platform.mapped}", games=${platform.game_count}`);
+        });
+        
+        // Log each storefront mapping
+        resolutionData.storefronts?.forEach((storefront, index) => {
+          console.log(`🔍 [FRONTEND-DEBUG] Storefront ${index}: original="${storefront.original}", mapped="${storefront.mapped}", games=${storefront.game_count}`);
+        });
+      }
     } catch (err) {
       console.error('Error loading resolution summary:', err);
       error = err instanceof Error ? err.message : 'Failed to load resolution summary';
@@ -98,22 +131,26 @@
 
       if (platformsResponse.ok) {
         availablePlatforms = await platformsResponse.json();
+        console.log('🔍 [FRONTEND-DEBUG] Available platforms loaded:', availablePlatforms);
       } else if (platformsResponse.status === 401) {
         await auth.refreshAuth();
         return loadAvailableOptions(); // Retry after auth refresh
       } else {
         console.warn('Failed to load platforms, using fallback list');
         availablePlatforms = ['PC (Windows)', 'PlayStation 5', 'Xbox Series X/S', 'Nintendo Switch'];
+        console.log('🔍 [FRONTEND-DEBUG] Using fallback platforms:', availablePlatforms);
       }
 
       if (storefrontsResponse.ok) {
         availableStorefronts = await storefrontsResponse.json();
+        console.log('🔍 [FRONTEND-DEBUG] Available storefronts loaded:', availableStorefronts);
       } else if (storefrontsResponse.status === 401) {
         await auth.refreshAuth();
         return loadAvailableOptions(); // Retry after auth refresh
       } else {
         console.warn('Failed to load storefronts, using fallback list');
         availableStorefronts = ['Steam', 'Epic Games Store', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'GOG'];
+        console.log('🔍 [FRONTEND-DEBUG] Using fallback storefronts:', availableStorefronts);
       }
     } catch (err) {
       console.error('Error loading available options:', err);
@@ -300,17 +337,20 @@
                           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <select 
                               class="form-select text-sm {platform.mapped === 'Unmapped' ? 'text-red-600' : ''}"
-                              value={platformMappings.get(platform.original) || (platform.mapped === 'Unmapped' ? '' : platform.mapped)}
+                              value={platformMappings.get(platform.original) ?? (platform.mapped !== 'Unmapped' ? platform.mapped : '')}
                               onchange={(e) => handlePlatformMappingChange(platform.original, e)}
                             >
                               {#if platform.mapped === 'Unmapped'}
                                 <option value="" class="text-red-600">Select a platform...</option>
+                                {#each availablePlatforms as availablePlatform}
+                                  <option value={availablePlatform}>{availablePlatform}</option>
+                                {/each}
                               {:else}
                                 <option value={platform.mapped}>{platform.mapped}</option>
+                                {#each availablePlatforms.filter(p => p !== platform.mapped) as availablePlatform}
+                                  <option value={availablePlatform}>{availablePlatform}</option>
+                                {/each}
                               {/if}
-                              {#each availablePlatforms.filter(p => p !== platform.mapped) as availablePlatform}
-                                <option value={availablePlatform}>{availablePlatform}</option>
-                              {/each}
                             </select>
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -351,17 +391,20 @@
                           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <select 
                               class="form-select text-sm {storefront.mapped === 'Unmapped' ? 'text-red-600' : ''}"
-                              value={storefrontMappings.get(storefront.original) || (storefront.mapped === 'Unmapped' ? '' : storefront.mapped)}
+                              value={storefrontMappings.get(storefront.original) ?? (storefront.mapped !== 'Unmapped' ? storefront.mapped : '')}
                               onchange={(e) => handleStorefrontMappingChange(storefront.original, e)}
                             >
                               {#if storefront.mapped === 'Unmapped'}
                                 <option value="" class="text-red-600">Select a storefront...</option>
+                                {#each availableStorefronts as availableStorefront}
+                                  <option value={availableStorefront}>{availableStorefront}</option>
+                                {/each}
                               {:else}
                                 <option value={storefront.mapped}>{storefront.mapped}</option>
+                                {#each availableStorefronts.filter(s => s !== storefront.mapped) as availableStorefront}
+                                  <option value={availableStorefront}>{availableStorefront}</option>
+                                {/each}
                               {/if}
-                              {#each availableStorefronts.filter(s => s !== storefront.mapped) as availableStorefront}
-                                <option value={availableStorefront}>{availableStorefront}</option>
-                              {/each}
                             </select>
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

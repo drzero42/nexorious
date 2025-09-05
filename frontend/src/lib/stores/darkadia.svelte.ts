@@ -655,11 +655,13 @@ function createDarkadiaStore() {
       state = { ...state, isAutoMatching: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/games/auto-match-all`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/batch/auto-match/start`, {
           method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             'Authorization': `Bearer ${auth.value.accessToken}`
-          }
+          },
+          body: JSON.stringify({})
         });
 
         if (!response.ok) {
@@ -704,11 +706,13 @@ function createDarkadiaStore() {
       state = { ...state, isSyncing: true, error: null };
 
       try {
-        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/games/sync-all`, {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/batch/sync/start`, {
           method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             'Authorization': `Bearer ${auth.value.accessToken}`
-          }
+          },
+          body: JSON.stringify({})
         });
 
         if (!response.ok) {
@@ -744,6 +748,97 @@ function createDarkadiaStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to start batch sync';
         state = { ...state, isSyncing: false, error: errorMessage };
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    async processBatchNext(sessionId: string): Promise<DarkadiaBatchNextResponse> {
+      try {
+        // Map operation type to correct URL path
+        const operationType = state.activeBatchSession?.operationType;
+        const urlPath = operationType === 'auto_match' ? 'auto-match' : 'sync';
+        
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/batch/${urlPath}/${sessionId}/next`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({})
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.processBatchNext(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to process next batch');
+        }
+
+        const batchData = await response.json() as DarkadiaBatchNextResponse;
+
+        // Update batch session state
+        if (state.activeBatchSession) {
+          state = {
+            ...state,
+            activeBatchSession: {
+              ...state.activeBatchSession,
+              processedItems: batchData.processed_items,
+              successfulItems: batchData.successful_items,
+              failedItems: batchData.failed_items,
+              progressPercentage: batchData.progress_percentage,
+              errors: [...state.activeBatchSession.errors, ...batchData.batch_errors],
+              isComplete: batchData.is_complete,
+              status: batchData.status
+            }
+          };
+
+          if (batchData.is_complete) {
+            state = {
+              ...state,
+              isBatchProcessing: false,
+              isAutoMatching: false,
+              isSyncing: false
+            };
+          }
+        }
+
+        return batchData;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process next batch';
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    async cancelBatchSession(sessionId: string): Promise<DarkadiaBatchCancelResponse> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/batch/${sessionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.cancelBatchSession(sessionId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to cancel batch session');
+        }
+
+        const cancelData = await response.json() as DarkadiaBatchCancelResponse;
+        
+        this.clearBatchSession();
+        ui.showInfo('Batch session cancelled');
+        
+        return cancelData;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to cancel batch session';
         ui.showError(errorMessage);
         throw error;
       }
