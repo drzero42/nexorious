@@ -113,7 +113,7 @@ class DarkadiaImportService(ImportSourceService):
         }
         return platform_mappings.get(platform_name, platform_name.lower().replace(' ', '-'))
     
-    def _normalize_storefront_name(self, storefront_name: str) -> str:
+    def _normalize_storefront_name(self, storefront_name: str) -> Optional[str]:
         """Normalize storefront name from CSV to database format."""
         # Storefront mapping from CSV values to database storefront names
         storefront_mappings = {
@@ -143,31 +143,11 @@ class DarkadiaImportService(ImportSourceService):
             'Google Play Store': 'google-play-store',
             'Physical': 'physical',
             
-            # Smaller/unknown storefronts - map to physical for now
-            'Backer': 'physical',
-            'Bilka': 'physical',
-            'Coolshop': 'physical',
-            'Coolshop.dk': 'physical',
-            'Elgiganten': 'physical',
-            'Fanatical': 'physical',
-            'GameBillet': 'physical',
-            'Gamebillet': 'physical',
-            'GamersGate': 'physical',
-            'Gamesplanet': 'physical',
-            'Gamesplanet UK': 'physical',
-            'Green Man Gaming': 'physical',
-            'Indie Gala': 'physical',
-            'Kickstarter': 'physical',
-            'Nintendopusheren': 'physical',
-            'Powerplay': 'physical',
-            'Proshop': 'physical',
-            'Telltale.com': 'physical',
-            'WinGameStore': 'physical',
-            'cdon.com': 'physical',
-            'telltale.com': 'physical',
-            'uk.gamesplanet.com': 'physical',
+            # Keep only truly physical retail storefronts
+            # Many digital storefronts were incorrectly mapped to 'physical' - let users resolve them
         }
-        return storefront_mappings.get(storefront_name, 'physical')  # Default to physical for unknown
+        # Return None for unknown storefronts - user must resolve them manually
+        return storefront_mappings.get(storefront_name, None)
     
     async def get_config(self, user_id: str) -> ImportSourceConfig:
         """Get Darkadia configuration for user."""
@@ -796,16 +776,19 @@ class DarkadiaImportService(ImportSourceService):
                     normalized_storefront_name = self._normalize_storefront_name(storefront_name)
                     logger.info(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{storefront_name}' -> '{normalized_storefront_name}'")
                     
-                    # Look up the normalized storefront in the database
-                    storefront = self.session.exec(
-                        select(Storefront).where(Storefront.name == normalized_storefront_name)
-                    ).first()
-                    if storefront:
-                        resolved_storefront_id = storefront.id
-                        storefront_resolved = True
-                        logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                    # Look up the normalized storefront in the database (if we got a mapped name)
+                    if normalized_storefront_name:
+                        storefront = self.session.exec(
+                            select(Storefront).where(Storefront.name == normalized_storefront_name)
+                        ).first()
+                        if storefront:
+                            resolved_storefront_id = storefront.id
+                            storefront_resolved = True
+                            logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                        else:
+                            logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
                     else:
-                        logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ❓ Unknown storefront: '{storefront_name}' - requires user resolution")
                 
                 # Create a DarkadiaImport record for each copy
                 darkadia_import = DarkadiaImport(
@@ -1029,15 +1012,18 @@ class DarkadiaImportService(ImportSourceService):
                 normalized_storefront_name = self._normalize_storefront_name(mapped_storefront_name)
                 logger.debug(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{mapped_storefront_name}' -> '{normalized_storefront_name}'")
                 
-                # Look up the normalized storefront in the database
-                storefront = self.session.exec(
-                    select(Storefront).where(Storefront.name == normalized_storefront_name)
-                ).first()
-                if storefront:
-                    resolved_storefront_id = storefront.id
-                    logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                # Look up the normalized storefront in the database (if we got a mapped name)
+                if normalized_storefront_name:
+                    storefront = self.session.exec(
+                        select(Storefront).where(Storefront.name == normalized_storefront_name)
+                    ).first()
+                    if storefront:
+                        resolved_storefront_id = storefront.id
+                        logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                    else:
+                        logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
                 else:
-                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❓ Unknown storefront: '{mapped_storefront_name}' - requires user resolution")
             
             # Create the DarkadiaImport record
             darkadia_import = DarkadiaImport(
@@ -1355,9 +1341,27 @@ class DarkadiaImportService(ImportSourceService):
         
         # Get total count and games
         games = self.session.exec(query.offset(offset).limit(limit)).all()
-        total_count = self.session.exec(select(func.count()).select_from(query.subquery())).first()
+        # Use direct count query to avoid Cartesian product from subquery
+        count_query = select(func.count(DarkadiaGame.id)).where(DarkadiaGame.user_id == user_id)
+        
+        # Apply the same filtering as main query
+        if status_filter == "unmatched":
+            count_query = count_query.where(DarkadiaGame.igdb_id is None)
+        elif status_filter == "matched":
+            count_query = count_query.where(DarkadiaGame.igdb_id is not None)
+        elif status_filter == "ignored":
+            count_query = count_query.where(DarkadiaGame.ignored)
+        elif status_filter == "synced":
+            count_query = count_query.where(DarkadiaGame.game_id is not None)
+        
+        if search:
+            search_term = f"%{search.lower()}%"
+            count_query = count_query.where(func.lower(DarkadiaGame.game_name).like(search_term))
+        
+        total_count = self.session.exec(count_query).first()
         
         logger.info(f"Successfully fetched {len(games)} games out of {total_count} total for user {user_id}")
+        logger.debug(f"Service layer count query result for user {user_id}: {total_count} distinct games")
         
         # Convert to ImportGame objects
         import_games = []

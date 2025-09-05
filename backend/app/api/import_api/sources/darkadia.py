@@ -518,8 +518,36 @@ async def list_darkadia_games(
             )
         
         # Get total count for pagination
-        count_query = select(func.count(DarkadiaGame.id)).select_from(base_query.subquery())
+        # Use direct count query to avoid Cartesian product from subquery
+        count_query = select(func.count(DarkadiaGame.id)).where(DarkadiaGame.user_id == current_user.id)
+        
+        # Apply the same filtering as base_query
+        if status_filter:
+            if status_filter == "unmatched":
+                count_query = count_query.where(
+                    and_(DarkadiaGame.igdb_id.is_(None), DarkadiaGame.ignored == False)
+                )
+            elif status_filter == "matched":
+                count_query = count_query.where(
+                    and_(
+                        DarkadiaGame.igdb_id.is_not(None), 
+                        DarkadiaGame.game_id.is_(None), 
+                        DarkadiaGame.ignored == False
+                    )
+                )
+            elif status_filter == "synced":
+                count_query = count_query.where(DarkadiaGame.game_id.is_not(None))
+            elif status_filter == "ignored":
+                count_query = count_query.where(DarkadiaGame.ignored == True)
+        
+        if search and search.strip():
+            search_term = f"%{search.strip()}%"
+            count_query = count_query.where(
+                DarkadiaGame.game_name.ilike(search_term)
+            )
+        
         total_count = session.exec(count_query).first() or 0
+        logger.debug(f"Total count query for user {current_user.id}: {total_count} games")
         
         # Apply pagination and get games
         games_query = base_query.order_by(DarkadiaGame.created_at.desc()).offset(offset).limit(limit)
