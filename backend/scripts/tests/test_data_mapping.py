@@ -152,7 +152,13 @@ class TestDarkadiaDataMapper:
     
     def test_map_storefront_name_fuzzy(self, mapper):
         """Test fuzzy storefront name mapping."""
+        # Epic variants should all map to Epic Games Store
         assert mapper._map_storefront_name('epic', 'PC (Windows)') == 'Epic Games Store'
+        assert mapper._map_storefront_name('Epic', 'PC (Windows)') == 'Epic Games Store'
+        assert mapper._map_storefront_name('Epic Game Store', 'PC (Windows)') == 'Epic Games Store'
+        assert mapper._map_storefront_name('Epic Games', 'PC (Windows)') == 'Epic Games Store'
+        
+        # Other fuzzy matches should still work
         assert mapper._map_storefront_name('playstation store', 'PlayStation 4') == 'PlayStation Store'
         assert mapper._map_storefront_name('humble bundle', 'PC (Windows)') == 'Humble Bundle'
         assert mapper._map_storefront_name('microsoft store', 'Xbox One') == 'Microsoft Store'
@@ -164,8 +170,8 @@ class TestDarkadiaDataMapper:
         assert mapper._map_storefront_name('', 'PlayStation 4') == 'PlayStation Store'
         assert mapper._map_storefront_name('', 'Nintendo Switch') == 'Nintendo eShop'
         
-        # Unknown storefront should use platform default
-        assert mapper._map_storefront_name('Unknown Store', 'PC (Windows)') == 'Steam'
+        # Unknown storefront should return None for resolution workflow
+        assert mapper._map_storefront_name('Unknown Store', 'PC (Windows)') is None
     
     def test_convert_single_platform(self, mapper):
         """Test single platform conversion."""
@@ -263,3 +269,28 @@ class TestDarkadiaDataMapper:
         assert summary['unknown_storefront_count'] == 1
         assert 'Unknown Platform' in summary['unknown_platforms']
         assert 'Unknown Store' in summary['unknown_storefronts']
+    
+    def test_unknown_storefront_resolution_workflow(self, mapper):
+        """Test that unknown storefronts properly flow into resolution workflow."""
+        # Test the complete workflow from unknown storefront to platform data
+        platform_info = {
+            'platform': 'PC',
+            'storefront': 'BattleDotNet',  # Unknown storefront
+            'media': 'Digital',
+            'label': 'Battle.net Edition',
+        }
+        
+        # Convert the platform - this should mark the storefront as unknown
+        result = mapper._convert_single_platform(platform_info)
+        
+        # The result should have platform data but with fallback storefront
+        assert result is not None
+        assert result['platform_name'] == 'PC (Windows)'
+        assert result['storefront_name'] == 'Steam'  # Fallback for PC platform
+        
+        # But the metadata should indicate the storefront was unknown
+        assert result['metadata']['original_storefront'] == 'BattleDotNet'
+        assert result['metadata']['storefront_was_unknown'] is True
+        
+        # The unknown storefront should be tracked
+        assert 'BattleDotNet' in mapper.unknown_storefronts

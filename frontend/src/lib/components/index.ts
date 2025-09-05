@@ -31,10 +31,9 @@ export { default as ImportConfigurationSection } from './ImportConfigurationSect
 export { default as DarkadiaFileUpload } from './DarkadiaFileUpload.svelte';
 export { default as DarkadiaGameCard } from './DarkadiaGameCard.svelte';
 export { default as DarkadiaGamesTable } from './DarkadiaGamesTable.svelte';
-export { default as ResolutionSummaryModal } from './ResolutionSummaryModal.svelte';
+export { default as PlatformStorefrontModal } from './PlatformStorefrontModal.svelte';
 
-// Platform Resolution components
-export { default as PlatformResolutionModal } from './PlatformResolutionModal.svelte';
+// Platform Resolution components (for other parts of app)
 export { default as PlatformMappingRow } from './PlatformMappingRow.svelte';
 export { default as PlatformSuggestionCard } from './PlatformSuggestionCard.svelte';
 

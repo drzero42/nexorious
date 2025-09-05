@@ -697,7 +697,10 @@ class PlatformResolutionService:
             and_(
                 DarkadiaImport.user_id == user_id,
                 DarkadiaImport.original_storefront_name.isnot(None),
-                not DarkadiaImport.storefront_resolved
+                or_(
+                    not DarkadiaImport.storefront_resolved,
+                    DarkadiaImport.requires_storefront_resolution.is_(True)
+                )
             )
         )
         

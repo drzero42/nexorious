@@ -1501,7 +1501,7 @@ async def get_pending_storefront_resolutions(
         
         for storefront_name in unknown_storefronts:
             # Get imports with this storefront name to build context
-            from sqlmodel import select, and_
+            from sqlmodel import select, and_, or_
             from ..models.darkadia_import import DarkadiaImport
             
             imports = session.exec(
@@ -1509,7 +1509,10 @@ async def get_pending_storefront_resolutions(
                     and_(
                         DarkadiaImport.user_id == current_user.id,
                         DarkadiaImport.original_storefront_name == storefront_name,
-                        DarkadiaImport.storefront_resolved.is_(False)
+                        or_(
+                            DarkadiaImport.storefront_resolved.is_(False),
+                            DarkadiaImport.requires_storefront_resolution.is_(True)
+                        )
                     )
                 ).limit(10)  # Limit for performance
             ).all()

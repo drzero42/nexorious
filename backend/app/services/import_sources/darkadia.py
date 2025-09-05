@@ -1005,25 +1005,37 @@ class DarkadiaImportService(ImportSourceService):
                     logger.debug(f"🔍 [RESOLUTION DEBUG] Available platforms: {available_names}")
             
             # Try to resolve storefront
+            storefront_was_unknown = False
+            
+            # If we have an original storefront name but no mapped name, it means the mapper couldn't resolve it
+            if original_storefront_name and not mapped_storefront_name:
+                storefront_was_unknown = True
+                logger.debug(f"🔍 [RESOLUTION DEBUG] ❓ Unmappable storefront: '{original_storefront_name}' - mapper returned None")
+            
             if mapped_storefront_name:
                 logger.debug(f"🔍 [RESOLUTION DEBUG] Processing storefront - Original: '{original_storefront_name}' -> Mapped: '{mapped_storefront_name}'")
                 
-                # Normalize storefront name to database format
-                normalized_storefront_name = self._normalize_storefront_name(mapped_storefront_name)
-                logger.debug(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{mapped_storefront_name}' -> '{normalized_storefront_name}'")
-                
-                # Look up the normalized storefront in the database (if we got a mapped name)
-                if normalized_storefront_name:
-                    storefront = self.session.exec(
-                        select(Storefront).where(Storefront.name == normalized_storefront_name)
-                    ).first()
-                    if storefront:
-                        resolved_storefront_id = storefront.id
-                        logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
-                    else:
-                        logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
+                # Check if this storefront was marked as unknown by the mapper
+                if platform_data and platform_data.get('metadata', {}).get('storefront_was_unknown', False):
+                    storefront_was_unknown = True
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❓ Storefront marked as unknown by mapper: '{mapped_storefront_name}' - requires user resolution")
                 else:
-                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❓ Unknown storefront: '{mapped_storefront_name}' - requires user resolution")
+                    # Normalize storefront name to database format
+                    normalized_storefront_name = self._normalize_storefront_name(mapped_storefront_name)
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{mapped_storefront_name}' -> '{normalized_storefront_name}'")
+                    
+                    # Look up the normalized storefront in the database (if we got a mapped name)
+                    if normalized_storefront_name:
+                        storefront = self.session.exec(
+                            select(Storefront).where(Storefront.name == normalized_storefront_name)
+                        ).first()
+                        if storefront:
+                            resolved_storefront_id = storefront.id
+                            logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                        else:
+                            logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
+                    else:
+                        logger.debug(f"🔍 [RESOLUTION DEBUG] ❓ Unknown storefront: '{mapped_storefront_name}' - requires user resolution")
             
             # Create the DarkadiaImport record
             darkadia_import = DarkadiaImport(
@@ -1037,6 +1049,8 @@ class DarkadiaImportService(ImportSourceService):
                 original_platform_name=original_platform_name,
                 original_storefront_name=original_storefront_name,
                 platform_resolved=platform_resolved,
+                storefront_resolved=bool(resolved_storefront_id) and not storefront_was_unknown,
+                requires_storefront_resolution=bool(original_storefront_name and (not resolved_storefront_id or storefront_was_unknown)),
                 resolved_platform_id=resolved_platform_id,
                 resolved_storefront_id=resolved_storefront_id,
                 user_game_platform_id=None,  # Will be set during sync phase
@@ -1049,7 +1063,7 @@ class DarkadiaImportService(ImportSourceService):
                 "status": "resolved" if platform_resolved else "pending",
                 "original_name": original_platform_name or "",
                 "is_fallback": is_fallback,
-                "requires_storefront_resolution": bool(original_storefront_name and not resolved_storefront_id),
+                "requires_storefront_resolution": bool(original_storefront_name and (not resolved_storefront_id or storefront_was_unknown)),
                 "suggestions": [],
                 "storefront_suggestions": [],
                 "resolved_platform_id": resolved_platform_id,

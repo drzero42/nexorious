@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, ImportProgressModal, PlatformResolutionModal, ResolutionSummaryModal } from '$lib/components';
+  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, ImportProgressModal, PlatformStorefrontModal } from '$lib/components';
   import { darkadia, ui, auth } from '$lib/stores';
   import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
@@ -40,12 +40,10 @@
   let showImportModal = $state(false);
   let importCancelling = $state(false);
 
-  // Platform resolution state
-  let showPlatformResolutionModal = $state(false);
+  // Platform and storefront resolution state
+  let showPlatformStorefrontModal = $state(false);
   let pendingPlatformResolutions = $state(0);
-  
-  // Resolution summary modal state
-  let showResolutionSummaryModal = $state(false);
+  let pendingStorefrontResolutions = $state(0);
 
   // Reset confirmation state
   let showResetModal = $state(false);
@@ -467,13 +465,20 @@
     // Show import progress modal since import starts automatically after upload
     showImportModal = true;
     
-    // Check for pending platform resolutions (but don't auto-show modal)
+    // Check for pending platform and storefront resolutions (but don't auto-show modal)
     try {
-      const resolutions = await platforms.getPendingResolutions(1, 1);
-      pendingPlatformResolutions = resolutions.total;
-      console.log('🔄 [PAGE] Fetched fresh resolution count from backend:', resolutions.total);
+      const [platformResolutions, storefrontResolutions] = await Promise.all([
+        platforms.getPendingResolutions(1, 1),
+        platforms.getPendingStorefrontResolutions(1, 1)
+      ]);
+      pendingPlatformResolutions = platformResolutions.total;
+      pendingStorefrontResolutions = storefrontResolutions.total;
+      console.log('🔄 [PAGE] Fetched fresh resolution counts from backend:', {
+        platforms: platformResolutions.total,
+        storefronts: storefrontResolutions.total
+      });
     } catch (error) {
-      console.warn('Failed to check for pending platform resolutions:', error);
+      console.warn('Failed to check for pending platform/storefront resolutions:', error);
     }
     
     // Switch to needs attention tab after successful upload/import
@@ -507,29 +512,45 @@
     }
   }
 
-  // Platform resolution handlers
-  function handleOpenPlatformResolution() {
-    showPlatformResolutionModal = true;
+  // Platform and storefront resolution handlers
+  function handleOpenPlatformStorefront() {
+    showPlatformStorefrontModal = true;
   }
 
-  function handleClosePlatformResolution() {
-    console.log('🔒 [PAGE] Closing platform resolution modal');
-    showPlatformResolutionModal = false;
+  function handleClosePlatformStorefront() {
+    console.log('🔒 [PAGE] Closing platform storefront modal');
+    showPlatformStorefrontModal = false;
   }
 
-  function handlePlatformResolutionsComplete(resolvedCount: number) {
-    console.log('📥 [PAGE] handlePlatformResolutionsComplete called with resolvedCount:', resolvedCount);
-    console.log('📊 [PAGE] Current pendingPlatformResolutions before update:', pendingPlatformResolutions);
+  function handlePlatformStorefrontResolutionsComplete(resolvedCount: number) {
+    console.log('📥 [PAGE] handlePlatformStorefrontResolutionsComplete called with resolvedCount:', resolvedCount);
+    console.log('📊 [PAGE] Current pending counts before update:', {
+      platforms: pendingPlatformResolutions,
+      storefronts: pendingStorefrontResolutions
+    });
     
-    ui.showSuccess(`Successfully resolved ${resolvedCount} platform${resolvedCount === 1 ? '' : 's'}`);
+    ui.showSuccess(`Successfully resolved ${resolvedCount} item${resolvedCount === 1 ? '' : 's'}`);
     
-    // Update pending count and refresh data if needed
-    pendingPlatformResolutions = Math.max(0, pendingPlatformResolutions - resolvedCount);
+    // Update pending counts (we don't know the exact split, so reduce both conservatively)
+    const totalPending = pendingPlatformResolutions + pendingStorefrontResolutions;
+    if (totalPending > 0) {
+      // Reduce total by resolved count, distribute proportionally
+      const platformRatio = pendingPlatformResolutions / totalPending;
+      
+      const platformReduction = Math.min(pendingPlatformResolutions, Math.ceil(resolvedCount * platformRatio));
+      const storefrontReduction = Math.min(pendingStorefrontResolutions, resolvedCount - platformReduction);
+      
+      pendingPlatformResolutions = Math.max(0, pendingPlatformResolutions - platformReduction);
+      pendingStorefrontResolutions = Math.max(0, pendingStorefrontResolutions - storefrontReduction);
+    }
     
-    console.log('📊 [PAGE] New pendingPlatformResolutions after update:', pendingPlatformResolutions);
+    console.log('📊 [PAGE] New pending counts after update:', {
+      platforms: pendingPlatformResolutions,
+      storefronts: pendingStorefrontResolutions
+    });
     
     // If all resolutions are complete, refresh the data
-    if (pendingPlatformResolutions === 0) {
+    if (pendingPlatformResolutions === 0 && pendingStorefrontResolutions === 0) {
       console.log('🔄 [PAGE] All resolutions complete, refreshing data in 1 second');
       setTimeout(async () => {
         await loadDarkadiaGames();
@@ -537,11 +558,13 @@
     }
   }
 
-  // Debug platform resolution button visibility
+  // Debug platform storefront button visibility
   $effect(() => {
-    console.log('🎯 [PAGE] Platform resolution button visibility check:', {
-      pendingCount: pendingPlatformResolutions,
-      shouldShow: pendingPlatformResolutions > 0
+    console.log('🎯 [PAGE] Platform storefront button visibility check:', {
+      platformsPending: pendingPlatformResolutions,
+      storefrontsPending: pendingStorefrontResolutions,
+      totalPending: pendingPlatformResolutions + pendingStorefrontResolutions,
+      shouldShow: (pendingPlatformResolutions + pendingStorefrontResolutions) > 0
     });
   });
 
@@ -586,13 +609,20 @@
       } else {
         console.log('🎮 [DARKADIA-PAGE] Games found, showing appropriate tab');
         
-        // Check for pending platform resolutions
+        // Check for pending platform and storefront resolutions
         try {
-          const resolutions = await platforms.getPendingResolutions(1, 1);
-          pendingPlatformResolutions = resolutions.total;
-          console.log(`🔗 [DARKADIA-PAGE] Found ${pendingPlatformResolutions} pending platform resolutions`);
+          const [platformResolutions, storefrontResolutions] = await Promise.all([
+            platforms.getPendingResolutions(1, 1),
+            platforms.getPendingStorefrontResolutions(1, 1)
+          ]);
+          pendingPlatformResolutions = platformResolutions.total;
+          pendingStorefrontResolutions = storefrontResolutions.total;
+          console.log(`🔗 [DARKADIA-PAGE] Found pending resolutions:`, {
+            platforms: pendingPlatformResolutions,
+            storefronts: pendingStorefrontResolutions
+          });
         } catch (error) {
-          console.warn('Failed to check for pending platform resolutions on init:', error);
+          console.warn('Failed to check for pending platform/storefront resolutions on init:', error);
         }
       }
     } catch (error) {
@@ -626,19 +656,6 @@
     }
   }
 
-  // Resolution summary handlers
-  function handleOpenResolutionSummary() {
-    showResolutionSummaryModal = true;
-  }
-
-  function handleCloseResolutionSummary() {
-    showResolutionSummaryModal = false;
-  }
-
-  async function handleMappingsUpdated() {
-    // Refresh game data after mappings are updated
-    await loadDarkadiaGames();
-  }
 </script>
 
 <svelte:head>
@@ -717,30 +734,30 @@
               </button>
             {/if}
             
-            {#if pendingPlatformResolutions > 0}
+            {#if (pendingPlatformResolutions + pendingStorefrontResolutions) > 0}
               <button
-                onclick={handleOpenPlatformResolution}
+                onclick={handleOpenPlatformStorefront}
                 class="btn-secondary"
-                title="Resolve unknown platforms from CSV import"
+                title="Resolve platforms and storefronts from CSV import"
               >
                 <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
-                Resolve Platforms ({pendingPlatformResolutions})
+                Platforms and Storefronts ({pendingPlatformResolutions + pendingStorefrontResolutions})
+              </button>
+            {:else}
+              <!-- Show button for reviewing mappings when no pending resolutions -->
+              <button
+                onclick={handleOpenPlatformStorefront}
+                class="btn-secondary"
+                title="Review platform and storefront mappings"
+              >
+                <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                Platforms and Storefronts
               </button>
             {/if}
-
-            <!-- Resolution Summary Button -->
-            <button
-              onclick={handleOpenResolutionSummary}
-              class="btn-secondary"
-              title="Review platform and storefront mappings"
-            >
-              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-              </svg>
-              Review Mappings
-            </button>
 
             <!-- Reset Button -->
             <button
@@ -853,7 +870,7 @@
             </div>
           </div>
 
-          {#if pendingPlatformResolutions > 0}
+          {#if (pendingPlatformResolutions + pendingStorefrontResolutions) > 0}
             <div class="bg-white overflow-hidden shadow rounded-lg">
               <div class="p-5">
                 <div class="flex items-center">
@@ -862,15 +879,20 @@
                   </div>
                   <div class="ml-5 w-0 flex-1">
                     <dl>
-                      <dt class="text-sm font-medium text-gray-500 truncate">Platform Issues</dt>
-                      <dd class="text-lg font-medium text-gray-900">{pendingPlatformResolutions}</dd>
+                      <dt class="text-sm font-medium text-gray-500 truncate">Resolution Needed</dt>
+                      <dd class="text-lg font-medium text-gray-900">
+                        {pendingPlatformResolutions + pendingStorefrontResolutions}
+                        <div class="text-xs text-gray-500 mt-1">
+                          {pendingPlatformResolutions} platforms, {pendingStorefrontResolutions} storefronts
+                        </div>
+                      </dd>
                     </dl>
                   </div>
                 </div>
               </div>
               <div class="bg-yellow-50 px-5 py-3">
                 <button
-                  onclick={handleOpenPlatformResolution}
+                  onclick={handleOpenPlatformStorefront}
                   class="text-xs font-medium text-yellow-800 hover:text-yellow-900 underline"
                 >
                   Resolve Now →
@@ -1074,21 +1096,24 @@
                       {/if}
                     </button>
                     
-                    <!-- Platform Resolution Button -->
-                    {#if pendingPlatformResolutions > 0}
+                    <!-- Platform and Storefront Resolution Button -->
+                    {#if (pendingPlatformResolutions + pendingStorefrontResolutions) > 0}
                       <button
                         onclick={() => {
-                          console.log('🎯 [PAGE] Platform resolution button clicked. Current count:', pendingPlatformResolutions);
-                          handleOpenPlatformResolution();
+                          console.log('🎯 [PAGE] Platform storefront button clicked. Current counts:', {
+                            platforms: pendingPlatformResolutions,
+                            storefronts: pendingStorefrontResolutions
+                          });
+                          handleOpenPlatformStorefront();
                         }}
                         class="btn-secondary text-purple-600 hover:text-purple-700 border-purple-300 hover:border-purple-400"
                       >
                         <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                         </svg>
-                        Resolve Platforms
+                        Platforms and Storefronts
                         <span class="ml-2 bg-purple-100 text-purple-600 py-0.5 px-2 rounded-full text-xs font-medium">
-                          {pendingPlatformResolutions}
+                          {pendingPlatformResolutions + pendingStorefrontResolutions}
                         </span>
                       </button>
                     {/if}
@@ -1290,18 +1315,11 @@
   importJob={darkadia.value.currentImportJob}
 />
 
-<!-- Resolution Summary Modal -->
-<ResolutionSummaryModal
-  show={showResolutionSummaryModal}
-  onClose={handleCloseResolutionSummary}
-  onMappingsUpdated={handleMappingsUpdated}
-/>
-
-<!-- Platform Resolution Modal -->
-<PlatformResolutionModal
-  isOpen={showPlatformResolutionModal}
-  onClose={handleClosePlatformResolution}
-  onResolutionsComplete={handlePlatformResolutionsComplete}
+<!-- Platform and Storefront Resolution Modal -->
+<PlatformStorefrontModal
+  isOpen={showPlatformStorefrontModal}
+  onClose={handleClosePlatformStorefront}
+  onResolutionsComplete={handlePlatformStorefrontResolutionsComplete}
 />
 
 <!-- Reset Confirmation Modal -->

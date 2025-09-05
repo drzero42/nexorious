@@ -1549,6 +1549,7 @@ async def get_resolution_summary(
             raise
         
         # Get platform mappings - use resolved_platform_id for import-phase records
+        # Only include platforms that are successfully resolved (not requiring resolution)
         try:
             logger.info(f"🔍 [DEBUG] Building platform query...")
             platform_query = (
@@ -1560,7 +1561,8 @@ async def get_resolution_summary(
                 .outerjoin(Platform, DarkadiaImport.resolved_platform_id == Platform.id)
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.original_platform_name.is_not(None)
+                    DarkadiaImport.original_platform_name.is_not(None),
+                    DarkadiaImport.resolved_platform_id.is_not(None)  # Only include resolved platforms
                 )
                 .group_by(DarkadiaImport.original_platform_name, Platform.name)
             )
@@ -1583,6 +1585,7 @@ async def get_resolution_summary(
             logger.info(f"🔍 [DEBUG] Platform result {i}: original='{result.original_platform_name}', mapped='{result.platform_name}', count={result.game_count}")
         
         # Get storefront mappings
+        # Only include storefronts that are successfully resolved (not requiring resolution)
         storefront_query = (
             select(
                 DarkadiaImport.original_storefront_name,
@@ -1592,7 +1595,9 @@ async def get_resolution_summary(
             .outerjoin(Storefront, DarkadiaImport.resolved_storefront_id == Storefront.id)
             .where(
                 DarkadiaImport.user_id == current_user.id,
-                DarkadiaImport.original_storefront_name.is_not(None)
+                DarkadiaImport.original_storefront_name.is_not(None),
+                DarkadiaImport.requires_storefront_resolution.is_(False),  # Exclude storefronts requiring resolution
+                DarkadiaImport.resolved_storefront_id.is_not(None)  # Only include actually resolved storefronts
             )
             .group_by(DarkadiaImport.original_storefront_name, Storefront.name)
         )
@@ -1604,25 +1609,23 @@ async def get_resolution_summary(
         for i, result in enumerate(storefront_results):
             logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{result.original_storefront_name}', mapped='{result.storefront_name}', count={result.game_count}")
         
-        # Process platform mappings - show ALL entries, but use proper mapped values
+        # Process platform mappings - only successfully resolved platforms
         platforms = []
         for result in platform_results:
-            mapped_value = result.platform_name or "Unmapped"
             platform_entry = {
                 "original": result.original_platform_name,
-                "mapped": mapped_value,  # Show "Unmapped" instead of original name
+                "mapped": result.platform_name,  # Will always have a value since we filtered for resolved platforms
                 "game_count": result.game_count
             }
             platforms.append(platform_entry)
             logger.info(f"🔍 [DEBUG] Processed platform: {platform_entry}")
         
-        # Process storefront mappings - show ALL entries, but use proper mapped values  
+        # Process storefront mappings - only successfully resolved storefronts
         storefronts = []
         for result in storefront_results:
-            mapped_value = result.storefront_name or "Unmapped"
             storefront_entry = {
                 "original": result.original_storefront_name,
-                "mapped": mapped_value,  # Show "Unmapped" instead of original name
+                "mapped": result.storefront_name,  # Will always have a value since we filtered out unresolved storefronts
                 "game_count": result.game_count
             }
             storefronts.append(storefront_entry)

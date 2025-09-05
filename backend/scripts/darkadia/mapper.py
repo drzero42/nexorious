@@ -247,6 +247,14 @@ class DarkadiaDataMapper:
         
         nexorious_storefront = self._map_storefront_name(storefront_to_map, nexorious_platform)
         
+        # Track if this storefront was unknown for resolution logic
+        storefront_was_unknown = nexorious_storefront is None
+        
+        # If storefront mapping returns None (unknown), use platform default for the data structure
+        # The resolution logic will handle the unknown storefront based on the original name
+        if nexorious_storefront is None:
+            nexorious_storefront = self.PLATFORM_DEFAULT_STOREFRONTS.get(nexorious_platform, 'Physical')
+        
         # Determine if this is a physical copy
         media = platform_info.get('media', '').strip().lower()
         is_physical = media == 'physical'
@@ -259,6 +267,7 @@ class DarkadiaDataMapper:
             'metadata': {
                 'original_platform': darkadia_platform,
                 'original_storefront': storefront_to_map,
+                'storefront_was_unknown': storefront_was_unknown,
                 'media_info': platform_info.get('media', ''),
                 'label': platform_info.get('label', ''),
                 'release': platform_info.get('release', ''),
@@ -306,7 +315,7 @@ class DarkadiaDataMapper:
         
         return None
     
-    def _map_storefront_name(self, darkadia_storefront: str, platform_name: str) -> str:
+    def _map_storefront_name(self, darkadia_storefront: str, platform_name: str) -> Optional[str]:
         """Map Darkadia storefront name to Nexorious storefront name."""
         
         if not darkadia_storefront or darkadia_storefront == 'nan':
@@ -343,13 +352,13 @@ class DarkadiaDataMapper:
         elif 'physical' in darkadia_lower:
             return 'Physical'
         
-        # Unknown storefront - record it and use default
+        # Unknown storefront - record it and return None for resolution workflow
         self.unknown_storefronts.add(darkadia_storefront)
         if self.verbose:
             console.print(f"[yellow]Unknown storefront: {darkadia_storefront}[/yellow]")
         
-        # Use default storefront for platform
-        return self.PLATFORM_DEFAULT_STOREFRONTS.get(platform_name, 'Physical')
+        # Return None to trigger pending resolution instead of auto-mapping to default
+        return None
     
     def _clean_string(self, value: Any) -> str:
         """Clean and normalize string values."""
