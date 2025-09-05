@@ -262,6 +262,9 @@ export interface DarkadiaBatchSession {
   processedItems: number;
   successfulItems: number;
   failedItems: number;
+  remainingItems: number;
+  progressPercentage: number;
+  isProcessing: boolean;
   errors: string[];
 }
 
@@ -271,4 +274,17 @@ export interface DarkadiaStats {
   matchedCount: number;
   ignoredCount: number;
   syncedCount: number;
+}
+
+export interface DarkadiaImportJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  total_items: number;
+  processed_items: number;
+  successful_items: number;
+  failed_items: number;
+  error_message?: string | undefined;
+  started_at?: Date | undefined;
+  completed_at?: Date | undefined;
 }

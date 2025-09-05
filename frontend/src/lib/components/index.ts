@@ -19,6 +19,7 @@ export { default as StarRating } from './StarRating.svelte';
 export { default as SteamGameCard } from './SteamGameCard.svelte';
 export { default as SteamGamesTable } from './SteamGamesTable.svelte';
 export { default as BatchProgressModal } from './BatchProgressModal.svelte';
+export { default as ImportProgressModal } from './ImportProgressModal.svelte';
 
 // Generic Import components
 export { default as ImportGameCard } from './ImportGameCard.svelte';

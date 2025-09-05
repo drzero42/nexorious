@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, PlatformResolutionModal, ResolutionSummaryModal } from '$lib/components';
+  import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, ImportProgressModal, PlatformResolutionModal, ResolutionSummaryModal } from '$lib/components';
   import { darkadia, ui, auth } from '$lib/stores';
   import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
@@ -35,6 +35,10 @@
   let batchProcessingActive = $state(false);
   let processingTimeout: NodeJS.Timeout | null = $state(null);
   let isCancelling = $state(false);
+
+  // Import progress modal state
+  let showImportModal = $state(false);
+  let importCancelling = $state(false);
 
   // Platform resolution state
   let showPlatformResolutionModal = $state(false);
@@ -460,6 +464,9 @@
     console.log('Upload completed:', result);
     ui.showSuccess(`Successfully uploaded ${result.total_games} games from your Darkadia CSV`);
     
+    // Show import progress modal since import starts automatically after upload
+    showImportModal = true;
+    
     // Check for pending platform resolutions (but don't auto-show modal)
     try {
       const resolutions = await platforms.getPendingResolutions(1, 1);
@@ -478,6 +485,26 @@
   function handleUploadError(error: string) {
     console.error('Upload error:', error);
     ui.showError(`Upload failed: ${error}`);
+  }
+
+  // Import progress modal handlers
+  function handleImportModalClose() {
+    showImportModal = false;
+    importCancelling = false;
+    darkadia.clearImportJob();
+  }
+
+  async function handleImportCancel() {
+    if (!darkadia.value.currentImportJob?.id) return;
+    
+    importCancelling = true;
+    
+    try {
+      await darkadia.cancelImportJob(darkadia.value.currentImportJob.id);
+    } catch (error) {
+      console.error('Failed to cancel import:', error);
+      importCancelling = false;
+    }
   }
 
   // Platform resolution handlers
@@ -1252,6 +1279,15 @@
   onCancel={handleBatchCancel}
   isCancelling={isCancelling}
   store="darkadia"
+/>
+
+<!-- Import Progress Modal -->
+<ImportProgressModal
+  isOpen={showImportModal}
+  onClose={handleImportModalClose}
+  onCancel={handleImportCancel}
+  isCancelling={importCancelling}
+  importJob={darkadia.value.currentImportJob}
 />
 
 <!-- Resolution Summary Modal -->

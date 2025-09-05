@@ -18,7 +18,8 @@ import type {
   DarkadiaGamesBulkUnmatchResponse,
   DarkadiaResolutionSummaryResponse,
   DarkadiaUpdateMappingsRequest,
-  DarkadiaUpdateMappingsResponse
+  DarkadiaUpdateMappingsResponse,
+  DarkadiaImportJob
 } from '$lib/types/darkadia';
 
 export type DarkadiaGameStatusFilter = 'unmatched' | 'matched' | 'ignored' | 'synced';
@@ -92,6 +93,9 @@ export interface DarkadiaState {
   activeBatchSession: DarkadiaBatchSession | null;
   isBatchProcessing: boolean;
   
+  // Import job tracking
+  currentImportJob: DarkadiaImportJob | null;
+  
   // Error handling
   error: string | null;
   lastRefresh: Date | null;
@@ -138,6 +142,7 @@ const initialState: DarkadiaState = {
   stats: initialStats,
   activeBatchSession: null,
   isBatchProcessing: false,
+  currentImportJob: null,
   error: null,
   lastRefresh: null
 };
@@ -366,8 +371,24 @@ function createDarkadiaStore() {
         
         ui.showSuccess('CSV import started successfully');
         
-        // Start polling for job status if job_id is provided
+        // Initialize currentImportJob with pending state
         if (result.job_id) {
+          state = {
+            ...state,
+            currentImportJob: {
+              id: result.job_id,
+              status: 'pending',
+              progress: 0,
+              total_items: 0,
+              processed_items: 0,
+              successful_items: 0,
+              failed_items: 0,
+              error_message: undefined,
+              started_at: new Date(),
+              completed_at: undefined
+            }
+          };
+          
           this.pollImportJob(result.job_id);
         }
         
@@ -399,8 +420,21 @@ function createDarkadiaStore() {
         if (response.ok) {
           const job = await response.json();
           
+          // Update current import job state
           state = {
             ...state,
+            currentImportJob: {
+              id: job.id,
+              status: job.status,
+              progress: job.progress || 0,
+              total_items: job.total_items || 0,
+              processed_items: job.processed_items || 0,
+              successful_items: job.successful_items || 0,
+              failed_items: job.failed_items || 0,
+              error_message: job.error_message || undefined,
+              started_at: job.started_at ? new Date(job.started_at) : undefined,
+              completed_at: job.completed_at ? new Date(job.completed_at) : undefined
+            },
             uploadState: {
               ...state.uploadState,
               importProgress: job.progress || 0
@@ -432,9 +466,20 @@ function createDarkadiaStore() {
             };
             
             ui.showError(job.error_message || 'Import failed');
-          } else if (job.status === 'processing') {
+          } else if (job.status === 'processing' || job.status === 'pending') {
             // Continue polling
             setTimeout(() => this.pollImportJob(jobId), 2000);
+          } else if (job.status === 'cancelled') {
+            state = {
+              ...state,
+              uploadState: {
+                ...state.uploadState,
+                isImporting: false,
+                error: null
+              }
+            };
+            
+            ui.showInfo('CSV import was cancelled');
           }
         }
       } catch (error) {
@@ -442,6 +487,39 @@ function createDarkadiaStore() {
         // Continue polling despite errors
         setTimeout(() => this.pollImportJob(jobId), 5000);
       }
+    },
+
+    async cancelImportJob(jobId: string): Promise<void> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/jobs/${jobId}/cancel`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.cancelImportJob(jobId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to cancel import job');
+        }
+
+        ui.showInfo('Import job cancellation requested');
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to cancel import job';
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    clearImportJob(): void {
+      state = {
+        ...state,
+        currentImportJob: null
+      };
     },
 
     // Games listing and filtering
@@ -687,6 +765,9 @@ function createDarkadiaStore() {
             processedItems: 0,
             successfulItems: 0,
             failedItems: 0,
+            remainingItems: sessionData.total_items,
+            progressPercentage: 0,
+            isProcessing: true,
             errors: []
           },
           isBatchProcessing: true
@@ -738,6 +819,9 @@ function createDarkadiaStore() {
             processedItems: 0,
             successfulItems: 0,
             failedItems: 0,
+            remainingItems: sessionData.total_items,
+            progressPercentage: 0,
+            isProcessing: true,
             errors: []
           },
           isBatchProcessing: true
@@ -788,7 +872,9 @@ function createDarkadiaStore() {
               processedItems: batchData.processed_items,
               successfulItems: batchData.successful_items,
               failedItems: batchData.failed_items,
+              remainingItems: state.activeBatchSession.totalItems - batchData.processed_items,
               progressPercentage: batchData.progress_percentage,
+              isProcessing: !batchData.is_complete,
               errors: [...state.activeBatchSession.errors, ...batchData.batch_errors],
               isComplete: batchData.is_complete,
               status: batchData.status
@@ -934,6 +1020,7 @@ function createDarkadiaStore() {
           stats: initialStats,
           activeBatchSession: null,
           isBatchProcessing: false,
+          currentImportJob: null,
           error: null,
           lastRefresh: new Date()
         };
