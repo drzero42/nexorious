@@ -24,14 +24,12 @@
     id: string;
     name: string;
     display_name: string;
-    short_name: string;
   }
 
   interface Storefront {
     id: string;
     name: string;
     display_name: string;
-    short_name: string;
   }
 
   interface PlatformCopy {

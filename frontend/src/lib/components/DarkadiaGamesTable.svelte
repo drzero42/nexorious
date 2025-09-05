@@ -1,8 +1,8 @@
 <script lang="ts">
   import DarkadiaGameCard from './DarkadiaGameCard.svelte';
+  import DarkadiaManualMatchModal from './DarkadiaManualMatchModal.svelte';
   import { darkadia } from '$lib/stores/darkadia.svelte';
   import { auth } from '$lib/stores/auth.svelte';
-  import IGDBSearchWidget from './steam/IGDBSearchWidget.svelte';
   import type { DarkadiaGameResponse, DarkadiaPlatformInfo } from '$lib/types/darkadia';
   
   interface Props {
@@ -55,37 +55,42 @@
     isLoading = false
   }: Props = $props();
 
-  // State for IGDB matching
-  let matchingGameId = $state<string | null>(null);
-  let showMatchWidget = $state(false);
+  // State for manual matching
+  let matchingGame = $state<DarkadiaGameResponse | null>(null);
+  let showManualMatchModal = $state(false);
   let loadingGames = $state<Set<string>>(new Set());
 
   // Individual game action handlers
   async function handleMatch(game: DarkadiaGameResponse) {
-    matchingGameId = game.id;
-    showMatchWidget = true;
+    matchingGame = game;
+    showManualMatchModal = true;
   }
 
-  async function handleGameSelected(selectedGame: any) {
-    if (!matchingGameId || !auth.value.user?.id) return;
+  async function handleManualMatchComplete(result: { igdb_game?: any; platform_changes?: any[] }) {
+    if (!matchingGame || !auth.value.user?.id) return;
     
     try {
-      setGameLoading(matchingGameId, true);
-      await darkadia.matchGame(auth.value.user.id, matchingGameId, selectedGame.igdb_id);
+      setGameLoading(matchingGame.id, true);
+      await darkadia.manualMatchGame(
+        auth.value.user.id, 
+        matchingGame.id, 
+        result.igdb_game, 
+        result.platform_changes
+      );
       await onRefresh?.();
-      onGameAction?.(matchingGameId, 'matched');
+      onGameAction?.(matchingGame.id, 'manually_matched');
     } catch (error) {
       // Error handled in store
     } finally {
-      setGameLoading(matchingGameId, false);
-      showMatchWidget = false;
-      matchingGameId = null;
+      setGameLoading(matchingGame.id, false);
+      showManualMatchModal = false;
+      matchingGame = null;
     }
   }
 
-  function handleCancelMatch() {
-    showMatchWidget = false;
-    matchingGameId = null;
+  function handleCancelManualMatch() {
+    showManualMatchModal = false;
+    matchingGame = null;
   }
 
   async function handleSync(game: DarkadiaGameResponse) {
@@ -179,10 +184,6 @@
       return platformName;
     }
   }
-
-  const matchingGame = $derived(
-    matchingGameId ? games.find(g => g.id === matchingGameId) : null
-  );
 
   const gameCount = $derived(games.length);
   const hasGames = $derived(gameCount > 0);
@@ -511,38 +512,11 @@
   {/if}
 </div>
 
-<!-- IGDB Match Modal -->
-{#if showMatchWidget && matchingGame}
-  <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="match-modal-title">
-    <div class="max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-      <div class="bg-white rounded-lg shadow-xl">
-        <div class="p-4 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <h3 id="match-modal-title" class="text-lg font-medium text-gray-900">
-              Match "{matchingGame.name}" to IGDB
-            </h3>
-            <button
-              onclick={handleCancelMatch}
-              class="text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded"
-              aria-label="Close match dialog"
-            >
-              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <p class="text-sm text-gray-500 mt-1">
-            Search for the correct game in the IGDB database
-          </p>
-        </div>
-        <div class="p-4">
-          <IGDBSearchWidget
-            initialQuery={matchingGame.name}
-            onGameSelected={handleGameSelected}
-            onCancel={handleCancelMatch}
-          />
-        </div>
-      </div>
-    </div>
-  </div>
+<!-- Manual Match Modal -->
+{#if showManualMatchModal && matchingGame}
+  <DarkadiaManualMatchModal
+    game={matchingGame}
+    onComplete={handleManualMatchComplete}
+    onCancel={handleCancelManualMatch}
+  />
 {/if}

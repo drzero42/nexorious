@@ -983,6 +983,73 @@ async def unmatch_all_darkadia_games(
         )
 
 
+# Individual game platform management endpoints
+@router.get("/games/{game_id}/platforms")
+async def get_game_platform_options(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> Dict[str, Any]:
+    """Get available platform/storefront options for a specific game."""
+    try:
+        options = await darkadia_service.get_game_platform_options(current_user.id, game_id)
+        return options
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error getting platform options for game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get platform options"
+        )
+
+
+@router.post("/games/{game_id}/platforms")
+async def update_game_platform(
+    game_id: str,
+    request: Dict[str, Any],
+    current_user: Annotated[User, Depends(get_current_user)],
+    darkadia_service = Depends(get_darkadia_service)
+) -> Dict[str, Any]:
+    """Update platform/storefront for a specific game copy."""
+    try:
+        # Extract required fields from request
+        copy_identifier = request.get("copy_identifier")
+        if not copy_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="copy_identifier is required"
+            )
+            
+        platform_id = request.get("platform_id")
+        storefront_id = request.get("storefront_id")
+        
+        result = await darkadia_service.update_game_platform(
+            user_id=current_user.id,
+            game_id=game_id,
+            copy_identifier=copy_identifier,
+            platform_id=platform_id,
+            storefront_id=storefront_id
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error updating platform for game {game_id} for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update game platform"
+        )
+
+
 # Job status and tracking endpoints
 @router.get("/jobs", response_model=ImportJobsListResponse)
 async def list_darkadia_jobs(

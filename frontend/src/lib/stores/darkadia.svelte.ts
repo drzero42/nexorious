@@ -1138,6 +1138,97 @@ function createDarkadiaStore() {
         ui.showError(errorMessage);
         throw error;
       }
+    },
+
+    // Manual matching methods
+    async manualMatchGame(userId: string, gameId: string, igdbGame?: any, platformChanges?: any[]): Promise<DarkadiaGameResponse> {
+      try {
+        // Step 1: Update IGDB match if provided
+        if (igdbGame) {
+          await this.matchGame(userId, gameId, igdbGame.igdb_id);
+        }
+
+        // Step 2: Update platform configurations if provided
+        if (platformChanges && platformChanges.length > 0) {
+          for (const change of platformChanges) {
+            await this.updateGamePlatform(gameId, change.copy_identifier, change.platform_id, change.storefront_id);
+          }
+        }
+
+        // Refresh the games list to get updated data
+        await this.listDarkadiaGames();
+        
+        // Find and return the updated game
+        const game = state.games.find(g => g.id === gameId);
+        if (!game) {
+          throw new Error('Game not found after manual match');
+        }
+
+        ui.showSuccess('Manual match completed successfully');
+        return game;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to complete manual match';
+        ui.showError(errorMessage);
+        throw error;
+      }
+    },
+
+    async updateGamePlatform(gameId: string, copyIdentifier: string, platformId?: string, storefrontId?: string): Promise<void> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/games/${gameId}/platforms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          },
+          body: JSON.stringify({
+            copy_identifier: copyIdentifier,
+            platform_id: platformId || null,
+            storefront_id: storefrontId || null
+          })
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.updateGamePlatform(gameId, copyIdentifier, platformId, storefrontId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to update game platform');
+        }
+
+        const result = await response.json();
+        console.log('Platform update result:', result);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update game platform';
+        console.error('Error updating game platform:', error);
+        throw new Error(errorMessage);
+      }
+    },
+
+    async getGamePlatformOptions(gameId: string): Promise<any> {
+      try {
+        const response = await fetch(`${config.apiUrl}/import/sources/darkadia/games/${gameId}/platforms`, {
+          headers: {
+            'Authorization': `Bearer ${auth.value.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await auth.refreshAuth();
+            return this.getGamePlatformOptions(gameId);
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to get platform options');
+        }
+
+        return await response.json();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get platform options';
+        console.error('Error getting platform options:', error);
+        throw new Error(errorMessage);
+      }
     }
   };
 

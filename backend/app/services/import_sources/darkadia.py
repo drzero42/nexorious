@@ -1495,6 +1495,165 @@ class DarkadiaImportService(ImportSourceService):
             storefront_name=None
         )
     
+    async def update_game_platform(
+        self, 
+        user_id: str, 
+        game_id: str, 
+        copy_identifier: str,
+        platform_id: Optional[str] = None, 
+        storefront_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Update platform/storefront for a specific game copy."""
+        # Validate game exists and belongs to user
+        game = self.session.get(DarkadiaGame, game_id)
+        if not game or game.user_id != user_id:
+            raise ValueError(f"Game {game_id} not found")
+            
+        # Find the DarkadiaImport record for this game copy
+        darkadia_import = self.session.exec(
+            select(DarkadiaImport).where(
+                and_(
+                    DarkadiaImport.user_id == user_id,
+                    DarkadiaImport.game_name == game.game_name,
+                    DarkadiaImport.copy_identifier == copy_identifier
+                )
+            )
+        ).first()
+        
+        if not darkadia_import:
+            raise ValueError(f"Game copy {copy_identifier} not found for game {game_id}")
+            
+        # Validate platform exists if provided
+        platform = None
+        if platform_id:
+            platform = self.session.get(Platform, platform_id)
+            if not platform:
+                raise ValueError(f"Platform {platform_id} not found")
+                
+        # Validate storefront exists if provided  
+        storefront = None
+        if storefront_id:
+            storefront = self.session.get(Storefront, storefront_id)
+            if not storefront:
+                raise ValueError(f"Storefront {storefront_id} not found")
+                
+        # Update the DarkadiaImport record
+        if platform_id:
+            darkadia_import.resolved_platform_id = platform_id
+            darkadia_import.platform_resolved = True
+        else:
+            darkadia_import.resolved_platform_id = None
+            darkadia_import.platform_resolved = False
+            
+        if storefront_id:
+            darkadia_import.resolved_storefront_id = storefront_id
+            darkadia_import.storefront_resolved = True
+        else:
+            darkadia_import.resolved_storefront_id = None
+            darkadia_import.storefront_resolved = False
+            
+        darkadia_import.updated_at = datetime.now(timezone.utc)
+        
+        # If the game is already synced, also update the UserGamePlatform
+        if darkadia_import.user_game_platform_id:
+            user_game_platform = self.session.get(UserGamePlatform, darkadia_import.user_game_platform_id)
+            if user_game_platform:
+                if platform_id:
+                    user_game_platform.platform_id = platform_id
+                if storefront_id:
+                    user_game_platform.storefront_id = storefront_id
+                user_game_platform.updated_at = datetime.now(timezone.utc)
+                self.session.add(user_game_platform)
+                
+        self.session.add(darkadia_import)
+        self.session.commit()
+        self.session.refresh(darkadia_import)
+        
+        return {
+            "message": "Game platform updated successfully",
+            "game_id": game_id,
+            "copy_identifier": copy_identifier,
+            "platform_name": platform.name if platform else None,
+            "storefront_name": storefront.name if storefront else None,
+            "updated_at": darkadia_import.updated_at
+        }
+    
+    async def get_game_platform_options(self, user_id: str, game_id: str) -> Dict[str, Any]:
+        """Get available platform/storefront options for a game."""
+        # Validate game exists and belongs to user
+        game = self.session.get(DarkadiaGame, game_id)
+        if not game or game.user_id != user_id:
+            raise ValueError(f"Game {game_id} not found")
+            
+        # Get all active platforms
+        platforms = self.session.exec(
+            select(Platform).where(Platform.is_active == True).order_by(Platform.display_name)
+        ).all()
+        
+        # Get all active storefronts
+        storefronts = self.session.exec(
+            select(Storefront).where(Storefront.is_active == True).order_by(Storefront.display_name)
+        ).all()
+        
+        # Get current DarkadiaImport records for this game
+        imports = self.session.exec(
+            select(DarkadiaImport).where(
+                and_(
+                    DarkadiaImport.user_id == user_id,
+                    DarkadiaImport.game_name == game.game_name
+                )
+            )
+        ).all()
+        
+        current_platforms = []
+        for imp in imports:
+            platform_info = {
+                "copy_identifier": imp.copy_identifier,
+                "original_platform_name": imp.original_platform_name,
+                "original_storefront_name": imp.original_storefront_name,
+                "resolved_platform_id": imp.resolved_platform_id,
+                "resolved_storefront_id": imp.resolved_storefront_id,
+                "platform_resolved": imp.platform_resolved,
+                "storefront_resolved": imp.storefront_resolved
+            }
+            
+            # Add resolved names if available
+            if imp.resolved_platform_id:
+                platform = self.session.get(Platform, imp.resolved_platform_id)
+                if platform:
+                    platform_info["resolved_platform_name"] = platform.display_name
+                    
+            if imp.resolved_storefront_id:
+                storefront = self.session.get(Storefront, imp.resolved_storefront_id)
+                if storefront:
+                    platform_info["resolved_storefront_name"] = storefront.display_name
+                    
+            current_platforms.append(platform_info)
+        
+        return {
+            "game": {
+                "id": game.id,
+                "name": game.game_name,
+                "igdb_id": game.igdb_id,
+                "igdb_title": game.igdb_title
+            },
+            "available_platforms": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "display_name": p.display_name
+                } for p in platforms
+            ],
+            "available_storefronts": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "display_name": s.display_name
+                } for s in storefronts
+            ],
+            "current_platforms": current_platforms
+        }
+    
     async def auto_match_game(self, user_id: str, game_id: str) -> MatchResult:
         """Automatically match single game to IGDB."""
         game = self.session.get(DarkadiaGame, game_id)
