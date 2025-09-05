@@ -1326,9 +1326,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(DarkadiaGame.igdb_id is None)
+            query = query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
         elif status_filter == "matched":
-            query = query.where(DarkadiaGame.igdb_id is not None)
+            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
         elif status_filter == "ignored":
             query = query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1346,9 +1346,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply the same filtering as main query
         if status_filter == "unmatched":
-            count_query = count_query.where(DarkadiaGame.igdb_id is None)
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
         elif status_filter == "matched":
-            count_query = count_query.where(DarkadiaGame.igdb_id is not None)
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
         elif status_filter == "ignored":
             count_query = count_query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
