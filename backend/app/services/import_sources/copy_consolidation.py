@@ -170,10 +170,9 @@ class CopyConsolidationProcessor:
             copy_data_list = self._extract_copy_data(row, csv_row_number)
             copies.extend(copy_data_list)
         
-        # If no real copies were found, create fallback copies from Platforms field
-        if not any(copy.is_real_copy for copy in copies):
-            fallback_copies = self._create_fallback_copies(rows[0])  # Use first row for fallback
-            copies.extend(fallback_copies)
+        # Enhanced platform processing: Handle both real copies and uncovered platforms from Platforms field
+        additional_platform_copies = self._create_additional_platform_copies(copies, rows[0])
+        copies.extend(additional_platform_copies)
         
         return ConsolidatedGame(
             name=game_name,
@@ -400,6 +399,158 @@ class CopyConsolidationProcessor:
         
         return fallback_copies
     
+    def _create_additional_platform_copies(self, existing_copies: List[CopyData], row: Dict[str, Any]) -> List[CopyData]:
+        """
+        Create additional platform copies for uncovered platforms from the general Platforms field.
+        
+        This implements a hybrid approach:
+        1. If no real copies exist, creates fallback copies from all platforms in Platforms field
+        2. If real copies exist, only creates copies for platforms NOT covered by existing copies
+        
+        Args:
+            existing_copies: List of already processed copies
+            row: CSV row dictionary containing Platforms field
+            
+        Returns:
+            List of additional CopyData objects for uncovered platforms
+        """
+        # Get platforms from the general Platforms field
+        platforms_field = safe_extract_string(row.get('Platforms'))
+        if not platforms_field:
+            return []
+        
+        # Parse comma-separated platforms
+        general_platforms = [safe_extract_string(p) for p in platforms_field.split(',') if safe_extract_string(p)]
+        if not general_platforms:
+            return []
+        
+        # Check if we have any real copies
+        real_copies = [copy for copy in existing_copies if copy.is_real_copy]
+        
+        # If no real copies exist, create fallback copies from all general platforms
+        if not real_copies:
+            logger.debug(f"No real copies found for {safe_extract_string(row.get('Name'), 'Unknown Game')}, creating fallback copies from all platforms")
+            return self._create_fallback_copies_from_platforms(general_platforms, row)
+        
+        # If real copies exist, find uncovered platforms
+        covered_platforms = self._get_covered_platforms(real_copies)
+        uncovered_platforms = self._get_uncovered_platforms(general_platforms, covered_platforms)
+        
+        if uncovered_platforms:
+            logger.debug(f"Found {len(uncovered_platforms)} uncovered platforms for {safe_extract_string(row.get('Name'), 'Unknown Game')}: {uncovered_platforms}")
+            return self._create_fallback_copies_from_platforms(uncovered_platforms, row)
+        
+        return []
+    
+    def _get_covered_platforms(self, real_copies: List[CopyData]) -> List[str]:
+        """
+        Get list of normalized platform names that are already covered by real copies.
+        
+        Args:
+            real_copies: List of real copy data objects
+            
+        Returns:
+            List of normalized platform names already covered
+        """
+        covered_platforms = []
+        
+        for copy in real_copies:
+            if copy.platform:
+                # Normalize the platform name for comparison
+                normalized = self._normalize_platform_for_comparison(copy.platform)
+                if normalized:
+                    covered_platforms.append(normalized)
+        
+        return covered_platforms
+    
+    def _get_uncovered_platforms(self, general_platforms: List[str], covered_platforms: List[str]) -> List[str]:
+        """
+        Find platforms from the general Platforms field that are not covered by existing copies.
+        
+        Args:
+            general_platforms: Platform names from the Platforms field
+            covered_platforms: Normalized platform names already covered by copies
+            
+        Returns:
+            List of platform names that need additional copies
+        """
+        uncovered_platforms = []
+        
+        for platform in general_platforms:
+            normalized = self._normalize_platform_for_comparison(platform)
+            if normalized and normalized not in covered_platforms:
+                uncovered_platforms.append(platform)
+        
+        return uncovered_platforms
+    
+    def _normalize_platform_for_comparison(self, platform_name: str) -> str:
+        """
+        Normalize platform name for comparison purposes.
+        
+        This uses similar logic to the import service's normalization but focuses on
+        consistent comparison rather than database storage format.
+        
+        Args:
+            platform_name: Original platform name
+            
+        Returns:
+            Normalized platform name for comparison
+        """
+        if not platform_name:
+            return ""
+        
+        # Convert to lowercase and remove common variations for comparison
+        normalized = platform_name.lower().strip()
+        
+        # Handle common platform name variations
+        platform_mappings = {
+            'pc': 'pc',
+            'pc (windows)': 'pc', 
+            'windows': 'pc',
+            'playstation 4': 'playstation-4',
+            'playstation 5': 'playstation-5',  
+            'ps4': 'playstation-4',
+            'ps5': 'playstation-5',
+            'xbox one': 'xbox-one',
+            'xbox series x/s': 'xbox-series',
+            'nintendo switch': 'nintendo-switch',
+            'switch': 'nintendo-switch',
+        }
+        
+        return platform_mappings.get(normalized, normalized.replace(' ', '-').replace('(', '').replace(')', ''))
+    
+    def _create_fallback_copies_from_platforms(self, platform_names: List[str], row: Dict[str, Any]) -> List[CopyData]:
+        """
+        Create fallback copies from a list of platform names.
+        
+        Args:
+            platform_names: List of platform names to create copies for
+            row: CSV row dictionary for metadata
+            
+        Returns:
+            List of CopyData objects for the platforms
+        """
+        fallback_copies = []
+        csv_row_number = row.get('_csv_row_number', 0)
+        
+        for i, platform_name in enumerate(platform_names):
+            copy_identifier = f"fallback:{platform_name}"
+            
+            fallback_copy = CopyData(
+                platform=platform_name,
+                storefront=None,
+                storefront_other=None,
+                media="Digital",  # Assume digital for fallback
+                copy_identifier=copy_identifier,
+                csv_row_number=csv_row_number,
+                is_real_copy=False,
+                requires_storefront_resolution=True  # Always true for fallback
+            )
+            
+            fallback_copies.append(fallback_copy)
+        
+        return fallback_copies
+
     def _generate_copy_identifier(self, platform: str, storefront: str, media: str) -> str:
         """
         Generate a unique identifier for a copy.

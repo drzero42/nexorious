@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .user import User
     from .user_game import UserGame, UserGamePlatform
-    from .platform import Storefront
+    from .platform import Platform, Storefront
 
 
 class DarkadiaImport(SQLModel, table=True):
@@ -66,6 +66,7 @@ class DarkadiaImport(SQLModel, table=True):
     fallback_platform_name: Optional[str] = Field(default=None, max_length=200, description="From generic Platforms field when no copy data")
     platform_resolved: bool = Field(default=False, index=True)
     storefront_resolved: bool = Field(default=False, index=True)
+    resolved_platform_id: Optional[str] = Field(default=None, foreign_key="platforms.id", description="Resolved platform ID")
     resolved_storefront_id: Optional[str] = Field(default=None, foreign_key="storefronts.id", description="Resolved storefront ID")
     requires_storefront_resolution: bool = Field(default=False, description="Copy has platform but no storefront")
     platform_resolution_data_json: str = Field(
@@ -82,6 +83,7 @@ class DarkadiaImport(SQLModel, table=True):
     user: "User" = Relationship(back_populates="darkadia_imports")
     user_game: "UserGame" = Relationship(back_populates="darkadia_imports")
     user_game_platform: "UserGamePlatform" = Relationship()
+    resolved_platform: Optional["Platform"] = Relationship()
     resolved_storefront: Optional["Storefront"] = Relationship()
     
     # Unique constraint per CSV row and copy (allows multiple copies per CSV row)

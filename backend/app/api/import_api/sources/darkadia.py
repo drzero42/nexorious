@@ -3,8 +3,8 @@ Darkadia CSV import endpoints using the new import framework.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
-from sqlmodel import Session
-from typing import Annotated, Optional, Dict, Any
+from sqlmodel import Session, select, and_, func
+from typing import Annotated, Optional, Dict, Any, List
 import logging
 import json
 from pathlib import Path
@@ -14,6 +14,9 @@ from ....core.database import get_session
 from ....core.security import get_current_user
 from ....models.user import User
 from ....models.import_job import ImportJob, ImportStatus, ImportType, JobType
+from ....models.darkadia_game import DarkadiaGame
+from ....models.darkadia_import import DarkadiaImport
+from ....models.platform import Platform, Storefront
 from ....services.import_sources.darkadia import create_darkadia_import_service
 from ....services.platform_resolution import create_platform_resolution_service
 from ...schemas.import_schemas import (
@@ -40,7 +43,10 @@ from ...schemas.darkadia import (
     DarkadiaResetResponse,
     DarkadiaResolutionSummaryResponse,
     DarkadiaUpdateMappingsRequest,
-    DarkadiaUpdateMappingsResponse
+    DarkadiaUpdateMappingsResponse,
+    DarkadiaGameResponse,
+    DarkadiaGamesListResponse,
+    DarkadiaPlatformInfo
 )
 from ....api.schemas.platform import (
     PendingResolutionsListResponse,
@@ -471,52 +477,152 @@ async def trigger_darkadia_import(
         )
 
 
-@router.get("/games", response_model=ImportGamesList)
+@router.get("/games", response_model=DarkadiaGamesListResponse)
 async def list_darkadia_games(
     current_user: Annotated[User, Depends(get_current_user)],
-    darkadia_service = Depends(get_darkadia_service),
+    session: Annotated[Session, Depends(get_session)],
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1),
     status_filter: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None)
-) -> ImportGamesList:
-    """List imported games with filtering and pagination."""
+) -> DarkadiaGamesListResponse:
+    """List imported games with multi-platform support and filtering."""
     try:
-        games, total_count = await darkadia_service.list_games(
-            user_id=current_user.id,
-            offset=offset,
-            limit=limit,
-            status_filter=status_filter,
-            search=search
+        # Build base query for DarkadiaGame
+        base_query = select(DarkadiaGame).where(DarkadiaGame.user_id == current_user.id)
+        
+        # Apply status filtering
+        if status_filter:
+            if status_filter == "unmatched":
+                base_query = base_query.where(
+                    and_(DarkadiaGame.igdb_id.is_(None), DarkadiaGame.ignored == False)
+                )
+            elif status_filter == "matched":
+                base_query = base_query.where(
+                    and_(
+                        DarkadiaGame.igdb_id.is_not(None), 
+                        DarkadiaGame.game_id.is_(None), 
+                        DarkadiaGame.ignored == False
+                    )
+                )
+            elif status_filter == "synced":
+                base_query = base_query.where(DarkadiaGame.game_id.is_not(None))
+            elif status_filter == "ignored":
+                base_query = base_query.where(DarkadiaGame.ignored == True)
+        
+        # Apply search filtering
+        if search and search.strip():
+            search_term = f"%{search.strip()}%"
+            base_query = base_query.where(
+                DarkadiaGame.game_name.ilike(search_term)
+            )
+        
+        # Get total count for pagination
+        count_query = select(func.count(DarkadiaGame.id)).select_from(base_query.subquery())
+        total_count = session.exec(count_query).first() or 0
+        
+        # Apply pagination and get games
+        games_query = base_query.order_by(DarkadiaGame.created_at.desc()).offset(offset).limit(limit)
+        games = session.exec(games_query).all()
+        
+        # For each game, get associated platform/storefront data from DarkadiaImport
+        games_response = []
+        for game in games:
+            # Query for all imports associated with this game
+            imports_query = select(DarkadiaImport).where(
+                and_(
+                    DarkadiaImport.user_id == current_user.id,
+                    DarkadiaImport.game_name == game.game_name  # Games are linked by name
+                )
+            )
+            imports = session.exec(imports_query).all()
+            
+            # Aggregate platform information
+            platforms = []
+            primary_platform = None
+            
+            for imp in imports:
+                # Determine resolution status
+                platform_status = "pending"
+                storefront_status = None
+                
+                if imp.resolved_platform_id:
+                    platform_status = "resolved"
+                elif imp.platform_resolved:
+                    platform_status = "resolved" 
+                    
+                if imp.resolved_storefront_id:
+                    storefront_status = "resolved"
+                elif imp.storefront_resolved:
+                    storefront_status = "resolved"
+                elif imp.original_storefront_name:
+                    storefront_status = "pending"
+                
+                platform_info = DarkadiaPlatformInfo(
+                    original_platform_name=imp.original_platform_name or imp.fallback_platform_name,
+                    original_storefront_name=imp.original_storefront_name,
+                    resolved_platform_name=None,  # We'll populate this with actual platform names
+                    resolved_storefront_name=None,  # We'll populate this with actual storefront names
+                    platform_resolution_status=platform_status,
+                    storefront_resolution_status=storefront_status,
+                    copy_identifier=imp.copy_identifier
+                )
+                
+                # Get actual resolved names if available
+                if imp.resolved_platform_id:
+                    platform = session.get(Platform, imp.resolved_platform_id)
+                    if platform:
+                        platform_info.resolved_platform_name = platform.display_name
+                        
+                if imp.resolved_storefront_id:
+                    storefront = session.get(Storefront, imp.resolved_storefront_id)
+                    if storefront:
+                        platform_info.resolved_storefront_name = storefront.display_name
+                
+                platforms.append(platform_info)
+                
+                # Use first platform as primary for backward compatibility
+                if primary_platform is None:
+                    primary_platform = platform_info
+            
+            # If no imports found, create basic entry from game data
+            if not platforms:
+                platforms = [DarkadiaPlatformInfo(
+                    platform_resolution_status="pending",
+                    storefront_resolution_status=None
+                )]
+                primary_platform = platforms[0]
+            
+            # Create game response
+            game_response = DarkadiaGameResponse(
+                id=game.id,
+                external_id=game.external_id,
+                name=game.game_name,
+                igdb_id=game.igdb_id,
+                igdb_title=game.igdb_title,
+                game_id=game.game_id,
+                user_game_id=None,  # This would need to be populated if we had the relationship
+                ignored=game.ignored,
+                created_at=game.created_at,
+                updated_at=game.updated_at,
+                platforms=platforms,
+                # Legacy single platform fields for backward compatibility
+                platform_resolved=primary_platform.platform_resolution_status == "resolved" if primary_platform else None,
+                original_platform_name=primary_platform.original_platform_name if primary_platform else None,
+                platform_resolution_status=primary_platform.platform_resolution_status if primary_platform else None,
+                platform_name=primary_platform.resolved_platform_name if primary_platform else None,
+                original_storefront_name=primary_platform.original_storefront_name if primary_platform else None,
+                storefront_resolution_status=primary_platform.storefront_resolution_status if primary_platform else None,
+                storefront_name=primary_platform.resolved_storefront_name if primary_platform else None
+            )
+            
+            games_response.append(game_response)
+        
+        return DarkadiaGamesListResponse(
+            total=total_count,
+            games=games_response
         )
         
-        return ImportGamesList(
-            games=[
-                ImportGameResponse(
-                    id=game.id,
-                    external_id=game.external_id,
-                    name=game.name,
-                    igdb_id=game.igdb_id,
-                    igdb_title=game.igdb_title,
-                    game_id=game.game_id,
-                    user_game_id=game.user_game_id,
-                    ignored=game.ignored,
-                    created_at=game.created_at,
-                    updated_at=game.updated_at,
-                    platform_resolved=game.platform_resolved,
-                    original_platform_name=game.original_platform_name,
-                    platform_resolution_status=game.platform_resolution_status,
-                    platform_name=game.platform_name,
-                    original_storefront_name=game.original_storefront_name,
-                    storefront_resolution_status=game.storefront_resolution_status,
-                    storefront_name=game.storefront_name
-                )
-                for game in games
-            ],
-            total=total_count,
-            offset=offset,
-            limit=limit
-        )
     except Exception as e:
         logger.error(f"Error listing games for user {current_user.id}: {str(e)}")
         raise HTTPException(

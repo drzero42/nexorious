@@ -83,6 +83,92 @@ class DarkadiaImportService(ImportSourceService):
             self.session.rollback()
             raise
     
+    def _normalize_platform_name(self, platform_name: str) -> str:
+        """Normalize platform name from CSV to database format."""
+        # Platform mapping from CSV values to database platform names
+        platform_mappings = {
+            # Direct CSV platform names
+            'PC': 'pc-windows',
+            'Mac': 'mac',
+            'Linux': 'pc-linux',
+            'Android': 'android',
+            'PlayStation 4': 'playstation-4',
+            'PlayStation 5': 'playstation-5',
+            'PlayStation 3': 'playstation-3',
+            'PlayStation 2': 'playstation-2',
+            'PlayStation Network (PS3)': 'playstation-3',  # Map PS3 network to PS3
+            'PlayStation Network (Vita)': 'playstation-vita',  # May need to add this platform
+            'Nintendo Switch': 'nintendo-switch',
+            'Xbox 360': 'xbox-360',
+            'Xbox 360 Games Store': 'xbox-360',  # Map Xbox 360 store to Xbox 360 platform
+            'Xbox One': 'xbox-one',
+            'Wii': 'nintendo-wii',
+            'iOS': 'ios',
+            
+            # Also handle mapper output format if it still gets called
+            'PC (Windows)': 'pc-windows',
+            'PC (Linux)': 'pc-linux',
+            'Xbox Series X/S': 'xbox-series',
+            'Nintendo Wii': 'nintendo-wii',
+        }
+        return platform_mappings.get(platform_name, platform_name.lower().replace(' ', '-'))
+    
+    def _normalize_storefront_name(self, storefront_name: str) -> str:
+        """Normalize storefront name from CSV to database format."""
+        # Storefront mapping from CSV values to database storefront names
+        storefront_mappings = {
+            # Direct CSV storefront names
+            'Steam': 'steam',
+            'Epic': 'epic-games-store',
+            'Epic Game Store': 'epic-games-store',
+            'Epic Games Store': 'epic-games-store',
+            'Epic Gamestore': 'epic-games-store',
+            'GOG': 'gog',
+            'Sony Entertainment Network': 'playstation-store',
+            'Nintendo eShop': 'nintendo-eshop',
+            'Google Play': 'google-play-store',
+            'Humble Bundle': 'humble-bundle',
+            'Origin': 'origin-ea-app',
+            'Uplay': 'uplay',
+            'Ubisoft Club': 'uplay',
+            'GameStop': 'physical',  # Physical retail
+            'Gamestop': 'physical',
+            
+            # Also handle mapper output format if it still gets called
+            'PlayStation Store': 'playstation-store',
+            'Microsoft Store': 'microsoft-store',
+            'Itch.io': 'itch-io',
+            'Origin/EA App': 'origin-ea-app',
+            'Apple App Store': 'apple-app-store',
+            'Google Play Store': 'google-play-store',
+            'Physical': 'physical',
+            
+            # Smaller/unknown storefronts - map to physical for now
+            'Backer': 'physical',
+            'Bilka': 'physical',
+            'Coolshop': 'physical',
+            'Coolshop.dk': 'physical',
+            'Elgiganten': 'physical',
+            'Fanatical': 'physical',
+            'GameBillet': 'physical',
+            'Gamebillet': 'physical',
+            'GamersGate': 'physical',
+            'Gamesplanet': 'physical',
+            'Gamesplanet UK': 'physical',
+            'Green Man Gaming': 'physical',
+            'Indie Gala': 'physical',
+            'Kickstarter': 'physical',
+            'Nintendopusheren': 'physical',
+            'Powerplay': 'physical',
+            'Proshop': 'physical',
+            'Telltale.com': 'physical',
+            'WinGameStore': 'physical',
+            'cdon.com': 'physical',
+            'telltale.com': 'physical',
+            'uk.gamesplanet.com': 'physical',
+        }
+        return storefront_mappings.get(storefront_name, 'physical')  # Default to physical for unknown
+    
     async def get_config(self, user_id: str) -> ImportSourceConfig:
         """Get Darkadia configuration for user."""
         user = self.session.get(User, user_id)
@@ -658,12 +744,68 @@ class DarkadiaImportService(ImportSourceService):
                     'complete_notes': copy_data.complete_notes
                 }
                 
-                logger.debug(f"Processing copy '{copy_data.copy_identifier}' for game '{darkadia_game.game_name}'")
+                logger.info(f"🔧 [IMPORT DEBUG] Processing copy '{copy_data.copy_identifier}' for game '{darkadia_game.game_name}'")
+                logger.info(f"🔧 [IMPORT DEBUG] Copy platform: '{copy_data.platform}', storefront: '{copy_data.storefront or copy_data.storefront_other}'")
                 log_serialization_debug(copy_data_dict, f"copy_data for game '{darkadia_game.game_name}' copy '{copy_data.copy_identifier}'")
                 
                 # Additional debug: check the specific fields that might contain Timestamps
                 logger.debug(f"Copy purchase_date type: {type(copy_data.purchase_date)} = {copy_data.purchase_date}")
                 logger.debug(f"Copy release type: {type(copy_data.release)} = {copy_data.release}")
+                
+                # Perform platform resolution for this copy
+                platform_resolved = False
+                storefront_resolved = False
+                resolved_platform_id = None
+                resolved_storefront_id = None
+                
+                # Resolve platform
+                if copy_data.platform:
+                    logger.info(f"🔍 [RESOLUTION DEBUG] Processing platform - Original: '{copy_data.platform}'")
+                    
+                    # Special handling for Mac - override mapper's decision to map Mac to PC
+                    mapped_platform_name = copy_data.platform
+                    if copy_data.platform and copy_data.platform.lower() == 'mac':
+                        mapped_platform_name = 'Mac'  # Use direct Mac mapping
+                        logger.info(f"🔍 [RESOLUTION DEBUG] Mac override applied: '{mapped_platform_name}'")
+                    
+                    # Normalize platform name to database format
+                    normalized_platform_name = self._normalize_platform_name(mapped_platform_name)
+                    logger.info(f"🔍 [RESOLUTION DEBUG] Platform normalization: '{mapped_platform_name}' -> '{normalized_platform_name}'")
+                    
+                    # Look up the normalized platform in the database
+                    platform = self.session.exec(
+                        select(Platform).where(Platform.name == normalized_platform_name)
+                    ).first()
+                    if platform:
+                        resolved_platform_id = platform.id
+                        platform_resolved = True
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{normalized_platform_name}' -> {platform.id} ({platform.display_name})")
+                    else:
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{normalized_platform_name}'")
+                        # Let's see what platforms are available for debugging
+                        all_platforms = self.session.exec(select(Platform)).all()
+                        available_names = [p.name for p in all_platforms]
+                        logger.info(f"🔍 [RESOLUTION DEBUG] Available platforms: {available_names}")
+                
+                # Resolve storefront
+                storefront_name = copy_data.storefront or copy_data.storefront_other
+                if storefront_name:
+                    logger.info(f"🔍 [RESOLUTION DEBUG] Processing storefront - Original: '{storefront_name}'")
+                    
+                    # Normalize storefront name to database format
+                    normalized_storefront_name = self._normalize_storefront_name(storefront_name)
+                    logger.info(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{storefront_name}' -> '{normalized_storefront_name}'")
+                    
+                    # Look up the normalized storefront in the database
+                    storefront = self.session.exec(
+                        select(Storefront).where(Storefront.name == normalized_storefront_name)
+                    ).first()
+                    if storefront:
+                        resolved_storefront_id = storefront.id
+                        storefront_resolved = True
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                    else:
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
                 
                 # Create a DarkadiaImport record for each copy
                 darkadia_import = DarkadiaImport(
@@ -708,8 +850,10 @@ class DarkadiaImportService(ImportSourceService):
                     original_platform_name=copy_data.platform,
                     original_storefront_name=copy_data.storefront or copy_data.storefront_other,
                     fallback_platform_name=copy_data.platform if not copy_data.is_real_copy else None,
-                    platform_resolved=False,  # Will be resolved later
-                    storefront_resolved=False,  # Will be resolved later
+                    platform_resolved=platform_resolved,
+                    storefront_resolved=storefront_resolved,
+                    resolved_platform_id=resolved_platform_id,
+                    resolved_storefront_id=resolved_storefront_id,
                     requires_storefront_resolution=copy_data.requires_storefront_resolution,
                     
                     # Copy metadata
@@ -734,17 +878,17 @@ class DarkadiaImportService(ImportSourceService):
                 
                 # Set platform resolution data
                 resolution_data = {
-                    "status": "pending",
+                    "status": "resolved" if platform_resolved else "pending",
                     "original_name": copy_data.platform or "",
                     "is_fallback": not copy_data.is_real_copy,
                     "requires_storefront_resolution": copy_data.requires_storefront_resolution,
                     "copy_identifier": copy_data.copy_identifier,
                     "suggestions": [],
                     "storefront_suggestions": [],
-                    "resolved_platform_id": None,
-                    "resolved_storefront_id": None,
-                    "resolution_timestamp": None,
-                    "resolution_method": None,
+                    "resolved_platform_id": resolved_platform_id,
+                    "resolved_storefront_id": resolved_storefront_id,
+                    "resolution_timestamp": datetime.now(timezone.utc).isoformat() if platform_resolved else None,
+                    "resolution_method": "auto" if platform_resolved else None,
                     "user_notes": None
                 }
                 darkadia_import.set_platform_resolution_data(resolution_data)
@@ -764,14 +908,19 @@ class DarkadiaImportService(ImportSourceService):
     ) -> None:
         """Create DarkadiaImport records during import phase for platform resolution."""
         try:
+            logger.info(f"🔧 [IMPORT DEBUG] _create_darkadia_import_records_for_import called for game: {darkadia_game.game_name}")
+            logger.info(f"🔧 [IMPORT DEBUG] game_data keys: {list(game_data.keys())}")
+            
             # Get platform data from transformation metadata
             platforms_data = game_data.get('_platforms', [])
-            logger.debug(f"Processing {darkadia_game.game_name}: Found {len(platforms_data)} platform entries in _platforms metadata")
+            logger.info(f"🔧 [IMPORT DEBUG] Processing {darkadia_game.game_name}: Found {len(platforms_data)} platform entries in _platforms metadata")
+            logger.info(f"🔧 [IMPORT DEBUG] Platform data: {platforms_data}")
             
             if not platforms_data:
                 # No platform data - check if we have fallback platform info
                 csv_data = {k: v for k, v in game_data.items() if not k.startswith('_')}
                 platforms_field = csv_data.get('Platforms', '').strip()
+                logger.info(f"🔧 [IMPORT DEBUG] No _platforms data, checking fallback. Platforms field: '{platforms_field}'")
                 
                 if platforms_field:
                     # Create a single DarkadiaImport record for the fallback platform
@@ -846,22 +995,49 @@ class DarkadiaImportService(ImportSourceService):
             
             # Try to resolve platform
             if mapped_platform_name:
-                # Look up the mapped platform in the database
+                logger.debug(f"🔍 [RESOLUTION DEBUG] Processing platform - Original: '{original_platform_name}' -> Mapped: '{mapped_platform_name}'")
+                
+                # Special handling for Mac - override mapper's decision to map Mac to PC
+                if original_platform_name and original_platform_name.lower() == 'mac':
+                    mapped_platform_name = 'Mac'  # Use direct Mac mapping
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] Mac override applied: '{mapped_platform_name}'")
+                
+                # Normalize platform name to database format
+                normalized_platform_name = self._normalize_platform_name(mapped_platform_name)
+                logger.debug(f"🔍 [RESOLUTION DEBUG] Platform normalization: '{mapped_platform_name}' -> '{normalized_platform_name}'")
+                
+                # Look up the normalized platform in the database
                 platform = self.session.exec(
-                    select(Platform).where(Platform.name == mapped_platform_name)
+                    select(Platform).where(Platform.name == normalized_platform_name)
                 ).first()
                 if platform:
                     resolved_platform_id = platform.id
                     platform_resolved = True
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{normalized_platform_name}' -> {platform.id} ({platform.display_name})")
+                else:
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{normalized_platform_name}'")
+                    # Let's see what platforms are available for debugging
+                    all_platforms = self.session.exec(select(Platform)).all()
+                    available_names = [p.name for p in all_platforms]
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] Available platforms: {available_names}")
             
             # Try to resolve storefront
             if mapped_storefront_name:
-                # Look up the mapped storefront in the database
+                logger.debug(f"🔍 [RESOLUTION DEBUG] Processing storefront - Original: '{original_storefront_name}' -> Mapped: '{mapped_storefront_name}'")
+                
+                # Normalize storefront name to database format
+                normalized_storefront_name = self._normalize_storefront_name(mapped_storefront_name)
+                logger.debug(f"🔍 [RESOLUTION DEBUG] Storefront normalization: '{mapped_storefront_name}' -> '{normalized_storefront_name}'")
+                
+                # Look up the normalized storefront in the database
                 storefront = self.session.exec(
-                    select(Storefront).where(Storefront.name == mapped_storefront_name)
+                    select(Storefront).where(Storefront.name == normalized_storefront_name)
                 ).first()
                 if storefront:
                     resolved_storefront_id = storefront.id
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Storefront resolved: '{normalized_storefront_name}' -> {storefront.id} ({storefront.display_name})")
+                else:
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Storefront NOT FOUND: '{normalized_storefront_name}'")
             
             # Create the DarkadiaImport record
             darkadia_import = DarkadiaImport(
@@ -1324,7 +1500,7 @@ class DarkadiaImportService(ImportSourceService):
         try:
             # For now, implement a simple mock matching
             # TODO: Implement real IGDB integration
-            if len(game.game_name) > 3:  # Simple heuristic for demo
+            if len(game.game_name.strip()) > 0:  # Allow all non-empty game names
                 game.igdb_id = f"mock_{hash(game.game_name) % 10000}"
                 game.igdb_title = f"{game.game_name} (IGDB)"
                 game.updated_at = datetime.now(timezone.utc)

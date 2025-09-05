@@ -44,6 +44,15 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "default_storefront_name": "playstation-store"
     },
     {
+        "name": "playstation-vita",
+        "display_name": "PlayStation Vita",
+        "icon_url": "/static/logos/platforms/playstation-vita/playstation-vita-icon-light.svg",
+        "is_active": True,
+        "source": "official",
+        "version_added": "1.0.0",
+        "default_storefront_name": "playstation-store"
+    },
+    {
         "name": "xbox-series",
         "display_name": "Xbox Series X/S",
         "icon_url": "/static/logos/platforms/xbox-series/xbox-series-icon-light.svg",
@@ -137,6 +146,15 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "name": "pc-linux",
         "display_name": "PC (Linux)",
         "icon_url": "/static/logos/platforms/pc-linux/pc-linux-icon-light.svg",
+        "is_active": True,
+        "source": "official",
+        "version_added": "1.0.0",
+        "default_storefront_name": "steam"
+    },
+    {
+        "name": "mac",
+        "display_name": "Mac",
+        "icon_url": "/static/logos/platforms/mac/mac-icon-light.svg",
         "is_active": True,
         "source": "official",
         "version_added": "1.0.0",

@@ -77,6 +77,17 @@ class DarkadiaLibraryPreview(BaseModel):
     platform_analysis: Dict[str, Any] = Field(..., description="Platform analysis including resolution status")
 
 
+class DarkadiaPlatformInfo(BaseModel):
+    """Schema for individual platform/storefront combination."""
+    original_platform_name: Optional[str] = Field(None, description="Original platform name from CSV")
+    original_storefront_name: Optional[str] = Field(None, description="Original storefront name from CSV")
+    resolved_platform_name: Optional[str] = Field(None, description="Resolved platform name")
+    resolved_storefront_name: Optional[str] = Field(None, description="Resolved storefront name")
+    platform_resolution_status: str = Field(..., description="Platform resolution status: resolved, pending, ignored, conflict")
+    storefront_resolution_status: Optional[str] = Field(None, description="Storefront resolution status: resolved, pending, ignored, conflict")
+    copy_identifier: Optional[str] = Field(None, description="Copy identifier for this platform combination")
+
+
 class DarkadiaGameResponse(BaseModel):
     """Response schema for Darkadia game from database."""
     id: str = Field(..., description="Darkadia game UUID")
@@ -90,16 +101,17 @@ class DarkadiaGameResponse(BaseModel):
     created_at: datetime = Field(..., description="When the Darkadia game was imported")
     updated_at: datetime = Field(..., description="When the Darkadia game was last updated")
     
-    # Platform resolution fields
-    platform_resolved: Optional[bool] = Field(None, description="Whether platform has been resolved")
-    original_platform_name: Optional[str] = Field(None, description="Original platform name from CSV")
-    platform_resolution_status: Optional[str] = Field(None, description="Platform resolution status: resolved, pending, ignored, conflict")
-    platform_name: Optional[str] = Field(None, description="Resolved platform name")
+    # Multi-platform support
+    platforms: List[DarkadiaPlatformInfo] = Field(default=[], description="All platform/storefront combinations for this game")
     
-    # Storefront resolution fields  
-    original_storefront_name: Optional[str] = Field(None, description="Original storefront name from CSV")
-    storefront_resolution_status: Optional[str] = Field(None, description="Storefront resolution status: resolved, pending, ignored, conflict")
-    storefront_name: Optional[str] = Field(None, description="Resolved storefront name")
+    # Legacy single platform fields (for backward compatibility)
+    platform_resolved: Optional[bool] = Field(None, description="Whether primary platform has been resolved")
+    original_platform_name: Optional[str] = Field(None, description="Primary original platform name from CSV")
+    platform_resolution_status: Optional[str] = Field(None, description="Primary platform resolution status: resolved, pending, ignored, conflict")
+    platform_name: Optional[str] = Field(None, description="Primary resolved platform name")
+    original_storefront_name: Optional[str] = Field(None, description="Primary original storefront name from CSV")
+    storefront_resolution_status: Optional[str] = Field(None, description="Primary storefront resolution status: resolved, pending, ignored, conflict")
+    storefront_name: Optional[str] = Field(None, description="Primary resolved storefront name")
 
 
 class DarkadiaGamesListResponse(BaseModel):
