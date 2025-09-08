@@ -59,6 +59,148 @@ class PlatformResolutionService:
         
         return sanitized
     
+    # Minimal explicit mappings for cases where fuzzy matching fails
+    EXPLICIT_PLATFORM_MAPPINGS = {
+        # Short forms that are too different for fuzzy matching
+        'PC': 'PC (Windows)',
+        'PS3': 'PlayStation 3',
+        'PS4': 'PlayStation 4', 
+        'PS5': 'PlayStation 5',
+        
+        # Special cases with very different names
+        'PlayStation Network (PS3)': 'PlayStation 3',
+        'Xbox 360 Games Store': 'Xbox 360',
+    }
+    
+    # Minimal explicit storefront mappings
+    EXPLICIT_STOREFRONT_MAPPINGS = {
+        # Short forms and abbreviations  
+        'PSN': 'PlayStation Store',
+        'HB': 'Humble Bundle',
+        'Epic': 'Epic Games Store',
+        
+        # Special cases
+        'Other': 'Physical',
+        'Sony Entertainment Network': 'PlayStation Store',
+    }
+    
+    async def get_canonical_platform(self, platform_name: str) -> Optional[Platform]:
+        """
+        Get the canonical platform object for a given platform name using fuzzy matching and minimal explicit mappings.
+        
+        Args:
+            platform_name: Platform name from CSV or other source
+            
+        Returns:
+            Platform object if found, None if not found
+        """
+        if not platform_name:
+            return None
+        
+        # Sanitize the input
+        clean_name = self.sanitize_platform_name(platform_name)
+        if not clean_name:
+            return None
+        
+        # First try direct database lookup by display name (exact match)
+        platform = self.session.exec(
+            select(Platform).where(
+                Platform.display_name == clean_name,
+                Platform.is_active == True
+            )
+        ).first()
+        
+        if platform:
+            return platform
+        
+        # Try explicit mapping for known edge cases
+        explicit_mapping = self.EXPLICIT_PLATFORM_MAPPINGS.get(clean_name)
+        if explicit_mapping:
+            platform = self.session.exec(
+                select(Platform).where(
+                    Platform.display_name == explicit_mapping,
+                    Platform.is_active == True
+                )
+            ).first()
+            if platform:
+                return platform
+        
+        # Use fuzzy matching to find best match
+        suggestions = await self._get_platform_suggestions(
+            clean_name, 
+            min_confidence=0.8,  # High confidence for automatic resolution
+            max_suggestions=1
+        )
+        
+        if suggestions and len(suggestions) > 0:
+            best_match = suggestions[0]
+            # Get the platform by ID from the suggestion
+            platform = self.session.get(Platform, best_match.platform_id)
+            if platform and platform.is_active:
+                return platform
+        
+        # Platform not found
+        return None
+    
+    async def get_canonical_storefront(self, storefront_name: str, platform: Optional[Platform] = None) -> Optional[Storefront]:
+        """
+        Get the canonical storefront object for a given storefront name using fuzzy matching and minimal explicit mappings.
+        
+        Args:
+            storefront_name: Storefront name from CSV or other source
+            platform: Optional platform for context-specific resolution
+            
+        Returns:
+            Storefront object if found, None if not found
+        """
+        if not storefront_name:
+            return None
+        
+        # Sanitize the input
+        clean_name = self.sanitize_platform_name(storefront_name)
+        if not clean_name:
+            return None
+        
+        # First try direct database lookup by display name (exact match)
+        storefront = self.session.exec(
+            select(Storefront).where(
+                Storefront.display_name == clean_name,
+                Storefront.is_active == True
+            )
+        ).first()
+        
+        if storefront:
+            return storefront
+        
+        # Try explicit mapping for known edge cases
+        explicit_mapping = self.EXPLICIT_STOREFRONT_MAPPINGS.get(clean_name)
+        if explicit_mapping:
+            storefront = self.session.exec(
+                select(Storefront).where(
+                    Storefront.display_name == explicit_mapping,
+                    Storefront.is_active == True
+                )
+            ).first()
+            if storefront:
+                return storefront
+        
+        # Use fuzzy matching to find best match
+        suggestions = await self._get_storefront_suggestions(
+            clean_name,
+            min_confidence=0.8,  # High confidence for automatic resolution
+            max_suggestions=1
+        )
+        
+        if suggestions and len(suggestions) > 0:
+            best_match = suggestions[0]
+            # Get the storefront by ID from the suggestion
+            storefront = self.session.get(Storefront, best_match.storefront_id)
+            if storefront and storefront.is_active:
+                return storefront
+        
+        # Storefront not found
+        return None
+    
     async def suggest_platform_matches(
         self, 
         unknown_platform_name: str,

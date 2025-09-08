@@ -36,7 +36,6 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from scripts.darkadia.parser import DarkadiaCSVParser
-from scripts.darkadia.mapper import DarkadiaDataMapper
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +49,9 @@ class DarkadiaImportService(ImportSourceService):
         self.csv_sanitizer = CSVSanitizer()
         self.file_validator = SecureFileUploadValidator()
         self.csv_parser = DarkadiaCSVParser()
-        self.data_mapper = DarkadiaDataMapper()
         self.transformer = DarkadiaTransformationPipeline()
-        self.consolidation_processor = CopyConsolidationProcessor()
         self.platform_resolution_service = create_platform_resolution_service(session)
+        self.consolidation_processor = CopyConsolidationProcessor(self.platform_resolution_service)
     
     def _get_user_darkadia_config(self, user: User) -> dict:
         """Get user's Darkadia configuration from preferences."""
@@ -83,35 +81,6 @@ class DarkadiaImportService(ImportSourceService):
             self.session.rollback()
             raise
     
-    def _normalize_platform_name(self, platform_name: str) -> str:
-        """Normalize platform name from CSV to database format."""
-        # Platform mapping from CSV values to database platform names
-        platform_mappings = {
-            # Direct CSV platform names
-            'PC': 'pc-windows',
-            'Mac': 'mac',
-            'Linux': 'pc-linux',
-            'Android': 'android',
-            'PlayStation 4': 'playstation-4',
-            'PlayStation 5': 'playstation-5',
-            'PlayStation 3': 'playstation-3',
-            'PlayStation 2': 'playstation-2',
-            'PlayStation Network (PS3)': 'playstation-3',  # Map PS3 network to PS3
-            'PlayStation Network (Vita)': 'playstation-vita',  # May need to add this platform
-            'Nintendo Switch': 'nintendo-switch',
-            'Xbox 360': 'xbox-360',
-            'Xbox 360 Games Store': 'xbox-360',  # Map Xbox 360 store to Xbox 360 platform
-            'Xbox One': 'xbox-one',
-            'Wii': 'nintendo-wii',
-            'iOS': 'ios',
-            
-            # Also handle mapper output format if it still gets called
-            'PC (Windows)': 'pc-windows',
-            'PC (Linux)': 'pc-linux',
-            'Xbox Series X/S': 'xbox-series',
-            'Nintendo Wii': 'nintendo-wii',
-        }
-        return platform_mappings.get(platform_name, platform_name.lower().replace(' ', '-'))
     
     def _normalize_storefront_name(self, storefront_name: str) -> Optional[str]:
         """Normalize storefront name from CSV to database format."""
@@ -326,9 +295,9 @@ class DarkadiaImportService(ImportSourceService):
         platform_suggestions = {}
         storefront_suggestions = {}
         
-        # Reset mapper's tracking sets
-        self.data_mapper.unknown_platforms = set()
-        self.data_mapper.unknown_storefronts = set()
+        # Track unknown platforms and storefronts
+        unknown_platforms = set()
+        unknown_storefronts = set()
         
         for game_data in games_data:
             # Extract platform information
@@ -349,9 +318,7 @@ class DarkadiaImportService(ImportSourceService):
             # Extract storefront information from Copy source fields
             await self._process_storefront_data(game_data, storefront_stats, unknown_storefronts)
         
-        # Include platforms/storefronts detected by the mapper
-        unknown_platforms.update(self.data_mapper.unknown_platforms)
-        unknown_storefronts.update(self.data_mapper.unknown_storefronts)
+        # Unknown platforms and storefronts are now tracked locally
         
         # Generate suggestions for unknown platforms using platform resolution service
         for unknown_platform in unknown_platforms:
@@ -417,24 +384,24 @@ class DarkadiaImportService(ImportSourceService):
     ):
         """Process a single platform name and update tracking structures."""
         if platform_name not in platform_stats:
-            # Check if platform exists in database using fuzzy matching
-            is_known = platform_name in self.data_mapper.PLATFORM_MAPPINGS
-            mapped_name = self.data_mapper.PLATFORM_MAPPINGS.get(platform_name)
-            suggested_mapping = self.data_mapper._map_platform_name(platform_name)
+            # Check if platform can be resolved using centralized service
+            platform = await self.platform_resolution_service.get_canonical_platform(platform_name)
+            is_known = platform is not None
+            mapped_name = platform.display_name if platform else None
             
             platform_stats[platform_name] = {
                 "name": platform_name,
                 "games_count": 0,
                 "is_known": is_known,
                 "mapped_name": mapped_name,
-                "suggested_mapping": suggested_mapping,
-                "resolution_status": "resolved" if is_known or suggested_mapping else "pending"
+                "suggested_mapping": mapped_name,
+                "resolution_status": "resolved" if is_known else "pending"
             }
         
         platform_stats[platform_name]["games_count"] += 1
         
         # Track unknown platforms for resolution
-        if not platform_stats[platform_name]["is_known"] and not platform_stats[platform_name]["suggested_mapping"]:
+        if not platform_stats[platform_name]["is_known"]:
             unknown_platforms.add(platform_name)
 
     async def _process_storefront_data(
@@ -463,25 +430,18 @@ class DarkadiaImportService(ImportSourceService):
         
         # Track storefront statistics
         if storefront_name not in storefront_stats:
-            # Check if storefront exists in database
-            is_known = storefront_name in self.data_mapper.STOREFRONT_MAPPINGS if hasattr(self.data_mapper, 'STOREFRONT_MAPPINGS') else False
-            mapped_name = self.data_mapper.STOREFRONT_MAPPINGS.get(storefront_name) if hasattr(self.data_mapper, 'STOREFRONT_MAPPINGS') else None
-            
-            # Try to map using data mapper
-            suggested_mapping = None
-            if hasattr(self.data_mapper, '_map_storefront_name'):
-                try:
-                    suggested_mapping = self.data_mapper._map_storefront_name(storefront_name)
-                except Exception:
-                    pass
+            # Check if storefront can be resolved using centralized service
+            storefront = await self.platform_resolution_service.get_canonical_storefront(storefront_name)
+            is_known = storefront is not None
+            mapped_name = storefront.display_name if storefront else None
             
             storefront_stats[storefront_name] = {
                 "name": storefront_name,
                 "games_count": 0,
                 "is_known": is_known,
                 "mapped_name": mapped_name,
-                "suggested_mapping": suggested_mapping,
-                "resolution_status": "resolved" if is_known or suggested_mapping else "pending"
+                "suggested_mapping": mapped_name,
+                "resolution_status": "resolved" if is_known else "pending"
             }
         
         storefront_stats[storefront_name]["games_count"] += 1
@@ -510,7 +470,7 @@ class DarkadiaImportService(ImportSourceService):
             logger.info(f"Parsed {len(games_data)} rows from CSV file")
             
             # Consolidate copies for games with multiple rows
-            consolidated_games = self.consolidation_processor.consolidate_games(games_data)
+            consolidated_games = await self.consolidation_processor.consolidate_games(games_data)
             logger.info(f"Copy consolidation completed: {len(consolidated_games)} unique games from {len(games_data)} rows")
             
             # Log consolidation stats
@@ -748,24 +708,14 @@ class DarkadiaImportService(ImportSourceService):
                         mapped_platform_name = 'Mac'  # Use direct Mac mapping
                         logger.info(f"🔍 [RESOLUTION DEBUG] Mac override applied: '{mapped_platform_name}'")
                     
-                    # Normalize platform name to database format
-                    normalized_platform_name = self._normalize_platform_name(mapped_platform_name)
-                    logger.info(f"🔍 [RESOLUTION DEBUG] Platform normalization: '{mapped_platform_name}' -> '{normalized_platform_name}'")
-                    
-                    # Look up the normalized platform in the database
-                    platform = self.session.exec(
-                        select(Platform).where(Platform.name == normalized_platform_name)
-                    ).first()
+                    # Resolve platform using centralized service
+                    platform = await self.platform_resolution_service.get_canonical_platform(mapped_platform_name)
                     if platform:
                         resolved_platform_id = platform.id
                         platform_resolved = True
-                        logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{normalized_platform_name}' -> {platform.id} ({platform.display_name})")
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{mapped_platform_name}' -> {platform.id} ({platform.display_name})")
                     else:
-                        logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{normalized_platform_name}'")
-                        # Let's see what platforms are available for debugging
-                        all_platforms = self.session.exec(select(Platform)).all()
-                        available_names = [p.name for p in all_platforms]
-                        logger.info(f"🔍 [RESOLUTION DEBUG] Available platforms: {available_names}")
+                        logger.info(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{mapped_platform_name}'")
                 
                 # Resolve storefront
                 storefront_name = copy_data.storefront or copy_data.storefront_other
@@ -985,20 +935,14 @@ class DarkadiaImportService(ImportSourceService):
                     mapped_platform_name = 'Mac'  # Use direct Mac mapping
                     logger.debug(f"🔍 [RESOLUTION DEBUG] Mac override applied: '{mapped_platform_name}'")
                 
-                # Normalize platform name to database format
-                normalized_platform_name = self._normalize_platform_name(mapped_platform_name)
-                logger.debug(f"🔍 [RESOLUTION DEBUG] Platform normalization: '{mapped_platform_name}' -> '{normalized_platform_name}'")
-                
-                # Look up the normalized platform in the database
-                platform = self.session.exec(
-                    select(Platform).where(Platform.name == normalized_platform_name)
-                ).first()
+                # Resolve platform using centralized service
+                platform = await self.platform_resolution_service.get_canonical_platform(mapped_platform_name)
                 if platform:
                     resolved_platform_id = platform.id
                     platform_resolved = True
-                    logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{normalized_platform_name}' -> {platform.id} ({platform.display_name})")
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ✅ Platform resolved: '{mapped_platform_name}' -> {platform.id} ({platform.display_name})")
                 else:
-                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{normalized_platform_name}'")
+                    logger.debug(f"🔍 [RESOLUTION DEBUG] ❌ Platform NOT FOUND: '{mapped_platform_name}'")
                     # Let's see what platforms are available for debugging
                     all_platforms = self.session.exec(select(Platform)).all()
                     available_names = [p.name for p in all_platforms]
@@ -1140,22 +1084,18 @@ class DarkadiaImportService(ImportSourceService):
                 if mapped_storefront:
                     storefront_name = mapped_storefront
             
-            # Apply data mapper transformations if transformation data not available
+            # Apply centralized platform resolution if transformation data not available
             if not transform_data and original_platform_name:
-                mapped_platform = self.data_mapper._map_platform_name(original_platform_name)
-                if mapped_platform:
-                    platform_name = mapped_platform
+                resolved_platform = await self.platform_resolution_service.get_canonical_platform(original_platform_name)
+                if resolved_platform:
+                    platform_name = resolved_platform.name
                     
                 if original_storefront_name:
-                    mapped_storefront = self.data_mapper._map_storefront_name(original_storefront_name, platform_name)
-                    if mapped_storefront:
-                        storefront_name = mapped_storefront
+                    resolved_storefront = await self.platform_resolution_service.get_canonical_storefront(original_storefront_name, resolved_platform)
+                    if resolved_storefront:
+                        storefront_name = resolved_storefront.name
             
-            # Get fallback platform name for tracking
-            if not is_real_copy:
-                pass
-            
-            # Look up platform by name (using mapped name)
+            # Look up platform by name (using resolved name)
             platform = None
             if platform_name:
                 platform = self.session.exec(

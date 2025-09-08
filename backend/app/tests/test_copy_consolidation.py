@@ -114,9 +114,10 @@ class TestCopyConsolidationProcessor:
             }
         ]
     
-    def test_consolidate_single_game(self, processor, sample_single_game_data):
+    @pytest.mark.asyncio
+    async def test_consolidate_single_game(self, processor, sample_single_game_data):
         """Test consolidating a single game with one copy."""
-        consolidated_games = processor.consolidate_games(sample_single_game_data)
+        consolidated_games = await processor.consolidate_games(sample_single_game_data)
         
         assert len(consolidated_games) == 1
         game = consolidated_games[0]
@@ -129,9 +130,10 @@ class TestCopyConsolidationProcessor:
         assert game.base_data['Rating'] == 4.5
         assert game.base_data['Finished']
     
-    def test_consolidate_multi_copy_game(self, processor, sample_multi_copy_data):
+    @pytest.mark.asyncio
+    async def test_consolidate_multi_copy_game(self, processor, sample_multi_copy_data):
         """Test consolidating a game with multiple copies."""
-        consolidated_games = processor.consolidate_games(sample_multi_copy_data)
+        consolidated_games = await processor.consolidate_games(sample_multi_copy_data)
         
         assert len(consolidated_games) == 1
         game = consolidated_games[0]
@@ -160,9 +162,10 @@ class TestCopyConsolidationProcessor:
         assert 1 in game.csv_row_numbers
         assert 2 in game.csv_row_numbers
     
-    def test_consolidate_fallback_platforms(self, processor, sample_fallback_platform_data):
+    @pytest.mark.asyncio
+    async def test_consolidate_fallback_platforms(self, processor, sample_fallback_platform_data):
         """Test consolidating games with fallback platform data."""
-        consolidated_games = processor.consolidate_games(sample_fallback_platform_data)
+        consolidated_games = await processor.consolidate_games(sample_fallback_platform_data)
         
         assert len(consolidated_games) == 1
         game = consolidated_games[0]
@@ -181,19 +184,21 @@ class TestCopyConsolidationProcessor:
         assert 'PC' in platform_names
         assert 'Nintendo Switch' in platform_names
     
-    def test_empty_input(self, processor):
+    @pytest.mark.asyncio
+    async def test_empty_input(self, processor):
         """Test handling of empty input."""
-        consolidated_games = processor.consolidate_games([])
+        consolidated_games = await processor.consolidate_games([])
         assert len(consolidated_games) == 0
     
-    def test_games_with_empty_names(self, processor):
+    @pytest.mark.asyncio
+    async def test_games_with_empty_names(self, processor):
         """Test handling of games with empty names."""
         data_with_empty_names = [
             {'Name': '', 'Copy platform': 'PC', '_csv_row_number': 1},
             {'Name': 'Valid Game', 'Copy platform': 'PC', '_csv_row_number': 2}
         ]
         
-        consolidated_games = processor.consolidate_games(data_with_empty_names)
+        consolidated_games = await processor.consolidate_games(data_with_empty_names)
         
         # Should only process the game with a valid name
         assert len(consolidated_games) == 1
@@ -362,14 +367,15 @@ class TestCopyConsolidationProcessor:
         fallback_copies = processor._create_fallback_copies(row)
         assert len(fallback_copies) == 0
     
-    def test_consolidation_stats(self, processor, sample_multi_copy_data):
+    @pytest.mark.asyncio
+    async def test_consolidation_stats(self, processor, sample_multi_copy_data):
         """Test consolidation statistics tracking."""
         # Add single game data to test consolidation stats
         mixed_data = sample_multi_copy_data + [
             {'Name': 'Single Game', 'Copy platform': 'PC', '_csv_row_number': 3}
         ]
         
-        processor.consolidate_games(mixed_data)
+        await processor.consolidate_games(mixed_data)
         stats = processor.get_consolidation_stats()
         
         assert stats['processed_games'] == 2  # Two unique games
@@ -412,7 +418,8 @@ class TestCopyConsolidationProcessor:
 class TestCopyConsolidationIntegration:
     """Integration tests for copy consolidation with realistic data."""
     
-    def test_realistic_darkadia_export(self):
+    @pytest.mark.asyncio
+    async def test_realistic_darkadia_export(self):
         """Test with realistic Darkadia export data."""
         processor = CopyConsolidationProcessor()
         
@@ -467,7 +474,7 @@ class TestCopyConsolidationIntegration:
             }
         ]
         
-        consolidated_games = processor.consolidate_games(realistic_data)
+        consolidated_games = await processor.consolidate_games(realistic_data)
         
         # Should have 3 unique games
         assert len(consolidated_games) == 3

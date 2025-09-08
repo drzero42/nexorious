@@ -15,6 +15,8 @@ from datetime import datetime
 from collections import defaultdict
 
 from ...utils.data_extraction import safe_extract_string, safe_extract_date_string, safe_extract_numeric
+from ...models.platform import Platform
+from ..platform_resolution import PlatformResolutionService
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +74,13 @@ class ConsolidatedGame:
 class CopyConsolidationProcessor:
     """Processor for consolidating multiple CSV rows representing copies of the same game."""
     
-    def __init__(self):
+    def __init__(self, platform_resolution_service: Optional[PlatformResolutionService] = None):
         self.processed_games = 0
         self.total_copies = 0
         self.consolidated_games = 0
+        self.platform_resolution_service = platform_resolution_service
     
-    def consolidate_games(self, csv_data: List[Dict[str, Any]]) -> List[ConsolidatedGame]:
+    async def consolidate_games(self, csv_data: List[Dict[str, Any]]) -> List[ConsolidatedGame]:
         """
         Consolidate CSV rows by grouping same games and merging their copy data.
         
@@ -99,7 +102,7 @@ class CopyConsolidationProcessor:
         consolidated_games = []
         for game_name, rows in game_groups.items():
             try:
-                consolidated_game = self._merge_game_copies(game_name, rows)
+                consolidated_game = await self._merge_game_copies(game_name, rows)
                 consolidated_games.append(consolidated_game)
                 
                 if len(rows) > 1:
@@ -141,7 +144,7 @@ class CopyConsolidationProcessor:
         
         return dict(game_groups)
     
-    def _merge_game_copies(self, game_name: str, rows: List[Dict[str, Any]]) -> ConsolidatedGame:
+    async def _merge_game_copies(self, game_name: str, rows: List[Dict[str, Any]]) -> ConsolidatedGame:
         """
         Merge multiple rows of the same game into a ConsolidatedGame.
         
@@ -171,7 +174,7 @@ class CopyConsolidationProcessor:
             copies.extend(copy_data_list)
         
         # Enhanced platform processing: Handle both real copies and uncovered platforms from Platforms field
-        additional_platform_copies = self._create_additional_platform_copies(copies, rows[0])
+        additional_platform_copies = await self._create_additional_platform_copies(copies, rows[0])
         copies.extend(additional_platform_copies)
         
         return ConsolidatedGame(
@@ -399,7 +402,7 @@ class CopyConsolidationProcessor:
         
         return fallback_copies
     
-    def _create_additional_platform_copies(self, existing_copies: List[CopyData], row: Dict[str, Any]) -> List[CopyData]:
+    async def _create_additional_platform_copies(self, existing_copies: List[CopyData], row: Dict[str, Any]) -> List[CopyData]:
         """
         Create additional platform copies for uncovered platforms from the general Platforms field.
         
@@ -432,9 +435,9 @@ class CopyConsolidationProcessor:
             logger.debug(f"No real copies found for {safe_extract_string(row.get('Name'), 'Unknown Game')}, creating fallback copies from all platforms")
             return self._create_fallback_copies_from_platforms(general_platforms, row)
         
-        # If real copies exist, find uncovered platforms
-        covered_platforms = self._get_covered_platforms(real_copies)
-        uncovered_platforms = self._get_uncovered_platforms(general_platforms, covered_platforms)
+        # If real copies exist, find uncovered platforms using canonical platform resolution
+        covered_platforms = await self._get_covered_platforms(real_copies)
+        uncovered_platforms = await self._get_uncovered_platforms(general_platforms, covered_platforms)
         
         if uncovered_platforms:
             logger.debug(f"Found {len(uncovered_platforms)} uncovered platforms for {safe_extract_string(row.get('Name'), 'Unknown Game')}: {uncovered_platforms}")
@@ -442,82 +445,63 @@ class CopyConsolidationProcessor:
         
         return []
     
-    def _get_covered_platforms(self, real_copies: List[CopyData]) -> List[str]:
+    async def _get_covered_platforms(self, real_copies: List[CopyData]) -> List[Platform]:
         """
-        Get list of normalized platform names that are already covered by real copies.
+        Get list of Platform objects that are already covered by real copies.
         
         Args:
             real_copies: List of real copy data objects
             
         Returns:
-            List of normalized platform names already covered
+            List of Platform objects already covered
         """
         covered_platforms = []
         
         for copy in real_copies:
             if copy.platform:
-                # Normalize the platform name for comparison
-                normalized = self._normalize_platform_for_comparison(copy.platform)
-                if normalized:
-                    covered_platforms.append(normalized)
+                # Resolve the platform name to canonical Platform object
+                platform = await self._resolve_platform_for_comparison(copy.platform)
+                if platform and platform not in covered_platforms:
+                    covered_platforms.append(platform)
         
         return covered_platforms
     
-    def _get_uncovered_platforms(self, general_platforms: List[str], covered_platforms: List[str]) -> List[str]:
+    async def _get_uncovered_platforms(self, general_platforms: List[str], covered_platforms: List[Platform]) -> List[str]:
         """
         Find platforms from the general Platforms field that are not covered by existing copies.
         
         Args:
             general_platforms: Platform names from the Platforms field
-            covered_platforms: Normalized platform names already covered by copies
+            covered_platforms: Platform objects already covered by copies
             
         Returns:
             List of platform names that need additional copies
         """
         uncovered_platforms = []
         
-        for platform in general_platforms:
-            normalized = self._normalize_platform_for_comparison(platform)
-            if normalized and normalized not in covered_platforms:
-                uncovered_platforms.append(platform)
+        for platform_name in general_platforms:
+            # Resolve the platform name to canonical Platform object
+            platform = await self._resolve_platform_for_comparison(platform_name)
+            # Only consider it uncovered if we could resolve it and it's not already covered
+            if platform and platform not in covered_platforms:
+                uncovered_platforms.append(platform_name)
         
         return uncovered_platforms
     
-    def _normalize_platform_for_comparison(self, platform_name: str) -> str:
+    async def _resolve_platform_for_comparison(self, platform_name: str) -> Optional[Platform]:
         """
-        Normalize platform name for comparison purposes.
-        
-        This uses similar logic to the import service's normalization but focuses on
-        consistent comparison rather than database storage format.
+        Resolve platform name to canonical Platform object for comparison purposes.
         
         Args:
             platform_name: Original platform name
             
         Returns:
-            Normalized platform name for comparison
+            Platform object if resolved, None if not found
         """
-        if not platform_name:
-            return ""
+        if not platform_name or not self.platform_resolution_service:
+            return None
         
-        # Convert to lowercase and remove common variations for comparison
-        normalized = platform_name.lower().strip()
-        
-        # Handle common platform name variations
-        platform_mappings = {
-            'pc': 'pc',
-            'pc (windows)': 'pc', 
-            'windows': 'pc',
-            'playstation 4': 'playstation-4',
-            'playstation 5': 'playstation-5',  
-            'ps4': 'playstation-4',
-            'ps5': 'playstation-5',
-            'xbox one': 'xbox-one',
-            'xbox series x/s': 'xbox-series',
-            'nintendo switch': 'nintendo-switch',
-            'switch': 'nintendo-switch',
-        }
-        
-        return platform_mappings.get(normalized, normalized.replace(' ', '-').replace('(', '').replace(')', ''))
+        return await self.platform_resolution_service.get_canonical_platform(platform_name)
     
     def _create_fallback_copies_from_platforms(self, platform_names: List[str], row: Dict[str, Any]) -> List[CopyData]:
         """
