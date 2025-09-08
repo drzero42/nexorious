@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 from typing import Dict
 
-from ..models.game import Game, GameAlias
+from ..models.game import Game
 from .integration_test_utils import (
     assert_api_error,
     assert_api_success
@@ -100,93 +100,6 @@ class TestGamesDetailEndpoint:
         
         assert_api_error(response, 404, "Game not found")
     
-    def test_get_game_with_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
-        """Test game retrieval with aliases."""
-        # Add alias
-        alias = GameAlias(
-            game_id=test_game.id,
-            alias_title="Alternative Title",
-            source="test"
-        )
-        session.add(alias)
-        session.commit()
-        
-        response = client.get(f"/api/games/{test_game.id}", headers=auth_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert "aliases" in data
-        assert len(data["aliases"]) == 1
-        assert data["aliases"][0]["alias_title"] == "Alternative Title"
-
-
-
-
-
-
-class TestGameAliasesEndpoints:
-    """Test game aliases endpoints."""
-    
-    def test_get_game_aliases(self, client: TestClient, test_game: Game, session: Session, auth_headers):
-        """Test getting game aliases."""
-        # Add alias
-        alias = GameAlias(
-            game_id=test_game.id,
-            alias_title="Alternative Title",
-            source="test"
-        )
-        session.add(alias)
-        session.commit()
-        
-        response = client.get(f"/api/games/{test_game.id}/aliases", headers=auth_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert len(data) == 1
-        assert data[0]["alias_title"] == "Alternative Title"
-        assert data[0]["source"] == "test"
-    
-    def test_create_game_alias(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test creating a game alias."""
-        alias_data = {
-            "alias_title": "Alternative Title",
-            "source": "test"
-        }
-        response = client.post(f"/api/games/{test_game.id}/aliases", json=alias_data, headers=auth_headers)
-        
-        assert_api_success(response, 201)
-        data = response.json()
-        assert data["alias_title"] == "Alternative Title"
-        assert data["source"] == "test"
-    
-    def test_create_game_alias_without_auth(self, client: TestClient, test_game: Game):
-        """Test creating a game alias without authentication."""
-        alias_data = {
-            "alias_title": "Alternative Title",
-            "source": "test"
-        }
-        response = client.post(f"/api/games/{test_game.id}/aliases", json=alias_data)
-        
-        assert_api_error(response, 403, "Not authenticated")
-    
-    def test_delete_game_alias(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str], session: Session):
-        """Test deleting a game alias."""
-        # Create alias
-        alias = GameAlias(
-            game_id=test_game.id,
-            alias_title="Alternative Title",
-            source="test"
-        )
-        session.add(alias)
-        session.commit()
-        session.refresh(alias)
-        
-        response = client.delete(f"/api/games/{test_game.id}/aliases/{alias.id}", headers=auth_headers)
-        
-        assert_api_success(response, 200)
-        data = response.json()
-        assert data["message"] == "Alias deleted successfully"
-
 
 class TestIGDBIntegrationEndpoints:
     """Test IGDB integration endpoints."""

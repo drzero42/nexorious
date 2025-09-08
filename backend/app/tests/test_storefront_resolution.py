@@ -276,6 +276,12 @@ class TestStorefrontProcessing:
         # Ensure no suggested mapping method exists or it returns None
         delattr(service.data_mapper, '_map_storefront_name') if hasattr(service.data_mapper, '_map_storefront_name') else None
         
+        # Mock the platform resolution service
+        service.platform_resolution_service = Mock()
+        mock_storefront = Mock()
+        mock_storefront.display_name = "Steam"
+        service.platform_resolution_service.get_canonical_storefront = AsyncMock(return_value=mock_storefront)
+        
         # Test the method
         await service._process_storefront_data(game_data, storefront_stats, unknown_storefronts)
         
@@ -308,6 +314,10 @@ class TestStorefrontProcessing:
         service.data_mapper.STOREFRONT_MAPPINGS = {}
         # Ensure no suggested mapping method exists or it returns None
         delattr(service.data_mapper, '_map_storefront_name') if hasattr(service.data_mapper, '_map_storefront_name') else None
+        
+        # Mock the platform resolution service to return None (unknown storefront)
+        service.platform_resolution_service = Mock()
+        service.platform_resolution_service.get_canonical_storefront = AsyncMock(return_value=None)
         
         # Test the method
         await service._process_storefront_data(game_data, storefront_stats, unknown_storefronts)

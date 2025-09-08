@@ -17,9 +17,6 @@ Ensure the following logic is followed everywhere.
 When removing the last platform/storefront, change ownership to No Longer Owned. If adding a platform/storefront to a UserGame change ownership to Owned.
 Only actually delete a UserGame if the user deletes it.
 
-## Remove game aliases
-Claude decided to implement a game alias feature. This should be removed.
-
 ## Use IGDB ID instead of UUID in the games table
 Since this app is tightly tied to IGDB for the needed data foundation, there is no need to invent separate UUIDs for games when we could simplify things by just using the IGDB ID.
 

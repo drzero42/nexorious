@@ -135,7 +135,6 @@ To create the definitive self-hosted solution for personal game collection manag
   - Games in the `games` table are automatically deleted when the last `user_games` association is removed
   - Games are automatically deleted when the last `wishlist` entry referencing them is removed
   - Automatic cleanup checks occur after any UserGame or Wishlist deletion operation
-  - GameAlias records are automatically cleaned up when their parent Game is deleted
   - Admin-only direct game deletion endpoints remain available for emergency cleanup scenarios
   - All cleanup operations are performed within database transactions to ensure data consistency
 - **Frontend Requirements**:

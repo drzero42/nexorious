@@ -16,7 +16,7 @@ from sqlmodel import SQLModel
 # Import all models to ensure they are registered with SQLModel
 from app.models import (  # noqa: F401
     User, UserSession, Platform, Storefront, PlatformStorefront,
-    Game, GameAlias, UserGame, UserGamePlatform, Tag, UserGameTag,
+    Game, UserGame, UserGamePlatform, Tag, UserGameTag,
     Wishlist, ImportJob, SteamGame, DarkadiaGame, DarkadiaImport
 )
 

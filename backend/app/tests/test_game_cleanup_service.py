@@ -5,7 +5,7 @@ Tests for the game cleanup service.
 from sqlmodel import Session, select
 
 from ..services.game_cleanup import cleanup_unreferenced_game, get_unreferenced_games, cleanup_multiple_games
-from ..models.game import Game, GameAlias
+from ..models.game import Game
 from ..models.user_game import UserGame, OwnershipStatus, PlayStatus
 from ..models.wishlist import Wishlist
 from ..models.user import User
@@ -26,18 +26,8 @@ class TestGameCleanupService:
         session.commit()
         session.refresh(game)
         
-        # Add an alias to test cascade deletion
-        alias = GameAlias(
-            game_id=game.id,
-            alias_title="Alternative Title",
-            source="test"
-        )
-        session.add(alias)
-        session.commit()
-        
-        # Verify the game and alias exist
+        # Verify the game exists
         assert session.get(Game, game.id) is not None
-        assert session.exec(select(GameAlias).where(GameAlias.game_id == game.id)).first() is not None
         
         # Run cleanup
         result = cleanup_unreferenced_game(game.id, session)
@@ -45,7 +35,6 @@ class TestGameCleanupService:
         # Verify game was deleted
         assert result is True
         assert session.get(Game, game.id) is None
-        assert session.exec(select(GameAlias).where(GameAlias.game_id == game.id)).first() is None
     
     def test_cleanup_unreferenced_game_with_user_game(self, session: Session, test_user: User):
         """Test cleanup of a game that has user_game references (should not be deleted)."""

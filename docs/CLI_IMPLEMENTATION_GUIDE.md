@@ -288,10 +288,6 @@ class GamesService:
         response = await self.client.request("POST", "/games/igdb-import", json=data)
         return response.json()
     
-    async def get_game_aliases(self, game_id: str):
-        """Get aliases for a game"""
-        response = await self.client.request("GET", f"/games/{game_id}/aliases")
-        return response.json()
 
 
 class UserGamesService:

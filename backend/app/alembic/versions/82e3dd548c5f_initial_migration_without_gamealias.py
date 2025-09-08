@@ -1,19 +1,19 @@
-"""Initial migration
+"""Initial migration without GameAlias
 
-Revision ID: 63c2a5c51259
+Revision ID: 82e3dd548c5f
 Revises: 
-Create Date: 2025-08-26 09:16:42.752594
+Create Date: 2025-09-08 17:05:47.689972
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import sqlmodel.sql.sqltypes
+import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '63c2a5c51259'
+revision: str = '82e3dd548c5f'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -107,19 +107,6 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_darkadia_games_game_id'), ['game_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_darkadia_games_igdb_id'), ['igdb_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_darkadia_games_user_id'), ['user_id'], unique=False)
-
-    op.create_table('game_aliases',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('alias_title', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
-    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['game_id'], ['games.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('game_aliases', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_game_aliases_alias_title'), ['alias_title'], unique=False)
-        batch_op.create_index(batch_op.f('ix_game_aliases_game_id'), ['game_id'], unique=False)
 
     op.create_table('import_jobs',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -325,11 +312,13 @@ def upgrade() -> None:
     sa.Column('fallback_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('platform_resolved', sa.Boolean(), nullable=False),
     sa.Column('storefront_resolved', sa.Boolean(), nullable=False),
+    sa.Column('resolved_platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('resolved_storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('requires_storefront_resolution', sa.Boolean(), nullable=False),
     sa.Column('platform_resolution_data', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['resolved_platform_id'], ['platforms.id'], ),
     sa.ForeignKeyConstraint(['resolved_storefront_id'], ['storefronts.id'], ),
     sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
     sa.ForeignKeyConstraint(['user_game_platform_id'], ['user_game_platforms.id'], ),
@@ -413,11 +402,6 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f('ix_import_jobs_source'))
 
     op.drop_table('import_jobs')
-    with op.batch_alter_table('game_aliases', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_game_aliases_game_id'))
-        batch_op.drop_index(batch_op.f('ix_game_aliases_alias_title'))
-
-    op.drop_table('game_aliases')
     with op.batch_alter_table('darkadia_games', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_darkadia_games_user_id'))
         batch_op.drop_index(batch_op.f('ix_darkadia_games_igdb_id'))
