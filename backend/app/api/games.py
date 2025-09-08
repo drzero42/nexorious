@@ -13,14 +13,12 @@ from typing import Annotated, Optional, List
 from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
-from ..models.game import Game, GameAlias
+from ..models.game import Game
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
 from ..api.schemas.game import (
     GameResponse,
     GameListResponse,
-    GameAliasCreateRequest,
-    GameAliasResponse,
     IGDBSearchRequest,
     IGDBGameCandidate,
     IGDBSearchResponse,
@@ -203,14 +201,8 @@ async def get_game(
             detail="Game not found"
         )
     
-    # Get aliases for this game
-    aliases = session.exec(
-        select(GameAlias).where(GameAlias.game_id == game_id)
-    ).all()
-    
     # Convert to response format
     game_response = GameResponse.model_validate(game)
-    game_response.aliases = [GameAliasResponse.model_validate(alias) for alias in aliases]
     
     return game_response
 
@@ -220,94 +212,6 @@ async def get_game(
 
 
 
-
-@router.get("/{game_id}/aliases", response_model=List[GameAliasResponse])
-async def get_game_aliases(
-    game_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Get all aliases for a specific game."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    aliases = session.exec(
-        select(GameAlias).where(GameAlias.game_id == game_id)
-    ).all()
-    
-    return aliases
-
-
-@router.post("/{game_id}/aliases", response_model=GameAliasResponse, status_code=status.HTTP_201_CREATED)
-async def create_game_alias(
-    game_id: str,
-    alias_data: GameAliasCreateRequest,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Create an alias for a game."""
-    
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game not found"
-        )
-    
-    # Check if alias already exists
-    existing_alias = session.exec(
-        select(GameAlias).where(
-            and_(
-                GameAlias.game_id == game_id,
-                GameAlias.alias_title == alias_data.alias_title
-            )
-        )
-    ).first()
-    
-    if existing_alias:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Alias already exists for this game"
-        )
-    
-    new_alias = GameAlias(
-        game_id=game_id,
-        alias_title=alias_data.alias_title,
-        source=alias_data.source
-    )
-    
-    session.add(new_alias)
-    session.commit()
-    session.refresh(new_alias)
-    
-    return new_alias
-
-
-@router.delete("/{game_id}/aliases/{alias_id}", response_model=SuccessResponse)
-async def delete_game_alias(
-    game_id: str,
-    alias_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)]
-):
-    """Delete a game alias."""
-    
-    alias = session.get(GameAlias, alias_id)
-    if not alias or alias.game_id != game_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Alias not found"
-        )
-    
-    session.delete(alias)
-    session.commit()
-    
-    return SuccessResponse(message="Alias deleted successfully")
 
 
 @router.post("/search/igdb", response_model=IGDBSearchResponse)

@@ -53,23 +53,7 @@ class Game(SQLModel, table=True):
     last_updated: Optional[datetime] = Field(default=None, description="Timestamp when IGDB metadata was last refreshed")
     
     # Relationships
-    aliases: List["GameAlias"] = Relationship(back_populates="game")
     user_games: List["UserGame"] = Relationship(back_populates="game")
     wishlists: List["Wishlist"] = Relationship(back_populates="game")
-
-
-class GameAlias(SQLModel, table=True):
-    """Game alias model for alternative titles and search optimization."""
-    
-    __tablename__ = "game_aliases"
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    game_id: str = Field(foreign_key="games.id", index=True)
-    alias_title: str = Field(index=True, max_length=500)
-    source: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
-    # Relationships
-    game: Game = Relationship(back_populates="aliases")
 
 

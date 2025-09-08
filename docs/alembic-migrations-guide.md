@@ -18,15 +18,6 @@ uv run alembic current
 uv run alembic history --verbose
 ```
 
-## Required SQLModel Import
-
-**CRITICAL**: All generated migrations must include SQLModel import for proper functionality:
-
-```python
-# Add to top of every migration file
-import sqlmodel
-```
-
 ## SQLite Batch Operations (Required)
 
 Use batch operations for ALL table modifications to ensure SQLite compatibility:

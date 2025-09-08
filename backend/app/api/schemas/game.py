@@ -33,7 +33,6 @@ class GameResponse(BaseModel, TimestampMixin):
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
     igdb_platform_names: Optional[str]
-    aliases: Optional[List['GameAliasResponse']] = Field(default_factory=list, description="Game aliases")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,21 +54,6 @@ class GameListResponse(BaseModel):
     per_page: int
     pages: int
 
-
-class GameAliasCreateRequest(BaseModel):
-    """Request schema for creating game aliases."""
-    alias_title: str = Field(..., max_length=500, description="Alias title")
-    source: Optional[str] = Field(None, max_length=100, description="Source of the alias")
-
-
-class GameAliasResponse(BaseModel):
-    """Response schema for game aliases."""
-    id: str
-    alias_title: str
-    source: Optional[str]
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class IGDBSearchRequest(BaseModel):

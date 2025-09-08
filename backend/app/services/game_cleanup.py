@@ -11,7 +11,7 @@ from typing import Optional
 from sqlmodel import Session, select, func
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..models.game import Game, GameAlias
+from ..models.game import Game
 from ..models.user_game import UserGame
 from ..models.wishlist import Wishlist
 
@@ -28,7 +28,7 @@ def cleanup_unreferenced_game(game_id: str, session: Session) -> bool:
     - user_games table (user collection entries)
     - wishlists table (user wishlist entries)
     
-    If the game has no references, it will be deleted along with its aliases.
+    If the game has no references, it will be deleted.
     
     Args:
         game_id (str): The ID of the game to potentially clean up
@@ -80,24 +80,14 @@ def cleanup_unreferenced_game(game_id: str, session: Session) -> bool:
             f"Game {game_id} ('{game.title}') has no references - proceeding with cleanup"
         )
         
-        # Delete all game aliases first (due to foreign key constraints)
-        aliases = session.exec(
-            select(GameAlias).where(GameAlias.game_id == game_id)
-        ).all()
-        
-        alias_count = len(aliases)
-        for alias in aliases:
-            session.delete(alias)
-            logger.debug(f"Deleted alias '{alias.alias_title}' for game {game_id}")
-        
-        # Delete the game itself
+        # Delete the game
         session.delete(game)
         
         # Commit the transaction
         session.commit()
         
         logger.info(
-            f"Successfully cleaned up game {game_id} ('{game.title}') and {alias_count} aliases"
+            f"Successfully cleaned up game {game_id} ('{game.title}')"
         )
         
         return True
