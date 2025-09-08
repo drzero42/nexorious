@@ -8,24 +8,20 @@ Uses sorting and filtering based on genres, platforms and time-to-beat to help t
 ## Backlog management
 Add a new view that shows all games that are not completed (/mastered/dominated) and not shelved.
 
-## Better handling of games not imported with Darkadia CSV import
-During import of Darkadia games with non-interactive strategies, all games that fail should be written to a new CSV file named the same as the one being imported, with an added -failed to the name. The output format should be the same as the Darkadia CSV. This will allow the user to go through all failed games and add by hand.
-
-## No direct SQLAlchemy usage
-Go through all direct usage of SQLAlchemy and check if SQLModel could be used instead.
-
 ## Darkadia import based on same principles as Steam Games
 The Darkadia CSV import should be rebuilt based on the same principles as the Steam Games feature. Biggest differences are that the Darkadia CSV import is unlikely to be much more than a one-off operation, and that Darkadia CSV contains a lot more information (platform/storefront information, date it was added, completion status and more).
 The flow should be that the CSV is read into a darkadia_games table, in the same style as steam_games. From there the same matching and syncing functionality as for Steam Games should be available.
-
-## Add IGDB Title to Steam Games
-Matched games should show both the Steam title and the IGDB title of the match to allow users to review the match before syncing.
 
 ## UserGames should be kept unless specifically deleted
 Ensure the following logic is followed everywhere.
 When removing the last platform/storefront, change ownership to No Longer Owned. If adding a platform/storefront to a UserGame change ownership to Owned.
 Only actually delete a UserGame if the user deletes it.
 
-## Darkadia CSV should be resetable
-There should be a button to remove all Darkadia data - resetting it as if no CSV was uploaded.
-It should start by unsyncing, and then clearing the users data in the DarkadiaGames table.
+## Remove game aliases
+Claude decided to implement a game alias feature. This should be removed.
+
+## Use IGDB ID instead of UUID in the games table
+Since this app is tightly tied to IGDB for the needed data foundation, there is no need to invent separate UUIDs for games when we could simplify things by just using the IGDB ID.
+
+## No need to import from IGDB
+It should be transparent that data is pulled in from IGDB. Instead of having a workflow of import-igdb and then adding a user-games entry, the user-games add endpoint should just accept an IGDB ID. If no game with that ID exists in our database it should be imported from IGDB. If one already exists, just use that.
