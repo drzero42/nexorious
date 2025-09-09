@@ -5,14 +5,16 @@
  * components that can work with different game import sources.
  */
 
+import type { GameId, UserGameId } from './game';
+
 export interface ImportGame {
-  id: string;
+  id: string; // Import record ID (remains as string UUID)
   name: string;
   external_id: string;
-  igdb_id: string | null;
+  igdb_id: GameId | null; // IGDB ID as integer
   igdb_title: string | null;
-  game_id: string | null;
-  user_game_id: string | null;
+  game_id: GameId | null; // Game ID (same as igdb_id when matched)
+  user_game_id: UserGameId | null; // User's game collection ID (UUID)
   ignored: boolean;
   created_at: string;
   updated_at: string;
@@ -68,9 +70,9 @@ export interface ImportConfiguration {
 }
 
 export interface ImportSearchResult {
-  id: string;
+  id: GameId; // IGDB game ID as integer
   name: string;
-  igdb_id: string;
+  igdb_id: GameId; // Redundant but kept for compatibility
   cover_url?: string;
   release_date?: string;
   platforms?: string[];
@@ -109,11 +111,11 @@ export interface ImportService {
   listGames(offset: number, limit: number, status?: string, search?: string): Promise<{ games: ImportGame[]; total: number }>;
   
   // Individual game actions
-  matchGameToIGDB(gameId: string, igdbId: string | null): Promise<void>;
-  autoMatchSingleGame(gameId: string): Promise<void>;
-  syncGameToCollection(gameId: string): Promise<void>;
-  toggleGameIgnored(gameId: string): Promise<void>;
-  unsyncGameFromCollection(gameId: string): Promise<void>;
+  matchGameToIGDB(importId: string, igdbId: GameId | null): Promise<void>;
+  autoMatchSingleGame(importId: string): Promise<void>;
+  syncGameToCollection(importId: string): Promise<void>;
+  toggleGameIgnored(importId: string): Promise<void>;
+  unsyncGameFromCollection(importId: string): Promise<void>;
   
   // Bulk operations
   unmatchAllGames(): Promise<BulkOperationResponse>;

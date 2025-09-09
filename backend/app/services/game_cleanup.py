@@ -19,7 +19,7 @@ from ..models.wishlist import Wishlist
 logger = logging.getLogger(__name__)
 
 
-def cleanup_unreferenced_game(game_id: str, session: Session) -> bool:
+def cleanup_unreferenced_game(game_id: int, session: Session) -> bool:
     """
     Clean up a game if it's no longer referenced by any users.
     
@@ -31,7 +31,7 @@ def cleanup_unreferenced_game(game_id: str, session: Session) -> bool:
     If the game has no references, it will be deleted.
     
     Args:
-        game_id (str): The ID of the game to potentially clean up
+        game_id (int): The ID of the game to potentially clean up
         session (Session): Database session for operations
         
     Returns:
@@ -111,7 +111,7 @@ def cleanup_unreferenced_game(game_id: str, session: Session) -> bool:
         raise
 
 
-def cleanup_multiple_games(game_ids: list[str], session: Session) -> dict[str, bool]:
+def cleanup_multiple_games(game_ids: list[int], session: Session) -> dict[int, bool]:
     """
     Clean up multiple games in a batch operation.
     
@@ -119,11 +119,11 @@ def cleanup_multiple_games(game_ids: list[str], session: Session) -> dict[str, b
     individually to ensure that failures don't affect other games.
     
     Args:
-        game_ids (list[str]): List of game IDs to potentially clean up
+        game_ids (list[int]): List of game IDs to potentially clean up
         session (Session): Database session for operations
         
     Returns:
-        dict[str, bool]: Dictionary mapping game IDs to cleanup success status
+        dict[int, bool]: Dictionary mapping game IDs to cleanup success status
     """
     results = {}
     

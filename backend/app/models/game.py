@@ -3,10 +3,10 @@ Game metadata models with IGDB integration support.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
+from pydantic import field_validator
 from typing import Optional, List
 from datetime import datetime, date, timezone
 from decimal import Decimal
-import uuid
 
 # Import forward references
 from typing import TYPE_CHECKING
@@ -18,10 +18,10 @@ if TYPE_CHECKING:
 
 class Game(SQLModel, table=True):
     """Game model with comprehensive metadata and IGDB integration."""
-    
+
     __tablename__ = "games"
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+
+    id: int = Field(primary_key=True, description="IGDB ID as primary key")
     title: str = Field(index=True, max_length=500)
     description: Optional[str] = Field(default=None)
     genre: Optional[str] = Field(default=None, max_length=200)
@@ -29,31 +29,39 @@ class Game(SQLModel, table=True):
     publisher: Optional[str] = Field(default=None, max_length=200)
     release_date: Optional[date] = Field(default=None)
     cover_art_url: Optional[str] = Field(default=None, max_length=500)
-    rating_average: Optional[Decimal] = Field(default=None, max_digits=3, decimal_places=2)
+    rating_average: Optional[Decimal] = Field(
+        default=None, max_digits=3, decimal_places=2
+    )
     rating_count: int = Field(default=0)
     game_metadata: str = Field(default="{}")  # JSON string for extensible metadata
     estimated_playtime_hours: Optional[int] = Field(default=None)
-    
+
     # How Long to Beat integration (stored in hours, converted from IGDB's seconds)
     howlongtobeat_main: Optional[int] = Field(default=None)
     howlongtobeat_extra: Optional[int] = Field(default=None)
     howlongtobeat_completionist: Optional[int] = Field(default=None)
-    
-    # IGDB integration - required since all games must be from IGDB
-    igdb_id: str = Field(index=True, max_length=50)
     igdb_slug: Optional[str] = Field(default=None, index=True, max_length=200)
-    igdb_platform_ids: Optional[str] = Field(default=None, description="JSON array of IGDB platform IDs")
-    igdb_platform_names: Optional[str] = Field(default=None, description="JSON array of IGDB platform names for frontend filtering")
-    
-    # Steam integration - for matching optimization during Steam import
-    steam_appid: Optional[int] = Field(default=None, index=True, description="Steam AppID for efficient matching during Steam library import")
-    
+    igdb_platform_ids: Optional[str] = Field(
+        default=None, description="JSON array of IGDB platform IDs"
+    )
+    igdb_platform_names: Optional[str] = Field(
+        default=None,
+        description="JSON array of IGDB platform names for frontend filtering",
+    )
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_updated: Optional[datetime] = Field(default=None, description="Timestamp when IGDB metadata was last refreshed")
-    
+    last_updated: Optional[datetime] = Field(
+        default=None, description="Timestamp when IGDB metadata was last refreshed"
+    )
+
     # Relationships
     user_games: List["UserGame"] = Relationship(back_populates="game")
     wishlists: List["Wishlist"] = Relationship(back_populates="game")
 
-
+    @field_validator("id")
+    @classmethod
+    def validate_igdb_id(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("IGDB ID must be a positive integer")
+        return v

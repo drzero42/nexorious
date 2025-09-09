@@ -140,8 +140,8 @@ test.describe('Comprehensive Game Management', () => {
         const pathname = new URL(currentUrl).pathname;
         console.log(`After clicking game card: URL = ${currentUrl}, pathname = ${pathname}`);
         
-        // Should navigate to a game detail page with UUID pattern
-        await expect(new URL(page.url()).pathname).toMatch(/^\/games\/[a-f0-9\-]{36}$/);
+        // Should navigate to a game detail page with integer ID pattern
+        await expect(new URL(page.url()).pathname).toMatch(/^\/games\/\d+$/);
       } else {
         // If UI doesn't show games, navigate directly using the created game ID
         await page.goto(`/games/${userGameId}`);

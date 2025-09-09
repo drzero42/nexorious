@@ -27,7 +27,7 @@ test.describe('Error Handling', () => {
       await helpers.ensureRegularUserLogin();
       
       // Navigate to invalid game ID
-      await page.goto('/games/invalid-game-id');
+      await page.goto('/games/invalid-id');
       
       // Wait for page to load and check for game not found message
       await page.waitForLoadState('networkidle');

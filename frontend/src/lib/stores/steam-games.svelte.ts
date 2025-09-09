@@ -1,16 +1,17 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { ui } from './ui.svelte';
+import type { GameId, UserGameId } from '$lib/types/game';
 
 // Steam Games API interfaces based on backend schemas
 export interface SteamGameResponse {
-  id: string;
+  id: string; // Import record ID (remains as string UUID)
   external_id: string;
   name: string;
-  igdb_id: string | null;
+  igdb_id: GameId | null; // IGDB ID as integer
   igdb_title: string | null;
-  game_id: string | null;
-  user_game_id: string | null;
+  game_id: GameId | null; // Game ID (same as igdb_id when matched)
+  user_game_id: UserGameId | null; // User's game collection ID (UUID)
   ignored: boolean;
   created_at: string;
   updated_at: string;
@@ -27,7 +28,7 @@ export interface SteamGamesImportStartedResponse {
 }
 
 export interface SteamGameMatchRequest {
-  igdb_id: string | null;
+  igdb_id: GameId | null;
 }
 
 export interface SteamGameMatchResponse {
@@ -38,7 +39,7 @@ export interface SteamGameMatchResponse {
 export interface SteamGameSyncResponse {
   message: string;
   game: SteamGameResponse;
-  user_game_id: string;
+  user_game_id: UserGameId;
   action: string;
 }
 
@@ -358,7 +359,7 @@ function createSteamGamesStore() {
     },
 
     // Match Steam game to IGDB game
-    async matchSteamGameToIGDB(steamGameId: string, igdbId: string | null): Promise<SteamGameMatchResponse> {
+    async matchSteamGameToIGDB(steamGameId: string, igdbId: GameId | null): Promise<SteamGameMatchResponse> {
       state = { ...state, error: null };
 
       try {
@@ -368,7 +369,7 @@ function createSteamGamesStore() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${auth.value.accessToken}`
           },
-          body: JSON.stringify({ igdb_id: igdbId })
+          body: JSON.stringify({ igdb_id: igdbId ? Number(igdbId) : null })
         });
 
         if (!response.ok) {

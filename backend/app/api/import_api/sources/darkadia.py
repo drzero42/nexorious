@@ -4,7 +4,7 @@ Darkadia CSV import endpoints using the new import framework.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from sqlmodel import Session, select, and_, func
-from typing import Annotated, Optional, Dict, Any, List
+from typing import Annotated, Optional, Dict, Any
 import logging
 import json
 from pathlib import Path
@@ -22,7 +22,6 @@ from ....services.platform_resolution import create_platform_resolution_service
 from ...schemas.import_schemas import (
     VerificationResponse,
     LibraryPreviewResponse,
-    ImportGamesList,
     ImportGameResponse,
     ImportStartResponse,
     ImportJobResponse,
@@ -495,20 +494,20 @@ async def list_darkadia_games(
         if status_filter:
             if status_filter == "unmatched":
                 base_query = base_query.where(
-                    and_(DarkadiaGame.igdb_id.is_(None), DarkadiaGame.ignored == False)
+                    and_(DarkadiaGame.igdb_id.is_(None), not DarkadiaGame.ignored)
                 )
             elif status_filter == "matched":
                 base_query = base_query.where(
                     and_(
                         DarkadiaGame.igdb_id.is_not(None), 
                         DarkadiaGame.game_id.is_(None), 
-                        DarkadiaGame.ignored == False
+                        not DarkadiaGame.ignored
                     )
                 )
             elif status_filter == "synced":
                 base_query = base_query.where(DarkadiaGame.game_id.is_not(None))
             elif status_filter == "ignored":
-                base_query = base_query.where(DarkadiaGame.ignored == True)
+                base_query = base_query.where(DarkadiaGame.ignored)
         
         # Apply search filtering
         if search and search.strip():
@@ -525,20 +524,20 @@ async def list_darkadia_games(
         if status_filter:
             if status_filter == "unmatched":
                 count_query = count_query.where(
-                    and_(DarkadiaGame.igdb_id.is_(None), DarkadiaGame.ignored == False)
+                    and_(DarkadiaGame.igdb_id.is_(None), not DarkadiaGame.ignored)
                 )
             elif status_filter == "matched":
                 count_query = count_query.where(
                     and_(
                         DarkadiaGame.igdb_id.is_not(None), 
                         DarkadiaGame.game_id.is_(None), 
-                        DarkadiaGame.ignored == False
+                        not DarkadiaGame.ignored
                     )
                 )
             elif status_filter == "synced":
                 count_query = count_query.where(DarkadiaGame.game_id.is_not(None))
             elif status_filter == "ignored":
-                count_query = count_query.where(DarkadiaGame.ignored == True)
+                count_query = count_query.where(DarkadiaGame.ignored)
         
         if search and search.strip():
             search_term = f"%{search.strip()}%"
@@ -1434,41 +1433,35 @@ async def get_resolution_summary(
     """
     try:
         logger.info(f"🔍 [DEBUG] Starting resolution summary for user {current_user.id}")
-        logger.info(f"🔍 [DEBUG] Attempting imports...")
+        logger.info("🔍 [DEBUG] Attempting imports...")
         
         try:
             from sqlmodel import select, func
-            logger.info(f"🔍 [DEBUG] ✅ SQLModel imports successful")
+            logger.info("🔍 [DEBUG] ✅ SQLModel imports successful")
         except Exception as import_err:
             logger.error(f"🔍 [DEBUG] ❌ SQLModel import failed: {import_err}")
             raise
             
         try:
             from ....models.darkadia_import import DarkadiaImport
-            logger.info(f"🔍 [DEBUG] ✅ DarkadiaImport import successful")
+            logger.info("🔍 [DEBUG] ✅ DarkadiaImport import successful")
         except Exception as import_err:
             logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport import failed: {import_err}")
             raise
             
         try:
             from ....models.platform import Platform, Storefront
-            logger.info(f"🔍 [DEBUG] ✅ Platform/Storefront imports successful")
+            logger.info("🔍 [DEBUG] ✅ Platform/Storefront imports successful")
         except Exception as import_err:
             logger.error(f"🔍 [DEBUG] ❌ Platform/Storefront import failed: {import_err}")
             raise
             
-        try:
-            from ....models.user_game import UserGamePlatform
-            logger.info(f"🔍 [DEBUG] ✅ UserGamePlatform import successful")
-        except Exception as import_err:
-            logger.error(f"🔍 [DEBUG] ❌ UserGamePlatform import failed: {import_err}")
-            raise
         
-        logger.info(f"🔍 [DEBUG] All imports successful, proceeding with queries")
+        logger.info("🔍 [DEBUG] All imports successful, proceeding with queries")
         
         # First, let's check what DarkadiaImport records exist
         try:
-            logger.info(f"🔍 [DEBUG] Executing total imports count query...")
+            logger.info("🔍 [DEBUG] Executing total imports count query...")
             total_imports = session.exec(
                 select(func.count(DarkadiaImport.id))
                 .where(DarkadiaImport.user_id == current_user.id)
@@ -1479,7 +1472,7 @@ async def get_resolution_summary(
             raise
         
         try:
-            logger.info(f"🔍 [DEBUG] Executing imports with platform names query...")
+            logger.info("🔍 [DEBUG] Executing imports with platform names query...")
             imports_with_platforms = session.exec(
                 select(func.count(DarkadiaImport.id))
                 .where(
@@ -1493,7 +1486,7 @@ async def get_resolution_summary(
             raise
         
         try:
-            logger.info(f"🔍 [DEBUG] Executing imports with user_game_platform_id query...")
+            logger.info("🔍 [DEBUG] Executing imports with user_game_platform_id query...")
             imports_with_platform_ids = session.exec(
                 select(func.count(DarkadiaImport.id))
                 .where(
@@ -1507,12 +1500,12 @@ async def get_resolution_summary(
             raise
         
         try:
-            logger.info(f"🔍 [DEBUG] Executing imports with resolved_platform_id query...")
-            logger.info(f"🔍 [DEBUG] Checking if DarkadiaImport.resolved_platform_id exists...")
+            logger.info("🔍 [DEBUG] Executing imports with resolved_platform_id query...")
+            logger.info("🔍 [DEBUG] Checking if DarkadiaImport.resolved_platform_id exists...")
             
             # Check if resolved_platform_id exists on the model
             if not hasattr(DarkadiaImport, 'resolved_platform_id'):
-                logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport.resolved_platform_id field does not exist!")
+                logger.error("🔍 [DEBUG] ❌ DarkadiaImport.resolved_platform_id field does not exist!")
                 logger.info(f"🔍 [DEBUG] Available DarkadiaImport fields: {dir(DarkadiaImport)}")
                 raise AttributeError("resolved_platform_id field does not exist on DarkadiaImport model")
             
@@ -1529,11 +1522,11 @@ async def get_resolution_summary(
             raise
         
         try:
-            logger.info(f"🔍 [DEBUG] Executing imports with resolved_storefront_id query...")
+            logger.info("🔍 [DEBUG] Executing imports with resolved_storefront_id query...")
             
             # Check if resolved_storefront_id exists on the model
             if not hasattr(DarkadiaImport, 'resolved_storefront_id'):
-                logger.error(f"🔍 [DEBUG] ❌ DarkadiaImport.resolved_storefront_id field does not exist!")
+                logger.error("🔍 [DEBUG] ❌ DarkadiaImport.resolved_storefront_id field does not exist!")
                 raise AttributeError("resolved_storefront_id field does not exist on DarkadiaImport model")
             
             imports_with_resolved_storefront_ids = session.exec(
@@ -1551,7 +1544,7 @@ async def get_resolution_summary(
         # Get platform mappings - use resolved_platform_id for import-phase records
         # Only include platforms that are successfully resolved (not requiring resolution)
         try:
-            logger.info(f"🔍 [DEBUG] Building platform query...")
+            logger.info("🔍 [DEBUG] Building platform query...")
             platform_query = (
                 select(
                     DarkadiaImport.original_platform_name,
@@ -1566,14 +1559,14 @@ async def get_resolution_summary(
                 )
                 .group_by(DarkadiaImport.original_platform_name, Platform.name)
             )
-            logger.info(f"🔍 [DEBUG] ✅ Platform query built successfully")
+            logger.info("🔍 [DEBUG] ✅ Platform query built successfully")
         except Exception as query_err:
             logger.error(f"🔍 [DEBUG] ❌ Platform query building failed: {query_err}")
             raise
         
         try:
             logger.info(f"🔍 [DEBUG] Platform query SQL: {platform_query}")
-            logger.info(f"🔍 [DEBUG] Executing platform query...")
+            logger.info("🔍 [DEBUG] Executing platform query...")
             platform_results = session.exec(platform_query).all()
             logger.info(f"🔍 [DEBUG] ✅ Platform query returned {len(platform_results)} results")
         except Exception as query_err:

@@ -4,7 +4,7 @@ Game-related schemas for API requests and responses.
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
-from datetime import date, datetime
+from datetime import date
 from .common import TimestampMixin
 
 
@@ -14,7 +14,7 @@ from .common import TimestampMixin
 
 class GameResponse(BaseModel, TimestampMixin):
     """Response schema for game data."""
-    id: str
+    id: int = Field(..., description="Game ID (IGDB ID as primary key)")
     title: str
     description: Optional[str]
     genre: Optional[str]
@@ -29,7 +29,6 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_main: Optional[int]
     howlongtobeat_extra: Optional[int]
     howlongtobeat_completionist: Optional[int]
-    igdb_id: Optional[str]
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
     igdb_platform_names: Optional[str]
@@ -68,7 +67,7 @@ class IGDBGameCandidate(BaseModel):
     Note: Time-to-beat fields are null in search responses for performance optimization.
     Complete metadata including time-to-beat data is fetched during game import.
     """
-    igdb_id: str = Field(..., description="IGDB unique identifier for the game")
+    igdb_id: int = Field(..., gt=0, description="IGDB unique identifier for the game")
     igdb_slug: Optional[str] = Field(None, description="IGDB URL slug for generating game links")
     title: str = Field(..., description="Game title from IGDB")
     release_date: Optional[date] = Field(None, description="Game release date")
@@ -88,7 +87,7 @@ class IGDBSearchResponse(BaseModel):
 
 class GameMetadataAcceptRequest(BaseModel):
     """Request schema for accepting IGDB metadata."""
-    igdb_id: str = Field(..., description="Selected IGDB game ID")
+    igdb_id: int = Field(..., gt=0, description="Selected IGDB game ID")
     accept_metadata: bool = Field(default=True, description="Whether to accept the metadata")
     custom_overrides: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Custom field overrides")
     
@@ -157,7 +156,7 @@ class MetadataComparisonResponse(BaseModel):
 
 class BulkMetadataRequest(BaseModel):
     """Request schema for bulk metadata operations."""
-    game_ids: List[str] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
+    game_ids: List[int] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
     operation: str = Field(..., pattern="^(refresh|populate)$", description="Operation type")
     options: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Operation-specific options")
 
@@ -174,5 +173,5 @@ class BulkMetadataResponse(BaseModel):
 
 class BulkCoverArtDownloadRequest(BaseModel):
     """Request schema for bulk cover art download operations."""
-    game_ids: List[str] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
+    game_ids: List[int] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
     skip_existing: bool = Field(default=True, description="Skip games that already have local cover art")

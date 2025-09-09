@@ -29,7 +29,7 @@ class TestIGDBMetadataService:
     def sample_game_metadata(self):
         """Sample game metadata for testing."""
         return GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -52,7 +52,7 @@ class TestIGDBMetadataService:
         
         assert result is not None
         assert result.title == "Test Game"
-        assert result.igdb_id == "12345"
+        assert result.igdb_id == 12345
         igdb_service.get_game_by_id.assert_called_once_with("12345")
     
     @pytest.mark.asyncio
@@ -60,7 +60,7 @@ class TestIGDBMetadataService:
         """Test populating missing metadata."""
         # Create current metadata with missing fields
         current_metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description=None,  # Missing
             genre=None,  # Missing
@@ -92,7 +92,7 @@ class TestIGDBMetadataService:
     def test_compare_metadata(self, igdb_service):
         """Test metadata comparison functionality."""
         current = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description="Old description",
             genre="Action",
@@ -106,7 +106,7 @@ class TestIGDBMetadataService:
         )
         
         fresh = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description="New description",
             genre="Action",
@@ -140,7 +140,7 @@ class TestIGDBMetadataService:
         """Test metadata completeness analysis."""
         # Create metadata with some missing fields
         metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description=None,  # Missing essential
             genre="Action",

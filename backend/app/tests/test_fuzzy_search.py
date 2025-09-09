@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 from app.models.game import Game
 from app.models.user import User
-import uuid
 
 
 class TestFuzzySearchAPI:
@@ -26,22 +25,19 @@ class TestFuzzySearchAPI:
         # Create test games
         test_games = [
             Game(
-                id=str(uuid.uuid4()),
+                id=1020,
                 title="The Witcher 3: Wild Hunt",
                 description="RPG game",
-                igdb_id="1020",
             ),
             Game(
-                id=str(uuid.uuid4()),
+                id=1037,
                 title="Witcher 2: Assassins of Kings", 
                 description="RPG game",
-                igdb_id="1037",
             ),
             Game(
-                id=str(uuid.uuid4()),
+                id=1877,
                 title="Cyberpunk 2077",
                 description="Sci-fi RPG",
-                igdb_id="1877",
             ),
         ]
         
@@ -75,10 +71,9 @@ class TestFuzzySearchAPI:
         
         # Create a test game
         test_game = Game(
-            id=str(uuid.uuid4()),
+            id=9999,
             title="Test Game",
             description="A test game",
-            igdb_id="9999"
         )
         session.add(test_game)
         session.commit()
@@ -118,16 +113,14 @@ class TestFuzzySearchAPI:
         # Create test games with different genres
         test_games = [
             Game(
-                id=str(uuid.uuid4()),
+                id=8888,
                 title="Witcher RPG",
                 genre="RPG",
-                igdb_id="8888",
             ),
             Game(
-                id=str(uuid.uuid4()),
+                id=7777,
                 title="Witcher Action",
                 genre="Action",
-                igdb_id="7777",
             ),
         ]
         

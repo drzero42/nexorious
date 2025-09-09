@@ -1,6 +1,7 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { ui } from './ui.svelte';
+import type { GameId } from '$lib/types/game';
 import type {
   DarkadiaGameResponse,
   DarkadiaGamesListResponse,
@@ -615,7 +616,7 @@ function createDarkadiaStore() {
     },
 
     // Game operations (matching Steam pattern)
-    async matchGame(userId: string, gameId: string, igdbId: string | null): Promise<DarkadiaGameResponse> {
+    async matchGame(userId: string, gameId: string, igdbId: GameId | null): Promise<DarkadiaGameResponse> {
       try {
         const response = await fetch(`${config.apiUrl}/import/sources/darkadia/games/${gameId}/match`, {
           method: 'POST',
@@ -623,7 +624,7 @@ function createDarkadiaStore() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${auth.value.accessToken}`
           },
-          body: JSON.stringify({ igdb_id: igdbId })
+          body: JSON.stringify({ igdb_id: igdbId ? Number(igdbId) : null })
         });
 
         if (!response.ok) {

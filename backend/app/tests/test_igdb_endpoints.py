@@ -76,7 +76,7 @@ class TestIGDBSearchEndpoint:
         """Test successful IGDB search."""
         search_results = [
             GameMetadata(
-                igdb_id="123",
+                igdb_id=123,
                 title="Test Game",
                 igdb_slug="test-game",
                 description="A test game for PC and PlayStation",
@@ -106,7 +106,7 @@ class TestIGDBSearchEndpoint:
             assert len(data["games"]) == 1
             
             candidate = data["games"][0]
-            assert candidate["igdb_id"] == "123"
+            assert candidate["igdb_id"] == 123
             assert candidate["title"] == "Test Game"
             assert candidate["description"] == "A test game for PC and PlayStation"
             assert "pc-windows" in candidate["platforms"]
@@ -183,7 +183,7 @@ class TestIGDBSearchEndpoint:
         """Test platform extraction from game description."""
         search_results = [
             GameMetadata(
-                igdb_id="123",
+                igdb_id=123,
                 title="Test Game",
                 igdb_slug="test-game", 
                 description="Available on PC, PlayStation 5, Xbox Series X/S and Nintendo Switch",
@@ -227,7 +227,7 @@ class TestIGDBImportEndpoint:
     def test_import_from_igdb_success(self, client):
         """Test successful game import from IGDB."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -248,7 +248,7 @@ class TestIGDBImportEndpoint:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -257,7 +257,7 @@ class TestIGDBImportEndpoint:
             assert response.status_code == 201
             data = response.json()
             assert data["title"] == "Test Game"
-            assert data["igdb_id"] == "123"
+            assert data["id"] == 123
             
         finally:
             # Clean up overrides
@@ -274,7 +274,7 @@ class TestIGDBImportEndpoint:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "nonexistent",
+                    "igdb_id": 99999,
                     "accept_metadata": True
                 }
             )
@@ -291,7 +291,7 @@ class TestIGDBImportEndpoint:
     def test_import_from_igdb_with_overrides(self, client):
         """Test import with custom overrides."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="Original description",
             genre="Action"
@@ -305,7 +305,7 @@ class TestIGDBImportEndpoint:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {
                         "description": "Custom description",

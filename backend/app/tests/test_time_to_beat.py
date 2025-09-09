@@ -69,7 +69,7 @@ class TestGameMetadata:
     def test_game_metadata_with_time_to_beat(self):
         """Test creating GameMetadata with time-to-beat fields."""
         metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             hastily=10,
             normally=20,
@@ -83,7 +83,7 @@ class TestGameMetadata:
     def test_game_metadata_without_time_to_beat(self):
         """Test creating GameMetadata without time-to-beat fields."""
         metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game"
         )
         
@@ -260,7 +260,7 @@ class TestIGDBService:
     async def test_populate_missing_metadata_includes_time_to_beat(self, igdb_service):
         """Test that populate_missing_metadata includes time-to-beat data."""
         current_metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             hastily=None,
             normally=None,
@@ -268,7 +268,7 @@ class TestIGDBService:
         )
         
         fresh_metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             hastily=12,
             normally=20,
@@ -286,7 +286,7 @@ class TestIGDBService:
     def test_compare_metadata_includes_time_to_beat(self, igdb_service):
         """Test that compare_metadata includes time-to-beat fields."""
         current_metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             hastily=10,
             normally=18,
@@ -294,7 +294,7 @@ class TestIGDBService:
         )
         
         fresh_metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             hastily=12,
             normally=20,
@@ -318,7 +318,7 @@ class TestIGDBService:
     async def test_get_metadata_completeness_includes_time_to_beat(self, igdb_service):
         """Test that get_metadata_completeness includes time-to-beat fields."""
         metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             igdb_slug="test-game",
             description="A test game",

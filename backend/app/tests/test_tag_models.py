@@ -62,7 +62,7 @@ def second_test_user_fixture(model_session: Session) -> User:
 @pytest.fixture(name="test_game_for_model")
 def test_game_for_model_fixture(model_session: Session) -> Game:
     """Create a test game for model tests."""
-    game = create_test_game(title="Test Game", igdb_id="test-model-game-1")
+    game = create_test_game(title="Test Game", igdb_id=1001)
     model_session.add(game)
     model_session.commit()
     model_session.refresh(game)
@@ -419,9 +419,9 @@ class TestUserGameTagModel:
     def test_multiple_games_per_tag(self, model_session: Session, test_user_for_model: User):
         """Test that a tag can be applied to multiple games."""
         # Create multiple games
-        game1 = create_test_game(title="Game 1", igdb_id="multi-game-1")
-        game2 = create_test_game(title="Game 2", igdb_id="multi-game-2")
-        game3 = create_test_game(title="Game 3", igdb_id="multi-game-3")
+        game1 = create_test_game(title="Game 1", igdb_id=1002)
+        game2 = create_test_game(title="Game 2", igdb_id=1003)
+        game3 = create_test_game(title="Game 3", igdb_id=1004)
         
         model_session.add_all([game1, game2, game3])
         model_session.commit()
@@ -463,8 +463,8 @@ class TestUserGameTagModel:
     def test_user_game_tag_isolation(self, model_session: Session, test_user_for_model: User, second_test_user: User):
         """Test that user game tags are properly isolated between users."""
         # Create games
-        game1 = create_test_game(title="Shared Game 1", igdb_id="isolation-game-1")
-        game2 = create_test_game(title="Shared Game 2", igdb_id="isolation-game-2")
+        game1 = create_test_game(title="Shared Game 1", igdb_id=1005)
+        game2 = create_test_game(title="Shared Game 2", igdb_id=1006)
         
         model_session.add_all([game1, game2])
         model_session.commit()

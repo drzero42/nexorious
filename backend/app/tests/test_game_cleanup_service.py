@@ -2,7 +2,7 @@
 Tests for the game cleanup service.
 """
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from ..services.game_cleanup import cleanup_unreferenced_game, get_unreferenced_games, cleanup_multiple_games
 from ..models.game import Game
@@ -19,7 +19,7 @@ class TestGameCleanupService:
         # Create a game with no user_games or wishlist references
         game = Game(
             title="Unreferenced Game",
-            igdb_id="12345",
+            igdb_id=12345,
             igdb_slug="unreferenced-game"
         )
         session.add(game)
@@ -41,7 +41,7 @@ class TestGameCleanupService:
         # Create a game
         game = Game(
             title="Referenced Game",
-            igdb_id="12346",
+            igdb_id=12346,
             igdb_slug="referenced-game"
         )
         session.add(game)
@@ -70,7 +70,7 @@ class TestGameCleanupService:
         # Create a game
         game = Game(
             title="Wishlisted Game",
-            igdb_id="12347",
+            igdb_id=12347,
             igdb_slug="wishlisted-game"
         )
         session.add(game)
@@ -107,7 +107,7 @@ class TestGameCleanupService:
         # Create a referenced game (with user_game)
         referenced_game = Game(
             title="Referenced Game",
-            igdb_id="12348",
+            igdb_id=12348,
             igdb_slug="referenced-game"
         )
         session.add(referenced_game)
@@ -125,7 +125,7 @@ class TestGameCleanupService:
         # Create an unreferenced game
         unreferenced_game = Game(
             title="Unreferenced Game",
-            igdb_id="12349",
+            igdb_id=12349,
             igdb_slug="unreferenced-game"
         )
         session.add(unreferenced_game)
@@ -144,19 +144,19 @@ class TestGameCleanupService:
         # Create two unreferenced games
         unreferenced_game1 = Game(
             title="Unreferenced Game 1",
-            igdb_id="12350",
+            igdb_id=12350,
             igdb_slug="unreferenced-game-1"
         )
         unreferenced_game2 = Game(
             title="Unreferenced Game 2",
-            igdb_id="12351",
+            igdb_id=12351,
             igdb_slug="unreferenced-game-2"
         )
         
         # Create one referenced game
         referenced_game = Game(
             title="Referenced Game",
-            igdb_id="12352",
+            igdb_id=12352,
             igdb_slug="referenced-game"
         )
         

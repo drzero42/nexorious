@@ -106,7 +106,7 @@ class PlatformResolutionService:
         platform = self.session.exec(
             select(Platform).where(
                 Platform.display_name == clean_name,
-                Platform.is_active == True
+                Platform.is_active
             )
         ).first()
         
@@ -119,7 +119,7 @@ class PlatformResolutionService:
             platform = self.session.exec(
                 select(Platform).where(
                     Platform.display_name == explicit_mapping,
-                    Platform.is_active == True
+                    Platform.is_active
                 )
             ).first()
             if platform:
@@ -165,7 +165,7 @@ class PlatformResolutionService:
         storefront = self.session.exec(
             select(Storefront).where(
                 Storefront.display_name == clean_name,
-                Storefront.is_active == True
+                Storefront.is_active
             )
         ).first()
         
@@ -178,7 +178,7 @@ class PlatformResolutionService:
             storefront = self.session.exec(
                 select(Storefront).where(
                     Storefront.display_name == explicit_mapping,
-                    Storefront.is_active == True
+                    Storefront.is_active
                 )
             ).first()
             if storefront:

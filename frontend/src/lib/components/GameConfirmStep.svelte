@@ -2,12 +2,13 @@
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import PlatformBadges from './PlatformBadges.svelte';
   import { resolveImageUrl } from '$lib/utils/image-url';
+  import type { GameId } from '$lib/types/game';
 
   interface Props {
     searchResults?: IGDBGameCandidate[];
-    addingGameId?: string | null;
-    isGameOwned: (igdbId: string) => boolean;
-    getOwnedPlatformDetailsForGame: (igdbId: string) => any[];
+    addingGameId?: GameId | null;
+    isGameOwned: (igdbId: GameId) => boolean;
+    getOwnedPlatformDetailsForGame: (igdbId: GameId) => any[];
     onback?: () => void;
     ongameclick?: (event: CustomEvent<{ game: IGDBGameCandidate; owned: boolean }>) => void;
   }

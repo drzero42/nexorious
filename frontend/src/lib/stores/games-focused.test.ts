@@ -63,7 +63,7 @@ describe('Games Store - PR Focused Tests', () => {
     it('should use config.apiUrl instead of hardcoded /api/ for IGDB import', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.createFromIGDB('igdb-123');
+      await games.createFromIGDB(123 as any);
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);

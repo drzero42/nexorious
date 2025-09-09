@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { toGameId } from '$lib/types/game';
 import { 
   setupFetchMock, 
   resetFetchMock,
@@ -70,7 +71,7 @@ describe('Dashboard Page', () => {
         {
           id: 'user-game-1',
           game: {
-            id: 'game-1',
+            id: toGameId(1001),
             title: 'Test Game',
             description: 'A test game',
             genre: 'Action',
@@ -85,7 +86,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_main: 18,
             howlongtobeat_extra: 28,
             howlongtobeat_completionist: 45,
-            igdb_id: 'igdb-123',
+            igdb_id: toGameId(123),
             igdb_slug: 'test-game-slug',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z'
@@ -104,7 +105,7 @@ describe('Dashboard Page', () => {
         {
           id: 'user-game-2',
           game: {
-            id: 'game-2',
+            id: toGameId(1002),
             title: 'RPG Game',
             description: 'An RPG game',
             genre: 'RPG',
@@ -119,7 +120,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_main: 40,
             howlongtobeat_extra: 70,
             howlongtobeat_completionist: 120,
-            igdb_id: 'igdb-456',
+            igdb_id: toGameId(456),
             igdb_slug: 'rpg-game-slug',
             created_at: '2024-02-01T00:00:00Z',
             updated_at: '2024-02-01T00:00:00Z'
@@ -138,7 +139,7 @@ describe('Dashboard Page', () => {
         {
           id: 'user-game-3',
           game: {
-            id: 'game-3',
+            id: toGameId(1003),
             title: 'Action Game 2',
             description: 'Another action game',
             genre: 'Action',
@@ -153,7 +154,7 @@ describe('Dashboard Page', () => {
             howlongtobeat_main: 15,
             howlongtobeat_extra: 25,
             howlongtobeat_completionist: 40,
-            igdb_id: 'igdb-101',
+            igdb_id: toGameId(101),
             igdb_slug: 'action-game-2-slug',
             created_at: '2024-04-01T00:00:00Z',
             updated_at: '2024-04-01T00:00:00Z'

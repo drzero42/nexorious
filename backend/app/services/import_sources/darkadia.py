@@ -1065,7 +1065,6 @@ class DarkadiaImportService(ImportSourceService):
             original_platform_name = platform_data.get('platform', '').strip()
             original_storefront_name = platform_data.get('storefront', '').strip() or platform_data.get('storefront_other', '').strip()
             copy_identifier = platform_data.get('copy_identifier')
-            is_real_copy = platform_data.get('is_real_copy', True)
             platform_data.get('requires_storefront_resolution', False)
             
             # Get transformed platform/storefront data if available
@@ -1280,9 +1279,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
+            query = query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
+            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             query = query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1300,9 +1299,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply the same filtering as main query
         if status_filter == "unmatched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             count_query = count_query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1409,7 +1408,7 @@ class DarkadiaImportService(ImportSourceService):
         
         return import_games, total_count
     
-    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[str]) -> ImportGame:
+    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
         """Match game to IGDB entry."""
         game = self.session.get(DarkadiaGame, game_id)
         if not game or game.user_id != user_id:
@@ -1541,12 +1540,12 @@ class DarkadiaImportService(ImportSourceService):
             
         # Get all active platforms
         platforms = self.session.exec(
-            select(Platform).where(Platform.is_active == True).order_by(Platform.display_name)
+            select(Platform).where(Platform.is_active).order_by(Platform.display_name)
         ).all()
         
         # Get all active storefronts
         storefronts = self.session.exec(
-            select(Storefront).where(Storefront.is_active == True).order_by(Storefront.display_name)
+            select(Storefront).where(Storefront.is_active).order_by(Storefront.display_name)
         ).all()
         
         # Get current DarkadiaImport records for this game
@@ -1618,7 +1617,7 @@ class DarkadiaImportService(ImportSourceService):
             # For now, implement a simple mock matching
             # TODO: Implement real IGDB integration
             if len(game.game_name.strip()) > 0:  # Allow all non-empty game names
-                game.igdb_id = f"mock_{hash(game.game_name) % 10000}"
+                game.igdb_id = abs(hash(game.game_name)) % 1000000  # Generate integer mock ID
                 game.igdb_title = f"{game.game_name} (IGDB)"
                 game.updated_at = datetime.now(timezone.utc)
                 self.session.add(game)
@@ -1724,7 +1723,7 @@ class DarkadiaImportService(ImportSourceService):
             logger.debug(f"🎮 [Darkadia Service] Game is matched to IGDB ID: {darkadia_game.igdb_id}")
             
             # Step 3: Check if Game record exists, create if needed
-            game_query = select(Game).where(Game.igdb_id == darkadia_game.igdb_id)
+            game_query = select(Game).where(Game.id == darkadia_game.igdb_id)
             game = self.session.exec(game_query).first()
             
             if not game:

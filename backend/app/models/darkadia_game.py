@@ -30,9 +30,9 @@ class DarkadiaGame(SQLModel, table=True):
     user_id: str = Field(foreign_key="users.id", index=True)
     external_id: str = Field(max_length=50, index=True, description="Row number or unique identifier from CSV")
     game_name: str = Field(max_length=500, description="Game name from CSV")
-    igdb_id: Optional[str] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., '1942')")
+    igdb_id: Optional[int] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., 1942)")
     igdb_title: Optional[str] = Field(default=None, max_length=500, description="Game title from IGDB when matched")
-    game_id: Optional[str] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
+    game_id: Optional[int] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
     ignored: bool = Field(default=False, description="Whether user has marked this game as ignored")
     
     # Store all CSV data as JSON for flexibility and audit trail

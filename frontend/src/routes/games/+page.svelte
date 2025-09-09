@@ -271,7 +271,11 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
    toggleGameSelection(gameId);
   } else {
    // Normal mode, navigate to game detail
-   goto(`/games/${gameId}`);
+   // Find the user game to get the actual game ID (IGDB ID)
+   const userGame = userGames.value.userGames?.find(ug => ug.id === gameId);
+   if (userGame) {
+    goto(`/games/${userGame.game.id}`);
+   }
   }
  }
 
@@ -350,7 +354,7 @@ let selectedAssociationIds = $state<Set<string>>(new Set());
   if (userGames.value?.userGames && Array.isArray(userGames.value.userGames)) {
     // Remove any selected IDs that are no longer in current results
     const currentGameIds = new Set(userGames.value.userGames.map(game => game.id));
-    const filteredSelectedIds = [...selectedGameIds].filter(id => currentGameIds.has(id));
+    const filteredSelectedIds = [...selectedGameIds].filter(id => currentGameIds.has(id as any));
     
     // Only update if the selection actually changed to prevent infinite loops
     if (filteredSelectedIds.length !== selectedGameIds.size || 

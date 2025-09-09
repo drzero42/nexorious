@@ -13,6 +13,7 @@
   import { OwnershipStatus } from '$lib/stores/user-games.svelte';
   import type { PlayStatus, UserGameUpdateRequest, ProgressUpdateRequest, UserGamePlatformCreateRequest } from '$lib/stores/user-games.svelte';
   import { auth } from '$lib/stores/auth.svelte';
+  import { parseGameIdParam, type GameId } from '$lib/types/game';
   import { 
     validatePersonalRating, 
     validateHoursPlayed, 
@@ -30,17 +31,18 @@
   let retryCount = $state(0);
   
   // Svelte 5 derived state from store
-  let gameId = $derived($page.params.id!);
-  let game = $derived(userGames.selectors?.byId(gameId) ?? null);
+  let gameIdParam = $derived($page.params.id!);
+  let gameId: GameId | null = $derived(parseGameIdParam(gameIdParam));
+  let game = $derived(gameId ? userGames.selectors?.byGameId(gameId) : null);
   let isLoadingStore = $derived(userGames.value.isLoading);
   
   
   
   // Combined loading state
-  let isLoadingCombined = $derived(isLoading || isLoadingStore || (userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false));
+  let isLoadingCombined = $derived(isLoading || isLoadingStore || (gameId ? userGames.entityState?.optimisticUpdates?.isPendingFor?.(String(gameId)) : false));
   
   // Visual feedback states for optimistic updates
-  let hasOptimisticUpdates = $derived(userGames.entityState?.optimisticUpdates?.isPendingFor?.(gameId) ?? false);
+  let hasOptimisticUpdates = $derived(gameId ? userGames.entityState?.optimisticUpdates?.isPendingFor?.(String(gameId)) : false);
 
   let editData = $state<{
     // Personal data
@@ -155,11 +157,13 @@
       isLoading = true;
       
       // Only fetch if we don't have the game in our store or if it's being updated
-      if (!game || userGames.entityState.optimisticUpdates.isPendingFor(gameId)) {
-        await userGames.getUserGame(gameId);
+      if (!game || (game && userGames.entityState.optimisticUpdates.isPendingFor(game.id))) {
+        if (gameId) {
+          await userGames.getUserGame(gameId);
+        }
         
         // Verify the game was loaded
-        const gameAfterLoad = userGames.selectors?.byId(gameId);
+        const gameAfterLoad = gameId ? userGames.selectors?.byGameId(gameId) : null;
         
         // Load IGDB platform data after successful game fetch
         if (gameAfterLoad) {
@@ -599,14 +603,20 @@
       }
       
       // Always update user-specific data (personal information) with retry
-      await retryOperation(() => userGames.updateUserGame(gameId, userGameUpdate));
-      await retryOperation(() => userGames.updateProgress(gameId, progressUpdate));
+      // Note: updateUserGame and updateProgress expect UserGameId (UUID), not GameId
+      if (!game) {
+        throw new Error('No game loaded to save changes for');
+      }
+      await retryOperation(() => userGames.updateUserGame(game.id, userGameUpdate));
+      await retryOperation(() => userGames.updateProgress(game.id, progressUpdate));
       
       // Clear cached entity to force fresh fetch from server
-      userGames.entityState.entities.delete(gameId);
+      userGames.entityState.entities.delete(game.id);
       
       // Refresh game data from server to ensure UI shows latest authoritative state
-      await userGames.getUserGame(gameId);
+      if (gameId) {
+        await userGames.getUserGame(gameId);
+      }
       
       isEditing = false;
       
@@ -643,7 +653,11 @@
   async function deleteGame() {
     if (confirm('Are you sure you want to remove this game from your collection?')) {
       try {
-        await userGames.removeFromCollection(gameId);
+        if (!game) {
+          throw new Error('No game loaded to delete');
+        }
+        // removeFromCollection expects UserGameId (UUID), not GameId
+        await userGames.removeFromCollection(game.id);
         goto('/games');
       } catch (error) {
         console.error('Failed to delete game:', error);
@@ -665,7 +679,9 @@
       
       // Note: Game data should be updated automatically, but for IGDB refresh
       // we may need to refresh the specific game from the server
-      await userGames.getUserGame(gameId);
+      if (gameId) {
+        await userGames.getUserGame(gameId);
+      }
       
       // Show success message with updated fields info
       if (result && result.updated_fields && result.updated_fields.length > 0) {

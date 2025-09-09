@@ -37,9 +37,9 @@ test.describe('Game Details', () => {
         if (await link.isVisible()) {
           await link.click();
           
-          // Should navigate to a game details page with UUID pattern
+          // Should navigate to a game details page with integer ID pattern
           const url = page.url();
-          if (url.match(/\/games\/[a-f0-9\-]{36}$/)) {
+          if (url.match(/\/games\/\d+$/)) {
             navigatedToDetails = true;
             break;
           }
@@ -57,7 +57,7 @@ test.describe('Game Details', () => {
       await helpers.ensureRegularUserLogin();
       
       // Instead of creating a game, go to a non-existent game ID to test the "Game not found" structure
-      await page.goto('/games/non-existent-game-id');
+      await page.goto('/games/99999');
       
       // Wait for page to load completely
       await page.waitForLoadState('networkidle');
@@ -74,8 +74,8 @@ test.describe('Game Details', () => {
     });
 
     test('should handle invalid game ID gracefully', async ({ page }) => {
-      // Use an invalid UUID format to test error handling
-      await page.goto('/games/invalid-uuid-12345');
+      // Use an invalid ID format to test error handling
+      await page.goto('/games/invalid-id');
       
       // Wait for page to fully load and async operations to complete
       await page.waitForLoadState('networkidle');
@@ -106,7 +106,7 @@ test.describe('Game Details', () => {
       // Should either show error or redirect
       if (!errorFound) {
         const url = page.url();
-        const redirected = !url.includes('/games/invalid-uuid-12345');
+        const redirected = !url.includes('/games/invalid-id');
         expect(redirected).toBe(true);
       }
     });
@@ -486,7 +486,7 @@ test.describe('Game Details', () => {
       
       await page.goto(`/games/${gameId}`);
       
-      // Should have proper game detail URL with UUID pattern
+      // Should have proper game detail URL with integer ID pattern
       await expect(page).toHaveURL(/\/games\/[a-f0-9\-]{36}/);
     });
   });
@@ -592,8 +592,8 @@ test.describe('Game Details', () => {
 
   test.describe('Error States and Edge Cases', () => {
     test('should handle games that might not exist', async ({ page }) => {
-      // Use a properly formatted but non-existent UUID
-      await page.goto('/games/00000000-0000-0000-0000-000000000000');
+      // Use a properly formatted but non-existent ID
+      await page.goto('/games/00000');
       
       // Should handle gracefully with either error page or redirect
       const errorHandling = [
@@ -619,7 +619,7 @@ test.describe('Game Details', () => {
       // Should either show error or redirect appropriately
       if (!errorDisplayed) {
         const url = page.url();
-        const redirected = !url.includes('/games/00000000-0000-0000-0000-000000000000');
+        const redirected = !url.includes('/games/00000');
         expect(redirected).toBe(true);
       }
     });

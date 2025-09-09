@@ -43,7 +43,7 @@ class UserGamePlatformCreateRequest(BaseModel):
 
 class UserGameCreateRequest(BaseModel):
     """Request schema for adding a game to user's collection."""
-    game_id: str = Field(..., description="Game ID to add to collection")
+    game_id: int = Field(..., gt=0, description="Game ID to add to collection")
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: bool = Field(default=False, description="Whether game is marked as loved")

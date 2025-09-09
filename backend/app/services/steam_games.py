@@ -37,7 +37,7 @@ class AutoMatchResult:
     steam_game_name: str
     steam_appid: int
     matched: bool
-    igdb_id: Optional[str] = None
+    igdb_id: Optional[int] = None
     igdb_game_title: Optional[str] = None
     confidence_score: Optional[float] = None
     error_message: Optional[str] = None
@@ -448,7 +448,7 @@ class SteamGamesService:
                 # Update Steam game with IGDB match (no Game record creation)
                 logger.info(f"💾 [Single Match] Setting IGDB ID for SteamGame {steam_game_id}: '{steam_game.game_name}' -> IGDB ID {best_match.igdb_id}")
                 old_igdb_id = steam_game.igdb_id
-                steam_game.igdb_id = best_match.igdb_id
+                steam_game.igdb_id = int(best_match.igdb_id)
                 steam_game.igdb_title = best_match.title
                 steam_game.updated_at = datetime.now(timezone.utc)
                 
@@ -479,7 +479,7 @@ class SteamGamesService:
                     steam_game_name=steam_game.game_name,
                     steam_appid=steam_game.steam_appid,
                     matched=True,
-                    igdb_id=best_match.igdb_id,
+                    igdb_id=int(best_match.igdb_id),
                     igdb_game_title=best_match.title,
                     confidence_score=confidence
                 )
@@ -803,7 +803,7 @@ class SteamGamesService:
     async def match_steam_game_to_igdb(
         self, 
         steam_game_id: str, 
-        igdb_id: Optional[str], 
+        igdb_id: Optional[int], 
         user_id: str
     ) -> Tuple[SteamGame, str]:
         """
@@ -964,7 +964,7 @@ class SteamGamesService:
             
             # Step 3: Check if Game record exists, create if needed
             logger.debug(f"🎮 [Steam Service] Step 3: Looking for existing Game record with IGDB ID: {steam_game.igdb_id}")
-            game_query = select(Game).where(Game.igdb_id == steam_game.igdb_id)
+            game_query = select(Game).where(Game.id == steam_game.igdb_id)
             game = self.session.exec(game_query).first()
             
             if not game:
@@ -1166,7 +1166,7 @@ class SteamGamesService:
             for steam_game in matched_steam_games:
                 try:
                     # Check if Game record exists, create if needed
-                    game_query = select(Game).where(Game.igdb_id == steam_game.igdb_id)
+                    game_query = select(Game).where(Game.id == steam_game.igdb_id)
                     game = self.session.exec(game_query).first()
                     
                     if not game:

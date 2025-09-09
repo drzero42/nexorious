@@ -2,6 +2,7 @@ import { games } from '$lib/stores';
 import { userGames, OwnershipStatus, PlayStatus, type UserGameCreateRequest } from '$lib/stores/user-games.svelte';
 import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
 import { notifications } from '$lib/stores/notifications.svelte';
+import type { GameId, UserGameId } from '$lib/types/game';
 
 // Types
 export interface PlatformData {
@@ -51,7 +52,7 @@ export class GameAdditionService {
   /**
    * Import game from IGDB
    */
-  async importFromIGDB(igdbId: string): Promise<any> {
+  async importFromIGDB(igdbId: GameId): Promise<any> {
     try {
       const createdGame = await games.createFromIGDB(igdbId, {});
       notifications.showSuccess(`Adding "${createdGame.title}" to your collection`);
@@ -138,7 +139,7 @@ export class GameAdditionService {
    * Update game progress if provided
    */
   async updateGameProgress(
-    userGameId: string,
+    userGameId: UserGameId,
     gameData: GameFormData
   ): Promise<string | null> {
     if (gameData.play_status === 'not_started' && gameData.hours_played === 0 && !gameData.personal_notes) {
@@ -179,7 +180,7 @@ export class GameAdditionService {
         updateData.personal_rating = gameData.personal_rating;
       }
       
-      await userGames.updateUserGame(userGameId, updateData);
+      await userGames.updateUserGame(userGameId as any, updateData);
       return null; // Success
     } catch (error) {
       console.error('Failed to update game details, but game was added to collection:', error);

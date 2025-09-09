@@ -21,7 +21,7 @@ class Wishlist(SQLModel, table=True):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
-    game_id: str = Field(foreign_key="games.id", index=True)
+    game_id: int = Field(foreign_key="games.id", index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships

@@ -80,7 +80,7 @@ class TestGameMetadataWithPlatforms:
     def test_game_metadata_with_platform_data(self):
         """Test GameMetadata creation with platform fields."""
         metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             igdb_platform_ids=[6, 48, 167],
             platform_names=["pc-windows", "playstation-4", "playstation-5"]
@@ -92,7 +92,7 @@ class TestGameMetadataWithPlatforms:
     def test_game_metadata_without_platform_data(self):
         """Test GameMetadata creation without platform fields."""
         metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game"
         )
         
@@ -106,7 +106,7 @@ class TestIGDBPlatformDataStorage:
     def test_igdb_import_stores_platform_data(self, client):
         """Test that IGDB import stores platform data in database."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -131,7 +131,7 @@ class TestIGDBPlatformDataStorage:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -152,7 +152,7 @@ class TestIGDBPlatformDataStorage:
     def test_igdb_import_without_platform_data(self, client):
         """Test that IGDB import handles games without platform data."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -177,7 +177,7 @@ class TestIGDBPlatformDataStorage:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -203,7 +203,7 @@ class TestIGDBSearchWithPlatforms:
         """Test that IGDB search returns platform data when available."""
         search_results = [
             GameMetadata(
-                igdb_id="123",
+                igdb_id=123,
                 title="Test Game",
                 igdb_slug="test-game",
                 description="A test game",
@@ -248,7 +248,7 @@ class TestIGDBSearchWithPlatforms:
         """Test that IGDB search returns empty platforms when no data available."""
         search_results = [
             GameMetadata(
-                igdb_id="123",
+                igdb_id=123,
                 title="Test Game",
                 igdb_slug="test-game",
                 description="A test game",

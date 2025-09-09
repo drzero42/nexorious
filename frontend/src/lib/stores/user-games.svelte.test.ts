@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { toGameId } from '$lib/types/game';
 
 // Mock dependencies before importing
 vi.mock('./auth.svelte', () => ({
@@ -28,9 +29,9 @@ describe('UserGames Store', () => {
 
 	// Mock user game data for testing
 	const mockUserGame: UserGame = {
-		id: '1',
+		id: '1' as any,
 		game: {
-			id: '1',
+			id: toGameId(1),
 			title: 'Test Game',
 			description: 'A test game',
 			genre: 'Action',
@@ -279,15 +280,23 @@ describe('UserGames Store', () => {
 
 	describe('Get User Game', () => {
 		it('should get a specific user game', async () => {
+			// getUserGame calls loadUserGames first, so this response comes first
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
-				json: () => Promise.resolve(mockUserGame)
+				json: () => Promise.resolve({
+					user_games: [mockUserGame],
+					total: 1,
+					page: 1,
+					per_page: 20,
+					pages: 1
+				})
 			});
 
-			const result = await userGamesStore.getUserGame('1');
+			const result = await userGamesStore.getUserGame(toGameId(1));
 
+			// Should have called the list endpoint to load games
 			expect(mockFetch).toHaveBeenCalledWith(
-				'http://localhost:8000/api/user-games/1',
+				expect.stringContaining('/user-games'),
 				expect.objectContaining({
 					headers: expect.objectContaining({
 						'Authorization': 'Bearer test-access-token'
@@ -441,10 +450,10 @@ describe('UserGames Store', () => {
 		beforeEach(() => {
 			// Set up test data
 			const testGames: UserGame[] = [
-				{ ...mockUserGame, id: '1', play_status: PlayStatus.COMPLETED, is_loved: true, personal_rating: 5 },
-				{ ...mockUserGame, id: '2', play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 3 },
-				{ ...mockUserGame, id: '3', play_status: PlayStatus.IN_PROGRESS, is_loved: true, personal_rating: 4 },
-				{ ...mockUserGame, id: '4', play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 5 }
+				{ ...mockUserGame, id: '1' as any, play_status: PlayStatus.COMPLETED, is_loved: true, personal_rating: 5 },
+				{ ...mockUserGame, id: '2' as any, play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 3 },
+				{ ...mockUserGame, id: '3' as any, play_status: PlayStatus.IN_PROGRESS, is_loved: true, personal_rating: 4 },
+				{ ...mockUserGame, id: '4' as any, play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 5 }
 			];
 			
 			userGamesStore.__testSetData(testGames);
