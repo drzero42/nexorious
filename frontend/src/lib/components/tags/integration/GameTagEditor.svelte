@@ -102,7 +102,8 @@
       pendingChanges = { toAdd: [], toRemove: [] };
 
       // Refresh user game data to get updated tag associations
-      await userGames.getUserGame(userGameId);
+      // userGameId is a UserGameId (UUID), so use getUserGameById
+      await userGames.getUserGameById(userGameId as any);
 
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to save tag changes';

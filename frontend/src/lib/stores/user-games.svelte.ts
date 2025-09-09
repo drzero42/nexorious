@@ -2,6 +2,7 @@ import { auth } from './auth.svelte';
 import type { Game } from './games.svelte';
 import type { Platform, Storefront } from './platforms.svelte';
 import { config } from '$lib/env';
+import type { GameId, UserGameId } from '$lib/types/game';
 
 // Enhanced TypeScript patterns for fine-grained reactivity
 // type DeepPartial<T> = {
@@ -134,7 +135,7 @@ export interface UserGamePlatform {
 }
 
 export interface UserGame {
-  id: string;
+  id: UserGameId; // User's game collection ID (UUID)
   game: Game;
   ownership_status: OwnershipStatus;
   is_physical: boolean;
@@ -159,7 +160,7 @@ export interface UserGamePlatformCreateRequest {
 }
 
 export interface UserGameCreateRequest {
-  game_id: string;
+  game_id: GameId; // IGDB game ID as integer
   ownership_status?: OwnershipStatus;
   is_physical?: boolean;
   physical_location?: string;
@@ -258,7 +259,7 @@ export interface CollectionStats {
 export interface UserGamesEntityState {
   entities: Map<string, UserGame>;
   ids: string[];
-  currentUserGameId: string | null;
+  currentUserGameId: string | null; // Can be either UserGameId or GameId as string
   stats: CollectionStats | null;
   isLoading: boolean;
   error: string | null;
@@ -338,10 +339,24 @@ function createUserGamesStore() {
       return entityState.optimisticUpdates.isPending;
     },
     
-    byId: (id: string) => {
+    // Find by UserGameId (UUID)
+    byId: (id: UserGameId) => {
       // Access entitiesVersion to ensure reactivity tracking
       entitiesVersion; // This makes the function reactive to entity changes
       return entityState.entities.get(id);
+    },
+    
+    // Find by GameId (IGDB integer ID)
+    byGameId: (gameId: GameId) => {
+      // Access entitiesVersion to ensure reactivity tracking
+      entitiesVersion; // This makes the function reactive to entity changes
+      // Search through all entities to find the one with matching game.id
+      for (const [_, userGame] of entityState.entities) {
+        if (userGame.game.id === gameId) {
+          return userGame;
+        }
+      }
+      return undefined;
     },
     
     byStatus: (status: PlayStatus) => 
@@ -375,6 +390,7 @@ function createUserGamesStore() {
     },
     
     addMany: (entities: UserGame[]) => {
+      if (!entities) return;
       entities.forEach(entity => {
         entityState.entities.set(entity.id, entity);
         if (!entityState.ids.includes(entity.id)) {
@@ -571,8 +587,45 @@ function createUserGamesStore() {
       }
     },
 
-    // Get a specific user game by ID with enhanced caching
-    getUserGame: async (id: string) => {
+    // Get a specific user game by GameId (IGDB ID)
+    getUserGame: async (gameId: GameId) => {
+      // First check if we already have this game in our entities
+      const existingGame = selectors.byGameId(gameId);
+      if (existingGame && !entityState.optimisticUpdates.isPendingFor(existingGame.id)) {
+        entityState.currentUserGameId = existingGame.id;
+        return existingGame;
+      }
+
+      // We need to load all user games and find the one with matching game ID
+      // This is not ideal but the backend doesn't have a direct endpoint for this
+      entityState.isLoading = true;
+      entityState.error = null;
+
+      try {
+        // Load user's games if not already loaded
+        if (entityState.ids.length === 0) {
+          await store.loadUserGames();
+        }
+        
+        // Now try to find the game again
+        const userGame = selectors.byGameId(gameId);
+        if (userGame) {
+          entityState.currentUserGameId = userGame.id;
+          entityState.isLoading = false;
+          return userGame;
+        }
+        
+        throw new Error(`Game with ID ${gameId} not found in your collection`);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load user game';
+        entityState.isLoading = false;
+        entityState.error = errorMessage;
+        throw error;
+      }
+    },
+    
+    // Get a specific user game by UserGameId (UUID)
+    getUserGameById: async (id: UserGameId) => {
       // Check if we already have this game in our entities
       const existingGame = entityState.entities.get(id);
       if (existingGame && !entityState.optimisticUpdates.isPendingFor(id)) {
@@ -589,7 +642,7 @@ function createUserGamesStore() {
 
         // Add/update the entity
         entityOperations.addOne(userGame);
-        entityState.currentUserGameId = id;
+        entityState.currentUserGameId = userGame.id;
         entityState.isLoading = false;
 
         return userGame;
@@ -632,7 +685,7 @@ function createUserGamesStore() {
     },
 
     // Update user game details with optimistic updates
-    updateUserGame: async (id: string, gameData: UserGameUpdateRequest) => {
+    updateUserGame: async (id: UserGameId, gameData: UserGameUpdateRequest) => {
       const existingGame = entityState.entities.get(id);
       if (!existingGame) {
         throw new Error(`Game with id ${id} not found in collection`);
@@ -679,7 +732,7 @@ function createUserGamesStore() {
     },
 
     // Update game progress with optimistic updates
-    updateProgress: async (id: string, progressData: ProgressUpdateRequest) => {
+    updateProgress: async (id: UserGameId, progressData: ProgressUpdateRequest) => {
       const existingGame = entityState.entities.get(id);
       if (!existingGame) {
         throw new Error(`Game with id ${id} not found in collection`);
@@ -726,7 +779,7 @@ function createUserGamesStore() {
     },
 
     // Remove game from collection with optimistic updates
-    removeFromCollection: async (id: string) => {
+    removeFromCollection: async (id: UserGameId) => {
       const existingGame = entityState.entities.get(id);
       if (!existingGame) {
         throw new Error(`Game with id ${id} not found in collection`);
@@ -773,7 +826,7 @@ function createUserGamesStore() {
     },
 
     // Add platform to user game with optimistic updates
-    addPlatformToUserGame: async (userGameId: string, platformData: UserGamePlatformCreateRequest) => {
+    addPlatformToUserGame: async (userGameId: UserGameId, platformData: UserGamePlatformCreateRequest) => {
       const existingGame = entityState.entities.get(userGameId);
       if (!existingGame) {
         throw new Error(`Game with id ${userGameId} not found in collection`);
@@ -837,7 +890,7 @@ function createUserGamesStore() {
     },
 
     // Remove platform from user game with optimistic updates
-    removePlatformFromUserGame: async (userGameId: string, platformId: string) => {
+    removePlatformFromUserGame: async (userGameId: UserGameId, platformId: string) => {
       const existingGame = entityState.entities.get(userGameId);
       if (!existingGame) {
         throw new Error(`Game with id ${userGameId} not found in collection`);
@@ -1249,8 +1302,18 @@ function createUserGamesStore() {
       return selectors.byPlatform(platformId);
     },
     
-    getGameById: (id: string) => {
-      return selectors.byId(id);
+    getGameById: (id: string | GameId | UserGameId) => {
+      // Convert string or number to appropriate type
+      if (typeof id === 'number') {
+        // It's a GameId
+        return selectors.byGameId(id as GameId);
+      } else if (typeof id === 'string' && /^\d+$/.test(id)) {
+        // It's a numeric string, treat as GameId
+        return selectors.byGameId(parseInt(id, 10) as GameId);
+      } else {
+        // It's a UserGameId (UUID)
+        return selectors.byId(id as UserGameId);
+      }
     },
 
     // Enhanced state management

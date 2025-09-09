@@ -18,7 +18,7 @@ vi.mock('$lib/env', () => ({
 vi.mock('$app/stores', () => ({
   page: {
     subscribe: (callback: any) => {
-      callback({ params: { id: 'user-game-1' } });
+      callback({ params: { id: '1' } });
       return () => {};
     }
   }
@@ -30,8 +30,8 @@ vi.mock('$app/navigation', () => ({
   page: {
     subscribe: vi.fn((callback) => {
       callback({
-        params: { id: 'user-game-1' },
-        url: new URL('http://localhost:3000/games/user-game-1'),
+        params: { id: '1' },
+        url: new URL('http://localhost:3000/games/1'),
         route: { id: '/games/[id]' },
         status: 200,
         error: null,
@@ -71,6 +71,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       
       mockUserGamesStore.value.userGames = [gameWithoutPlatforms];
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutPlatforms.id ? gameWithoutPlatforms : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutPlatforms.game.id ? gameWithoutPlatforms : null);
       
       render(GameDetailPage);
       
@@ -244,6 +245,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutRating);
       // Update the selector to return the game without rating
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutRating.id ? gameWithoutRating : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutRating.game.id ? gameWithoutRating : null);
       
       render(GameDetailPage);
       
@@ -310,6 +312,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutTimes);
       // Update the selector to return the game without HLTB times
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutTimes.id ? gameWithoutTimes : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutTimes.game.id ? gameWithoutTimes : null);
       
       render(GameDetailPage);
       
@@ -341,7 +344,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.getByText('25 hours')).toBeInTheDocument();
       
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
-      const igdbLink = screen.getByText('igdb-123');
+      const igdbLink = screen.getByText('123');
       expect(igdbLink).toBeInTheDocument();
       expect(igdbLink.closest('a')).toHaveAttribute('href', 'https://www.igdb.com/games/test-game-slug');
     });
@@ -363,6 +366,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutSlug);
       // Update the selector to return the game without slug
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutSlug.id ? gameWithoutSlug : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutSlug.game.id ? gameWithoutSlug : null);
       
       render(GameDetailPage);
       
@@ -371,7 +375,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       });
       
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
-      const igdbText = screen.getByText('igdb-123');
+      const igdbText = screen.getByText('123');
       expect(igdbText).toBeInTheDocument();
       // Component should render as plain text without slug
       expect(igdbText.closest('a')).toBeNull();
@@ -387,7 +391,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           ...baseGame.game,
           developer: '',
           estimated_playtime_hours: 0,
-          igdb_id: 'igdb-test-456'
+          igdb_id: 456
         }
       };
       (mockUserGamesStore.value as any).userGames = [gameWithMissingFields];
@@ -396,6 +400,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithMissingFields);
       // Update the selector to return the game with missing fields
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithMissingFields.id ? gameWithMissingFields : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithMissingFields.game.id ? gameWithMissingFields : null);
       
       render(GameDetailPage);
       
@@ -451,7 +456,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
         ...baseGame,
         game: {
           ...baseGame.game,
-          id: 'game-minimal',
+          id: 1,
           title: 'Minimal Game',
           description: '',
           genre: '',
@@ -463,7 +468,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           howlongtobeat_main: 0,
           howlongtobeat_extra: 0,
           howlongtobeat_completionist: 0,
-          igdb_id: 'igdb-minimal-789'
+          igdb_id: 789
         },
         platforms: []
       };
@@ -473,6 +478,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(minimalGame);
       // Update the selector to return the minimal game
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === minimalGame.id ? minimalGame : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === minimalGame.game.id ? minimalGame : null);
       
       render(GameDetailPage);
       
@@ -516,6 +522,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithDecimalRating);
       // Update the selector to return the game with decimal rating
       (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithDecimalRating.id ? gameWithDecimalRating : null);
+      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithDecimalRating.game.id ? gameWithDecimalRating : null);
       
       render(GameDetailPage);
       

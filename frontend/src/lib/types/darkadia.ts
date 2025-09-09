@@ -3,6 +3,8 @@
  * Matches backend API schemas in backend/app/api/schemas/darkadia.py
  */
 
+import type { GameId, UserGameId } from './game';
+
 // Upload and Configuration Types
 
 export interface DarkadiaConfigRequest {
@@ -58,13 +60,13 @@ export interface DarkadiaPlatformInfo {
 }
 
 export interface DarkadiaGameResponse {
-  id: string;
+  id: string; // Import record ID (remains as string UUID)
   external_id: string;
   name: string;
-  igdb_id?: string;
+  igdb_id?: GameId; // IGDB ID as integer
   igdb_title?: string;
-  game_id?: string;
-  user_game_id?: string;
+  game_id?: GameId; // Game ID (same as igdb_id when matched)
+  user_game_id?: UserGameId; // User's game collection ID (UUID)
   ignored: boolean;
   created_at: Date;
   updated_at: Date;
@@ -101,7 +103,7 @@ export interface DarkadiaImportStartResponse {
 // Game Operation Types
 
 export interface DarkadiaGameMatchRequest {
-  igdb_id?: string;
+  igdb_id?: GameId;
 }
 
 export interface DarkadiaGameMatchResponse {
@@ -112,7 +114,7 @@ export interface DarkadiaGameMatchResponse {
 export interface DarkadiaGameSyncResponse {
   message: string;
   game: DarkadiaGameResponse;
-  user_game_id: string;
+  user_game_id: UserGameId;
   action: string;
 }
 

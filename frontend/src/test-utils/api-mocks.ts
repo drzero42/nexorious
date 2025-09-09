@@ -1,9 +1,10 @@
 import { vi } from 'vitest';
 import type { Game, GameListResponse, IGDBSearchResponse, IGDBGameCandidate } from '$lib/stores/games.svelte';
+import type { GameId } from '$lib/types/game';
 
 // Mock game data
 export const mockGame: Game = {
-  id: 'game-1',
+  id: 1 as GameId,
   title: 'Test Game',
   description: 'A test game description',
   genre: 'Action',
@@ -18,7 +19,7 @@ export const mockGame: Game = {
   howlongtobeat_main: 18,  // Realistic main story completion time
   howlongtobeat_extra: 28,  // Realistic main + extras completion time
   howlongtobeat_completionist: 45,  // Realistic completionist time
-  igdb_id: 'igdb-123',
+  igdb_id: 123 as GameId,
   igdb_slug: 'test-game-slug',
   created_at: '2023-01-01T00:00:00.000Z',
   updated_at: '2023-01-01T00:00:00.000Z'
@@ -28,21 +29,21 @@ export const mockGames: Game[] = [
   mockGame,
   {
     ...mockGame,
-    id: 'game-2',
+    id: 2 as GameId,
     title: 'Another Game',
-    igdb_id: 'igdb-456'
+    igdb_id: 456 as GameId
   },
   {
     ...mockGame,
-    id: 'game-3',
+    id: 3 as GameId,
     title: 'Third Game',
-    igdb_id: 'igdb-789'
+    igdb_id: 789 as GameId
   }
 ];
 
 // Mock IGDB game candidates
 export const mockIGDBCandidate: IGDBGameCandidate = {
-  igdb_id: 'igdb-123',
+  igdb_id: 123 as GameId,
   igdb_slug: 'test-igdb-game-slug',
   title: 'Test IGDB Game',
   release_date: '2023-01-01',
@@ -56,7 +57,7 @@ export const mockIGDBCandidates: IGDBGameCandidate[] = [
   mockIGDBCandidate,
   {
     ...mockIGDBCandidate,
-    igdb_id: 'igdb-888',
+    igdb_id: 888 as GameId,
     title: 'Another IGDB Game',
     platforms: ['PC', 'Xbox Series X']
   }
@@ -122,7 +123,7 @@ export class APIResponseMock {
   }
 
   // Single game endpoint mock
-  static mockGameEndpoint(gameId: string, response = mockGame, status = 200) {
+  static mockGameEndpoint(gameId: number, response = mockGame, status = 200) {
     return vi.fn().mockImplementation((url: string) => {
       if (url.includes(`/games/${gameId}`)) {
         return Promise.resolve(this.createResponse(response, status));
@@ -175,7 +176,7 @@ export class APIResponseMock {
       
       // Create game
       if (url.endsWith('/games') && method === 'POST') {
-        return Promise.resolve(this.createResponse({...mockGame, id: 'new-game-id'}, 201));
+        return Promise.resolve(this.createResponse({...mockGame, id: 999 as GameId}, 201));
       }
       
       // Update game
@@ -207,8 +208,8 @@ export class APIResponseMock {
       if (url.includes('/user-games') && method === 'POST') {
         return Promise.resolve(this.createResponse({
           ...mockGame,
-          id: 'user-game-1',
-          game_id: 'game-1'
+          id: 998 as GameId,
+          game_id: 997 as GameId
         }, 201));
       }
       

@@ -1,8 +1,9 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import type { GameId } from '$lib/types/game';
 
 export interface Game {
-  id: string;
+  id: GameId; // IGDB ID as integer primary key
   title: string;
   description?: string;
   genre?: string;
@@ -17,7 +18,7 @@ export interface Game {
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
-  igdb_id?: string;
+  igdb_id?: GameId; // Redundant but kept for compatibility
   igdb_slug?: string;
   igdb_platform_names?: string;
   created_at: string;
@@ -41,7 +42,7 @@ export interface GameListResponse {
 }
 
 export interface IGDBGameCandidate {
-  igdb_id: string;
+  igdb_id: GameId; // IGDB ID as integer
   igdb_slug?: string;
   title: string;
   release_date?: string;
@@ -176,7 +177,7 @@ function createGamesStore() {
     },
 
     // Get a specific game by ID
-    getGame: async (id: string) => {
+    getGame: async (id: GameId) => {
       state = { ...state, isLoading: true, error: null };
 
       try {
@@ -224,7 +225,7 @@ function createGamesStore() {
     },
 
     // Create a new game from IGDB metadata
-    createFromIGDB: async (igdb_id: string, custom_overrides: Record<string, any> = {}) => {
+    createFromIGDB: async (igdb_id: GameId, custom_overrides: Record<string, any> = {}) => {
       state = { ...state, isLoading: true, error: null };
 
       try {
@@ -256,7 +257,7 @@ function createGamesStore() {
 
 
     // Update an existing game
-    updateGame: async (id: string, gameData: Partial<Game>) => {
+    updateGame: async (id: GameId, gameData: Partial<Game>) => {
       state = { ...state, isLoading: true, error: null };
 
       try {
@@ -286,7 +287,7 @@ function createGamesStore() {
     },
 
     // Delete a game
-    deleteGame: async (id: string) => {
+    deleteGame: async (id: GameId) => {
       state = { ...state, isLoading: true, error: null };
 
       try {
@@ -309,7 +310,7 @@ function createGamesStore() {
     },
 
     // Refresh metadata for a game
-    refreshMetadata: async (id: string, fields?: string[], force: boolean = false) => {
+    refreshMetadata: async (id: GameId, fields?: string[], force: boolean = false) => {
       state = { ...state, isLoading: true, error: null };
 
       try {

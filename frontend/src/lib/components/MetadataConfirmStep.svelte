@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
+  import type { GameId } from '$lib/types/game';
   import { resolveImageUrl } from '$lib/utils/image-url';
   import PlatformSelector from './PlatformSelector.svelte';
   import StarRating from './StarRating.svelte';
@@ -7,7 +8,7 @@
   interface Props {
     selectedGame?: IGDBGameCandidate | null;
     gameData?: any;
-    addingGameId?: string | null;
+    addingGameId?: GameId | null;
     selectedPlatforms?: Set<string>;
     platformStorefronts?: Map<string, Set<string>>;
     platformStoreUrls?: Map<string, string>;

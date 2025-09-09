@@ -152,9 +152,9 @@ class SteamGameResponse(BaseModel):
     id: str = Field(..., description="Steam game UUID")
     steam_appid: int = Field(..., description="Steam AppID from Steam Web API")
     game_name: str = Field(..., description="Game name from Steam Web API")
-    igdb_id: Optional[str] = Field(None, description="IGDB ID when matched to games table")
+    igdb_id: Optional[int] = Field(None, description="IGDB ID when matched to games table")
     igdb_title: Optional[str] = Field(None, description="Game title from IGDB when matched to IGDB game")
-    game_id: Optional[str] = Field(None, description="Game ID when synced to user collection")
+    game_id: Optional[int] = Field(None, description="Game ID when synced to user collection")
     user_game_id: Optional[str] = Field(None, description="UserGame ID when synced to user collection")
     ignored: bool = Field(..., description="Whether user has marked this game as ignored")
     created_at: datetime = Field(..., description="When the Steam game was added")
@@ -175,7 +175,7 @@ class SteamGamesImportStartedResponse(BaseModel):
 
 class SteamGameMatchRequest(BaseModel):
     """Request schema for matching Steam game to IGDB game."""
-    igdb_id: Optional[str] = Field(None, description="IGDB game ID to match Steam game to. Set to null to clear existing match.")
+    igdb_id: Optional[int] = Field(None, description="IGDB game ID to match Steam game to. Set to null to clear existing match.")
 
 
 class SteamGameMatchResponse(BaseModel):

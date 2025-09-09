@@ -1409,7 +1409,7 @@ class DarkadiaImportService(ImportSourceService):
         
         return import_games, total_count
     
-    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[str]) -> ImportGame:
+    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
         """Match game to IGDB entry."""
         game = self.session.get(DarkadiaGame, game_id)
         if not game or game.user_id != user_id:
@@ -1618,7 +1618,7 @@ class DarkadiaImportService(ImportSourceService):
             # For now, implement a simple mock matching
             # TODO: Implement real IGDB integration
             if len(game.game_name.strip()) > 0:  # Allow all non-empty game names
-                game.igdb_id = f"mock_{hash(game.game_name) % 10000}"
+                game.igdb_id = abs(hash(game.game_name)) % 1000000  # Generate integer mock ID
                 game.igdb_title = f"{game.game_name} (IGDB)"
                 game.updated_at = datetime.now(timezone.utc)
                 self.session.add(game)
@@ -1724,7 +1724,7 @@ class DarkadiaImportService(ImportSourceService):
             logger.debug(f"🎮 [Darkadia Service] Game is matched to IGDB ID: {darkadia_game.igdb_id}")
             
             # Step 3: Check if Game record exists, create if needed
-            game_query = select(Game).where(Game.igdb_id == darkadia_game.igdb_id)
+            game_query = select(Game).where(Game.id == darkadia_game.igdb_id)
             game = self.session.exec(game_query).first()
             
             if not game:

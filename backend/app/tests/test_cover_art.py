@@ -82,13 +82,12 @@ def temp_storage_dir():
 def sample_game_data():
     """Sample game data for testing."""
     return {
-        "id": "test-game-id",
+        "id": 123,  # Use integer IGDB ID as primary key
         "title": "Test Game",
         "description": "A test game",
         "genre": "Action",
         "developer": "Test Studio",
         "publisher": "Test Publisher",
-        "igdb_id": "123",
         "cover_art_url": "https://example.com/cover.jpg"
     }
 
@@ -142,10 +141,13 @@ class TestCoverArtDownload:
             app.dependency_overrides[get_current_user] = lambda: mock_user
             app.dependency_overrides[get_igdb_service_dependency] = lambda: create_mock_igdb_service()
             
-            response = client.post("/api/games/nonexistent-id/cover-art/download")
+            response = client.post("/api/games/99999/cover-art/download")  # Use integer ID
             
             assert response.status_code == 404
-            assert "Game not found" in response.json()["error"]
+            # Check for error in either 'error' or 'detail' field
+            data = response.json()
+            error_message = data.get("error", data.get("detail", ""))
+            assert "not found" in error_message.lower()
             
         finally:
             # Clean up overrides
@@ -155,9 +157,8 @@ class TestCoverArtDownload:
     def test_download_cover_art_no_cover_url(self, client, mock_user):
         """Test cover art download for game without cover art URL."""
         sample_data = {
-            "id": "test-game-id",
+            "id": 123,
             "title": "Test Game",
-            "igdb_id": "123",
             "cover_art_url": None
         }
         
@@ -243,7 +244,7 @@ class TestBulkCoverArtDownload:
     
     def test_bulk_download_success(self, client, mock_admin_user):
         """Test successful bulk cover art download."""
-        game_ids = ["game1", "game2"]
+        game_ids = [1001, 1002]
         
         try:
             # Create games in the test database
@@ -253,7 +254,6 @@ class TestBulkCoverArtDownload:
                 game = Game(
                     id=game_id,
                     title=f"Test Game {i+1}",
-                    igdb_id=str(i+1),
                     cover_art_url=f"https://example.com/cover{i+1}.jpg",
                     )
                 session.add(game)
@@ -288,7 +288,7 @@ class TestBulkCoverArtDownload:
             
             response = client.post(
                 "/api/games/cover-art/bulk-download",
-                json={"game_ids": ["game1", "game2"], "skip_existing": False}
+                json={"game_ids": [1001, 1002], "skip_existing": False}
             )
             
             assert response.status_code == 403
@@ -302,7 +302,7 @@ class TestBulkCoverArtDownload:
     
     def test_bulk_download_skip_existing(self, client, mock_admin_user):
         """Test bulk download with skip existing option."""
-        game_ids = ["game1", "game2"]
+        game_ids = [1001, 1002]
         
         try:
             # Create games in the test database
@@ -311,18 +311,16 @@ class TestBulkCoverArtDownload:
             
             # Game 1 - already has local cover art
             game1 = Game(
-                id="game1",
+                id=1001,
                 title="Test Game 1",
-                igdb_id="1",
                 cover_art_url="/static/cover_art/1.jpg",  # Local URL
             )
             session.add(game1)
             
             # Game 2 - has remote cover art
             game2 = Game(
-                id="game2",
+                id=1002,
                 title="Test Game 2",
-                igdb_id="2",
                 cover_art_url="https://example.com/cover2.jpg",  # Remote URL
             )
             session.add(game2)
@@ -346,8 +344,8 @@ class TestBulkCoverArtDownload:
             
             # Check that game1 was skipped and game2 was downloaded
             results = data["results"]
-            game1_result = next(r for r in results if r["game_id"] == "game1")
-            game2_result = next(r for r in results if r["game_id"] == "game2")
+            game1_result = next(r for r in results if r["game_id"] == 1001)
+            game2_result = next(r for r in results if r["game_id"] == 1002)
             
             assert game1_result["success"] is True
             assert "Already has local cover art" in game1_result["message"]
@@ -361,7 +359,7 @@ class TestBulkCoverArtDownload:
     
     def test_bulk_download_mixed_results(self, client, mock_admin_user):
         """Test bulk download with mixed success/failure results."""
-        game_ids = ["game1", "game2", "game3"]
+        game_ids = [1001, 1002, 1003]
         
         try:
             # Create games in the test database
@@ -370,27 +368,24 @@ class TestBulkCoverArtDownload:
             
             # Game 1 - valid game
             game1 = Game(
-                id="game1",
+                id=1001,
                 title="Test Game 1",
-                igdb_id="1",
                 cover_art_url="https://example.com/cover1.jpg",
             )
             session.add(game1)
             
             # Game 2 - has IGDB ID and cover URL
             game2 = Game(
-                id="game2",
+                id=1002,
                 title="Test Game 2",
-                igdb_id="2",
                 cover_art_url="https://example.com/cover2.jpg",
             )
             session.add(game2)
             
             # Game 3 - no cover art URL
             game3 = Game(
-                id="game3",
+                id=1003,
                 title="Test Game 3",
-                igdb_id="3",
                 cover_art_url=None,
             )
             session.add(game3)
@@ -429,7 +424,7 @@ class TestAutomaticCoverArtDownload:
     def test_igdb_import_default_behavior_downloads_cover_art(self, client, mock_user):
         """Test IGDB import with default behavior (should download cover art automatically)."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -450,7 +445,7 @@ class TestAutomaticCoverArtDownload:
             response = client.post(
                 "/api/games/igdb-import",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -462,7 +457,7 @@ class TestAutomaticCoverArtDownload:
             assert data["cover_art_url"] == "/static/cover_art/123.jpg"
             
             # Verify download was called due to new default behavior
-            mock_igdb.download_and_store_cover_art.assert_called_once_with("123", "https://example.com/cover.jpg")
+            mock_igdb.download_and_store_cover_art.assert_called_once_with(123, "https://example.com/cover.jpg")
             
         finally:
             # Clean up overrides
@@ -472,7 +467,7 @@ class TestAutomaticCoverArtDownload:
     def test_igdb_import_with_cover_art_download(self, client, mock_user):
         """Test IGDB import with automatic cover art download."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -492,7 +487,7 @@ class TestAutomaticCoverArtDownload:
             response = client.post(
                 "/api/games/igdb-import?download_cover_art=true",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -504,7 +499,7 @@ class TestAutomaticCoverArtDownload:
             assert data["cover_art_url"] == "/static/cover_art/123.jpg"
             
             # Verify download was called
-            mock_igdb.download_and_store_cover_art.assert_called_once_with("123", "https://example.com/cover.jpg")
+            mock_igdb.download_and_store_cover_art.assert_called_once_with(123, "https://example.com/cover.jpg")
             
         finally:
             # Clean up overrides
@@ -514,7 +509,7 @@ class TestAutomaticCoverArtDownload:
     def test_igdb_import_without_cover_art_download(self, client, mock_user):
         """Test IGDB import without automatic cover art download."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -534,7 +529,7 @@ class TestAutomaticCoverArtDownload:
             response = client.post(
                 "/api/games/igdb-import?download_cover_art=false",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }
@@ -556,7 +551,7 @@ class TestAutomaticCoverArtDownload:
     def test_igdb_import_cover_art_download_failure(self, client, mock_user):
         """Test IGDB import when cover art download fails."""
         game_metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -576,7 +571,7 @@ class TestAutomaticCoverArtDownload:
             response = client.post(
                 "/api/games/igdb-import?download_cover_art=true",
                 json={
-                    "igdb_id": "123",
+                    "igdb_id": 123,
                     "accept_metadata": True,
                     "custom_overrides": {}
                 }

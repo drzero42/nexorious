@@ -15,9 +15,9 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3"),
-            GameMetadata(igdb_id="2", title="Witcher 2"),
-            GameMetadata(igdb_id="3", title="Some Other Game")
+            GameMetadata(igdb_id=1, title="The Witcher 3"),
+            GameMetadata(igdb_id=2, title="Witcher 2"),
+            GameMetadata(igdb_id=3, title="Some Other Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "The Witcher 3", threshold=0.5)
@@ -31,9 +31,9 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3: Wild Hunt"),
-            GameMetadata(igdb_id="2", title="Witcher 2: Assassins of Kings"),
-            GameMetadata(igdb_id="3", title="Some Other Game")
+            GameMetadata(igdb_id=1, title="The Witcher 3: Wild Hunt"),
+            GameMetadata(igdb_id=2, title="Witcher 2: Assassins of Kings"),
+            GameMetadata(igdb_id=3, title="Some Other Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Witcher 3", threshold=0.5)
@@ -47,8 +47,8 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3"),
-            GameMetadata(igdb_id="2", title="Completely Different Game")
+            GameMetadata(igdb_id=1, title="The Witcher 3"),
+            GameMetadata(igdb_id=2, title="Completely Different Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Witcher", threshold=0.8)
@@ -64,7 +64,7 @@ class TestIGDBService:
         result = service._rank_games_by_fuzzy_match([], "test", threshold=0.5)
         assert result == []
         
-        games = [GameMetadata(igdb_id="1", title="Test Game")]
+        games = [GameMetadata(igdb_id=1, title="Test Game")]
         result = service._rank_games_by_fuzzy_match(games, "", threshold=0.5)
         assert result == games
     
@@ -73,7 +73,7 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3"),
+            GameMetadata(igdb_id=1, title="The Witcher 3"),
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "THE WITCHER 3", threshold=0.5)
@@ -86,8 +86,8 @@ class TestIGDBService:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="Grand Theft Auto V"),
-            GameMetadata(igdb_id="2", title="Another Game")
+            GameMetadata(igdb_id=1, title="Grand Theft Auto V"),
+            GameMetadata(igdb_id=2, title="Another Game")
         ]
         
         result = service._rank_games_by_fuzzy_match(games, "Auto Grand Theft V", threshold=0.5)
@@ -108,7 +108,7 @@ class TestIGDBService:
         with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
             with patch.object(service, '_rank_games_by_fuzzy_match') as mock_rank:
                 mock_rank.return_value = [
-                    GameMetadata(igdb_id="1", title="Test Game")
+                    GameMetadata(igdb_id=1, title="Test Game")
                 ]
                 
                 await service.search_games("test", limit=10)
@@ -139,9 +139,9 @@ class TestIGDBService:
         
         with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
             with patch.object(service, '_parse_game_data') as mock_parse:
-                mock_parse.return_value = GameMetadata(igdb_id="1", title="Test Game")
+                mock_parse.return_value = GameMetadata(igdb_id=1, title="Test Game")
                 
-                result = await service.get_game_by_id("1")
+                result = await service.get_game_by_id(1)
                 
                 assert result is not None
                 assert result.title == "Test Game"
@@ -156,7 +156,7 @@ class TestIGDBService:
         mock_wrapper.api_request.return_value = b'[]'
         
         with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
-            result = await service.get_game_by_id("nonexistent")
+            result = await service.get_game_by_id(999999)
             assert result is None
 
 
@@ -166,11 +166,11 @@ class TestGameMetadata:
     def test_game_metadata_creation(self):
         """Test GameMetadata creation with required fields."""
         metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game"
         )
         
-        assert metadata.igdb_id == "123"
+        assert metadata.igdb_id == 123
         assert metadata.title == "Test Game"
         assert metadata.description is None
         assert metadata.genre is None
@@ -178,7 +178,7 @@ class TestGameMetadata:
     def test_game_metadata_with_optional_fields(self):
         """Test GameMetadata with optional fields."""
         metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Test Game",
             description="A test game",
             genre="Action",
@@ -596,18 +596,18 @@ class TestKeywordExpansion:
         
         # Create test data with some overlapping IGDB IDs
         original_results = [
-            GameMetadata(igdb_id="1", title="Game A"),
-            GameMetadata(igdb_id="2", title="Game B"),
+            GameMetadata(igdb_id=1, title="Game A"),
+            GameMetadata(igdb_id=2, title="Game B"),
         ]
         
         expanded_results = [
             [
-                GameMetadata(igdb_id="2", title="Game B"),  # Duplicate
-                GameMetadata(igdb_id="3", title="Game C"),  # New
+                GameMetadata(igdb_id=2, title="Game B"),  # Duplicate
+                GameMetadata(igdb_id=3, title="Game C"),  # New
             ],
             [
-                GameMetadata(igdb_id="1", title="Game A"),  # Duplicate
-                GameMetadata(igdb_id="4", title="Game D"),  # New
+                GameMetadata(igdb_id=1, title="Game A"),  # Duplicate
+                GameMetadata(igdb_id=4, title="Game D"),  # New
             ]
         ]
         
@@ -617,8 +617,8 @@ class TestKeywordExpansion:
         assert len(result) == 4
         
         # Original results should appear first
-        assert result[0].igdb_id == "1"  # Game A from original
-        assert result[1].igdb_id == "2"  # Game B from original
+        assert result[0].igdb_id == 1  # Game A from original
+        assert result[1].igdb_id == 2  # Game B from original
         
         # Check all IDs are unique
         seen_ids = set()
@@ -631,15 +631,15 @@ class TestKeywordExpansion:
         service = IGDBService()
         
         original_results = [
-            GameMetadata(igdb_id="1", title="Game A"),
-            GameMetadata(igdb_id="2", title="Game B"),
+            GameMetadata(igdb_id=1, title="Game A"),
+            GameMetadata(igdb_id=2, title="Game B"),
         ]
         
         expanded_results = [
             [
-                GameMetadata(igdb_id="3", title="Game C"),
-                GameMetadata(igdb_id="4", title="Game D"),
-                GameMetadata(igdb_id="5", title="Game E"),
+                GameMetadata(igdb_id=3, title="Game C"),
+                GameMetadata(igdb_id=4, title="Game D"),
+                GameMetadata(igdb_id=5, title="Game E"),
             ]
         ]
         
@@ -649,24 +649,24 @@ class TestKeywordExpansion:
         assert len(result) == 3
         
         # Original results should appear first
-        assert result[0].igdb_id == "1"
-        assert result[1].igdb_id == "2"
-        assert result[2].igdb_id == "3"  # First from expanded
+        assert result[0].igdb_id == 1
+        assert result[1].igdb_id == 2
+        assert result[2].igdb_id == 3  # First from expanded
     
     def test_merge_and_deduplicate_empty_results(self):
         """Test merging with empty results."""
         service = IGDBService()
         
         # Test with empty original results
-        result = service._merge_and_deduplicate_results([], [[GameMetadata(igdb_id="1", title="Game A")]], limit=10)
+        result = service._merge_and_deduplicate_results([], [[GameMetadata(igdb_id=1, title="Game A")]], limit=10)
         assert len(result) == 1
-        assert result[0].igdb_id == "1"
+        assert result[0].igdb_id == 1
         
         # Test with empty expanded results
-        original = [GameMetadata(igdb_id="1", title="Game A")]
+        original = [GameMetadata(igdb_id=1, title="Game A")]
         result = service._merge_and_deduplicate_results(original, [], limit=10)
         assert len(result) == 1
-        assert result[0].igdb_id == "1"
+        assert result[0].igdb_id == 1
         
         # Test with both empty
         result = service._merge_and_deduplicate_results([], [], limit=10)
@@ -678,8 +678,8 @@ class TestKeywordExpansion:
         service = IGDBService()
         
         # Mock the single search method to return different results
-        original_game = GameMetadata(igdb_id="1", title="GOTY Award Winner")
-        expanded_game = GameMetadata(igdb_id="2", title="Game of the Year 2023")
+        original_game = GameMetadata(igdb_id=1, title="GOTY Award Winner")
+        expanded_game = GameMetadata(igdb_id=2, title="Game of the Year 2023")
         
         async def mock_single_search(query, limit):
             if "GOTY" in query:
@@ -700,15 +700,15 @@ class TestKeywordExpansion:
                 assert len(result) == 2
                 
                 # Original result should appear first
-                assert result[0].igdb_id == "1"
-                assert result[1].igdb_id == "2"
+                assert result[0].igdb_id == 1
+                assert result[1].igdb_id == 2
     
     @pytest.mark.asyncio
     async def test_search_games_without_keywords(self):
         """Test search without keywords works normally."""
         service = IGDBService()
         
-        game = GameMetadata(igdb_id="1", title="Regular Game")
+        game = GameMetadata(igdb_id=1, title="Regular Game")
         
         # Mock fuzzy matching to return all games as-is
         def mock_fuzzy_match(games, query, threshold):
@@ -720,14 +720,14 @@ class TestKeywordExpansion:
                 
                 # Should get only the original search result
                 assert len(result) == 1
-                assert result[0].igdb_id == "1"
+                assert result[0].igdb_id == 1
     
     @pytest.mark.asyncio
     async def test_search_games_expansion_failure_fallback(self):
         """Test that expansion failures don't break the search."""
         service = IGDBService()
         
-        original_game = GameMetadata(igdb_id="1", title="GOTY Winner")
+        original_game = GameMetadata(igdb_id=1, title="GOTY Winner")
         
         async def mock_single_search(query, limit):
             if "GOTY" in query:
@@ -746,4 +746,4 @@ class TestKeywordExpansion:
                 result = await service.search_games("GOTY 2023", limit=10)
                 
                 assert len(result) == 1
-                assert result[0].igdb_id == "1"
+                assert result[0].igdb_id == 1

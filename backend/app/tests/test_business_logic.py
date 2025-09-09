@@ -17,10 +17,10 @@ class TestIGDBServiceBusinessLogic:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3: Wild Hunt"),
-            GameMetadata(igdb_id="2", title="The Witcher"),
-            GameMetadata(igdb_id="3", title="Witcher 2"),
-            GameMetadata(igdb_id="4", title="Some Other Game")
+            GameMetadata(igdb_id=1, title="The Witcher 3: Wild Hunt"),
+            GameMetadata(igdb_id=2, title="The Witcher"),
+            GameMetadata(igdb_id=3, title="Witcher 2"),
+            GameMetadata(igdb_id=4, title="Some Other Game")
         ]
         
         # Test exact match gets highest score
@@ -46,8 +46,8 @@ class TestIGDBServiceBusinessLogic:
         service = IGDBService()
         
         games = [
-            GameMetadata(igdb_id="1", title="The Witcher 3"),
-            GameMetadata(igdb_id="2", title="Completely Different Game")
+            GameMetadata(igdb_id=1, title="The Witcher 3"),
+            GameMetadata(igdb_id=2, title="Completely Different Game")
         ]
         
         # High threshold should filter out non-matches
@@ -106,7 +106,7 @@ class TestStorageServiceBusinessLogic:
         """Test that cover art path generation is consistent."""
         service = StorageService()
         
-        igdb_id = "test-game-123"
+        igdb_id = 12300
         url = "https://example.com/image.jpg"
         path1 = service.get_cover_art_path(igdb_id, url)
         path2 = service.get_cover_art_path(igdb_id, url)
@@ -121,7 +121,7 @@ class TestGameMetadataBusinessLogic:
     def test_game_metadata_creation(self):
         """Test GameMetadata object creation and validation."""
         metadata = GameMetadata(
-            igdb_id="12345",
+            igdb_id=12345,
             title="Test Game",
             description="A test game",
             release_date="2023-01-01",
@@ -135,7 +135,7 @@ class TestGameMetadataBusinessLogic:
             completely=40
         )
         
-        assert metadata.igdb_id == "12345"
+        assert metadata.igdb_id == 12345
         assert metadata.title == "Test Game"
         assert metadata.rating_average == 85.5
         assert metadata.genre == "Action"
@@ -146,11 +146,11 @@ class TestGameMetadataBusinessLogic:
     def test_game_metadata_minimal_creation(self):
         """Test GameMetadata with minimal required fields."""
         metadata = GameMetadata(
-            igdb_id="123",
+            igdb_id=123,
             title="Minimal Game"
         )
         
-        assert metadata.igdb_id == "123"
+        assert metadata.igdb_id == 123
         assert metadata.title == "Minimal Game"
         assert metadata.description is None
         assert metadata.genre is None
@@ -159,7 +159,7 @@ class TestGameMetadataBusinessLogic:
     def test_game_metadata_string_representation(self):
         """Test string representation of GameMetadata."""
         metadata = GameMetadata(
-            igdb_id="456",
+            igdb_id=456,
             title="String Test Game"
         )
         

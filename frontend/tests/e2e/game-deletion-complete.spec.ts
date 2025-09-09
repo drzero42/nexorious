@@ -111,8 +111,8 @@ test.describe('Complete Game Deletion Workflows', () => {
 
       // Verify we're on a game detail page
 
-      // Should be on a game detail page with UUID pattern
-      expect(new URL(page.url()).pathname).toMatch(/^\/games\/[a-f0-9\-]{36}$/);
+      // Should be on a game detail page with integer ID pattern
+      expect(new URL(page.url()).pathname).toMatch(/^\/games\/\d+$/);
 
       // Look for the delete/remove button on the detail page
       const deleteButton = page.getByRole('button', { name: /remove|delete/i });

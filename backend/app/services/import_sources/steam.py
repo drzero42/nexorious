@@ -380,7 +380,7 @@ class SteamImportService(ImportSourceService):
         
         return games, total
     
-    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[str]) -> ImportGame:
+    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
         """Match Steam game to IGDB entry."""
         try:
             steam_games_service = create_steam_games_service(self.session, self.igdb_service)

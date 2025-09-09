@@ -10,6 +10,7 @@ import {
 import { mockGamesStore, mockUserGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
 import { mockGoto } from '../../../test-utils/navigation-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
+import type { GameId } from '$lib/types/game';
 import GameAddPage from './+page.svelte';
 
 // Mock the config module
@@ -86,7 +87,7 @@ describe('Game Addition Page', () => {
       const multipleGames = [
         ...mockIGDBCandidates,
         {
-          igdb_id: 'igdb-456',
+          igdb_id: 456 as GameId,
           title: 'Another Test Game',
           release_date: '2024-03-01',
           cover_art_url: 'https://example.com/cover2.jpg',
@@ -209,7 +210,7 @@ describe('Game Addition Page', () => {
       
       // Should call createFromIGDB when confirmed
       await waitFor(() => {
-        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-123', {});
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith(123, {});
       });
     });
 
@@ -315,7 +316,7 @@ describe('Game Addition Page', () => {
       await fireEvent.click(confirmButton);
       
       await waitFor(() => {
-        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-123', {});
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith(123, {});
       });
     });
 
@@ -348,7 +349,7 @@ describe('Game Addition Page', () => {
       
       // Wait for the service calls to complete
       await waitFor(() => {
-        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-123', {});
+        expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith(123, {});
         expect(mockUserGamesStore.addGameToCollection).toHaveBeenCalled();
       });
       
@@ -482,7 +483,7 @@ describe('Game Addition Page', () => {
       const multipleGames = [
         ...mockIGDBCandidates,
         {
-          igdb_id: 'igdb-456',
+          igdb_id: 456 as GameId,
           title: 'Another Test Game',
           release_date: '2024-03-01',
           cover_art_url: 'https://example.com/cover2.jpg',
@@ -490,7 +491,7 @@ describe('Game Addition Page', () => {
           platforms: ['PC']
         },
         {
-          igdb_id: 'igdb-789',
+          igdb_id: 789 as GameId,
           title: 'Third Test Game',
           release_date: '2023-05-15',
           cover_art_url: 'https://example.com/cover3.jpg',
@@ -545,7 +546,7 @@ describe('Game Addition Page', () => {
       expect(loadingMessages).toHaveLength(1);
       
       // Verify that the createFromIGDB was called with the correct IGDB ID for the second game
-      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith('igdb-456', {});
+      expect(mockGamesStore.createFromIGDB).toHaveBeenCalledWith(456 as GameId, {});
       
       resolvePromise!(mockGame);
     });

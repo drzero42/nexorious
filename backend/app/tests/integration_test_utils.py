@@ -266,6 +266,7 @@ def steam_dependencies_fixture(session: Session):
 def test_game_fixture(session: Session) -> Game:
     """Create a test game in the database."""
     game = Game(
+        id=12345,  # Use integer IGDB ID as primary key
         title="Test Game",
         description="A test game for integration testing",
         genre="Action",
@@ -273,7 +274,6 @@ def test_game_fixture(session: Session) -> Game:
         publisher="Test Publisher",
         release_date=date(2023, 1, 1),
         cover_art_url="https://example.com/cover.jpg",
-        igdb_id="12345",
           # Make it unverified so regular users can update it
     )
     session.add(game)
@@ -305,10 +305,10 @@ def test_user_game_fixture(session: Session, test_user: User, test_game: Game) -
 
 # IGDB Mock Helper Functions
 
-def _create_game_metadata(igdb_id: str, title: str, genre: str, **overrides) -> GameMetadata:
+def _create_game_metadata(igdb_id: int, title: str, genre: str, **overrides) -> GameMetadata:
     """Create consistent GameMetadata for mocks."""
     base_data = {
-        "igdb_id": igdb_id,
+        "igdb_id": igdb_id,  # Keep as integer for IGDB ID
         "title": title,
         "igdb_slug": title.lower().replace(" ", "-"),
         "description": f"A {genre.lower()} game",
@@ -328,12 +328,12 @@ def _create_game_metadata(igdb_id: str, title: str, genre: str, **overrides) -> 
 def _get_predefined_game_data():
     """Get predefined game data for consistent testing."""
     return {
-        "12345": {"title": "Test Game", "genre": "Action"},
-        "100": {"title": "The Legend of Zelda", "genre": "Adventure", "developer": "Nintendo", "publisher": "Nintendo"},
-        "200": {"title": "Elden Ring", "genre": "RPG", "developer": "FromSoftware", "publisher": "Bandai Namco"},
-        "300": {"title": "Apex Legends", "genre": "Shooter", "developer": "Respawn", "publisher": "EA"},
-        "400": {"title": "Cyberpunk 2077", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"},
-        "500": {"title": "The Witcher 3", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"}
+        12345: {"title": "Test Game", "genre": "Action"},
+        100: {"title": "The Legend of Zelda", "genre": "Adventure", "developer": "Nintendo", "publisher": "Nintendo"},
+        200: {"title": "Elden Ring", "genre": "RPG", "developer": "FromSoftware", "publisher": "Bandai Namco"},
+        300: {"title": "Apex Legends", "genre": "Shooter", "developer": "Respawn", "publisher": "EA"},
+        400: {"title": "Cyberpunk 2077", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"},
+        500: {"title": "The Witcher 3", "genre": "RPG", "developer": "CD Projekt RED", "publisher": "CD Projekt"}
     }
 
 
@@ -350,44 +350,44 @@ def mock_igdb_service_fixture():
         
         # Smart matching based on query content
         if "zelda" in query_lower:
-            data = game_data["100"].copy()
+            data = game_data[100].copy()
             data.pop("title", None)  # Remove to avoid duplicate
             data.pop("genre", None)  # Remove to avoid duplicate
-            results.append(_create_game_metadata("100", game_data["100"]["title"], game_data["100"]["genre"], **data))
+            results.append(_create_game_metadata(100, game_data[100]["title"], game_data[100]["genre"], **data))
         elif "elden" in query_lower:
-            data = game_data["200"].copy()
+            data = game_data[200].copy()
             data.pop("title", None)
             data.pop("genre", None)
-            results.append(_create_game_metadata("200", game_data["200"]["title"], game_data["200"]["genre"], **data))
+            results.append(_create_game_metadata(200, game_data[200]["title"], game_data[200]["genre"], **data))
         elif "apex" in query_lower:
-            data = game_data["300"].copy()
+            data = game_data[300].copy()
             data.pop("title", None)
             data.pop("genre", None)
-            results.append(_create_game_metadata("300", game_data["300"]["title"], game_data["300"]["genre"], **data))
+            results.append(_create_game_metadata(300, game_data[300]["title"], game_data[300]["genre"], **data))
         elif "cyberpunk" in query_lower:
-            data = game_data["400"].copy()
+            data = game_data[400].copy()
             data.pop("title", None)
             data.pop("genre", None)
-            results.append(_create_game_metadata("400", game_data["400"]["title"], game_data["400"]["genre"], **data))
+            results.append(_create_game_metadata(400, game_data[400]["title"], game_data[400]["genre"], **data))
         elif "witcher" in query_lower:
-            data = game_data["500"].copy()
+            data = game_data[500].copy()
             data.pop("title", None)
             data.pop("genre", None)
-            results.append(_create_game_metadata("500", game_data["500"]["title"], game_data["500"]["genre"], **data))
+            results.append(_create_game_metadata(500, game_data[500]["title"], game_data[500]["genre"], **data))
         else:
             # Default fallback - use query as title if it contains "Test Game", otherwise create generic
             if "test game" in query_lower:
-                results.append(_create_game_metadata("12345", query, "Action"))
+                results.append(_create_game_metadata(12345, query, "Action"))
             else:
-                results.append(_create_game_metadata("12345", f"Test Game: {query}", "Action"))
+                results.append(_create_game_metadata(12345, f"Test Game: {query}", "Action"))
         
         return results[:limit]
     
     mock_service.search_games.side_effect = mock_search_games
     
     # Improved get_game_by_id with better data coverage
-    def mock_get_game_by_id(igdb_id: str) -> GameMetadata:
-        data = game_data.get(igdb_id, game_data["12345"]).copy()
+    def mock_get_game_by_id(igdb_id: int) -> GameMetadata:
+        data = game_data.get(igdb_id, game_data[12345]).copy()
         title = data.pop("title")
         genre = data.pop("genre")
         return _create_game_metadata(igdb_id, title, genre, **data)
@@ -396,15 +396,15 @@ def mock_igdb_service_fixture():
     
     # Smart refresh_game_metadata that uses existing game data
     def mock_refresh_game_metadata(game: Game) -> GameMetadata:
-        if game.igdb_id and game.igdb_id in game_data:
-            data = game_data[game.igdb_id].copy()
+        if game.id and game.id in game_data:
+            data = game_data[game.id].copy()
             title = data.pop("title")
             genre = data.pop("genre")
-            return _create_game_metadata(game.igdb_id, title, genre, **data)
+            return _create_game_metadata(game.id, title, genre, **data)
         else:
             # Return enhanced version of existing game data
             return _create_game_metadata(
-                game.igdb_id or "12345",
+                game.id or 12345,
                 game.title or "Enhanced Test Game",
                 game.genre or "Action",
                 description=f"Enhanced description for {game.title or 'test game'}"
@@ -414,8 +414,8 @@ def mock_igdb_service_fixture():
     
     # Smart populate_missing_metadata that actually populates missing fields
     def mock_populate_missing_metadata(game: Game) -> GameMetadata:
-        igdb_id = game.igdb_id or "12345"
-        data = game_data.get(igdb_id, game_data["12345"]).copy()
+        igdb_id = game.id or 12345
+        data = game_data.get(igdb_id, game_data[12345]).copy()
         
         # Use existing game data as base, fill in missing fields
         title = game.title or data.pop("title")
@@ -480,7 +480,7 @@ def configurable_mock_igdb_fixture():
             mock_service.search_games.return_value = search_results
         else:
             mock_service.search_games.return_value = [
-                _create_game_metadata("default", "Default Game", "Action")
+                _create_game_metadata(999999, "Default Game", "Action")
             ]
         
         if custom_behavior:
@@ -538,10 +538,13 @@ def create_test_platform_data(
     }
 
 
+# Global counter for unique IGDB ID generation across test runs
+_test_game_counter = 300000
+
 def create_test_game(
     title: str = None,
     description: str = None,
-    igdb_id: str = None,
+    igdb_id: int = None,
     **kwargs
 ) -> Game:
     """Create a test game with automatically generated IGDB ID if not provided.
@@ -557,23 +560,28 @@ def create_test_game(
     """
     import uuid
     import time
+    import random
     
     # Generate unique values if not provided
     if igdb_id is None:
-        # Use timestamp + random component for uniqueness
-        igdb_id = f"test-{int(time.time() * 1000)}-{str(uuid.uuid4())[:8]}"
+        # Use global counter + random component for guaranteed uniqueness
+        global _test_game_counter
+        _test_game_counter += 1
+        # Add small random component to avoid conflicts across test runs
+        random_component = random.randint(1, 999)
+        igdb_id = _test_game_counter * 1000 + random_component
     
     if title is None:
-        title = f"Test Game {igdb_id[-8:]}"
+        title = f"Test Game {igdb_id}"
     
     if description is None:
         description = f"Test description for {title}"
     
     # Set default values and allow override with kwargs
     game_data = {
+        "id": igdb_id,  # Use IGDB ID as primary key
         "title": title,
         "description": description,
-        "igdb_id": igdb_id,
         "genre": "Action",
         "developer": "Test Developer",
         "publisher": "Test Publisher",
@@ -603,19 +611,21 @@ def create_test_games(
     import time
     
     games = []
-    base_timestamp = int(time.time() * 1000)
+    global _test_game_counter
     
     for i in range(count):
-        # Generate unique IGDB ID for each game
-        igdb_id = f"test-{base_timestamp + i}"
-        title = kwargs.get('title', f"Game {i}")
-        description = kwargs.get('description', f"Description {i}")
+        # Generate unique IGDB ID for each game using global counter
+        _test_game_counter += 1
+        igdb_id = _test_game_counter * 1000 + i + 1  # Ensure uniqueness within batch
+        title = kwargs.get('title', f"Game {i+1}")
+        description = kwargs.get('description', f"Description {i+1}")
         
+        game_kwargs = {k: v for k, v in kwargs.items() if k not in ['title', 'description']}
         game = create_test_game(
             title=title,
             description=description,
             igdb_id=igdb_id,
-            **kwargs
+            **game_kwargs
         )
         
         games.append(game)
@@ -648,7 +658,7 @@ def create_test_storefront_data(
 
 
 def create_test_user_game_data(
-    game_id: str,
+    game_id: int,  # Changed to integer for IGDB ID
     ownership_status: str = "owned",
     personal_rating: Optional[float] = None,
     is_loved: bool = False,

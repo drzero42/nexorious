@@ -1,8 +1,9 @@
 import { vi } from 'vitest';
+import type { GameId } from '$lib/types/game';
 
 // Mock game metadata (separate from user-specific data)
 export const mockGameMetadata = {
-  id: 'game-1',
+  id: 1 as GameId,
   title: 'Test Game',
   description: 'A test game description',
   genre: 'Action',
@@ -17,7 +18,7 @@ export const mockGameMetadata = {
   howlongtobeat_main: 18,
   howlongtobeat_extra: 28,
   howlongtobeat_completionist: 45,
-  igdb_id: 'igdb-123',
+  igdb_id: 123 as GameId,
   igdb_slug: 'test-game-slug',
   created_at: '2023-01-01T00:00:00.000Z',
   updated_at: '2023-01-01T00:00:00.000Z'
@@ -76,7 +77,7 @@ export const mockUserGames = [
     id: 'user-game-2',
     game: {
       ...mockGameMetadata,
-      id: 'game-2',
+      id: 2 as GameId,
       title: 'Another Game',
       cover_art_url: 'https://example.com/cover2.jpg'
     },
@@ -89,7 +90,7 @@ export const mockUserGames = [
     id: 'user-game-3',
     game: {
       ...mockGameMetadata,
-      id: 'game-3',
+      id: 3 as GameId,
       title: 'Third Game',
       cover_art_url: 'https://example.com/cover3.jpg'
     },
@@ -129,7 +130,8 @@ export const mockUserGamesStore = {
     }
   },
   selectors: {
-    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null)
+    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null),
+    byGameId: vi.fn((gameId) => mockUserGames.find(g => g.game.id === gameId) || null)
   },
   fetchUserGames: vi.fn(),
   loadUserGames: vi.fn(),
@@ -158,7 +160,7 @@ export const mockUserGamesStore = {
 // Mock IGDB candidates for games store
 export const mockIGDBCandidates = [
   {
-    igdb_id: 'igdb-123',
+    igdb_id: 123 as GameId,
     igdb_slug: 'test-igdb-game-slug',
     title: 'Test IGDB Game',
     release_date: '2023-01-01',
@@ -605,7 +607,7 @@ export function resetStoresMocks() {
   });
   mockUserGamesStore.addGameToCollection.mockResolvedValue({
     id: 'user-game-1',
-    game_id: 'game-1'
+    game_id: 1 as GameId
   });
   mockUserGamesStore.updateProgress.mockResolvedValue({});
   mockUserGamesStore.updateUserGame.mockResolvedValue({});
@@ -638,7 +640,8 @@ export function resetStoresMocks() {
 
   // Reset selectors
   mockUserGamesStore.selectors = {
-    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null)
+    byId: vi.fn((id) => mockUserGames.find(g => g.id === id) || null),
+    byGameId: vi.fn((gameId) => mockUserGames.find(g => g.game.id === gameId) || null)
   };
 
   // Reset additional methods

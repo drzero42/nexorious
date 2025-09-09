@@ -149,7 +149,7 @@ class TestSteamGameModel:
         session.refresh(steam_game)
         
         # Test that igdb_id stores the IGDB API ID correctly
-        assert steam_game.igdb_id == "1234"
+        assert steam_game.igdb_id == 1234
         assert steam_game.igdb_id is not None
         
         # Test that we can query games by IGDB API ID
@@ -163,8 +163,8 @@ class TestSteamGameModel:
         """Test relationship with Game model via game_id (synced game)."""
         # Create a game first
         game = Game(
+            id=5678,  # Use integer IGDB ID as primary key
             title="Team Fortress 2",
-            igdb_id="5678",
             release_date=None,
             description="Team-based FPS",
             igdb_slug="team-fortress-2"
@@ -189,7 +189,7 @@ class TestSteamGameModel:
         assert steam_game.synced_game is not None
         assert steam_game.synced_game.id == game.id
         assert steam_game.synced_game.title == "Team Fortress 2"
-        assert steam_game.synced_game.igdb_id == "5678"
+        assert steam_game.synced_game.id == 5678  # Check primary key ID
     
     def test_required_fields(self, session: Session, test_user: User):
         """Test that required fields cannot be null."""
@@ -341,7 +341,7 @@ class TestSteamGameModel:
             user_id=test_user.id,
             steam_appid=2,
             game_name="Matched Game",
-            igdb_id="1001"
+            igdb_id=1001
         )
         session.add(matched_steam_game)
         
@@ -396,7 +396,7 @@ class TestSteamGameModel:
         
         # Matched game: has igdb_id, no game_id, not ignored
         matched_game = games_by_id["2"]
-        assert matched_game["igdb_id"] == "1001"
+        assert matched_game["igdb_id"] == 1001
         assert matched_game["game_id"] is None
         assert matched_game["ignored"] is False
         
@@ -479,8 +479,8 @@ class TestSteamGameModelEdgeCases:
         """Test igdb_id field accepts various IGDB API ID formats."""
         # Test with different valid IGDB API ID formats
         test_cases = [
-            "1234",           # Numeric string
-            "56789",          # Longer numeric
+            1234,             # Integer ID
+            56789,            # Longer integer ID
             None,             # Null/unmatched game
         ]
         

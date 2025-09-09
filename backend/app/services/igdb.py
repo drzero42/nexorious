@@ -59,7 +59,7 @@ KEYWORD_EXPANSIONS = {
 class GameMetadata:
     """Structured game metadata from IGDB."""
     
-    igdb_id: str
+    igdb_id: int
     title: str
     igdb_slug: Optional[str] = None
     description: Optional[str] = None
@@ -372,7 +372,7 @@ class IGDBService:
         
         return [game for game, score in scored_games]
     
-    async def get_game_by_id(self, igdb_id: str) -> Optional[GameMetadata]:
+    async def get_game_by_id(self, igdb_id: int) -> Optional[GameMetadata]:
         """Get game metadata by IGDB ID."""
         logger.debug(f"Fetching game metadata from IGDB for ID {igdb_id}")
         
@@ -426,7 +426,7 @@ class IGDBService:
             logger.error(f"Error fetching game by ID {igdb_id}: {e}", exc_info=True)
             raise IGDBError(f"Failed to fetch game: {e}")
     
-    async def _get_time_to_beat_data(self, igdb_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_time_to_beat_data(self, igdb_id: int) -> Optional[Dict[str, Any]]:
         """Get time-to-beat data for a game from IGDB.
         
         IGDB returns time-to-beat data in seconds, but we store and display it in hours.
@@ -540,7 +540,7 @@ class IGDBService:
             logger.debug(f"Successfully parsed {game_name}: genres={genre}, platforms={len(platform_names) if platform_names else 0}")
             
             return GameMetadata(
-                igdb_id=str(game_id),
+                igdb_id=game_id,
                 title=game_name,
                 igdb_slug=game_data.get('slug'),
                 description=game_data.get('summary'),
@@ -584,13 +584,13 @@ class IGDBService:
             logger.error(f"Failed to download cover art from {cover_url}: {e}")
             return None
     
-    async def download_and_store_cover_art(self, igdb_id: str, cover_url: str) -> Optional[str]:
+    async def download_and_store_cover_art(self, igdb_id: int, cover_url: str) -> Optional[str]:
         """Download and store cover art locally. Returns local URL on success."""
         if not cover_url or not igdb_id:
             return None
             
         try:
-            local_url = await storage_service.download_and_store_cover_art(igdb_id, cover_url)
+            local_url = await storage_service.download_and_store_cover_art(str(igdb_id), cover_url)
             if local_url:
                 logger.info(f"Successfully stored cover art for IGDB ID {igdb_id}")
                 return local_url
@@ -600,7 +600,7 @@ class IGDBService:
             logger.error(f"Failed to store cover art for IGDB ID {igdb_id}: {e}")
             return None
     
-    async def refresh_game_metadata(self, igdb_id: str) -> Optional[GameMetadata]:
+    async def refresh_game_metadata(self, igdb_id: int) -> Optional[GameMetadata]:
         """Refresh game metadata from IGDB by ID."""
         if not igdb_id:
             logger.warning("Attempted to refresh metadata with empty IGDB ID")
@@ -621,7 +621,7 @@ class IGDBService:
             logger.error(f"Failed to refresh metadata for IGDB ID {igdb_id}: {e}", exc_info=True)
             return None
     
-    async def populate_missing_metadata(self, current_metadata: GameMetadata, igdb_id: str) -> Optional[GameMetadata]:
+    async def populate_missing_metadata(self, current_metadata: GameMetadata, igdb_id: int) -> Optional[GameMetadata]:
         """Populate missing fields in existing metadata with IGDB data."""
         if not igdb_id:
             return None

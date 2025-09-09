@@ -28,7 +28,7 @@ class TestGamesListEndpoint:
         assert "page" in data
         assert "per_page" in data
         assert len(data["games"]) == 1
-        assert data["games"][0]["id"] == str(test_game.id)
+        assert data["games"][0]["id"] == test_game.id
         assert data["games"][0]["title"] == test_game.title
     
     def test_list_games_pagination(self, client: TestClient, session: Session, auth_headers):
@@ -87,7 +87,7 @@ class TestGamesDetailEndpoint:
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["id"] == str(test_game.id)
+        assert data["id"] == test_game.id
         assert data["title"] == test_game.title
         assert data["description"] == test_game.description
         assert data["genre"] == test_game.genre
@@ -96,7 +96,7 @@ class TestGamesDetailEndpoint:
     
     def test_get_game_not_found(self, client: TestClient, auth_headers):
         """Test game retrieval with non-existent ID."""
-        response = client.get("/api/games/non-existent-id", headers=auth_headers)
+        response = client.get("/api/games/99999", headers=auth_headers)
         
         assert_api_error(response, 404, "Game not found")
     
@@ -132,7 +132,7 @@ class TestIGDBIntegrationEndpoints:
     def test_igdb_import_success(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
         """Test successful IGDB import."""
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "Test Game"
         }
         response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=auth_headers)
@@ -140,12 +140,12 @@ class TestIGDBIntegrationEndpoints:
         assert_api_success(response, 201)
         data = response.json()
         assert data["title"] == "Test Game"
-        assert data["igdb_id"] == "12345"
+        assert data["id"] == 12345
     
     def test_igdb_import_with_overrides(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
         """Test IGDB import with user overrides."""
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "Custom Title",
             "description": "Custom description"
         }
@@ -160,7 +160,7 @@ class TestIGDBIntegrationEndpoints:
         """Test IGDB import when game already exists - should return existing game."""
         # First import - use the IGDB ID that the mock service returns
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "Test Game"
         }
         response1 = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=auth_headers)
@@ -175,13 +175,13 @@ class TestIGDBIntegrationEndpoints:
         
         # Should return the same game
         assert data2["id"] == game_id
-        assert data2["igdb_id"] == "12345"
+        assert data2["id"] == 12345
         assert data2["title"] == "Test Game"
     
     def test_igdb_import_without_auth(self, client_with_mock_igdb: TestClient):
         """Test IGDB import without authentication."""
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "Test Game"
         }
         response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data)
@@ -275,7 +275,7 @@ class TestCoverArtEndpoints:
     
     def test_download_cover_art_game_not_found(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
         """Test cover art download with non-existent game."""
-        response = client_with_mock_igdb.post("/api/games/non-existent-id/cover-art/download", headers=auth_headers)
+        response = client_with_mock_igdb.post("/api/games/99999/cover-art/download", headers=auth_headers)
         
         assert_api_error(response, 404, "Game not found")
     
@@ -334,7 +334,7 @@ class TestGamesEndpointsSecurity:
         
         # Test IGDB import endpoint
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "Test Game"
         }
         response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data)

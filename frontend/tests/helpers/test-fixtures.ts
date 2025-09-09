@@ -20,7 +20,7 @@ export class TestHelpers {
   constructor(private page: Page) {}
 
   // Store created game IDs for cleanup
-  private createdGameIds: string[] = [];
+  private createdGameIds: number[] = [];
 
   /**
    * Check if setup is needed by visiting the homepage
@@ -122,7 +122,7 @@ export class TestHelpers {
   /**
    * Track a game ID for cleanup (used by E2E tests)
    */
-  trackGameForCleanup(gameId: string): void {
+  trackGameForCleanup(gameId: number): void {
     this.createdGameIds.push(gameId);
   }
 
@@ -138,7 +138,7 @@ export class TestHelpers {
     ownership_status?: string;
     hours_played?: number;
     platforms?: string[];
-  }): Promise<string> {
+  }): Promise<number> {
     try {
       // Get auth token from localStorage
       const authState = await this.page.evaluate(() => {
@@ -157,7 +157,7 @@ export class TestHelpers {
           'Content-Type': 'application/json'
         },
         data: {
-          igdb_id: '11208', // Witcher 3 - reliable test game
+          igdb_id: 11208, // Witcher 3 - reliable test game
           title: gameData.title,
           description: gameData.description || 'Test game description'
         }
@@ -169,7 +169,7 @@ export class TestHelpers {
       }
 
       const gameResult = await gameResponse.json();
-      const gameId = gameResult.id;
+      const gameId = Number(gameResult.id);
 
       // Update user game data if additional fields are provided
       if (gameData.personal_rating || gameData.play_status !== 'not_started' || 
@@ -220,7 +220,7 @@ export class TestHelpers {
   /**
    * Delete a game via API (for cleanup)
    */
-  private async deleteGameViaAPI(gameId: string): Promise<void> {
+  private async deleteGameViaAPI(gameId: number): Promise<void> {
     try {
       // Get auth token for cleanup
       const authState = await this.page.evaluate(() => {
@@ -248,7 +248,7 @@ export class TestHelpers {
   /**
    * Navigate to game details page by ID
    */
-  async navigateToGameDetails(gameId: string): Promise<void> {
+  async navigateToGameDetails(gameId: number): Promise<void> {
     await this.page.goto(`/games/${gameId}`);
     await this.page.waitForLoadState('networkidle');
   }

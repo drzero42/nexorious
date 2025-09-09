@@ -94,7 +94,7 @@ class TestCompleteImportToSyncWorkflow:
         for i, steam_game in enumerate(steam_games):
             igdb_game = Game(
                 title=steam_game.game_name,
-                igdb_id=f"igdb-{i+1}",
+                id=i+1,
                 igdb_slug=f"game-slug-{i+1}"
             )
             igdb_games.append(igdb_game)
@@ -119,7 +119,7 @@ class TestCompleteImportToSyncWorkflow:
                 mock_game_data = MockGameData(igdb_game.title)
                 mock_igdb_service.get_game_by_id.return_value = mock_game_data
                 
-                match_request = {"igdb_id": igdb_game.igdb_id}
+                match_request = {"igdb_id": igdb_game.id}
                 response = client_with_shared_session.put(
                     f"/api/import/sources/steam/games/{steam_game.id}/match",
                     json=match_request,
@@ -127,7 +127,7 @@ class TestCompleteImportToSyncWorkflow:
                 )
                 assert_api_success(response, 200)
                 match_data = response.json()
-                assert match_data["game"]["igdb_id"] == igdb_game.igdb_id
+                assert match_data["game"]["igdb_id"] == igdb_game.id
                 assert match_data["game"]["igdb_title"] == igdb_game.title
         
         # Step 5: Verify games appear in matched list
@@ -341,13 +341,13 @@ class TestCompleteImportToSyncWorkflow:
         assert "must be matched to igdb" in error_message
         
         # Step 2: Try to match to non-existent IGDB game
-        match_request = {"igdb_id": "non-existent-igdb-id"}
+        match_request = {"igdb_id": 999999}
         response = client_with_shared_session.put(
             f"/api/import/sources/steam/games/{steam_game.id}/match",
             json=match_request,
             headers=auth_headers
         )
-        assert_api_error(response, 400)  # Bad Request
+        assert_api_error(response, 400)  # Bad Request for non-existent ID
         error_data = response.json()
         # Handle both error formats
         error_message = error_data.get("detail", error_data.get("error", "")).lower()
@@ -425,7 +425,7 @@ class TestAutoMatchingWorkflows:
         # Create matched game (should be skipped)
         igdb_game = Game(
             title="Already Matched Game",
-            igdb_id="existing-1",
+            id=1,
             igdb_slug="already-matched"
         )
         session.add(igdb_game)
@@ -435,7 +435,7 @@ class TestAutoMatchingWorkflows:
             user_id=test_user.id,
             steam_appid=999,
             game_name="Already Matched Game",
-            igdb_id=igdb_game.igdb_id,
+            igdb_id=igdb_game.id,
             ignored=False
         )
         session.add(matched_game)
@@ -506,7 +506,7 @@ class TestBulkOperationsWorkflows:
         for i in range(3):
             game = Game(
                 title=f"Game {i+1}",
-                igdb_id=f"igdb-{i+1}",
+                id=i+1,
                 igdb_slug=f"game-{i+1}"
             )
             igdb_games.append(game)
@@ -520,7 +520,7 @@ class TestBulkOperationsWorkflows:
                 user_id=test_user.id,
                 steam_appid=1000 + i,
                 game_name=f"Game {i+1}",
-                igdb_id=igdb_game.igdb_id,
+                igdb_id=igdb_game.id,
                 game_id=None,  # Not synced yet
                 ignored=False
             )

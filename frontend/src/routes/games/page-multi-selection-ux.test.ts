@@ -101,7 +101,7 @@ describe('Games Page - Multi-Selection UX Enhancement', () => {
     const gameCard = screen.getByRole('button', { name: /view details for test game/i });
     await fireEvent.click(gameCard);
     
-    expect(goto).toHaveBeenCalledWith('/games/user-game-1');
+    expect(goto).toHaveBeenCalledWith('/games/1');
   });
 
   it('should toggle selection when games are selected (bulk selection mode)', async () => {

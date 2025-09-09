@@ -99,7 +99,7 @@ class TestUserGamesListEndpoint:
         
         # Create a game for user1 using IGDB import
         import_data = {
-            "igdb_id": "12345",
+            "igdb_id": 12345,
             "title": "User1 Game"
         }
         game_response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data, headers=user1_headers)
@@ -126,9 +126,9 @@ class TestUserGamesListEndpoint:
         
         # Create multiple games using IGDB import
         import_games_data = [
-            {"igdb_id": "100", "title": "Zelda"},
-            {"igdb_id": "200", "title": "Elden Ring"},
-            {"igdb_id": "300", "title": "Apex Legends"}
+            {"igdb_id": 100, "title": "Zelda"},
+            {"igdb_id": 200, "title": "Elden Ring"},
+            {"igdb_id": 300, "title": "Apex Legends"}
         ]
         
         user_games_data = []
@@ -238,12 +238,12 @@ class TestUserGamesCreateEndpoint:
     
     def test_create_user_game_success(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test successful user game creation."""
-        user_game_data = create_test_user_game_data(str(test_game.id))
+        user_game_data = create_test_user_game_data(test_game.id)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["game"]["id"] == str(test_game.id)
+        assert data["game"]["id"] == test_game.id
         assert data["ownership_status"] == user_game_data["ownership_status"]
         assert data["is_loved"] == user_game_data["is_loved"]
         assert data["play_status"] == user_game_data["play_status"]
@@ -252,7 +252,7 @@ class TestUserGamesCreateEndpoint:
     
     def test_create_user_game_with_rating(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test user game creation with personal rating."""
-        user_game_data = create_test_user_game_data(str(test_game.id), personal_rating=4.5)
+        user_game_data = create_test_user_game_data(test_game.id, personal_rating=4.5)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_success(response, 201)
@@ -261,14 +261,14 @@ class TestUserGamesCreateEndpoint:
     
     def test_create_user_game_duplicate(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
         """Test creation of duplicate user game."""
-        user_game_data = create_test_user_game_data(str(test_user_game.game_id))
+        user_game_data = create_test_user_game_data(test_user_game.game_id)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_error(response, 409, "already exists")
     
     def test_create_user_game_invalid_game(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test user game creation with invalid game ID."""
-        user_game_data = create_test_user_game_data("non-existent-game-id")
+        user_game_data = create_test_user_game_data(99999)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_error(response, 404, "Game not found")
@@ -282,14 +282,14 @@ class TestUserGamesCreateEndpoint:
     
     def test_create_user_game_invalid_status(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test user game creation with invalid play status."""
-        user_game_data = create_test_user_game_data(str(test_game.id), play_status="invalid_status")
+        user_game_data = create_test_user_game_data(test_game.id, play_status="invalid_status")
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_error(response, 422)
     
     def test_create_user_game_invalid_rating(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test user game creation with invalid rating."""
-        user_game_data = create_test_user_game_data(str(test_game.id), personal_rating=6.0)
+        user_game_data = create_test_user_game_data(test_game.id, personal_rating=6.0)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         
         assert_api_error(response, 422)
@@ -1030,7 +1030,7 @@ class TestUserGamesEndpointsSecurity:
         assert_api_error(response, 403, "Not authenticated")
         
         # Test create endpoint
-        user_game_data = create_test_user_game_data(str(test_game.id))
+        user_game_data = create_test_user_game_data(test_game.id)
         response = client.post("/api/user-games/", json=user_game_data)
         assert_api_error(response, 403, "Not authenticated")
         
@@ -1057,33 +1057,33 @@ class TestUserGamesDataValidation:
     def test_play_status_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test play status validation."""
         # Test invalid play status
-        user_game_data = create_test_user_game_data(str(test_game.id), play_status="invalid_status")
+        user_game_data = create_test_user_game_data(test_game.id, play_status="invalid_status")
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
     
     def test_ownership_status_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test ownership status validation."""
         # Test invalid ownership status
-        user_game_data = create_test_user_game_data(str(test_game.id), ownership_status="invalid_status")
+        user_game_data = create_test_user_game_data(test_game.id, ownership_status="invalid_status")
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
     
     def test_rating_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test rating validation."""
         # Test rating too low
-        user_game_data = create_test_user_game_data(str(test_game.id), personal_rating=0.5)
+        user_game_data = create_test_user_game_data(test_game.id, personal_rating=0.5)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
         
         # Test rating too high
-        user_game_data = create_test_user_game_data(str(test_game.id), personal_rating=5.5)
+        user_game_data = create_test_user_game_data(test_game.id, personal_rating=5.5)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
     
     def test_hours_played_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
         """Test hours played validation."""
         # Test negative hours
-        user_game_data = create_test_user_game_data(str(test_game.id), hours_played=-1)
+        user_game_data = create_test_user_game_data(test_game.id, hours_played=-1)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
 

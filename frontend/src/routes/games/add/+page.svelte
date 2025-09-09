@@ -12,10 +12,11 @@
   import MetadataConfirmStep from '$lib/components/MetadataConfirmStep.svelte';
   import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
   import { onMount, onDestroy } from 'svelte';
+  import type { GameId } from '$lib/types/game';
 
   let searchQuery = '';
   let isSearching = false;
-  let addingGameId: string | null = null;
+  let addingGameId: GameId | null = null;
   let searchResults: IGDBGameCandidate[] = [];
   let selectedGame: IGDBGameCandidate | null = null;
   let step: 'search' | 'confirm' | 'metadata-confirm' = 'search';
@@ -69,13 +70,13 @@
   });
 
   // Helper functions for ownership detection
-  function isGameOwned(igdbId: string): boolean {
+  function isGameOwned(igdbId: GameId): boolean {
     return userGames.value.userGames.some((userGame: UserGame) => 
       userGame.game.igdb_id === igdbId
     );
   }
 
-  function getOwnedPlatformDetailsForGame(igdbId: string): UserGamePlatform[] {
+  function getOwnedPlatformDetailsForGame(igdbId: GameId): UserGamePlatform[] {
     const userGame = userGames.value.userGames.find((ug: UserGame) => ug.game.igdb_id === igdbId);
     if (!userGame || !userGame.platforms) return [];
     

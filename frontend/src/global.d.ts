@@ -2,6 +2,8 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/client" />
 
+import type { GameId } from '$lib/types/game';
+
 // Global environment variables
 interface ImportMetaEnv {
   readonly PUBLIC_API_URL: string;
@@ -56,9 +58,9 @@ declare global {
   interface CustomEventMap {
     'auth:login': CustomEvent<{ user: App.Locals['user'] }>;
     'auth:logout': CustomEvent<void>;
-    'game:added': CustomEvent<{ gameId: string }>;
-    'game:updated': CustomEvent<{ gameId: string }>;
-    'game:deleted': CustomEvent<{ gameId: string }>;
+    'game:added': CustomEvent<{ gameId: GameId }>;
+    'game:updated': CustomEvent<{ gameId: GameId }>;
+    'game:deleted': CustomEvent<{ gameId: GameId }>;
   }
 
   // Extend the global Window interface
@@ -123,4 +125,5 @@ export interface PaginationResult<T> {
   hasPrevious: boolean;
 }
 
+export type { GameId, UserGameId } from '$lib/types/game';
 export {};

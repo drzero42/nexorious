@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { toGameId } from '$lib/types/game';
 import { 
   APIResponseMock, 
   setupFetchMock, 
@@ -52,13 +53,13 @@ describe('Games Store API Integration', () => {
     it('should use config.apiUrl for single game fetch', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.getGame('test-game-id');
+      await games.getGame(toGameId(123));
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
       
       const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/test-game-id`);
+      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/123`);
     });
 
     it('should use config.apiUrl for IGDB search endpoint', async () => {
@@ -76,7 +77,7 @@ describe('Games Store API Integration', () => {
     it('should use config.apiUrl for IGDB import endpoint', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.createFromIGDB('igdb-123');
+      await games.createFromIGDB(toGameId(123));
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
@@ -90,25 +91,25 @@ describe('Games Store API Integration', () => {
     it('should use config.apiUrl for game deletion', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.deleteGame('game-123');
+      await games.deleteGame(toGameId(123));
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
       
       const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/game-123`);
+      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/123`);
     });
 
     it('should use config.apiUrl for metadata refresh', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.refreshMetadata('game-123');
+      await games.refreshMetadata(toGameId(123));
       
       expect(mockFetch).toHaveBeenCalled();
       verifyAPIUrlUsage(mockFetch, mockConfig.apiUrl);
       
       const callUrl = mockFetch.mock.calls[0][0];
-      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/game-123/metadata/refresh`);
+      expect(callUrl).toBe(`${mockConfig.apiUrl}/games/123/metadata/refresh`);
     });
   });
 
@@ -160,7 +161,7 @@ describe('Games Store API Integration', () => {
     it('should handle IGDB import with correct parameters', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.createFromIGDB('igdb-123', { title: 'Test Game' });
+      await games.createFromIGDB(123 as any, { title: 'Test Game' });
       
       expect(mockFetch).toHaveBeenCalledWith(
         `${mockConfig.apiUrl}/games/igdb-import?download_cover_art=true`,
@@ -170,7 +171,7 @@ describe('Games Store API Integration', () => {
             'Content-Type': 'application/json'
           }),
           body: JSON.stringify({
-            igdb_id: 'igdb-123',
+            igdb_id: 123,
             custom_overrides: { title: 'Test Game' }
           })
         })
@@ -209,15 +210,15 @@ describe('Games Store API Integration', () => {
     });
 
     it('should fetch single game by ID', async () => {
-      mockFetch.mockImplementation(APIResponseMock.mockGameEndpoint('game-123', mockGame));
+      mockFetch.mockImplementation(APIResponseMock.mockGameEndpoint(123, mockGame));
       
       const { games } = await import('./games.svelte');
       
-      const result = await games.getGame('game-123');
+      const result = await games.getGame(toGameId(123));
       
       expect(result).toEqual(mockGame);
       expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games/game-123`,
+        `${mockConfig.apiUrl}/games/123`,
         expect.objectContaining({
           headers: expect.objectContaining({
             'Authorization': 'Bearer test-token'
@@ -231,10 +232,10 @@ describe('Games Store API Integration', () => {
     it('should delete game by ID', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.deleteGame('game-123');
+      await games.deleteGame(toGameId(123));
       
       expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games/game-123`,
+        `${mockConfig.apiUrl}/games/123`,
         expect.objectContaining({
           method: 'DELETE'
         })
@@ -244,10 +245,10 @@ describe('Games Store API Integration', () => {
     it('should refresh game metadata with options', async () => {
       const { games } = await import('./games.svelte');
       
-      await games.refreshMetadata('game-123', ['title', 'description'], true);
+      await games.refreshMetadata(toGameId(123), ['title', 'description'], true);
       
       expect(mockFetch).toHaveBeenCalledWith(
-        `${mockConfig.apiUrl}/games/game-123/metadata/refresh`,
+        `${mockConfig.apiUrl}/games/123/metadata/refresh`,
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -270,7 +271,7 @@ describe('Games Store API Integration', () => {
       const { games } = await import('./games.svelte');
       
       try {
-        await games.getGame('nonexistent-game');
+        await games.getGame(toGameId(99999));
       } catch (error) {
         // Error is expected
       }
@@ -300,7 +301,7 @@ describe('Games Store API Integration', () => {
       // Create an error state by causing a failed API call
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(500, 'Server error'));
       try {
-        await games.getGame('nonexistent-game');
+        await games.getGame(toGameId(99999));
       } catch (error) {
         // Expected error
       }

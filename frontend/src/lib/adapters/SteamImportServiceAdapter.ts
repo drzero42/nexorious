@@ -7,6 +7,7 @@
 
 import type { ImportService, ImportGame, BulkOperationResponse, BatchSession } from '$lib/types/import';
 import { steamGames, type SteamGameResponse, type SteamGameStatusFilter } from '$lib/stores/steam-games.svelte';
+import type { GameId } from '$lib/types/game';
 
 export class SteamImportServiceAdapter implements ImportService {
   constructor(private steamGamesService: typeof steamGames) {}
@@ -37,24 +38,24 @@ export class SteamImportServiceAdapter implements ImportService {
   }
 
   // Individual game actions
-  async matchGameToIGDB(gameId: string, igdbId: string | null): Promise<void> {
-    await this.steamGamesService.matchSteamGameToIGDB(gameId, igdbId);
+  async matchGameToIGDB(importId: string, igdbId: GameId | null): Promise<void> {
+    await this.steamGamesService.matchSteamGameToIGDB(importId, igdbId);
   }
 
-  async autoMatchSingleGame(gameId: string): Promise<void> {
-    await this.steamGamesService.autoMatchSingleGame(gameId);
+  async autoMatchSingleGame(importId: string): Promise<void> {
+    await this.steamGamesService.autoMatchSingleGame(importId);
   }
 
-  async syncGameToCollection(gameId: string): Promise<void> {
-    await this.steamGamesService.syncSteamGameToCollection(gameId);
+  async syncGameToCollection(importId: string): Promise<void> {
+    await this.steamGamesService.syncSteamGameToCollection(importId);
   }
 
-  async toggleGameIgnored(gameId: string): Promise<void> {
-    await this.steamGamesService.toggleSteamGameIgnored(gameId);
+  async toggleGameIgnored(importId: string): Promise<void> {
+    await this.steamGamesService.toggleSteamGameIgnored(importId);
   }
 
-  async unsyncGameFromCollection(gameId: string): Promise<void> {
-    await this.steamGamesService.unsyncSteamGameFromCollection(gameId);
+  async unsyncGameFromCollection(importId: string): Promise<void> {
+    await this.steamGamesService.unsyncSteamGameFromCollection(importId);
   }
 
   // Bulk operations

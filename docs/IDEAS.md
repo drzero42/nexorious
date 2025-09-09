@@ -17,8 +17,8 @@ Ensure the following logic is followed everywhere.
 When removing the last platform/storefront, change ownership to No Longer Owned. If adding a platform/storefront to a UserGame change ownership to Owned.
 Only actually delete a UserGame if the user deletes it.
 
-## Use IGDB ID instead of UUID in the games table
-Since this app is tightly tied to IGDB for the needed data foundation, there is no need to invent separate UUIDs for games when we could simplify things by just using the IGDB ID.
+## Use IGDB ID as Game ID
+After refactoring to use IGDB ID as the primary key for games, there are schemas and models that feature both igdb_id and game_id. Those are now the same, so we need to refactor to only use one of them. No need to have both.
 
 ## No need to import from IGDB
 It should be transparent that data is pulled in from IGDB. Instead of having a workflow of import-igdb and then adding a user-games entry, the user-games add endpoint should just accept an IGDB ID. If no game with that ID exists in our database it should be imported from IGDB. If one already exists, just use that.
