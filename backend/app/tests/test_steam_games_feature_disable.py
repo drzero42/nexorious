@@ -103,7 +103,7 @@ class TestSteamGamesFeatureDisable:
             ("POST", "/api/import/sources/steam/games/import", {}),
             
             # Individual game operations
-            ("PUT", "/api/import/sources/steam/games/test-id/match", {"igdb_id": 123}),
+            ("PUT", "/api/import/sources/steam/games/test-id/match", {"game_id": 123}),
             ("POST", "/api/import/sources/steam/games/test-id/auto-match", {}),
             ("POST", "/api/import/sources/steam/games/test-id/sync", {}),
             ("POST", "/api/import/sources/steam/games/test-id/unsync", {}),

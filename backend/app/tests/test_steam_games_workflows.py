@@ -74,7 +74,7 @@ class TestCompleteImportToSyncWorkflow:
                 user_id=test_user.id,
                 steam_appid=mock_game.appid,
                 game_name=mock_game.name,
-                igdb_id=None,  # Initially unmatched
+                game_id=None,  # Initially unmatched
                 ignored=False
             )
             steam_games.append(steam_game)
@@ -119,7 +119,7 @@ class TestCompleteImportToSyncWorkflow:
                 mock_game_data = MockGameData(igdb_game.title)
                 mock_igdb_service.get_game_by_id.return_value = mock_game_data
                 
-                match_request = {"igdb_id": igdb_game.id}
+                match_request = {"game_id": igdb_game.id}
                 response = client_with_shared_session.put(
                     f"/api/import/sources/steam/games/{steam_game.id}/match",
                     json=match_request,
@@ -127,7 +127,7 @@ class TestCompleteImportToSyncWorkflow:
                 )
                 assert_api_success(response, 200)
                 match_data = response.json()
-                assert match_data["game"]["igdb_id"] == igdb_game.id
+                assert match_data["game"]["game_id"] == igdb_game.id
                 assert match_data["game"]["igdb_title"] == igdb_game.title
         
         # Step 5: Verify games appear in matched list
@@ -341,7 +341,7 @@ class TestCompleteImportToSyncWorkflow:
         assert "must be matched to igdb" in error_message
         
         # Step 2: Try to match to non-existent IGDB game
-        match_request = {"igdb_id": 999999}
+        match_request = {"game_id": 999999}
         response = client_with_shared_session.put(
             f"/api/import/sources/steam/games/{steam_game.id}/match",
             json=match_request,
@@ -356,7 +356,7 @@ class TestCompleteImportToSyncWorkflow:
         # Step 3: Try to access non-existent Steam game
         response = client_with_shared_session.put(
             "/api/import/sources/steam/games/non-existent-id/match",
-            json={"igdb_id": None},
+            json={"game_id": None},
             headers=auth_headers
         )
         assert_api_error(response, 404)  # Not Found
@@ -378,7 +378,7 @@ class TestCompleteImportToSyncWorkflow:
         # Try to match other user's game
         response = client_with_shared_session.put(
             f"/api/import/sources/steam/games/{other_steam_game.id}/match",
-            json={"igdb_id": None},
+            json={"game_id": None},
             headers=auth_headers
         )
         assert_api_error(response, 404)  # Should appear as not found for security
@@ -416,7 +416,7 @@ class TestAutoMatchingWorkflows:
                 user_id=test_user.id,
                 steam_appid=appid,
                 game_name=f"Game {i+1}",
-                igdb_id=None,  # Unmatched
+                game_id=None,  # Unmatched
                 ignored=False
             )
             unmatched_games.append(steam_game)
@@ -435,7 +435,7 @@ class TestAutoMatchingWorkflows:
             user_id=test_user.id,
             steam_appid=999,
             game_name="Already Matched Game",
-            igdb_id=igdb_game.id,
+            game_id=igdb_game.id,
             ignored=False
         )
         session.add(matched_game)
@@ -445,7 +445,7 @@ class TestAutoMatchingWorkflows:
             user_id=test_user.id,
             steam_appid=888,
             game_name="Ignored Game",
-            igdb_id=None,
+            game_id=None,
             ignored=True
         )
         session.add(ignored_game)
@@ -520,8 +520,7 @@ class TestBulkOperationsWorkflows:
                 user_id=test_user.id,
                 steam_appid=1000 + i,
                 game_name=f"Game {i+1}",
-                igdb_id=igdb_game.id,
-                game_id=None,  # Not synced yet
+                game_id=igdb_game.id,
                 ignored=False
             )
             matched_games.append(steam_game)
@@ -532,7 +531,7 @@ class TestBulkOperationsWorkflows:
             user_id=test_user.id,
             steam_appid=2000,
             game_name="Unmatched Game",
-            igdb_id=None,
+            game_id=None,
             ignored=False
         )
         session.add(unmatched_game)
@@ -542,7 +541,7 @@ class TestBulkOperationsWorkflows:
             user_id=test_user.id,
             steam_appid=3000,
             game_name="Ignored Game",
-            igdb_id=igdb_games[2].id,
+            game_id=igdb_games[2].id,
             ignored=True
         )
         session.add(ignored_game)

@@ -34,7 +34,6 @@ class TestSteamGameModel:
         assert steam_game.user_id == test_user.id
         assert steam_game.steam_appid == 730
         assert steam_game.game_name == "Counter-Strike: Global Offensive"
-        assert steam_game.igdb_id is None
         assert steam_game.game_id is None
         assert steam_game.ignored is False
         assert steam_game.created_at is not None
@@ -54,7 +53,6 @@ class TestSteamGameModel:
         session.commit()
         session.refresh(steam_game)
         
-        assert steam_game.igdb_id is None
         assert steam_game.game_id is None
         assert steam_game.ignored is False
         assert steam_game.created_at is not None
@@ -132,28 +130,28 @@ class TestSteamGameModel:
         assert steam_game.user.id == test_user.id
         assert steam_game.user.username == test_user.username
     
-    def test_igdb_id_field(self, session: Session, test_user: User):
-        """Test igdb_id field stores IGDB API IDs correctly."""
-        # Create Steam game with IGDB API ID (not a foreign key reference)
-        igdb_api_id = "1234"  # This is an IGDB API ID, not a Game.id
+    def test_game_id_field(self, session: Session, test_user: User):
+        """Test game_id field stores IGDB IDs correctly."""
+        # Create Steam game with IGDB ID
+        igdb_id = 1234  # This is an IGDB ID that references games.id
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=igdb_api_id
+            game_id=igdb_id
         )
         
         session.add(steam_game)
         session.commit()
         session.refresh(steam_game)
         
-        # Test that igdb_id stores the IGDB API ID correctly
-        assert steam_game.igdb_id == 1234
-        assert steam_game.igdb_id is not None
+        # Test that game_id stores the IGDB ID correctly
+        assert steam_game.game_id == 1234
+        assert steam_game.game_id is not None
         
-        # Test that we can query games by IGDB API ID
+        # Test that we can query games by IGDB ID
         found_game = session.exec(
-            select(SteamGame).where(SteamGame.igdb_id == igdb_api_id)
+            select(SteamGame).where(SteamGame.game_id == igdb_id)
         ).first()
         assert found_game is not None
         assert found_game.id == steam_game.id
@@ -176,7 +174,6 @@ class TestSteamGameModel:
             user_id=test_user.id,
             steam_appid=440,
             game_name="Team Fortress 2",
-            igdb_id=game.id,
             game_id=game.id
         )
         
@@ -335,12 +332,12 @@ class TestSteamGameModel:
         )
         session.add(unmatched_steam_game)
         
-        # 2. Matched game (has igdb_id but no synced game)
+        # 2. Matched game (has game_id but no UserGame)
         matched_steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=2,
             game_name="Matched Game",
-            igdb_id=1001
+            game_id=1001
         )
         session.add(matched_steam_game)
         
@@ -353,12 +350,11 @@ class TestSteamGameModel:
         )
         session.add(ignored_steam_game)
         
-        # 4. Synced game (has both igdb_id and synced game relationship)
+        # 4. Synced game (has game_id and synced game relationship)
         synced_steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=4,
             game_name="Synced Game",
-            igdb_id=test_game.id,
             game_id=test_game.id
         )
         session.add(synced_steam_game)
@@ -369,7 +365,7 @@ class TestSteamGameModel:
         steam_games = session.exec(select(SteamGame).where(SteamGame.user_id == test_user.id)).all()
         print(f"\nDEBUG: Found {len(steam_games)} Steam games for user {test_user.id}")
         for game in steam_games:
-            print(f"  - Steam appid: {game.steam_appid}, name: {game.game_name}, igdb_id: {game.igdb_id}, game_id: {game.game_id}, ignored: {game.ignored}")
+            print(f"  - Steam appid: {game.steam_appid}, name: {game.game_name}, game_id: {game.game_id}, ignored: {game.ignored}")
         
         # Debug: Test API without any filter first
         all_response = client_with_shared_session.get("/api/import/sources/steam/games", headers=auth_headers)
@@ -387,25 +383,22 @@ class TestSteamGameModel:
         # Verify different game states are correctly represented
         games_by_id = {game["external_id"]: game for game in all_data["games"]}
         
-        # Unmatched game: no igdb_id, no game_id, not ignored
+        # Unmatched game: no game_id, not ignored
         unmatched_game = games_by_id["1"]
-        assert unmatched_game["igdb_id"] is None
         assert unmatched_game["game_id"] is None  
         assert unmatched_game["ignored"] is False
         
-        # Matched game: has igdb_id, no game_id, not ignored
+        # Matched game: has game_id, not ignored
         matched_game = games_by_id["2"]
-        assert matched_game["igdb_id"] == 1001
-        assert matched_game["game_id"] is None
+        assert matched_game["game_id"] == 1001
         assert matched_game["ignored"] is False
         
         # Ignored game: ignored=True
         ignored_game = games_by_id["3"]
         assert ignored_game["ignored"] is True
         
-        # Synced game: has both igdb_id and game_id, not ignored
+        # Synced game: has game_id, not ignored
         synced_game = games_by_id["4"]
-        assert synced_game["igdb_id"] == test_game.id
         assert synced_game["game_id"] == test_game.id
         assert synced_game["ignored"] is False
 
@@ -474,30 +467,30 @@ class TestSteamGameModelIndexes:
 class TestSteamGameModelEdgeCases:
     """Test edge cases and error conditions."""
     
-    def test_igdb_id_field_validation(self, session: Session, test_user: User):
-        """Test igdb_id field accepts various IGDB API ID formats."""
-        # Test with different valid IGDB API ID formats
+    def test_game_id_field_validation(self, session: Session, test_user: User):
+        """Test game_id field accepts various IGDB ID formats."""
+        # Test with different valid IGDB ID formats
         test_cases = [
             1234,             # Integer ID
             56789,            # Longer integer ID
             None,             # Null/unmatched game
         ]
         
-        for i, igdb_id in enumerate(test_cases):
+        for i, game_id in enumerate(test_cases):
             steam_game = SteamGame(
                 user_id=test_user.id,
                 steam_appid=730 + i,  # Different app IDs
                 game_name=f"Test Game {i}",
-                igdb_id=igdb_id
+                game_id=game_id
             )
             
             session.add(steam_game)
             session.commit()
             session.refresh(steam_game)
             
-            # The steam game should exist and have the correct igdb_id
+            # The steam game should exist and have the correct game_id
             assert steam_game.id is not None
-            assert steam_game.igdb_id == igdb_id
+            assert steam_game.game_id == game_id
             
             # Clear session for next iteration
             session.expunge(steam_game)

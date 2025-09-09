@@ -67,7 +67,7 @@ class TestSteamGamesListEndpoint:
         assert games[0]["external_id"] == "730"  # Steam AppID is string
         assert games[0]["name"] == "Counter-Strike: Global Offensive"
         assert not games[0]["ignored"]
-        assert games[0]["igdb_id"] is None
+        assert games[0]["game_id"] is None
         assert games[0]["game_id"] is None
     
     def test_list_steam_games_status_filter_unmatched(self, client_with_shared_session: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], steam_dependencies):
@@ -93,7 +93,7 @@ class TestSteamGamesListEndpoint:
         assert all_data["total"] >= 0
         assert all_data["games"][0]["external_id"] == "730"  # Steam AppID is string
         assert not all_data["games"][0]["ignored"]
-        assert all_data["games"][0]["igdb_id"] is None
+        assert all_data["games"][0]["game_id"] is None
         assert all_data["games"][0]["game_id"] is None
     
     def test_list_steam_games_status_filter_ignored(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
@@ -270,7 +270,7 @@ class TestSteamGameMatchEndpoint:
         session.commit()
         
         # Match the Steam game to the IGDB game (using mock's default IGDB ID)
-        match_data = {"igdb_id": 12345}
+        match_data = {"game_id": 12345}
         response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -279,12 +279,12 @@ class TestSteamGameMatchEndpoint:
         data = response.json()
         assert "matched successfully" in data["message"]
         assert data["game"]["id"] == steam_game.id
-        assert data["game"]["igdb_id"] == 12345
+        assert data["game"]["game_id"] == 12345
         assert data["game"]["external_id"] == "730"  # Steam AppID is string
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.igdb_id == 12345
+        assert steam_game.game_id == 12345
     
     def test_match_steam_game_update_existing(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test updating existing IGDB match on Steam game."""
@@ -299,14 +299,14 @@ class TestSteamGameMatchEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id=100,
+            game_id=100,
             ignored=False
         )
         session.add(steam_game)
         session.commit()
         
         # Update the match
-        match_data = {"igdb_id": 200}
+        match_data = {"game_id": 200}
         response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -314,11 +314,11 @@ class TestSteamGameMatchEndpoint:
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Game matched successfully"
-        assert data["game"]["igdb_id"] == 200
+        assert data["game"]["game_id"] == 200
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.igdb_id == 200
+        assert steam_game.game_id == 200
     
     def test_match_steam_game_clear_existing(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test clearing existing IGDB match from Steam game."""
@@ -331,14 +331,14 @@ class TestSteamGameMatchEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id=1234,
+            game_id=1234,
             ignored=False
         )
         session.add(steam_game)
         session.commit()
         
         # Clear the match
-        match_data = {"igdb_id": None}
+        match_data = {"game_id": None}
         response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -346,11 +346,11 @@ class TestSteamGameMatchEndpoint:
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Game match cleared"
-        assert data["game"]["igdb_id"] is None
+        assert data["game"]["game_id"] is None
         
         # Verify database was updated
         session.refresh(steam_game)
-        assert steam_game.igdb_id is None
+        assert steam_game.game_id is None
     
     def test_match_steam_game_clear_no_existing(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test clearing IGDB match when none exists."""
@@ -365,7 +365,7 @@ class TestSteamGameMatchEndpoint:
         session.commit()
         
         # Try to clear non-existent match
-        match_data = {"igdb_id": None}
+        match_data = {"game_id": None}
         response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -373,11 +373,11 @@ class TestSteamGameMatchEndpoint:
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Game match cleared"
-        assert data["game"]["igdb_id"] is None
+        assert data["game"]["game_id"] is None
     
     def test_match_steam_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test matching non-existent Steam game returns 404."""
-        match_data = {"igdb_id": 1234}
+        match_data = {"game_id": 1234}
         response = client.put("/api/import/sources/steam/games/nonexistent-id/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -402,7 +402,7 @@ class TestSteamGameMatchEndpoint:
         session.commit()
         
         # Try to match as current user
-        match_data = {"igdb_id": 1234}
+        match_data = {"game_id": 1234}
         response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
@@ -410,7 +410,7 @@ class TestSteamGameMatchEndpoint:
         assert_api_error(response, 404)
         assert "Steam game not found or access denied" in response.json()["error"]
     
-    def test_match_steam_game_valid_igdb_id(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], test_game):
+    def test_match_steam_game_valid_game_id(self, client_with_mock_igdb: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str], test_game):
         """Test matching Steam game to a valid IGDB ID succeeds."""
         # Create Steam game
         steam_game = SteamGame(
@@ -423,16 +423,16 @@ class TestSteamGameMatchEndpoint:
         session.commit()
         
         # Match to valid IGDB ID (using test_game fixture)
-        match_data = {"igdb_id": test_game.id}  # Use Game ID (which is IGDB ID)
+        match_data = {"game_id": test_game.id}  # Use Game ID (which is IGDB ID)
         response = client_with_mock_igdb.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                              json=match_data, 
                              headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
-        assert data["game"]["igdb_id"] == test_game.id
+        assert data["game"]["game_id"] == test_game.id
     
-    def test_match_steam_game_any_igdb_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
+    def test_match_steam_game_any_game_id(self, client: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test matching Steam game to any IGDB ID succeeds with proper IGDB service mocking."""
         from unittest.mock import patch, AsyncMock
         from ..services.steam_games import SteamGamesService
@@ -465,14 +465,14 @@ class TestSteamGameMatchEndpoint:
         with patch('app.services.import_sources.steam.create_steam_games_service', side_effect=mock_factory):
             
             # Match to valid integer IGDB ID (validation mocked to succeed)
-            match_data = {"igdb_id": 99999}  # Use integer instead of string
+            match_data = {"game_id": 99999}  # Use integer instead of string
             response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", 
                                  json=match_data, 
                                  headers=auth_headers)
             
             assert response.status_code == 200
             data = response.json()
-            assert data["game"]["igdb_id"] == 99999
+            assert data["game"]["game_id"] == 99999
             assert data["game"]["igdb_title"] == "Mocked IGDB Game Title"
             
             # Verify IGDB service was called for validation
@@ -490,7 +490,7 @@ class TestSteamGameMatchEndpoint:
         session.add(steam_game)
         session.commit()
         
-        match_data = {"igdb_id": 1234}
+        match_data = {"game_id": 1234}
         response = client.put(f"/api/import/sources/steam/games/{steam_game.id}/match", json=match_data)
         
         assert_api_error(response, 403)
@@ -692,13 +692,12 @@ class TestSteamGamesBulkSyncEndpoint:
         )
         session.add(test_game)
         
-        # Create a matched Steam game (has igdb_id but no game_id)
+        # Create a matched Steam game (has game_id)
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=1234,  # Matched to IGDB
-            game_id=None,    # Not synced yet
+            game_id=1234,  # Matched to IGDB
             ignored=False
         )
         session.add(steam_game)
@@ -733,16 +732,14 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=100,
             game_name="Game 1",
-            igdb_id=1111,
-            game_id=None,
+            game_id=1111,
             ignored=False
         )
         steam_game2 = SteamGame(
             user_id=test_user.id,
             steam_appid=200,
             game_name="Game 2",
-            igdb_id=2222,
-            game_id=None,
+            game_id=2222,
             ignored=False
         )
         session.add(steam_game1)
@@ -778,23 +775,20 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=100,
             game_name="Unmatched Game",
-            igdb_id=None,  # No IGDB match
-            game_id=None,
+            game_id=None,  # No IGDB match
             ignored=False
         )
         steam_game_ignored = SteamGame(
             user_id=test_user.id,
             steam_appid=200,
             game_name="Ignored Game",
-            igdb_id=1234,
-            game_id=None,
+            game_id=None,  # Ignored games shouldn't be matched
             ignored=True  # Ignored
         )
         steam_game_already_synced = SteamGame(
             user_id=test_user.id,
             steam_appid=300,
             game_name="Already Synced Game",
-            igdb_id=1234,
             game_id=test_game.id,  # Already synced
             ignored=False
         )
@@ -802,8 +796,7 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=400,
             game_name="Valid Game",
-            igdb_id=1234,
-            game_id=None,  # Should be processed
+            game_id=1234,
             ignored=False
         )
         
@@ -849,8 +842,7 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id=1234,
-            game_id=None,
+            game_id=1234,
             ignored=False
         )
         session.add(steam_game)
@@ -911,8 +903,7 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id=1234,
-            game_id=None,
+            game_id=1234,
             ignored=False
         )
         session.add(steam_game)
@@ -966,8 +957,7 @@ class TestSteamGamesBulkSyncEndpoint:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Test Game",
-            igdb_id=1234,
-            game_id=None,  # Not synced yet
+            game_id=1234,  # Not synced yet
             ignored=False
         )
         session.add(steam_game)

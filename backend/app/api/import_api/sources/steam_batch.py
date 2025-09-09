@@ -56,7 +56,7 @@ async def start_batch_auto_match(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_(None),  # No IGDB match yet
+                col(SteamGame.game_id).is_(None),  # No IGDB match yet
                 SteamGame.ignored.is_(False)    # Not ignored by user
             )
         )
@@ -144,7 +144,7 @@ async def process_next_auto_match_batch(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_(None),
+                col(SteamGame.game_id).is_(None),
                 SteamGame.ignored.is_(False),
                 col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
             )
@@ -207,7 +207,7 @@ async def process_next_auto_match_batch(
                 "id": game.id,
                 "steam_appid": game.steam_appid,  # Keep original field name for schema compatibility
                 "game_name": game.game_name,  # Keep original field name for schema compatibility
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": None,  # Not synced yet
@@ -275,7 +275,7 @@ async def start_batch_sync(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_not(None),  # Has IGDB match
+                col(SteamGame.game_id).is_not(None),  # Has IGDB match
                 col(SteamGame.game_id).is_(None),     # Not yet synced to collection
                 SteamGame.ignored.is_(False)       # Not ignored by user
             )
@@ -361,7 +361,7 @@ async def process_next_sync_batch(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_not(None),
+                col(SteamGame.game_id).is_not(None),
                 col(SteamGame.game_id).is_(None),
                 SteamGame.ignored.is_(False),
                 col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
@@ -431,7 +431,7 @@ async def process_next_sync_batch(
                 "id": game.id,
                 "steam_appid": game.steam_appid,  # Keep original field name for schema compatibility
                 "game_name": game.game_name,  # Keep original field name for schema compatibility  
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": sync_results.get(game.id, {}).get("user_game_id"),

@@ -37,7 +37,7 @@ class AutoMatchResult:
     steam_game_name: str
     steam_appid: int
     matched: bool
-    igdb_id: Optional[int] = None
+    game_id: Optional[int] = None
     igdb_game_title: Optional[str] = None
     confidence_score: Optional[float] = None
     error_message: Optional[str] = None
@@ -255,7 +255,7 @@ class SteamGamesService:
                     unmatched_games_query = select(SteamGame).where(
                         and_(
                             SteamGame.user_id == user_id,
-                            SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                            SteamGame.game_id.is_(None),  # No IGDB match yet
                             not SteamGame.ignored    # Not ignored by user
                         )
                     )
@@ -334,7 +334,7 @@ class SteamGamesService:
                     
                     if result.matched:
                         successful_matches += 1
-                        logger.info(f"✅ [Auto-Match] MATCHED: '{result.steam_game_name}' -> '{result.igdb_game_title}' (confidence: {result.confidence_score:.1%}, IGDB ID: {result.igdb_id})")
+                        logger.info(f"✅ [Auto-Match] MATCHED: '{result.steam_game_name}' -> '{result.igdb_game_title}' (confidence: {result.confidence_score:.1%}, IGDB ID: {result.game_id})")
                     elif result.error_message:
                         failed_matches += 1
                         logger.warning(f"❌ [Auto-Match] FAILED: '{result.steam_game_name}' - {result.error_message}")
@@ -393,8 +393,8 @@ class SteamGamesService:
         logger.debug(f"🎯 [Single Match] Processing '{steam_game.game_name}' (Steam AppID: {steam_game.steam_appid})")
         
         # Skip if already matched
-        if steam_game.igdb_id:
-            logger.debug(f"🎯 [Single Match] Skipping '{steam_game.game_name}' - already has IGDB match: {steam_game.igdb_id}")
+        if steam_game.game_id:
+            logger.debug(f"🎯 [Single Match] Skipping '{steam_game.game_name}' - already has IGDB match: {steam_game.game_id}")
             return AutoMatchResult(
                 steam_game_id=steam_game_id,
                 steam_game_name=steam_game.game_name,
@@ -443,16 +443,16 @@ class SteamGamesService:
                 logger.info(f"✅ [Single Match] Confidence meets threshold ({confidence:.1%} >= {self.auto_match_confidence_threshold:.1%}), proceeding with match...")
                 
                 # Log game state before update
-                logger.info(f"📋 [Single Match] BEFORE UPDATE - Game: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id} | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
+                logger.info(f"📋 [Single Match] BEFORE UPDATE - Game: '{steam_game.game_name}' | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
                 
                 # Update Steam game with IGDB match (no Game record creation)
-                logger.info(f"💾 [Single Match] Setting IGDB ID for SteamGame {steam_game_id}: '{steam_game.game_name}' -> IGDB ID {best_match.igdb_id}")
-                old_igdb_id = steam_game.igdb_id
-                steam_game.igdb_id = int(best_match.igdb_id)
+                logger.info(f"💾 [Single Match] Setting game_id for SteamGame {steam_game_id}: '{steam_game.game_name}' -> IGDB ID {best_match.igdb_id}")
+                old_game_id = steam_game.game_id
+                steam_game.game_id = int(best_match.igdb_id)
                 steam_game.igdb_title = best_match.title
                 steam_game.updated_at = datetime.now(timezone.utc)
                 
-                logger.info(f"📋 [Single Match] AFTER ASSIGNMENT - Game: '{steam_game.game_name}' | old_igdb_id: {old_igdb_id} | new_igdb_id: {steam_game.igdb_id}")
+                logger.info(f"📋 [Single Match] AFTER ASSIGNMENT - Game: '{steam_game.game_name}' | old_game_id: {old_game_id} | new_game_id: {steam_game.game_id}")
                 
                 try:
                     logger.info("💾 [Single Match] Adding to session and committing...")
@@ -462,7 +462,7 @@ class SteamGamesService:
                     
                     # Verify the update in database
                     self.session.refresh(steam_game)
-                    logger.info(f"🔍 [Single Match] VERIFICATION - Game after refresh: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id} | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
+                    logger.info(f"🔍 [Single Match] VERIFICATION - Game after refresh: '{steam_game.game_name}' | game_id: {steam_game.game_id} | ignored: {steam_game.ignored}")
                     
                 except Exception as e:
                     logger.error(f"❌ [Single Match] DATABASE COMMIT FAILED for '{steam_game.game_name}': {str(e)}")
@@ -471,7 +471,7 @@ class SteamGamesService:
                     
                     # Log final state after rollback
                     self.session.refresh(steam_game)
-                    logger.error(f"🔄 [Single Match] AFTER ROLLBACK - Game: '{steam_game.game_name}' | igdb_id: {steam_game.igdb_id}")
+                    logger.error(f"🔄 [Single Match] AFTER ROLLBACK - Game: '{steam_game.game_name}' | game_id: {steam_game.game_id}")
                     raise  # Re-raise to trigger the outer catch block
                 
                 return AutoMatchResult(
@@ -479,7 +479,7 @@ class SteamGamesService:
                     steam_game_name=steam_game.game_name,
                     steam_appid=steam_game.steam_appid,
                     matched=True,
-                    igdb_id=int(best_match.igdb_id),
+                    game_id=int(best_match.igdb_id),
                     igdb_game_title=best_match.title,
                     confidence_score=confidence
                 )
@@ -552,7 +552,7 @@ class SteamGamesService:
             unmatched_games_query = select(SteamGame).where(
                 and_(
                     SteamGame.user_id == user_id,
-                    SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                    SteamGame.game_id.is_(None),  # No IGDB match yet
                     not SteamGame.ignored    # Not ignored by user
                 )
             )
@@ -563,13 +563,12 @@ class SteamGamesService:
             all_games = self.session.exec(all_games_query).all()
             logger.info(f"📊 [Manual Auto-Match] All games state for user {user_id}:")
             for game in all_games:
-                logger.info(f"  - {game.game_name} | igdb_id: {game.igdb_id} | game_id: {game.game_id} | ignored: {game.ignored}")
+                logger.info(f"  - {game.game_name} | game_id: {game.game_id} | ignored: {game.ignored}")
             
             logger.info(f"📊 [Manual Auto-Match] Game counts for user {user_id}:")
             logger.info(f"  - Total games: {len(all_games)}")
-            logger.info(f"  - Unmatched (no igdb_id, not ignored): {len([g for g in all_games if not g.igdb_id and not g.ignored])}")
-            logger.info(f"  - Matched (has igdb_id, no game_id, not ignored): {len([g for g in all_games if g.igdb_id and not g.game_id and not g.ignored])}")
-            logger.info(f"  - Synced (has game_id): {len([g for g in all_games if g.game_id])}")
+            logger.info(f"  - Unmatched (no game_id, not ignored): {len([g for g in all_games if not g.game_id and not g.ignored])}")
+            logger.info(f"  - Matched/Synced (has game_id): {len([g for g in all_games if g.game_id])}")
             logger.info(f"  - Ignored: {len([g for g in all_games if g.ignored])}")
             
             if not unmatched_games:
@@ -803,7 +802,7 @@ class SteamGamesService:
     async def match_steam_game_to_igdb(
         self, 
         steam_game_id: str, 
-        igdb_id: Optional[int], 
+        game_id: Optional[int], 
         user_id: str
     ) -> Tuple[SteamGame, str]:
         """
@@ -811,7 +810,7 @@ class SteamGamesService:
         
         Args:
             steam_game_id: Steam game ID to match
-            igdb_id: IGDB ID to match to, or None to clear match
+            game_id: IGDB ID to match to, or None to clear match
             user_id: User ID for authorization
             
         Returns:
@@ -820,7 +819,7 @@ class SteamGamesService:
         Raises:
             SteamGamesServiceError: For service errors
         """
-        logger.info(f"🔄 [Transaction] Starting Steam game match operation: {steam_game_id} -> IGDB ID {igdb_id} for user {user_id}")
+        logger.info(f"🔄 [Transaction] Starting Steam game match operation: {steam_game_id} -> IGDB ID {game_id} for user {user_id}")
         
         try:
             # Find the Steam game and verify ownership
@@ -835,32 +834,27 @@ class SteamGamesService:
             if not steam_game:
                 raise SteamGamesServiceError("Steam game not found or access denied")
             
-            # Validate IGDB ID and fetch title if provided (skip validation for clearing matches)
+            # Validate game_id (IGDB ID) and fetch title if provided (skip validation for clearing matches)
             igdb_title = None
-            if igdb_id is not None:
+            if game_id is not None:
                 try:
                     # Fetch IGDB game data to get the title and validate the ID
-                    game_data = await self.igdb_service.get_game_by_id(igdb_id)
+                    game_data = await self.igdb_service.get_game_by_id(game_id)
                     if not game_data:
-                        raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
+                        raise SteamGamesServiceError(f"Invalid IGDB ID: {game_id}")
                     igdb_title = game_data.title
-                    logger.debug(f"🔄 [Transaction] Retrieved IGDB title: '{igdb_title}' for IGDB ID {igdb_id}")
+                    logger.debug(f"🔄 [Transaction] Retrieved IGDB title: '{igdb_title}' for IGDB ID {game_id}")
                 except Exception as e:
                     # If IGDB service fails, treat it as invalid IGDB ID
-                    logger.warning(f"IGDB validation failed for ID {igdb_id}: {str(e)}")
-                    raise SteamGamesServiceError(f"Invalid IGDB ID: {igdb_id}")
+                    logger.warning(f"IGDB validation failed for ID {game_id}: {str(e)}")
+                    raise SteamGamesServiceError(f"Invalid IGDB ID: {game_id}")
             
             # Store current state for unsync operations
-            old_igdb_id = steam_game.igdb_id
             old_game_id = steam_game.game_id
             
-            # Update the Steam game's IGDB ID and title
-            steam_game.igdb_id = igdb_id
+            # Update the Steam game's game_id (IGDB ID) and title
+            steam_game.game_id = game_id
             steam_game.igdb_title = igdb_title  # Set to None when clearing match
-            
-            # If unmatching (igdb_id=None), also clear sync status
-            if igdb_id is None:
-                steam_game.game_id = None
             
             steam_game.updated_at = datetime.now(timezone.utc)
             
@@ -870,29 +864,26 @@ class SteamGamesService:
             
             # Handle collection unsync for unmatch operations
             unsync_result = None
-            if igdb_id is None and old_game_id:
-                logger.info(f"🔄 [Transaction] Steam game was synced (game_id: {old_game_id}), performing unsync operation")
+            if game_id is None and old_game_id:
+                logger.info(f"🔄 [Transaction] Steam game was synced (old game_id: {old_game_id}), performing unsync operation")
                 unsync_result = await self._unsync_steam_game_from_collection(old_game_id, user_id)
                 logger.debug(f"🔄 [Transaction] Unsync operation result: {unsync_result}")
             
             # Create response message
-            if igdb_id is None:
-                if old_igdb_id and old_game_id:
-                    # Was matched and synced - unmatched and unsynced
+            if game_id is None:
+                if old_game_id:
+                    # Was matched/synced - unmatched and unsynced
                     if unsync_result == "complete":
                         message = f"Unmatched Steam game '{steam_game.game_name}' and removed from collection"
                     elif unsync_result == "platform_only":
                         message = f"Unmatched Steam game '{steam_game.game_name}' and removed Steam platform (other platforms retained)"
                     else:
                         message = f"Unmatched Steam game '{steam_game.game_name}' and removed from collection"
-                elif old_igdb_id:
-                    # Was matched but not synced - just unmatched
-                    message = f"Cleared IGDB match for Steam game '{steam_game.game_name}'"
                 else:
                     # Was neither matched nor synced
                     message = f"No IGDB match to clear for Steam game '{steam_game.game_name}'"
             else:
-                if old_igdb_id:
+                if old_game_id:
                     message = f"Updated IGDB match for Steam game '{steam_game.game_name}'"
                 else:
                     message = f"Successfully matched Steam game '{steam_game.game_name}' to IGDB"
@@ -901,7 +892,7 @@ class SteamGamesService:
             logger.debug("🔄 [Transaction] Committing all changes to database")
             self.session.commit()
             self.session.refresh(steam_game)
-            logger.info(f"✅ [Transaction] Successfully committed Steam game {steam_game_id} IGDB match update: {old_igdb_id} -> {igdb_id} by user {user_id}")
+            logger.info(f"✅ [Transaction] Successfully committed Steam game {steam_game_id} IGDB match update: {old_game_id} -> {game_id} by user {user_id}")
             
             return steam_game, message
             
@@ -953,23 +944,23 @@ class SteamGamesService:
                 raise SteamGamesServiceError("Steam game not found or access denied")
             
             logger.debug(f"🎮 [Steam Service] Found Steam game: {steam_game.game_name} (AppID: {steam_game.steam_appid})")
-            logger.debug(f"🎮 [Steam Service] Steam game status: IGDB ID: {steam_game.igdb_id}, Game ID: {steam_game.game_id}, Ignored: {steam_game.ignored}")
+            logger.debug(f"🎮 [Steam Service] Steam game status: Game ID: {steam_game.game_id}, Ignored: {steam_game.ignored}")
             
             # Step 2: Validate Steam game has IGDB match
-            if not steam_game.igdb_id:
+            if not steam_game.game_id:
                 logger.error(f"🎮 [Steam Service] Steam game {steam_game_id} not matched to IGDB")
                 raise SteamGamesServiceError("Steam game must be matched to IGDB before syncing to collection")
             
-            logger.debug(f"🎮 [Steam Service] Step 2: Steam game is matched to IGDB ID: {steam_game.igdb_id}")
+            logger.debug(f"🎮 [Steam Service] Step 2: Steam game is matched to IGDB ID: {steam_game.game_id}")
             
             # Step 3: Check if Game record exists, create if needed
-            logger.debug(f"🎮 [Steam Service] Step 3: Looking for existing Game record with IGDB ID: {steam_game.igdb_id}")
-            game_query = select(Game).where(Game.id == steam_game.igdb_id)
+            logger.debug(f"🎮 [Steam Service] Step 3: Looking for existing Game record with IGDB ID: {steam_game.game_id}")
+            game_query = select(Game).where(Game.id == steam_game.game_id)
             game = self.session.exec(game_query).first()
             
             if not game:
                 # Create Game record using import_from_igdb
-                logger.info(f"🎮 [Steam Service] Step 3a: Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
+                logger.info(f"🎮 [Steam Service] Step 3a: Creating Game record from IGDB for game_id {steam_game.game_id}")
                 try:
                     # Get user for import_from_igdb call
                     user = self.session.get(User, user_id)
@@ -977,15 +968,15 @@ class SteamGamesService:
                         raise SteamGamesServiceError(f"User {user_id} not found")
                     
                     # Use import_from_igdb to create Game record with proper platform handling
-                    import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
+                    import_request = GameMetadataAcceptRequest(igdb_id=steam_game.game_id)
                     game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
                     
                     # Get the created Game record
                     game = self.session.get(Game, game_response.id)
-                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
+                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.game_id} via import_from_igdb")
                     
                 except Exception as e:
-                    logger.error(f"🎮 [Steam Service] Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                    logger.error(f"🎮 [Steam Service] Error creating Game from IGDB ID {steam_game.game_id}: {str(e)}")
                     raise SteamGamesServiceError(f"Failed to create game from IGDB data: {str(e)}")
             else:
                 logger.debug(f"🎮 [Steam Service] Step 3b: Found existing Game record: {game.title} (ID: {game.id})")
@@ -1064,16 +1055,9 @@ class SteamGamesService:
             else:
                 logger.debug("🎮 [Steam Service] Step 5c: Steam platform association already exists")
             
-            # Step 6: Update Steam game sync tracking (only if not already set)
-            logger.debug("🎮 [Steam Service] Step 6: Updating Steam game sync tracking")
-            if steam_game.game_id is None:
-                logger.info(f"🎮 [Steam Service] Setting Steam game game_id to {game.id}")
-                steam_game.game_id = game.id
-                steam_game.updated_at = datetime.now(timezone.utc)
-                self.session.add(steam_game)
-                logger.info(f"🎮 [Steam Service] Set SteamGame {steam_game_id} game_id to {game.id}")
-            else:
-                logger.debug(f"🎮 [Steam Service] Steam game already has game_id set: {steam_game.game_id}")
+            # Step 6: Update Steam game sync tracking (game is already matched, so no changes needed to game_id)
+            logger.debug("🎮 [Steam Service] Step 6: Steam game already matched via game_id")
+            logger.debug(f"🎮 [Steam Service] SteamGame {steam_game_id} game_id: {steam_game.game_id}")
             
             # Commit all changes
             logger.debug("🎮 [Steam Service] Step 7: Committing all database changes")
@@ -1122,12 +1106,11 @@ class SteamGamesService:
         logger.info(f"Starting bulk sync for all matched Steam games for user {user_id}")
         
         try:
-            # Find all matched Steam games that haven't been synced yet
+            # Find all matched Steam games (has game_id means matched/ready to sync)
             matched_steam_games_query = select(SteamGame).where(
                 and_(
                     SteamGame.user_id == user_id,
-                    SteamGame.igdb_id.isnot(None),  # Has IGDB match
-                    SteamGame.game_id.is_(None),     # Not yet synced
+                    SteamGame.game_id.isnot(None),  # Has IGDB match
                     not SteamGame.ignored       # Not ignored
                 )
             )
@@ -1166,12 +1149,12 @@ class SteamGamesService:
             for steam_game in matched_steam_games:
                 try:
                     # Check if Game record exists, create if needed
-                    game_query = select(Game).where(Game.id == steam_game.igdb_id)
+                    game_query = select(Game).where(Game.id == steam_game.game_id)
                     game = self.session.exec(game_query).first()
                     
                     if not game:
                         # Create Game record using import_from_igdb
-                        logger.debug(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
+                        logger.debug(f"Creating Game record from IGDB for game_id {steam_game.game_id}")
                         try:
                             # Get user for import_from_igdb call
                             user = self.session.get(User, user_id)
@@ -1189,15 +1172,15 @@ class SteamGamesService:
                                 continue
                             
                             # Use import_from_igdb to create Game record with proper platform handling
-                            import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
+                            import_request = GameMetadataAcceptRequest(igdb_id=steam_game.game_id)
                             game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
                             
                             # Get the created Game record
                             game = self.session.get(Game, game_response.id)
-                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
+                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.game_id} via import_from_igdb")
                             
                         except Exception as e:
-                            logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
+                            logger.error(f"Error creating Game from IGDB ID {steam_game.game_id}: {str(e)}")
                             # Ensure session is rolled back after any error
                             try:
                                 self.session.rollback()
@@ -1265,10 +1248,7 @@ class SteamGamesService:
                         self.session.add(platform_association)
                         logger.debug(f"Added Steam platform association for UserGame {user_game.id}")
                     
-                    # Update Steam game sync tracking
-                    steam_game.game_id = game.id
-                    steam_game.updated_at = datetime.now(timezone.utc)
-                    self.session.add(steam_game)
+                    # Steam game already has game_id set (no need to update)
                     
                     # Add successful result
                     results.append(SyncResult(
@@ -1477,13 +1457,29 @@ class SteamGamesService:
         """
         try:
             # Find matched but not synced Steam games for the user
-            matched_games = self.session.exec(
-                select(SteamGame)
-                .where(SteamGame.user_id == user_id)
-                .where(SteamGame.igdb_id.isnot(None))  # Has IGDB match
-                .where(SteamGame.game_id.is_(None))    # NOT synced to collection
-                .where(not SteamGame.ignored)     # Not ignored
-            ).all()
+            # Since game_id is now the IGDB ID, we need to find games that have game_id
+            # but don't have a corresponding UserGame entry (not synced)
+            matched_games_query = select(SteamGame).where(
+                and_(
+                    SteamGame.user_id == user_id,
+                    SteamGame.game_id.isnot(None),  # Has IGDB match
+                    not SteamGame.ignored           # Not ignored
+                )
+            )
+            all_matched_games = self.session.exec(matched_games_query).all()
+            
+            # Filter to only games that are NOT synced (no UserGame exists)
+            matched_games = []
+            for steam_game in all_matched_games:
+                user_game_query = select(UserGame).where(
+                    and_(
+                        UserGame.user_id == user_id,
+                        UserGame.game_id == steam_game.game_id
+                    )
+                )
+                user_game = self.session.exec(user_game_query).first()
+                if not user_game:  # Not synced to collection
+                    matched_games.append(steam_game)
             
             total_processed = len(matched_games)
             logger.info(f"Found {total_processed} matched (non-synced) Steam games to unmatch for user {user_id}")
@@ -1504,10 +1500,11 @@ class SteamGamesService:
             # Process each matched (non-synced) game
             for steam_game in matched_games:
                 try:
-                    logger.debug(f"Processing '{steam_game.game_name}' (igdb_id: {steam_game.igdb_id})")
+                    logger.debug(f"Processing '{steam_game.game_name}' (game_id: {steam_game.game_id})")
                     
-                    # Clear IGDB match only (no game_id to clear since we filtered them out)
-                    steam_game.igdb_id = None
+                    # Clear IGDB match (game_id is the IGDB ID)
+                    steam_game.game_id = None
+                    steam_game.igdb_title = None
                     steam_game.updated_at = datetime.now(timezone.utc)
                     
                     # Add to session (will be committed later)
@@ -1572,12 +1569,28 @@ class SteamGamesService:
         """
         try:
             # Find synced Steam games for the user
-            synced_games = self.session.exec(
-                select(SteamGame)
-                .where(SteamGame.user_id == user_id)
-                .where(SteamGame.game_id.isnot(None))  # Synced to collection
-                .where(not SteamGame.ignored)     # Not ignored
-            ).all()
+            # These are games with game_id that also have a UserGame entry
+            synced_games_query = select(SteamGame).where(
+                and_(
+                    SteamGame.user_id == user_id,
+                    SteamGame.game_id.isnot(None),  # Has IGDB match
+                    not SteamGame.ignored           # Not ignored
+                )
+            )
+            all_matched_games = self.session.exec(synced_games_query).all()
+            
+            # Filter to only games that ARE synced (have UserGame)
+            synced_games = []
+            for steam_game in all_matched_games:
+                user_game_query = select(UserGame).where(
+                    and_(
+                        UserGame.user_id == user_id,
+                        UserGame.game_id == steam_game.game_id
+                    )
+                )
+                user_game = self.session.exec(user_game_query).first()
+                if user_game:  # Is synced to collection
+                    synced_games.append(steam_game)
             
             total_processed = len(synced_games)
             logger.info(f"Found {total_processed} synced Steam games to unsync for user {user_id}")
@@ -1613,8 +1626,9 @@ class SteamGamesService:
                         failed_unsyncs += 1
                         continue  # Skip to next game
                     
-                    # Clear game_id from SteamGame (keeps igdb_id - returns to matched state)
+                    # Clear game_id from SteamGame (returns to unmatched state)
                     steam_game.game_id = None
+                    steam_game.igdb_title = None
                     steam_game.updated_at = datetime.now(timezone.utc)
                     
                     # Add to session (will be committed later)
@@ -1681,9 +1695,20 @@ class SteamGamesService:
             if not steam_game or steam_game.user_id != user_id:
                 raise SteamGamesServiceError(f"Steam game {steam_game_id} not found or access denied")
             
-            # Check if game is actually synced
+            # Check if game is actually synced (has game_id and UserGame exists)
             if not steam_game.game_id:
-                raise SteamGamesServiceError(f"Steam game '{steam_game.game_name}' is not synced to collection")
+                raise SteamGamesServiceError(f"Steam game '{steam_game.game_name}' is not matched/synced to collection")
+                
+            # Verify UserGame exists (double-check synced status)
+            user_game_check_query = select(UserGame).where(
+                and_(
+                    UserGame.user_id == user_id,
+                    UserGame.game_id == steam_game.game_id
+                )
+            )
+            user_game_check = self.session.exec(user_game_check_query).first()
+            if not user_game_check:
+                raise SteamGamesServiceError(f"Steam game '{steam_game.game_name}' is matched but not synced to collection")
             
             logger.info(f"Unsyncing Steam game '{steam_game.game_name}' (game_id: {steam_game.game_id}) for user {user_id}")
             
@@ -1694,8 +1719,9 @@ class SteamGamesService:
             unsync_result = await self._unsync_steam_game_from_collection(old_game_id, user_id)
             logger.debug(f"Unsync operation result: {unsync_result}")
             
-            # Clear game_id from SteamGame (keeps igdb_id - returns to matched state)
+            # Clear game_id from SteamGame (returns to unmatched state)
             steam_game.game_id = None
+            steam_game.igdb_title = None
             steam_game.updated_at = datetime.now(timezone.utc)
             
             # Commit changes

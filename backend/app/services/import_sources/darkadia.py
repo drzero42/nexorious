@@ -1279,9 +1279,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
+            query = query.where(and_(DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
+            query = query.where(and_(DarkadiaGame.game_id is not None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             query = query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1299,9 +1299,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply the same filtering as main query
         if status_filter == "unmatched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
+            count_query = count_query.where(and_(DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
+            count_query = count_query.where(and_(DarkadiaGame.game_id is not None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             count_query = count_query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1391,7 +1391,7 @@ class DarkadiaImportService(ImportSourceService):
                 id=game.id,
                 external_id=game.external_id,
                 name=game.game_name,
-                igdb_id=game.igdb_id,
+                igdb_id=game.game_id,
                 igdb_title=game.igdb_title,
                 game_id=game.game_id,
                 ignored=game.ignored,
@@ -1408,19 +1408,19 @@ class DarkadiaImportService(ImportSourceService):
         
         return import_games, total_count
     
-    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
-        """Match game to IGDB entry."""
+    async def match_game(self, user_id: str, game_id: str, game_id_to_match: Optional[int]) -> ImportGame:
+        """Match game to Game entry."""
         game = self.session.get(DarkadiaGame, game_id)
         if not game or game.user_id != user_id:
             raise ValueError(f"Game {game_id} not found")
         
-        if igdb_id:
-            # TODO: Validate IGDB ID exists
-            game.igdb_id = igdb_id
-            game.igdb_title = f"IGDB Game {igdb_id}"  # This should come from IGDB service
+        if game_id_to_match:
+            # TODO: Validate Game ID exists
+            game.game_id = game_id_to_match
+            game.igdb_title = f"Game {game_id_to_match}"  # This should come from Game service
         else:
             # Clear match
-            game.igdb_id = None
+            game.game_id = None
             game.igdb_title = None
         
         game.updated_at = datetime.now(timezone.utc)
@@ -1432,7 +1432,7 @@ class DarkadiaImportService(ImportSourceService):
             id=game.id,
             external_id=game.external_id,
             name=game.game_name,
-            igdb_id=game.igdb_id,
+            igdb_id=game.game_id,
             igdb_title=game.igdb_title,
             game_id=game.game_id,
             ignored=game.ignored,
@@ -1587,7 +1587,7 @@ class DarkadiaImportService(ImportSourceService):
             "game": {
                 "id": game.id,
                 "name": game.game_name,
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title
             },
             "available_platforms": [
@@ -1608,17 +1608,17 @@ class DarkadiaImportService(ImportSourceService):
         }
     
     async def auto_match_game(self, user_id: str, game_id: str) -> MatchResult:
-        """Automatically match single game to IGDB."""
+        """Automatically match single game to Game catalog."""
         game = self.session.get(DarkadiaGame, game_id)
         if not game or game.user_id != user_id:
             raise ValueError(f"Game {game_id} not found")
         
         try:
             # For now, implement a simple mock matching
-            # TODO: Implement real IGDB integration
+            # TODO: Implement real Game catalog integration
             if len(game.game_name.strip()) > 0:  # Allow all non-empty game names
-                game.igdb_id = abs(hash(game.game_name)) % 1000000  # Generate integer mock ID
-                game.igdb_title = f"{game.game_name} (IGDB)"
+                game.game_id = abs(hash(game.game_name)) % 1000000  # Generate integer mock ID
+                game.igdb_title = f"{game.game_name} (Game)"
                 game.updated_at = datetime.now(timezone.utc)
                 self.session.add(game)
                 self.session.commit()
@@ -1627,7 +1627,7 @@ class DarkadiaImportService(ImportSourceService):
                     game_id=game.id,
                     game_name=game.game_name,
                     matched=True,
-                    igdb_id=game.igdb_id,
+                    igdb_id=game.game_id,
                     igdb_title=game.igdb_title,
                     confidence_score=0.8
                 )
@@ -1649,13 +1649,13 @@ class DarkadiaImportService(ImportSourceService):
             )
     
     async def auto_match_all_games(self, user_id: str) -> BulkOperationResult:
-        """Automatically match all unmatched games to IGDB."""
+        """Automatically match all unmatched games to Game catalog."""
         # Get all unmatched games
         unmatched_games = self.session.exec(
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id is None,
+                    DarkadiaGame.game_id is None,
                     not DarkadiaGame.ignored
                 )
             )
@@ -1709,29 +1709,29 @@ class DarkadiaImportService(ImportSourceService):
             
             logger.debug(f"🎮 [Darkadia Service] Found Darkadia game: {darkadia_game.game_name}")
             
-            # Step 2: Validate game has IGDB match
-            if not darkadia_game.igdb_id:
-                logger.error(f"🎮 [Darkadia Service] Darkadia game {game_id} not matched to IGDB")
+            # Step 2: Validate game has Game match
+            if not darkadia_game.game_id:
+                logger.error(f"🎮 [Darkadia Service] Darkadia game {game_id} not matched to Game")
                 return SyncResult(
                     steam_game_id=game_id,
                     steam_game_name=darkadia_game.game_name,
                     user_game_id=None,
                     action="failed",
-                    error_message="Game must be matched to IGDB before syncing to collection"
+                    error_message="Game must be matched before syncing to collection"
                 )
             
-            logger.debug(f"🎮 [Darkadia Service] Game is matched to IGDB ID: {darkadia_game.igdb_id}")
+            logger.debug(f"🎮 [Darkadia Service] Game is matched to Game ID: {darkadia_game.game_id}")
             
             # Step 3: Check if Game record exists, create if needed
-            game_query = select(Game).where(Game.id == darkadia_game.igdb_id)
+            game_query = select(Game).where(Game.id == darkadia_game.game_id)
             game = self.session.exec(game_query).first()
             
             if not game:
                 # Create a basic Game record (for now, we'll create a minimal one)
-                # TODO: Integrate with IGDB service to create proper Game record
-                logger.info(f"🎮 [Darkadia Service] Creating Game record for IGDB ID {darkadia_game.igdb_id}")
+                # TODO: Integrate with Game service to create proper Game record
+                logger.info(f"🎮 [Darkadia Service] Creating Game record for Game ID {darkadia_game.game_id}")
                 game = Game(
-                    igdb_id=darkadia_game.igdb_id,
+                    igdb_id=darkadia_game.game_id,
                     title=darkadia_game.igdb_title or darkadia_game.game_name,
                     description="",
                     genre="",
@@ -1862,17 +1862,34 @@ class DarkadiaImportService(ImportSourceService):
     
     async def sync_all_games(self, user_id: str) -> BulkOperationResult:
         """Sync all matched games to main collection."""
-        # Get all matched but unsynced games
+        # Get all matched games - since game_id now represents both matched and synced state
+        # we need to find games that are matched but not yet in user's collection
+        # This is more complex now - we need to check if UserGame exists
         matched_games = self.session.exec(
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id is not None,
-                    DarkadiaGame.game_id is None,  # Not yet synced
+                    DarkadiaGame.game_id is not None,  # Matched games
                     not DarkadiaGame.ignored
                 )
             )
         ).all()
+        
+        # Filter out games that are already in user's collection
+        games_to_sync = []
+        for game in matched_games:
+            user_game_exists = self.session.exec(
+                select(UserGame).where(
+                    and_(
+                        UserGame.user_id == user_id,
+                        UserGame.game_id == game.game_id
+                    )
+                )
+            ).first()
+            if not user_game_exists:
+                games_to_sync.append(game)
+        
+        matched_games = games_to_sync
         
         total_processed = len(matched_games)
         successful_operations = 0
@@ -1992,7 +2009,7 @@ class DarkadiaImportService(ImportSourceService):
             id=darkadia_game.id,
             external_id=darkadia_game.external_id,
             name=darkadia_game.game_name,
-            igdb_id=darkadia_game.igdb_id,
+            igdb_id=darkadia_game.game_id,
             igdb_title=darkadia_game.igdb_title,
             game_id=darkadia_game.game_id,
             ignored=darkadia_game.ignored,
@@ -2024,7 +2041,7 @@ class DarkadiaImportService(ImportSourceService):
             id=game.id,
             external_id=game.external_id,
             name=game.game_name,
-            igdb_id=game.igdb_id,
+            igdb_id=game.game_id,
             igdb_title=game.igdb_title,
             game_id=game.game_id,
             ignored=game.ignored,
@@ -2068,19 +2085,19 @@ class DarkadiaImportService(ImportSourceService):
         )
     
     async def unmatch_all_games(self, user_id: str) -> BulkOperationResult:
-        """Remove IGDB matches from all matched games."""
+        """Remove Game matches from all matched games."""
         matched_games = self.session.exec(
             select(DarkadiaGame).where(
                 and_(
                     DarkadiaGame.user_id == user_id,
-                    DarkadiaGame.igdb_id is not None
+                    DarkadiaGame.game_id is not None
                 )
             )
         ).all()
         
         successful_operations = 0
         for game in matched_games:
-            game.igdb_id = None
+            game.game_id = None
             game.igdb_title = None
             game.updated_at = datetime.now(timezone.utc)
             self.session.add(game)

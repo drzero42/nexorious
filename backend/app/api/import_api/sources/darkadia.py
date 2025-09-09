@@ -667,10 +667,10 @@ async def match_darkadia_game(
 ) -> GameMatchResponse:
     """Manually match game to IGDB."""
     try:
-        game = await darkadia_service.match_game(current_user.id, game_id, request.igdb_id)
+        game = await darkadia_service.match_game(current_user.id, game_id, request.game_id)
         
         return GameMatchResponse(
-            message="Game matched successfully" if request.igdb_id else "Game match cleared",
+            message="Game matched successfully" if request.game_id else "Game match cleared",
             game=ImportGameResponse(
                 id=game.id,
                 external_id=game.external_id,

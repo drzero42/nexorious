@@ -93,9 +93,8 @@ class DarkadiaGameResponse(BaseModel):
     id: str = Field(..., description="Darkadia game UUID")
     external_id: str = Field(..., description="External ID (row number from CSV)")
     name: str = Field(..., description="Game name from CSV")
-    igdb_id: Optional[int] = Field(None, description="IGDB ID when matched to games table")
     igdb_title: Optional[str] = Field(None, description="Game title from IGDB when matched")
-    game_id: Optional[int] = Field(None, description="Game ID when synced to user collection")
+    game_id: Optional[int] = Field(None, description="Game ID when matched/synced to user collection")
     user_game_id: Optional[str] = Field(None, description="UserGame ID when synced to user collection")
     ignored: bool = Field(..., description="Whether user has marked this game as ignored")
     created_at: datetime = Field(..., description="When the Darkadia game was imported")
@@ -131,8 +130,8 @@ class DarkadiaImportStartResponse(BaseModel):
 
 
 class DarkadiaGameMatchRequest(BaseModel):
-    """Request schema for matching Darkadia game to IGDB game."""
-    igdb_id: Optional[int] = Field(None, description="IGDB game ID to match to. Set to null to clear existing match.")
+    """Request schema for matching Darkadia game to game catalog."""
+    game_id: Optional[int] = Field(None, description="Game ID to match to. Set to null to clear existing match.")
 
 
 class DarkadiaGameMatchResponse(BaseModel):

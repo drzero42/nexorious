@@ -299,7 +299,7 @@ async def list_steam_games(
                     "id": game.id,
                     "external_id": game.external_id,
                     "name": game.name,
-                    "igdb_id": game.igdb_id,
+                    "igdb_id": game.game_id,
                     "igdb_title": game.igdb_title,
                     "game_id": game.game_id,
                     "user_game_id": game.user_game_id,
@@ -357,15 +357,15 @@ async def match_steam_game(
 ) -> GameMatchResponse:
     """Match Steam game to IGDB entry."""
     try:
-        game = await steam_service.match_game(current_user.id, game_id, request.igdb_id)
+        game = await steam_service.match_game(current_user.id, game_id, request.game_id)
         
         return GameMatchResponse(
-            message="Game matched successfully" if request.igdb_id else "Game match cleared",
+            message="Game matched successfully" if request.game_id else "Game match cleared",
             game=ImportGameResponse.model_validate({
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
@@ -420,7 +420,7 @@ async def auto_match_steam_game(
                         "id": game.id,
                         "external_id": game.external_id,
                         "name": game.name,
-                        "igdb_id": game.igdb_id,
+                        "igdb_id": game.game_id,
                         "igdb_title": game.igdb_title,
                         "game_id": game.game_id,
                         "user_game_id": game.user_game_id,
@@ -488,7 +488,7 @@ async def sync_steam_game(
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
@@ -541,7 +541,7 @@ async def unsync_steam_game(
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
@@ -582,7 +582,7 @@ async def toggle_ignore_steam_game(
                 "id": game.id,
                 "external_id": game.external_id,
                 "name": game.name,
-                "igdb_id": game.igdb_id,
+                "igdb_id": game.game_id,
                 "igdb_title": game.igdb_title,
                 "game_id": game.game_id,
                 "user_game_id": game.user_game_id,

@@ -102,9 +102,8 @@ class ImportGameResponse(BaseModel):
     id: str = Field(..., description="Game ID in import system")
     external_id: str = Field(..., description="External game ID (AppID, etc.)")
     name: str = Field(..., description="Game name")
-    igdb_id: Optional[int] = Field(None, description="IGDB game ID if matched")
     igdb_title: Optional[str] = Field(None, description="IGDB game title if matched")
-    game_id: Optional[int] = Field(None, description="Main games table ID if synced")
+    game_id: Optional[int] = Field(None, description="Main games table ID if matched/synced")
     user_game_id: Optional[str] = Field(None, description="User games table ID if synced")
     ignored: bool = Field(..., description="Whether game is ignored")
     created_at: datetime = Field(..., description="When game was imported")
@@ -138,8 +137,8 @@ class ImportStartResponse(BaseModel):
 
 
 class GameMatchRequest(BaseModel):
-    """Request for matching game to IGDB."""
-    igdb_id: Optional[int] = Field(None, description="IGDB ID to match to, or null to clear match")
+    """Request for matching game to game catalog."""
+    game_id: Optional[int] = Field(None, description="Game ID to match to, or null to clear match")
 
 
 class GameMatchResponse(BaseModel):

@@ -326,9 +326,9 @@ class SteamImportService(ImportSourceService):
         # Apply status filter
         if status_filter:
             if status_filter == "unmatched":
-                query = query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
+                query = query.where(and_(SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "matched":
-                query = query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
+                query = query.where(and_(SteamGame.game_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "ignored":
                 query = query.where(SteamGame.ignored)
             elif status_filter == "synced":
@@ -343,9 +343,9 @@ class SteamImportService(ImportSourceService):
         count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
         if status_filter:
             if status_filter == "unmatched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
+                count_query = count_query.where(and_(SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "matched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
+                count_query = count_query.where(and_(SteamGame.game_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
             elif status_filter == "ignored":
                 count_query = count_query.where(SteamGame.ignored)
             elif status_filter == "synced":
@@ -369,7 +369,7 @@ class SteamImportService(ImportSourceService):
                 id=steam_game.id,
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
-                igdb_id=steam_game.igdb_id,
+                igdb_id=steam_game.game_id,
                 igdb_title=steam_game.igdb_title,
                 game_id=steam_game.game_id,
                 user_game_id=user_game_id,
@@ -386,7 +386,7 @@ class SteamImportService(ImportSourceService):
             steam_games_service = create_steam_games_service(self.session, self.igdb_service)
             steam_game, message = await steam_games_service.match_steam_game_to_igdb(
                 steam_game_id=game_id,
-                igdb_id=igdb_id,
+                game_id=igdb_id,
                 user_id=user_id
             )
             
@@ -407,7 +407,7 @@ class SteamImportService(ImportSourceService):
                 id=steam_game.id,
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
-                igdb_id=steam_game.igdb_id,
+                igdb_id=steam_game.game_id,
                 igdb_title=steam_game.igdb_title,
                 game_id=steam_game.game_id,
                 user_game_id=user_game_id,
@@ -507,7 +507,7 @@ class SteamImportService(ImportSourceService):
                 id=steam_game.id,
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
-                igdb_id=steam_game.igdb_id,
+                igdb_id=steam_game.game_id,
                 igdb_title=steam_game.igdb_title,
                 game_id=steam_game.game_id,
                 user_game_id=None,  # Always None after unsync
@@ -561,7 +561,7 @@ class SteamImportService(ImportSourceService):
                 id=steam_game.id,
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
-                igdb_id=steam_game.igdb_id,
+                igdb_id=steam_game.game_id,
                 igdb_title=steam_game.igdb_title,
                 game_id=steam_game.game_id,
                 user_game_id=user_game_id,

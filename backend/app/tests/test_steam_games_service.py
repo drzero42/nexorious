@@ -138,7 +138,7 @@ def sample_igdb_games_data():
         MockIGDBGame(
             id="1234",
             title="Counter-Strike: Global Offensive", 
-            igdb_id=1234,
+            game_id=1234,
             slug="counter-strike-global-offensive",
             cover_art_url="https://example.com/cover1.jpg",
             summary="Tactical FPS game",
@@ -149,7 +149,7 @@ def sample_igdb_games_data():
         MockIGDBGame(
             id="5678",
             title="Team Fortress 2",
-            igdb_id=5678, 
+            game_id=5678, 
             slug="team-fortress-2",
             cover_art_url="https://example.com/cover2.jpg",
             summary="Team-based FPS",
@@ -229,7 +229,6 @@ class TestSteamLibraryImport:
             mock_import.return_value = Game(
                 id=1234,
                 title="Counter-Strike: Global Offensive",
-                igdb_id=1234,
                 igdb_slug="counter-strike-global-offensive"
             )
             
@@ -283,7 +282,7 @@ class TestSteamLibraryImport:
         ).all()
         
         assert len(steam_games) == 5
-        assert all(game.igdb_id is None for game in steam_games)
+        assert all(game.game_id is None for game in steam_games)
     
     @pytest.mark.asyncio
     async def test_import_steam_library_deduplication(
@@ -390,7 +389,6 @@ class TestAutoMatching:
             mock_import.return_value = Game(
                 id=1234,
                 title="Counter-Strike: Global Offensive",
-                igdb_id=1234,
                 igdb_slug="counter-strike-global-offensive"
             )
             
@@ -402,7 +400,7 @@ class TestAutoMatching:
         assert result.steam_game_id == steam_game.id
         assert result.steam_game_name == "Counter-Strike: Global Offensive"
         assert result.steam_appid == 730
-        assert result.igdb_id == 1234
+        assert result.game_id == 1234
         assert result.confidence_score >= 0.80
     
     @pytest.mark.asyncio
@@ -433,7 +431,7 @@ class TestAutoMatching:
         assert isinstance(result, AutoMatchResult)
         assert result.matched is False
         assert result.steam_game_id == steam_game.id
-        assert result.igdb_id is None
+        assert result.game_id is None
         assert result.confidence_score < 0.80
     
     @pytest.mark.asyncio
@@ -462,7 +460,7 @@ class TestAutoMatching:
         assert isinstance(result, AutoMatchResult)
         assert result.matched is False
         assert result.steam_game_id == steam_game.id
-        assert result.igdb_id is None
+        assert result.game_id is None
         assert result.error_message is None  # No error, just no matches
     
     @pytest.mark.asyncio
@@ -496,7 +494,6 @@ class TestAutoMatching:
             mock_import.return_value = Game(
                 id=1234,
                 title="Game 1",
-                igdb_id=1234,
                 igdb_slug="game-1"
             )
             
@@ -523,7 +520,7 @@ class TestAutoMatching:
                 user_id=test_user.id,
                 steam_appid=appid,
                 game_name=f"Unmatched Game {i+1}",
-                igdb_id=None,
+                game_id=None,
                 ignored=False
             )
             unmatched_games.append(game)
@@ -534,7 +531,7 @@ class TestAutoMatching:
             user_id=test_user.id,
             steam_appid=570,
             game_name="Matched Game",
-            igdb_id=999888,  # Test existing IGDB ID
+            game_id=999888,  # Test existing game_id (IGDB ID)
             ignored=False
         )
         steam_games_service.session.add(matched_game)
@@ -544,7 +541,7 @@ class TestAutoMatching:
             user_id=test_user.id,
             steam_appid=620,
             game_name="Ignored Game",
-            igdb_id=None,
+            game_id=None,
             ignored=True
         )
         steam_games_service.session.add(ignored_game)
@@ -560,7 +557,6 @@ class TestAutoMatching:
             mock_import.return_value = Game(
                 id=9999,
                 title="Perfect Match",
-                igdb_id=9999,
                 igdb_slug="perfect-match"
             )
             
@@ -612,23 +608,23 @@ class TestManualMatching:
         # Match Steam game to IGDB game
         result_game, message = await steam_games_service.match_steam_game_to_igdb(
             steam_game_id=steam_game.id,
-            igdb_id=str(igdb_game.id),
+            game_id=igdb_game.id,
             user_id=test_user.id
         )
         
         # Verify result
         assert result_game.id == steam_game.id
-        assert result_game.igdb_id == igdb_game.id
+        assert result_game.game_id == igdb_game.id
         assert result_game.igdb_title == "Counter-Strike: Global Offensive"
         assert "matched" in message.lower()
         
         # Verify database update
         steam_games_service.session.refresh(steam_game)
-        assert steam_game.igdb_id == igdb_game.id
+        assert steam_game.game_id == igdb_game.id
         assert steam_game.igdb_title == "Counter-Strike: Global Offensive"
         
         # Verify IGDB service was called for validation
-        mock_igdb_service.get_game_by_id.assert_called_once_with("1234")
+        mock_igdb_service.get_game_by_id.assert_called_once_with(1234)
     
     @pytest.mark.asyncio
     async def test_match_steam_game_to_igdb_clear_existing(
@@ -639,8 +635,8 @@ class TestManualMatching:
         """Test clearing existing IGDB match."""
         # Create IGDB game
         igdb_game = Game(
+            id=1234,
             title="Counter-Strike: Global Offensive",
-            igdb_id=1234,
             igdb_slug="counter-strike-global-offensive"
         )
         steam_games_service.session.add(igdb_game)
@@ -651,7 +647,7 @@ class TestManualMatching:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=igdb_game.id
+            game_id=igdb_game.id
         )
         steam_games_service.session.add(steam_game)
         steam_games_service.session.commit()
@@ -659,14 +655,14 @@ class TestManualMatching:
         # Clear the match (set to None)
         result_game, message = await steam_games_service.match_steam_game_to_igdb(
             steam_game_id=steam_game.id,
-            igdb_id=None,
+            game_id=None,
             user_id=test_user.id
         )
         
         # Verify result
         assert result_game.id == steam_game.id
-        assert result_game.igdb_id is None
-        assert "cleared" in message.lower()
+        assert result_game.game_id is None
+        assert "unmatched" in message.lower()
     
     @pytest.mark.asyncio
     async def test_match_steam_game_to_igdb_not_found(
@@ -678,7 +674,7 @@ class TestManualMatching:
         with pytest.raises(SteamGamesServiceError) as exc_info:
             await steam_games_service.match_steam_game_to_igdb(
                 steam_game_id="non-existent-id",
-                igdb_id=777666,
+                game_id=777666,
                 user_id=test_user.id
             )
         
@@ -712,7 +708,7 @@ class TestManualMatching:
         with pytest.raises(SteamGamesServiceError) as exc_info:
             await steam_games_service.match_steam_game_to_igdb(
                 steam_game_id=steam_game.id,
-                igdb_id=777666,
+                game_id=777666,
                 user_id=current_user.id
             )
         
@@ -749,7 +745,7 @@ class TestCollectionSync:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=igdb_game.id
+            game_id=igdb_game.id
         )
         session.add(steam_game)
         session.commit()
@@ -795,7 +791,7 @@ class TestCollectionSync:
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=None  # Not matched
+            game_id=None  # Not matched
         )
         steam_games_service.session.add(steam_game)
         steam_games_service.session.commit()
@@ -841,7 +837,7 @@ class TestCollectionSync:
                 user_id=test_user.id,
                 steam_appid=730 + i,
                 game_name=f"Game {i+1}",
-                igdb_id=igdb_game.id,
+                game_id=igdb_game.id,
                 ignored=False
             )
             matched_games.append(steam_game)
@@ -852,7 +848,7 @@ class TestCollectionSync:
             user_id=test_user.id,
             steam_appid=999,
             game_name="Unmatched Game",
-            igdb_id=None,
+            game_id=None,
             ignored=False
         )
         session.add(unmatched_game)
@@ -862,7 +858,7 @@ class TestCollectionSync:
             user_id=test_user.id,
             steam_appid=1000,
             game_name="Ignored Game",
-            igdb_id=igdb_games[2].id,
+            game_id=igdb_games[2].id,
             ignored=True
         )
         session.add(ignored_game)
@@ -1065,7 +1061,7 @@ class TestDataClasses:
             steam_game_name="Game Name",
             steam_appid=730,
             matched=True,
-            igdb_id=12001,
+            game_id=12001,
             igdb_game_title="IGDB Game Name",
             confidence_score=0.85
         )
@@ -1074,7 +1070,7 @@ class TestDataClasses:
         assert result.steam_game_name == "Game Name"
         assert result.steam_appid == 730
         assert result.matched is True
-        assert result.igdb_id == 12001
+        assert result.game_id == 12001
         assert result.igdb_game_title == "IGDB Game Name"
         assert result.confidence_score == 0.85
     
