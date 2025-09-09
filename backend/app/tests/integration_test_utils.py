@@ -558,8 +558,6 @@ def create_test_game(
     Returns:
         Game object with guaranteed igdb_id field
     """
-    import uuid
-    import time
     import random
     
     # Generate unique values if not provided
@@ -608,8 +606,6 @@ def create_test_games(
     Returns:
         List of Game objects with guaranteed unique igdb_id fields
     """
-    import time
-    
     games = []
     global _test_game_counter
     

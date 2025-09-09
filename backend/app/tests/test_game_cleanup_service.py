@@ -2,7 +2,7 @@
 Tests for the game cleanup service.
 """
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from ..services.game_cleanup import cleanup_unreferenced_game, get_unreferenced_games, cleanup_multiple_games
 from ..models.game import Game

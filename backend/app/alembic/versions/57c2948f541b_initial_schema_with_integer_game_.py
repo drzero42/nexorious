@@ -66,9 +66,6 @@ def upgrade() -> None:
         batch_op.create_index(
             batch_op.f("ix_games_igdb_slug"), ["igdb_slug"], unique=False
         )
-        batch_op.create_index(
-            batch_op.f("ix_games_steam_appid"), ["steam_appid"], unique=False
-        )
         batch_op.create_index(batch_op.f("ix_games_title"), ["title"], unique=False)
 
     op.create_table(

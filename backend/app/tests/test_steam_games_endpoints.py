@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 from typing import Dict
-from unittest.mock import MagicMock
 
 from ..models.user import User
 from ..models.steam_game import SteamGame

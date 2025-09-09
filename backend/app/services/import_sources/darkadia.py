@@ -1065,7 +1065,6 @@ class DarkadiaImportService(ImportSourceService):
             original_platform_name = platform_data.get('platform', '').strip()
             original_storefront_name = platform_data.get('storefront', '').strip() or platform_data.get('storefront_other', '').strip()
             copy_identifier = platform_data.get('copy_identifier')
-            is_real_copy = platform_data.get('is_real_copy', True)
             platform_data.get('requires_storefront_resolution', False)
             
             # Get transformed platform/storefront data if available
@@ -1280,9 +1279,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply status filter
         if status_filter == "unmatched":
-            query = query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
+            query = query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
+            query = query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             query = query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1300,9 +1299,9 @@ class DarkadiaImportService(ImportSourceService):
         
         # Apply the same filtering as main query
         if status_filter == "unmatched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, DarkadiaGame.ignored == False))
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is None, not DarkadiaGame.ignored))
         elif status_filter == "matched":
-            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, DarkadiaGame.ignored == False))
+            count_query = count_query.where(and_(DarkadiaGame.igdb_id is not None, DarkadiaGame.game_id is None, not DarkadiaGame.ignored))
         elif status_filter == "ignored":
             count_query = count_query.where(DarkadiaGame.ignored)
         elif status_filter == "synced":
@@ -1541,12 +1540,12 @@ class DarkadiaImportService(ImportSourceService):
             
         # Get all active platforms
         platforms = self.session.exec(
-            select(Platform).where(Platform.is_active == True).order_by(Platform.display_name)
+            select(Platform).where(Platform.is_active).order_by(Platform.display_name)
         ).all()
         
         # Get all active storefronts
         storefronts = self.session.exec(
-            select(Storefront).where(Storefront.is_active == True).order_by(Storefront.display_name)
+            select(Storefront).where(Storefront.is_active).order_by(Storefront.display_name)
         ).all()
         
         # Get current DarkadiaImport records for this game

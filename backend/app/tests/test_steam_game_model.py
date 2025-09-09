@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 from typing import Dict
 
 from ..models.user import User
