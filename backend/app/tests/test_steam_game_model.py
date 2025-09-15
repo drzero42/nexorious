@@ -11,7 +11,6 @@ from typing import Dict
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
-from ..models.game import Game
 
 
 class TestSteamGameModel:
@@ -35,7 +34,7 @@ class TestSteamGameModel:
         assert steam_game.steam_appid == 730
         assert steam_game.game_name == "Counter-Strike: Global Offensive"
         assert steam_game.igdb_id is None
-        assert steam_game.game_id is None
+        # game_id field was removed in migration
         assert steam_game.ignored is False
         assert steam_game.created_at is not None
         assert steam_game.updated_at is not None
@@ -53,9 +52,9 @@ class TestSteamGameModel:
         session.add(steam_game)
         session.commit()
         session.refresh(steam_game)
-        
+
         assert steam_game.igdb_id is None
-        assert steam_game.game_id is None
+        # game_id field was removed in migration
         assert steam_game.ignored is False
         assert steam_game.created_at is not None
         assert steam_game.updated_at is not None
@@ -158,37 +157,30 @@ class TestSteamGameModel:
         assert found_game is not None
         assert found_game.id == steam_game.id
     
-    def test_synced_game_relationship(self, session: Session, test_user: User):
-        """Test relationship with Game model via game_id (synced game)."""
-        # Create a game first
-        game = Game(
-            id=5678,  # Use integer IGDB ID as primary key
-            title="Team Fortress 2",
-            release_date=None,
-            description="Team-based FPS",
-            igdb_slug="team-fortress-2"
-        )
-        session.add(game)
-        session.commit()
-        
-        # Create Steam game with synced game relationship
+    def test_steam_game_basic_creation(self, session: Session, test_user: User):
+        """Test basic Steam game creation after migration."""
+        # Create a Steam game with IGDB match (post-migration structure)
         steam_game = SteamGame(
             user_id=test_user.id,
-            steam_appid=440,
-            game_name="Team Fortress 2",
-            igdb_id=game.id,
-            game_id=game.id
+            steam_appid=730,
+            game_name="Counter-Strike: Global Offensive",
+            igdb_id=123456  # Has IGDB match but no direct game_id reference
         )
-        
         session.add(steam_game)
         session.commit()
         session.refresh(steam_game)
-        
-        # Test synced game relationship
-        assert steam_game.synced_game is not None
-        assert steam_game.synced_game.id == game.id
-        assert steam_game.synced_game.title == "Team Fortress 2"
-        assert steam_game.synced_game.id == 5678  # Check primary key ID
+
+        # Verify the game was created correctly
+        assert steam_game.id is not None
+        assert steam_game.user_id == test_user.id
+        assert steam_game.steam_appid == 730
+        assert steam_game.game_name == "Counter-Strike: Global Offensive"
+        assert steam_game.igdb_id == 123456
+        assert steam_game.ignored is False
+
+        # Verify game_id field no longer exists (migration worked)
+        with pytest.raises(AttributeError):
+            _ = steam_game.game_id
     
     def test_required_fields(self, session: Session, test_user: User):
         """Test that required fields cannot be null."""
@@ -353,13 +345,12 @@ class TestSteamGameModel:
         )
         session.add(ignored_steam_game)
         
-        # 4. Synced game (has both igdb_id and synced game relationship)
+        # 4. Previously synced game (has igdb_id, sync status determined by platform associations)
         synced_steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=4,
             game_name="Synced Game",
-            igdb_id=test_game.id,
-            game_id=test_game.id
+            igdb_id=test_game.id
         )
         session.add(synced_steam_game)
         
@@ -369,7 +360,7 @@ class TestSteamGameModel:
         steam_games = session.exec(select(SteamGame).where(SteamGame.user_id == test_user.id)).all()
         print(f"\nDEBUG: Found {len(steam_games)} Steam games for user {test_user.id}")
         for game in steam_games:
-            print(f"  - Steam appid: {game.steam_appid}, name: {game.game_name}, igdb_id: {game.igdb_id}, game_id: {game.game_id}, ignored: {game.ignored}")
+            print(f"  - Steam appid: {game.steam_appid}, name: {game.game_name}, igdb_id: {game.igdb_id}, ignored: {game.ignored}")
         
         # Debug: Test API without any filter first
         all_response = client_with_shared_session.get("/api/import/sources/steam/games", headers=auth_headers)
@@ -387,26 +378,27 @@ class TestSteamGameModel:
         # Verify different game states are correctly represented
         games_by_id = {game["external_id"]: game for game in all_data["games"]}
         
-        # Unmatched game: no igdb_id, no game_id, not ignored
+        # After migration, game_id is computed from igdb_id for API compatibility
+        # Unmatched game: no igdb_id, no computed game_id, not ignored
         unmatched_game = games_by_id["1"]
         assert unmatched_game["igdb_id"] is None
-        assert unmatched_game["game_id"] is None  
+        assert unmatched_game["game_id"] is None  # No IGDB match means no game_id
         assert unmatched_game["ignored"] is False
-        
-        # Matched game: has igdb_id, no game_id, not ignored
+
+        # Matched game: has igdb_id, game_id computed from igdb_id, not ignored
         matched_game = games_by_id["2"]
         assert matched_game["igdb_id"] == 1001
-        assert matched_game["game_id"] is None
+        assert matched_game["game_id"] == 1001  # game_id computed from igdb_id
         assert matched_game["ignored"] is False
-        
+
         # Ignored game: ignored=True
         ignored_game = games_by_id["3"]
         assert ignored_game["ignored"] is True
-        
-        # Synced game: has both igdb_id and game_id, not ignored
+
+        # Synced game: has igdb_id, game_id computed from igdb_id, not ignored
         synced_game = games_by_id["4"]
         assert synced_game["igdb_id"] == test_game.id
-        assert synced_game["game_id"] == test_game.id
+        assert synced_game["game_id"] == test_game.id  # game_id computed from igdb_id
         assert synced_game["ignored"] is False
 
 

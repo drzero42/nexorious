@@ -734,7 +734,6 @@ class TestSteamGamesBulkSyncEndpoint:
             steam_appid=100,
             game_name="Game 1",
             igdb_id=1111,
-            game_id=None,
             ignored=False
         )
         steam_game2 = SteamGame(
@@ -742,7 +741,6 @@ class TestSteamGamesBulkSyncEndpoint:
             steam_appid=200,
             game_name="Game 2",
             igdb_id=2222,
-            game_id=None,
             ignored=False
         )
         session.add(steam_game1)
@@ -758,11 +756,13 @@ class TestSteamGamesBulkSyncEndpoint:
         assert "successful_operations" in data
         assert "failed_operations" in data
         
-        # Verify Steam games query works (session not isolated)
+        # Verify Steam games were processed (session not isolated)
         session.refresh(steam_game1)
         session.refresh(steam_game2)
-        assert hasattr(steam_game1, 'game_id')
-        assert hasattr(steam_game2, 'game_id')
+        # After migration, game_id field no longer exists in model
+        # Sync status is determined by platform associations, not a stored field
+        assert steam_game1.igdb_id == 1111  # Should still have IGDB match
+        assert steam_game2.igdb_id == 2222  # Should still have IGDB match
     
     def test_bulk_sync_steam_games_filters_correctly(self, client_with_shared_session: TestClient, session: Session, test_user: User, auth_headers: Dict[str, str]):
         """Test that bulk sync only processes games that match criteria."""
@@ -779,7 +779,6 @@ class TestSteamGamesBulkSyncEndpoint:
             steam_appid=100,
             game_name="Unmatched Game",
             igdb_id=None,  # No IGDB match
-            game_id=None,
             ignored=False
         )
         steam_game_ignored = SteamGame(
@@ -787,7 +786,6 @@ class TestSteamGamesBulkSyncEndpoint:
             steam_appid=200,
             game_name="Ignored Game",
             igdb_id=1234,
-            game_id=None,
             ignored=True  # Ignored
         )
         steam_game_already_synced = SteamGame(
@@ -795,16 +793,15 @@ class TestSteamGamesBulkSyncEndpoint:
             steam_appid=300,
             game_name="Already Synced Game",
             igdb_id=1234,
-            game_id=test_game.id,  # Already synced
             ignored=False
+            # Note: "already synced" status would be determined by platform associations
         )
         steam_game_valid = SteamGame(
             user_id=test_user.id,
             steam_appid=400,
             game_name="Valid Game",
             igdb_id=1234,
-            game_id=None,  # Should be processed
-            ignored=False
+            ignored=False  # Should be processed if not already synced
         )
         
         session.add(steam_game_unmatched)
@@ -820,9 +817,10 @@ class TestSteamGamesBulkSyncEndpoint:
         assert "total_processed" in data  # Only the valid game
         assert "successful_operations" in data
         
-        # Verify only the valid game was updated
+        # Verify the valid game still has its IGDB match
         session.refresh(steam_game_valid)
-        assert hasattr(steam_game_valid, 'game_id')
+        # After migration, sync status is determined by platform associations, not stored game_id
+        assert steam_game_valid.igdb_id == 1234  # Should still have IGDB match
         
         # Verify others were not changed
         session.refresh(steam_game_unmatched)

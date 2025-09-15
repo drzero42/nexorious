@@ -39,23 +39,45 @@ def is_game_synced(
     Returns:
         True if user_game_platforms association exists, False otherwise
     """
+    # Input validation
+    if session is None:
+        logger.error("Database session is None")
+        return False
+
+    if not user_id:
+        logger.error("User ID is empty or None")
+        return False
+
+    if igdb_id is None:
+        logger.error("IGDB ID is None")
+        return False
+
+    if not platform_id:
+        logger.error("Platform ID is empty or None")
+        return False
+
+    if not storefront_id:
+        logger.error("Storefront ID is empty or None")
+        return False
+
     try:
-        # Query for UserGame + UserGamePlatform association
-        query = (
-            select(UserGame)
-            .join(UserGamePlatform, UserGamePlatform.user_game_id == UserGame.id)
-            .where(
+        # Optimized query using EXISTS for better performance
+        # We only need to check if the association exists, not return the data
+        from sqlalchemy import exists
+
+        query = select(
+            exists().where(
                 and_(
                     UserGame.user_id == user_id,
                     UserGame.game_id == igdb_id,  # UserGame.game_id references games.id which is the IGDB ID
+                    UserGamePlatform.user_game_id == UserGame.id,
                     UserGamePlatform.platform_id == platform_id,
                     UserGamePlatform.storefront_id == storefront_id
                 )
             )
         )
 
-        result = session.exec(query).first()
-        is_synced = result is not None
+        is_synced = session.scalar(query)
 
         logger.debug(
             f"Sync check for user {user_id}, IGDB ID {igdb_id}, "
@@ -66,8 +88,9 @@ def is_game_synced(
 
     except Exception as e:
         logger.error(
-            f"Error checking sync status for user {user_id}, IGDB ID {igdb_id}, "
-            f"platform {platform_id}, storefront {storefront_id}: {e}"
+            f"Database error checking sync status for user {user_id}, IGDB ID {igdb_id}, "
+            f"platform {platform_id}, storefront {storefront_id}: {e}",
+            exc_info=True
         )
         return False
 
@@ -76,8 +99,8 @@ def is_steam_game_synced(session: Session, user_id: str, igdb_id: int) -> bool:
     """
     Check if a Steam game is synced using the generic sync function.
 
-    This is a convenience wrapper around is_game_synced() that uses the
-    Steam platform and storefront IDs.
+    This is a convenience wrapper around is_game_synced() that dynamically
+    looks up the Steam platform and storefront IDs.
 
     Args:
         session: Database session
@@ -87,11 +110,19 @@ def is_steam_game_synced(session: Session, user_id: str, igdb_id: int) -> bool:
     Returns:
         True if the Steam game is synced, False otherwise
     """
-    # These IDs are from the seeded platform/storefront data
-    STEAM_PLATFORM_ID = "1cfb37e2-db56-41e6-8e42-011ab79548ff"  # pc-windows
-    STEAM_STOREFRONT_ID = "39933eda-2868-4903-bff4-3764b3b457ea"  # steam
+    try:
+        # Dynamically look up platform and storefront IDs
+        platform_id = get_platform_id("pc-windows", session)
+        storefront_id = get_storefront_id("steam", session)
 
-    return is_game_synced(session, user_id, igdb_id, STEAM_PLATFORM_ID, STEAM_STOREFRONT_ID)
+        if not platform_id or not storefront_id:
+            logger.warning("Could not find platform or storefront IDs for Steam sync check")
+            return False
+
+        return is_game_synced(session, user_id, igdb_id, platform_id, storefront_id)
+    except Exception as e:
+        logger.error(f"Error in Steam game sync check: {e}")
+        return False
 
 
 def get_platform_id(platform_name: str, session: Session) -> Optional[str]:
@@ -105,13 +136,28 @@ def get_platform_id(platform_name: str, session: Session) -> Optional[str]:
     Returns:
         Platform ID if found, None otherwise
     """
+    if session is None:
+        logger.error("Database session is None")
+        return None
+
+    if not platform_name:
+        logger.error("Platform name is empty or None")
+        return None
+
     try:
         platform = session.exec(
             select(Platform).where(Platform.name == platform_name)
         ).first()
-        return platform.id if platform else None
+
+        if platform:
+            logger.debug(f"Found platform '{platform_name}' with ID: {platform.id}")
+            return platform.id
+        else:
+            logger.warning(f"Platform '{platform_name}' not found")
+            return None
+
     except Exception as e:
-        logger.error(f"Error getting platform ID for {platform_name}: {e}")
+        logger.error(f"Database error getting platform ID for '{platform_name}': {e}", exc_info=True)
         return None
 
 
@@ -126,11 +172,26 @@ def get_storefront_id(storefront_name: str, session: Session) -> Optional[str]:
     Returns:
         Storefront ID if found, None otherwise
     """
+    if session is None:
+        logger.error("Database session is None")
+        return None
+
+    if not storefront_name:
+        logger.error("Storefront name is empty or None")
+        return None
+
     try:
         storefront = session.exec(
             select(Storefront).where(Storefront.name == storefront_name)
         ).first()
-        return storefront.id if storefront else None
+
+        if storefront:
+            logger.debug(f"Found storefront '{storefront_name}' with ID: {storefront.id}")
+            return storefront.id
+        else:
+            logger.warning(f"Storefront '{storefront_name}' not found")
+            return None
+
     except Exception as e:
-        logger.error(f"Error getting storefront ID for {storefront_name}: {e}")
+        logger.error(f"Database error getting storefront ID for '{storefront_name}': {e}", exc_info=True)
         return None

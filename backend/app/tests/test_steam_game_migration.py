@@ -12,12 +12,6 @@ This test file covers:
 import pytest
 from sqlmodel import Session, select, text
 from sqlalchemy.exc import OperationalError
-from alembic.config import Config
-from alembic import command
-from alembic.runtime.migration import MigrationContext
-from alembic.operations import Operations
-import tempfile
-import os
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
@@ -27,67 +21,73 @@ from ..models.game import Game
 class TestSteamGameMigration:
     """Test SteamGame schema migration functionality."""
 
-    def test_pre_migration_state_validation(self, session: Session, test_user: User):
-        """Test that current schema has game_id column before migration."""
-        # Create a steam game with game_id to verify current schema
+    def test_post_migration_state_validation(self, session: Session, test_user: User):
+        """Test that current schema has removed game_id column after migration."""
+        # Create a steam game without game_id to verify current schema
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=1942,
-            game_id=1942  # This should exist in current schema
+            igdb_id=1942  # Only igdb_id, no game_id
         )
 
         session.add(steam_game)
         session.commit()
         session.refresh(steam_game)
 
-        # Verify game_id field exists and works
-        assert steam_game.game_id == 1942
-        assert hasattr(steam_game, 'game_id')
+        # Verify game_id field does not exist
+        assert not hasattr(steam_game, 'game_id')
 
-        # Verify we can query by game_id
+        # Verify igdb_id field exists and works
+        assert steam_game.igdb_id == 1942
+
+        # Verify we can query by igdb_id
         found_game = session.exec(
-            select(SteamGame).where(SteamGame.game_id == 1942)
+            select(SteamGame).where(SteamGame.igdb_id == 1942)
         ).first()
         assert found_game is not None
         assert found_game.id == steam_game.id
 
     def test_schema_column_existence(self, session: Session):
-        """Test that game_id column exists in current database schema."""
+        """Test that game_id column has been removed and igdb_id exists."""
         # Use direct SQL to check column existence
         try:
-            # This should work with current schema
-            result = session.exec(text("SELECT game_id FROM steam_games LIMIT 1")).first()
-            # Column exists if no exception is raised
+            # This should fail - game_id column should not exist
+            session.exec(text("SELECT game_id FROM steam_games LIMIT 1")).first()
+            pytest.fail("game_id column should not exist after migration")
+        except OperationalError:
+            # Column doesn't exist - this is expected after migration
+            assert True
+
+        try:
+            # This should work - igdb_id column should exist
+            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1")).first()
             assert True
         except OperationalError as e:
-            # If column doesn't exist, this test should fail
-            pytest.fail(f"game_id column should exist in current schema: {e}")
+            pytest.fail(f"igdb_id column should exist: {e}")
 
     def test_migration_removes_game_id_column(self, session: Session, test_user: User):
-        """Test simulation of what migration should do."""
-        # Create test data before migration
+        """Test that migration successfully removed game_id column."""
+        # Create test data after migration
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=1942,
-            game_id=1942
+            igdb_id=1942
+            # No game_id field - should be removed by migration
         )
 
         session.add(steam_game)
         session.commit()
         original_id = steam_game.id
 
-        # Simulate what migration will do - verify data preservation
-        # After migration, game_id should be gone but igdb_id should remain
+        # Verify data preservation after migration
         steam_game_after = session.get(SteamGame, original_id)
         assert steam_game_after is not None
         assert steam_game_after.igdb_id == 1942
 
-        # game_id should still exist in current schema (before migration)
-        assert steam_game_after.game_id == 1942
+        # game_id should not exist after migration
+        assert not hasattr(steam_game_after, 'game_id')
 
     def test_data_integrity_after_migration_simulation(self, session: Session, test_user: User):
         """Test that essential data is preserved during migration."""
@@ -97,22 +97,19 @@ class TestSteamGameMigration:
                 user_id=test_user.id,
                 steam_appid=730,
                 game_name="CS:GO",
-                igdb_id=1942,
-                game_id=1942  # Synced game
+                igdb_id=1942  # Only igdb_id after migration
             ),
             SteamGame(
                 user_id=test_user.id,
                 steam_appid=440,
                 game_name="TF2",
-                igdb_id=440,
-                game_id=None  # Matched but not synced
+                igdb_id=440  # Matched
             ),
             SteamGame(
                 user_id=test_user.id,
                 steam_appid=570,
                 game_name="Dota 2",
-                igdb_id=None,
-                game_id=None  # Unmatched
+                igdb_id=None  # Unmatched
             )
         ]
 
@@ -143,13 +140,12 @@ class TestSteamGameMigration:
         session.add(game)
         session.commit()
 
-        # Create steam game
+        # Create steam game (post-migration)
         steam_game = SteamGame(
             user_id=test_user.id,
             steam_appid=730,
             game_name="Counter-Strike: Global Offensive",
-            igdb_id=1942,
-            game_id=1942
+            igdb_id=1942  # Only igdb_id after migration
         )
 
         session.add(steam_game)
@@ -160,9 +156,9 @@ class TestSteamGameMigration:
         assert steam_game.user is not None
         assert steam_game.user.id == test_user.id
 
-        # Test synced_game relationship (should work before migration)
-        assert steam_game.synced_game is not None
-        assert steam_game.synced_game.id == 1942
+        # Verify igdb_id is preserved
+        assert steam_game.igdb_id == 1942
+        # Note: synced_game relationship removed in migration
 
     def test_unique_constraints_preserved(self, session: Session, test_user: User):
         """Test that unique constraints are preserved after migration."""
@@ -249,25 +245,28 @@ class TestMigrationRollback:
         assert steam_game.steam_appid == 730
         assert steam_game.igdb_id == 1942
 
-    def test_rollback_restores_game_id_column(self, session: Session):
-        """Test conceptual rollback scenario."""
-        # This test documents what rollback should accomplish:
-        # 1. Restore game_id column in steam_games table
-        # 2. Restore foreign key constraint to games table
-        # 3. Preserve all existing data
+    def test_rollback_capability_documented(self, session: Session):
+        """Test that rollback capability is documented and migration is reversible."""
+        # This test documents the rollback capability:
+        # 1. Migration script includes proper downgrade() function
+        # 2. Rollback would restore game_id column in steam_games table
+        # 3. Rollback would restore foreign key constraint to games table
+        # 4. All existing data would be preserved
 
-        # In actual rollback testing, we would:
-        # 1. Apply migration (remove game_id)
-        # 2. Apply rollback (restore game_id)
-        # 3. Verify column exists and data is intact
-
-        # For now, just verify current schema state
+        # Verify current post-migration state (game_id should not exist)
         try:
             session.exec(text("SELECT game_id FROM steam_games LIMIT 1"))
-            # Column should exist in current state
+            pytest.fail("game_id column should not exist after migration")
+        except OperationalError:
+            # This is expected - game_id column was removed by migration
+            assert True
+
+        # Verify igdb_id exists (our replacement)
+        try:
+            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1"))
             assert True
         except OperationalError:
-            pytest.fail("game_id column should exist for rollback test")
+            pytest.fail("igdb_id column should exist after migration")
 
 
 class TestMigrationEdgeCases:

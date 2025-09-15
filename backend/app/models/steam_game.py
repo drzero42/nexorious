@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .user import User
-    from .game import Game
 
 
 class SteamGame(SQLModel, table=True):
