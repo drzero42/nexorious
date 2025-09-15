@@ -393,8 +393,8 @@ class SteamImportService(ImportSourceService):
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,  # Use igdb_id as game_id
                 user_game_id=user_game_id,
+                is_synced=is_synced,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -438,8 +438,8 @@ class SteamImportService(ImportSourceService):
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,  # Use igdb_id as game_id
                 user_game_id=user_game_id,
+                is_synced=is_steam_game_synced(self.session, user_id, steam_game.igdb_id) if steam_game.igdb_id else False,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -538,8 +538,8 @@ class SteamImportService(ImportSourceService):
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,
                 user_game_id=None,  # Always None after unsync
+                is_synced=False,  # Always False after unsync
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at
@@ -594,8 +594,8 @@ class SteamImportService(ImportSourceService):
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,
                 user_game_id=user_game_id,
+                is_synced=is_steam_game_synced(self.session, user_id, steam_game.igdb_id) if steam_game.igdb_id else False,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
                 updated_at=steam_game.updated_at

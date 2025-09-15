@@ -378,27 +378,27 @@ class TestSteamGameModel:
         # Verify different game states are correctly represented
         games_by_id = {game["external_id"]: game for game in all_data["games"]}
         
-        # After migration, game_id is computed from igdb_id for API compatibility
-        # Unmatched game: no igdb_id, no computed game_id, not ignored
+        # After migration, sync status is determined by platform associations
+        # Unmatched game: no igdb_id, not synced, not ignored
         unmatched_game = games_by_id["1"]
         assert unmatched_game["igdb_id"] is None
-        assert unmatched_game["game_id"] is None  # No IGDB match means no game_id
+        assert not unmatched_game["is_synced"]  # No IGDB match means not synced
         assert unmatched_game["ignored"] is False
 
-        # Matched game: has igdb_id, game_id computed from igdb_id, not ignored
+        # Matched game: has igdb_id, sync status computed dynamically, not ignored
         matched_game = games_by_id["2"]
         assert matched_game["igdb_id"] == 1001
-        assert matched_game["game_id"] == 1001  # game_id computed from igdb_id
+        assert not matched_game["is_synced"]  # Not synced until platform associations exist
         assert matched_game["ignored"] is False
 
         # Ignored game: ignored=True
         ignored_game = games_by_id["3"]
         assert ignored_game["ignored"] is True
 
-        # Synced game: has igdb_id, game_id computed from igdb_id, not ignored
+        # Synced game: has igdb_id, sync status computed dynamically, not ignored
         synced_game = games_by_id["4"]
         assert synced_game["igdb_id"] == test_game.id
-        assert synced_game["game_id"] == test_game.id  # game_id computed from igdb_id
+        assert not synced_game["is_synced"]  # Not synced until platform associations exist
         assert synced_game["ignored"] is False
 
 

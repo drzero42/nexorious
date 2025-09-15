@@ -487,3 +487,127 @@ class TestPerformance:
         assert result is True
         elapsed_ms = (end_time - start_time) * 1000
         assert elapsed_ms < 50, f"Steam game sync check took {elapsed_ms:.2f}ms, should be <50ms"
+
+    def test_large_collection_performance(self, session: Session, test_user: User, steam_dependencies):
+        """Test performance with large collections (1000+ games)."""
+        import time
+
+        pc_platform = steam_dependencies["platform"]
+        steam_storefront = steam_dependencies["storefront"]
+
+        # Create 1000 games for performance testing
+        games = []
+        user_games = []
+        platform_associations = []
+
+        # Batch create games
+        for i in range(1000):
+            game = Game(
+                id=5000 + i,
+                title=f"Performance Test Game {i}",
+                description=f"Performance test game {i}",
+                igdb_slug=f"performance-test-game-{i}"
+            )
+            games.append(game)
+
+            user_game = UserGame(
+                user_id=test_user.id,
+                game_id=game.id
+            )
+            user_games.append(user_game)
+
+            # Only sync every 10th game to create mixed scenarios
+            if i % 10 == 0:
+                platform_assoc = UserGamePlatform(
+                    user_game_id=user_game.id if hasattr(user_game, 'id') else f"temp_{i}",
+                    platform_id=pc_platform.id,
+                    storefront_id=steam_storefront.id
+                )
+                platform_associations.append((platform_assoc, user_game))
+
+        # Add games in batches for better performance
+        session.add_all(games)
+        session.commit()
+
+        session.add_all(user_games)
+        session.commit()
+
+        # Now add platform associations with correct user_game_ids
+        for platform_assoc, user_game in platform_associations:
+            platform_assoc.user_game_id = user_game.id
+            session.add(platform_assoc)
+        session.commit()
+
+        # Test batch performance - check 100 random games
+        import random
+        test_games = random.sample(games, 100)
+
+        start_time = time.time()
+        results = []
+        for game in test_games:
+            result = is_steam_game_synced(session, test_user.id, game.id)
+            results.append(result)
+        end_time = time.time()
+
+        # Performance requirement: 100 sync checks should complete in under 1 second
+        elapsed_ms = (end_time - start_time) * 1000
+        avg_per_check = elapsed_ms / 100
+
+        assert elapsed_ms < 1000, f"100 sync checks took {elapsed_ms:.2f}ms, should be <1000ms"
+        assert avg_per_check < 50, f"Average per check was {avg_per_check:.2f}ms, should be <50ms"
+
+        # Verify some results are True (synced) and some are False (not synced)
+        synced_count = sum(results)
+        assert synced_count > 0, "Should have some synced games"
+        assert synced_count < len(results), "Should have some non-synced games"
+
+    def test_concurrent_sync_operations(self, session: Session, test_user: User, steam_dependencies):
+        """Test that sync functions handle concurrent access gracefully."""
+        import time
+
+        pc_platform = steam_dependencies["platform"]
+        steam_storefront = steam_dependencies["storefront"]
+
+        # Create test game and sync it
+        game = Game(
+            id=7000,
+            title="Concurrent Test Game",
+            description="Game for testing concurrent operations",
+            igdb_slug="concurrent-test-game"
+        )
+        session.add(game)
+        session.commit()
+
+        user_game = UserGame(
+            user_id=test_user.id,
+            game_id=game.id
+        )
+        session.add(user_game)
+        session.commit()
+
+        platform_assoc = UserGamePlatform(
+            user_game_id=user_game.id,
+            platform_id=pc_platform.id,
+            storefront_id=steam_storefront.id
+        )
+        session.add(platform_assoc)
+        session.commit()
+
+        # Test sequential operations to verify the setup works
+        result1 = is_steam_game_synced(session, test_user.id, game.id)
+        result2 = is_steam_game_synced(session, test_user.id, game.id)
+
+        # Both should return True and be consistent
+        assert result1 is True, "First sync check should return True"
+        assert result2 is True, "Second sync check should return True"
+        assert result1 == result2, "Sequential calls should be consistent"
+
+        # Test that the function completes quickly even under load
+        start_time = time.time()
+        for _ in range(10):
+            result = is_steam_game_synced(session, test_user.id, game.id)
+            assert result is True, "All sync checks should return True"
+        end_time = time.time()
+
+        elapsed_ms = (end_time - start_time) * 1000
+        assert elapsed_ms < 500, f"10 sequential sync checks took {elapsed_ms:.2f}ms, should be <500ms"

@@ -75,8 +75,8 @@ class TestSteamImportRefactorSync:
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
-                game_id=str(steam_game.igdb_id),
                 user_game_id=user_game.id,
+                is_synced=True,  # Synced since we have a user_game_id
                 ignored=False
             )], 1)
 
@@ -300,8 +300,8 @@ class TestSteamImportServiceIntegration:
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
                 igdb_id=game.id,
-                game_id=str(game.id),
                 user_game_id=None,
+                is_synced=False,  # Not synced yet (user_game_id is None)
                 ignored=False
             )
 
@@ -433,8 +433,8 @@ class TestSteamImportServiceIntegration:
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
                 igdb_id=game.id,
-                game_id=str(game.id),
                 user_game_id=None,
+                is_synced=False,  # Not synced after unsync operation
                 ignored=False
             )
 
