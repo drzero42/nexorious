@@ -18,6 +18,7 @@ from .base import (
     MatchResult
 )
 from ...models.user import User
+from ..sync_utils import is_steam_game_synced
 from ...models.steam_game import SteamGame
 from ...models.user_game import UserGame
 from ...services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
@@ -314,11 +315,11 @@ class SteamImportService(ImportSourceService):
                         search: Optional[str] = None) -> Tuple[List[ImportGame], int]:
         """List imported Steam games with filtering and pagination."""
         
-        # Build base query
+        # Build base query - join with UserGame based on igdb_id
         query = select(SteamGame, UserGame.id.label('user_game_id')).outerjoin(
             UserGame,
             and_(
-                SteamGame.game_id == UserGame.game_id,
+                SteamGame.igdb_id == UserGame.game_id,  # UserGame.game_id is the IGDB ID
                 UserGame.user_id == user_id
             )
         ).where(SteamGame.user_id == user_id)
@@ -328,28 +329,39 @@ class SteamImportService(ImportSourceService):
             if status_filter == "unmatched":
                 query = query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
             elif status_filter == "matched":
-                query = query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
+                # Matched but not synced: has igdb_id but no UserGamePlatform association
+                # We'll need to filter these in Python since sync status requires complex joins
+                query = query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
             elif status_filter == "ignored":
                 query = query.where(SteamGame.ignored)
             elif status_filter == "synced":
-                query = query.where(SteamGame.game_id.isnot(None))
+                # Synced games: have UserGame entries via igdb_id join
+                query = query.where(UserGame.id.isnot(None))
         
         # Apply search filter
         if search:
             search_term = f"%{search.strip().lower()}%"
             query = query.where(func.lower(SteamGame.game_name).contains(search_term))
         
-        # Get total count
-        count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
-        if status_filter:
-            if status_filter == "unmatched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
-            elif status_filter == "matched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), SteamGame.game_id.is_(None), not SteamGame.ignored))
-            elif status_filter == "ignored":
-                count_query = count_query.where(SteamGame.ignored)
-            elif status_filter == "synced":
-                count_query = count_query.where(SteamGame.game_id.isnot(None))
+        # Get total count with proper joins for synced games
+        if status_filter == "synced":
+            count_query = (
+                select(func.count(SteamGame.id))
+                .join(UserGame, and_(
+                    SteamGame.igdb_id == UserGame.game_id,
+                    UserGame.user_id == user_id
+                ))
+                .where(SteamGame.user_id == user_id)
+            )
+        else:
+            count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
+            if status_filter:
+                if status_filter == "unmatched":
+                    count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
+                elif status_filter == "matched":
+                    count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
+                elif status_filter == "ignored":
+                    count_query = count_query.where(SteamGame.ignored)
         if search:
             search_term = f"%{search.strip().lower()}%"
             count_query = count_query.where(func.lower(SteamGame.game_name).contains(search_term))
@@ -371,7 +383,7 @@ class SteamImportService(ImportSourceService):
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=steam_game.game_id,
+                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,  # Use igdb_id as game_id
                 user_game_id=user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
@@ -389,27 +401,27 @@ class SteamImportService(ImportSourceService):
                 igdb_id=igdb_id,
                 user_id=user_id
             )
-            
-            # Get user_game_id if synced
+
+            # Get user_game_id if synced (check by igdb_id)
             user_game_id = None
-            if steam_game.game_id:
+            if steam_game.igdb_id:
                 user_game_result = self.session.exec(
                     select(UserGame.id).where(
                         and_(
-                            UserGame.game_id == steam_game.game_id,
+                            UserGame.game_id == steam_game.igdb_id,  # UserGame.game_id is the IGDB ID
                             UserGame.user_id == user_id
                         )
                     )
                 ).first()
                 user_game_id = user_game_result
-            
+
             return ImportGame(
                 id=steam_game.id,
                 external_id=str(steam_game.steam_appid),
                 name=steam_game.game_name,
                 igdb_id=steam_game.igdb_id,
                 igdb_title=steam_game.igdb_title,
-                game_id=steam_game.game_id,
+                game_id=str(steam_game.igdb_id) if steam_game.igdb_id else None,  # Use igdb_id as game_id
                 user_game_id=user_game_id,
                 ignored=steam_game.ignored,
                 created_at=steam_game.created_at,
