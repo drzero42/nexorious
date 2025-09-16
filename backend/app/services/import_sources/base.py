@@ -27,8 +27,8 @@ class ImportGame:
     name: str
     igdb_id: Optional[str] = None
     igdb_title: Optional[str] = None
-    game_id: Optional[str] = None  # ID in main games table when synced
     user_game_id: Optional[str] = None  # ID in user_games table when synced
+    is_synced: bool = False  # Whether the game is synced to user collection
     ignored: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

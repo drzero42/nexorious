@@ -301,8 +301,8 @@ async def list_steam_games(
                     "name": game.name,
                     "igdb_id": game.igdb_id,
                     "igdb_title": game.igdb_title,
-                    "game_id": game.game_id,
                     "user_game_id": game.user_game_id,
+                    "is_synced": game.is_synced,
                     "ignored": game.ignored,
                     "created_at": game.created_at,
                     "updated_at": game.updated_at
@@ -367,8 +367,8 @@ async def match_steam_game(
                 "name": game.name,
                 "igdb_id": game.igdb_id,
                 "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
+                "is_synced": game.is_synced,
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
@@ -490,8 +490,8 @@ async def sync_steam_game(
                 "name": game.name,
                 "igdb_id": game.igdb_id,
                 "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
+                "is_synced": game.is_synced,
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
@@ -543,8 +543,8 @@ async def unsync_steam_game(
                 "name": game.name,
                 "igdb_id": game.igdb_id,
                 "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
+                "is_synced": game.is_synced,
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at
@@ -584,8 +584,8 @@ async def toggle_ignore_steam_game(
                 "name": game.name,
                 "igdb_id": game.igdb_id,
                 "igdb_title": game.igdb_title,
-                "game_id": game.game_id,
                 "user_game_id": game.user_game_id,
+                "is_synced": game.is_synced,
                 "ignored": game.ignored,
                 "created_at": game.created_at,
                 "updated_at": game.updated_at

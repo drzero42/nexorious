@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .user import User
-    from .game import Game
 
 
 class SteamGame(SQLModel, table=True):
@@ -30,15 +29,11 @@ class SteamGame(SQLModel, table=True):
     game_name: str = Field(max_length=500, description="Game name from Steam Web API")
     igdb_id: Optional[int] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., 1942)")
     igdb_title: Optional[str] = Field(default=None, max_length=500, description="Game title from IGDB when matched to IGDB game")
-    game_id: Optional[int] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
     ignored: bool = Field(default=False, description="Whether user has marked this game as ignored (won't be imported)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user: "User" = Relationship(back_populates="steam_games")
-    synced_game: Optional["Game"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "SteamGame.game_id", "post_update": True}
-    )
 
 

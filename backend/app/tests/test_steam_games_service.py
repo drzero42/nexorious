@@ -779,9 +779,10 @@ class TestCollectionSync:
         user_game = user_games[0]
         assert user_game.ownership_status == OwnershipStatus.OWNED
         
-        # Verify Steam game was updated with game_id
+        # Verify Steam game is synced using new sync checking function
         session.refresh(steam_game)
-        assert steam_game.game_id == igdb_game.id
+        from app.services.sync_utils import is_steam_game_synced
+        assert is_steam_game_synced(session, test_user.id, steam_game.igdb_id)
     
     @pytest.mark.asyncio
     async def test_sync_steam_game_to_collection_not_matched(
