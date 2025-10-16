@@ -49,7 +49,7 @@
 - **Environment:** Nix development shell for reproducible builds
 
 ### Development Environment
-- **Shell:** Nix develop for consistent Python 3.13, uv, ruff, mypy, pytest environment
+- **Shell:** Nix develop for consistent Python 3.13, uv, ruff, pyrefly, pytest environment
 - **Hot Reload:** uvicorn --reload for backend, SvelteKit dev server for frontend
 - **Database:** Automatic migrations on startup via Alembic
 
@@ -62,7 +62,7 @@
 
 ### Code Quality
 - **Linting:** Ruff for Python code checking
-- **Type Checking:** MyPy built into pytest, TypeScript for frontend
+- **Type Checking:** Pyrefly for type checking and the rest is pytest, TypeScript for frontend
 - **Formatting:** Automated via development tools
 - **Standards:** KISS and DRY principles, practical over perfect
 

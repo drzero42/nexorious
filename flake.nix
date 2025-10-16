@@ -22,7 +22,7 @@
 
           # Development tools
           ruff
-          mypy
+          pyrefly
 
           # System dependencies for Python packages
           gcc
@@ -52,7 +52,7 @@
           echo "Available tools:"
           echo "  - uv: Fast Python package manager"
           echo "  - ruff: Python linter and formatter"
-          echo "  - mypy: Static type checker"
+          echo "  - pyrefly: Static type checker"
           echo "  - playwright: End-to-end testing framework"
           echo ""
           echo "To get started:"

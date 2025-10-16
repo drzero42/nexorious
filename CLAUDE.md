@@ -32,7 +32,7 @@ cd /home/abo/workspace/home/nexorious/frontend && npm --version
 ### Development Environment
 The project uses Nix for reproducible development:
 ```bash
-nix develop  # Enter development shell with Python 3.13, uv, ruff, mypy, pytest
+nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pytest
 ```
 
 ### Initial Setup
