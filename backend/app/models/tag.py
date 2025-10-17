@@ -31,11 +31,11 @@ class Tag(SQLModel, table=True):
     
     # Computed field using PrivateAttr - completely excluded from SQL
     _game_count: Optional[int] = PrivateAttr(default=None)
-    
+
     @property
-    def game_count(self) -> Optional[int]:
+    def game_count(self) -> int:
         """Computed field that returns the game count."""
-        return self._game_count
+        return self._game_count if self._game_count is not None else 0
     
     # Relationships
     user: "User" = Relationship(back_populates="tags")

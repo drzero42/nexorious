@@ -28,32 +28,32 @@ class PandasJSONEncoder(json.JSONEncoder):
     - Other non-serializable -> string representation
     """
     
-    def default(self, obj):
+    def default(self, o):
         # Handle pandas Timestamp
-        if isinstance(obj, pd.Timestamp):
-            if pd.isna(obj):
+        if isinstance(o, pd.Timestamp):
+            if pd.isna(o):
                 return None
-            return obj.strftime('%Y-%m-%d')
-        
+            return o.strftime('%Y-%m-%d')
+
         # Handle pandas NaT and NaN
-        if pd.isna(obj):
+        if pd.isna(o):
             return None
-        
+
         # Handle Python datetime objects
-        if isinstance(obj, (datetime, date)):
-            return obj.strftime('%Y-%m-%d')
-        
+        if isinstance(o, (datetime, date)):
+            return o.strftime('%Y-%m-%d')
+
         # Handle Decimal
-        if isinstance(obj, Decimal):
-            return float(obj)
-        
+        if isinstance(o, Decimal):
+            return float(o)
+
         # For any other non-serializable type, convert to string
         try:
             # Try the default encoder first
-            return super().default(obj)
+            return super().default(o)
         except TypeError:
-            logger.warning(f"Converting non-serializable object to string: {type(obj)} = {obj}")
-            return str(obj)
+            logger.warning(f"Converting non-serializable object to string: {type(o)} = {o}")
+            return str(o)
 
 
 def make_json_serializable(data: Any) -> Any:
@@ -129,8 +129,8 @@ def make_json_serializable(data: Any) -> Any:
         return float(data)
     
     # Handle dataclasses (convert to dict first)
-    if hasattr(data, '__dataclass_fields__'):  # dataclass detection
-        from dataclasses import asdict
+    from dataclasses import is_dataclass, asdict
+    if is_dataclass(data) and not isinstance(data, type):
         try:
             return make_json_serializable(asdict(data))
         except Exception:
@@ -288,15 +288,15 @@ def log_serialization_debug(data: Any, context: str = "") -> None:
 def deep_debug_serialization_issues(data: Any, name: str = "data") -> Dict[str, Any]:
     """
     Perform deep debugging of serialization issues with comprehensive analysis.
-    
+
     Args:
         data: The data structure to analyze
         name: Name for the data structure (for logging)
-        
+
     Returns:
         Dictionary with detailed analysis results
     """
-    analysis = {
+    analysis: Dict[str, Any] = {
         'name': name,
         'type': str(type(data)),
         'is_json_safe': False,

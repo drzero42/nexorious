@@ -477,7 +477,7 @@ async def get_metadata_status(
     from ..services.igdb import GameMetadata
 
     game_metadata = GameMetadata(
-        igdb_id=str(game.id),
+        igdb_id=game.id,
         igdb_slug=game.igdb_slug,
         title=game.title,
         description=game.description,
@@ -538,7 +538,7 @@ async def refresh_game_metadata(
 
     try:
         logger.debug(f"Calling IGDB service to refresh metadata for IGDB ID {game.id}")
-        fresh_metadata = await igdb_service.refresh_game_metadata(str(game.id))
+        fresh_metadata = await igdb_service.refresh_game_metadata(game.id)
         if not fresh_metadata:
             logger.error(
                 f"Failed to retrieve fresh metadata from IGDB for game '{game.title}' (IGDB ID: {game.id})"
@@ -707,7 +707,7 @@ async def populate_game_metadata(
         from ..services.igdb import GameMetadata
 
         current_metadata = GameMetadata(
-            igdb_id=str(game.id),
+            igdb_id=game.id,
             igdb_slug=game.igdb_slug,
             title=game.title,
             description=game.description,
@@ -725,7 +725,7 @@ async def populate_game_metadata(
         )
 
         updated_metadata = await igdb_service.populate_missing_metadata(
-            current_metadata, str(game.id)
+            current_metadata, game.id
         )
         if not updated_metadata:
             return MetadataPopulateResponse(
@@ -834,7 +834,7 @@ async def bulk_metadata_operation(
             result = {"game_id": game_id, "success": False, "fields": []}
 
             if bulk_request.operation == "refresh":
-                fresh_metadata = await igdb_service.refresh_game_metadata(str(game.id))
+                fresh_metadata = await igdb_service.refresh_game_metadata(game.id)
                 if fresh_metadata:
                     # Update all fields
                     updated_fields = []
@@ -887,7 +887,7 @@ async def bulk_metadata_operation(
                 from ..services.igdb import GameMetadata
 
                 current_metadata = GameMetadata(
-                    igdb_id=str(game.id),
+                    igdb_id=game.id,
                     igdb_slug=game.igdb_slug,
                     title=game.title,
                     description=game.description,
@@ -909,7 +909,7 @@ async def bulk_metadata_operation(
                 )
 
                 updated_metadata = await igdb_service.populate_missing_metadata(
-                    current_metadata, str(game.id)
+                    current_metadata, game.id
                 )
                 if updated_metadata:
                     populated_fields = []
@@ -1003,7 +1003,7 @@ async def download_game_cover_art(
 
     try:
         local_url = await igdb_service.download_and_store_cover_art(
-            str(game.id), game.cover_art_url
+            game.id, game.cover_art_url
         )
 
         if local_url:
@@ -1080,7 +1080,7 @@ async def bulk_download_cover_art(
 
             # Download cover art
             local_url = await igdb_service.download_and_store_cover_art(
-                str(game.id), game.cover_art_url
+                game.id, game.cover_art_url
             )
 
             if local_url:

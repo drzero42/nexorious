@@ -34,3 +34,12 @@ dev = [
     "pytest-cov>=6.2.1",
     "rich>=13.0.0",
 ]
+
+[tool.pyrefly]
+project-excludes = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/*venv/**",
+    "**/.[!/.]*/**",
+    "**/.uv-cache/**",
+]

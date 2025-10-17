@@ -25,7 +25,7 @@ class ImportGame:
     id: str
     external_id: str  # Steam AppID, Epic ID, GOG ID, etc.
     name: str
-    igdb_id: Optional[str] = None
+    igdb_id: Optional[int] = None
     igdb_title: Optional[str] = None
     user_game_id: Optional[str] = None  # ID in user_games table when synced
     is_synced: bool = False  # Whether the game is synced to user collection
@@ -89,7 +89,7 @@ class MatchResult:
     game_id: str
     game_name: str
     matched: bool
-    igdb_id: Optional[str] = None
+    igdb_id: Optional[int] = None
     igdb_title: Optional[str] = None
     confidence_score: Optional[float] = None
     error_message: Optional[str] = None
@@ -148,7 +148,7 @@ class ImportSourceService(ABC):
         pass
     
     @abstractmethod
-    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[str]) -> ImportGame:
+    async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
         """Match game to IGDB entry."""
         pass
     
