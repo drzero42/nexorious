@@ -4,6 +4,7 @@ Platform and storefront models for gaming platforms and digital stores.
 
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.orm import Mapped
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
