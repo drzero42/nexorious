@@ -4,7 +4,6 @@ Darkadia games models for Darkadia CSV import staging and management.
 
 from sqlmodel import SQLModel, Field, Relationship, Column
 from sqlalchemy import UniqueConstraint, JSON
-from sqlalchemy.orm import Mapped
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 import uuid
@@ -27,31 +26,31 @@ class DarkadiaGame(SQLModel, table=True):
         UniqueConstraint("user_id", "external_id", name="uq_darkadia_games_user_external"),
     )
     
-    id: Mapped[str] = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    user_id: Mapped[str] = Field(foreign_key="users.id", index=True)
-    external_id: Mapped[str] = Field(max_length=50, index=True, description="Row number or unique identifier from CSV")
-    game_name: Mapped[str] = Field(max_length=500, description="Game name from CSV")
-    igdb_id: Mapped[Optional[int]] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., 1942)")
-    igdb_title: Mapped[Optional[str]] = Field(default=None, max_length=500, description="Game title from IGDB when matched")
-    game_id: Mapped[Optional[int]] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
-    ignored: Mapped[bool] = Field(default=False, description="Whether user has marked this game as ignored")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    external_id: str = Field(max_length=50, index=True, description="Row number or unique identifier from CSV")
+    game_name: str = Field(max_length=500, description="Game name from CSV")
+    igdb_id: Optional[int] = Field(default=None, index=True, description="IGDB API ID from IGDB service (e.g., 1942)")
+    igdb_title: Optional[str] = Field(default=None, max_length=500, description="Game title from IGDB when matched")
+    game_id: Optional[int] = Field(default=None, foreign_key="games.id", index=True, description="Game ID when synced to user collection")
+    ignored: bool = Field(default=False, description="Whether user has marked this game as ignored")
     
     # Store all CSV data as JSON for flexibility and audit trail
-    csv_data_json: Mapped[str] = Field(
+    csv_data_json: str = Field(
         default="{}",
         sa_column=Column("csv_data", JSON),
         description="All CSV row data as JSON"
     )
-
+    
     # Store transformation metadata (platform mappings, validation results, etc.)
-    transformation_data_json: Mapped[str] = Field(
+    transformation_data_json: str = Field(
         default="{}",
         sa_column=Column("transformation_data", JSON),
         description="Transformation metadata as JSON"
     )
-
-    created_at: Mapped[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user: "User" = Relationship(back_populates="darkadia_games")

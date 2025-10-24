@@ -3,7 +3,6 @@ Game metadata models with IGDB integration support.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy.orm import Mapped
 from pydantic import field_validator
 from typing import Optional, List
 from datetime import datetime, date, timezone
@@ -22,37 +21,37 @@ class Game(SQLModel, table=True):
 
     __tablename__ = "games"
 
-    id: Mapped[int] = Field(primary_key=True, description="IGDB ID as primary key")
-    title: Mapped[str] = Field(index=True, max_length=500)
-    description: Mapped[Optional[str]] = Field(default=None)
-    genre: Mapped[Optional[str]] = Field(default=None, max_length=200)
-    developer: Mapped[Optional[str]] = Field(default=None, max_length=200)
-    publisher: Mapped[Optional[str]] = Field(default=None, max_length=200)
-    release_date: Mapped[Optional[date]] = Field(default=None)
-    cover_art_url: Mapped[Optional[str]] = Field(default=None, max_length=500)
-    rating_average: Mapped[Optional[Decimal]] = Field(
+    id: int = Field(primary_key=True, description="IGDB ID as primary key")
+    title: str = Field(index=True, max_length=500)
+    description: Optional[str] = Field(default=None)
+    genre: Optional[str] = Field(default=None, max_length=200)
+    developer: Optional[str] = Field(default=None, max_length=200)
+    publisher: Optional[str] = Field(default=None, max_length=200)
+    release_date: Optional[date] = Field(default=None)
+    cover_art_url: Optional[str] = Field(default=None, max_length=500)
+    rating_average: Optional[Decimal] = Field(
         default=None, max_digits=3, decimal_places=2
     )
-    rating_count: Mapped[int] = Field(default=0)
-    game_metadata: Mapped[str] = Field(default="{}")  # JSON string for extensible metadata
-    estimated_playtime_hours: Mapped[Optional[int]] = Field(default=None)
+    rating_count: int = Field(default=0)
+    game_metadata: str = Field(default="{}")  # JSON string for extensible metadata
+    estimated_playtime_hours: Optional[int] = Field(default=None)
 
     # How Long to Beat integration (stored in hours, converted from IGDB's seconds)
-    howlongtobeat_main: Mapped[Optional[int]] = Field(default=None)
-    howlongtobeat_extra: Mapped[Optional[int]] = Field(default=None)
-    howlongtobeat_completionist: Mapped[Optional[int]] = Field(default=None)
-    igdb_slug: Mapped[Optional[str]] = Field(default=None, index=True, max_length=200)
-    igdb_platform_ids: Mapped[Optional[str]] = Field(
+    howlongtobeat_main: Optional[int] = Field(default=None)
+    howlongtobeat_extra: Optional[int] = Field(default=None)
+    howlongtobeat_completionist: Optional[int] = Field(default=None)
+    igdb_slug: Optional[str] = Field(default=None, index=True, max_length=200)
+    igdb_platform_ids: Optional[str] = Field(
         default=None, description="JSON array of IGDB platform IDs"
     )
-    igdb_platform_names: Mapped[Optional[str]] = Field(
+    igdb_platform_names: Optional[str] = Field(
         default=None,
         description="JSON array of IGDB platform names for frontend filtering",
     )
 
-    created_at: Mapped[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_updated: Mapped[Optional[datetime]] = Field(
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: Optional[datetime] = Field(
         default=None, description="Timestamp when IGDB metadata was last refreshed"
     )
 
