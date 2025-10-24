@@ -17,6 +17,7 @@ dependencies = [
     "psutil>=6.1.0",
     "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.10.1",
+    "pyrefly>=0.38.2",
     "python-jose[cryptography]>=3.5.0",
     "python-magic>=0.4.27",
     "python-multipart>=0.0.20",
