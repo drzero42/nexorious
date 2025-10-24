@@ -11,7 +11,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Start development server | `uv run python -m app.main` | `npm run dev` |
 | Run tests | `uv run pytest` | `npm run test` |
 | Run tests with coverage | `uv run pytest --cov=app --cov-report=term-missing` | `npm run test:coverage` |
-| Type checking | Built into pytest | `npm run check` |
+| Type checking | `uv run pyrefly check` | `npm run check` |
+| Linting | `uv run ruff check .` | N/A |
 | Database migrations | `uv run alembic upgrade head` | N/A |
 
 ### Environment Validation
@@ -34,6 +35,8 @@ The project uses Nix for reproducible development:
 ```bash
 nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pytest
 ```
+
+**Note**: `pyrefly` is installed in the backend venv via uv, not in the Nix shell. Run it using `uv run pyrefly` from the backend directory.
 
 ### Initial Setup
 ```bash
@@ -147,10 +150,11 @@ npm run check  # Must pass
 npm run test   # Must pass (all 778 tests)
 ```
 
-#### Backend Changes  
+#### Backend Changes
 ```bash
 uv run alembic upgrade head  # After pulling changes
-uv run ruff check . # Check for common errors and problems
+uv run ruff check .  # Check for common errors and problems (linting)
+uv run pyrefly check  # Type checking with pyrefly (installed in venv)
 uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverage
 ```
 
