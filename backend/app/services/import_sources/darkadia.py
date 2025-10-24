@@ -32,10 +32,7 @@ from ...services.platform_resolution import create_platform_resolution_service
 from .darkadia_transformer import DarkadiaTransformationPipeline
 from .copy_consolidation import CopyConsolidationProcessor, ConsolidatedGame
 from ...utils.json_serialization import safe_json_dumps, log_serialization_debug, enhanced_safe_json_dumps
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from scripts.darkadia.parser import DarkadiaCSVParser
+from .darkadia_parser import DarkadiaCSVParser
 
 logger = logging.getLogger(__name__)
 
