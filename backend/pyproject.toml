@@ -43,3 +43,4 @@ project-excludes = [
     "**/.[!/.]*/**",
     "**/.uv-cache/**",
 ]
+python-interpreter-path = ".venv/bin/python"

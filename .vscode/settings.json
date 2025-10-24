@@ -1,20 +1,22 @@
 {
-    "python.pythonPath": "./backend/.venv/bin/python3",
-    "python.defaultInterpreterPath": "./backend/.venv/bin/python3",
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
     "python.analysis.extraPaths": [
-        "./backend"
+        "${workspaceFolder}/backend"
     ],
     "python.analysis.autoSearchPaths": true,
     "python.analysis.autoImportCompletions": true,
-    "python.analysis.ignore": ["*"],
-    "python.linting.enabled": true,
-    "python.linting.pylintEnabled": false,
-    "python.linting.flake8Enabled": false,
-    "python.formatting.provider": "black",
-    "python.formatting.blackPath": "./backend/.venv/bin/black",
-    "python.sortImports.path": "./backend/.venv/bin/isort",
+    "python.analysis.include": [
+        "${workspaceFolder}/backend"
+    ],
+    "python.languageServer": "Pylance",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "warning"
+    },
+    "ruff.interpreter": [
+        "${workspaceFolder}/backend/.venv/bin/python"
+    ],
     "python.testing.pytestEnabled": true,
-    "python.testing.pytestPath": "./backend/.venv/bin/pytest",
+    "python.testing.pytestPath": "${workspaceFolder}/backend/.venv/bin/pytest",
     "python.testing.pytestArgs": [
         "backend"
     ],
