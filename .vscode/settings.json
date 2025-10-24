@@ -27,5 +27,6 @@
         "**/node_modules": true,
         "**/.git": false
     },
-    "python.analysis.typeCheckingMode": "basic"
+    "python.analysis.typeCheckingMode": "basic",
+    "python-envs.pythonProjects": []
 }
