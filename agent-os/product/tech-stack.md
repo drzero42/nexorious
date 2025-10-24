@@ -49,7 +49,7 @@
 - **Environment:** Nix development shell for reproducible builds
 
 ### Development Environment
-- **Shell:** Nix develop for consistent Python 3.13, uv, ruff, pyrefly, pytest environment
+- **Shell:** Nix develop for consistent Python 3.13, uv, ruff, pytest environment
 - **Hot Reload:** uvicorn --reload for backend, SvelteKit dev server for frontend
 - **Database:** Automatic migrations on startup via Alembic
 
