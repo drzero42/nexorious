@@ -161,6 +161,16 @@ class BulkMetadataRequest(BaseModel):
     options: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Operation-specific options")
 
 
+class CoverArtResult(BaseModel):
+    """Result of a cover art download operation."""
+    game_id: int
+    success: bool = False
+    fields: List[str] = Field(default_factory=list)
+    message: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BulkMetadataResponse(BaseModel):
     """Response schema for bulk metadata operations."""
     total_games: int

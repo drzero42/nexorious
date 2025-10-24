@@ -31,6 +31,7 @@ from ..api.schemas.game import (
     BulkMetadataRequest,
     BulkMetadataResponse,
     BulkCoverArtDownloadRequest,
+    CoverArtResult,
 )
 from ..api.schemas.common import SuccessResponse
 
@@ -1065,18 +1066,17 @@ async def bulk_download_cover_art(
                 and game.cover_art_url
                 and game.cover_art_url.startswith("/static/")
             ):
-                results.append(
-                    {
-                        "game_id": game_id,
-                        "success": True,
-                        "fields": ["cover_art_url"],
-                        "message": "Already has local cover art",
-                    }
+                result = CoverArtResult(
+                    game_id=game_id,
+                    success=True,
+                    fields=["cover_art_url"],
+                    message="Already has local cover art",
                 )
+                results.append(result.model_dump())
                 successful_operations += 1
                 continue
 
-            result = {"game_id": game_id, "success": False, "fields": []}
+            result = CoverArtResult(game_id=game_id)
 
             # Download cover art
             local_url = await igdb_service.download_and_store_cover_art(
@@ -1088,14 +1088,14 @@ async def bulk_download_cover_art(
                 game.cover_art_url = local_url
                 game.updated_at = datetime.now(timezone.utc)
 
-                result["success"] = True
-                result["fields"] = ["cover_art_url"]
-                result["message"] = "Cover art downloaded successfully"
+                result.success = True
+                result.fields = ["cover_art_url"]
+                result.message = "Cover art downloaded successfully"
                 successful_operations += 1
             else:
-                result["message"] = "Failed to download cover art"
+                result.message = "Failed to download cover art"
 
-            results.append(result)
+            results.append(result.model_dump())
 
         except Exception as e:
             errors.append(f"Failed to download cover art for game {game_id}: {str(e)}")
