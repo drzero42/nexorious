@@ -1,17 +1,7 @@
 {
     "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}/backend"
-    ],
-    "python.analysis.autoSearchPaths": true,
     "python.analysis.autoImportCompletions": true,
-    "python.analysis.include": [
-        "${workspaceFolder}/backend"
-    ],
     "python.languageServer": "Pylance",
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingImports": "warning"
-    },
     "ruff.interpreter": [
         "${workspaceFolder}/backend/.venv/bin/python"
     ],
@@ -29,6 +19,5 @@
         "**/node_modules": true,
         "**/.git": false
     },
-    "python.analysis.typeCheckingMode": "basic",
     "python-envs.pythonProjects": []
 }
