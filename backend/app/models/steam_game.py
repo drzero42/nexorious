@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class SteamGame(SQLModel, table=True):
     """Steam game model for managing user's Steam library games."""
     
-    __tablename__ = "steam_games"
+    __tablename__ = "steam_games"  # type: ignore[assignment]
     __table_args__ = (
         UniqueConstraint("user_id", "steam_appid", name="uq_steam_games_user_appid"),
     )

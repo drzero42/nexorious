@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class Tag(SQLModel, table=True):
     """Tag model for user-defined game categorization."""
     
-    __tablename__ = "tags"
+    __tablename__ = "tags"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
@@ -51,7 +51,7 @@ class Tag(SQLModel, table=True):
 class UserGameTag(SQLModel, table=True):
     """Many-to-many relationship between user games and tags."""
     
-    __tablename__ = "user_game_tags"
+    __tablename__ = "user_game_tags"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_game_id: str = Field(foreign_key="user_games.id", index=True)

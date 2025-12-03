@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class Platform(SQLModel, table=True):
     """Platform model for gaming platforms (Windows, PlayStation, Xbox, Nintendo Switch, etc.)."""
     
-    __tablename__ = "platforms"
+    __tablename__ = "platforms"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     name: str = Field(unique=True, index=True, max_length=100)
@@ -43,7 +43,7 @@ class Platform(SQLModel, table=True):
 class Storefront(SQLModel, table=True):
     """Storefront model for digital game stores."""
     
-    __tablename__ = "storefronts"
+    __tablename__ = "storefronts"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     name: str = Field(unique=True, index=True, max_length=100)
@@ -67,7 +67,7 @@ class Storefront(SQLModel, table=True):
 class PlatformStorefront(SQLModel, table=True):
     """Junction table for many-to-many platform-storefront associations."""
     
-    __tablename__ = "platform_storefronts"
+    __tablename__ = "platform_storefronts"  # type: ignore[assignment]
     
     platform_id: str = Field(foreign_key="platforms.id", primary_key=True)
     storefront_id: str = Field(foreign_key="storefronts.id", primary_key=True)

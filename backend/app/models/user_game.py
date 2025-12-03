@@ -45,7 +45,7 @@ class PlayStatus(str, Enum):
 class UserGame(SQLModel, table=True):
     """User game model linking users to games with ownership and progress data."""
     
-    __tablename__ = "user_games"
+    __tablename__ = "user_games"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
@@ -76,7 +76,7 @@ class UserGame(SQLModel, table=True):
 class UserGamePlatform(SQLModel, table=True):
     """User game platform model for platform-specific ownership data."""
     
-    __tablename__ = "user_game_platforms"
+    __tablename__ = "user_game_platforms"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_game_id: str = Field(foreign_key="user_games.id", index=True)

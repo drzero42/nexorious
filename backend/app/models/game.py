@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class Game(SQLModel, table=True):
     """Game model with comprehensive metadata and IGDB integration."""
 
-    __tablename__ = "games"
+    __tablename__ = "games"  # type: ignore[assignment]
 
     id: int = Field(primary_key=True, description="IGDB ID as primary key")
     title: str = Field(index=True, max_length=500)

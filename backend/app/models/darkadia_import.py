@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class DarkadiaImport(SQLModel, table=True):
     """Darkadia import model for storing CSV import data with extended metadata."""
     
-    __tablename__ = "darkadia_imports"
+    __tablename__ = "darkadia_imports"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)

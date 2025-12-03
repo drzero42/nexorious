@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class DarkadiaGame(SQLModel, table=True):
     """Darkadia game model for staging CSV import data before sync to collection."""
     
-    __tablename__ = "darkadia_games"
+    __tablename__ = "darkadia_games"  # type: ignore[assignment]
     __table_args__ = (
         UniqueConstraint("user_id", "external_id", name="uq_darkadia_games_user_external"),
     )

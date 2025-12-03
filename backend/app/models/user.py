@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class User(SQLModel, table=True):
     """User model for authentication and profile data."""
     
-    __tablename__ = "users"
+    __tablename__ = "users"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     username: str = Field(unique=True, index=True, min_length=3, max_length=100)
@@ -61,7 +61,7 @@ class User(SQLModel, table=True):
 class UserSession(SQLModel, table=True):
     """User session model for JWT token management."""
     
-    __tablename__ = "user_sessions"
+    __tablename__ = "user_sessions"  # type: ignore[assignment]
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
