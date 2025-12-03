@@ -14,6 +14,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.user_game import UserGame
 from .integration_test_utils import create_test_game
+from ..utils.sqlalchemy_typed import in_
 
 
 @pytest.fixture(name="model_session")
@@ -518,7 +519,7 @@ class TestUserGameTagModel:
             select(UserGameTag)
             .where(and_(
                 UserGameTag.tag_id == user2_tag.id,
-                UserGameTag.user_game_id.in_([user1_game1.id, user1_game2.id])
+                in_(UserGameTag.user_game_id, [user1_game1.id, user1_game2.id])
             ))
         ).all()
         assert len(cross_user_query) == 0

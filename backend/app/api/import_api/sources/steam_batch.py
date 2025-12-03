@@ -17,6 +17,7 @@ from ....models.steam_game import SteamGame
 from ....models.batch_session import BatchOperationType, BATCH_SIZES, BatchSessionStatus
 from ....services.batch_session_manager import get_batch_session_manager
 from ....services.import_sources.steam import create_steam_import_service
+from ....utils.sqlalchemy_typed import is_, is_not, in_
 from ...schemas.batch import (
     BatchSessionStartRequest,
     BatchSessionStartResponse,
@@ -56,8 +57,8 @@ async def start_batch_auto_match(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_(None),  # No IGDB match yet
-                SteamGame.ignored.is_(False)    # Not ignored by user
+                is_(col(SteamGame.igdb_id), None),  # No IGDB match yet
+                is_(SteamGame.ignored, False)    # Not ignored by user
             )
         )
         unmatched_games = db_session.exec(unmatched_games_query).all()
@@ -144,9 +145,9 @@ async def process_next_auto_match_batch(
         unmatched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_(None),
-                SteamGame.ignored.is_(False),
-                col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
+                is_(col(SteamGame.igdb_id), None),
+                is_(SteamGame.ignored, False),
+                ~in_(col(SteamGame.id), batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)
         
@@ -275,9 +276,9 @@ async def start_batch_sync(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_not(None),  # Has IGDB match
-                col(SteamGame.game_id).is_(None),     # Not yet synced to collection
-                SteamGame.ignored.is_(False)       # Not ignored by user
+                is_not(col(SteamGame.igdb_id), None),  # Has IGDB match
+                is_(col(SteamGame.game_id), None),     # Not yet synced to collection
+                is_(SteamGame.ignored, False)       # Not ignored by user
             )
         )
         matched_games = db_session.exec(matched_games_query).all()
@@ -361,10 +362,10 @@ async def process_next_sync_batch(
         matched_games_query = select(SteamGame).where(
             and_(
                 SteamGame.user_id == current_user.id,
-                col(SteamGame.igdb_id).is_not(None),
-                col(SteamGame.game_id).is_(None),
-                SteamGame.ignored.is_(False),
-                col(SteamGame.id).in_(batch_session.processed_item_ids)  # Exclude already processed
+                is_not(col(SteamGame.igdb_id), None),
+                is_(col(SteamGame.game_id), None),
+                is_(SteamGame.ignored, False),
+                ~in_(col(SteamGame.id), batch_session.processed_item_ids)  # Exclude already processed
             )
         ).limit(batch_size)
         

@@ -24,6 +24,7 @@ from ...models.user_game import UserGame
 from ...services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
 from ...services.steam_games import create_steam_games_service, SteamGamesServiceError
 from ...services.igdb import IGDBService
+from ...utils.sqlalchemy_typed import is_, asc
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +322,7 @@ class SteamImportService(ImportSourceService):
         # Apply status filter (note: sync status will be checked post-query using new function)
         if status_filter:
             if status_filter == "unmatched":
-                query = query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
+                query = query.where(and_(is_(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "matched":
                 # Matched but not synced: has igdb_id but we'll filter for non-synced in Python
                 query = query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
@@ -341,7 +342,7 @@ class SteamImportService(ImportSourceService):
         count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
         if status_filter:
             if status_filter == "unmatched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.is_(None), not SteamGame.ignored))
+                count_query = count_query.where(and_(is_(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "matched":
                 count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
             elif status_filter == "ignored":
@@ -358,7 +359,7 @@ class SteamImportService(ImportSourceService):
         total = self.session.exec(count_query).first() or 0
         
         # Apply pagination and ordering
-        query = query.order_by(SteamGame.game_name.asc()).offset(offset).limit(limit)
+        query = query.order_by(asc(SteamGame.game_name)).offset(offset).limit(limit)
         results = self.session.exec(query).all()
         
         # Convert to ImportGame format with sync status filtering

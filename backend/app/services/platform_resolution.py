@@ -14,6 +14,7 @@ import re
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.darkadia_import import DarkadiaImport
 from ..utils.fuzzy_match import calculate_fuzzy_confidence
+from ..utils.sqlalchemy_typed import is_
 from ..api.schemas.platform import (
     PlatformSuggestion,
     StorefrontSuggestion,
@@ -378,7 +379,7 @@ class PlatformResolutionService:
                     # Unresolved storefront (has original storefront but no resolved storefront)
                     and_(
                         DarkadiaImport.original_storefront_name.isnot(None),
-                        DarkadiaImport.resolved_storefront_id.is_(None)
+                        is_(DarkadiaImport.resolved_storefront_id, None)
                     )
                 )
             )
@@ -841,7 +842,7 @@ class PlatformResolutionService:
                 DarkadiaImport.original_storefront_name.isnot(None),
                 or_(
                     not DarkadiaImport.storefront_resolved,
-                    DarkadiaImport.requires_storefront_resolution.is_(True)
+                    is_(DarkadiaImport.requires_storefront_resolution, True)
                 )
             )
         )

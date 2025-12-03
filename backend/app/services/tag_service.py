@@ -11,9 +11,10 @@ import uuid
 from ..models.tag import Tag, UserGameTag
 from ..models.user_game import UserGame
 from ..api.schemas.tag import (
-    TagCreateRequest, 
+    TagCreateRequest,
     TagUpdateRequest
 )
+from ..utils.sqlalchemy_typed import in_
 
 logger = logging.getLogger(__name__)
 
@@ -362,22 +363,22 @@ class TagService:
             # Verify user owns all tags
             tags = self.session.exec(
                 select(Tag).where(
-                    and_(Tag.id.in_(tag_ids), Tag.user_id == user_id)
+                    and_(in_(Tag.id, tag_ids), Tag.user_id == user_id)
                 )
             ).all()
-            
+
             if len(tags) != len(tag_ids):
                 found_tag_ids = {tag.id for tag in tags}
                 missing_tags = set(tag_ids) - found_tag_ids
                 logger.warning(f"Some tags not found for user {user_id}: {missing_tags}")
                 raise ValueError("Some tags not found")
-            
+
             # Get existing associations to avoid duplicates
             existing_associations = self.session.exec(
                 select(UserGameTag).where(
                     and_(
                         UserGameTag.user_game_id == user_game_id,
-                        UserGameTag.tag_id.in_(tag_ids)
+                        in_(UserGameTag.tag_id, tag_ids)
                     )
                 )
             ).all()
@@ -444,7 +445,7 @@ class TagService:
                 select(UserGameTag).where(
                     and_(
                         UserGameTag.user_game_id == user_game_id,
-                        UserGameTag.tag_id.in_(tag_ids)
+                        in_(UserGameTag.tag_id, tag_ids)
                     )
                 )
             ).all()

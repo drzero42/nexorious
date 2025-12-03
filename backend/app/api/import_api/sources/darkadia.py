@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+from ....utils.sqlalchemy_typed import is_, is_not, ilike, desc, label, in_, asc
+
 from ....core.database import get_session
 from ....core.security import get_current_user
 from ....models.user import User
@@ -494,26 +496,26 @@ async def list_darkadia_games(
         if status_filter:
             if status_filter == "unmatched":
                 base_query = base_query.where(
-                    and_(DarkadiaGame.igdb_id.is_(None), not DarkadiaGame.ignored)
+                    and_(is_(DarkadiaGame.igdb_id, None), not DarkadiaGame.ignored)
                 )
             elif status_filter == "matched":
                 base_query = base_query.where(
                     and_(
-                        DarkadiaGame.igdb_id.is_not(None), 
-                        DarkadiaGame.game_id.is_(None), 
+                        is_not(DarkadiaGame.igdb_id, None),
+                        is_(DarkadiaGame.game_id, None),
                         not DarkadiaGame.ignored
                     )
                 )
             elif status_filter == "synced":
-                base_query = base_query.where(DarkadiaGame.game_id.is_not(None))
+                base_query = base_query.where(is_not(DarkadiaGame.game_id, None))
             elif status_filter == "ignored":
                 base_query = base_query.where(DarkadiaGame.ignored)
-        
+
         # Apply search filtering
         if search and search.strip():
             search_term = f"%{search.strip()}%"
             base_query = base_query.where(
-                DarkadiaGame.game_name.ilike(search_term)
+                ilike(DarkadiaGame.game_name, search_term)
             )
         
         # Get total count for pagination
@@ -524,32 +526,32 @@ async def list_darkadia_games(
         if status_filter:
             if status_filter == "unmatched":
                 count_query = count_query.where(
-                    and_(DarkadiaGame.igdb_id.is_(None), not DarkadiaGame.ignored)
+                    and_(is_(DarkadiaGame.igdb_id, None), not DarkadiaGame.ignored)
                 )
             elif status_filter == "matched":
                 count_query = count_query.where(
                     and_(
-                        DarkadiaGame.igdb_id.is_not(None), 
-                        DarkadiaGame.game_id.is_(None), 
+                        is_not(DarkadiaGame.igdb_id, None),
+                        is_(DarkadiaGame.game_id, None),
                         not DarkadiaGame.ignored
                     )
                 )
             elif status_filter == "synced":
-                count_query = count_query.where(DarkadiaGame.game_id.is_not(None))
+                count_query = count_query.where(is_not(DarkadiaGame.game_id, None))
             elif status_filter == "ignored":
                 count_query = count_query.where(DarkadiaGame.ignored)
-        
+
         if search and search.strip():
             search_term = f"%{search.strip()}%"
             count_query = count_query.where(
-                DarkadiaGame.game_name.ilike(search_term)
+                ilike(DarkadiaGame.game_name, search_term)
             )
         
         total_count = session.exec(count_query).first() or 0
         logger.debug(f"Total count query for user {current_user.id}: {total_count} games")
         
         # Apply pagination and get games
-        games_query = base_query.order_by(DarkadiaGame.created_at.desc()).offset(offset).limit(limit)
+        games_query = base_query.order_by(desc(DarkadiaGame.created_at)).offset(offset).limit(limit)
         games = session.exec(games_query).all()
         
         # For each game, get associated platform/storefront data from DarkadiaImport
@@ -1477,7 +1479,7 @@ async def get_resolution_summary(
                 select(func.count(DarkadiaImport.id))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.original_platform_name.is_not(None)
+                    is_not(DarkadiaImport.original_platform_name, None)
                 )
             ).one()
             logger.info(f"🔍 [DEBUG] ✅ Imports with platform names: {imports_with_platforms}")
@@ -1491,7 +1493,7 @@ async def get_resolution_summary(
                 select(func.count(DarkadiaImport.id))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.user_game_platform_id.is_not(None)
+                    is_not(DarkadiaImport.user_game_platform_id, None)
                 )
             ).one()
             logger.info(f"🔍 [DEBUG] ✅ Imports with user_game_platform_id set: {imports_with_platform_ids}")
@@ -1513,7 +1515,7 @@ async def get_resolution_summary(
                 select(func.count(DarkadiaImport.id))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.resolved_platform_id.is_not(None)
+                    is_not(DarkadiaImport.resolved_platform_id, None)
                 )
             ).one()
             logger.info(f"🔍 [DEBUG] ✅ Imports with resolved_platform_id set: {imports_with_resolved_platform_ids}")
@@ -1533,7 +1535,7 @@ async def get_resolution_summary(
                 select(func.count(DarkadiaImport.id))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.resolved_storefront_id.is_not(None)
+                    is_not(DarkadiaImport.resolved_storefront_id, None)
                 )
             ).one()
             logger.info(f"🔍 [DEBUG] ✅ Imports with resolved_storefront_id set: {imports_with_resolved_storefront_ids}")
@@ -1548,14 +1550,14 @@ async def get_resolution_summary(
             platform_query = (
                 select(
                     DarkadiaImport.original_platform_name,
-                    Platform.name.label('platform_name'),
-                    func.count(DarkadiaImport.id).label('game_count')
+                    label(Platform.name, 'platform_name'),
+                    label(func.count(DarkadiaImport.id), 'game_count')
                 )
                 .outerjoin(Platform, DarkadiaImport.resolved_platform_id == Platform.id)
                 .where(
                     DarkadiaImport.user_id == current_user.id,
-                    DarkadiaImport.original_platform_name.is_not(None),
-                    DarkadiaImport.resolved_platform_id.is_not(None)  # Only include resolved platforms
+                    is_not(DarkadiaImport.original_platform_name, None),
+                    is_not(DarkadiaImport.resolved_platform_id, None)  # Only include resolved platforms
                 )
                 .group_by(DarkadiaImport.original_platform_name, Platform.name)
             )
@@ -1582,15 +1584,15 @@ async def get_resolution_summary(
         storefront_query = (
             select(
                 DarkadiaImport.original_storefront_name,
-                Storefront.name.label('storefront_name'),
-                func.count(DarkadiaImport.id).label('game_count')
+                label(Storefront.name, 'storefront_name'),
+                label(func.count(DarkadiaImport.id), 'game_count')
             )
             .outerjoin(Storefront, DarkadiaImport.resolved_storefront_id == Storefront.id)
             .where(
                 DarkadiaImport.user_id == current_user.id,
-                DarkadiaImport.original_storefront_name.is_not(None),
-                DarkadiaImport.requires_storefront_resolution.is_(False),  # Exclude storefronts requiring resolution
-                DarkadiaImport.resolved_storefront_id.is_not(None)  # Only include actually resolved storefronts
+                is_not(DarkadiaImport.original_storefront_name, None),
+                is_(DarkadiaImport.requires_storefront_resolution, False),  # Exclude storefronts requiring resolution
+                is_not(DarkadiaImport.resolved_storefront_id, None)  # Only include actually resolved storefronts
             )
             .group_by(DarkadiaImport.original_storefront_name, Storefront.name)
         )

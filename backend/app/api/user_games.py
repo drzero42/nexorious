@@ -15,6 +15,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
+from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc
 from ..api.schemas.user_game import (
     UserGameCreateRequest,
     UserGameUpdateRequest,
@@ -147,11 +148,11 @@ async def list_user_games(
     
     if has_notes is not None:
         if has_notes:
-            filters.append(col(UserGame.personal_notes).is_not(None))
+            filters.append(is_not(col(UserGame.personal_notes), None))
             filters.append(UserGame.personal_notes != "")
         else:
             filters.append(or_(
-                col(UserGame.personal_notes).is_(None),
+                is_(col(UserGame.personal_notes), None),
                 UserGame.personal_notes == ""
             ))
     
@@ -175,7 +176,7 @@ async def list_user_games(
         query = query.join(Game)
         query = query.where(or_(
             col(Game.title).icontains(q),
-            and_(col(UserGame.personal_notes).is_not(None), col(UserGame.personal_notes).icontains(q))
+            and_(is_not(col(UserGame.personal_notes), None), col(UserGame.personal_notes).icontains(q))
         ))
     
     if fuzzy_search_mode:
@@ -234,9 +235,9 @@ async def list_user_games(
     
     # Apply sort order
     if sort_order == "desc":
-        query = query.order_by(col(sort_field).desc())
+        query = query.order_by(desc(col(sort_field)))
     else:
-        query = query.order_by(col(sort_field).asc())
+        query = query.order_by(asc(col(sort_field)))
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -302,7 +303,7 @@ async def get_collection_stats(
             where(
                 and_(
                     UserGame.user_id == current_user.id,
-                    col(UserGame.personal_rating).is_not(None)
+                    is_not(col(UserGame.personal_rating), None)
                 )
             ).
             group_by(col(UserGame.personal_rating))
@@ -326,7 +327,7 @@ async def get_collection_stats(
             where(
                 and_(
                     UserGame.user_id == current_user.id,
-                    col(UserGame.personal_rating).is_not(None)
+                    is_not(col(UserGame.personal_rating), None)
                 )
             )
         ).one()
@@ -391,7 +392,7 @@ async def bulk_update_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                col(UserGame.id).in_(bulk_data.user_game_ids),
+                in_(col(UserGame.id), bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -449,7 +450,7 @@ async def bulk_delete_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                col(UserGame.id).in_(bulk_data.user_game_ids),
+                in_(col(UserGame.id), bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -503,7 +504,7 @@ async def bulk_add_platforms_to_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                col(UserGame.id).in_(bulk_data.user_game_ids),
+                in_(col(UserGame.id), bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
@@ -517,15 +518,15 @@ async def bulk_add_platforms_to_user_games(
     platform_ids = {assoc.platform_id for assoc in bulk_data.platform_associations}
     storefront_ids = {assoc.storefront_id for assoc in bulk_data.platform_associations if assoc.storefront_id}
     
-    platforms = session.exec(select(Platform).where(col(Platform.id).in_(platform_ids))).all()
+    platforms = session.exec(select(Platform).where(in_(col(Platform.id), platform_ids))).all()
     if len(platforms) != len(platform_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="One or more platform IDs are invalid"
         )
-    
+
     if storefront_ids:
-        storefronts = session.exec(select(Storefront).where(col(Storefront.id).in_(storefront_ids))).all()
+        storefronts = session.exec(select(Storefront).where(in_(col(Storefront.id), storefront_ids))).all()
         if len(storefronts) != len(storefront_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -583,22 +584,22 @@ async def bulk_remove_platforms_from_user_games(
     user_games = session.exec(
         select(UserGame).where(
             and_(
-                col(UserGame.id).in_(bulk_data.user_game_ids),
+                in_(col(UserGame.id), bulk_data.user_game_ids),
                 UserGame.user_id == current_user.id
             )
         )
     ).all()
-    
+
     found_game_ids = {user_game.id for user_game in user_games}
     remove_count = 0
     failed_count = len(bulk_data.user_game_ids) - len(found_game_ids)
-    
+
     # Get platform associations to remove that belong to the user's games
     platform_associations = session.exec(
         select(UserGamePlatform).where(
             and_(
-                col(UserGamePlatform.id).in_(bulk_data.platform_association_ids),
-                col(UserGamePlatform.user_game_id).in_(found_game_ids)
+                in_(col(UserGamePlatform.id), bulk_data.platform_association_ids),
+                in_(col(UserGamePlatform.user_game_id), found_game_ids)
             )
         )
     ).all()

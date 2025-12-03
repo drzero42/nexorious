@@ -26,6 +26,7 @@ from ..services.igdb import IGDBService, IGDBError
 from ..services.sync_utils import is_steam_game_synced
 from ..api.games import import_from_igdb
 from ..api.schemas.game import GameMetadataAcceptRequest
+from ..utils.sqlalchemy_typed import is_, is_not
 
 
 logger = logging.getLogger(__name__)
@@ -256,7 +257,7 @@ class SteamGamesService:
                     unmatched_games_query = select(SteamGame).where(
                         and_(
                             SteamGame.user_id == user_id,
-                            SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                            is_(SteamGame.igdb_id, None),  # No IGDB match yet
                             not SteamGame.ignored    # Not ignored by user
                         )
                     )
@@ -553,7 +554,7 @@ class SteamGamesService:
             unmatched_games_query = select(SteamGame).where(
                 and_(
                     SteamGame.user_id == user_id,
-                    SteamGame.igdb_id.is_(None),  # No IGDB match yet
+                    is_(SteamGame.igdb_id, None),  # No IGDB match yet
                     not SteamGame.ignored    # Not ignored by user
                 )
             )

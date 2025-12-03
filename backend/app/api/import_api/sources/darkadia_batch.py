@@ -18,6 +18,7 @@ from ....models.darkadia_game import DarkadiaGame
 from ....models.batch_session import BatchOperationType, BATCH_SIZES, BatchSessionStatus
 from ....services.batch_session_manager import get_batch_session_manager
 from ....services.import_sources.darkadia import create_darkadia_import_service
+from ....utils.sqlalchemy_typed import is_, is_not, in_
 from ...schemas.batch import (
     BatchSessionStartRequest,
     BatchSessionStartResponse,
@@ -57,8 +58,8 @@ async def start_batch_auto_match(
         unmatched_games_query = select(DarkadiaGame).where(
             and_(
                 DarkadiaGame.user_id == current_user.id,
-                col(DarkadiaGame.igdb_id).is_(None),  # No IGDB match yet
-                DarkadiaGame.ignored.is_(False)    # Not ignored by user
+                is_(col(DarkadiaGame.igdb_id), None),  # No IGDB match yet
+                is_(DarkadiaGame.ignored, False)    # Not ignored by user
             )
         )
         unmatched_games = db_session.exec(unmatched_games_query).all()
@@ -146,13 +147,13 @@ async def process_next_auto_match_batch(
         # Build query conditions
         query_conditions = [
             DarkadiaGame.user_id == current_user.id,
-            col(DarkadiaGame.igdb_id).is_(None),  # No IGDB match yet
-            DarkadiaGame.ignored.is_(False)    # Not ignored by user
+            is_(col(DarkadiaGame.igdb_id), None),  # No IGDB match yet
+            is_(DarkadiaGame.ignored, False)    # Not ignored by user
         ]
-        
+
         # Exclude games already processed in this batch session
         if batch_session.processed_item_ids:
-            query_conditions.append(~DarkadiaGame.id.in_(batch_session.processed_item_ids))
+            query_conditions.append(~in_(DarkadiaGame.id, batch_session.processed_item_ids))
         
         unmatched_games_query = select(DarkadiaGame).where(
             and_(*query_conditions)
@@ -229,7 +230,7 @@ async def process_next_auto_match_batch(
         
         # Refresh games from database to get updated data after matching
         updated_games = db_session.exec(
-            select(DarkadiaGame).where(DarkadiaGame.id.in_(game_ids))
+            select(DarkadiaGame).where(in_(DarkadiaGame.id, game_ids))
         ).all()
         
         # Format games for response using DarkadiaGameResponse
@@ -306,9 +307,9 @@ async def start_batch_sync(
         matched_games_query = select(DarkadiaGame).where(
             and_(
                 DarkadiaGame.user_id == current_user.id,
-                col(DarkadiaGame.igdb_id).is_not(None),  # Has IGDB match
-                col(DarkadiaGame.game_id).is_(None),     # Not yet synced to collection
-                DarkadiaGame.ignored.is_(False)       # Not ignored by user
+                is_not(col(DarkadiaGame.igdb_id), None),  # Has IGDB match
+                is_(col(DarkadiaGame.game_id), None),     # Not yet synced to collection
+                is_(DarkadiaGame.ignored, False)       # Not ignored by user
             )
         )
         matched_games = db_session.exec(matched_games_query).all()
@@ -393,14 +394,14 @@ async def process_next_sync_batch(
         # Build query conditions
         query_conditions = [
             DarkadiaGame.user_id == current_user.id,
-            col(DarkadiaGame.igdb_id).is_not(None),  # Has IGDB match
-            col(DarkadiaGame.game_id).is_(None),     # Not yet synced to collection
-            DarkadiaGame.ignored.is_(False)       # Not ignored by user
+            is_not(col(DarkadiaGame.igdb_id), None),  # Has IGDB match
+            is_(col(DarkadiaGame.game_id), None),     # Not yet synced to collection
+            is_(DarkadiaGame.ignored, False)       # Not ignored by user
         ]
-        
+
         # Exclude games already processed in this batch session
         if batch_session.processed_item_ids:
-            query_conditions.append(~DarkadiaGame.id.in_(batch_session.processed_item_ids))
+            query_conditions.append(~in_(DarkadiaGame.id, batch_session.processed_item_ids))
         
         matched_games_query = select(DarkadiaGame).where(
             and_(*query_conditions)
@@ -468,7 +469,7 @@ async def process_next_sync_batch(
         
         # Refresh games from database to get updated data after syncing
         updated_games = db_session.exec(
-            select(DarkadiaGame).where(DarkadiaGame.id.in_(game_ids))
+            select(DarkadiaGame).where(in_(DarkadiaGame.id, game_ids))
         ).all()
         
         # Format games for response using DarkadiaGameResponse

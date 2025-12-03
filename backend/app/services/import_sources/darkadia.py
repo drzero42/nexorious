@@ -33,6 +33,7 @@ from .darkadia_transformer import DarkadiaTransformationPipeline
 from .copy_consolidation import CopyConsolidationProcessor, ConsolidatedGame
 from ...utils.json_serialization import safe_json_dumps, log_serialization_debug, enhanced_safe_json_dumps
 from .darkadia_parser import DarkadiaCSVParser
+from ...utils.sqlalchemy_typed import asc
 
 logger = logging.getLogger(__name__)
 
@@ -1321,7 +1322,7 @@ class DarkadiaImportService(ImportSourceService):
                 select(DarkadiaImport)
                 .where(DarkadiaImport.user_id == user_id)
                 .where(DarkadiaImport.game_name == game.game_name)
-                .order_by(DarkadiaImport.created_at.asc())
+                .order_by(asc(DarkadiaImport.created_at))
                 .limit(1)
             ).first()
             

@@ -12,6 +12,7 @@ from ..core.database import get_session
 from ..core.security import get_current_admin_user, get_current_user
 from ..models.user import User
 from ..models.platform import Platform, Storefront, PlatformStorefront
+from ..utils.sqlalchemy_typed import is_
 from ..api.schemas.platform import (
     PlatformCreateRequest,
     PlatformUpdateRequest,
@@ -1510,8 +1511,8 @@ async def get_pending_storefront_resolutions(
                         DarkadiaImport.user_id == current_user.id,
                         DarkadiaImport.original_storefront_name == storefront_name,
                         or_(
-                            DarkadiaImport.storefront_resolved.is_(False),
-                            DarkadiaImport.requires_storefront_resolution.is_(True)
+                            is_(DarkadiaImport.storefront_resolved, False),
+                            is_(DarkadiaImport.requires_storefront_resolution, True)
                         )
                     )
                 ).limit(10)  # Limit for performance

@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ..models.game import Game
 from ..models.user_game import UserGame
 from ..models.wishlist import Wishlist
+from ..utils.sqlalchemy_typed import in_
 
 
 logger = logging.getLogger(__name__)
@@ -172,8 +173,8 @@ def get_unreferenced_games(session: Session, limit: Optional[int] = None) -> lis
     
     # Find games that are not in either table
     query = select(Game).where(
-        ~Game.id.in_(subquery_user_games),
-        ~Game.id.in_(subquery_wishlists)
+        ~in_(Game.id, subquery_user_games),
+        ~in_(Game.id, subquery_wishlists)
     )
     
     if limit:

@@ -16,6 +16,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
+from ..utils.sqlalchemy_typed import is_not, desc, asc
 from ..api.schemas.game import (
     GameResponse,
     GameListResponse,
@@ -125,7 +126,7 @@ async def list_games(
         search_filter = or_(
             col(Game.title).icontains(q),
             and_(
-                col(Game.description).is_not(None), col(Game.description).icontains(q)
+                is_not(col(Game.description), None), col(Game.description).icontains(q)
             ),
         )
         filters.append(search_filter)
@@ -180,9 +181,9 @@ async def list_games(
         # Apply sorting
         sort_field = col(getattr(Game, sort_by or "title", Game.title))
         if sort_order == "desc":
-            query = query.order_by(sort_field.desc())
+            query = query.order_by(desc(sort_field))
         else:
-            query = query.order_by(sort_field.asc())
+            query = query.order_by(asc(sort_field))
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
