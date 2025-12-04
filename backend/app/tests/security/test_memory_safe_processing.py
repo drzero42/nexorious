@@ -474,7 +474,7 @@ class TestSecureCSVProcessorEdgeCases:
         nonexistent_file = Path("/tmp/nonexistent_12345.csv")
         processor = SecureCSVProcessor()
         
-        with pytest.raises((FileNotFoundError, ValueError)):
+        with pytest.raises((FileNotFoundError, ValueError)):  # type: ignore[call-overload]
             async with processor.process_csv_securely(nonexistent_file) as chunks:
                 async for chunk in chunks:
                     pass
@@ -493,7 +493,7 @@ class TestSecureCSVProcessorEdgeCases:
         try:
             processor = SecureCSVProcessor()
             
-            with pytest.raises((PermissionError, ValueError)):
+            with pytest.raises((PermissionError, ValueError)):  # type: ignore[call-overload]
                 async with processor.process_csv_securely(test_file) as chunks:
                     async for chunk in chunks:
                         pass

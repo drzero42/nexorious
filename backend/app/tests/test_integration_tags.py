@@ -121,7 +121,9 @@ class TestTagsListEndpoint:
         # Get user IDs from database
         user1 = session.exec(select(User).where(User.username == "user1")).first()
         user2 = session.exec(select(User).where(User.username == "user2")).first()
-        
+        assert user1 is not None, "User1 should exist after registration"
+        assert user2 is not None, "User2 should exist after registration"
+
         # Create tags for both users
         user1_tags = [
             Tag(user_id=user1.id, name="User1 Tag1"),
@@ -304,13 +306,14 @@ class TestTagGetEndpoint:
         
         # Get user IDs
         user1 = session.exec(select(User).where(User.username == "user1")).first()
-        
+        assert user1 is not None, "User1 should exist after registration"
+
         # Create tag for user1
         tag = Tag(user_id=user1.id, name="User1 Tag")
         session.add(tag)
         session.commit()
         session.refresh(tag)
-        
+
         # User2 tries to access user1's tag
         response = client.get(f"/api/tags/{tag.id}", headers=user2_headers)
         assert_api_error(response, 404, "not found")
@@ -386,13 +389,14 @@ class TestTagUpdateEndpoint:
         
         # Get user1 ID
         user1 = session.exec(select(User).where(User.username == "user1")).first()
-        
+        assert user1 is not None, "User1 should exist after registration"
+
         # Create tag for user1
         tag = Tag(user_id=user1.id, name="User1 Tag")
         session.add(tag)
         session.commit()
         session.refresh(tag)
-        
+
         # User2 tries to update user1's tag
         update_data = {"name": "Hacked Name"}
         response = client.put(f"/api/tags/{tag.id}", json=update_data, headers=user2_headers)
@@ -472,13 +476,14 @@ class TestTagDeleteEndpoint:
         
         # Get user1 ID
         user1 = session.exec(select(User).where(User.username == "user1")).first()
-        
+        assert user1 is not None, "User1 should exist after registration"
+
         # Create tag for user1
         tag = Tag(user_id=user1.id, name="User1 Tag")
         session.add(tag)
         session.commit()
         session.refresh(tag)
-        
+
         # User2 tries to delete user1's tag
         response = client.delete(f"/api/tags/{tag.id}", headers=user2_headers)
         assert_api_error(response, 404, "not found")

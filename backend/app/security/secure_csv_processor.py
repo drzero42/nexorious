@@ -316,7 +316,7 @@ class SecureCSVProcessor:
         """Check current memory usage against limits."""
         if self._process:
             try:
-                memory_info = self._process.memory_info()
+                memory_info = self._process.memory_info()  # type: ignore[misc]
                 memory_mb = memory_info.rss / 1024 / 1024  # Convert to MB
                 
                 # Track peak memory usage

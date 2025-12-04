@@ -305,9 +305,9 @@ def test_user_game_fixture(session: Session, test_user: User, test_game: Game) -
 
 # IGDB Mock Helper Functions
 
-def _create_game_metadata(igdb_id: int, title: str, genre: str, **overrides) -> GameMetadata:
+def _create_game_metadata(igdb_id: int, title: str, genre: str, **overrides: Any) -> GameMetadata:
     """Create consistent GameMetadata for mocks."""
-    base_data = {
+    base_data: Dict[str, Any] = {
         "igdb_id": igdb_id,  # Keep as integer for IGDB ID
         "title": title,
         "igdb_slug": title.lower().replace(" ", "-"),
@@ -542,10 +542,10 @@ def create_test_platform_data(
 _test_game_counter = 300000
 
 def create_test_game(
-    title: str = None,
-    description: str = None,
-    igdb_id: int = None,
-    **kwargs
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    igdb_id: Optional[int] = None,
+    **kwargs: Any
 ) -> Game:
     """Create a test game with automatically generated IGDB ID if not provided.
     
@@ -591,9 +591,9 @@ def create_test_game(
 
 def create_test_games(
     count: int,
-    session: Session = None,
+    session: Optional[Session] = None,
     commit: bool = True,
-    **kwargs
+    **kwargs: Any
 ) -> list[Game]:
     """Create multiple test games with unique IGDB IDs.
     
@@ -663,7 +663,7 @@ def create_test_user_game_data(
     personal_notes: str = ""
 ) -> Dict[str, Any]:
     """Create test user game data."""
-    data = {
+    data: Dict[str, Any] = {
         "game_id": game_id,
         "ownership_status": ownership_status,
         "is_loved": is_loved,
@@ -676,7 +676,7 @@ def create_test_user_game_data(
     return data
 
 
-def assert_api_error(response, status_code: int, error_message: str = None):
+def assert_api_error(response: Any, status_code: int, error_message: Optional[str] = None) -> None:
     """Assert that an API response contains the expected error."""
     if response.status_code != status_code:
         print(f"DEBUG: Expected status {status_code}, got {response.status_code}. Response: {response.json()}")

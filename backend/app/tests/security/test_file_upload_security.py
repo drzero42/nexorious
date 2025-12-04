@@ -280,6 +280,7 @@ class TestSecureFileUploadValidator:
         assert result1.file_hash != result3.file_hash, "Different content should have different hash"
         
         # Hash should be consistent
+        assert result1.file_hash is not None, "Hash should exist"
         assert len(result1.file_hash) > 0, "Hash should not be empty"
         assert isinstance(result1.file_hash, str), "Hash should be string"
         
@@ -292,7 +293,7 @@ class TestSecureFileUploadValidator:
     async def test_no_file_provided(self):
         """Test handling when no file is provided."""
         # Test None file
-        result = await SecureFileUploadValidator.validate_upload(None, "test_user")
+        result = await SecureFileUploadValidator.validate_upload(None, "test_user")  # type: ignore[arg-type]
         assert not result.is_valid, "Should reject None file"
         assert any("No file provided" in error for error in result.errors), "Should report no file error"
         

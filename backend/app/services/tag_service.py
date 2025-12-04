@@ -2,7 +2,7 @@
 Tag service for managing user tags and tag assignments.
 """
 
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 from sqlmodel import Session, select, func, and_
 from datetime import datetime, timezone
 import logging
@@ -58,8 +58,8 @@ class TagService:
             offset = (page - 1) * per_page
             query = base_query.order_by(Tag.name).offset(offset).limit(per_page)
             
-            tags = self.session.exec(query).all()
-            
+            tags = list(self.session.exec(query).all())
+
             # Set game count if requested (using PrivateAttr) with error handling
             if include_game_count:
                 for tag in tags:
@@ -69,7 +69,7 @@ class TagService:
                     except Exception as e:
                         logger.error(f"Failed to get game count for tag {tag.id}: {e}")
                         tag._game_count = 0  # Graceful degradation
-                        
+
             logger.info(f"Found {len(tags)} tags (total: {total_count}) for user {user_id}")
             return tags, total_count
             
@@ -489,9 +489,9 @@ class TagService:
             ).all()
             
             # Get tag usage counts
-            tag_usage = {}
-            popular_tags = []
-            unused_tags = []
+            tag_usage: Dict[Any, int] = {}
+            popular_tags: list[tuple[Tag, int]] = []
+            unused_tags: list[Tag] = []
             
             for tag in all_tags:
                 count = self._get_tag_game_count(tag.id)
@@ -508,12 +508,12 @@ class TagService:
             # Sort popular tags by usage count
             popular_tags.sort(key=lambda item: item[1], reverse=True)
             # Extract just the tags for the response
-            popular_tags = [tag for tag, count in popular_tags]
+            sorted_popular_tags: list[Tag] = [tag for tag, _count in popular_tags]
             
             # Get total tagged games count
             total_tagged_games = len(self.session.exec(
                 select(UserGameTag.user_game_id)
-                .join(Tag, Tag.id == UserGameTag.tag_id)
+                .join(Tag, Tag.id == UserGameTag.tag_id)  # type: ignore[arg-type]
                 .where(Tag.user_id == user_id)
                 .distinct()
             ).all())
@@ -529,7 +529,7 @@ class TagService:
                 "total_tagged_games": total_tagged_games,
                 "average_tags_per_game": round(avg_tags_per_game, 2),
                 "tag_usage": tag_usage,
-                "popular_tags": popular_tags[:10],  # Top 10
+                "popular_tags": sorted_popular_tags[:10],  # Top 10
                 "unused_tags": unused_tags
             }
             

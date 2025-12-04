@@ -88,6 +88,7 @@ class TestAuthLoginEndpoint:
         
         # Deactivate user
         user = session.exec(select(User).where(User.username == user_data["username"])).first()
+        assert user is not None, "User should exist after registration"
         user.is_active = False
         session.add(user)
         session.commit()
@@ -151,6 +152,7 @@ class TestAuthRefreshEndpoint:
         
         # Get user and create expired session
         user = session.exec(select(User).where(User.username == user_data["username"])).first()
+        assert user is not None, "User should exist after registration"
         expired_session = UserSession(
             user_id=user.id,
             token_hash="expired-token-hash",

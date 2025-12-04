@@ -241,9 +241,9 @@ class DarkadiaImportService(ImportSourceService):
             raise ValueError(f"User {user_id} not found")
         
         config = await self.get_config(user_id)
-        if not config.is_configured:
+        if not config.is_configured or config.config_data is None:
             raise ValueError("Darkadia CSV file not configured")
-        
+
         csv_file_path = config.config_data.get("csv_file_path")
         if not csv_file_path or not Path(csv_file_path).exists():
             raise ValueError("CSV file not found")
@@ -455,9 +455,9 @@ class DarkadiaImportService(ImportSourceService):
             raise ValueError(f"User {user_id} not found")
         
         config = await self.get_config(user_id)
-        if not config.is_configured or not config.is_verified:
+        if not config.is_configured or not config.is_verified or config.config_data is None:
             raise ValueError("Darkadia CSV file not configured or verified")
-        
+
         csv_file_path = config.config_data.get("csv_file_path")
         if not csv_file_path:
             raise ValueError("CSV file path not found in configuration")
@@ -1058,11 +1058,12 @@ class DarkadiaImportService(ImportSourceService):
                                                 platform_data: Dict[str, Any],
                                                 csv_data: Dict[str, Any]) -> None:
         """Create a single UserGamePlatform association and link DarkadiaImport record."""
+        # Extract copy_identifier early for error reporting
+        copy_identifier = platform_data.get('copy_identifier')
         try:
             # Extract platform and storefront information
             original_platform_name = platform_data.get('platform', '').strip()
             original_storefront_name = platform_data.get('storefront', '').strip() or platform_data.get('storefront_other', '').strip()
-            copy_identifier = platform_data.get('copy_identifier')
             platform_data.get('requires_storefront_resolution', False)
             
             # Get transformed platform/storefront data if available
@@ -1178,8 +1179,9 @@ class DarkadiaImportService(ImportSourceService):
                                               platform_data: Dict[str, Any],
                                               csv_data: Dict[str, Any]) -> None:
         """Create or update DarkadiaImport record for this specific copy."""
+        # Extract copy_identifier early for error reporting
+        copy_identifier = platform_data.get('copy_identifier')
         try:
-            copy_identifier = platform_data.get('copy_identifier')
             # Ensure we have a valid csv_row_number
             csv_row_number = csv_data.get('_csv_row_number')
             if csv_row_number is None:
@@ -1219,7 +1221,7 @@ class DarkadiaImportService(ImportSourceService):
                 storefront_resolved=bool(user_game_platform.storefront_id),
                 requires_storefront_resolution=platform_data.get('requires_storefront_resolution', False),
                 platform_resolution_data_json=await self._generate_platform_resolution_data(
-                    platform_data.get('platform'), bool(user_game_platform.platform_id)
+                    platform_data.get('platform') or '', bool(user_game_platform.platform_id)
                 ),
                 
                 created_at=datetime.now(timezone.utc),
@@ -1293,7 +1295,7 @@ class DarkadiaImportService(ImportSourceService):
         # Get total count and games
         games = self.session.exec(query.offset(offset).limit(limit)).all()
         # Use direct count query to avoid Cartesian product from subquery
-        count_query = select(func.count(DarkadiaGame.id)).where(DarkadiaGame.user_id == user_id)
+        count_query = select(func.count('*')).where(DarkadiaGame.user_id == user_id)
         
         # Apply the same filtering as main query
         if status_filter == "unmatched":
@@ -1309,7 +1311,7 @@ class DarkadiaImportService(ImportSourceService):
             search_term = f"%{search.lower()}%"
             count_query = count_query.where(func.lower(DarkadiaGame.game_name).like(search_term))
         
-        total_count = self.session.exec(count_query).first()
+        total_count = self.session.exec(count_query).first() or 0
         
         logger.info(f"Successfully fetched {len(games)} games out of {total_count} total for user {user_id}")
         logger.debug(f"Service layer count query result for user {user_id}: {total_count} distinct games")

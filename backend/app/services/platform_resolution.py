@@ -14,7 +14,7 @@ import re
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.darkadia_import import DarkadiaImport
 from ..utils.fuzzy_match import calculate_fuzzy_confidence
-from ..utils.sqlalchemy_typed import is_
+from ..utils.sqlalchemy_typed import is_, is_not
 from ..schemas.platform import (
     PlatformSuggestion,
     StorefrontSuggestion,
@@ -374,11 +374,11 @@ class PlatformResolutionService:
                     # Unresolved platform
                     and_(
                         not DarkadiaImport.platform_resolved,
-                        DarkadiaImport.original_platform_name.isnot(None)
+                        is_not(DarkadiaImport.original_platform_name, None)
                     ),
                     # Unresolved storefront (has original storefront but no resolved storefront)
                     and_(
-                        DarkadiaImport.original_storefront_name.isnot(None),
+                        is_not(DarkadiaImport.original_storefront_name, None),
                         is_(DarkadiaImport.resolved_storefront_id, None)
                     )
                 )
@@ -610,8 +610,11 @@ class PlatformResolutionService:
         
         for resolution_data in resolutions:
             try:
+                import_id = resolution_data.get("import_id")
+                if not import_id:
+                    raise ValueError("Missing import_id in resolution data")
                 result = await self.resolve_platform(
-                    import_id=resolution_data.get("import_id"),
+                    import_id=str(import_id),
                     user_id=user_id,
                     resolved_platform_id=resolution_data.get("resolved_platform_id"),
                     resolved_storefront_id=resolution_data.get("resolved_storefront_id"),
@@ -675,7 +678,7 @@ class PlatformResolutionService:
             )
             
             # Update resolution data with suggestions
-            resolution_data = import_record.get_platform_resolution_data()
+            resolution_data: Dict[str, Any] = import_record.get_platform_resolution_data() or {}
             if not resolution_data:
                 resolution_data = {
                     "status": "pending",
@@ -712,13 +715,13 @@ class PlatformResolutionService:
         """
         storefronts = self.session.exec(
             select(Storefront)
-            .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)
+            .join(PlatformStorefront, Storefront.id == PlatformStorefront.storefront_id)  # type: ignore[arg-type]
             .where(PlatformStorefront.platform_id == platform_id)
             .where(Storefront.is_active)
             .order_by(Storefront.display_name)
         ).all()
-        
-        return storefronts
+
+        return list(storefronts)
 
     async def suggest_storefront_matches_for_platform(
         self,
@@ -839,7 +842,7 @@ class PlatformResolutionService:
         query = select(DarkadiaImport.original_storefront_name).where(
             and_(
                 DarkadiaImport.user_id == user_id,
-                DarkadiaImport.original_storefront_name.isnot(None),
+                is_not(DarkadiaImport.original_storefront_name, None),
                 or_(
                     not DarkadiaImport.storefront_resolved,
                     is_(DarkadiaImport.requires_storefront_resolution, True)
@@ -931,10 +934,14 @@ class PlatformResolutionService:
         
         for resolution in resolutions:
             try:
+                import_id = resolution.get("import_id")
+                storefront_id = resolution.get("storefront_id")
+                if not import_id or not storefront_id:
+                    raise ValueError("Missing import_id or storefront_id in resolution data")
                 success = await self.resolve_storefront(
-                    import_id=resolution.get("import_id"),
+                    import_id=str(import_id),
                     user_id=user_id,
-                    resolved_storefront_id=resolution.get("storefront_id"),
+                    resolved_storefront_id=str(storefront_id),
                     user_notes=resolution.get("user_notes")
                 )
                 
@@ -975,9 +982,14 @@ class PlatformResolutionService:
         for resolution in pending_resolutions:
             try:
                 # Get storefront suggestions for this resolution
+                platform_id = getattr(resolution, 'platform_id', None)
+                if not platform_id:
+                    # Skip if no platform_id available
+                    updated_resolutions.append(resolution)
+                    continue
                 suggestions = await self.suggest_storefront_matches_for_platform(
                     unknown_storefront_name=resolution.original_storefront_name,
-                    platform_id=resolution.platform_id if hasattr(resolution, 'platform_id') else None,
+                    platform_id=str(platform_id),
                     min_confidence=confidence_threshold,
                     max_suggestions=1  # We only need the best match
                 )

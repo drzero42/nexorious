@@ -53,7 +53,7 @@ class TestSteamGameMigration:
         # Use direct SQL to check column existence
         try:
             # This should fail - game_id column should not exist
-            session.exec(text("SELECT game_id FROM steam_games LIMIT 1")).first()
+            session.exec(text("SELECT game_id FROM steam_games LIMIT 1")).first()  # type: ignore[call-overload]
             pytest.fail("game_id column should not exist after migration")
         except OperationalError:
             # Column doesn't exist - this is expected after migration
@@ -61,7 +61,7 @@ class TestSteamGameMigration:
 
         try:
             # This should work - igdb_id column should exist
-            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1")).first()
+            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1")).first()  # type: ignore[call-overload]
             assert True
         except OperationalError as e:
             pytest.fail(f"igdb_id column should exist: {e}")
@@ -213,8 +213,9 @@ class TestSteamGameMigration:
         assert specific_game.game_name == "Test Game 5"
 
         # Test igdb_id index (should work after migration)
+        from app.utils.sqlalchemy_typed import is_not
         igdb_games = session.exec(
-            select(SteamGame).where(SteamGame.igdb_id.isnot(None))
+            select(SteamGame).where(is_not(SteamGame.igdb_id, None))
         ).all()
         assert len(igdb_games) == 5  # Every other game has igdb_id
 
@@ -255,7 +256,7 @@ class TestMigrationRollback:
 
         # Verify current post-migration state (game_id should not exist)
         try:
-            session.exec(text("SELECT game_id FROM steam_games LIMIT 1"))
+            session.exec(text("SELECT game_id FROM steam_games LIMIT 1"))  # type: ignore[call-overload]
             pytest.fail("game_id column should not exist after migration")
         except OperationalError:
             # This is expected - game_id column was removed by migration
@@ -263,7 +264,7 @@ class TestMigrationRollback:
 
         # Verify igdb_id exists (our replacement)
         try:
-            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1"))
+            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1"))  # type: ignore[call-overload]
             assert True
         except OperationalError:
             pytest.fail("igdb_id column should exist after migration")

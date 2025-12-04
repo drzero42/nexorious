@@ -386,7 +386,7 @@ class TestAutoMatching:
         assert result.steam_game_name == "Counter-Strike: Global Offensive"
         assert result.steam_appid == 730
         assert result.igdb_id == 1234
-        assert result.confidence_score >= 0.80
+        assert result.confidence_score is not None and result.confidence_score >= 0.80
     
     @pytest.mark.asyncio
     async def test_auto_match_single_steam_game_low_confidence(
@@ -417,7 +417,7 @@ class TestAutoMatching:
         assert result.matched is False
         assert result.steam_game_id == steam_game.id
         assert result.igdb_id is None
-        assert result.confidence_score < 0.80
+        assert result.confidence_score is None or result.confidence_score < 0.80
     
     @pytest.mark.asyncio
     async def test_auto_match_single_steam_game_no_results(
@@ -579,7 +579,7 @@ class TestManualMatching:
         # Match Steam game to IGDB game
         result_game, message = await steam_games_service.match_steam_game_to_igdb(
             steam_game_id=steam_game.id,
-            igdb_id=str(igdb_game.id),
+            igdb_id=igdb_game.id,
             user_id=test_user.id
         )
         
@@ -595,7 +595,7 @@ class TestManualMatching:
         assert steam_game.igdb_title == "Counter-Strike: Global Offensive"
         
         # Verify IGDB service was called for validation
-        mock_igdb_service.get_game_by_id.assert_called_once_with("1234")
+        mock_igdb_service.get_game_by_id.assert_called_once_with(1234)
     
     @pytest.mark.asyncio
     async def test_match_steam_game_to_igdb_clear_existing(

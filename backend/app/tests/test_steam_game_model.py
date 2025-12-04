@@ -185,29 +185,29 @@ class TestSteamGameModel:
     def test_required_fields(self, session: Session, test_user: User):
         """Test that required fields cannot be null."""
         # Test missing user_id
-        with pytest.raises((IntegrityError, ValueError)):
+        with pytest.raises((IntegrityError, ValueError)):  # type: ignore[call-overload]
             steam_game = SteamGame(
                 steam_appid=730,
                 game_name="Counter-Strike: Global Offensive"
             )
             session.add(steam_game)
             session.commit()
-        
+
         session.rollback()
-        
+
         # Test missing steam_appid
-        with pytest.raises((IntegrityError, TypeError)):
+        with pytest.raises((IntegrityError, TypeError)):  # type: ignore[call-overload]
             steam_game = SteamGame(
                 user_id=test_user.id,
                 game_name="Counter-Strike: Global Offensive"
             )
             session.add(steam_game)
             session.commit()
-        
+
         session.rollback()
-        
+
         # Test missing game_name
-        with pytest.raises((IntegrityError, TypeError)):
+        with pytest.raises((IntegrityError, TypeError)):  # type: ignore[call-overload]
             steam_game = SteamGame(
                 user_id=test_user.id,
                 steam_appid=730

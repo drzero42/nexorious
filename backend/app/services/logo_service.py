@@ -77,13 +77,13 @@ class LogoService:
                     detail="Invalid SVG file format"
                 )
         
-        if mime_type not in self.supported_formats:
+        if mime_type is None or mime_type not in self.supported_formats:
             supported_list = list(self.supported_formats.keys())
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported file format. Supported formats: {', '.join(supported_list)}"
             )
-        
+
         return mime_type
     
     def _generate_filename(self, entity_name: str, theme: str, mime_type: str) -> str:

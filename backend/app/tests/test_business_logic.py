@@ -106,7 +106,7 @@ class TestStorageServiceBusinessLogic:
         """Test that cover art path generation is consistent."""
         service = StorageService()
         
-        igdb_id = 12300
+        igdb_id = "12300"
         url = "https://example.com/image.jpg"
         path1 = service.get_cover_art_path(igdb_id, url)
         path2 = service.get_cover_art_path(igdb_id, url)

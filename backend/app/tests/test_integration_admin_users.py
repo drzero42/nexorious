@@ -512,7 +512,9 @@ class TestAdminEndpointSecurity:
                 response = client.put(url, json=data, headers=auth_headers)
             elif method == "DELETE":
                 response = client.delete(url, headers=auth_headers)
-            
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+
             assert_api_error(response, 403, "Administrative privileges required")
     
     def test_no_password_data_in_responses(self, client: TestClient, admin_headers: Dict[str, str], test_user: User):

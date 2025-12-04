@@ -153,12 +153,13 @@ class IGDBService:
             wrapper = await self._get_wrapper()
             
             # Create the API request function
-            async def make_request():
+            async def make_request() -> bytes:
                 loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(
-                    None,
-                    lambda: wrapper.api_request(endpoint, query)
-                )
+
+                def _sync_request() -> bytes:
+                    return wrapper.api_request(endpoint, query)  # type: ignore[return-value]
+
+                return await loop.run_in_executor(None, _sync_request)  # type: ignore[arg-type]
             
             # Execute with rate limiting
             logger.debug(f"Making rate-limited IGDB API request to {endpoint}")
