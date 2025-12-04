@@ -6,7 +6,23 @@ from alembic import command
 from alembic.config import Config
 
 # Import all models to ensure they are registered with SQLModel
-from ..models import *  # noqa: F403
+from ..models import (  # noqa: F401
+    User,
+    UserSession,
+    Platform,
+    Storefront,
+    PlatformStorefront,
+    Game,
+    UserGame,
+    UserGamePlatform,
+    Tag,
+    UserGameTag,
+    Wishlist,
+    ImportJob,
+    SteamGame,
+    DarkadiaGame,
+    DarkadiaImport,
+)
 
 logger = logging.getLogger(__name__)
 
