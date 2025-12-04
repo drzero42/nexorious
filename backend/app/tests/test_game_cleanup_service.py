@@ -94,8 +94,8 @@ class TestGameCleanupService:
     
     def test_cleanup_nonexistent_game(self, session: Session):
         """Test cleanup of a game that doesn't exist."""
-        nonexistent_id = "nonexistent-game-id"
-        
+        nonexistent_id = 999999999  # Non-existent int game ID
+
         # Run cleanup
         result = cleanup_unreferenced_game(nonexistent_id, session)
         

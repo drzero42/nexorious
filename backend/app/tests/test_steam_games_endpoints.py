@@ -883,14 +883,14 @@ class TestSteamGamesBulkSyncEndpoint:
         pc_platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
         steam_storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
         
-        # Platform association query - may fail if user_game is None  
-        if user_game is not None:
+        # Platform association query - may fail if user_game is None
+        if user_game is not None and pc_platform is not None and steam_storefront is not None:
             platform_association = session.exec(
                 select(UserGamePlatform).where(
                     and_(
-                        UserGamePlatform.user_game_id == user_game.id,
-                        UserGamePlatform.platform_id == pc_platform.id,
-                        UserGamePlatform.storefront_id == steam_storefront.id
+                        UserGamePlatform.user_game_id == user_game.id,  # type: ignore[arg-type]
+                        UserGamePlatform.platform_id == pc_platform.id,  # type: ignore[arg-type]
+                        UserGamePlatform.storefront_id == steam_storefront.id  # type: ignore[arg-type]
                     )
                 )
             ).first()

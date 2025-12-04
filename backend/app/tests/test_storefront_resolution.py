@@ -243,7 +243,7 @@ class TestStorefrontResolution:
             assert isinstance(result[0], StorefrontSuggestion)
             assert result[0].storefront_id == sample_storefront.id
             assert result[0].confidence > 0.8  # Should be boosted
-            assert "Compatible with platform" in result[0].reason
+            assert result[0].reason is not None and "Compatible with platform" in result[0].reason
             
         finally:
             # Restore original function

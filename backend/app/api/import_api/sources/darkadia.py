@@ -520,7 +520,7 @@ async def list_darkadia_games(
         
         # Get total count for pagination
         # Use direct count query to avoid Cartesian product from subquery
-        count_query = select(func.count(DarkadiaGame.id)).where(DarkadiaGame.user_id == current_user.id)
+        count_query = select(func.count('*')).where(DarkadiaGame.user_id == current_user.id)
         
         # Apply the same filtering as base_query
         if status_filter:
@@ -567,8 +567,8 @@ async def list_darkadia_games(
             imports = session.exec(imports_query).all()
             
             # Aggregate platform information
-            platforms = []
-            primary_platform = None
+            platforms: list[DarkadiaPlatformInfo] = []
+            primary_platform: Optional[DarkadiaPlatformInfo] = None
             
             for imp in imports:
                 # Determine resolution status
@@ -1465,7 +1465,7 @@ async def get_resolution_summary(
         try:
             logger.info("🔍 [DEBUG] Executing total imports count query...")
             total_imports = session.exec(
-                select(func.count(DarkadiaImport.id))
+                select(func.count('*'))
                 .where(DarkadiaImport.user_id == current_user.id)
             ).one()
             logger.info(f"🔍 [DEBUG] ✅ Total DarkadiaImport records for user: {total_imports}")
@@ -1476,7 +1476,7 @@ async def get_resolution_summary(
         try:
             logger.info("🔍 [DEBUG] Executing imports with platform names query...")
             imports_with_platforms = session.exec(
-                select(func.count(DarkadiaImport.id))
+                select(func.count('*'))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
                     is_not(DarkadiaImport.original_platform_name, None)
@@ -1490,7 +1490,7 @@ async def get_resolution_summary(
         try:
             logger.info("🔍 [DEBUG] Executing imports with user_game_platform_id query...")
             imports_with_platform_ids = session.exec(
-                select(func.count(DarkadiaImport.id))
+                select(func.count('*'))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
                     is_not(DarkadiaImport.user_game_platform_id, None)
@@ -1512,7 +1512,7 @@ async def get_resolution_summary(
                 raise AttributeError("resolved_platform_id field does not exist on DarkadiaImport model")
             
             imports_with_resolved_platform_ids = session.exec(
-                select(func.count(DarkadiaImport.id))
+                select(func.count('*'))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
                     is_not(DarkadiaImport.resolved_platform_id, None)
@@ -1532,7 +1532,7 @@ async def get_resolution_summary(
                 raise AttributeError("resolved_storefront_id field does not exist on DarkadiaImport model")
             
             imports_with_resolved_storefront_ids = session.exec(
-                select(func.count(DarkadiaImport.id))
+                select(func.count('*'))
                 .where(
                     DarkadiaImport.user_id == current_user.id,
                     is_not(DarkadiaImport.resolved_storefront_id, None)
@@ -1551,9 +1551,9 @@ async def get_resolution_summary(
                 select(
                     DarkadiaImport.original_platform_name,
                     label(Platform.name, 'platform_name'),
-                    label(func.count(DarkadiaImport.id), 'game_count')
+                    label(func.count('*'), 'game_count')
                 )
-                .outerjoin(Platform, DarkadiaImport.resolved_platform_id == Platform.id)
+                .outerjoin(Platform, DarkadiaImport.resolved_platform_id == Platform.id)  # type: ignore[arg-type]
                 .where(
                     DarkadiaImport.user_id == current_user.id,
                     is_not(DarkadiaImport.original_platform_name, None),
@@ -1577,7 +1577,8 @@ async def get_resolution_summary(
             raise
         
         for i, result in enumerate(platform_results):
-            logger.info(f"🔍 [DEBUG] Platform result {i}: original='{result.original_platform_name}', mapped='{result.platform_name}', count={result.game_count}")
+            # Row results: [0]=original_platform_name, [1]=platform_name, [2]=game_count
+            logger.info(f"🔍 [DEBUG] Platform result {i}: original='{result[0]}', mapped='{result[1]}', count={result[2]}")
         
         # Get storefront mappings
         # Only include storefronts that are successfully resolved (not requiring resolution)
@@ -1585,9 +1586,9 @@ async def get_resolution_summary(
             select(
                 DarkadiaImport.original_storefront_name,
                 label(Storefront.name, 'storefront_name'),
-                label(func.count(DarkadiaImport.id), 'game_count')
+                label(func.count('*'), 'game_count')
             )
-            .outerjoin(Storefront, DarkadiaImport.resolved_storefront_id == Storefront.id)
+            .outerjoin(Storefront, DarkadiaImport.resolved_storefront_id == Storefront.id)  # type: ignore[arg-type]
             .where(
                 DarkadiaImport.user_id == current_user.id,
                 is_not(DarkadiaImport.original_storefront_name, None),
@@ -1602,15 +1603,17 @@ async def get_resolution_summary(
         logger.info(f"🔍 [DEBUG] Storefront query returned {len(storefront_results)} results")
         
         for i, result in enumerate(storefront_results):
-            logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{result.original_storefront_name}', mapped='{result.storefront_name}', count={result.game_count}")
+            # Row results: [0]=original_storefront_name, [1]=storefront_name, [2]=game_count
+            logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{result[0]}', mapped='{result[1]}', count={result[2]}")
         
         # Process platform mappings - only successfully resolved platforms
         platforms = []
         for result in platform_results:
+            # Row results: [0]=original_platform_name, [1]=platform_name, [2]=game_count
             platform_entry = {
-                "original": result.original_platform_name,
-                "mapped": result.platform_name,  # Will always have a value since we filtered for resolved platforms
-                "game_count": result.game_count
+                "original": result[0],
+                "mapped": result[1],  # Will always have a value since we filtered for resolved platforms
+                "game_count": result[2]
             }
             platforms.append(platform_entry)
             logger.info(f"🔍 [DEBUG] Processed platform: {platform_entry}")
@@ -1618,10 +1621,11 @@ async def get_resolution_summary(
         # Process storefront mappings - only successfully resolved storefronts
         storefronts = []
         for result in storefront_results:
+            # Row results: [0]=original_storefront_name, [1]=storefront_name, [2]=game_count
             storefront_entry = {
-                "original": result.original_storefront_name,
-                "mapped": result.storefront_name,  # Will always have a value since we filtered out unresolved storefronts
-                "game_count": result.game_count
+                "original": result[0],
+                "mapped": result[1],  # Will always have a value since we filtered out unresolved storefronts
+                "game_count": result[2]
             }
             storefronts.append(storefront_entry)
             logger.info(f"🔍 [DEBUG] Processed storefront: {storefront_entry}")

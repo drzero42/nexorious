@@ -501,15 +501,15 @@ class TestUserGameTagModel:
         # Verify user 1 has 2 tagged games
         user1_tagged_games = model_session.exec(
             select(UserGameTag)
-            .join(Tag, Tag.id == UserGameTag.tag_id)
+            .join(Tag, Tag.id == UserGameTag.tag_id)  # type: ignore[arg-type]
             .where(Tag.user_id == test_user_for_model.id)
         ).all()
         assert len(user1_tagged_games) == 2
-        
+
         # Verify user 2 has 1 tagged game
         user2_tagged_games = model_session.exec(
             select(UserGameTag)
-            .join(Tag, Tag.id == UserGameTag.tag_id)
+            .join(Tag, Tag.id == UserGameTag.tag_id)  # type: ignore[arg-type]
             .where(Tag.user_id == second_test_user.id)
         ).all()
         assert len(user2_tagged_games) == 1

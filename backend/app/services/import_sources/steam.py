@@ -4,7 +4,7 @@ Steam import service implementation using the new import framework.
 
 import logging
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from datetime import datetime, timezone
 from sqlmodel import Session, select, and_, func
 
@@ -24,7 +24,7 @@ from ...models.user_game import UserGame
 from ...services.steam import create_steam_service, SteamAuthenticationError, SteamAPIError
 from ...services.steam_games import create_steam_games_service, SteamGamesServiceError
 from ...services.igdb import IGDBService
-from ...utils.sqlalchemy_typed import is_, asc
+from ...utils.sqlalchemy_typed import is_, is_not, asc
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class SteamImportService(ImportSourceService):
         self.session = session
         self.igdb_service = igdb_service
     
-    def _handle_steam_service_error(self, e: Exception) -> None:
+    def _handle_steam_service_error(self, e: Exception) -> NoReturn:
         """Convert SteamGamesServiceError to appropriate exceptions for HTTP status codes."""
         error_msg = str(e)
         if "not found or access denied" in error_msg.lower():
@@ -250,7 +250,7 @@ class SteamImportService(ImportSourceService):
                     {
                         "appid": game.appid,
                         "name": game.name,
-                        "img_icon_url": game.img_icon_url
+                        "img_icon_url": getattr(game, 'img_icon_url', None)
                     } for game in games[:10]  # Show first 10 games as preview
                 ],
                 "steam_user_info": {
@@ -325,12 +325,12 @@ class SteamImportService(ImportSourceService):
                 query = query.where(and_(is_(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "matched":
                 # Matched but not synced: has igdb_id but we'll filter for non-synced in Python
-                query = query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
+                query = query.where(and_(is_not(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "ignored":
                 query = query.where(SteamGame.ignored)
             elif status_filter == "synced":
                 # Synced games: we'll filter these post-query using is_steam_game_synced
-                query = query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
+                query = query.where(and_(is_not(SteamGame.igdb_id, None), not SteamGame.ignored))
         
         # Apply search filter
         if search:
@@ -339,16 +339,16 @@ class SteamImportService(ImportSourceService):
         
         # Get total count with proper joins for synced games
         # For sync status, we'll need to count after filtering, so we build a base count query
-        count_query = select(func.count(SteamGame.id)).where(SteamGame.user_id == user_id)
+        count_query = select(func.count('*')).where(SteamGame.user_id == user_id)
         if status_filter:
             if status_filter == "unmatched":
                 count_query = count_query.where(and_(is_(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "matched":
-                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
+                count_query = count_query.where(and_(is_not(SteamGame.igdb_id, None), not SteamGame.ignored))
             elif status_filter == "ignored":
                 count_query = count_query.where(SteamGame.ignored)
             elif status_filter == "synced":
-                count_query = count_query.where(and_(SteamGame.igdb_id.isnot(None), not SteamGame.ignored))
+                count_query = count_query.where(and_(is_not(SteamGame.igdb_id, None), not SteamGame.ignored))
 
         if search:
             search_term = f"%{search.strip().lower()}%"

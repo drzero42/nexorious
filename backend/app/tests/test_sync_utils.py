@@ -496,9 +496,9 @@ class TestPerformance:
         steam_storefront = steam_dependencies["storefront"]
 
         # Create 1000 games for performance testing
-        games = []
-        user_games = []
-        platform_associations = []
+        games: list[Game] = []
+        user_games: list[UserGame] = []
+        platform_associations: list[tuple[UserGamePlatform, UserGame]] = []
 
         # Batch create games
         for i in range(1000):

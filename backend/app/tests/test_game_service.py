@@ -353,6 +353,8 @@ class TestGameServiceCreateOrUpdateFromIGDB:
         )
 
         import json
+        assert result.igdb_platform_ids is not None
+        assert result.igdb_platform_names is not None
         platform_ids = json.loads(result.igdb_platform_ids)
         platform_names = json.loads(result.igdb_platform_names)
 

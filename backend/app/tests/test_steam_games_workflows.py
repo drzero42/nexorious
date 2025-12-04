@@ -468,8 +468,8 @@ class TestAutoMatchingWorkflows:
                 failed_matches=1,
                 skipped_games=0,
                 results=[
-                    AutoMatchResult("game1", "Game 1", 730, True, "igdb-1", "Game 1", 0.85),
-                    AutoMatchResult("game2", "Game 2", 440, True, "igdb-2", "Game 2", 0.90),
+                    AutoMatchResult("game1", "Game 1", 730, True, 1001, "Game 1", 0.85),
+                    AutoMatchResult("game2", "Game 2", 440, True, 1002, "Game 2", 0.90),
                     AutoMatchResult("game3", "Game 3", 570, False, None, None, 0.60)  # Low confidence
                 ],
                 errors=[]

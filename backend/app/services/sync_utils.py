@@ -68,11 +68,11 @@ def is_game_synced(
         query = select(
             exists().where(
                 and_(
-                    UserGame.user_id == user_id,
-                    UserGame.game_id == igdb_id,  # UserGame.game_id references games.id which is the IGDB ID
-                    UserGamePlatform.user_game_id == UserGame.id,
-                    UserGamePlatform.platform_id == platform_id,
-                    UserGamePlatform.storefront_id == storefront_id
+                    UserGame.user_id == user_id,  # type: ignore[arg-type]
+                    UserGame.game_id == igdb_id,  # type: ignore[arg-type]
+                    UserGamePlatform.user_game_id == UserGame.id,  # type: ignore[arg-type]
+                    UserGamePlatform.platform_id == platform_id,  # type: ignore[arg-type]
+                    UserGamePlatform.storefront_id == storefront_id  # type: ignore[arg-type]
                 )
             )
         )

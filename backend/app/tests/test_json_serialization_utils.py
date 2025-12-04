@@ -152,7 +152,7 @@ class TestMakeJsonSerializable:
         """Test handling of dataclass objects."""
         test_obj = SampleDataClass(
             name="test",
-            timestamp=pd.Timestamp('2023-01-15'),
+            timestamp=pd.Timestamp('2023-01-15'),  # type: ignore[arg-type]
             value=42
         )
         
