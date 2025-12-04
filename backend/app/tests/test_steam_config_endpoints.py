@@ -49,6 +49,7 @@ class TestSteamConfigEndpoints:
         """Test getting Steam config when user has configuration."""
         # Set up user with Steam config
         user = session.get(User, test_user.id)
+        assert user is not None
         steam_config = {
             "steam": {
                 "web_api_key": "ABCDEF1234567890ABCDEF1234567890",
@@ -137,6 +138,7 @@ class TestSteamConfigEndpoints:
         """Test deleting Steam config successfully."""
         # Set up user with Steam config
         user = session.get(User, test_user.id)
+        assert user is not None
         steam_config = {
             "steam": {
                 "web_api_key": "ABCDEF1234567890ABCDEF1234567890",
@@ -146,14 +148,15 @@ class TestSteamConfigEndpoints:
         }
         user.preferences_json = json.dumps(steam_config)
         session.commit()
-        
+
         response = client.delete("/api/import/sources/steam/config", headers=auth_headers)
-        
+
         assert_api_success(response)
         assert "deleted successfully" in response.json()["message"]
-        
+
         # Verify Steam config was removed but other preferences remain
         session.refresh(user)
+        assert user is not None
         preferences = user.preferences
         assert "steam" not in preferences
         assert preferences.get("other_setting") == "value"
