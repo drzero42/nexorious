@@ -132,11 +132,78 @@ uv run pytest scripts/tests/ -v
 
 ### Essential Workflow
 1. **Planning**: Read `docs/PRD.md` before starting work
-2. **Branching**: Create feature branch with task name when working on tasks
+2. **Branching**: Create feature branch before starting ANY task work (see Branch Workflow below)
 3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
 5. **Documentation**: Use context7 MCP to verify API usage in generated code
 6. **Expert Consultation**: Always consult the experts
+
+### Branch Workflow (MANDATORY)
+
+**You MUST use branches when working on tasks. Never commit directly to main.**
+
+#### Starting Work on a Task
+```bash
+# 1. Ensure you're on main and up to date
+git checkout main
+git pull origin main
+
+# 2. Create a feature branch using the beads issue ID
+git checkout -b bd-42-fix-login-bug  # Format: <issue-id>-<short-description>
+
+# 3. Mark the issue as in progress
+bd update bd-42 --status in_progress
+```
+
+#### Branch Naming Convention
+- Format: `<issue-id>-<short-kebab-case-description>`
+- Examples:
+  - `bd-42-fix-login-bug`
+  - `bd-55-add-dark-mode`
+  - `bd-100-refactor-auth-service`
+
+#### During Development
+```bash
+# Make commits on your feature branch
+git add <files>
+git commit -m "feat(auth): implement JWT refresh logic"
+
+# Keep branch up to date with main (if needed)
+git fetch origin main
+git rebase origin/main  # or merge if preferred
+```
+
+#### Completing Work
+```bash
+# 1. Ensure all tests pass
+uv run pytest  # Backend
+npm run check && npm run test  # Frontend
+
+# 2. Close the beads issue
+bd close bd-42
+
+# 3. Sync beads changes
+bd sync
+
+# 4. Push the branch
+git push -u origin bd-42-fix-login-bug
+
+# 5. Create a pull request
+gh pr create --title "Fix login bug" --body "Closes bd-42"
+
+# 6. After PR is merged, clean up
+git checkout main
+git pull origin main
+git branch -d bd-42-fix-login-bug
+```
+
+#### Rules
+- ✅ Always create a branch before starting task work
+- ✅ Name branches with the beads issue ID
+- ✅ Keep branches focused on a single task/issue
+- ✅ Create PRs for code review before merging to main
+- ❌ Never commit directly to main
+- ❌ Never work on multiple unrelated changes in one branch
 
 ### Code Reference Documents
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators

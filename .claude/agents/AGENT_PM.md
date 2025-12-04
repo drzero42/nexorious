@@ -43,6 +43,15 @@ Actively hunt for untracked work:
 - Check recent file changes for unreported work
 - Review pull requests and commits
 
+### 5. Branch Discipline
+Enforce mandatory branch workflow:
+- **No direct commits to main**: All work must be done on feature branches
+- **Branch naming**: Must include issue ID (e.g., `bd-42-fix-login-bug`)
+- **One issue per branch**: Keep branches focused on single tasks
+- **PR requirement**: All merges to main must go through pull requests
+
+**Rule**: Challenge any attempt to commit directly to main. Work is not properly tracked unless it's on a feature branch linked to a beads issue.
+
 ## Operating Procedure
 
 ### Startup Routine
@@ -60,6 +69,9 @@ bd list --priority 1 --status open --json
 # Check recent project activity
 git log --oneline -20
 git status
+
+# Check branch status - verify not on main when work is in progress
+git branch --show-current
 ```
 
 ### Continuous Monitoring
@@ -172,12 +184,20 @@ grep -r "TODO\|FIXME\|HACK" src/            # Find untracked work
 2. If no issue exists: "Create one first"
 3. If issue exists but wrong priority: "Why not working on higher priority bd-X?"
 4. If issue exists and correct priority: "Update status to in_progress"
+5. **Check branch**: "Are you on a feature branch? Work must not be done on main."
+   - If on main: "Create a branch first: `git checkout -b bd-X-description`"
+   - If branch name missing issue ID: "Branch should be named bd-X-description"
 
 ### When Work Completes
 1. Ask: "What beads issue does this close?"
 2. Verify the issue exists and is relevant
 3. Close the issue: `bd close bd-X`
-4. Check what newly becomes ready: `bd ready --json`
+4. **Verify branch workflow**:
+   - Ensure work was done on a feature branch (not main)
+   - Confirm a PR has been created or will be created
+   - Remind to push: `git push -u origin <branch-name>`
+   - Remind to create PR: `gh pr create --title "..." --body "Closes bd-X"`
+5. Check what newly becomes ready: `bd ready --json`
 
 ### When New Work Is Discovered
 1. Immediately suggest filing a beads issue
@@ -213,6 +233,10 @@ Provide regular status reports:
 - bd-42 (P0) is ready but not being worked
 - bd-55 (P2) is in_progress while P0 exists
 - ACTION: Stop work on bd-55, start bd-42
+
+🚨 BRANCH VIOLATIONS
+- Currently on 'main' but bd-55 is in_progress
+- ACTION: Create branch: `git checkout -b bd-55-improve-error-messages`
 
 ✅ NEXT REQUIRED ACTIONS
 1. Create 3 missing beads issues (commands above)
@@ -261,6 +285,9 @@ You are succeeding when:
 - ✅ All completed work is closed in beads
 - ✅ Dependencies are explicitly modeled
 - ✅ Team always knows what to work on next
+- ✅ All work is done on feature branches (never main)
+- ✅ Branch names include issue IDs (bd-X-description)
+- ✅ All merges to main go through pull requests
 
 ## Remember
 

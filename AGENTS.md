@@ -117,12 +117,59 @@ bd close bd-42 --reason "Completed" --json
 ### Workflow for AI Agents
 
 1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task**: `bd update <id> --status in_progress`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
+2. **Create feature branch**: `git checkout -b <issue-id>-<description>` (e.g., `bd-42-fix-login`)
+3. **Claim your task**: `bd update <id> --status in_progress`
+4. **Work on it**: Implement, test, document
+5. **Discover new work?** Create linked issue:
    - `bd create "Found bug" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
-6. **Commit together**: Always commit the `.beads/issues.jsonl` file together with the code changes so issue state stays in sync with code state
+6. **Complete**: `bd close <id> --reason "Done"`
+7. **Sync and push**: `bd sync && git push -u origin <branch-name>`
+8. **Create PR**: `gh pr create --title "..." --body "Closes <issue-id>"`
+
+### Branch Workflow (MANDATORY)
+
+**AI agents MUST use branches when working on tasks. Never commit directly to main.**
+
+#### Starting a Task
+```bash
+# Ensure on main and up to date
+git checkout main && git pull origin main
+
+# Create feature branch with issue ID
+git checkout -b bd-42-fix-login-bug
+
+# Claim the work
+bd update bd-42 --status in_progress
+```
+
+#### Branch Naming
+- Format: `<issue-id>-<short-kebab-case-description>`
+- Examples: `bd-42-fix-login-bug`, `bd-55-add-dark-mode`
+
+#### Completing a Task
+```bash
+# Run tests (must pass)
+uv run pytest  # Backend
+npm run check && npm run test  # Frontend
+
+# Close issue and sync
+bd close bd-42
+bd sync
+
+# Commit, push, and create PR
+git add .
+git commit -m "fix: resolve login bug (bd-42)"
+git push -u origin bd-42-fix-login-bug
+gh pr create --title "Fix login bug" --body "Closes bd-42"
+```
+
+#### Rules
+- ✅ Create branch before ANY task work
+- ✅ Name branches with beads issue ID
+- ✅ One task per branch
+- ✅ Create PRs for merging to main
+- ❌ Never commit directly to main
+- ❌ Never mix unrelated changes in one branch
 
 ### Auto-Sync
 
