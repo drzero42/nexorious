@@ -8,16 +8,28 @@ from sqlalchemy import pool
 from alembic import context
 
 # Add the backend directory to the Python path so we can import our models
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from app.core.config import settings
 from sqlmodel import SQLModel
 
 # Import all models to ensure they are registered with SQLModel
 from app.models import (  # noqa: F401
-    User, UserSession, Platform, Storefront, PlatformStorefront,
-    Game, UserGame, UserGamePlatform, Tag, UserGameTag,
-    Wishlist, ImportJob, SteamGame, DarkadiaGame, DarkadiaImport
+    User,
+    UserSession,
+    Platform,
+    Storefront,
+    PlatformStorefront,
+    Game,
+    UserGame,
+    UserGamePlatform,
+    Tag,
+    UserGameTag,
+    Wishlist,
+    ImportJob,
+    SteamGame,
+    DarkadiaGame,
+    DarkadiaImport,
 )
 
 # this is the Alembic Config object, which provides
@@ -29,7 +41,9 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None and config.attributes.get('configure_logger', True):
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
@@ -82,7 +96,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, 
+            connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,  # Required for SQLite compatibility
         )
