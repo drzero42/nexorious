@@ -580,7 +580,8 @@ class TestBulkOperationsWorkflows:
             # Verify Steam game sync status using new sync checking function
             from app.services.sync_utils import is_steam_game_synced
             # Note: Steam game may or may not be synced depending on service behavior, just check it doesn't error
-            sync_status = is_steam_game_synced(session, test_user.id, steam_game.igdb_id) if steam_game.igdb_id else False
+            if steam_game.igdb_id:
+                is_steam_game_synced(session, test_user.id, steam_game.igdb_id)
         
         # Step 6: Test bulk sync idempotency (running again should not create duplicates)
         response = client_with_shared_session.post("/api/import/sources/steam/games/sync", headers=auth_headers)
