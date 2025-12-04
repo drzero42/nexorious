@@ -17,7 +17,7 @@ class TestRateLimitedIGDBService:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch('app.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.service.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
@@ -53,9 +53,12 @@ class TestRateLimitedIGDBService:
     @pytest.mark.asyncio
     async def test_rate_limited_api_request_success(self, igdb_service, mock_wrapper):
         """Test successful rate-limited API request."""
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             response = await igdb_service._rate_limited_api_request('games', 'fields id, name;')
-            
+
             assert response == b'[{"id": 1, "name": "Test Game"}]'
             mock_wrapper.api_request.assert_called_once_with('games', 'fields id, name;')
     
@@ -63,8 +66,11 @@ class TestRateLimitedIGDBService:
     async def test_rate_limited_api_request_error_handling(self, igdb_service, mock_wrapper):
         """Test error handling in rate-limited API request."""
         mock_wrapper.api_request.side_effect = Exception("API Error")
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             with pytest.raises(IGDBError, match="IGDB API request failed"):
                 await igdb_service._rate_limited_api_request('games', 'fields id, name;')
     
@@ -81,10 +87,13 @@ class TestRateLimitedIGDBService:
         }]'''
         
         mock_wrapper.api_request.return_value = games_response
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             results = await igdb_service.search_games("test", limit=1)
-        
+
         assert len(results) == 1
         assert results[0].title == "Test Game"
         assert results[0].hastily is None  # Time-to-beat not fetched during search for performance
@@ -109,10 +118,13 @@ class TestRateLimitedIGDBService:
         }]'''
         
         mock_wrapper.api_request.side_effect = [games_response, time_response]
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service.get_game_by_id("123")
-        
+
         assert result is not None
         assert result.title == "Test Game"
         assert result.hastily == 0  # 1800 seconds = 0.5 hours, rounds to 0
@@ -133,8 +145,11 @@ class TestRateLimitedIGDBService:
                 return f'[{{"id": {call_count}, "name": "Game {call_count}"}}]'.encode()
             
             mock_wrapper.api_request.side_effect = mock_api_request
-            
-            with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+            async def mock_get_wrapper():
+                return mock_wrapper
+
+            with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
                 # Launch 5 concurrent search requests (each makes 1 API call)
                 start_time = time.monotonic()
                 
@@ -166,12 +181,15 @@ class TestRateLimitedIGDBService:
         assert initial_status['utilization'] == 0.0
         
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test"}]'
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             # Make a few API calls
             await igdb_service._rate_limited_api_request('games', 'fields id;')
             await igdb_service._rate_limited_api_request('games', 'fields id;')
-            
+
             # Status should show reduced tokens (allow for small floating-point differences)
             status = igdb_service.get_rate_limiter_status()
             assert 5.5 <= status['tokens_available'] <= 6.5  # Should be around 6, allow for refill
@@ -190,11 +208,14 @@ class TestRateLimitedIGDBService:
             return b'[{"id": 1, "name": "Success"}]'
         
         mock_wrapper.api_request.side_effect = mock_api_request
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             with patch('asyncio.sleep', new_callable=AsyncMock):  # Speed up retries
                 response = await igdb_service._rate_limited_api_request('games', 'fields id;')
-        
+
         assert response == b'[{"id": 1, "name": "Success"}]'
         assert call_count == 2  # Should have retried once
     
@@ -214,11 +235,14 @@ class TestRateLimitedIGDBService:
         
         mock_wrapper = MagicMock()
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test"}]'
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             # First call should succeed (uses the one available token)
             await igdb_service._rate_limited_api_request('games', 'fields id;')
-            
+
             # Second call should fail due to rate limit (patch to use very short timeout)
             with patch.object(igdb_service._rate_limiter, 'call') as mock_call:
                 mock_call.side_effect = RateLimitExceeded("Rate limit exceeded", retry_after=1.0)
@@ -239,12 +263,15 @@ class TestRateLimitedIGDBService:
         igdb_service._rate_limiter = create_igdb_rate_limiter(restrictive_config)
         
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test"}]'
-        
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             # First call should succeed
             result1 = await igdb_service.search_games("test1", limit=1)
             assert len(result1) == 1
-            
+
             # Second call should fail due to rate limiting (patch to simulate failure)
             with patch.object(igdb_service._rate_limiter, 'call') as mock_call:
                 mock_call.side_effect = RateLimitExceeded("Rate limit exceeded")
@@ -268,10 +295,13 @@ class TestRateLimitedIGDBService:
             # Using tokens in one service shouldn't affect the other
             mock_wrapper = MagicMock()
             mock_wrapper.api_request.return_value = b'[{"id": 1}]'
-            
-            with patch.object(service1, '_get_wrapper', return_value=mock_wrapper):
+
+            async def mock_get_wrapper():
+                return mock_wrapper
+
+            with patch.object(service1, '_get_wrapper', mock_get_wrapper):
                 await service1._rate_limited_api_request('games', 'fields id;')
-            
+
             # Service1 should have fewer tokens, service2 should be unchanged
             status1_after = service1.get_rate_limiter_status()
             status2_after = service2.get_rate_limiter_status()

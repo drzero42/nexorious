@@ -100,19 +100,23 @@ class TestIGDBService:
     async def test_search_games_calls_fuzzy_matching(self):
         """Test that search_games calls fuzzy matching."""
         service = IGDBService()
-        
+
         # Mock the IGDB wrapper and API response
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game"}]'
-        
-        with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
+
+        # _get_wrapper is now async, so we need AsyncMock
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(service, '_get_wrapper', mock_get_wrapper):
             with patch.object(service, '_rank_games_by_fuzzy_match') as mock_rank:
                 mock_rank.return_value = [
                     GameMetadata(igdb_id=1, title="Test Game")
                 ]
-                
+
                 await service.search_games("test", limit=10)
-                
+
                 # Verify fuzzy matching was called
                 mock_rank.assert_called_once()
                 args, kwargs = mock_rank.call_args
@@ -123,9 +127,12 @@ class TestIGDBService:
     async def test_search_games_error_handling(self):
         """Test error handling in search_games."""
         service = IGDBService()
-        
-        # Mock authentication error
-        with patch.object(service, '_get_wrapper', side_effect=TwitchAuthError("Auth failed")):
+
+        # Mock authentication error - _get_wrapper is now async
+        async def mock_get_wrapper():
+            raise TwitchAuthError("Auth failed")
+
+        with patch.object(service, '_get_wrapper', mock_get_wrapper):
             with pytest.raises(IGDBError):
                 await service.search_games("test")
     
@@ -133,29 +140,35 @@ class TestIGDBService:
     async def test_get_game_by_id_success(self):
         """Test successful game retrieval by ID."""
         service = IGDBService()
-        
+
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game"}]'
-        
-        with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
-            with patch.object(service, '_parse_game_data') as mock_parse:
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(service, '_get_wrapper', mock_get_wrapper):
+            with patch('app.services.igdb.service.parse_game_data') as mock_parse:
                 mock_parse.return_value = GameMetadata(igdb_id=1, title="Test Game")
-                
+
                 result = await service.get_game_by_id(1)
-                
+
                 assert result is not None
                 assert result.title == "Test Game"
                 mock_parse.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_get_game_by_id_not_found(self):
         """Test handling of game not found."""
         service = IGDBService()
-        
+
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = b'[]'
-        
-        with patch.object(service, '_get_wrapper', return_value=mock_wrapper):
+
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(service, '_get_wrapper', mock_get_wrapper):
             result = await service.get_game_by_id(999999)
             assert result is None
 

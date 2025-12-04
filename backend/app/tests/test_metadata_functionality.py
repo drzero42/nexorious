@@ -15,7 +15,7 @@ class TestIGDBMetadataService:
     @pytest.fixture
     def igdb_service(self):
         """Create IGDB service instance for testing."""
-        with patch('app.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.service.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"

@@ -98,7 +98,7 @@ class TestIGDBService:
     @pytest.fixture
     def igdb_service(self):
         """Create an IGDB service instance for testing."""
-        with patch('app.services.igdb.settings') as mock_settings:
+        with patch('app.services.igdb.service.settings') as mock_settings:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
@@ -121,16 +121,19 @@ class TestIGDBService:
             "completely": 90000  # 25 hours in seconds
         }]).encode('utf-8')
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
-        
+
         # Result should be converted to hours
         assert result == {
             "hastily": 8,
             "normally": 15,
             "completely": 25
         }
-        
+
         mock_wrapper.api_request.assert_called_once()
         call_args = mock_wrapper.api_request.call_args
         assert call_args[0][0] == 'game_time_to_beats'
@@ -142,22 +145,28 @@ class TestIGDBService:
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = json.dumps([]).encode('utf-8')
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
-        
+
         assert result is None
-    
+
     @pytest.mark.asyncio
     async def test_get_time_to_beat_data_error(self, igdb_service):
         """Test error handling in time-to-beat data retrieval."""
         mock_wrapper = Mock()
         mock_wrapper.api_request.side_effect = Exception("API Error")
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
-        
+
         assert result is None
-    
+
     @pytest.mark.asyncio
     async def test_get_time_to_beat_data_seconds_to_hours_conversion(self, igdb_service):
         """Test that time-to-beat data is correctly converted from seconds to hours."""
@@ -169,9 +178,12 @@ class TestIGDBService:
             "completely": 180000  # 50 hours in seconds
         }]).encode('utf-8')
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
-        
+
         # Should be converted to hours and rounded
         assert result == {
             "hastily": 10,
@@ -190,9 +202,12 @@ class TestIGDBService:
             "completely": 39600  # 11 hours in seconds
         }]).encode('utf-8')
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper):
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper):
             result = await igdb_service._get_time_to_beat_data("12345")
-        
+
         assert result == {
             "hastily": 8,      # Rounded from 7.5
             "normally": None,   # Preserved None
@@ -219,9 +234,12 @@ class TestIGDBService:
             "completely": 30
         }
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper), \
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper), \
              patch.object(igdb_service, '_get_time_to_beat_data', return_value=time_data):
-            
+
             result = await igdb_service.get_game_by_id("12345")
         
         assert result is not None
@@ -242,9 +260,12 @@ class TestIGDBService:
         }]
         mock_wrapper.api_request.return_value = json.dumps(games_data).encode('utf-8')
         
-        with patch.object(igdb_service, '_get_wrapper', return_value=mock_wrapper), \
+        async def mock_get_wrapper():
+            return mock_wrapper
+
+        with patch.object(igdb_service, '_get_wrapper', mock_get_wrapper), \
              patch.object(igdb_service, '_get_time_to_beat_data') as mock_time_fetch:
-            
+
             results = await igdb_service.search_games("test")
             
             assert len(results) == 1
