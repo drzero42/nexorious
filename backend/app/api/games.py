@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, or_, and_, func, col
 from datetime import datetime, timezone, date
 from decimal import Decimal
-import json
 import logging
 from typing import Annotated, Optional, List
 
@@ -15,6 +14,7 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.game import Game
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
+from ..services.game_service import GameService, GameNotFoundError
 from ..api.dependencies import get_igdb_service_dependency
 from ..utils.sqlalchemy_typed import is_not, desc, asc
 from ..schemas.game import (
@@ -351,99 +351,20 @@ async def import_from_igdb(
     """
 
     try:
-        # Retrieve full game metadata from IGDB
-        game_metadata = await igdb_service.get_game_by_id(import_data.igdb_id)
+        # Use GameService to handle all business logic
+        game_service = GameService(session, igdb_service)
+        game = await game_service.create_or_update_game_from_igdb(
+            igdb_id=import_data.igdb_id,
+            custom_overrides=import_data.custom_overrides,
+            download_cover_art=download_cover_art,
+        )
 
-        if not game_metadata:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Game not found in IGDB"
-            )
+        return GameResponse.model_validate(game)
 
-        # Check if game already exists in our database
-        existing_game = session.get(Game, import_data.igdb_id)
-
-        if existing_game:
-            logger.info(
-                f"IGDB game import found existing game - returning existing entry. "
-                f"IGDB ID: {import_data.igdb_id} | "
-                f"Existing game ID: {existing_game.id} | "
-                f"Existing title: '{existing_game.title}' | "
-                f"IGDB title: '{game_metadata.title}' | "
-                f"Title match: {existing_game.title == game_metadata.title} | "
-                f"Existing game created: {existing_game.created_at} | "
-                f"Existing developer: {existing_game.developer} | "
-                f"IGDB developer: {game_metadata.developer} | "
-                f"Requested by user: {current_user.username} ({current_user.id})"
-            )
-            # Apply any custom overrides from the user to the existing game if requested
-            if import_data.custom_overrides:
-                for key, value in import_data.custom_overrides.items():
-                    if hasattr(existing_game, key) and value is not None:
-                        setattr(existing_game, key, value)
-                session.commit()
-                session.refresh(existing_game)
-
-            return GameResponse.model_validate(existing_game)
-
-        # Create game from IGDB metadata
-        game_data = {
-            "id": game_metadata.igdb_id,  # IGDB ID as primary key
-            "title": game_metadata.title,
-            "description": game_metadata.description,
-            "genre": game_metadata.genre,
-            "developer": game_metadata.developer,
-            "publisher": game_metadata.publisher,
-            "release_date": parse_date_string(game_metadata.release_date),
-            "cover_art_url": game_metadata.cover_art_url,
-            "rating_average": game_metadata.rating_average,
-            "rating_count": game_metadata.rating_count or 0,
-            "estimated_playtime_hours": game_metadata.estimated_playtime_hours,
-            "howlongtobeat_main": game_metadata.hastily,
-            "howlongtobeat_extra": game_metadata.normally,
-            "howlongtobeat_completionist": game_metadata.completely,
-            "igdb_slug": game_metadata.igdb_slug,
-            "igdb_platform_ids": json.dumps(game_metadata.igdb_platform_ids)
-            if game_metadata.igdb_platform_ids
-            else None,
-            "igdb_platform_names": json.dumps(game_metadata.platform_names)
-            if game_metadata.platform_names
-            else None,
-            "game_metadata": "{}",
-        }
-
-        # Apply any custom overrides from the user
-        if import_data.custom_overrides:
-            for key, value in import_data.custom_overrides.items():
-                if key in game_data and value is not None:
-                    game_data[key] = value
-
-        # Create the game
-        new_game = Game(**game_data)
-        session.add(new_game)
-        session.commit()
-        session.refresh(new_game)
-
-        # Download cover art if requested and available
-        if download_cover_art and game_metadata.cover_art_url:
-            try:
-                local_url = await igdb_service.download_and_store_cover_art(
-                    game_metadata.igdb_id, game_metadata.cover_art_url
-                )
-                if local_url:
-                    new_game.cover_art_url = local_url
-                    session.commit()
-                    session.refresh(new_game)
-            except Exception as e:
-                # Log the error but don't fail the import
-                logger.error(
-                    f"Failed to download cover art for game {new_game.id}: {e}"
-                )
-
-        return GameResponse.model_validate(new_game)
-
-    except HTTPException:
-        # Re-raise HTTPException as-is (e.g., 404 Game not found)
-        raise
+    except GameNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Game not found in IGDB"
+        )
     except TwitchAuthError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
