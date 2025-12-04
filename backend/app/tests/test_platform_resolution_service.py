@@ -6,7 +6,7 @@ import pytest
 
 from app.services.platform_resolution import PlatformResolutionService
 from app.models.platform import Platform, Storefront
-from app.api.schemas.platform import PlatformSuggestion, StorefrontSuggestion
+from app.schemas.platform import PlatformSuggestion, StorefrontSuggestion
 
 
 @pytest.fixture

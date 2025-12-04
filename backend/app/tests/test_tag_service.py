@@ -13,7 +13,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.user_game import UserGame
 from ..services.tag_service import TagService
-from ..api.schemas.tag import TagCreateRequest, TagUpdateRequest
+from ..schemas.tag import TagCreateRequest, TagUpdateRequest
 from .integration_test_utils import create_test_games
 
 

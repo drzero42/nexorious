@@ -21,7 +21,7 @@ from ....models.darkadia_import import DarkadiaImport
 from ....models.platform import Platform, Storefront
 from ....services.import_sources.darkadia import create_darkadia_import_service
 from ....services.platform_resolution import create_platform_resolution_service
-from ...schemas.import_schemas import (
+from ....schemas.import_schemas import (
     VerificationResponse,
     LibraryPreviewResponse,
     ImportGameResponse,
@@ -35,7 +35,7 @@ from ...schemas.import_schemas import (
     GameIgnoreResponse,
     BulkOperationResponse
 )
-from ...schemas.darkadia import (
+from ....schemas.darkadia import (
     DarkadiaConfigRequest,
     DarkadiaConfigResponse,
     DarkadiaVerificationRequest,
@@ -49,7 +49,7 @@ from ...schemas.darkadia import (
     DarkadiaGamesListResponse,
     DarkadiaPlatformInfo
 )
-from ....api.schemas.platform import (
+from ....schemas.platform import (
     PendingResolutionsListResponse,
     BulkPlatformResolutionRequest,
     BulkPlatformResolutionResponse

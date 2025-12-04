@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.models.platform import Platform, Storefront, PlatformStorefront
 from app.models.darkadia_import import DarkadiaImport
 from app.services.platform_resolution import PlatformResolutionService
-from app.api.schemas.platform import StorefrontSuggestion
+from app.schemas.platform import StorefrontSuggestion
 
 
 class TestStorefrontResolution:

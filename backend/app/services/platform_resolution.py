@@ -15,7 +15,7 @@ from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..models.darkadia_import import DarkadiaImport
 from ..utils.fuzzy_match import calculate_fuzzy_confidence
 from ..utils.sqlalchemy_typed import is_
-from ..api.schemas.platform import (
+from ..schemas.platform import (
     PlatformSuggestion,
     StorefrontSuggestion,
     PlatformResolutionData,

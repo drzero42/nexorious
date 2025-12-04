@@ -19,7 +19,7 @@ from ....models.batch_session import BatchOperationType, BATCH_SIZES, BatchSessi
 from ....services.batch_session_manager import get_batch_session_manager
 from ....services.import_sources.darkadia import create_darkadia_import_service
 from ....utils.sqlalchemy_typed import is_, is_not, in_
-from ...schemas.batch import (
+from ....schemas.batch import (
     BatchSessionStartRequest,
     BatchSessionStartResponse,
     BatchNextRequest, 
@@ -27,7 +27,7 @@ from ...schemas.batch import (
     BatchStatusResponse,
     BatchCancelResponse
 )
-from ...schemas.darkadia import DarkadiaGameResponse
+from ....schemas.darkadia import DarkadiaGameResponse
 
 router = APIRouter(prefix="/batch", tags=["Darkadia Batch Import"])
 logger = logging.getLogger(__name__)

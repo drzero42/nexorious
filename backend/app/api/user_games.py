@@ -16,7 +16,7 @@ from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
 from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc
-from ..api.schemas.user_game import (
+from ..schemas.user_game import (
     UserGameCreateRequest,
     UserGameUpdateRequest,
     ProgressUpdateRequest,
@@ -30,7 +30,7 @@ from ..api.schemas.user_game import (
     BulkRemovePlatformRequest,
     CollectionStatsResponse
 )
-from ..api.schemas.common import SuccessResponse
+from ..schemas.common import SuccessResponse
 from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
 
 router = APIRouter(prefix="/user-games", tags=["User Game Collection"])

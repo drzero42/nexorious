@@ -12,7 +12,7 @@ from ...core.database import get_session
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.import_job import ImportJob, ImportStatus
-from ..schemas.import_schemas import (
+from ...schemas.import_schemas import (
     ImportSourceInfo,
     ImportSourcesResponse,
     ImportJobsListResponse, 

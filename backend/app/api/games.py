@@ -17,7 +17,7 @@ from ..models.game import Game
 from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
 from ..api.dependencies import get_igdb_service_dependency
 from ..utils.sqlalchemy_typed import is_not, desc, asc
-from ..api.schemas.game import (
+from ..schemas.game import (
     GameResponse,
     GameListResponse,
     IGDBSearchRequest,
@@ -34,7 +34,7 @@ from ..api.schemas.game import (
     BulkCoverArtDownloadRequest,
     CoverArtResult,
 )
-from ..api.schemas.common import SuccessResponse
+from ..schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/games", tags=["Games"])
 logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ from ..core.security import get_current_admin_user, get_current_user
 from ..models.user import User
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..utils.sqlalchemy_typed import is_
-from ..api.schemas.platform import (
+from ..schemas.platform import (
     PlatformCreateRequest,
     PlatformUpdateRequest,
     PlatformResponse,
@@ -51,7 +51,7 @@ from ..api.schemas.platform import (
     StorefrontCompatibilityRequest,
     StorefrontCompatibilityResponse
 )
-from ..api.schemas.common import SuccessResponse
+from ..schemas.common import SuccessResponse
 from ..services.logo_service import LogoService, logo_service
 from ..services.platform_resolution import create_platform_resolution_service, PlatformResolutionService
 from ..core.audit_logging import get_client_ip, audit

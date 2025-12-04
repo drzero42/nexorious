@@ -11,7 +11,7 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
 from ..services.tag_service import TagService
-from .schemas.tag import (
+from ..schemas.tag import (
     TagResponse,
     TagCreateRequest,
     TagUpdateRequest,

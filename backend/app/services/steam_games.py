@@ -25,7 +25,7 @@ from ..services.steam import SteamService, SteamAuthenticationError, SteamAPIErr
 from ..services.igdb import IGDBService, IGDBError
 from ..services.sync_utils import is_steam_game_synced
 from ..api.games import import_from_igdb
-from ..api.schemas.game import GameMetadataAcceptRequest
+from ..schemas.game import GameMetadataAcceptRequest
 from ..utils.sqlalchemy_typed import is_, is_not
 
 

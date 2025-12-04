@@ -27,7 +27,7 @@ from ..models.user_game import UserGame
 from ..models.tag import Tag
 from ..models.wishlist import Wishlist
 from ..models.import_job import ImportJob
-from ..api.schemas.auth import (
+from ..schemas.auth import (
     UserRegisterRequest,
     UserLoginRequest,
     TokenResponse,
@@ -46,7 +46,7 @@ from ..api.schemas.auth import (
     AdminUserResponse,
     UserDeletionImpactResponse
 )
-from ..api.schemas.common import SuccessResponse
+from ..schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 logger = logging.getLogger(__name__)

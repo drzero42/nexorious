@@ -10,7 +10,7 @@ import uuid
 
 from ..models.tag import Tag, UserGameTag
 from ..models.user_game import UserGame
-from ..api.schemas.tag import (
+from ..schemas.tag import (
     TagCreateRequest,
     TagUpdateRequest
 )

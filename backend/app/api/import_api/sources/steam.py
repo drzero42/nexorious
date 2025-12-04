@@ -13,7 +13,7 @@ from ....models.user import User
 from ....services.import_sources.steam import create_steam_import_service
 from ....services.igdb import IGDBService
 from ...dependencies import verify_steam_games_enabled, get_igdb_service_dependency
-from ...schemas.import_schemas import (
+from ....schemas.import_schemas import (
     LibraryPreviewResponse,
     ImportGamesList,
     ImportGameResponse,
@@ -24,7 +24,7 @@ from ...schemas.import_schemas import (
     GameIgnoreResponse,
     BulkOperationResponse
 )
-from ...schemas.steam import (
+from ....schemas.steam import (
     SteamConfigRequest,
     SteamConfigResponse,
     SteamVerificationRequest,

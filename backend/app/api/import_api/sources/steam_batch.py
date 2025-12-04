@@ -18,7 +18,7 @@ from ....models.batch_session import BatchOperationType, BATCH_SIZES, BatchSessi
 from ....services.batch_session_manager import get_batch_session_manager
 from ....services.import_sources.steam import create_steam_import_service
 from ....utils.sqlalchemy_typed import is_, is_not, in_
-from ...schemas.batch import (
+from ....schemas.batch import (
     BatchSessionStartRequest,
     BatchSessionStartResponse,
     BatchNextRequest, 
@@ -26,7 +26,7 @@ from ...schemas.batch import (
     BatchStatusResponse,
     BatchCancelResponse
 )
-from ...schemas.steam import SteamGameResponse
+from ....schemas.steam import SteamGameResponse
 
 router = APIRouter(prefix="/batch", tags=["Steam Batch Import"])
 logger = logging.getLogger(__name__)
