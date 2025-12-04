@@ -84,7 +84,7 @@ def is_game_synced(
             f"platform {platform_id}, storefront {storefront_id}: {is_synced}"
         )
 
-        return is_synced
+        return bool(is_synced)
 
     except Exception as e:
         logger.error(

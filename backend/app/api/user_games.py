@@ -5,7 +5,7 @@ User game collection management endpoints.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, and_, func, or_, col
 from datetime import datetime, timezone
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional, List, Any
 import logging
 from decimal import Decimal
 
@@ -129,8 +129,8 @@ async def list_user_games(
     query = select(UserGame).where(UserGame.user_id == current_user.id)
     
     # Apply filters
-    filters = []
-    
+    filters: List[Any] = []
+
     if play_status is not None:
         filters.append(UserGame.play_status == play_status)
     
@@ -955,6 +955,7 @@ async def add_platform_to_user_game(
         )
     
     # Check if storefront exists (if provided)
+    storefront: Optional[Storefront] = None
     if platform_data.storefront_id:
         storefront = session.get(Storefront, platform_data.storefront_id)
         if not storefront:
@@ -962,7 +963,7 @@ async def add_platform_to_user_game(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Storefront not found"
             )
-    
+
     # Check if association already exists (platform + storefront combination)
     existing_platform = session.exec(
         select(UserGamePlatform).where(
@@ -973,9 +974,9 @@ async def add_platform_to_user_game(
             )
         )
     ).first()
-    
+
     if existing_platform:
-        storefront_name = storefront.name if platform_data.storefront_id and 'storefront' in locals() else "None"
+        storefront_name = storefront.name if storefront else "None"
         logger.error(
             f"409 CONFLICT - Platform association addition failed due to existing combination. "
             f"User: {current_user.username} ({current_user.id}) | "
@@ -1062,6 +1063,7 @@ async def update_platform_association(
         )
     
     # Check if storefront exists (if provided)
+    storefront: Optional[Storefront] = None
     if platform_data.storefront_id:
         storefront = session.get(Storefront, platform_data.storefront_id)
         if not storefront:
@@ -1069,9 +1071,9 @@ async def update_platform_association(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Storefront not found"
             )
-    
+
     # Check if the updated combination would conflict with existing associations
-    if (platform_assoc.platform_id != platform_data.platform_id or 
+    if (platform_assoc.platform_id != platform_data.platform_id or
         platform_assoc.storefront_id != platform_data.storefront_id):
         existing_platform = session.exec(
             select(UserGamePlatform).where(
@@ -1083,9 +1085,9 @@ async def update_platform_association(
                 )
             )
         ).first()
-        
+
         if existing_platform:
-            storefront_name = storefront.name if platform_data.storefront_id and 'storefront' in locals() else "None" 
+            storefront_name = storefront.name if storefront else "None" 
             old_platform = session.get(Platform, platform_assoc.platform_id)
             old_storefront = session.get(Storefront, platform_assoc.storefront_id) if platform_assoc.storefront_id else None
             logger.error(

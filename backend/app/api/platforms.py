@@ -1163,7 +1163,10 @@ async def get_platform_suggestions(
     
     client_ip = get_client_ip(http_request) if http_request else None
     logger.debug(f"Client IP: {client_ip}")
-    
+
+    # Initialize platform_name before try block for error handling
+    platform_name: Optional[str] = None
+
     try:
         # Handle empty platform names by getting default platform for storefront
         platform_name = request.unknown_platform_name
@@ -1201,7 +1204,7 @@ async def get_platform_suggestions(
         audit.log_invalid_input(
             user_id=current_user.id,
             operation_name="platform_suggestions",
-            invalid_input=platform_name if 'platform_name' in locals() else request.unknown_platform_name,
+            invalid_input=platform_name or request.unknown_platform_name or "unknown",
             request_ip=client_ip
         )
         

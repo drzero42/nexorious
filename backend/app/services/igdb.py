@@ -212,10 +212,12 @@ class IGDBService:
             logger.debug(f"Token preview: {self._access_token[:10]}...")
             return self._access_token
             
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error getting Twitch access token: {e}")
+            logger.debug(f"Response body: {e.response.text}")
+            raise TwitchAuthError(f"Failed to authenticate with Twitch: {e}")
         except httpx.HTTPError as e:
             logger.error(f"HTTP error getting Twitch access token: {e}")
-            if hasattr(e.response, 'text'):
-                logger.debug(f"Response body: {e.response.text}")
             raise TwitchAuthError(f"Failed to authenticate with Twitch: {e}")
         except Exception as e:
             logger.error(f"Unexpected error getting access token: {e}", exc_info=True)

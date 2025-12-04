@@ -109,6 +109,9 @@ class SecureCSVProcessor:
         self._start_time: Optional[float] = None
         self._process: Optional[psutil.Process] = None
         self._timeout_handler_set = False
+        self._chunk_iterator: Optional[AsyncIterator[List[Dict[str, Any]]]] = None
+        self._file_path: Optional[Path] = None
+        self._progress_callback: Optional[Callable[[ProcessingStats], None]] = None
     
     @asynccontextmanager
     async def process_csv_securely(self, 
@@ -165,6 +168,7 @@ class SecureCSVProcessor:
         """Async iterator protocol - get next chunk."""
         if self._chunk_iterator is None:
             # Initialize the chunk iterator on first call
+            assert self._file_path is not None, "File path must be set before iterating"
             self._chunk_iterator = self._process_csv_chunks(self._file_path, self._progress_callback)
         
         try:
@@ -346,17 +350,19 @@ class SecureCSVProcessor:
             file_size = file_path.stat().st_size
             max_file_size = limits.max_memory_mb * 1024 * 1024  # Convert to bytes
             
-            result = {
+            warnings: List[str] = []
+            errors: List[str] = []
+            result: Dict[str, Any] = {
                 'file_size_bytes': file_size,
                 'estimated_rows': 0,
                 'estimated_columns': 0,
                 'size_check_passed': file_size <= max_file_size,
-                'warnings': [],
-                'errors': []
+                'warnings': warnings,
+                'errors': errors
             }
             
             if file_size > max_file_size:
-                result['errors'].append(f"File size {file_size} exceeds limit {max_file_size}")
+                errors.append(f"File size {file_size} exceeds limit {max_file_size}")
                 return result
             
             # Quick structure check - read just the first few lines
@@ -371,10 +377,10 @@ class SecureCSVProcessor:
                 
                 # Check against limits
                 if result['estimated_rows'] > limits.max_rows:
-                    result['warnings'].append(f"Estimated rows {result['estimated_rows']} may exceed limit {limits.max_rows}")
-                
+                    warnings.append(f"Estimated rows {result['estimated_rows']} may exceed limit {limits.max_rows}")
+
             except Exception as e:
-                result['warnings'].append(f"Could not analyze CSV structure: {e}")
+                warnings.append(f"Could not analyze CSV structure: {e}")
             
             return result
             
