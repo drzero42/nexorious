@@ -161,6 +161,13 @@ git add .
 git commit -m "fix: resolve login bug (bd-42)"
 git push -u origin bd-42-fix-login-bug
 gh pr create --title "Fix login bug" --body "Closes bd-42"
+
+# Merge the PR (always delete branch on merge)
+gh pr merge --squash --delete-branch
+
+# Return to main
+git checkout main
+git pull origin main
 ```
 
 #### Rules
@@ -168,6 +175,7 @@ gh pr create --title "Fix login bug" --body "Closes bd-42"
 - ✅ Name branches with beads issue ID
 - ✅ One task per branch
 - ✅ Create PRs for merging to main
+- ✅ Always use `gh pr merge --delete-branch` to auto-delete branch
 - ❌ Never commit directly to main
 - ❌ Never mix unrelated changes in one branch
 

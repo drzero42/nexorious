@@ -191,10 +191,12 @@ git push -u origin bd-42-fix-login-bug
 # 5. Create a pull request
 gh pr create --title "Fix login bug" --body "Closes bd-42"
 
-# 6. After PR is merged, clean up
+# 6. Merge the PR (always delete branch on merge)
+gh pr merge --squash --delete-branch
+
+# 7. Return to main
 git checkout main
 git pull origin main
-git branch -d bd-42-fix-login-bug
 ```
 
 #### Rules
@@ -202,6 +204,7 @@ git branch -d bd-42-fix-login-bug
 - ✅ Name branches with the beads issue ID
 - ✅ Keep branches focused on a single task/issue
 - ✅ Create PRs for code review before merging to main
+- ✅ Always use `--delete-branch` when merging PRs
 - ❌ Never commit directly to main
 - ❌ Never work on multiple unrelated changes in one branch
 
