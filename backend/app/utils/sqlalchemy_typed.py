@@ -95,15 +95,15 @@ def like(column: Any, pattern: str) -> ColumnElement[bool]:
     return column.like(pattern)  # type: ignore[no-any-return]
 
 
-def in_(column: Any, values: list[Any]) -> ColumnElement[bool]:
+def in_(column: Any, values: Any) -> ColumnElement[bool]:
     """
     Type-safe wrapper for SQLAlchemy column.in_() method.
 
-    Checks if column value is in a list of values.
+    Checks if column value is in a collection of values or a subquery.
 
     Args:
         column: SQLAlchemy column or expression
-        values: List of values to check against
+        values: Collection of values (list, set, tuple) or a SQLAlchemy subquery
 
     Returns:
         SQLAlchemy column element representing the IN comparison
@@ -115,15 +115,15 @@ def in_(column: Any, values: list[Any]) -> ColumnElement[bool]:
     return column.in_(values)  # type: ignore[no-any-return]
 
 
-def not_in(column: Any, values: list[Any]) -> ColumnElement[bool]:
+def not_in(column: Any, values: Any) -> ColumnElement[bool]:
     """
     Type-safe wrapper for SQLAlchemy column.not_in() method.
 
-    Checks if column value is not in a list of values.
+    Checks if column value is not in a collection of values or subquery.
 
     Args:
         column: SQLAlchemy column or expression
-        values: List of values to check against
+        values: Collection of values (list, set, tuple) or a SQLAlchemy subquery
 
     Returns:
         SQLAlchemy column element representing the NOT IN comparison

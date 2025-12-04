@@ -16,7 +16,7 @@ class ImportSourceConfig:
     is_verified: bool
     configured_at: Optional[datetime] = None
     last_import: Optional[datetime] = None
-    config_data: Dict[str, Any] = None  # Source-specific config data
+    config_data: Optional[Dict[str, Any]] = None  # Source-specific config data
 
 
 @dataclass
@@ -73,9 +73,9 @@ class BulkOperationResult:
     successful_operations: int
     failed_operations: int
     skipped_items: int = 0
-    errors: List[str] = None
-    results: List[Any] = None  # Specific operation results
-    
+    errors: Optional[List[str]] = None
+    results: Optional[List[Any]] = None  # Specific operation results
+
     def __post_init__(self):
         if self.errors is None:
             self.errors = []

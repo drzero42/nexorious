@@ -181,7 +181,7 @@ def get_unreferenced_games(session: Session, limit: Optional[int] = None) -> lis
         query = query.limit(limit)
     
     unreferenced_games = session.exec(query).all()
-    
+
     logger.debug(f"Found {len(unreferenced_games)} unreferenced games")
-    
-    return unreferenced_games
+
+    return list(unreferenced_games)

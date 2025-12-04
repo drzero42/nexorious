@@ -131,6 +131,7 @@ class TestSeedPlatforms:
         
         # Verify the custom platform was preserved
         platform = session.exec(select(Platform).where(Platform.name == "pc-windows")).first()
+        assert platform is not None
         assert platform.source == "custom"  # Still custom
         assert platform.version_added is None  # No version set for custom
         assert platform.display_name == "My Custom PC"  # Custom name preserved
@@ -200,6 +201,7 @@ class TestSeedStorefronts:
         
         # Verify the custom storefront was preserved
         storefront = session.exec(select(Storefront).where(Storefront.name == "steam")).first()
+        assert storefront is not None
         assert storefront.source == "custom"  # Still custom
         assert storefront.version_added is None  # No version set for custom
         assert storefront.display_name == "My Custom Steam"  # Custom name preserved

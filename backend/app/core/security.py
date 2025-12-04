@@ -5,7 +5,7 @@ from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from .config import settings
 from .database import get_session
-from typing import Optional
+from typing import Optional, Dict, Any
 import uuid
 import hashlib
 
@@ -43,7 +43,7 @@ def create_refresh_token(data: dict) -> str:
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
-def verify_token(token: str, token_type: str = "access") -> dict:
+def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
     """Verify and decode a JWT token"""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
@@ -52,7 +52,7 @@ def verify_token(token: str, token_type: str = "access") -> dict:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type"
             )
-        return payload
+        return dict(payload)
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

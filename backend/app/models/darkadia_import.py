@@ -54,7 +54,7 @@ class DarkadiaImport(SQLModel, table=True):
     shelved: bool = Field(default=False, description="Game has been shelved")
     
     # Physical copy metadata (JSONB)
-    physical_copy_data_json: str = Field(
+    physical_copy_data_json: Optional[str] = Field(
         default=None,
         sa_column=Column("physical_copy_data", JSON),
         description="Physical copy metadata as JSON"

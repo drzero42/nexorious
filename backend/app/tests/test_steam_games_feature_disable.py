@@ -3,6 +3,7 @@ Tests for Steam Games feature disable functionality.
 """
 
 import pytest
+from typing import Optional
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
@@ -38,7 +39,7 @@ def client_fixture(session: Session):
     app.dependency_overrides.clear()
 
 
-def create_user_with_preferences(client: TestClient, username: str, password: str, preferences: dict = None):
+def create_user_with_preferences(client: TestClient, username: str, password: str, preferences: Optional[dict] = None):
     """Helper function to create a user with specific preferences."""
     # Register user
     register_response = client.post("/api/auth/register", json={
@@ -130,7 +131,11 @@ class TestSteamGamesFeatureDisable:
                 response = client.post(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
             elif method == "PUT":
                 response = client.put(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
-            
+            elif method == "DELETE":
+                response = client.delete(url, headers={"Authorization": f"Bearer {token}"})
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+
             assert response.status_code == 404, f"Expected 404 for {method} {url}, got {response.status_code}"
             assert response.json()["error"] == "Steam Games feature is disabled"
     
@@ -413,6 +418,10 @@ class TestSteamGamesPlatformStorefrontValidation:
                 response = client.post(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
             elif method == "PUT":
                 response = client.put(url, json=json_data, headers={"Authorization": f"Bearer {token}"})
-            
+            elif method == "DELETE":
+                response = client.delete(url, headers={"Authorization": f"Bearer {token}"})
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+
             assert response.status_code == 404, f"Expected 404 for {method} {url}, got {response.status_code}"
             assert "PC-Windows platform is inactive" in response.json()["error"]
