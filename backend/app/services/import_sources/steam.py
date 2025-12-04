@@ -285,8 +285,15 @@ class SteamImportService(ImportSourceService):
             raise ValueError("Steam configuration not verified")
         
         try:
+            # Create Steam service with the user's API key
+            steam_service = create_steam_service(steam_config["web_api_key"])
+
             # Use existing Steam games service for import logic
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(
+                self.session,
+                steam_service=steam_service,
+                igdb_service=self.igdb_service
+            )
             result = await steam_games_service.import_steam_library(
                 user_id=user_id,
                 steam_config=steam_config,
@@ -411,7 +418,7 @@ class SteamImportService(ImportSourceService):
     async def match_game(self, user_id: str, game_id: str, igdb_id: Optional[int]) -> ImportGame:
         """Match Steam game to IGDB entry."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             steam_game, message = await steam_games_service.match_steam_game_to_igdb(
                 steam_game_id=game_id,
                 igdb_id=igdb_id,
@@ -452,7 +459,7 @@ class SteamImportService(ImportSourceService):
     async def auto_match_game(self, user_id: str, game_id: str) -> MatchResult:
         """Automatically match single Steam game to IGDB."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             result = await steam_games_service.auto_match_single_steam_game(
                 steam_game_id=game_id,
                 user_id=user_id
@@ -473,7 +480,7 @@ class SteamImportService(ImportSourceService):
     async def auto_match_all_games(self, user_id: str) -> BulkOperationResult:
         """Automatically match all unmatched Steam games to IGDB."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             results = await steam_games_service.retry_auto_matching_for_unmatched_games(user_id)
             
             return BulkOperationResult(
@@ -490,7 +497,7 @@ class SteamImportService(ImportSourceService):
     async def sync_game(self, user_id: str, game_id: str) -> SyncResult:
         """Sync Steam game to main collection."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             result = await steam_games_service.sync_steam_game_to_collection(
                 steam_game_id=game_id,
                 user_id=user_id
@@ -510,7 +517,7 @@ class SteamImportService(ImportSourceService):
     async def sync_all_games(self, user_id: str) -> BulkOperationResult:
         """Sync all matched Steam games to main collection."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             results = await steam_games_service.sync_all_matched_games(user_id)
             
             return BulkOperationResult(
@@ -527,7 +534,7 @@ class SteamImportService(ImportSourceService):
     async def unsync_game(self, user_id: str, game_id: str) -> ImportGame:
         """Remove Steam game from main collection but keep import record."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             steam_game, message = await steam_games_service.unsync_steam_game_from_collection(
                 steam_game_id=game_id,
                 user_id=user_id
@@ -552,7 +559,7 @@ class SteamImportService(ImportSourceService):
     async def unsync_all_games(self, user_id: str) -> BulkOperationResult:
         """Remove all synced Steam games from main collection."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             results = await steam_games_service.unsync_all_synced_games(user_id)
             
             return BulkOperationResult(
@@ -568,7 +575,7 @@ class SteamImportService(ImportSourceService):
     async def ignore_game(self, user_id: str, game_id: str) -> ImportGame:
         """Toggle ignore status of Steam game."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             steam_game, message, ignored_status = steam_games_service.toggle_steam_game_ignored(
                 steam_game_id=game_id,
                 user_id=user_id
@@ -608,7 +615,7 @@ class SteamImportService(ImportSourceService):
     async def unignore_all_games(self, user_id: str) -> BulkOperationResult:
         """Unignore all ignored Steam games."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             results = await steam_games_service.unignore_all_steam_games(user_id)
             
             return BulkOperationResult(
@@ -624,7 +631,7 @@ class SteamImportService(ImportSourceService):
     async def unmatch_all_games(self, user_id: str) -> BulkOperationResult:
         """Remove IGDB matches from all matched Steam games."""
         try:
-            steam_games_service = create_steam_games_service(self.session, self.igdb_service)
+            steam_games_service = create_steam_games_service(self.session, igdb_service=self.igdb_service)
             results = await steam_games_service.unmatch_all_matched_games(user_id)
             
             return BulkOperationResult(
