@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from ....utils.sqlalchemy_typed import is_, is_not, ilike, desc, label, in_, asc
+from ....utils.query_types import PlatformMappingRow, StorefrontMappingRow
 
 from ....core.database import get_session
 from ....core.security import get_current_user
@@ -1549,7 +1550,7 @@ async def get_resolution_summary(
             logger.info("🔍 [DEBUG] Building platform query...")
             platform_query = (
                 select(
-                    DarkadiaImport.original_platform_name,
+                    label(DarkadiaImport.original_platform_name, 'original_platform_name'),
                     label(Platform.name, 'platform_name'),
                     label(func.count('*'), 'game_count')
                 )
@@ -1565,26 +1566,25 @@ async def get_resolution_summary(
         except Exception as query_err:
             logger.error(f"🔍 [DEBUG] ❌ Platform query building failed: {query_err}")
             raise
-        
+
         try:
             logger.info(f"🔍 [DEBUG] Platform query SQL: {platform_query}")
             logger.info("🔍 [DEBUG] Executing platform query...")
-            platform_results = session.exec(platform_query).all()
+            platform_results = session.execute(platform_query).mappings().all()
             logger.info(f"🔍 [DEBUG] ✅ Platform query returned {len(platform_results)} results")
         except Exception as query_err:
             logger.error(f"🔍 [DEBUG] ❌ Platform query execution failed: {query_err}")
             logger.error(f"🔍 [DEBUG] Query was: {platform_query}")
             raise
-        
-        for i, result in enumerate(platform_results):
-            # Row results: [0]=original_platform_name, [1]=platform_name, [2]=game_count
-            logger.info(f"🔍 [DEBUG] Platform result {i}: original='{result[0]}', mapped='{result[1]}', count={result[2]}")
+
+        for i, row in enumerate(platform_results):
+            logger.info(f"🔍 [DEBUG] Platform result {i}: original='{row['original_platform_name']}', mapped='{row['platform_name']}', count={row['game_count']}")
         
         # Get storefront mappings
         # Only include storefronts that are successfully resolved (not requiring resolution)
         storefront_query = (
             select(
-                DarkadiaImport.original_storefront_name,
+                label(DarkadiaImport.original_storefront_name, 'original_storefront_name'),
                 label(Storefront.name, 'storefront_name'),
                 label(func.count('*'), 'game_count')
             )
@@ -1597,35 +1597,32 @@ async def get_resolution_summary(
             )
             .group_by(DarkadiaImport.original_storefront_name, Storefront.name)
         )
-        
+
         logger.info(f"🔍 [DEBUG] Storefront query SQL: {storefront_query}")
-        storefront_results = session.exec(storefront_query).all()
+        storefront_results = session.execute(storefront_query).mappings().all()
         logger.info(f"🔍 [DEBUG] Storefront query returned {len(storefront_results)} results")
-        
-        for i, result in enumerate(storefront_results):
-            # Row results: [0]=original_storefront_name, [1]=storefront_name, [2]=game_count
-            logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{result[0]}', mapped='{result[1]}', count={result[2]}")
+
+        for i, row in enumerate(storefront_results):
+            logger.info(f"🔍 [DEBUG] Storefront result {i}: original='{row['original_storefront_name']}', mapped='{row['storefront_name']}', count={row['game_count']}")
         
         # Process platform mappings - only successfully resolved platforms
         platforms = []
-        for result in platform_results:
-            # Row results: [0]=original_platform_name, [1]=platform_name, [2]=game_count
+        for row in platform_results:
             platform_entry = {
-                "original": result[0],
-                "mapped": result[1],  # Will always have a value since we filtered for resolved platforms
-                "game_count": result[2]
+                "original": row["original_platform_name"],
+                "mapped": row["platform_name"],  # Will always have a value since we filtered for resolved platforms
+                "game_count": row["game_count"]
             }
             platforms.append(platform_entry)
             logger.info(f"🔍 [DEBUG] Processed platform: {platform_entry}")
-        
+
         # Process storefront mappings - only successfully resolved storefronts
         storefronts = []
-        for result in storefront_results:
-            # Row results: [0]=original_storefront_name, [1]=storefront_name, [2]=game_count
+        for row in storefront_results:
             storefront_entry = {
-                "original": result[0],
-                "mapped": result[1],  # Will always have a value since we filtered out unresolved storefronts
-                "game_count": result[2]
+                "original": row["original_storefront_name"],
+                "mapped": row["storefront_name"],  # Will always have a value since we filtered out unresolved storefronts
+                "game_count": row["game_count"]
             }
             storefronts.append(storefront_entry)
             logger.info(f"🔍 [DEBUG] Processed storefront: {storefront_entry}")

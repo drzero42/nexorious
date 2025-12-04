@@ -15,7 +15,8 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
-from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc
+from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc, label
+from ..utils.query_types import PlatformCountRow, RatingCountRow, GenreCountRow
 from ..schemas.user_game import (
     UserGameCreateRequest,
     UserGameUpdateRequest,
@@ -286,28 +287,36 @@ async def get_collection_stats(
     
     # Platform counts (only if there are games)
     if total_games > 0:
-        platform_counts = session.exec(
-            select(Platform.display_name, func.count()).
-            join(UserGamePlatform).
-            join(UserGame).
-            where(UserGame.user_id == current_user.id).
-            group_by(Platform.id, Platform.display_name)
-        ).all()
+        platform_query = (
+            select(
+                label(Platform.display_name, "display_name"),
+                label(func.count(), "count")
+            )
+            .join(UserGamePlatform)
+            .join(UserGame)
+            .where(UserGame.user_id == current_user.id)
+            .group_by(Platform.id, Platform.display_name)
+        )
+        platform_counts = session.execute(platform_query).mappings().all()
     else:
         platform_counts = []
     
     # Rating distribution (only if there are games)
     if total_games > 0:
-        rating_counts = session.exec(
-            select(col(UserGame.personal_rating), func.count()).
-            where(
+        rating_query = (
+            select(
+                label(col(UserGame.personal_rating), "personal_rating"),
+                label(func.count(), "count")
+            )
+            .where(
                 and_(
                     UserGame.user_id == current_user.id,
                     is_not(col(UserGame.personal_rating), None)
                 )
-            ).
-            group_by(col(UserGame.personal_rating))
-        ).all()
+            )
+            .group_by(col(UserGame.personal_rating))
+        )
+        rating_counts = session.execute(rating_query).mappings().all()
     else:
         rating_counts = []
     
@@ -356,23 +365,27 @@ async def get_collection_stats(
     # Genre stats (from game data)
     genre_stats = {}
     if total_games > 0:
-        genre_data = session.exec(
-            select(col(Game.genre), func.count()).
-            join(UserGame).
-            where(UserGame.user_id == current_user.id).
-            group_by(col(Game.genre))
-        ).all()
-        genre_stats = {genre: count for genre, count in genre_data if genre is not None}
+        genre_query = (
+            select(
+                label(col(Game.genre), "genre"),
+                label(func.count(), "count")
+            )
+            .join(UserGame)
+            .where(UserGame.user_id == current_user.id)
+            .group_by(col(Game.genre))
+        )
+        genre_data = session.execute(genre_query).mappings().all()
+        genre_stats = {row["genre"]: row["count"] for row in genre_data if row["genre"] is not None}
     
     return CollectionStatsResponse(
         total_games=total_games,
         completion_stats=status_counts,
         ownership_stats=ownership_stats,
-        platform_stats={name: count for name, count in platform_counts},
+        platform_stats={row["display_name"]: row["count"] for row in platform_counts},
         genre_stats=genre_stats,
         by_status=status_counts,
-        by_platform={name: count for name, count in platform_counts},
-        by_rating={str(rating): count for rating, count in rating_counts},
+        by_platform={row["display_name"]: row["count"] for row in platform_counts},
+        by_rating={str(row["personal_rating"]): row["count"] for row in rating_counts},
         pile_of_shame=pile_of_shame,
         completion_rate=round(completion_rate, 2),
         average_rating=float(avg_rating_result) if avg_rating_result else None,

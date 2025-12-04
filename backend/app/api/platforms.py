@@ -13,6 +13,7 @@ from ..core.security import get_current_admin_user, get_current_user
 from ..models.user import User
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..utils.sqlalchemy_typed import is_
+from ..utils.query_types import PlatformUsageRow, StorefrontUsageRow
 from ..schemas.platform import (
     PlatformCreateRequest,
     PlatformUpdateRequest,
@@ -947,14 +948,14 @@ async def get_platform_usage_stats(
         .order_by(func.count(col(UserGamePlatform.id)).desc(), Platform.display_name)
     )
     
-    results = session.exec(query).all()
-    
+    results = session.execute(query).mappings().all()
+
     platform_stats = [
         PlatformUsageStats(
-            platform_id=row[0],
-            platform_name=row[1],
-            platform_display_name=row[2],
-            usage_count=row[3]
+            platform_id=row["platform_id"],
+            platform_name=row["platform_name"],
+            platform_display_name=row["platform_display_name"],
+            usage_count=row["usage_count"]
         )
         for row in results
     ]
@@ -992,14 +993,14 @@ async def get_storefront_usage_stats(
         .order_by(func.count(col(UserGamePlatform.id)).desc(), Storefront.display_name)
     )
     
-    results = session.exec(query).all()
-    
+    results = session.execute(query).mappings().all()
+
     storefront_stats = [
         StorefrontUsageStats(
-            storefront_id=row[0],
-            storefront_name=row[1],
-            storefront_display_name=row[2],
-            usage_count=row[3]
+            storefront_id=row["storefront_id"],
+            storefront_name=row["storefront_name"],
+            storefront_display_name=row["storefront_display_name"],
+            usage_count=row["usage_count"]
         )
         for row in results
     ]
