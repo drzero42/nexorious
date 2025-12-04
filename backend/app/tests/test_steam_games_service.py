@@ -3,7 +3,7 @@ Unit tests for SteamGamesService.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from sqlmodel import Session, select
 from typing import Dict, Any, List
 
@@ -224,20 +224,11 @@ class TestSteamLibraryImport:
             MockIGDBResult("1234", "Counter-Strike: Global Offensive", "1234", "counter-strike-global-offensive")
         ]
         
-        # Mock import_from_igdb to succeed
-        with patch('app.services.steam_games.import_from_igdb') as mock_import:
-            mock_import.return_value = Game(
-                id=1234,
-                title="Counter-Strike: Global Offensive",
-                igdb_id=1234,
-                igdb_slug="counter-strike-global-offensive"
-            )
-            
-            result = await steam_games_service.import_steam_library(
-                user_id=test_user.id,
-                steam_config=sample_steam_config,
-                enable_auto_matching=True
-            )
+        result = await steam_games_service.import_steam_library(
+            user_id=test_user.id,
+            steam_config=sample_steam_config,
+            enable_auto_matching=True
+        )
         
         # Verify result
         assert isinstance(result, ImportResult)
@@ -386,15 +377,7 @@ class TestAutoMatching:
             MockIGDBResult("1234", "Counter-Strike: Global Offensive", "1234", "counter-strike-global-offensive")
         ]
         
-        with patch('app.services.steam_games.import_from_igdb') as mock_import:
-            mock_import.return_value = Game(
-                id=1234,
-                title="Counter-Strike: Global Offensive",
-                igdb_id=1234,
-                igdb_slug="counter-strike-global-offensive"
-            )
-            
-            result = await steam_games_service._auto_match_single_steam_game(steam_game.id)
+        result = await steam_games_service._auto_match_single_steam_game(steam_game.id)
         
         # Verify result
         assert isinstance(result, AutoMatchResult)
@@ -492,15 +475,7 @@ class TestAutoMatching:
             MockIGDBResult("1234", "Game 1", "1234", "game-1")
         ]
         
-        with patch('app.services.steam_games.import_from_igdb') as mock_import:
-            mock_import.return_value = Game(
-                id=1234,
-                title="Game 1",
-                igdb_id=1234,
-                igdb_slug="game-1"
-            )
-            
-            results = await steam_games_service._auto_match_steam_games(steam_game_ids)
+        results = await steam_games_service._auto_match_steam_games(steam_game_ids)
         
         # Verify results
         assert isinstance(results, AutoMatchResults)
@@ -556,15 +531,7 @@ class TestAutoMatching:
             MockIGDBResult("9999", "Perfect Match", "9999", "perfect-match")
         ]
         
-        with patch('app.services.steam_games.import_from_igdb') as mock_import:
-            mock_import.return_value = Game(
-                id=9999,
-                title="Perfect Match",
-                igdb_id=9999,
-                igdb_slug="perfect-match"
-            )
-            
-            results = await steam_games_service.retry_auto_matching_for_unmatched_games(test_user.id)
+        results = await steam_games_service.retry_auto_matching_for_unmatched_games(test_user.id)
         
         # Verify results - service can see games but query logic has complex conditions
         assert isinstance(results, AutoMatchResults)

@@ -24,8 +24,7 @@ from ..models.platform import Platform, Storefront
 from ..services.steam import SteamService, SteamAuthenticationError, SteamAPIError
 from ..services.igdb import IGDBService, IGDBError
 from ..services.sync_utils import is_steam_game_synced
-from ..api.games import import_from_igdb
-from ..schemas.game import GameMetadataAcceptRequest
+from ..services.game_service import GameService
 from ..utils.sqlalchemy_typed import is_, is_not
 
 
@@ -978,22 +977,17 @@ class SteamGamesService:
             game = self.session.exec(game_query).first()
             
             if not game:
-                # Create Game record using import_from_igdb
+                # Create Game record using GameService
                 logger.info(f"🎮 [Steam Service] Step 3a: Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
                 try:
-                    # Get user for import_from_igdb call
-                    user = self.session.get(User, user_id)
-                    if not user:
-                        raise SteamGamesServiceError(f"User {user_id} not found")
-                    
-                    # Use import_from_igdb to create Game record with proper platform handling
-                    import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
-                    game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
-                    
-                    # Get the created Game record
-                    game = self.session.get(Game, game_response.id)
-                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
-                    
+                    # Use GameService to create Game record with proper platform handling
+                    game_service = GameService(self.session, self.igdb_service)
+                    game = await game_service.create_or_update_game_from_igdb(
+                        igdb_id=steam_game.igdb_id,
+                        download_cover_art=True,
+                    )
+                    logger.info(f"🎮 [Steam Service] Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via GameService")
+
                 except Exception as e:
                     logger.error(f"🎮 [Steam Service] Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
                     raise SteamGamesServiceError(f"Failed to create game from IGDB data: {str(e)}")
@@ -1175,32 +1169,17 @@ class SteamGamesService:
                     game = self.session.exec(game_query).first()
                     
                     if not game:
-                        # Create Game record using import_from_igdb
+                        # Create Game record using GameService
                         logger.debug(f"Creating Game record from IGDB for igdb_id {steam_game.igdb_id}")
                         try:
-                            # Get user for import_from_igdb call
-                            user = self.session.get(User, user_id)
-                            if not user:
-                                error_msg = f"User {user_id} not found during bulk sync"
-                                errors.append(error_msg)
-                                results.append(SyncResult(
-                                    steam_game_id=steam_game.id,
-                                    steam_game_name=steam_game.game_name,
-                                    user_game_id=None,
-                                    action="failed",
-                                    error_message=error_msg
-                                ))
-                                failed_syncs += 1
-                                continue
-                            
-                            # Use import_from_igdb to create Game record with proper platform handling
-                            import_request = GameMetadataAcceptRequest(igdb_id=steam_game.igdb_id)
-                            game_response = await import_from_igdb(import_request, self.session, user, self.igdb_service)
-                            
-                            # Get the created Game record
-                            game = self.session.get(Game, game_response.id)
-                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via import_from_igdb")
-                            
+                            # Use GameService to create Game record with proper platform handling
+                            game_service = GameService(self.session, self.igdb_service)
+                            game = await game_service.create_or_update_game_from_igdb(
+                                igdb_id=steam_game.igdb_id,
+                                download_cover_art=True,
+                            )
+                            logger.debug(f"Created Game record {game.id} from IGDB ID {steam_game.igdb_id} via GameService")
+
                         except Exception as e:
                             logger.error(f"Error creating Game from IGDB ID {steam_game.igdb_id}: {str(e)}")
                             # Ensure session is rolled back after any error
