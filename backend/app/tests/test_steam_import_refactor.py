@@ -494,13 +494,13 @@ class TestSteamImportErrorHandling:
     def test_sync_status_with_invalid_parameters(self, session: Session):
         """Test sync status with invalid parameters."""
         # Test with None parameters
-        is_synced = is_steam_game_synced(None, "user", 1)
+        is_synced = is_steam_game_synced(None, "user", 1)  # type: ignore[arg-type]
         assert is_synced is False
 
-        is_synced = is_steam_game_synced(session, None, 1)
+        is_synced = is_steam_game_synced(session, None, 1)  # type: ignore[arg-type]
         assert is_synced is False
 
-        is_synced = is_steam_game_synced(session, "user", None)
+        is_synced = is_steam_game_synced(session, "user", None)  # type: ignore[arg-type]
         assert is_synced is False
 
 

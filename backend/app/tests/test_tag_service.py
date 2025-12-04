@@ -674,21 +674,24 @@ class TestTagServiceErrorHandling:
         
         # Initially should have 0 games
         retrieved_tag = tag_service.get_tag_by_id(tag.id, test_user_for_service.id)
+        assert retrieved_tag is not None
         assert retrieved_tag.game_count == 0
-        
+
         # Assign to 2 games
         tag_service.assign_tags_to_game(test_user_games[0].id, [tag.id], test_user_for_service.id)
         tag_service.assign_tags_to_game(test_user_games[1].id, [tag.id], test_user_for_service.id)
-        
+
         # Should now have 2 games
         retrieved_tag = tag_service.get_tag_by_id(tag.id, test_user_for_service.id)
+        assert retrieved_tag is not None
         assert retrieved_tag.game_count == 2
-        
+
         # Remove from 1 game
         tag_service.remove_tags_from_game(test_user_games[0].id, [tag.id], test_user_for_service.id)
-        
+
         # Should now have 1 game
         retrieved_tag = tag_service.get_tag_by_id(tag.id, test_user_for_service.id)
+        assert retrieved_tag is not None
         assert retrieved_tag.game_count == 1
 
     def test_delete_tag_cascades_associations(self, tag_service: TagService, test_user_for_service: User, test_user_games: list[UserGame], service_session: Session):

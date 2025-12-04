@@ -346,34 +346,34 @@ class TestErrorHandling:
     def test_is_game_synced_handles_database_errors(self, session: Session, test_user: User):
         """Test that is_game_synced handles database connectivity issues gracefully."""
         # Test with None session (should not crash, return False)
-        result = is_game_synced(None, test_user.id, 1, "platform", "storefront")
+        result = is_game_synced(None, test_user.id, 1, "platform", "storefront")  # type: ignore[arg-type]
         assert result is False
 
     def test_is_game_synced_with_none_parameters(self, session: Session):
         """Test is_game_synced with None parameters."""
-        result = is_game_synced(session, None, 1, "platform", "storefront")
+        result = is_game_synced(session, None, 1, "platform", "storefront")  # type: ignore[arg-type]
         assert result is False
 
-        result = is_game_synced(session, "user", None, "platform", "storefront")
+        result = is_game_synced(session, "user", None, "platform", "storefront")  # type: ignore[arg-type]
         assert result is False
 
-        result = is_game_synced(session, "user", 1, None, "storefront")
+        result = is_game_synced(session, "user", 1, None, "storefront")  # type: ignore[arg-type]
         assert result is False
 
-        result = is_game_synced(session, "user", 1, "platform", None)
+        result = is_game_synced(session, "user", 1, "platform", None)  # type: ignore[arg-type]
         assert result is False
 
     def test_is_steam_game_synced_error_handling(self, session: Session):
         """Test error handling in Steam-specific function."""
         # Test with None session
-        result = is_steam_game_synced(None, "user", 1)
+        result = is_steam_game_synced(None, "user", 1)  # type: ignore[arg-type]
         assert result is False
 
         # Test with None parameters
-        result = is_steam_game_synced(session, None, 1)
+        result = is_steam_game_synced(session, None, 1)  # type: ignore[arg-type]
         assert result is False
 
-        result = is_steam_game_synced(session, "user", None)
+        result = is_steam_game_synced(session, "user", None)  # type: ignore[arg-type]
         assert result is False
 
 
