@@ -124,9 +124,11 @@ def steam_service_with_responses():
     def create_service(responses=None, errors=None):
         service = SteamService("test_api_key_32chars_long_1234567")
 
-        # Replace the complex rate limiter mocking with direct method mocking
+        # Track calls for verification
+        calls = []
 
         async def mock_make_request(endpoint, params=None):
+            calls.append((endpoint, params))
             if errors and endpoint in errors:
                 raise errors[endpoint]
             if responses and endpoint in responses:
@@ -134,6 +136,7 @@ def steam_service_with_responses():
             return {"response": {"success": 1}}
 
         service._make_request = mock_make_request
+        setattr(service, "_mock_calls", calls)  # Expose for test verification
         return service
 
     return create_service
@@ -234,10 +237,15 @@ class TestSteamService:
         service = steam_service_with_responses(
             responses={"ISteamUser/GetPlayerSummaries/v0002/": steam_test_responses["api_key_test"]}
         )
-        
+
         result = await service.verify_api_key()
-        
+
         assert result is True
+        # Verify correct endpoint and parameters were used
+        assert len(service._mock_calls) == 1
+        endpoint, params = service._mock_calls[0]
+        assert endpoint == "ISteamUser/GetPlayerSummaries/v0002/"
+        assert params == {"steamids": "76561197960435530"}
 
     @pytest.mark.asyncio
     async def test_verify_api_key_invalid(self, steam_service_with_responses, steam_error_scenarios):
@@ -245,10 +253,29 @@ class TestSteamService:
         service = steam_service_with_responses(
             errors={"ISteamUser/GetPlayerSummaries/v0002/": steam_error_scenarios["auth_401"]}
         )
-        
+
         result = await service.verify_api_key()
-        
+
         assert result is False
+        # Verify correct endpoint was called before error
+        assert len(service._mock_calls) == 1
+        endpoint, params = service._mock_calls[0]
+        assert endpoint == "ISteamUser/GetPlayerSummaries/v0002/"
+        assert params == {"steamids": "76561197960435530"}
+
+    @pytest.mark.asyncio
+    async def test_verify_api_key_unexpected_error(self, steam_service_with_responses):
+        """Test API key verification handles unexpected errors gracefully."""
+        service = steam_service_with_responses(
+            errors={"ISteamUser/GetPlayerSummaries/v0002/": Exception("Unexpected network error")}
+        )
+
+        result = await service.verify_api_key()
+
+        # Should return False for unexpected errors (not crash)
+        assert result is False
+        # Verify the call was attempted
+        assert len(service._mock_calls) == 1
 
     @pytest.mark.asyncio
     async def test_get_user_info_success(self, steam_service_with_responses, steam_test_responses):
