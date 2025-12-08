@@ -5,14 +5,39 @@ Tests for Steam Web API service.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 from app.services.steam import (
-    SteamService, 
+    SteamService,
     create_steam_service,
     SteamAPIError,
     SteamAuthenticationError,
     SteamUserInfo,
     SteamGame
 )
+from app.utils.rate_limiter import RateLimitExceeded
+
+
+def create_mock_http_response(status_code: int, text: str = ""):
+    """Create a mock httpx response that raises HTTPStatusError on raise_for_status()."""
+    mock_request = MagicMock(spec=httpx.Request)
+    mock_request.url = "https://api.steampowered.com/test"
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = status_code
+    mock_response.text = text
+    mock_response.request = mock_request
+
+    def raise_for_status():
+        if status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"HTTP {status_code}",
+                request=mock_request,
+                response=mock_response
+            )
+
+    mock_response.raise_for_status = raise_for_status
+    return mock_response
 
 
 @pytest.fixture
@@ -98,20 +123,43 @@ def steam_service_with_responses():
     """Create Steam service with configurable response mocking."""
     def create_service(responses=None, errors=None):
         service = SteamService("test_api_key_32chars_long_1234567")
-        
+
         # Replace the complex rate limiter mocking with direct method mocking
-        
+
         async def mock_make_request(endpoint, params=None):
             if errors and endpoint in errors:
                 raise errors[endpoint]
             if responses and endpoint in responses:
                 return responses[endpoint]
             return {"response": {"success": 1}}
-        
+
         service._make_request = mock_make_request
         return service
-    
+
     return create_service
+
+
+@pytest.fixture
+def mock_rate_limiter_passthrough():
+    """Mock rate limiter that passes through to the actual function."""
+    with patch('app.services.steam.RateLimitedClient') as mock_class:
+        mock_instance = MagicMock()
+        mock_class.return_value = mock_instance
+
+        async def passthrough(func, **kwargs):
+            return await func()
+        mock_instance.call = passthrough
+
+        yield mock_class
+
+
+@pytest.fixture
+def mock_httpx_client():
+    """Mock httpx.AsyncClient for HTTP-level testing."""
+    with patch('httpx.AsyncClient') as mock_class:
+        mock_client = AsyncMock()
+        mock_class.return_value.__aenter__.return_value = mock_client
+        yield mock_client
 
 
 class TestSteamService:
@@ -146,34 +194,39 @@ class TestSteamService:
         mock_rate_limiter_instance.call.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_make_request_authentication_error(self, steam_service_with_responses, steam_error_scenarios):
-        """Test API request with authentication error."""
-        service = steam_service_with_responses(
-            errors={"test/endpoint": steam_error_scenarios["auth_401"]}
-        )
-        
+    async def test_make_request_authentication_error(self, mock_rate_limiter_passthrough, mock_httpx_client):
+        """Test that 401 HTTP response is converted to SteamAuthenticationError."""
+        mock_httpx_client.get.return_value = create_mock_http_response(401)
+
+        service = SteamService("test_api_key_32chars_long_1234567")
+
         with pytest.raises(SteamAuthenticationError, match="Invalid Steam Web API key"):
             await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
-    async def test_make_request_forbidden_error(self, steam_service_with_responses, steam_error_scenarios):
-        """Test API request with forbidden error."""
-        service = steam_service_with_responses(
-            errors={"test/endpoint": steam_error_scenarios["auth_403"]}
-        )
-        
+    async def test_make_request_forbidden_error(self, mock_rate_limiter_passthrough, mock_httpx_client):
+        """Test that 403 HTTP response is converted to SteamAuthenticationError."""
+        mock_httpx_client.get.return_value = create_mock_http_response(403)
+
+        service = SteamService("test_api_key_32chars_long_1234567")
+
         with pytest.raises(SteamAuthenticationError, match="does not have required permissions"):
             await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
-    async def test_make_request_rate_limit_exceeded(self, steam_service_with_responses, steam_error_scenarios):
-        """Test API request with rate limit exceeded."""
-        service = steam_service_with_responses(
-            errors={"test/endpoint": steam_error_scenarios["rate_limit"]}
-        )
-        
-        with pytest.raises(SteamAPIError, match="rate limit exceeded"):
-            await service._make_request("test/endpoint")
+    async def test_make_request_rate_limit_exceeded(self):
+        """Test that RateLimitExceeded from rate limiter is converted to SteamAPIError."""
+        with patch('app.services.steam.RateLimitedClient') as mock_class:
+            mock_instance = MagicMock()
+            mock_class.return_value = mock_instance
+            mock_instance.call = AsyncMock(
+                side_effect=RateLimitExceeded("Rate limit exceeded", retry_after=1.0)
+            )
+
+            service = SteamService("test_api_key_32chars_long_1234567")
+
+            with pytest.raises(SteamAPIError, match="rate limit exceeded"):
+                await service._make_request("test/endpoint")
 
     @pytest.mark.asyncio
     async def test_verify_api_key_valid(self, steam_service_with_responses, steam_test_responses):
