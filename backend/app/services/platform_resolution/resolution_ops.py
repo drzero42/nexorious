@@ -21,7 +21,6 @@ from app.schemas.platform import (
 )
 
 from .suggestions import (
-    get_platform_suggestions,
     get_storefront_suggestions,
     suggest_storefront_matches_for_platform
 )

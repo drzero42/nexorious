@@ -7,15 +7,13 @@ Main facade for all Steam games operations.
 import logging
 from typing import Dict, Any, List, Tuple, Optional
 
-from sqlmodel import Session, select, and_
+from sqlmodel import Session, select
 
 from app.models.steam_game import SteamGame
-from app.models.game import Game
-from app.services.steam import SteamService, SteamAuthenticationError, SteamAPIError
+from app.services.steam import SteamService
 from app.services.igdb import IGDBService
 from app.services.sync_utils import is_steam_game_synced
 from app.core.config import settings
-from app.utils.sqlalchemy_typed import is_, is_not
 
 from .models import (
     ImportResult,

@@ -16,7 +16,6 @@ from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
 from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc, label
-from ..utils.query_types import PlatformCountRow, RatingCountRow, GenreCountRow
 from ..schemas.user_game import (
     UserGameCreateRequest,
     UserGameUpdateRequest,

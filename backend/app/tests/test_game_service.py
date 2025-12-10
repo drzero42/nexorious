@@ -6,7 +6,7 @@ Tests game import from IGDB, existing game handling, and error cases.
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from datetime import date
 
 from ..models.game import Game

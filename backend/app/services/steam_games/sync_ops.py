@@ -5,7 +5,7 @@ Handles syncing Steam games to the user's main collection.
 """
 
 import logging
-from typing import Tuple, Optional
+from typing import Tuple
 from datetime import datetime, timezone
 
 from sqlmodel import Session, select, and_

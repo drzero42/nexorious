@@ -10,8 +10,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-from ....utils.sqlalchemy_typed import is_, is_not, ilike, desc, label, in_, asc
-from ....utils.query_types import PlatformMappingRow, StorefrontMappingRow
+from ....utils.sqlalchemy_typed import is_, is_not, ilike, desc, label
 
 from ....core.database import get_session
 from ....core.security import get_current_user

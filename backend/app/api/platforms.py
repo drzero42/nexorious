@@ -13,7 +13,6 @@ from ..core.security import get_current_admin_user, get_current_user
 from ..models.user import User
 from ..models.platform import Platform, Storefront, PlatformStorefront
 from ..utils.sqlalchemy_typed import is_
-from ..utils.query_types import PlatformUsageRow, StorefrontUsageRow
 from ..schemas.platform import (
     PlatformCreateRequest,
     PlatformUpdateRequest,
