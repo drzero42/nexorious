@@ -1,0 +1,38 @@
+# Virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Test and coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Development databases
+*.db
+*.db-journal
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# uv cache (not needed in container)
+.uv-cache/
+
+# Runtime storage (mounted as volume in dev)
+storage/
+
+# Documentation (not needed at runtime)
+docs/
+README.md
+
+# Git
+.git/
+.gitignore
