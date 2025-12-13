@@ -230,37 +230,16 @@ check_pending_syncs.schedule_by_cron(
 
 ## Docker Compose Configuration
 
-```yaml
-# docker-compose.yml
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: nexorious
-      POSTGRES_PASSWORD: nexorious
-      POSTGRES_DB: nexorious
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexorious"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+This plan builds on the foundation established in [Docker/Podman Compose Design](2025-12-13-docker-compose-design.md). Add these services to `docker-compose.yml`:
 
-  api:
-    build: ./backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    environment:
-      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
+```yaml
+# Additional services for background task system
+services:
+  # ... existing db, api, frontend services from docker-compose design ...
 
   worker:
     build: ./backend
-    command: taskiq worker app.worker.broker:broker app.worker.tasks
+    command: uv run taskiq worker app.worker.broker:broker app.worker.tasks
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
     depends_on:
@@ -269,7 +248,7 @@ services:
 
   scheduler:
     build: ./backend
-    command: taskiq scheduler app.worker.schedules:scheduler
+    command: uv run taskiq scheduler app.worker.schedules:scheduler
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
     depends_on:
@@ -277,22 +256,11 @@ services:
         condition: service_healthy
     deploy:
       replicas: 1  # Must remain 1 - no scaling
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    environment:
-      PUBLIC_API_URL: http://api:8000
-    depends_on:
-      - api
-
-volumes:
-  postgres_data:
 ```
 
 **Notes:**
-- All backend services use the same Docker image with different commands
+- Worker and scheduler use the same backend Docker image with different commands
+- Commands use `uv run` prefix (consistent with backend Dockerfile pattern)
 - Scheduler explicitly limited to 1 replica (no leader election in taskiq)
 - Workers can be scaled: `docker compose up --scale worker=3`
 - Health check ensures DB is ready before services start
