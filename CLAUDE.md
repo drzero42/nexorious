@@ -25,6 +25,15 @@ cd /home/abo/workspace/home/nexorious/backend && uv --version
 cd /home/abo/workspace/home/nexorious/frontend && npm --version
 ```
 
+### Docker/Podman Compose (Alternative)
+| Task | Command |
+|------|---------|
+| Start all services | `podman-compose up --build` |
+| Stop services | `podman-compose down` |
+| Stop and reset DB | `podman-compose down -v` |
+| Rebuild backend | `podman-compose build api` |
+| Rebuild frontend | `podman-compose build frontend` |
+
 ### Important URLs
 - Backend API Docs: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
