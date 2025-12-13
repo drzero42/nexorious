@@ -1,0 +1,53 @@
+# docker-compose.yml - Development environment
+# Works with both Docker Compose and Podman Compose (rootless)
+#
+# Usage:
+#   podman-compose up --build       # Start all services
+#   podman-compose down             # Stop (keeps volumes)
+#   podman-compose down -v          # Stop and remove volumes (fresh DB)
+
+services:
+  db:
+    image: docker.io/postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexorious
+      POSTGRES_PASSWORD: nexorious
+      POSTGRES_DB: nexorious
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexorious"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app:Z
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      PUBLIC_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app:Z
+      - /app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
