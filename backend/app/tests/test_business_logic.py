@@ -168,67 +168,113 @@ class TestGameMetadataBusinessLogic:
         assert "456" in str_repr
 
 
-class TestBusinessRulesAndValidation:
-    """Test business rules and validation logic."""
-    
-    def test_play_status_validation(self):
-        """Test play status validation logic."""
-        valid_statuses = [
-            'not_started', 'in_progress', 'completed', 'mastered', 
+class TestPlayStatusEnum:
+    """Test PlayStatus enum used for game play status tracking.
+
+    Tests the actual PlayStatus enum from the models to verify
+    all expected statuses exist and can be created properly.
+    """
+
+    def test_play_status_enum_values(self):
+        """Test that PlayStatus enum has all expected values."""
+        from app.models.user_game import PlayStatus
+
+        # Verify all expected status values exist
+        expected_statuses = [
+            'not_started', 'in_progress', 'completed', 'mastered',
             'dominated', 'shelved', 'dropped', 'replay'
         ]
-        
-        # This would normally be in a model or service
-        def validate_play_status(status: str) -> bool:
-            return status in valid_statuses
-        
-        # Test valid statuses
-        for status in valid_statuses:
-            assert validate_play_status(status) is True
-        
-        # Test invalid statuses
+
+        enum_values = [status.value for status in PlayStatus]
+
+        for expected in expected_statuses:
+            assert expected in enum_values, f"Expected status '{expected}' not found in PlayStatus enum"
+
+    def test_play_status_enum_creation(self):
+        """Test PlayStatus enum can be created from string values."""
+        from app.models.user_game import PlayStatus
+
+        # Test creating enum from valid values
+        assert PlayStatus('not_started') == PlayStatus.NOT_STARTED
+        assert PlayStatus('in_progress') == PlayStatus.IN_PROGRESS
+        assert PlayStatus('completed') == PlayStatus.COMPLETED
+        assert PlayStatus('mastered') == PlayStatus.MASTERED
+        assert PlayStatus('dominated') == PlayStatus.DOMINATED
+        assert PlayStatus('shelved') == PlayStatus.SHELVED
+        assert PlayStatus('dropped') == PlayStatus.DROPPED
+        assert PlayStatus('replay') == PlayStatus.REPLAY
+
+    def test_play_status_invalid_value_raises(self):
+        """Test that invalid play status raises ValueError."""
+        from app.models.user_game import PlayStatus
+        import pytest
+
         invalid_statuses = ['invalid', 'unknown', 'finished', 'playing']
-        for status in invalid_statuses:
-            assert validate_play_status(status) is False
-    
-    def test_rating_validation(self):
-        """Test rating validation logic."""
-        def validate_rating(rating: float) -> bool:
-            return 1.0 <= rating <= 5.0
-        
-        # Test valid ratings
-        assert validate_rating(1.0) is True
-        assert validate_rating(3.5) is True
-        assert validate_rating(5.0) is True
-        
-        # Test invalid ratings
-        assert validate_rating(0.9) is False
-        assert validate_rating(5.1) is False
-        assert validate_rating(-1.0) is False
-    
-    def test_completion_percentage_calculation(self):
-        """Test completion percentage calculation logic."""
-        def calculate_completion_percentage(play_status: str, hours_played: int, estimated_hours: int) -> float:
-            if play_status in ['completed', 'mastered', 'dominated']:
-                return 100.0
-            elif play_status == 'not_started':
-                return 0.0
-            elif play_status in ['in_progress', 'replay'] and estimated_hours > 0:
-                return min(100.0, (hours_played / estimated_hours) * 100.0)
-            else:
-                return 0.0
-        
-        # Test completed games
-        assert calculate_completion_percentage('completed', 20, 30) == 100.0
-        assert calculate_completion_percentage('mastered', 50, 30) == 100.0
-        
-        # Test not started
-        assert calculate_completion_percentage('not_started', 0, 30) == 0.0
-        
-        # Test in progress
-        assert calculate_completion_percentage('in_progress', 15, 30) == 50.0
-        assert calculate_completion_percentage('in_progress', 30, 30) == 100.0
-        assert calculate_completion_percentage('in_progress', 45, 30) == 100.0
-        
-        # Test with zero estimated hours
-        assert calculate_completion_percentage('in_progress', 10, 0) == 0.0
+
+        for invalid in invalid_statuses:
+            with pytest.raises(ValueError):
+                PlayStatus(invalid)
+
+
+class TestPydanticRatingValidation:
+    """Test rating validation through Pydantic schemas.
+
+    Tests the actual Pydantic Field validation for personal_rating
+    to ensure the ge=1, le=5 constraints work correctly.
+    """
+
+    def test_valid_rating_in_schema(self):
+        """Test that valid ratings are accepted by the schema."""
+        from app.schemas.user_game import UserGameCreateRequest
+        import pytest
+
+        # Valid ratings should not raise
+        for rating in [1.0, 2.5, 3.0, 4.5, 5.0]:
+            # Create with minimal required fields plus rating
+            schema = UserGameCreateRequest(
+                game_id=1,
+                personal_rating=rating
+            )
+            assert schema.personal_rating == rating
+
+    def test_invalid_rating_too_low(self):
+        """Test that rating below 1 is rejected."""
+        from app.schemas.user_game import UserGameCreateRequest
+        from pydantic import ValidationError
+        import pytest
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserGameCreateRequest(
+                game_id=1,
+                personal_rating=0.5
+            )
+
+        # Check that the error is about the rating being too low
+        errors = exc_info.value.errors()
+        assert any('personal_rating' in str(e) for e in errors)
+
+    def test_invalid_rating_too_high(self):
+        """Test that rating above 5 is rejected."""
+        from app.schemas.user_game import UserGameCreateRequest
+        from pydantic import ValidationError
+        import pytest
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserGameCreateRequest(
+                game_id=1,
+                personal_rating=5.5
+            )
+
+        # Check that the error is about the rating being too high
+        errors = exc_info.value.errors()
+        assert any('personal_rating' in str(e) for e in errors)
+
+    def test_null_rating_is_valid(self):
+        """Test that None/null rating is accepted (rating is optional)."""
+        from app.schemas.user_game import UserGameCreateRequest
+
+        schema = UserGameCreateRequest(
+            game_id=1,
+            personal_rating=None
+        )
+        assert schema.personal_rating is None
