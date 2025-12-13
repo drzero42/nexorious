@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+	localStorageMock,
+	installLocalStorageMock,
+	resetLocalStorageMock
+} from '../../test-utils/storage-mocks';
 
-// Mock localStorage
-const localStorageMock = {
-	getItem: vi.fn(),
-	setItem: vi.fn(),
-	removeItem: vi.fn(),
-	clear: vi.fn(),
-};
-Object.defineProperty(window, 'localStorage', {
-	value: localStorageMock
-});
+// Install localStorage mock
+installLocalStorageMock();
 
 // Mock the app environment with explicit vi.doMock
 vi.doMock('$app/environment', () => ({
@@ -23,14 +20,15 @@ describe('UI Store', () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
+		resetLocalStorageMock();
 		localStorageMock.getItem.mockReturnValue(null);
-		
+
 		// Mock browser environment before importing module
 		vi.doMock('$app/environment', () => ({
 			browser: true,
 			dev: false
 		}));
-		
+
 		// Clear module cache and reimport
 		vi.resetModules();
 		const module = await import('./ui.svelte');

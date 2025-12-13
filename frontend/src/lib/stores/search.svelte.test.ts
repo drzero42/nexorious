@@ -1,28 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+	localStorageMock,
+	installLocalStorageMock,
+	resetLocalStorageMock
+} from '../../test-utils/storage-mocks';
 
-// Set up Svelte runes mock before any other imports that might use them
-if (typeof globalThis !== 'undefined' && !(globalThis as any).$state) {
-	(globalThis as any).$state = vi.fn((initialValue: any) => {
-		if (typeof initialValue === 'object' && initialValue !== null) {
-			const state = { ...initialValue };
-			return new Proxy(state, {
-				get(target, prop) {
-					return target[prop as keyof typeof target];
-				},
-				set(target, prop, value) {
-					(target as any)[prop] = value;
-					return true;
-				}
-			});
-		}
-		return { value: initialValue };
-	});
-	(globalThis as any).$derived = vi.fn((fn: () => any) => fn());
-	(globalThis as any).$effect = vi.fn(() => () => {});
-	(globalThis as any).$props = vi.fn(() => ({}));
-}
+// Note: Svelte runes are mocked globally via test-utils/svelte-runes-mock.ts
+// which is loaded in vitest.config.ts setupFiles
 
-// Import enums first
+// Import enums - use actual values to ensure type safety
 const PlayStatus = {
 	NOT_STARTED: 'not_started',
 	IN_PROGRESS: 'in_progress',
@@ -41,16 +27,8 @@ const OwnershipStatus = {
 	SUBSCRIPTION: 'subscription'
 } as const;
 
-// Mock localStorage
-const localStorageMock = {
-	getItem: vi.fn(),
-	setItem: vi.fn(),
-	removeItem: vi.fn(),
-	clear: vi.fn(),
-};
-Object.defineProperty(window, 'localStorage', {
-	value: localStorageMock
-});
+// Install localStorage mock
+installLocalStorageMock();
 
 // Mock the dynamic imports
 vi.mock('./games.svelte', () => ({
@@ -130,6 +108,7 @@ describe('Search Store', () => {
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
+		resetLocalStorageMock();
 		localStorageMock.getItem.mockReturnValue(null);
 		
 		// Get references to mocked stores

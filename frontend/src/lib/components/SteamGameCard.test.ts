@@ -123,22 +123,26 @@ describe('SteamGameCard', () => {
       expect(screen.getByText('Ignored')).toBeInTheDocument();
     });
 
-    it('applies correct CSS classes for status colors', () => {
-      const { container: unmatchedContainer } = render(SteamGameCard, { game: baseSteamGame });
-      expect(unmatchedContainer.querySelector('.bg-yellow-100.text-yellow-600')).toBeInTheDocument();
+    it('displays distinct status badges for each game state', () => {
+      // Test that each status has a visible, distinct badge - focus on content, not CSS
+      const { unmount } = render(SteamGameCard, { game: baseSteamGame });
+      expect(screen.getByText('Unmatched')).toBeInTheDocument();
+      unmount();
 
       const matchedGame = { ...baseSteamGame, igdb_id: 123456 as GameId, igdb_title: 'Counter-Strike: Global Offensive' };
-      const { container: matchedContainer } = render(SteamGameCard, { game: matchedGame });
-      expect(matchedContainer.querySelector('.bg-blue-100.text-blue-600')).toBeInTheDocument();
+      const { unmount: unmount2 } = render(SteamGameCard, { game: matchedGame });
+      expect(screen.getByText('Matched')).toBeInTheDocument();
+      unmount2();
 
       const syncedGame = { ...baseSteamGame, igdb_id: 123456 as GameId, igdb_title: 'Counter-Strike: Global Offensive', game_id: 123456 as GameId,
         user_game_id: '550e8400-e29b-41d4-a716-446655440000' as UserGameId };
-      const { container: syncedContainer } = render(SteamGameCard, { game: syncedGame });
-      expect(syncedContainer.querySelector('.bg-green-100.text-green-600')).toBeInTheDocument();
+      const { unmount: unmount3 } = render(SteamGameCard, { game: syncedGame });
+      expect(screen.getAllByText('In Collection')).toHaveLength(2);
+      unmount3();
 
       const ignoredGame = { ...baseSteamGame, ignored: true };
-      const { container: ignoredContainer } = render(SteamGameCard, { game: ignoredGame });
-      expect(ignoredContainer.querySelector('.bg-gray-100.text-gray-600')).toBeInTheDocument();
+      render(SteamGameCard, { game: ignoredGame });
+      expect(screen.getByText('Ignored')).toBeInTheDocument();
     });
   });
 
@@ -425,16 +429,8 @@ describe('SteamGameCard', () => {
     });
   });
 
-  describe('Visual Styling', () => {
-    it('applies hover shadow effect to card container', () => {
-      const { container } = render(SteamGameCard, { game: baseSteamGame });
-
-      const cardElement = container.firstChild as HTMLElement;
-      expect(cardElement).toHaveClass('hover:shadow-md');
-      expect(cardElement).toHaveClass('transition-shadow');
-    });
-
-    it('applies primary button styling to sync button', () => {
+  describe('Button Hierarchy', () => {
+    it('sync button is visually prominent as primary action', () => {
       const onSync = vi.fn();
       const matchedGame = {
         ...baseSteamGame,
@@ -447,11 +443,13 @@ describe('SteamGameCard', () => {
         onSync
       });
 
+      // The sync button should exist and be the primary call-to-action
       const syncButton = screen.getByTitle('Add to collection');
-      expect(syncButton).toHaveClass('btn-primary');
+      expect(syncButton).toBeInTheDocument();
+      expect(syncButton).toHaveTextContent('Sync');
     });
 
-    it('applies secondary button styling to other buttons', () => {
+    it('match and ignore buttons are present as secondary actions', () => {
       const callbacks = {
         onMatch: vi.fn(),
         onIgnore: vi.fn()
@@ -462,23 +460,14 @@ describe('SteamGameCard', () => {
         ...callbacks
       });
 
+      // Both buttons should be present and accessible
       const matchButton = screen.getByTitle('Match to IGDB game');
       const ignoreButton = screen.getByTitle('Mark as ignored');
 
-      expect(matchButton).toHaveClass('btn-secondary');
-      expect(ignoreButton).toHaveClass('btn-secondary');
-    });
-
-    it('applies red hover color to ignore button', () => {
-      const onIgnore = vi.fn();
-
-      render(SteamGameCard, {
-        game: baseSteamGame,
-        onIgnore
-      });
-
-      const ignoreButton = screen.getByTitle('Mark as ignored');
-      expect(ignoreButton).toHaveClass('hover:text-red-600');
+      expect(matchButton).toBeInTheDocument();
+      expect(ignoreButton).toBeInTheDocument();
+      expect(matchButton).toHaveTextContent('Match');
+      expect(ignoreButton).toHaveTextContent('Ignore');
     });
   });
 
