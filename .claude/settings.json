@@ -1,0 +1,15 @@
+{
+  "enabledPlugins": {
+    "beads@beads-marketplace": true,
+    "c4-architecture@claude-code-workflows": true,
+    "api-scaffolding@claude-code-workflows": true,
+    "code-documentation@claude-code-workflows": true,
+    "python-development@claude-code-workflows": true,
+    "api-testing-observability@claude-code-workflows": true,
+    "frontend-design@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "superpowers@superpowers-marketplace": true,
+    "commit-commands@claude-plugins-official": true
+  }
+}
