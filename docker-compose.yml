@@ -1,10 +1,18 @@
 # docker-compose.yml - Development environment
 # Works with both Docker Compose and Podman Compose (rootless)
 #
+# Services:
+#   db        - PostgreSQL 16 database
+#   api       - FastAPI backend (hot-reload enabled)
+#   frontend  - SvelteKit frontend (hot-reload enabled)
+#   worker    - Taskiq background task worker (scalable)
+#   scheduler - Taskiq scheduled task runner (single instance only)
+#
 # Usage:
-#   podman-compose up --build       # Start all services
-#   podman-compose down             # Stop (keeps volumes)
-#   podman-compose down -v          # Stop and remove volumes (fresh DB)
+#   podman-compose up --build           # Start all services
+#   podman-compose down                 # Stop (keeps volumes)
+#   podman-compose down -v              # Stop and remove volumes (fresh DB)
+#   podman-compose up --scale worker=3  # Scale workers horizontally
 
 services:
   db:
@@ -50,6 +58,34 @@ services:
       - /app/node_modules
     depends_on:
       - api
+
+  worker:
+    build: ./backend
+    command: uv run taskiq worker app.worker.broker:broker app.worker.tasks
+    environment:
+      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
+    volumes:
+      - ./backend:/app:Z
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+
+  scheduler:
+    build: ./backend
+    command: uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks
+    environment:
+      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+    volumes:
+      - ./backend:/app:Z
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 1  # Must remain 1 - taskiq has no leader election
 
 volumes:
   postgres_data:
