@@ -1427,6 +1427,26 @@ function createUserGamesStore() {
     // Testing utility - only for test environments
     __testSetData: (games: UserGame[]) => {
       entityOperations.replaceAll(games);
+    },
+
+    // Reset store to initial state (for testing)
+    reset: () => {
+      entityOperations.clear();
+      entityState.stats = null;
+      entityState.isLoading = false;
+      entityState.error = null;
+      entityState.filters = {};
+      entityState.pagination = {
+        page: 1,
+        per_page: 20,
+        total: 0,
+        pages: 0
+      };
+      entityState.bulkOperations = {
+        isProcessing: false,
+        processingIds: new Set()
+      };
+      entitiesVersion = 0;
     }
   };
 
