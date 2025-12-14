@@ -19,7 +19,8 @@ os.environ.setdefault("DOCKER_HOST", f"unix:///run/user/{os.getuid()}/podman/pod
 from testcontainers.postgres import PostgresContainer
 
 from ..main import app
-from ..core.database import get_session
+from ..core.database import get_session, _reset_engine, _set_skip_migrations
+import app.core.database as db_module
 from ..core.security import create_access_token
 from ..models.user import User
 from ..models.game import Game
@@ -64,8 +65,22 @@ def get_test_engine():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
-    """Set up the test database once per session."""
+    """Set up the test database once per session.
+
+    This fixture injects the testcontainer engine into the database module
+    before any tests run, ensuring the app uses the test database instead
+    of trying to connect to the configured DATABASE_URL.
+    """
+    # Reset any existing engine to ensure clean state
+    _reset_engine()
+
+    # Skip Alembic migrations in tests (we use SQLModel.metadata.create_all instead)
+    _set_skip_migrations(True)
+
+    # Get the testcontainer engine and inject it into the database module
     engine = get_test_engine()
+    db_module._engine = engine
+
     SQLModel.metadata.create_all(engine)
     yield
     # Cleanup happens when container is garbage collected or explicitly stopped

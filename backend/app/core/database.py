@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
+from typing import Optional
 from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import Engine
 from .config import settings
 import logging
 import os
@@ -29,26 +29,57 @@ from ..models import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# PostgreSQL only - validate database URL
-if not settings.database_url.startswith("postgresql"):
-    raise ValueError(
-        f"Invalid database URL: {settings.database_url}. "
-        "Only PostgreSQL is supported. Use postgresql://user:pass@host:port/db"
-    )
+# Lazy-initialized database engine
+_engine: Optional[Engine] = None
 
-engine = create_engine(
-    settings.database_url,
-    echo=settings.debug,
-    pool_pre_ping=True
-)
+# Flag to skip migrations (used in tests)
+_skip_migrations = False
+
+
+def get_engine():
+    """Get or create the database engine (lazy initialization).
+
+    The engine is created on first use rather than at module import time.
+    This allows tests to inject their own engine before the app tries to
+    connect to the configured database URL.
+    """
+    global _engine
+    if _engine is None:
+        if not settings.database_url.startswith("postgresql"):
+            raise ValueError(
+                f"Invalid database URL: {settings.database_url}. "
+                "Only PostgreSQL is supported. Use postgresql://user:pass@host:port/db"
+            )
+        _engine = create_engine(
+            settings.database_url,
+            echo=settings.debug,
+            pool_pre_ping=True
+        )
+    return _engine
+
+
+def _reset_engine():
+    """Reset the engine for testing. Not for production use."""
+    global _engine
+    _engine = None
+
+
+def _set_skip_migrations(skip: bool):
+    """Set flag to skip migrations. Used in tests."""
+    global _skip_migrations
+    _skip_migrations = skip
 
 def create_db_and_tables():
     """Create database tables"""
-    SQLModel.metadata.create_all(engine)
+    SQLModel.metadata.create_all(get_engine())
     logger.info("Database tables created")
 
 def run_alembic_migrations():
     """Run Alembic database migrations to upgrade to head"""
+    if _skip_migrations:
+        logger.info("Skipping database migrations (test mode)")
+        return
+
     try:
         # Get the directory containing this file (nexorious/core/)
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -84,13 +115,8 @@ def run_alembic_migrations():
 
 def get_session():
     """Get database session"""
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         yield session
-
-
-def get_engine():
-    """Get the database engine."""
-    return engine
 
 
 def get_sync_session() -> Session:
@@ -99,7 +125,7 @@ def get_sync_session() -> Session:
     Returns:
         Session: A new SQLModel session.
     """
-    return Session(engine)
+    return Session(get_engine())
 
 
 @asynccontextmanager
@@ -114,7 +140,7 @@ async def get_session_context():
     Note: This uses synchronous SQLModel sessions wrapped in an async context
     manager since taskiq tasks run in a synchronous context.
     """
-    session = Session(engine)
+    session = Session(get_engine())
     try:
         yield session
     finally:
