@@ -26,23 +26,18 @@ from ..models import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# Determine if we're using SQLite or PostgreSQL
-is_sqlite = settings.database_url.startswith("sqlite")
+# PostgreSQL only - validate database URL
+if not settings.database_url.startswith("postgresql"):
+    raise ValueError(
+        f"Invalid database URL: {settings.database_url}. "
+        "Only PostgreSQL is supported. Use postgresql://user:pass@host:port/db"
+    )
 
-if is_sqlite:
-    # SQLite setup
-    engine = create_engine(
-        settings.database_url,
-        echo=settings.debug,
-        connect_args={"check_same_thread": False}
-    )
-else:
-    # PostgreSQL setup
-    engine = create_engine(
-        settings.database_url,
-        echo=settings.debug,
-        pool_pre_ping=True
-    )
+engine = create_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True
+)
 
 def create_db_and_tables():
     """Create database tables"""
