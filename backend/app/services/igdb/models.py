@@ -70,6 +70,16 @@ class TwitchAuthError(Exception):
     pass
 
 
+class IGDBNotConfiguredError(TwitchAuthError):
+    """Exception raised when IGDB credentials are not configured."""
+
+    def __init__(
+        self,
+        message: str = "IGDB API credentials are not configured. See docs/igdb-setup.md for setup instructions.",
+    ):
+        super().__init__(message)
+
+
 class IGDBError(Exception):
     """Exception for IGDB API errors."""
     pass

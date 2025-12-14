@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { RouteGuard, DarkadiaGamesTable, DarkadiaFileUpload, BatchProgressModal, ImportProgressModal, PlatformStorefrontModal } from '$lib/components';
+  import IgdbWarningBanner from '$lib/components/IgdbWarningBanner.svelte';
   import { darkadia, ui, auth } from '$lib/stores';
   import { platforms } from '$lib/stores/platforms.svelte';
   import type { 
@@ -664,6 +665,9 @@
 
 <RouteGuard requireAuth={true}>
   <div class="space-y-6">
+    <!-- IGDB Warning Banner -->
+    <IgdbWarningBanner />
+
     <!-- Header -->
     <div>
       <nav class="flex text-sm text-gray-500" aria-label="Breadcrumb">

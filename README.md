@@ -20,6 +20,7 @@ A self-hostable web application for managing personal video game collections wit
 - **Node.js 18+** with npm
 - **PostgreSQL 13+** (production) or SQLite (development)
 - **Nix** (optional, recommended for reproducible development environment)
+- **IGDB API Credentials** (required) - See [IGDB Setup Guide](docs/igdb-setup.md)
 
 ### Development Setup
 

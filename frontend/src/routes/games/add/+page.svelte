@@ -7,6 +7,7 @@
   import { gameAdditionService, type GameFormData } from '$lib/services/game-addition';
   import { goto } from '$app/navigation';
   import { RouteGuard } from '$lib/components';
+  import IgdbWarningBanner from '$lib/components/IgdbWarningBanner.svelte';
   import GameSearchStep from '$lib/components/GameSearchStep.svelte';
   import GameConfirmStep from '$lib/components/GameConfirmStep.svelte';
   import MetadataConfirmStep from '$lib/components/MetadataConfirmStep.svelte';
@@ -239,6 +240,9 @@
 
 <RouteGuard requireAuth={true}>
 <div class="space-y-6">
+  <!-- IGDB Warning Banner -->
+  <IgdbWarningBanner />
+
   <!-- Header -->
   <div class="sm:flex sm:items-center sm:justify-between">
     <div>

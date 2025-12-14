@@ -519,6 +519,18 @@ export const mockTags = [
   }
 ];
 
+// Mock app status store
+export const mockAppStatusStore = {
+  value: {
+    igdbConfigured: true,
+    isLoading: false,
+    error: null,
+    hasFetched: true
+  },
+  fetchStatus: vi.fn().mockResolvedValue(undefined),
+  reset: vi.fn()
+};
+
 // Mock tags store
 export const mockTagsStore = {
   value: {
@@ -569,7 +581,8 @@ vi.mock('$lib/stores', () => ({
   platforms: mockPlatformsStore,
   search: mockSearchStore,
   ui: mockUIStore,
-  steam: mockSteamStore
+  steam: mockSteamStore,
+  appStatus: mockAppStatusStore
 }));
 
 // Mock platforms store specifically
@@ -871,6 +884,17 @@ export function resetStoresMocks() {
     },
     isLoading: false,
     error: null
+  };
+
+  // Reset app status store
+  mockAppStatusStore.fetchStatus.mockClear();
+  mockAppStatusStore.reset.mockClear();
+  mockAppStatusStore.fetchStatus.mockResolvedValue(undefined);
+  mockAppStatusStore.value = {
+    igdbConfigured: true,
+    isLoading: false,
+    error: null,
+    hasFetched: true
   };
 }
 
