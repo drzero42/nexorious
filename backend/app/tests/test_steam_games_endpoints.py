@@ -987,7 +987,7 @@ class TestSteamGamesBulkSyncEndpoint:
 
         # Create service directly with test session
         igdb_service = IGDBService()
-        steam_service = create_steam_games_service(session, igdb_service)
+        steam_service = create_steam_games_service(session, igdb_service=igdb_service)
 
         # Test individual game sync instead of bulk sync (bypasses session/query issues)
         sync_result = await steam_service.sync_steam_game_to_collection(
