@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .steam_game import SteamGame
     from .darkadia_game import DarkadiaGame
     from .darkadia_import import DarkadiaImport
+    from .user_sync_config import UserSyncConfig
 
 
 class User(SQLModel, table=True):
@@ -58,6 +59,7 @@ class User(SQLModel, table=True):
     steam_games: List["SteamGame"] = Relationship(back_populates="user")
     darkadia_games: List["DarkadiaGame"] = Relationship(back_populates="user")
     darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user")
+    sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")
 
 
 class UserSession(SQLModel, table=True):
