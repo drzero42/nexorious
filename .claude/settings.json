@@ -10,6 +10,12 @@
     "context7@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "superpowers@superpowers-marketplace": true,
-    "commit-commands@claude-plugins-official": true
+    "commit-commands@claude-plugins-official": true,
+    "code-refactoring@claude-code-workflows": true,
+    "codebase-cleanup@claude-code-workflows": true,
+    "debugging-toolkit@claude-code-workflows": true,
+    "git-pr-workflows@claude-code-workflows": true,
+    "unit-testing@claude-code-workflows": true,
+    "javascript-typescript@claude-code-workflows": true
   }
 }
