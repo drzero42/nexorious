@@ -3,11 +3,34 @@
 import pytest
 import json
 import io
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
+
+
+@pytest.fixture(autouse=True)
+def mock_task_queue():
+    """Mock the task queue to prevent actual task enqueuing during tests."""
+    mock_result = MagicMock()
+    mock_result.task_id = "test-task-id"
+
+    with patch(
+        "app.api.import_endpoints.import_nexorious_task.kiq",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ), patch(
+        "app.api.import_endpoints.import_darkadia_task.kiq",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ), patch(
+        "app.api.import_endpoints.import_steam_task.kiq",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        yield
 
 
 class TestNexoriousImport:

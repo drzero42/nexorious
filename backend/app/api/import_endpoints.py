@@ -30,6 +30,11 @@ from ..models.job import (
     BackgroundJobPriority,
 )
 from ..worker.queues import QUEUE_HIGH
+from ..worker.tasks.import_export import (
+    import_nexorious_json as import_nexorious_task,
+    import_darkadia_csv as import_darkadia_task,
+    import_steam_library as import_steam_task,
+)
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
 logger = logging.getLogger(__name__)
@@ -217,8 +222,11 @@ async def import_nexorious_json(
     session.commit()
     session.refresh(job)
 
-    # TODO: Enqueue task when worker is implemented
-    # await import_nexorious_task.kiq(job.id)
+    # Enqueue the import task
+    task_result = await import_nexorious_task.kiq(job.id)
+    job.taskiq_task_id = task_result.task_id
+    session.add(job)
+    session.commit()
 
     logger.info(f"Created Nexorious import job {job.id} for user {current_user.id}")
 
@@ -358,8 +366,11 @@ async def import_darkadia_csv(
     session.commit()
     session.refresh(job)
 
-    # TODO: Enqueue task when worker is implemented
-    # await import_darkadia_task.kiq(job.id)
+    # Enqueue the import task
+    task_result = await import_darkadia_task.kiq(job.id)
+    job.taskiq_task_id = task_result.task_id
+    session.add(job)
+    session.commit()
 
     logger.info(f"Created Darkadia import job {job.id} for user {current_user.id}")
 
@@ -442,8 +453,11 @@ async def import_steam_library(
     session.commit()
     session.refresh(job)
 
-    # TODO: Enqueue task when worker is implemented
-    # await import_steam_task.kiq(job.id)
+    # Enqueue the import task
+    task_result = await import_steam_task.kiq(job.id)
+    job.taskiq_task_id = task_result.task_id
+    session.add(job)
+    session.commit()
 
     logger.info(f"Created Steam import job {job.id} for user {current_user.id}")
 
