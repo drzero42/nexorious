@@ -12,7 +12,7 @@ import httpx
 from igdb.wrapper import IGDBWrapper
 
 from app.core.config import settings
-from .models import TwitchAuthError
+from .models import IGDBNotConfiguredError, TwitchAuthError
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class IGDBAuthManager:
         """Get or refresh Twitch access token using client credentials flow."""
         if not self.client_id or not self.client_secret:
             logger.error("IGDB client ID and secret not configured")
-            raise TwitchAuthError("IGDB client ID and secret must be configured")
+            raise IGDBNotConfiguredError()
 
         # Check if current token is still valid
         if (self._access_token and
@@ -83,7 +83,7 @@ class IGDBAuthManager:
         if not self._wrapper:
             if not self.client_id:
                 logger.error("IGDB client ID is required for wrapper initialization")
-                raise TwitchAuthError("IGDB client ID is required")
+                raise IGDBNotConfiguredError()
 
             logger.debug("Initializing IGDB wrapper")
             access_token = await self.get_access_token()

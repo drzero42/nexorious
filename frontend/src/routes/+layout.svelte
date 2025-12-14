@@ -1,6 +1,6 @@
 <script lang="ts">
   import '../app.css';
-  import { auth } from '$lib/stores';
+  import { auth, appStatus } from '$lib/stores';
   import { platforms, type Storefront } from '$lib/stores/platforms.svelte';
   import { ToastContainer } from '$lib/components';
   import { buildIconUrl } from '$lib/utils/icon-utils';
@@ -18,6 +18,9 @@
   const steamIconUrl = $derived(steamStorefront ? buildIconUrl(steamStorefront.icon_url) : null);
   
   onMount(async () => {
+    // Fetch app status (IGDB configuration, etc.)
+    await appStatus.fetchStatus();
+
     // Check if user is authenticated and refresh token if needed
     const authState = auth.value;
     

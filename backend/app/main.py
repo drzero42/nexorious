@@ -14,6 +14,7 @@ from .api.platforms import router as platforms_router
 from .api.user_games import router as user_games_router
 from .api.tags import router as tags_router
 from .api.import_api import router as import_router
+from .api.status import router as status_router
 from .services.batch_session_manager import (
     startup_batch_session_manager,
     shutdown_batch_session_manager,
@@ -59,6 +60,14 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
     await startup_batch_session_manager()
     logger.info("Batch session manager initialized")
+
+    # Warn if IGDB credentials are not configured
+    if not settings.igdb_client_id or not settings.igdb_client_secret:
+        logger.warning(
+            "IGDB credentials not configured. Game search and import features "
+            "will be unavailable. See docs/igdb-setup.md for setup instructions."
+        )
+
     yield
     # Shutdown
     logger.info("Shutting down Nexorious Game Collection Management Service")
@@ -112,6 +121,7 @@ app.include_router(platforms_router, prefix="/api")
 app.include_router(user_games_router, prefix="/api")
 app.include_router(tags_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
+app.include_router(status_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:

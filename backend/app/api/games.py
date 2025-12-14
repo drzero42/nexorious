@@ -13,7 +13,7 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.game import Game
-from ..services.igdb import IGDBService, IGDBError, TwitchAuthError
+from ..services.igdb import IGDBService, IGDBError, IGDBNotConfiguredError, TwitchAuthError
 from ..services.game_service import GameService, GameNotFoundError
 from ..api.dependencies import get_igdb_service_dependency
 from ..utils.sqlalchemy_typed import is_not, desc, asc
@@ -295,6 +295,14 @@ async def search_igdb(
         )
         # Re-raise HTTPException as-is
         raise
+    except IGDBNotConfiguredError as e:
+        logger.warning(
+            f"IGDB not configured during search for '{search_data.query}': {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
     except TwitchAuthError as e:
         logger.error(
             f"Twitch authentication failed for IGDB search '{search_data.query}': {str(e)}"
@@ -364,6 +372,11 @@ async def import_from_igdb(
     except GameNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Game not found in IGDB"
+        )
+    except IGDBNotConfiguredError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
         )
     except TwitchAuthError as e:
         raise HTTPException(

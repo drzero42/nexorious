@@ -8,6 +8,7 @@ Re-exports for backwards compatibility:
     - GameMetadata: Structured game metadata dataclass
     - IGDBError: Exception for IGDB API errors
     - TwitchAuthError: Exception for Twitch authentication errors
+    - IGDBNotConfiguredError: Exception when IGDB credentials are not configured
     - IGDB_PLATFORM_MAPPING: Platform ID to internal name mapping
     - KEYWORD_EXPANSIONS: Search query keyword expansions
     - map_igdb_time_to_beat_to_db_fields: Utility function for time-to-beat mapping
@@ -16,6 +17,7 @@ Re-exports for backwards compatibility:
 from .models import (
     GameMetadata,
     IGDBError,
+    IGDBNotConfiguredError,
     TwitchAuthError,
     IGDB_PLATFORM_MAPPING,
     KEYWORD_EXPANSIONS,
@@ -30,6 +32,7 @@ __all__ = [
     "GameMetadata",
     # Exceptions
     "IGDBError",
+    "IGDBNotConfiguredError",
     "TwitchAuthError",
     # Constants
     "IGDB_PLATFORM_MAPPING",

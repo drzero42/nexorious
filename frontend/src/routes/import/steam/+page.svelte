@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { RouteGuard, SteamGamesTable, BatchProgressModal } from '$lib/components';
+  import IgdbWarningBanner from '$lib/components/IgdbWarningBanner.svelte';
   import { steam, ui } from '$lib/stores';
   import { steamGames, type SteamGameResponse, type SteamGamesListResponse } from '$lib/stores/steam-games.svelte';
   import { steamAvailability } from '$lib/stores/steam-availability.svelte';
@@ -752,6 +753,9 @@
 
 <RouteGuard requireAuth={true}>
   <div class="space-y-6">
+    <!-- IGDB Warning Banner -->
+    <IgdbWarningBanner />
+
     <!-- Header -->
     <div>
       <nav class="flex text-sm text-gray-500" aria-label="Breadcrumb">
