@@ -8,10 +8,12 @@ from app.worker.queues import (
     get_queue_for_user_initiated,
     get_queue_for_scheduled,
 )
+from app.worker.schedules import scheduler
 
 __all__ = [
     "broker",
     "result_backend",
+    "scheduler",
     "QUEUE_HIGH",
     "QUEUE_LOW",
     "QUEUE_DEFAULT",
