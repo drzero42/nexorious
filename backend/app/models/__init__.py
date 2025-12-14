@@ -11,6 +11,15 @@ from .user_game import UserGame, UserGamePlatform
 from .tag import Tag, UserGameTag
 from .wishlist import Wishlist
 from .import_job import ImportJob
+from .job import (
+    Job,
+    ReviewItem,
+    BackgroundJobType,
+    BackgroundJobSource,
+    BackgroundJobStatus,
+    BackgroundJobPriority,
+    ReviewItemStatus,
+)
 from .steam_game import SteamGame
 from .darkadia_game import DarkadiaGame
 from .darkadia_import import DarkadiaImport
@@ -28,6 +37,13 @@ __all__ = [
     "UserGameTag",
     "Wishlist",
     "ImportJob",
+    "Job",
+    "ReviewItem",
+    "BackgroundJobType",
+    "BackgroundJobSource",
+    "BackgroundJobStatus",
+    "BackgroundJobPriority",
+    "ReviewItemStatus",
     "SteamGame",
     "DarkadiaGame",
     "DarkadiaImport",
