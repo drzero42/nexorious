@@ -124,6 +124,24 @@
                     Manage Tags
                   </a>
                 </li>
+                <li>
+                  <a
+                    href="/jobs"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">⚙️</span>
+                    Background Jobs
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/review"
+                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">📋</span>
+                    Review Queue
+                  </a>
+                </li>
                 <!-- Import Sources Section -->
                 <li>
                   <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
@@ -166,33 +184,28 @@
                         Darkadia CSV
                       </a>
                     </li>
-                    
-                    <!-- Future import sources will go here -->
-                    <!-- 
+                  </ul>
+                </li>
+                <!-- Settings Section -->
+                <li>
+                  <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                    Settings
+                  </div>
+                  <ul role="list" class="-mx-2 mt-2 space-y-1">
                     <li>
                       <a
-                        href="/import/epic"
+                        href="/settings/sync"
                         class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                       >
-                        <span class="text-lg">🎮</span>
-                        Epic Games Store
+                        <span class="text-lg">🔄</span>
+                        Sync Settings
                       </a>
                     </li>
-                    <li>
-                      <a
-                        href="/import/gog"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                      >
-                        <span class="text-lg">🏪</span>
-                        GOG
-                      </a>
-                    </li>
-                    -->
                   </ul>
                 </li>
               </ul>
             </li>
-            
+
             <!-- Admin Section -->
             {#if auth.value.user?.isAdmin}
               <li>
@@ -370,6 +383,26 @@
                           Manage Tags
                         </a>
                       </li>
+                      <li>
+                        <a
+                          href="/jobs"
+                          onclick={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">⚙️</span>
+                          Background Jobs
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href="/review"
+                          onclick={closeMobileMenu}
+                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">📋</span>
+                          Review Queue
+                        </a>
+                      </li>
                       <!-- Import Sources Section -->
                       <li>
                         <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
@@ -418,9 +451,27 @@
                           <!-- Future import sources will go here -->
                         </ul>
                       </li>
+                      <!-- Settings Section -->
+                      <li>
+                        <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
+                          Settings
+                        </div>
+                        <ul role="list" class="-mx-2 mt-2 space-y-1">
+                          <li>
+                            <a
+                              href="/settings/sync"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                            >
+                              <span class="text-lg">🔄</span>
+                              Sync Settings
+                            </a>
+                          </li>
+                        </ul>
+                      </li>
                     </ul>
                   </li>
-                  
+
                   <!-- Mobile Admin Section -->
                   {#if auth.value.user?.isAdmin}
                     <li>
