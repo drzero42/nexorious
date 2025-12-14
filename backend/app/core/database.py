@@ -1,4 +1,7 @@
+from contextlib import asynccontextmanager
 from sqlmodel import SQLModel, create_engine, Session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 from .config import settings
 import logging
 import os
@@ -83,3 +86,36 @@ def get_session():
     """Get database session"""
     with Session(engine) as session:
         yield session
+
+
+def get_engine():
+    """Get the database engine."""
+    return engine
+
+
+def get_sync_session() -> Session:
+    """Get a synchronous database session for use in background tasks.
+
+    Returns:
+        Session: A new SQLModel session.
+    """
+    return Session(engine)
+
+
+@asynccontextmanager
+async def get_session_context():
+    """Async context manager for database sessions in background tasks.
+
+    Usage:
+        async with get_session_context() as session:
+            # Use session here
+            ...
+
+    Note: This uses synchronous SQLModel sessions wrapped in an async context
+    manager since taskiq tasks run in a synchronous context.
+    """
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()
