@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toGameId } from '$lib/types/game';
+import type { UserGameId } from '$lib/types/game';
 
-// Mock dependencies before importing
-vi.mock('./auth.svelte', () => ({
+// Mock dependencies before importing - use vi.hoisted to ensure mock is available before import
+const mockAuth = vi.hoisted(() => ({
 	auth: {
 		value: {
-			accessToken: 'test-access-token',
-			refreshToken: 'test-refresh-token',
-			user: { id: '1', username: 'testuser', isAdmin: false }
+			accessToken: 'test-access-token' as string | null,
+			refreshToken: 'test-refresh-token' as string | null,
+			user: { id: '1', username: 'testuser', isAdmin: false } as { id: string; username: string; isAdmin: boolean } | null
 		},
 		refreshAuth: vi.fn(() => Promise.resolve(true))
 	}
 }));
+
+vi.mock('./auth.svelte', () => mockAuth);
 
 vi.mock('$lib/env', () => ({
 	config: {
@@ -20,16 +23,18 @@ vi.mock('$lib/env', () => ({
 }));
 
 // Import after mocking
-import { PlayStatus, OwnershipStatus } from './user-games.svelte';
+import { userGames, PlayStatus, OwnershipStatus } from './user-games.svelte';
 import type { UserGame, UserGameFilters, CollectionStats } from './user-games.svelte';
 
+// Helper to create UserGameId for tests (bypasses UUID validation for test simplicity)
+const testUserGameId = (id: string): UserGameId => id as unknown as UserGameId;
+
 describe('UserGames Store', () => {
-	let userGamesStore: any;
-	let mockFetch = vi.fn();
+	const mockFetch = vi.fn();
 
 	// Mock user game data for testing
 	const mockUserGame: UserGame = {
-		id: '1' as any,
+		id: testUserGameId('1'),
 		game: {
 			id: toGameId(1),
 			title: 'Test Game',
@@ -77,29 +82,22 @@ describe('UserGames Store', () => {
 		total_hours_played: 150
 	};
 
-	beforeEach(async () => {
+	beforeEach(() => {
 		// Reset all mocks
 		vi.clearAllMocks();
 		global.fetch = mockFetch;
-		
+
 		// Suppress console.error for cleaner test output
 		vi.spyOn(console, 'error').mockImplementation(() => {});
-		
-		// Get the mocked auth module
-		const { auth } = await import('./auth.svelte');
-		
-		// Reset auth mock values
-		auth.value.accessToken = 'test-access-token'; 
-		(auth.refreshAuth as any).mockReset().mockResolvedValue(true);
-		
-		// Dynamic import to get fresh store instance
-		const module = await import('./user-games.svelte');
-		userGamesStore = module.userGames;
-		
-		// Clear store state
-		userGamesStore.clearFilters();
-		userGamesStore.clearCurrentUserGame();
-		userGamesStore.clearError();
+
+		// Reset auth mock to default authenticated state
+		mockAuth.auth.value.accessToken = 'test-access-token';
+		mockAuth.auth.value.refreshToken = 'test-refresh-token';
+		mockAuth.auth.value.user = { id: '1', username: 'testuser', isAdmin: false };
+		mockAuth.auth.refreshAuth.mockReset().mockResolvedValue(true);
+
+		// Reset store to initial state
+		userGames.reset();
 	});
 
 	afterEach(() => {
@@ -108,7 +106,7 @@ describe('UserGames Store', () => {
 
 	describe('Store Structure', () => {
 		it('should have correct initial state', () => {
-			const state = userGamesStore.value;
+			const state = userGames.value;
 			
 			expect(state).toMatchObject({
 				userGames: [],
@@ -146,25 +144,23 @@ describe('UserGames Store', () => {
 				'clearFilters',
 				'clearError',
 				'fetchUserGames'
-			];
+			] as const;
 
 			requiredMethods.forEach(method => {
-				expect(typeof userGamesStore[method]).toBe('function');
+				expect(typeof userGames[method]).toBe('function');
 			});
 		});
 	});
 
 	describe('Authentication Handling', () => {
 		it('should throw error when not authenticated', async () => {
-			const { auth } = await import('./auth.svelte');
-			auth.value.accessToken = null;
+			// Set auth mock to unauthenticated state
+			mockAuth.auth.value.accessToken = null;
 
-			await expect(userGamesStore.loadUserGames()).rejects.toThrow('Not authenticated');
+			await expect(userGames.loadUserGames()).rejects.toThrow('Not authenticated');
 		});
 
 		it('should retry request after token refresh on 401', async () => {
-			const { auth } = await import('./auth.svelte');
-			
 			mockFetch
 				.mockResolvedValueOnce({
 					ok: false,
@@ -182,11 +178,11 @@ describe('UserGames Store', () => {
 					})
 				});
 
-			(auth.refreshAuth as any).mockResolvedValueOnce(true);
+			mockAuth.auth.refreshAuth.mockResolvedValueOnce(true);
 
-			await userGamesStore.loadUserGames();
+			await userGames.loadUserGames();
 
-			expect(auth.refreshAuth).toHaveBeenCalled();
+			expect(mockAuth.auth.refreshAuth).toHaveBeenCalled();
 			expect(mockFetch).toHaveBeenCalledTimes(2);
 		});
 	});
@@ -206,7 +202,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(mockResponse)
 			});
 
-			await userGamesStore.loadUserGames();
+			await userGames.loadUserGames();
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/?page=1&per_page=20',
@@ -217,7 +213,7 @@ describe('UserGames Store', () => {
 				})
 			);
 
-			const state = userGamesStore.value;
+			const state = userGames.value;
 			expect(state.userGames).toEqual([mockUserGame]);
 			expect(state.pagination).toEqual({
 				page: 1,
@@ -246,7 +242,7 @@ describe('UserGames Store', () => {
 				})
 			});
 
-			await userGamesStore.loadUserGames(filters);
+			await userGames.loadUserGames(filters);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				expect.stringContaining('play_status=completed'),
@@ -270,9 +266,9 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve({ detail: 'Server error' })
 			});
 
-			await expect(userGamesStore.loadUserGames()).rejects.toThrow('Server error');
+			await expect(userGames.loadUserGames()).rejects.toThrow('Server error');
 
-			const state = userGamesStore.value;
+			const state = userGames.value;
 			expect(state.isLoading).toBe(false);
 			expect(state.error).toBe('Server error');
 		});
@@ -292,7 +288,7 @@ describe('UserGames Store', () => {
 				})
 			});
 
-			const result = await userGamesStore.getUserGame(toGameId(1));
+			const result = await userGames.getUserGame(toGameId(1));
 
 			// Should have called the list endpoint to load games
 			expect(mockFetch).toHaveBeenCalledWith(
@@ -305,16 +301,16 @@ describe('UserGames Store', () => {
 			);
 
 			expect(result).toEqual(mockUserGame);
-			expect(userGamesStore.value.currentUserGame).toEqual(mockUserGame);
+			expect(userGames.value.currentUserGame).toEqual(mockUserGame);
 		});
 	});
 
 	describe('Add Game to Collection', () => {
 		it('should add a game to collection', async () => {
 			const gameData = {
-				game_id: '1',
+				game_id: toGameId(1),
 				ownership_status: OwnershipStatus.OWNED,
-				platforms: ['platform-1']
+				platforms: [{ platform_id: 'platform-1', is_available: true }]
 			};
 
 			mockFetch.mockResolvedValueOnce({
@@ -322,7 +318,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(mockUserGame)
 			});
 
-			const result = await userGamesStore.addGameToCollection(gameData);
+			const result = await userGames.addGameToCollection(gameData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/',
@@ -333,15 +329,15 @@ describe('UserGames Store', () => {
 			);
 
 			expect(result).toEqual(mockUserGame);
-			expect(userGamesStore.value.userGames).toHaveLength(1);
-			expect(userGamesStore.value.userGames[0]).toEqual(mockUserGame);
+			expect(userGames.value.userGames).toHaveLength(1);
+			expect(userGames.value.userGames[0]).toEqual(mockUserGame);
 		});
 	});
 
 	describe('Update User Game', () => {
 		it('should update user game', async () => {
 			// Set initial state with the game
-			userGamesStore.__testSetData([mockUserGame]);
+			userGames.__testSetData([mockUserGame]);
 
 			const updateData = {
 				personal_rating: 5,
@@ -355,7 +351,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(updatedGame)
 			});
 
-			const result = await userGamesStore.updateUserGame('1', updateData);
+			const result = await userGames.updateUserGame(testUserGameId('1'), updateData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/1',
@@ -366,12 +362,15 @@ describe('UserGames Store', () => {
 			);
 
 			expect(result).toEqual(updatedGame);
-			expect(userGamesStore.value.userGames[0]).toEqual(updatedGame);
+			expect(userGames.value.userGames[0]).toEqual(updatedGame);
 		});
 	});
 
 	describe('Update Progress', () => {
 		it('should update game progress', async () => {
+			// Set initial state with the game
+			userGames.__testSetData([mockUserGame]);
+
 			const progressData = {
 				play_status: PlayStatus.MASTERED,
 				hours_played: 50,
@@ -385,7 +384,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(updatedGame)
 			});
 
-			const result = await userGamesStore.updateProgress('1', progressData);
+			const result = await userGames.updateProgress(testUserGameId('1'), progressData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/1/progress',
@@ -402,14 +401,14 @@ describe('UserGames Store', () => {
 	describe('Remove from Collection', () => {
 		it('should remove game from collection', async () => {
 			// Set initial state with the game
-			userGamesStore.__testSetData([mockUserGame]);
-			userGamesStore.value.currentUserGame = mockUserGame;
+			userGames.__testSetData([mockUserGame]);
+			userGames.value.currentUserGame = mockUserGame;
 
 			mockFetch.mockResolvedValueOnce({
 				ok: true
 			});
 
-			await userGamesStore.removeFromCollection('1');
+			await userGames.removeFromCollection(testUserGameId('1'));
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/1',
@@ -418,8 +417,8 @@ describe('UserGames Store', () => {
 				})
 			);
 
-			expect(userGamesStore.value.userGames).toEqual([]);
-			expect(userGamesStore.value.currentUserGame).toBeNull();
+			expect(userGames.value.userGames).toEqual([]);
+			expect(userGames.value.currentUserGame).toBeNull();
 		});
 	});
 
@@ -430,7 +429,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(mockCollectionStats)
 			});
 
-			const result = await userGamesStore.getCollectionStats();
+			const result = await userGames.getCollectionStats();
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/stats',
@@ -442,7 +441,7 @@ describe('UserGames Store', () => {
 			);
 
 			expect(result).toEqual(mockCollectionStats);
-			expect(userGamesStore.value.stats).toEqual(mockCollectionStats);
+			expect(userGames.value.stats).toEqual(mockCollectionStats);
 		});
 	});
 
@@ -450,41 +449,41 @@ describe('UserGames Store', () => {
 		beforeEach(() => {
 			// Set up test data
 			const testGames: UserGame[] = [
-				{ ...mockUserGame, id: '1' as any, play_status: PlayStatus.COMPLETED, is_loved: true, personal_rating: 5 },
-				{ ...mockUserGame, id: '2' as any, play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 3 },
-				{ ...mockUserGame, id: '3' as any, play_status: PlayStatus.IN_PROGRESS, is_loved: true, personal_rating: 4 },
-				{ ...mockUserGame, id: '4' as any, play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 5 }
+				{ ...mockUserGame, id: testUserGameId('1'), play_status: PlayStatus.COMPLETED, is_loved: true, personal_rating: 5 },
+				{ ...mockUserGame, id: testUserGameId('2'), play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 3 },
+				{ ...mockUserGame, id: testUserGameId('3'), play_status: PlayStatus.IN_PROGRESS, is_loved: true, personal_rating: 4 },
+				{ ...mockUserGame, id: testUserGameId('4'), play_status: PlayStatus.NOT_STARTED, is_loved: false, personal_rating: 5 }
 			];
-			
-			userGamesStore.__testSetData(testGames);
+
+			userGames.__testSetData(testGames);
 		});
 
 		it('should get games by status', () => {
-			const completedGames = userGamesStore.getGamesByStatus(PlayStatus.COMPLETED);
-			const notStartedGames = userGamesStore.getGamesByStatus(PlayStatus.NOT_STARTED);
+			const completedGames = userGames.getGamesByStatus(PlayStatus.COMPLETED);
+			const notStartedGames = userGames.getGamesByStatus(PlayStatus.NOT_STARTED);
 
 			expect(completedGames).toHaveLength(1);
-			expect(completedGames[0].id).toBe('1');
+			expect(completedGames[0]?.id).toBe(testUserGameId('1'));
 			expect(notStartedGames).toHaveLength(2);
 		});
 
 		it('should get loved games', () => {
-			const lovedGames = userGamesStore.getLovedGames();
+			const lovedGames = userGames.getLovedGames();
 
 			expect(lovedGames).toHaveLength(2);
-			expect(lovedGames.map((g: UserGame) => g.id)).toEqual(['1', '3']);
+			expect(lovedGames.map((g: UserGame) => g.id)).toEqual([testUserGameId('1'), testUserGameId('3')]);
 		});
 
 		it('should get games by rating', () => {
-			const fiveStarGames = userGamesStore.getGamesByRating(5);
-			const threeStarGames = userGamesStore.getGamesByRating(3);
+			const fiveStarGames = userGames.getGamesByRating(5);
+			const threeStarGames = userGames.getGamesByRating(3);
 
 			expect(fiveStarGames).toHaveLength(2);
 			expect(threeStarGames).toHaveLength(1);
 		});
 
 		it('should get pile of shame', () => {
-			const pileOfShame = userGamesStore.getPileOfShame();
+			const pileOfShame = userGames.getPileOfShame();
 
 			expect(pileOfShame).toHaveLength(2);
 			expect(pileOfShame.every((g: UserGame) => g.play_status === PlayStatus.NOT_STARTED)).toBe(true);
@@ -512,13 +511,13 @@ describe('UserGames Store', () => {
 			});
 
 			// Set initial state
-			userGamesStore.__testSetData([
-				{ ...mockUserGame, id: '1' },
-				{ ...mockUserGame, id: '2' },
-				{ ...mockUserGame, id: '3' }
+			userGames.__testSetData([
+				{ ...mockUserGame, id: testUserGameId('1') },
+				{ ...mockUserGame, id: testUserGameId('2') },
+				{ ...mockUserGame, id: testUserGameId('3') }
 			]);
 
-			const result = await userGamesStore.bulkUpdateStatus(bulkData);
+			const result = await userGames.bulkUpdateStatus(bulkData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/bulk-update',
@@ -538,10 +537,14 @@ describe('UserGames Store', () => {
 
 	describe('Platform Management', () => {
 		it('should add platform to user game', async () => {
+			// Set initial state with the game
+			userGames.__testSetData([mockUserGame]);
+
 			const platformData = {
 				platform_id: 'platform-1',
 				storefront_id: 'storefront-1',
-				store_game_id: 'store-123'
+				store_game_id: 'store-123',
+				is_available: true
 			};
 
 			const updatedGame = { ...mockUserGame };
@@ -551,7 +554,7 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve(updatedGame)
 			});
 
-			const result = await userGamesStore.addPlatformToUserGame('1', platformData);
+			const result = await userGames.addPlatformToUserGame(testUserGameId('1'), platformData);
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/1/platforms',
@@ -565,21 +568,33 @@ describe('UserGames Store', () => {
 		});
 
 		it('should remove platform from user game', async () => {
-			const testGame = {
+			const testGame: UserGame = {
 				...mockUserGame,
 				platforms: [
-					{ id: 'platform-1', platform: { id: '1', name: 'PC' }, is_available: true, created_at: '2023-01-01T00:00:00.000Z' }
+					{
+						id: 'platform-1',
+						platform: {
+							id: '1',
+							name: 'pc-windows',
+							display_name: 'PC',
+							is_active: true,
+							source: 'seed',
+							created_at: '2023-01-01T00:00:00.000Z',
+							updated_at: '2023-01-01T00:00:00.000Z'
+						},
+						is_available: true,
+						created_at: '2023-01-01T00:00:00.000Z'
+					}
 				]
 			};
 
-			userGamesStore.__testSetData([testGame]);
-			userGamesStore.value.currentUserGame = testGame;
+			userGames.__testSetData([testGame]);
 
 			mockFetch.mockResolvedValueOnce({
 				ok: true
 			});
 
-			await userGamesStore.removePlatformFromUserGame('1', 'platform-1');
+			await userGames.removePlatformFromUserGame(testUserGameId('1'), 'platform-1');
 
 			expect(mockFetch).toHaveBeenCalledWith(
 				'http://localhost:8000/api/user-games/1/platforms/platform-1',
@@ -588,33 +603,33 @@ describe('UserGames Store', () => {
 				})
 			);
 
-			expect(userGamesStore.value.userGames[0].platforms).toEqual([]);
+			expect(userGames.value.userGames[0]?.platforms).toEqual([]);
 		});
 	});
 
 	describe('State Management', () => {
 		it('should clear current user game', () => {
-			userGamesStore.value.currentUserGame = mockUserGame;
+			userGames.value.currentUserGame = mockUserGame;
 
-			userGamesStore.clearCurrentUserGame();
+			userGames.clearCurrentUserGame();
 
-			expect(userGamesStore.value.currentUserGame).toBeNull();
+			expect(userGames.value.currentUserGame).toBeNull();
 		});
 
 		it('should clear filters', () => {
-			userGamesStore.value.filters = { play_status: PlayStatus.COMPLETED };
+			userGames.value.filters = { play_status: PlayStatus.COMPLETED };
 
-			userGamesStore.clearFilters();
+			userGames.clearFilters();
 
-			expect(userGamesStore.value.filters).toEqual({});
+			expect(userGames.value.filters).toEqual({});
 		});
 
 		it('should clear error', () => {
-			userGamesStore.value.error = 'Some error';
+			userGames.value.error = 'Some error';
 
-			userGamesStore.clearError();
+			userGames.clearError();
 
-			expect(userGamesStore.value.error).toBeNull();
+			expect(userGames.value.error).toBeNull();
 		});
 	});
 
@@ -625,9 +640,9 @@ describe('UserGames Store', () => {
 
 			mockFetch.mockReturnValueOnce(loadingPromise);
 
-			const loadPromise = userGamesStore.loadUserGames();
+			const loadPromise = userGames.loadUserGames();
 
-			expect(userGamesStore.value.isLoading).toBe(true);
+			expect(userGames.value.isLoading).toBe(true);
 
 			resolvePromise!({
 				ok: true,
@@ -642,7 +657,7 @@ describe('UserGames Store', () => {
 
 			await loadPromise;
 
-			expect(userGamesStore.value.isLoading).toBe(false);
+			expect(userGames.value.isLoading).toBe(false);
 		});
 	});
 
@@ -655,18 +670,18 @@ describe('UserGames Store', () => {
 				json: () => Promise.resolve({ detail: 'Invalid data' })
 			});
 
-			await expect(userGamesStore.addGameToCollection({ game_id: 'invalid' })).rejects.toThrow('Invalid data');
+			await expect(userGames.addGameToCollection({ game_id: toGameId(999999) })).rejects.toThrow('Invalid data');
 
-			expect(userGamesStore.value.error).toBe('Invalid data');
-			expect(userGamesStore.value.isLoading).toBe(false);
+			expect(userGames.value.error).toBe('Invalid data');
+			expect(userGames.value.isLoading).toBe(false);
 		});
 
 		it('should handle network errors', async () => {
 			mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-			await expect(userGamesStore.loadUserGames()).rejects.toThrow('Network error');
+			await expect(userGames.loadUserGames()).rejects.toThrow('Network error');
 
-			expect(userGamesStore.value.error).toBe('Network error');
+			expect(userGames.value.error).toBe('Network error');
 		});
 	});
 
@@ -683,7 +698,7 @@ describe('UserGames Store', () => {
 				})
 			});
 
-			await userGamesStore.fetchUserGames();
+			await userGames.fetchUserGames();
 
 			expect(mockFetch).toHaveBeenCalled();
 		});

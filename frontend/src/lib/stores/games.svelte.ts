@@ -357,6 +357,11 @@ function createGamesStore() {
     // Clear error
     clearError: () => {
       state = { ...state, error: null };
+    },
+
+    // Reset store to initial state (for testing)
+    reset: () => {
+      state = { ...initialState };
     }
   };
 }
