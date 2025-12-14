@@ -287,11 +287,7 @@ export class APIResponseMock {
 
   // Error response mocks
   static mockErrorResponse(status = 400, message = 'Test error') {
-    return vi.fn().mockRejectedValue({
-      status,
-      message,
-      json: vi.fn().mockResolvedValue({ detail: message })
-    });
+    return vi.fn().mockResolvedValue(this.createResponse({ detail: message }, status));
   }
 
   static mockNetworkError() {
