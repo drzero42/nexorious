@@ -1,15 +1,22 @@
 """
 Shared utilities for integration tests.
 Provides common fixtures, helpers, and test client setup.
+Uses PostgreSQL via testcontainers for realistic database testing.
 """
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
 from typing import Dict, Any, Optional
 from unittest.mock import MagicMock
 from datetime import date
+
+# Configure testcontainers to use Podman if Docker is not available
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+os.environ.setdefault("DOCKER_HOST", f"unix:///run/user/{os.getuid()}/podman/podman.sock")
+
+from testcontainers.postgres import PostgresContainer
 
 from ..main import app
 from ..core.database import get_session
@@ -23,17 +30,68 @@ from ..services.igdb import IGDBService, GameMetadata
 from ..services.logo_service import LogoService
 
 
-@pytest.fixture(name="session")
-def session_fixture():
-    """Create a test database engine and session."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+# Module-level PostgreSQL container (shared across all tests in a session)
+_postgres_container: Optional[PostgresContainer] = None
+_test_engine = None
+
+
+def get_postgres_container() -> PostgresContainer:
+    """Get or create the shared PostgreSQL container."""
+    global _postgres_container
+    if _postgres_container is None:
+        _postgres_container = PostgresContainer(
+            image="postgres:16-alpine",
+            username="test",
+            password="test",
+            dbname="testdb",
+        )
+        _postgres_container.start()
+    return _postgres_container
+
+
+def get_test_engine():
+    """Get or create the test database engine."""
+    global _test_engine
+    if _test_engine is None:
+        container = get_postgres_container()
+        _test_engine = create_engine(
+            container.get_connection_url(),
+            echo=False,
+            pool_pre_ping=True,
+        )
+    return _test_engine
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_database():
+    """Set up the test database once per session."""
+    engine = get_test_engine()
     SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
+    yield
+    # Cleanup happens when container is garbage collected or explicitly stopped
+
+
+@pytest.fixture(name="session")
+def session_fixture(setup_test_database):
+    """Create a test database session with transaction rollback."""
+    engine = get_test_engine()
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+
+    # Begin a nested transaction (savepoint) so that explicit rollback
+    # calls in tests don't break the outer transaction
+    nested = connection.begin_nested()
+
+    yield session
+
+    # Cleanup - rollback any remaining changes
+    session.close()
+    if nested.is_active:
+        nested.rollback()
+    if transaction.is_active:
+        transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture(name="test_logo_service", scope="session")
@@ -52,13 +110,9 @@ def test_logo_service_fixture():
 @pytest.fixture(name="client")
 def client_fixture(session: Session):
     """Create a test client with the test database session."""
-    # Store the engine for creating new sessions
-    test_engine = session.get_bind()
-    
     def get_session_override():
-        # Create a new session for each request to avoid isolation issues
-        with Session(test_engine) as new_session:
-            yield new_session
+        # Use the same session to stay within the transaction
+        yield session
 
     app.dependency_overrides[get_session] = get_session_override
     client = TestClient(app)
@@ -69,14 +123,10 @@ def client_fixture(session: Session):
 @pytest.fixture(name="client_with_logo_service")
 def client_with_logo_service_fixture(session: Session, test_logo_service: LogoService):
     """Create a test client with the test database session and logo service."""
-    # Store the engine for creating new sessions
-    test_engine = session.get_bind()
-    
     def get_session_override():
-        # Create a new session for each request to avoid isolation issues
-        with Session(test_engine) as new_session:
-            yield new_session
-    
+        # Use the same session to stay within the transaction
+        yield session
+
     def get_logo_service_override():
         return test_logo_service
 
@@ -499,14 +549,15 @@ def configurable_mock_igdb_fixture():
 def client_with_mock_igdb_fixture(session: Session, mock_igdb_service):
     """Create a test client with mocked IGDB service."""
     def get_session_override():
-        return session
-    
+        # Use the same session to stay within the transaction
+        yield session
+
     def get_igdb_service_override():
         return mock_igdb_service
 
     app.dependency_overrides[get_session] = get_session_override
     app.dependency_overrides[get_igdb_service_dependency] = get_igdb_service_override
-    
+
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()

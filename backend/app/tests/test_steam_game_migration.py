@@ -11,7 +11,7 @@ This test file covers:
 
 import pytest
 from sqlmodel import Session, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from ..models.user import User
 from ..models.steam_game import SteamGame
@@ -50,21 +50,20 @@ class TestSteamGameMigration:
 
     def test_schema_column_existence(self, session: Session):
         """Test that game_id column has been removed and igdb_id exists."""
-        # Use direct SQL to check column existence
+        # First verify igdb_id exists (this should work)
         try:
-            # This should fail - game_id column should not exist
-            session.exec(text("SELECT game_id FROM steam_games LIMIT 1")).first()  # type: ignore[call-overload]
-            pytest.fail("game_id column should not exist after migration")
-        except OperationalError:
-            # Column doesn't exist - this is expected after migration
-            assert True
-
-        try:
-            # This should work - igdb_id column should exist
             session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1")).first()  # type: ignore[call-overload]
-            assert True
-        except OperationalError as e:
+        except (OperationalError, ProgrammingError) as e:
             pytest.fail(f"igdb_id column should exist: {e}")
+
+        # Now check that game_id column does NOT exist
+        # We use a separate connection to avoid transaction state issues
+        from sqlalchemy import inspect
+        inspector = inspect(session.get_bind())
+        columns = [col['name'] for col in inspector.get_columns('steam_games')]
+
+        assert 'igdb_id' in columns, "igdb_id column should exist after migration"
+        assert 'game_id' not in columns, "game_id column should not exist after migration"
 
     def test_migration_removes_game_id_column(self, session: Session, test_user: User):
         """Test that migration successfully removed game_id column."""
@@ -254,20 +253,17 @@ class TestMigrationRollback:
         # 3. Rollback would restore foreign key constraint to games table
         # 4. All existing data would be preserved
 
-        # Verify current post-migration state (game_id should not exist)
-        try:
-            session.exec(text("SELECT game_id FROM steam_games LIMIT 1"))  # type: ignore[call-overload]
-            pytest.fail("game_id column should not exist after migration")
-        except OperationalError:
-            # This is expected - game_id column was removed by migration
-            assert True
+        # Verify current post-migration state using schema inspection
+        # (avoids transaction state issues with PostgreSQL)
+        from sqlalchemy import inspect
+        inspector = inspect(session.get_bind())
+        columns = [col['name'] for col in inspector.get_columns('steam_games')]
 
-        # Verify igdb_id exists (our replacement)
-        try:
-            session.exec(text("SELECT igdb_id FROM steam_games LIMIT 1"))  # type: ignore[call-overload]
-            assert True
-        except OperationalError:
-            pytest.fail("igdb_id column should exist after migration")
+        # game_id should not exist after migration
+        assert 'game_id' not in columns, "game_id column should not exist after migration"
+
+        # igdb_id should exist (our replacement)
+        assert 'igdb_id' in columns, "igdb_id column should exist after migration"
 
 
 class TestMigrationEdgeCases:

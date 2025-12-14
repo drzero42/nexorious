@@ -38,6 +38,13 @@ Once the server is running, you can access:
 
 ## Testing
 
+Tests use **testcontainers** to spin up a real PostgreSQL database. This requires Docker or Podman to be running.
+
+### Prerequisites
+
+- Docker or Podman must be running
+- For Podman users, ensure the socket is available at `/run/user/$UID/podman/podman.sock`
+
 ### Running Tests
 
 Run the basic test suite:
@@ -100,10 +107,37 @@ The project aims for:
 
 ## Database
 
-The application supports both SQLite and PostgreSQL databases. Configure the `DATABASE_URL` in your `.env` file:
+The application requires **PostgreSQL** (SQLite is no longer supported). Configure the `DATABASE_URL` in your `.env` file:
 
-- SQLite: `sqlite:///./nexorious.db`
-- PostgreSQL: `postgresql://username:password@localhost:5432/nexorious`
+```bash
+DATABASE_URL=postgresql://username:password@localhost:5432/nexorious
+```
+
+### PostgreSQL Setup
+
+For local development, you can use Docker/Podman:
+
+```bash
+# Start PostgreSQL container
+podman run -d \
+  --name nexorious-db \
+  -e POSTGRES_USER=nexorious \
+  -e POSTGRES_PASSWORD=nexorious \
+  -e POSTGRES_DB=nexorious \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+Or use the project's docker-compose setup which includes PostgreSQL.
+
+### Breaking Change (v0.2.0)
+
+**SQLite support has been removed.** If you were using SQLite, you must migrate to PostgreSQL:
+
+1. Export your data from SQLite
+2. Set up a PostgreSQL database
+3. Import your data to PostgreSQL
+4. Update your `DATABASE_URL` environment variable
 
 ## Configuration
 

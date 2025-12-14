@@ -12,10 +12,10 @@ class Settings(BaseSettings):
         description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
     )
     
-    # Database
+    # Database (PostgreSQL only)
     database_url: str = Field(
-        default="sqlite:///./nexorious.db",
-        description="Database URL. Use sqlite:///./nexorious.db for SQLite or postgresql://user:pass@localhost/db for PostgreSQL"
+        default="postgresql://nexorious:nexorious@localhost:5432/nexorious",
+        description="PostgreSQL database URL. Format: postgresql://user:pass@host:port/db"
     )
     
     # Security

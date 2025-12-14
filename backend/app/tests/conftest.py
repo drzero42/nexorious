@@ -8,8 +8,9 @@ from unittest.mock import patch
 
 # Import all fixtures from integration_test_utils to make them globally available
 from .integration_test_utils import (
+    setup_test_database,  # Session-scoped fixture for PostgreSQL container
     session_fixture as session,
-    test_logo_service_fixture as test_logo_service, 
+    test_logo_service_fixture as test_logo_service,
     client_fixture as client,
     client_with_logo_service_fixture as client_with_logo_service,
     test_user_fixture as test_user,
@@ -50,30 +51,31 @@ def client_with_shared_session(session):
     from fastapi.testclient import TestClient
     from app.main import app
     from app.core.database import get_session
-    
+
     # Override the dependency to use the same session as the test
     def get_shared_session():
-        return session
-    
+        yield session
+
     app.dependency_overrides[get_session] = get_shared_session
-    
+
     try:
         with TestClient(app) as client:
             yield client
     finally:
         # Clean up the override
-        del app.dependency_overrides[get_session]
+        app.dependency_overrides.pop(get_session, None)
 
 
 # Re-export all fixtures so pytest can find them
 __all__ = [
+    'setup_test_database',
     'session',
     'test_logo_service',
-    'client', 
+    'client',
     'client_with_logo_service',
     'client_with_shared_session',
     'test_user',
-    'admin_user', 
+    'admin_user',
     'auth_headers',
     'admin_headers',
     'test_platform',
