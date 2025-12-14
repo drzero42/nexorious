@@ -111,7 +111,10 @@ class Job(SQLModel, table=True):
 
     # Relationships
     user: "User" = Relationship(back_populates="jobs")
-    review_items: List["ReviewItem"] = Relationship(back_populates="job")
+    review_items: List["ReviewItem"] = Relationship(
+        back_populates="job",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
     def get_result_summary(self) -> Dict[str, Any]:
         """Get result summary as a dictionary."""
