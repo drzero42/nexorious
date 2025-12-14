@@ -42,3 +42,7 @@ export { default as GameSearchStep } from './GameSearchStep.svelte';
 export { default as GameConfirmStep } from './GameConfirmStep.svelte';
 export { default as MetadataConfirmStep } from './MetadataConfirmStep.svelte';
 export { default as PlatformSelector } from './PlatformSelector.svelte';
+
+// Job and Review components
+export { default as JobCard } from './JobCard.svelte';
+export { default as ReviewItemCard } from './ReviewItemCard.svelte';

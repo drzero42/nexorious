@@ -102,3 +102,27 @@ export type {
 // App Status store
 export { appStatus } from './app-status.svelte';
 export type { AppStatusState } from './app-status.svelte';
+
+// Jobs store
+export { jobs } from './jobs.svelte';
+export type { Job, JobFilters, JobsState } from './jobs.svelte';
+export { JobType, JobSource, JobStatus } from './jobs.svelte';
+
+// Review store
+export { review } from './review.svelte';
+export type {
+  ReviewItem,
+  ReviewItemDetail,
+  ReviewSummary,
+  ReviewFilters,
+  ReviewState
+} from './review.svelte';
+export { ReviewItemStatus } from './review.svelte';
+
+// Re-export IGDBCandidate from types for review pages
+export type { IGDBCandidate } from '$lib/types/jobs';
+
+// Sync store
+export { sync } from './sync.svelte';
+export type { SyncConfig, SyncConfigUpdateRequest, SyncStatusResponse, SyncState } from './sync.svelte';
+export { SyncFrequency, SyncPlatform } from './sync.svelte';
