@@ -87,9 +87,6 @@ describe('UserGames Store', () => {
 		vi.clearAllMocks();
 		global.fetch = mockFetch;
 
-		// Suppress console.error for cleaner test output
-		vi.spyOn(console, 'error').mockImplementation(() => {});
-
 		// Reset auth mock to default authenticated state
 		mockAuth.auth.value.accessToken = 'test-access-token';
 		mockAuth.auth.value.refreshToken = 'test-refresh-token';
@@ -259,6 +256,8 @@ describe('UserGames Store', () => {
 		});
 
 		it('should handle load user games error', async () => {
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
 			mockFetch.mockResolvedValueOnce({
 				ok: false,
 				status: 500,
@@ -271,6 +270,13 @@ describe('UserGames Store', () => {
 			const state = userGames.value;
 			expect(state.isLoading).toBe(false);
 			expect(state.error).toBe('Server error');
+
+			// Verify the expected error was logged
+			expect(consoleSpy).toHaveBeenCalledWith(
+				expect.stringContaining('API call failed'),
+				expect.objectContaining({ status: 500, errorMessage: 'Server error' })
+			);
+			consoleSpy.mockRestore();
 		});
 	});
 
@@ -663,6 +669,8 @@ describe('UserGames Store', () => {
 
 	describe('Error Handling', () => {
 		it('should handle API errors gracefully', async () => {
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
 			mockFetch.mockResolvedValueOnce({
 				ok: false,
 				status: 400,
@@ -674,9 +682,18 @@ describe('UserGames Store', () => {
 
 			expect(userGames.value.error).toBe('Invalid data');
 			expect(userGames.value.isLoading).toBe(false);
+
+			// Verify the expected error was logged
+			expect(consoleSpy).toHaveBeenCalledWith(
+				expect.stringContaining('API call failed'),
+				expect.objectContaining({ status: 400, errorMessage: 'Invalid data' })
+			);
+			consoleSpy.mockRestore();
 		});
 
 		it('should handle network errors', async () => {
+			// Network errors don't reach the API error logging code path
+			// since fetch itself throws before we get a response
 			mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
 			await expect(userGames.loadUserGames()).rejects.toThrow('Network error');
