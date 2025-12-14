@@ -6,6 +6,9 @@ WORKDIR /app
 # Enable bytecode compilation for faster startup
 ENV UV_COMPILE_BYTECODE=1
 
+# Use copy mode for linking (hardlinks don't work across container filesystem layers)
+ENV UV_LINK_MODE=copy
+
 # Copy dependency files first (better layer caching)
 COPY pyproject.toml uv.lock ./
 
