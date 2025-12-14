@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
-import { 
-  setupFetchMock, 
+import {
+  setupFetchMock,
   resetFetchMock,
   mockConfig
 } from '../../../test-utils/api-mocks';
-import { resetStoresMocks, mockUserGamesStore } from '../../../test-utils/stores-mocks';
+import {
+  resetStoresMocks,
+  mockUserGamesStore,
+  createTestUserGame,
+  setupUserGamesStoreWithData
+} from '../../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
+import { toGameId } from '$lib/types/game';
 import GameDetailPage from './+page.svelte';
 
 // Mock the config module
@@ -60,37 +66,27 @@ describe('Game Detail Page - Enhanced Metadata', () => {
 
   describe('Platform Information Display', () => {
     it('should not display platform section when no platforms available', async () => {
-      // Override mock to have no platforms for this specific test
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithoutPlatforms = {
-        ...baseGame,
+      // Create a game without platforms using the helper
+      const gameWithoutPlatforms = createTestUserGame({
         platforms: []
-      };
-      
-      mockUserGamesStore.value.userGames = [gameWithoutPlatforms];
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutPlatforms.id ? gameWithoutPlatforms : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutPlatforms.game.id ? gameWithoutPlatforms : null);
-      
+      });
+      setupUserGamesStoreWithData([gameWithoutPlatforms]);
+      mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutPlatforms);
+
       render(GameDetailPage);
-      
+
       // Wait for the component to finish loading
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       // Should not display platform section since mock has empty platforms array
       expect(screen.queryByText('Available On')).not.toBeInTheDocument();
     });
 
     it('should display platform information when platforms are available', async () => {
-      // Add platform data to the mock for this test  
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithPlatforms = {
-        ...baseGame,
+      // Create a game with platform data using the helper
+      const gameWithPlatforms = createTestUserGame({
         platforms: [
           {
             id: 'platform-1',
@@ -98,8 +94,10 @@ describe('Game Detail Page - Enhanced Metadata', () => {
               id: 'pc',
               name: 'PC (Windows)',
               display_name: 'PC (Windows)',
+              icon_url: 'https://example.com/pc-icon.png',
               source: 'manual',
               is_active: true,
+              version_added: '1.0.0',
               created_at: '2024-01-01T00:00:00Z',
               updated_at: '2024-01-01T00:00:00Z'
             },
@@ -111,51 +109,43 @@ describe('Game Detail Page - Enhanced Metadata', () => {
               base_url: 'https://store.steampowered.com',
               source: 'manual',
               is_active: true,
+              version_added: '1.0.0',
               created_at: '2024-01-01T00:00:00Z',
               updated_at: '2024-01-01T00:00:00Z'
             },
             store_game_id: '12345',
-            store_url: 'https://store.steampowered.com/app/12345/test-game/',
             is_available: true,
             created_at: '2024-01-01T00:00:00Z'
           }
         ]
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
-      
-      // Also mock getUserGame to return the game with platforms
+      });
+      setupUserGamesStoreWithData([gameWithPlatforms]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithPlatforms);
-      // Update the selector to return the game with platforms
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithPlatforms.id ? gameWithPlatforms : null);
-      
+
       render(GameDetailPage);
-      
+
       // Wait for the component to finish loading and check that PC (Windows) platform badge is visible
       await waitFor(() => {
         expect(screen.getByText('PC (Windows)')).toBeInTheDocument();
       });
-      
+
       // Click the PC (Windows) platform badge to expand its details
       const pcBadge = screen.getByRole('button', { name: /PC \(Windows\).*Available on.*Steam.*Click to expand details/i });
       await fireEvent.click(pcBadge);
-      
+
       // Now the "Available On" text should be visible in the expanded view
       await waitFor(() => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
-      
+
       // Steam should be visible in the expanded content
       const steamElements = screen.getAllByText('Steam');
       expect(steamElements.length).toBeGreaterThan(0);
     });
 
     it('should display clickable store links with proper accessibility', async () => {
-      // Add platform data to the mock for this test
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithPlatforms = {
-        ...baseGame,
+      // Create a game with platform data using the helper
+      const gameWithPlatforms = createTestUserGame({
         platforms: [
           {
             id: 'platform-1',
@@ -163,8 +153,10 @@ describe('Game Detail Page - Enhanced Metadata', () => {
               id: 'pc',
               name: 'PC (Windows)',
               display_name: 'PC (Windows)',
+              icon_url: 'https://example.com/pc-icon.png',
               source: 'manual',
               is_active: true,
+              version_added: '1.0.0',
               created_at: '2024-01-01T00:00:00Z',
               updated_at: '2024-01-01T00:00:00Z'
             },
@@ -176,38 +168,34 @@ describe('Game Detail Page - Enhanced Metadata', () => {
               base_url: 'https://store.steampowered.com',
               source: 'manual',
               is_active: true,
+              version_added: '1.0.0',
               created_at: '2024-01-01T00:00:00Z',
               updated_at: '2024-01-01T00:00:00Z'
             },
             store_game_id: '12345',
-            store_url: 'https://store.steampowered.com/app/12345/test-game/',
             is_available: true,
             created_at: '2024-01-01T00:00:00Z'
           }
         ]
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithPlatforms];
-      
-      // Also mock getUserGame to return the game with platforms
+      });
+      setupUserGamesStoreWithData([gameWithPlatforms]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithPlatforms);
-      // Update the selector to return the game with platforms
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithPlatforms.id ? gameWithPlatforms : null);
-      
+
       render(GameDetailPage);
-      
+
       // Wait for PC (Windows) platform badge to be visible and click it to expand
       await waitFor(() => {
         expect(screen.getByText('PC (Windows)')).toBeInTheDocument();
       });
-      
+
       const pcBadge = screen.getByRole('button', { name: /PC \(Windows\).*Available on.*Steam.*Click to expand details/i });
       await fireEvent.click(pcBadge);
-      
+
       // Now check for the expanded content with "Available On"
       await waitFor(() => {
         expect(screen.getByText('Available On')).toBeInTheDocument();
       });
-      
+
       // The store link should now be visible - check for any Steam text
       expect(screen.getAllByText('Steam').length).toBeGreaterThan(0);
     });
@@ -228,31 +216,21 @@ describe('Game Detail Page - Enhanced Metadata', () => {
 
 
     it('should not display rating section when no rating', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithoutRating = {
-        ...baseGame,
+      const gameWithoutRating = createTestUserGame({
         game: {
-          ...baseGame.game,
           rating_count: 0,
           rating_average: 0
         }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithoutRating];
-      
-      // Also mock getUserGame to return the game without rating
+      });
+      setupUserGamesStoreWithData([gameWithoutRating]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutRating);
-      // Update the selector to return the game without rating
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutRating.id ? gameWithoutRating : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutRating.game.id ? gameWithoutRating : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       // Component should not show Game Rating section without rating data
       expect(screen.queryByText('Game Rating')).not.toBeInTheDocument();
     });
@@ -294,32 +272,22 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should not display How Long to Beat section when no times available', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithoutTimes = {
-        ...baseGame,
+      const gameWithoutTimes = createTestUserGame({
         game: {
-          ...baseGame.game,
           howlongtobeat_main: 0,
           howlongtobeat_extra: 0,
           howlongtobeat_completionist: 0
         }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithoutTimes];
-      
-      // Also mock getUserGame to return the game without HLTB times
+      });
+      setupUserGamesStoreWithData([gameWithoutTimes]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutTimes);
-      // Update the selector to return the game without HLTB times
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutTimes.id ? gameWithoutTimes : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutTimes.game.id ? gameWithoutTimes : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       // Component should not show How Long to Beat section without times
       expect(screen.queryByText('How Long to Beat')).not.toBeInTheDocument();
     });
@@ -350,30 +318,20 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should display IGDB ID as plain text when slug is missing', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithoutSlug = {
-        ...baseGame,
+      const gameWithoutSlug = createTestUserGame({
         game: {
-          ...baseGame.game,
           igdb_slug: '' // Remove slug but keep ID
         }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithoutSlug];
-      
-      // Also mock getUserGame to return the game without slug
+      });
+      setupUserGamesStoreWithData([gameWithoutSlug]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithoutSlug);
-      // Update the selector to return the game without slug
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithoutSlug.id ? gameWithoutSlug : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithoutSlug.game.id ? gameWithoutSlug : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
       const igdbText = screen.getByText('123');
       expect(igdbText).toBeInTheDocument();
@@ -382,38 +340,28 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should handle missing optional fields gracefully', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithMissingFields = {
-        ...baseGame,
+      const gameWithMissingFields = createTestUserGame({
         game: {
-          ...baseGame.game,
           developer: '',
           estimated_playtime_hours: 0,
-          igdb_id: 456
+          igdb_id: toGameId(456)
         }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithMissingFields];
-      
-      // Also mock getUserGame to return the game with missing fields
+      });
+      setupUserGamesStoreWithData([gameWithMissingFields]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithMissingFields);
-      // Update the selector to return the game with missing fields
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithMissingFields.id ? gameWithMissingFields : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithMissingFields.game.id ? gameWithMissingFields : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       // Component should not show fields that are undefined
       expect(screen.queryByText('Developer')).not.toBeInTheDocument();
       expect(screen.queryByText('Estimated Playtime')).not.toBeInTheDocument();
       // IGDB ID should always be present since all games are IGDB-sourced
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
-      
+
       // Other fields should still be present
       expect(screen.getByText('Publisher')).toBeInTheDocument();
       expect(screen.getByText('Genre')).toBeInTheDocument();
@@ -449,14 +397,9 @@ describe('Game Detail Page - Enhanced Metadata', () => {
     });
 
     it('should handle minimal metadata gracefully', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const minimalGame = {
-        ...baseGame,
+      const minimalGame = createTestUserGame({
         game: {
-          ...baseGame.game,
-          id: 1,
+          id: toGameId(1),
           title: 'Minimal Game',
           description: '',
           genre: '',
@@ -468,27 +411,22 @@ describe('Game Detail Page - Enhanced Metadata', () => {
           howlongtobeat_main: 0,
           howlongtobeat_extra: 0,
           howlongtobeat_completionist: 0,
-          igdb_id: 789
+          igdb_id: toGameId(789)
         },
         platforms: []
-      };
-      (mockUserGamesStore.value as any).userGames = [minimalGame];
-      
-      // Also mock getUserGame to return the minimal game
+      });
+      setupUserGamesStoreWithData([minimalGame]);
       mockUserGamesStore.getUserGame.mockResolvedValue(minimalGame);
-      // Update the selector to return the minimal game
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === minimalGame.id ? minimalGame : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === minimalGame.game.id ? minimalGame : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Minimal Game')).toBeInTheDocument();
       });
-      
+
       // Title should be displayed with updated title from mock data
       expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Minimal Game');
-      
+
       // These sections should not be displayed with minimal data
       expect(screen.queryByText('Available On')).not.toBeInTheDocument();
       expect(screen.queryByText('Game Rating')).not.toBeInTheDocument();
@@ -498,7 +436,7 @@ describe('Game Detail Page - Enhanced Metadata', () => {
       expect(screen.queryByText('Estimated Playtime')).not.toBeInTheDocument();
       // IGDB ID should always be present since all games are IGDB-sourced
       expect(screen.getByText('IGDB ID')).toBeInTheDocument();
-      
+
       // Personal information section should still be available
       expect(screen.getByText('Your Information')).toBeInTheDocument();
     });
@@ -506,30 +444,20 @@ describe('Game Detail Page - Enhanced Metadata', () => {
 
   describe('Edge Cases', () => {
     it('should handle decimal rating values correctly', async () => {
-      const baseGame = mockUserGamesStore.value.userGames[0];
-      if (!baseGame) throw new Error('Base game not found in mock');
-      
-      const gameWithDecimalRating = {
-        ...baseGame,
+      const gameWithDecimalRating = createTestUserGame({
         game: {
-          ...baseGame.game,
           rating_average: 77.5
         }
-      };
-      (mockUserGamesStore.value as any).userGames = [gameWithDecimalRating];
-      
-      // Also mock getUserGame to return the game with decimal rating
+      });
+      setupUserGamesStoreWithData([gameWithDecimalRating]);
       mockUserGamesStore.getUserGame.mockResolvedValue(gameWithDecimalRating);
-      // Update the selector to return the game with decimal rating
-      (mockUserGamesStore.selectors.byId as any) = vi.fn((id: string) => id === gameWithDecimalRating.id ? gameWithDecimalRating : null);
-      (mockUserGamesStore.selectors.byGameId as any) = vi.fn((gameId: any) => gameId === gameWithDecimalRating.game.id ? gameWithDecimalRating : null);
-      
+
       render(GameDetailPage);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Test Game')).toBeInTheDocument();
       });
-      
+
       expect(screen.getByText('7.75/10')).toBeInTheDocument(); // formatIgdbRating(77.5) = 7.75
     });
 

@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { toGameId } from '$lib/types/game';
-import { 
-  setupFetchMock, 
+import {
+  setupFetchMock,
   resetFetchMock,
   mockConfig
 } from '../../test-utils/api-mocks';
-import { mockUserGamesStore, resetStoresMocks } from '../../test-utils/stores-mocks';
+import {
+  mockUserGamesStore,
+  resetStoresMocks,
+  createTestUserGame,
+  setupUserGamesStoreWithData,
+  setUserGamesStoreLoading
+} from '../../test-utils/stores-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../test-utils/auth-mocks';
 import { PlayStatus, OwnershipStatus } from '$lib/stores/user-games.svelte';
 
@@ -55,6 +61,112 @@ vi.mock('$lib/components', async () => {
 import DashboardPage from './+page.svelte';
 import { goto } from '$app/navigation';
 
+// Test data factory for dashboard tests
+const createDashboardTestGames = () => [
+  createTestUserGame({
+    id: 'user-game-1',
+    game: {
+      id: toGameId(1001),
+      title: 'Test Game',
+      description: 'A test game',
+      genre: 'Action',
+      developer: 'Test Dev',
+      publisher: 'Test Pub',
+      release_date: '2024-01-01',
+      cover_art_url: 'https://example.com/cover.jpg',
+      rating_average: 45,
+      rating_count: 100,
+      game_metadata: '{}',
+      estimated_playtime_hours: 25,
+      howlongtobeat_main: 18,
+      howlongtobeat_extra: 28,
+      howlongtobeat_completionist: 45,
+      igdb_id: toGameId(123),
+      igdb_slug: 'test-game-slug',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z'
+    },
+    ownership_status: OwnershipStatus.OWNED,
+    personal_rating: 4,
+    is_loved: true,
+    play_status: PlayStatus.COMPLETED,
+    hours_played: 25,
+    personal_notes: 'Great game!',
+    acquired_date: '2024-01-01',
+    platforms: [],
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z'
+  }),
+  createTestUserGame({
+    id: 'user-game-2',
+    game: {
+      id: toGameId(1002),
+      title: 'RPG Game',
+      description: 'An RPG game',
+      genre: 'RPG',
+      developer: 'RPG Dev',
+      publisher: 'RPG Pub',
+      release_date: '2024-02-01',
+      cover_art_url: 'https://example.com/rpg.jpg',
+      rating_average: 48,
+      rating_count: 200,
+      game_metadata: '{}',
+      estimated_playtime_hours: 60,
+      howlongtobeat_main: 40,
+      howlongtobeat_extra: 70,
+      howlongtobeat_completionist: 120,
+      igdb_id: toGameId(456),
+      igdb_slug: 'rpg-game-slug',
+      created_at: '2024-02-01T00:00:00Z',
+      updated_at: '2024-02-01T00:00:00Z'
+    },
+    ownership_status: OwnershipStatus.OWNED,
+    personal_rating: 5,
+    is_loved: false,
+    play_status: PlayStatus.IN_PROGRESS,
+    hours_played: 15,
+    personal_notes: 'Playing through',
+    acquired_date: '2024-02-01',
+    platforms: [],
+    created_at: '2024-02-01T00:00:00Z',
+    updated_at: '2024-02-01T00:00:00Z'
+  }),
+  createTestUserGame({
+    id: 'user-game-3',
+    game: {
+      id: toGameId(1003),
+      title: 'Action Game 2',
+      description: 'Another action game',
+      genre: 'Action',
+      developer: 'Action Dev',
+      publisher: 'Action Pub',
+      release_date: '2024-04-01',
+      cover_art_url: 'https://example.com/action2.jpg',
+      rating_average: 38,
+      rating_count: 80,
+      game_metadata: '{}',
+      estimated_playtime_hours: 20,
+      howlongtobeat_main: 15,
+      howlongtobeat_extra: 25,
+      howlongtobeat_completionist: 40,
+      igdb_id: toGameId(101),
+      igdb_slug: 'action-game-2-slug',
+      created_at: '2024-04-01T00:00:00Z',
+      updated_at: '2024-04-01T00:00:00Z'
+    },
+    ownership_status: OwnershipStatus.OWNED,
+    personal_rating: 3,
+    is_loved: true,
+    play_status: PlayStatus.COMPLETED,
+    hours_played: 30,
+    personal_notes: 'Mastered all content',
+    acquired_date: '2024-04-01',
+    platforms: [],
+    created_at: '2024-04-01T00:00:00Z',
+    updated_at: '2024-04-01T00:00:00Z'
+  })
+];
+
 describe('Dashboard Page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,124 +177,8 @@ describe('Dashboard Page', () => {
     setAuthenticatedState();
     vi.mocked(goto).mockClear();
 
-    // Setup mock data for user games with comprehensive test data
-    mockUserGamesStore.value = {
-      userGames: [
-        {
-          id: 'user-game-1',
-          game: {
-            id: toGameId(1001),
-            title: 'Test Game',
-            description: 'A test game',
-            genre: 'Action',
-            developer: 'Test Dev',
-            publisher: 'Test Pub',
-            release_date: '2024-01-01',
-            cover_art_url: 'https://example.com/cover.jpg',
-            rating_average: 45,
-            rating_count: 100,
-            game_metadata: '{}',
-            estimated_playtime_hours: 25,
-            howlongtobeat_main: 18,
-            howlongtobeat_extra: 28,
-            howlongtobeat_completionist: 45,
-            igdb_id: toGameId(123),
-            igdb_slug: 'test-game-slug',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
-          },
-          ownership_status: OwnershipStatus.OWNED,
-          personal_rating: 4,
-          is_loved: true,
-          play_status: PlayStatus.COMPLETED,
-          hours_played: 25,
-          personal_notes: 'Great game!',
-          acquired_date: '2024-01-01',
-          platforms: [],
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
-        },
-        {
-          id: 'user-game-2',
-          game: {
-            id: toGameId(1002),
-            title: 'RPG Game',
-            description: 'An RPG game',
-            genre: 'RPG',
-            developer: 'RPG Dev',
-            publisher: 'RPG Pub',
-            release_date: '2024-02-01',
-            cover_art_url: 'https://example.com/rpg.jpg',
-            rating_average: 48,
-            rating_count: 200,
-            game_metadata: '{}',
-            estimated_playtime_hours: 60,
-            howlongtobeat_main: 40,
-            howlongtobeat_extra: 70,
-            howlongtobeat_completionist: 120,
-            igdb_id: toGameId(456),
-            igdb_slug: 'rpg-game-slug',
-            created_at: '2024-02-01T00:00:00Z',
-            updated_at: '2024-02-01T00:00:00Z'
-          },
-          ownership_status: OwnershipStatus.OWNED,
-          personal_rating: 5,
-          is_loved: false,
-          play_status: PlayStatus.IN_PROGRESS,
-          hours_played: 15,
-          personal_notes: 'Playing through',
-          acquired_date: '2024-02-01',
-          platforms: [],
-          created_at: '2024-02-01T00:00:00Z',
-          updated_at: '2024-02-01T00:00:00Z'
-        },
-        {
-          id: 'user-game-3',
-          game: {
-            id: toGameId(1003),
-            title: 'Action Game 2',
-            description: 'Another action game',
-            genre: 'Action',
-            developer: 'Action Dev',
-            publisher: 'Action Pub',
-            release_date: '2024-04-01',
-            cover_art_url: 'https://example.com/action2.jpg',
-            rating_average: 38,
-            rating_count: 80,
-            game_metadata: '{}',
-            estimated_playtime_hours: 20,
-            howlongtobeat_main: 15,
-            howlongtobeat_extra: 25,
-            howlongtobeat_completionist: 40,
-            igdb_id: toGameId(101),
-            igdb_slug: 'action-game-2-slug',
-            created_at: '2024-04-01T00:00:00Z',
-            updated_at: '2024-04-01T00:00:00Z'
-          },
-          ownership_status: OwnershipStatus.OWNED,
-          personal_rating: 3,
-          is_loved: true,
-          play_status: PlayStatus.COMPLETED,
-          hours_played: 30,
-          personal_notes: 'Mastered all content',
-          acquired_date: '2024-04-01',
-          platforms: [],
-          created_at: '2024-04-01T00:00:00Z',
-          updated_at: '2024-04-01T00:00:00Z'
-        }
-      ],
-      currentUserGame: null,
-      stats: null,
-      isLoading: false,
-      error: null,
-      filters: {},
-      pagination: {
-        page: 1,
-        per_page: 20,
-        total: 3,
-        pages: 1
-      }
-    };
+    // Setup mock data using the helper function
+    setupUserGamesStoreWithData(createDashboardTestGames());
 
     // Add required methods to mocks
     mockUserGamesStore.fetchUserGames = vi.fn().mockResolvedValue(undefined);
@@ -196,25 +192,25 @@ describe('Dashboard Page', () => {
     });
 
     it('should show loading state when isLoading is true', async () => {
-      mockUserGamesStore.value.isLoading = true;
-      
+      setUserGamesStoreLoading(true);
+
       render(DashboardPage);
-      
+
       expect(screen.getByText('Loading statistics...')).toBeInTheDocument();
     });
 
     it('should show empty state when no games exist', async () => {
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([]);
+
       render(DashboardPage);
-      
+
       expect(screen.getByText('No games in your collection yet. Add some games to see your statistics!')).toBeInTheDocument();
       expect(screen.getByText('Add Your First Game')).toBeInTheDocument();
     });
 
     it('should navigate to add game page when clicking "Add Your First Game"', async () => {
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([]);
+
       render(DashboardPage);
       
       const addGameButton = screen.getByText('Add Your First Game');
@@ -319,46 +315,37 @@ describe('Dashboard Page', () => {
 
   describe('Edge Cases', () => {
     it('should handle games with no ratings', async () => {
-      const gamesWithoutRatings = mockUserGamesStore.value.userGames.map(game => ({
-        ...game,
-        personal_rating: undefined
-      }));
-      
-      mockUserGamesStore.value.userGames = gamesWithoutRatings as any;
-      
+      const gamesWithoutRatings = createDashboardTestGames().map(game =>
+        createTestUserGame({ ...game, personal_rating: null })
+      );
+      setupUserGamesStoreWithData(gamesWithoutRatings);
+
       render(DashboardPage);
-      
+
       expect(screen.getByText('Average Rating')).toBeInTheDocument();
       expect(screen.getByText('N/A')).toBeInTheDocument();
     });
 
     it('should handle games with zero hours played', async () => {
-      const gamesWithoutHours = mockUserGamesStore.value.userGames.map(game => ({
-        ...game,
-        hours_played: 0
-      }));
-      
-      mockUserGamesStore.value.userGames = gamesWithoutHours;
-      
+      const gamesWithoutHours = createDashboardTestGames().map(game =>
+        createTestUserGame({ ...game, hours_played: 0 })
+      );
+      setupUserGamesStoreWithData(gamesWithoutHours);
+
       render(DashboardPage);
-      
+
       expect(screen.getByText('Total Hours')).toBeInTheDocument();
       expect(screen.getByText('0h')).toBeInTheDocument();
     });
 
     it('should handle games with missing genre data', async () => {
-      const gamesWithoutGenre = mockUserGamesStore.value.userGames.map(game => ({
-        ...game,
-        game: {
-          ...game.game,
-          genre: 'Unknown'
-        }
-      }));
-      
-      mockUserGamesStore.value.userGames = gamesWithoutGenre;
-      
+      const gamesWithoutGenre = createDashboardTestGames().map(game =>
+        createTestUserGame({ ...game, game: { ...game.game, genre: 'Unknown' } })
+      );
+      setupUserGamesStoreWithData(gamesWithoutGenre);
+
       render(DashboardPage);
-      
+
       expect(screen.getByText('Top Genres')).toBeInTheDocument();
       expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
@@ -384,21 +371,19 @@ describe('Dashboard Page', () => {
 
   describe('Data Loading', () => {
     it('should handle store error state gracefully', async () => {
-      mockUserGamesStore.value.error = null;
-      mockUserGamesStore.value.isLoading = false;
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([], { error: null, isLoading: false });
+
       render(DashboardPage);
-      
+
       // Should show empty state even with error (dashboard handles this gracefully)
       expect(screen.getByText('No games in your collection yet. Add some games to see your statistics!')).toBeInTheDocument();
     });
 
     it('should handle fetchUserGames rejection gracefully', async () => {
       mockUserGamesStore.fetchUserGames.mockRejectedValue(new Error('Network error'));
-      
+
       render(DashboardPage);
-      
+
       expect(mockUserGamesStore.fetchUserGames).toHaveBeenCalled();
       // Component should handle the error gracefully without crashing
     });

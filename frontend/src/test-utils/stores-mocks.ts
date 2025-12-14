@@ -24,17 +24,21 @@ export const mockGameMetadata = {
   updated_at: '2023-01-01T00:00:00.000Z'
 };
 
+// Play status type for test data
+type PlayStatusType = 'not_started' | 'in_progress' | 'completed' | 'mastered' | 'dominated' | 'shelved' | 'dropped' | 'replay';
+type OwnershipStatusType = 'owned' | 'borrowed' | 'rented' | 'subscription';
+
 // Mock user game (includes game metadata + user-specific data)
 export const mockUserGame = {
   id: 'user-game-1',
   game: mockGameMetadata,
-  ownership_status: 'owned' as const,
-  personal_rating: 4,
+  ownership_status: 'owned' as OwnershipStatusType,
+  personal_rating: 4 as number | null,
   is_loved: true,
-  play_status: 'completed' as const,
+  play_status: 'completed' as PlayStatusType,
   hours_played: 25,
-  personal_notes: 'Great game!',
-  acquired_date: '2023-01-01',
+  personal_notes: 'Great game!' as string | null,
+  acquired_date: '2023-01-01' as string | null,
   platforms: [
     {
       id: 'platform-1',
@@ -104,22 +108,38 @@ export const mockUserGames = [
 // For backwards compatibility
 export const mockGames = mockUserGames;
 
+// Type for user games store state
+interface UserGamesStoreState {
+  userGames: typeof mockUserGames;
+  currentUserGame: typeof mockUserGame | null;
+  stats: null;
+  isLoading: boolean;
+  error: string | null;
+  filters: Record<string, unknown>;
+  pagination: {
+    page: number;
+    per_page: number;
+    total: number;
+    pages: number;
+  };
+}
+
 // Mock user games store with entityState support
 export const mockUserGamesStore = {
   value: {
     userGames: mockUserGames,
-    currentUserGame: null,
+    currentUserGame: null as typeof mockUserGame | null,
     stats: null,
     isLoading: false,
-    error: null,
-    filters: {},
+    error: null as string | null,
+    filters: {} as Record<string, unknown>,
     pagination: {
       page: 1,
       per_page: 20,
       total: 3,
       pages: 1
     }
-  },
+  } as UserGamesStoreState,
   entityState: {
     optimisticUpdates: {
       isPending: false,
@@ -151,6 +171,12 @@ export const mockUserGamesStore = {
   getPileOfShame: vi.fn(() => mockUserGames.filter(g => g.play_status === 'not_started')),
   __testSetData: vi.fn((games) => {
     mockUserGamesStore.value.userGames = games;
+  }),
+  __testSetState: vi.fn((state: Partial<typeof mockUserGamesStore.value>) => {
+    mockUserGamesStore.value = { ...mockUserGamesStore.value, ...state };
+  }),
+  __testSetSelectors: vi.fn((selectors: Partial<typeof mockUserGamesStore.selectors>) => {
+    mockUserGamesStore.selectors = { ...mockUserGamesStore.selectors, ...selectors };
   }),
   on: vi.fn(),
   off: vi.fn(),
@@ -846,4 +872,127 @@ export function resetStoresMocks() {
     isLoading: false,
     error: null
   };
+}
+
+// ============================================================================
+// Type-safe test setup helpers
+// ============================================================================
+
+// Type for user game data used in tests
+export type TestUserGame = typeof mockUserGame;
+export type TestGameMetadata = typeof mockGameMetadata;
+
+// Type for partial game overrides - allows partial game metadata
+export interface TestUserGameOverrides extends Partial<Omit<TestUserGame, 'game'>> {
+  game?: Partial<TestGameMetadata>;
+}
+
+/**
+ * Creates a test user game by merging with the default mock data.
+ * Use this instead of spreading mockUserGame directly to ensure type safety.
+ */
+export function createTestUserGame(overrides: TestUserGameOverrides = {}): TestUserGame {
+  const { game: gameOverrides, ...restOverrides } = overrides;
+  return {
+    ...mockUserGame,
+    ...restOverrides,
+    game: {
+      ...mockUserGame.game,
+      ...gameOverrides
+    }
+  } as TestUserGame;
+}
+
+/**
+ * Sets up the user games store with test data.
+ * Use this instead of directly mutating mockUserGamesStore.value.
+ */
+export function setupUserGamesStoreWithData(
+  userGames: TestUserGame[],
+  options: {
+    isLoading?: boolean;
+    error?: string | null;
+    currentUserGame?: TestUserGame | null;
+  } = {}
+): void {
+  mockUserGamesStore.value = {
+    ...mockUserGamesStore.value,
+    userGames,
+    isLoading: options.isLoading ?? false,
+    error: options.error ?? null,
+    currentUserGame: options.currentUserGame ?? null,
+    pagination: {
+      page: 1,
+      per_page: 20,
+      total: userGames.length,
+      pages: Math.ceil(userGames.length / 20) || 1
+    }
+  };
+
+  // Update selectors to work with the new data
+  mockUserGamesStore.selectors.byId = vi.fn((id: string) =>
+    userGames.find(g => g.id === id) || null
+  );
+  mockUserGamesStore.selectors.byGameId = vi.fn((gameId: GameId) =>
+    userGames.find(g => g.game.id === gameId) || null
+  );
+
+  // Update helper methods
+  mockUserGamesStore.getGamesByStatus.mockImplementation((status) =>
+    userGames.filter(g => g.play_status === status)
+  );
+  mockUserGamesStore.getLovedGames.mockImplementation(() =>
+    userGames.filter(g => g.is_loved)
+  );
+  mockUserGamesStore.getGamesByRating.mockImplementation((rating) =>
+    userGames.filter(g => g.personal_rating === rating)
+  );
+  mockUserGamesStore.getPileOfShame.mockImplementation(() =>
+    userGames.filter(g => g.play_status === 'not_started')
+  );
+}
+
+/**
+ * Sets the loading state of the user games store.
+ * Use this instead of directly mutating mockUserGamesStore.value.isLoading.
+ */
+export function setUserGamesStoreLoading(isLoading: boolean): void {
+  mockUserGamesStore.value = {
+    ...mockUserGamesStore.value,
+    isLoading
+  };
+}
+
+/**
+ * Sets the error state of the user games store.
+ * Use this instead of directly mutating mockUserGamesStore.value.error.
+ */
+export function setUserGamesStoreError(error: string | null): void {
+  mockUserGamesStore.value = {
+    ...mockUserGamesStore.value,
+    error
+  };
+}
+
+// Type for games store state with flexible error type
+interface GamesStoreState {
+  games: typeof mockGamesStore.value.games;
+  searchResults: typeof mockGamesStore.value.searchResults;
+  igdbCandidates: typeof mockGamesStore.value.igdbCandidates;
+  isLoading: boolean;
+  isSearching: boolean;
+  error: string | null;
+}
+
+/**
+ * Sets up the games store with test data.
+ * Use this instead of directly mutating mockGamesStore.value.
+ */
+export function setupGamesStoreWithData(
+  options: Partial<GamesStoreState> = {}
+): void {
+  mockGamesStore.value = {
+    ...mockGamesStore.value,
+    ...options
+  } as typeof mockGamesStore.value;
 }
