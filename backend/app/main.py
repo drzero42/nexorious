@@ -16,6 +16,7 @@ from .api.tags import router as tags_router
 from .api.import_api import router as import_router
 from .api.status import router as status_router
 from .api.jobs import router as jobs_router
+from .api.review import router as review_router
 from .services.batch_session_manager import (
     startup_batch_session_manager,
     shutdown_batch_session_manager,
@@ -124,6 +125,7 @@ app.include_router(tags_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
 app.include_router(status_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
+app.include_router(review_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:

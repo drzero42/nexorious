@@ -115,3 +115,14 @@ class JobDeleteResponse(BaseModel):
     success: bool
     message: str
     deleted_job_id: str
+
+
+class JobConfirmResponse(BaseModel):
+    """Response model for confirming an import job after review."""
+
+    success: bool
+    message: str
+    job: Optional[JobResponse] = None
+    games_added: int = 0
+    games_skipped: int = 0
+    games_removed: int = 0
