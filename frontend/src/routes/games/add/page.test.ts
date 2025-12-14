@@ -1,13 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import { 
-  setupFetchMock, 
+import {
+  setupFetchMock,
   resetFetchMock,
   mockConfig,
   mockIGDBCandidates,
   mockGame
 } from '../../../test-utils/api-mocks';
-import { mockGamesStore, mockUserGamesStore, resetStoresMocks } from '../../../test-utils/stores-mocks';
+import {
+  mockGamesStore,
+  mockUserGamesStore,
+  resetStoresMocks,
+  setupUserGamesStoreWithData,
+  setupGamesStoreWithData
+} from '../../../test-utils/stores-mocks';
 import { mockGoto } from '../../../test-utils/navigation-mocks';
 import { setAuthenticatedState, resetAuthMocks } from '../../../test-utils/auth-mocks';
 import type { GameId } from '$lib/types/game';
@@ -139,8 +145,8 @@ describe('Game Addition Page', () => {
   describe('Game Selection and Confirmation', () => {
     beforeEach(async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([]);
+
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates,
         total: mockIGDBCandidates.length
@@ -236,8 +242,8 @@ describe('Game Addition Page', () => {
 
     it('should show error message when IGDB import fails after confirmation', async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([]);
+
       // Mock IGDB import to fail
       mockGamesStore.createFromIGDB.mockRejectedValue(new Error('Import failed'));
       
@@ -276,8 +282,8 @@ describe('Game Addition Page', () => {
   describe('Game Addition Process', () => {
     beforeEach(async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
-      mockUserGamesStore.value.userGames = [];
-      
+      setupUserGamesStoreWithData([]);
+
       mockGamesStore.searchIGDB.mockResolvedValue({
         games: mockIGDBCandidates,
         total: mockIGDBCandidates.length
@@ -440,7 +446,7 @@ describe('Game Addition Page', () => {
 
     it('should show loading state during game addition', async () => {
       // Clear user games collection so the IGDB game doesn't appear as already owned
-      mockUserGamesStore.value.userGames = [];
+      setupUserGamesStoreWithData([]);
       
       let resolvePromise: (value: any) => void;
       const pendingPromise = new Promise((resolve) => {
@@ -564,17 +570,16 @@ describe('Game Addition Page', () => {
 
     it('should handle IGDB search errors gracefully', async () => {
       // Pre-set the error state to simulate what happens when search fails
-      mockGamesStore.value = {
-        ...mockGamesStore.value,
+      setupGamesStoreWithData({
         error: 'Failed to search IGDB',
         isLoading: false
-      } as any;
-      
+      });
+
       // Mock searchIGDB to fail
       mockGamesStore.searchIGDB.mockRejectedValue(new Error('Search failed'));
 
       render(GameAddPage);
-      
+
       // Since error is already set, it should be visible immediately
       await waitFor(() => {
         expect(screen.getByText(/failed to search igdb/i)).toBeInTheDocument();
