@@ -265,53 +265,41 @@ describe('Games Store API Integration', () => {
 
   describe('Error Handling', () => {
     it('should handle API errors and update error state', async () => {
-      // Test error response
+      // Test error response - apiCall throws "HTTP {status}: {statusText}"
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(404, 'Game not found'));
-      
+
       const { games } = await import('./games.svelte');
-      
-      try {
-        await games.getGame(toGameId(99999));
-      } catch (error) {
-        // Error is expected
-      }
-      
-      expect(games.value.error).toBeTruthy();
+
+      await expect(games.getGame(toGameId(99999))).rejects.toThrow('HTTP 404: Error');
+
+      expect(games.value.error).toBe('HTTP 404: Error');
       expect(games.value.isLoading).toBe(false);
     });
 
     it('should handle network errors gracefully', async () => {
       mockFetch.mockImplementation(APIResponseMock.mockNetworkError());
-      
+
       const { games } = await import('./games.svelte');
-      
-      try {
-        await games.loadGames();
-      } catch (error) {
-        // Error is expected
-      }
-      
-      expect(games.value.error).toBeTruthy();
+
+      await expect(games.loadGames()).rejects.toThrow('Network error');
+
+      expect(games.value.error).toBe('Network error');
       expect(games.value.isLoading).toBe(false);
     });
 
     it('should clear error state when clearError is called', async () => {
       const { games } = await import('./games.svelte');
-      
+
       // Create an error state by causing a failed API call
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(500, 'Server error'));
-      try {
-        await games.getGame(toGameId(99999));
-      } catch (error) {
-        // Expected error
-      }
-      
+      await expect(games.getGame(toGameId(99999))).rejects.toThrow('HTTP 500: Error');
+
       // Verify error state was set
-      expect(games.value.error).toBeTruthy();
-      
+      expect(games.value.error).toBe('HTTP 500: Error');
+
       // Clear the error
       games.clearError();
-      
+
       expect(games.value.error).toBe(null);
     });
 
@@ -369,13 +357,8 @@ describe('Games Store API Integration', () => {
       // Re-import to get updated mock
       vi.resetModules();
       const { games } = await import('./games.svelte');
-      
-      try {
-        await games.loadGames();
-      } catch (error) {
-        // Expected to fail with "Not authenticated"
-        expect((error as Error).message).toBe('Not authenticated');
-      }
+
+      await expect(games.loadGames()).rejects.toThrow('Not authenticated');
     });
   });
 
