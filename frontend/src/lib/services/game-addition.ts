@@ -2,7 +2,10 @@ import { games } from '$lib/stores';
 import { userGames, OwnershipStatus, PlayStatus, type UserGameCreateRequest } from '$lib/stores/user-games.svelte';
 import type { IGDBGameCandidate } from '$lib/stores/games.svelte';
 import { notifications } from '$lib/stores/notifications.svelte';
+import { loggers } from '$lib/services/logger';
 import type { GameId, UserGameId } from '$lib/types/game';
+
+const log = loggers.import;
 
 // Types
 export interface PlatformData {
@@ -58,7 +61,7 @@ export class GameAdditionService {
       notifications.showSuccess(`Adding "${createdGame.title}" to your collection`);
       return createdGame;
     } catch (error) {
-      console.error('Failed to create game:', error);
+      log.error('Failed to create game', error);
       notifications.showError('Failed to import game from IGDB. Please try a different search or contact support.');
       throw error;
     }
@@ -129,7 +132,7 @@ export class GameAdditionService {
       const userGame = await userGames.addGameToCollection(addRequest);
       return userGame;
     } catch (error) {
-      console.error('Failed to add game to collection:', error);
+      log.error('Failed to add game to collection', error);
       notifications.showError('Game was imported but couldn\'t be added to your collection. Please try again or contact support.');
       throw error;
     }
@@ -154,7 +157,7 @@ export class GameAdditionService {
       });
       return null; // Success
     } catch (error) {
-      console.error('Failed to update progress, but game was added to collection:', error);
+      log.error('Failed to update progress, but game was added to collection', error);
       return 'Failed to save progress information';
     }
   }
@@ -183,7 +186,7 @@ export class GameAdditionService {
       await userGames.updateUserGame(userGameId as any, updateData);
       return null; // Success
     } catch (error) {
-      console.error('Failed to update game details, but game was added to collection:', error);
+      log.error('Failed to update game details, but game was added to collection', error);
       return 'Failed to save rating and favorite status';
     }
   }

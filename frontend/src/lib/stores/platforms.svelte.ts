@@ -1,5 +1,8 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.platforms;
 import type {
   PlatformSuggestionsRequest,
   PlatformSuggestionsResponse,
@@ -192,48 +195,26 @@ function createPlatformsStore() {
       }
     },
 
-    // Fetch both platforms and storefronts (accessible to all authenticated users)  
+    // Fetch both platforms and storefronts (accessible to all authenticated users)
     fetchAll: async () => {
-      console.log('🔄 [PLATFORMS-STORE] Starting fetchAll...');
+      log.debug('Starting fetchAll');
       state = { ...state, isLoading: true, error: null };
 
       try {
         // Load ALL platforms and storefronts in parallel
-        console.log('📡 [PLATFORMS-STORE] Making API calls for platforms and storefronts...');
         const [platformsResponse, storefrontsResponse] = await Promise.all([
           apiCall(`${config.apiUrl}/platforms/?active_only=false`),
           apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=false`)
         ]);
 
-        console.log('📨 [PLATFORMS-STORE] API responses received, parsing JSON...');
         const [platformsData, storefrontsData] = await Promise.all([
           platformsResponse.json(),
           storefrontsResponse.json()
         ]);
 
-        console.log('📊 [PLATFORMS-STORE] Parsed data:', {
+        log.debug('Fetched platforms and storefronts', {
           platformsCount: platformsData.platforms?.length || 0,
-          storefrontsCount: storefrontsData.storefronts?.length || 0,
-          platforms: platformsData.platforms?.map((p: Platform) => ({ 
-            id: p.id, 
-            name: p.name, 
-            display_name: p.display_name, 
-            is_active: p.is_active 
-          })),
-          storefronts: storefrontsData.storefronts?.map((s: Storefront) => ({ 
-            id: s.id, 
-            name: s.name, 
-            display_name: s.display_name, 
-            is_active: s.is_active 
-          }))
-        });
-
-        // Look specifically for pc-windows platform
-        const pcWindowsPlatform = platformsData.platforms?.find((p: Platform) => p.name === 'pc-windows');
-        console.log('🖥️ [PLATFORMS-STORE] PC-Windows platform search result:', {
-          found: !!pcWindowsPlatform,
-          platform: pcWindowsPlatform || 'Not found',
-          searchCriteria: 'platform.name === "pc-windows"'
+          storefrontsCount: storefrontsData.storefronts?.length || 0
         });
 
         state = {
@@ -243,18 +224,13 @@ function createPlatformsStore() {
           isLoading: false
         };
 
-        console.log('✅ [PLATFORMS-STORE] Store updated, fetchAll completed successfully');
-
         return {
           platforms: platformsData.platforms,
           storefronts: storefrontsData.storefronts
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch platforms and storefronts';
-        console.error('❌ [PLATFORMS-STORE] Error in fetchAll:', {
-          error: errorMessage,
-          fullError: error
-        });
+        log.error('Error in fetchAll', error);
         state = { ...state, isLoading: false, error: errorMessage };
         throw error;
       }
@@ -749,7 +725,7 @@ function createPlatformsStore() {
             });
           } catch (error) {
             // Log error but don't throw - platform was created successfully
-            console.warn('Platform created but auto-resolution failed:', error);
+            log.warn('Platform created but auto-resolution failed', error);
           }
         }
 
@@ -923,7 +899,7 @@ function createPlatformsStore() {
             });
           } catch (error) {
             // Log error but don't throw - storefront was created successfully
-            console.warn('Storefront created but auto-resolution failed:', error);
+            log.warn('Storefront created but auto-resolution failed', error);
           }
         }
 

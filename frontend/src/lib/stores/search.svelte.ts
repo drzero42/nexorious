@@ -1,6 +1,9 @@
 import { browser } from '$app/environment';
+import { loggers } from '$lib/services/logger';
 import type { Game, GameSearchFilters } from './games.svelte';
 import type { UserGame, UserGameFilters, PlayStatus, OwnershipStatus } from './user-games.svelte';
+
+const log = loggers.ui;
 
 export interface SearchQuery {
   q: string;
@@ -80,7 +83,7 @@ function createSearchStore() {
         const parsedSearches = JSON.parse(storedSearches);
         state = { ...state, savedSearches: parsedSearches };
       } catch (error) {
-        console.error('Failed to parse saved searches:', error);
+        log.error('Failed to parse saved searches', error);
       }
     }
 
@@ -90,7 +93,7 @@ function createSearchStore() {
         const parsedHistory = JSON.parse(storedHistory);
         state = { ...state, searchHistory: parsedHistory };
       } catch (error) {
-        console.error('Failed to parse search history:', error);
+        log.error('Failed to parse search history', error);
       }
     }
   }

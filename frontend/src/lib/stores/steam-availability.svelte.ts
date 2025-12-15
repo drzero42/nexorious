@@ -1,5 +1,8 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.steamAvailability;
 
 export interface SteamAvailability {
   /** Whether Steam Games feature is available */
@@ -44,19 +47,18 @@ function createSteamAvailabilityStore() {
      * This is much simpler and more reliable than the previous approach.
      */
     async checkAvailability(): Promise<void> {
-      console.log('🔄 [STEAM-AVAILABILITY] Starting availability check via API...');
-      
+      log.debug('Starting availability check via API');
+
       availability.isLoading = true;
-      
+
       try {
         if (!auth.value.accessToken) {
-          console.log('❌ [STEAM-AVAILABILITY] No access token available');
+          log.debug('No access token available');
           availability.isAvailable = false;
           availability.unavailableReason = 'Not authenticated';
           return;
         }
 
-        console.log('📡 [STEAM-AVAILABILITY] Calling backend availability API...');
         const response = await fetch(`${config.apiUrl}/import/sources/steam/availability`, {
           method: 'GET',
           headers: {
@@ -66,31 +68,28 @@ function createSteamAvailabilityStore() {
         });
 
         if (!response.ok) {
-          console.error('❌ [STEAM-AVAILABILITY] API request failed:', response.status, response.statusText);
+          log.error('API request failed', { status: response.status, statusText: response.statusText });
           availability.isAvailable = false;
           availability.unavailableReason = `API request failed: ${response.status}`;
           return;
         }
 
         const data = await response.json();
-        console.log('✅ [STEAM-AVAILABILITY] API response received:', data);
-        
+        log.debug('API response received', { available: data.available });
+
         availability.isAvailable = data.available;
         availability.unavailableReason = data.reason;
-        
-        if (data.available) {
-          console.log('🎯 [STEAM-AVAILABILITY] Steam is available!');
-        } else {
-          console.log('❌ [STEAM-AVAILABILITY] Steam not available:', data.reason);
+
+        if (!data.available) {
+          log.debug('Steam not available', { reason: data.reason });
         }
-        
+
       } catch (error) {
-        console.error('❌ [STEAM-AVAILABILITY] Error checking Steam availability:', error);
+        log.error('Error checking Steam availability', error);
         availability.isAvailable = false;
         availability.unavailableReason = 'Failed to check Steam availability';
       } finally {
         availability.isLoading = false;
-        console.log('✅ [STEAM-AVAILABILITY] Availability check completed');
       }
     }
   };

@@ -1,7 +1,10 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { ui } from './ui.svelte';
+import { loggers } from '$lib/services/logger';
 import type { GameId, UserGameId } from '$lib/types/game';
+
+const log = loggers.steamGames;
 
 // Steam Games API interfaces based on backend schemas
 export interface SteamGameResponse {
@@ -236,12 +239,7 @@ function createSteamGamesStore() {
       statusFilter?: SteamGameStatusFilter,
       search?: string
     ): Promise<SteamGamesListResponse> {
-      console.log('🔄 [STORE-LIST] Starting listSteamGames with params:', {
-        offset,
-        limit,
-        statusFilter,
-        search
-      });
+      log.debug('Starting listSteamGames', { offset, limit, statusFilter, search });
       
       state = { ...state, isLoading: true, error: null };
 
@@ -260,7 +258,7 @@ function createSteamGamesStore() {
         }
 
         const url = `${config.apiUrl}/import/sources/steam/games?${params}`;
-        console.log('📡 [STORE-LIST] Making API call to:', url);
+        log.debug('Making API call', { url });
 
         const response = await fetch(url, {
           headers: {
@@ -268,32 +266,21 @@ function createSteamGamesStore() {
           }
         });
 
-        console.log('📨 [STORE-LIST] List API response status:', response.status);
-        console.log('📨 [STORE-LIST] List API response ok:', response.ok);
+        log.debug('List API response', { status: response.status, ok: response.ok });
 
         if (!response.ok) {
           if (response.status === 401) {
-            console.log('🔄 [STORE-LIST] Token expired, refreshing auth...');
+            log.debug('Token expired, refreshing auth');
             await auth.refreshAuth();
             return this.listSteamGames(offset, limit, statusFilter, search);
           }
           const errorData = await response.json().catch(() => ({}));
-          console.error('❌ [STORE-LIST] List API error:', errorData);
+          log.error('List API error', errorData);
           throw new Error(errorData.detail || 'Failed to fetch Steam games');
         }
 
         const data = await response.json() as SteamGamesListResponse;
-        console.log('✅ [STORE-LIST] List response data:', {
-          total: data.total,
-          gamesCount: data.games.length,
-          games: data.games.map(g => ({
-            id: g.id,
-            name: g.name,
-            igdb_id: g.igdb_id,
-            game_id: g.game_id,
-            ignored: g.ignored
-          }))
-        });
+        log.debug('List response received', { total: data.total, gamesCount: data.games.length });
         
         state = {
           ...state,
@@ -304,13 +291,7 @@ function createSteamGamesStore() {
           lastRefresh: new Date()
         };
 
-        console.log('📦 [STORE-LIST] Store state updated:', {
-          gamesCount: state.games.length,
-          total: state.total,
-          lastRefresh: state.lastRefresh
-        });
-
-        console.log('📤 [STORE-LIST] Returning list data');
+        log.debug('Store state updated', { gamesCount: state.games.length, total: state.total });
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch Steam games';
@@ -403,16 +384,12 @@ function createSteamGamesStore() {
 
     // Sync individual Steam game to collection
     async syncSteamGameToCollection(steamGameId: string): Promise<SteamGameSyncResponse> {
-      console.log('🎮 [Steam Sync] Starting sync for Steam game:', steamGameId);
+      log.debug('Starting sync for Steam game', { steamGameId });
       state = { ...state, error: null };
 
       try {
         const url = `${config.apiUrl}/import/sources/steam/games/${steamGameId}/sync`;
         const requestBody = {};
-        console.log('🎮 [Steam Sync] Request URL:', url);
-        console.log('🎮 [Steam Sync] Request body:', requestBody);
-        console.log('🎮 [Steam Sync] Auth token available:', !!auth.value.accessToken);
-        console.log('🎮 [Steam Sync] Auth token prefix:', auth.value.accessToken?.substring(0, 20) + '...');
 
         const response = await fetch(url, {
           method: 'POST',
@@ -423,49 +400,43 @@ function createSteamGamesStore() {
           body: JSON.stringify(requestBody)
         });
 
-        console.log('🎮 [Steam Sync] Response status:', response.status, response.statusText);
-        console.log('🎮 [Steam Sync] Response headers:', Object.fromEntries(response.headers.entries()));
+        log.debug('Sync response', { status: response.status, statusText: response.statusText });
 
         if (!response.ok) {
           const responseText = await response.text();
-          console.log('🎮 [Steam Sync] Error response body:', responseText);
-          
+
           if (response.status === 401) {
-            console.log('🎮 [Steam Sync] Auth token expired, refreshing...');
+            log.debug('Auth token expired, refreshing');
             await auth.refreshAuth();
             return this.syncSteamGameToCollection(steamGameId);
           }
-          
+
           let errorData;
           try {
             errorData = JSON.parse(responseText);
           } catch (e) {
             errorData = { detail: responseText || 'Failed to sync Steam game to collection' };
           }
-          
-          console.log('🎮 [Steam Sync] Parsed error data:', errorData);
+
+          log.error('Sync error', errorData);
           throw new Error(errorData.detail || 'Failed to sync Steam game to collection');
         }
 
         const data = await response.json() as SteamGameSyncResponse;
-        console.log('🎮 [Steam Sync] Success response data:', data);
-        
+        log.debug('Sync success', { steamGameId, action: data.action });
+
         // Update the game in our local state
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
         if (gameIndex !== -1) {
           const updatedGames = [...state.games];
           updatedGames[gameIndex] = data.game;
           state = { ...state, games: updatedGames };
-          console.log('🎮 [Steam Sync] Updated local state for game at index:', gameIndex);
-        } else {
-          console.log('🎮 [Steam Sync] Game not found in local state:', steamGameId);
         }
 
         ui.showSuccess(data.message);
-        console.log('🎮 [Steam Sync] Sync completed successfully');
         return data;
       } catch (error) {
-        console.log('🎮 [Steam Sync] Error caught:', error);
+        log.error('Sync failed', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to sync Steam game';
         state = { ...state, error: errorMessage };
         ui.showError(errorMessage);
@@ -521,11 +492,10 @@ function createSteamGamesStore() {
 
     // Manually retry auto-matching for all unmatched Steam games
     async retryAutoMatching(): Promise<BulkOperationResponse> {
-      console.log('🔄 [STORE] Starting retryAutoMatching...');
+      log.debug('Starting retryAutoMatching');
       state = { ...state, isAutoMatching: true, error: null };
 
       try {
-        console.log('📡 [STORE] Making API call to:', `${config.apiUrl}/import/sources/steam/games/auto-match`);
         const response = await fetch(`${config.apiUrl}/import/sources/steam/games/auto-match`, {
           method: 'POST',
           headers: {
@@ -533,23 +503,22 @@ function createSteamGamesStore() {
           }
         });
 
-        console.log('📨 [STORE] Auto-match API response status:', response.status);
-        console.log('📨 [STORE] Auto-match API response ok:', response.ok);
+        log.debug('Auto-match API response', { status: response.status, ok: response.ok });
 
         if (!response.ok) {
           if (response.status === 401) {
-            console.log('🔄 [STORE] Token expired, refreshing auth...');
+            log.debug('Token expired, refreshing auth');
             await auth.refreshAuth();
             return this.retryAutoMatching();
           }
           const errorData = await response.json().catch(() => ({}));
-          console.error('❌ [STORE] Auto-match API error:', errorData);
+          log.error('Auto-match API error', errorData);
           throw new Error(errorData.detail || 'Failed to retry auto-matching');
         }
 
         const data = await response.json() as BulkOperationResponse;
-        console.log('✅ [STORE] Auto-match response data:', data);
-        
+        log.debug('Auto-match response', { successful: data.successful_operations, total: data.total_processed });
+
         state = {
           ...state,
           isAutoMatching: false,
@@ -557,17 +526,13 @@ function createSteamGamesStore() {
         };
 
         if (data.successful_operations > 0) {
-          console.log('🎉 [STORE] Showing success notification');
           ui.showSuccess(data.message);
         } else if (data.total_processed === 0) {
-          console.log('ℹ️ [STORE] Showing info notification');
           ui.showInfo(data.message);
         } else {
-          console.log('⚠️ [STORE] Showing warning notification');
           ui.showWarning(data.message);
         }
 
-        console.log('📤 [STORE] Returning auto-match data:', data);
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to retry auto-matching';
@@ -579,13 +544,12 @@ function createSteamGamesStore() {
 
     // Auto-match a single Steam game to IGDB
     async autoMatchSingleGame(steamGameId: string): Promise<SteamGameAutoMatchSingleResponse> {
-      console.log('🔄 [STORE-SINGLE] Starting autoMatchSingleGame for ID:', steamGameId);
+      log.debug('Starting autoMatchSingleGame', { steamGameId });
       state = { ...state, error: null };
 
       try {
         const url = `${config.apiUrl}/import/sources/steam/games/${steamGameId}/auto-match`;
-        console.log('📡 [STORE-SINGLE] Making API call to:', url);
-        
+
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -593,35 +557,31 @@ function createSteamGamesStore() {
           }
         });
 
-        console.log('📨 [STORE-SINGLE] Single auto-match API response status:', response.status);
-        console.log('📨 [STORE-SINGLE] Single auto-match API response ok:', response.ok);
+        log.debug('Single auto-match API response', { status: response.status, ok: response.ok });
 
         if (!response.ok) {
           if (response.status === 401) {
-            console.log('🔄 [STORE-SINGLE] Token expired, refreshing auth...');
+            log.debug('Token expired, refreshing auth');
             await auth.refreshAuth();
             return this.autoMatchSingleGame(steamGameId);
           }
           const errorData = await response.json().catch(() => ({}));
-          console.error('❌ [STORE-SINGLE] Single auto-match API error:', errorData);
+          log.error('Single auto-match API error', errorData);
           throw new Error(errorData.detail || 'Failed to auto-match Steam game');
         }
 
         const data = await response.json() as SteamGameAutoMatchSingleResponse;
-        console.log('✅ [STORE-SINGLE] Single auto-match response data:', data);
-        
+        log.debug('Single auto-match response', { matched: data.matched, confidence: data.confidence });
+
         // Update the game in our local state
         const gameIndex = state.games.findIndex(g => g.id === steamGameId);
-        console.log('🔍 [STORE-SINGLE] Looking for game in state, index:', gameIndex);
-        
+
         if (gameIndex !== -1) {
-          console.log('📋 [STORE-SINGLE] BEFORE update - Game in state:', state.games[gameIndex]);
           const updatedGames = [...state.games];
           updatedGames[gameIndex] = data.steam_game;
           state = { ...state, games: updatedGames };
-          console.log('📋 [STORE-SINGLE] AFTER update - Game in state:', state.games[gameIndex]);
         } else {
-          console.warn('⚠️ [STORE-SINGLE] Game not found in state for update');
+          log.warn('Game not found in state for update', { steamGameId });
         }
 
         // Show appropriate success/info message
@@ -831,7 +791,7 @@ function createSteamGamesStore() {
 
     // Start batch auto-matching session
     async startBatchAutoMatch(): Promise<BatchSessionStartResponse> {
-      console.log('🚀 [BATCH-AUTO-MATCH] Starting batch auto-match session...');
+      log.debug('Starting batch auto-match session');
       state = { ...state, error: null, isBatchProcessing: true };
 
       try {
@@ -877,7 +837,7 @@ function createSteamGamesStore() {
         }
 
         ui.showSuccess(data.message);
-        console.log('✅ [BATCH-AUTO-MATCH] Session started:', data);
+        log.debug('Batch auto-match session started', { sessionId: data.session_id, totalItems: data.total_items });
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to start batch auto-match session';
@@ -889,7 +849,7 @@ function createSteamGamesStore() {
 
     // Process next batch in auto-matching session
     async processBatchAutoMatch(sessionId: string): Promise<BatchNextResponse> {
-      console.log(`🔄 [BATCH-AUTO-MATCH] Processing next batch for session ${sessionId}...`);
+      log.debug('Processing next auto-match batch', { sessionId });
       
       try {
         const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/auto-match/${sessionId}/next`, {
@@ -931,10 +891,10 @@ function createSteamGamesStore() {
           };
         }
 
-        console.log(`✅ [BATCH-AUTO-MATCH] Processed batch: ${data.batch_successful} successful, ${data.batch_failed} failed`);
+        log.debug('Batch auto-match processed', { successful: data.batch_successful, failed: data.batch_failed });
         return data;
       } catch (error) {
-        console.error('❌ [BATCH-AUTO-MATCH] Error processing batch:', error);
+        log.error('Error processing batch auto-match', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to process batch auto-match';
         
         // Update error state
@@ -957,7 +917,7 @@ function createSteamGamesStore() {
 
     // Start batch sync session
     async startBatchSync(): Promise<BatchSessionStartResponse> {
-      console.log('🚀 [BATCH-SYNC] Starting batch sync session...');
+      log.debug('Starting batch sync session');
       state = { ...state, error: null, isBatchProcessing: true };
 
       try {
@@ -1003,7 +963,7 @@ function createSteamGamesStore() {
         }
 
         ui.showSuccess(data.message);
-        console.log('✅ [BATCH-SYNC] Session started:', data);
+        log.debug('Batch sync session started', { sessionId: data.session_id, totalItems: data.total_items });
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to start batch sync session';
@@ -1015,7 +975,7 @@ function createSteamGamesStore() {
 
     // Process next batch in sync session
     async processBatchSync(sessionId: string): Promise<BatchNextResponse> {
-      console.log(`🔄 [BATCH-SYNC] Processing next sync batch for session ${sessionId}...`);
+      log.debug('Processing next sync batch', { sessionId });
       
       try {
         const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/sync/${sessionId}/next`, {
@@ -1057,10 +1017,10 @@ function createSteamGamesStore() {
           };
         }
 
-        console.log(`✅ [BATCH-SYNC] Processed batch: ${data.batch_successful} successful, ${data.batch_failed} failed`);
+        log.debug('Batch sync processed', { successful: data.batch_successful, failed: data.batch_failed });
         return data;
       } catch (error) {
-        console.error('❌ [BATCH-SYNC] Error processing batch:', error);
+        log.error('Error processing batch sync', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to process batch sync';
         
         // Update error state
@@ -1083,7 +1043,7 @@ function createSteamGamesStore() {
 
     // Cancel batch operation
     async cancelBatchOperation(sessionId: string): Promise<BatchCancelResponse> {
-      console.log(`❌ [BATCH-CANCEL] Cancelling batch session ${sessionId}...`);
+      log.debug('Cancelling batch session', { sessionId });
 
       try {
         const response = await fetch(`${config.apiUrl}/import/sources/steam/batch/${sessionId}`, {
@@ -1112,7 +1072,7 @@ function createSteamGamesStore() {
         };
 
         ui.showSuccess(data.message);
-        console.log('✅ [BATCH-CANCEL] Session cancelled:', data);
+        log.debug('Batch session cancelled', { sessionId });
         return data;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to cancel batch operation';

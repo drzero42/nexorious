@@ -1,6 +1,15 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Mock $app/environment with all exports needed by the app
+// This must be at the top before any code that imports it
+vi.mock('$app/environment', () => ({
+  browser: true,
+  dev: false, // Disable logging in tests by default
+  building: false,
+  version: 'test'
+}));
+
 // Mock Date and Date.now() to return consistent timestamps for tests
 // Use this approach instead of fake timers to avoid breaking async operations
 const originalDate = Date;

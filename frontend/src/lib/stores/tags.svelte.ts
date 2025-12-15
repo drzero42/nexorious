@@ -1,5 +1,8 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.tags;
 
 // Tag Interface matching backend schema
 export interface Tag {
@@ -584,7 +587,7 @@ function createTagsStore() {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get tag usage stats';
         // Don't clear tags on error - preserve existing data
         state = { ...state, isLoading: false, error: errorMessage };
-        console.warn('Tag usage stats failed, but preserving existing tags');
+        log.warn('Tag usage stats failed, but preserving existing tags');
         // Don't throw - allow graceful degradation
       }
     },

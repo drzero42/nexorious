@@ -623,7 +623,8 @@ describe('Search Store', () => {
 		it('should handle non-browser environment gracefully', async () => {
 			// Mock browser as false
 			vi.doMock('$app/environment', () => ({
-				browser: false
+				browser: false,
+				dev: false
 			}));
 
 			// Reimport to test initialization without browser

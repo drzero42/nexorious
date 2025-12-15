@@ -1,5 +1,8 @@
 import { auth } from '$lib/stores/auth.svelte';
 import { browser } from '$app/environment';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.auth;
 
 export interface AuthCheckOptions {
   requireAuth?: boolean;
@@ -50,7 +53,7 @@ export class AuthGuardService {
         await auth.refreshAuth();
         authState = auth.value; // Re-read auth state after refresh
       } catch (error) {
-        console.error('Failed to refresh auth:', error);
+        log.error('Failed to refresh auth', error);
         // Continue with the check - might still be valid for public routes
       }
     }
