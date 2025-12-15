@@ -20,6 +20,13 @@ class ReviewItemStatus(str, Enum):
     REMOVAL = "removal"
 
 
+class ReviewSource(str, Enum):
+    """Source type for filtering review items by job type."""
+
+    IMPORT = "import"
+    SYNC = "sync"
+
+
 class IGDBCandidate(BaseModel):
     """IGDB search result candidate for matching."""
 

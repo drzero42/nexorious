@@ -165,9 +165,15 @@ export interface MatchResponse {
   item: ReviewItem | null;
 }
 
+export enum ReviewSource {
+  IMPORT = 'import',
+  SYNC = 'sync'
+}
+
 export interface ReviewFilters {
   status?: ReviewItemStatus;
   job_id?: string;
+  source?: ReviewSource;
 }
 
 // ============================================================================

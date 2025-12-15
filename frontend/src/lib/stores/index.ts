@@ -117,7 +117,7 @@ export type {
   ReviewFilters,
   ReviewState
 } from './review.svelte';
-export { ReviewItemStatus } from './review.svelte';
+export { ReviewItemStatus, ReviewSource } from './review.svelte';
 
 // Re-export IGDBCandidate from types for review pages
 export type { IGDBCandidate } from '$lib/types/jobs';

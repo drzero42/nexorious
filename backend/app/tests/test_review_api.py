@@ -191,6 +191,62 @@ class TestListReviewItems:
         data = response.json()
         assert len(data["items"]) == 10
 
+    def test_list_review_items_filter_by_source(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test filtering review items by source type (import vs sync)."""
+        # Create an import job and a sync job
+        import_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+        sync_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add_all([import_job, sync_job])
+        session.commit()
+        session.refresh(import_job)
+        session.refresh(sync_job)
+
+        # Create review items for each job
+        import_item = ReviewItem(
+            job_id=import_job.id,
+            user_id=test_user.id,
+            source_title="Import Game",
+        )
+        sync_item = ReviewItem(
+            job_id=sync_job.id,
+            user_id=test_user.id,
+            source_title="Sync Game",
+        )
+        session.add_all([import_item, sync_item])
+        session.commit()
+
+        # Filter by import source
+        response = client.get("/api/review/?source=import", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["source_title"] == "Import Game"
+        assert data["items"][0]["job_type"] == "import"
+
+        # Filter by sync source
+        response = client.get("/api/review/?source=sync", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["source_title"] == "Sync Game"
+        assert data["items"][0]["job_type"] == "sync"
+
+        # Without filter, should return both
+        response = client.get("/api/review/", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+
     def test_list_review_items_only_own_items(
         self, client, auth_headers, test_user: User, admin_user: User, session: Session
     ):
