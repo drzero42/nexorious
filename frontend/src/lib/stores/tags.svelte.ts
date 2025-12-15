@@ -1,6 +1,6 @@
-import { auth } from './auth.svelte';
 import { config } from '$lib/env';
 import { loggers } from '$lib/services/logger';
+import { api } from '$lib/services/api';
 
 const log = loggers.tags;
 
@@ -117,56 +117,6 @@ const initialState: TagsState = {
 function createTagsStore() {
   let state = $state<TagsState>(initialState);
 
-  // Shared API call helper with auth integration
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authState.accessToken}`,
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Try to refresh token
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          // Retry the request with new token
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${auth.value.accessToken}`,
-              ...options.headers,
-            },
-          });
-        }
-      }
-      
-      // Try to get more detailed error info from response body
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.detail) {
-          errorMessage = errorBody.detail;
-        }
-      } catch (e) {
-        // If we can't parse the error body, use the default message
-      }
-      
-      throw new Error(errorMessage);
-    }
-
-    return response;
-  };
-
   return {
     get value() {
       return state;
@@ -183,7 +133,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/`);
+        const response = await api.get(`${config.apiUrl}/tags/`);
         const data = await response.json();
 
         state = {
@@ -215,7 +165,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/${id}`);
+        const response = await api.get(`${config.apiUrl}/tags/${id}`);
         const tag: Tag = await response.json();
 
         // Update tags list if this is a new tag
@@ -256,10 +206,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/`, {
-          method: 'POST',
-          body: JSON.stringify(cleanedData),
-        });
+        const response = await api.post(`${config.apiUrl}/tags/`, cleanedData);
         
         const tag: Tag = await response.json();
 
@@ -292,7 +239,7 @@ function createTagsStore() {
           params.append('color', color);
         }
 
-        const response = await apiCall(`${config.apiUrl}/tags/create-or-get?${params}`);
+        const response = await api.get(`${config.apiUrl}/tags/create-or-get?${params}`);
         const data = await response.json();
         
         const tag: Tag = data.tag;
@@ -354,10 +301,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(tagData),
-        });
+        const response = await api.put(`${config.apiUrl}/tags/${id}`, tagData);
         
         const updatedTag: Tag = await response.json();
 
@@ -403,9 +347,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`${config.apiUrl}/tags/${id}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/tags/${id}`);
 
         state = { ...state, isLoading: false };
         
@@ -434,10 +376,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/assign/${userGameId}`, {
-          method: 'POST',
-          body: JSON.stringify({ tag_ids: tagIds }),
-        });
+        const response = await api.post(`${config.apiUrl}/tags/assign/${userGameId}`, { tag_ids: tagIds });
         
         const result = await response.json();
         
@@ -465,7 +404,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/remove/${userGameId}`, {
+        const response = await api.call(`${config.apiUrl}/tags/remove/${userGameId}`, {
           method: 'DELETE',
           body: JSON.stringify({ tag_ids: tagIds }),
         });
@@ -498,10 +437,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/bulk-assign`, {
-          method: 'POST',
-          body: JSON.stringify(data),
-        });
+        const response = await api.post(`${config.apiUrl}/tags/bulk-assign`, data);
         
         const result = await response.json();
         
@@ -529,7 +465,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/bulk-remove`, {
+        const response = await api.call(`${config.apiUrl}/tags/bulk-remove`, {
           method: 'DELETE',
           body: JSON.stringify(data),
         });
@@ -561,7 +497,7 @@ function createTagsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/tags/usage/stats`);
+        const response = await api.get(`${config.apiUrl}/tags/usage/stats`);
         const stats = await response.json();
         
         // Update usage map

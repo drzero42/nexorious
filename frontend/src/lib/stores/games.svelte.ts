@@ -1,5 +1,5 @@
-import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { api } from '$lib/services/api';
 import type { GameId } from '$lib/types/game';
 
 export interface Game {
@@ -94,43 +94,6 @@ const initialState: GamesState = {
 function createGamesStore() {
   let state = $state<GamesState>(initialState);
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authState.accessToken}`,
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Try to refresh token
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          // Retry the request with new token
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${auth.value.accessToken}`,
-              ...options.headers,
-            },
-          });
-        }
-      }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return response;
-  };
-
   return {
     get value() {
       return state;
@@ -153,7 +116,7 @@ function createGamesStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`${config.apiUrl}/games?${params}`);
+        const response = await api.get(`${config.apiUrl}/games?${params}`);
         const data: GameListResponse = await response.json();
 
         state = {
@@ -181,7 +144,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/${id}`);
+        const response = await api.get(`${config.apiUrl}/games/${id}`);
         const game: Game = await response.json();
 
         state = {
@@ -203,10 +166,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/search/igdb`, {
-          method: 'POST',
-          body: JSON.stringify({ query: title, limit }),
-        });
+        const response = await api.post(`${config.apiUrl}/games/search/igdb`, { query: title, limit });
         
         const data: IGDBSearchResponse = await response.json();
 
@@ -229,12 +189,9 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/igdb-import?download_cover_art=true`, {
-          method: 'POST',
-          body: JSON.stringify({
-            igdb_id,
-            custom_overrides
-          }),
+        const response = await api.post(`${config.apiUrl}/games/igdb-import?download_cover_art=true`, {
+          igdb_id,
+          custom_overrides
         });
         
         const game: Game = await response.json();
@@ -261,10 +218,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(gameData),
-        });
+        const response = await api.put(`${config.apiUrl}/games/${id}`, gameData);
         
         const updatedGame: Game = await response.json();
 
@@ -291,9 +245,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`${config.apiUrl}/games/${id}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/games/${id}`);
 
         // Remove the game from the current games list
         state = {
@@ -314,10 +266,7 @@ function createGamesStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        const response = await apiCall(`${config.apiUrl}/games/${id}/metadata/refresh`, {
-          method: 'POST',
-          body: JSON.stringify({ fields, force }),
-        });
+        const response = await api.post(`${config.apiUrl}/games/${id}/metadata/refresh`, { fields, force });
         
         const result = await response.json();
 
