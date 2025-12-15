@@ -4,7 +4,6 @@ Import endpoints for triggering background import jobs.
 Provides endpoints for:
 - POST /import/nexorious - Upload Nexorious JSON export (non-interactive)
 - POST /import/darkadia - Upload Darkadia CSV (interactive with review)
-- POST /import/steam - Initiate Steam library import (interactive)
 
 All endpoints create unified Job records and return job_id for tracking.
 Uses high priority queue for user-initiated imports.
@@ -33,7 +32,6 @@ from ..worker.queues import QUEUE_HIGH
 from ..worker.tasks.import_export import (
     import_nexorious_json as import_nexorious_task,
     import_darkadia_csv as import_darkadia_task,
-    import_steam_library as import_steam_task,
 )
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
@@ -69,18 +67,10 @@ class ImportJobCreatedResponseModel(BaseModel):
     """Response model for import job creation."""
 
     job_id: str = Field(..., description="ID of the created import job")
-    source: str = Field(..., description="Import source (nexorious, darkadia, steam)")
+    source: str = Field(..., description="Import source (nexorious, darkadia)")
     status: str = Field(..., description="Initial job status")
     message: str = Field(..., description="Success message")
     total_items: Optional[int] = Field(None, description="Total items to import (if known)")
-
-
-class SteamImportRequest(BaseModel):
-    """Request model for Steam import."""
-
-    steam_id: Optional[str] = Field(
-        None, description="Steam ID or vanity URL. If not provided, uses configured Steam ID"
-    )
 
 
 def _check_active_import(
@@ -383,88 +373,3 @@ async def import_darkadia_csv(
     )
 
 
-@router.post("/steam", response_model=ImportJobCreatedResponseModel)
-async def import_steam_library(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    request: Optional[SteamImportRequest] = None,
-) -> ImportJobCreatedResponseModel:
-    """
-    Initiate Steam library import.
-
-    This is an interactive import that will:
-    1. Fetch the user's Steam library via Steam Web API
-    2. Run each game through the matching service
-    3. High confidence matches are marked ready
-    4. Low confidence matches are queued for user review
-
-    If any games need review, job status changes to AWAITING_REVIEW.
-    User must confirm the final import via the review API.
-
-    Requires the user to have their Steam ID configured in settings,
-    or provide a Steam ID/vanity URL in the request.
-
-    Returns the job_id for tracking import progress and reviewing matches.
-    """
-    # Check for existing active import
-    existing_job = _check_active_import(
-        session, current_user.id, BackgroundJobSource.STEAM
-    )
-    if existing_job:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Import already in progress. Job ID: {existing_job.id}"
-        )
-
-    # Get Steam ID from request or user settings
-    steam_id = None
-    if request and request.steam_id:
-        steam_id = request.steam_id
-    else:
-        # TODO: Get from user's configured Steam settings
-        # For now, require it in the request
-        if not request or not request.steam_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Steam ID is required. Configure your Steam settings or provide steam_id in the request."
-            )
-
-    logger.info(
-        f"User {current_user.id} initiating Steam import for Steam ID: {steam_id}"
-    )
-
-    # Create job record
-    job = Job(
-        user_id=current_user.id,
-        job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.STEAM,
-        status=BackgroundJobStatus.PENDING,
-        priority=BackgroundJobPriority.HIGH,
-        # Total will be updated when we fetch the library
-        progress_total=0,
-    )
-
-    # Store Steam ID for the worker
-    job.set_result_summary({
-        "steam_id": steam_id,
-    })
-
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-
-    # Enqueue the import task
-    task_result = await import_steam_task.kiq(job.id)
-    job.taskiq_task_id = task_result.task_id
-    session.add(job)
-    session.commit()
-
-    logger.info(f"Created Steam import job {job.id} for user {current_user.id}")
-
-    return ImportJobCreatedResponseModel(
-        job_id=job.id,
-        source="steam",
-        status=job.status.value,
-        message="Import job created. Fetching Steam library...",
-        total_items=None,  # Unknown until we fetch the library
-    )

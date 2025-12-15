@@ -25,10 +25,6 @@ def mock_task_queue():
         "app.api.import_endpoints.import_darkadia_task.kiq",
         new_callable=AsyncMock,
         return_value=mock_result,
-    ), patch(
-        "app.api.import_endpoints.import_steam_task.kiq",
-        new_callable=AsyncMock,
-        return_value=mock_result,
     ):
         yield
 
@@ -258,79 +254,6 @@ class TestDarkadiaImport:
         assert response.status_code == 409
 
 
-class TestSteamImport:
-    """Tests for Steam library import endpoint."""
-
-    def test_import_steam_success(
-        self, client: TestClient, auth_headers: dict, session: Session, test_user
-    ):
-        """POST /import/steam creates import job with Steam ID."""
-        response = client.post(
-            "/api/import/steam",
-            headers=auth_headers,
-            json={"steam_id": "76561198012345678"},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "job_id" in data
-        assert data["source"] == "steam"
-        assert data["status"] == "pending"
-        assert data["total_items"] is None  # Unknown until library is fetched
-
-        # Verify job in database
-        from sqlmodel import select
-        stmt = select(Job).where(Job.id == data["job_id"])
-        job = session.exec(stmt).first()
-        assert job is not None
-        assert job.job_type == BackgroundJobType.IMPORT
-        assert job.source == BackgroundJobSource.STEAM
-        assert job.status == BackgroundJobStatus.PENDING
-
-        # Verify Steam ID stored in result summary
-        summary = job.get_result_summary()
-        assert summary["steam_id"] == "76561198012345678"
-
-    def test_import_steam_missing_steam_id(
-        self, client: TestClient, auth_headers: dict
-    ):
-        """POST /import/steam returns 400 if no Steam ID provided."""
-        response = client.post(
-            "/api/import/steam",
-            headers=auth_headers,
-            json={},
-        )
-
-        assert response.status_code == 400
-        data = response.json()
-        error_msg = data.get("error", data.get("detail", ""))
-        assert "Steam ID" in error_msg
-
-    def test_import_steam_conflict_when_active(
-        self, client: TestClient, auth_headers: dict, session: Session, test_user
-    ):
-        """POST /import/steam returns 409 if import already in progress."""
-        # Create an active import job
-        existing_job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PENDING,
-            priority="high",
-        )
-        session.add(existing_job)
-        session.commit()
-
-        response = client.post(
-            "/api/import/steam",
-            headers=auth_headers,
-            json={"steam_id": "76561198012345678"},
-        )
-
-        assert response.status_code == 409
-
-
 class TestImportEndpointAuthentication:
     """Tests for import endpoint authentication."""
 
@@ -353,15 +276,6 @@ class TestImportEndpointAuthentication:
         response = client.post(
             "/api/import/darkadia",
             files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 403
-
-    def test_steam_import_requires_auth(self, client: TestClient):
-        """POST /import/steam returns 403 without auth."""
-        response = client.post(
-            "/api/import/steam",
-            json={"steam_id": "12345"},
         )
 
         assert response.status_code == 403
