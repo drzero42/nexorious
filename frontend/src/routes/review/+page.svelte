@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -9,6 +9,7 @@
 		type ReviewFilters,
 		type IGDBCandidate
 	} from '$lib/stores';
+	import { websocket, WebSocketEventType } from '$lib/stores/websocket.svelte';
 	import { RouteGuard, Pagination } from '$lib/components';
 	import ReviewItemCard from '$lib/components/ReviewItemCard.svelte';
 
@@ -22,9 +23,12 @@
 	const isLoading = $derived(review.value.isLoading);
 	const error = $derived(review.value.error);
 	const pagination = $derived(review.value.pagination);
+	const wsStatus = $derived(websocket.value.status);
 
 	// Parse job_id from URL query params
 	const jobIdFromUrl = $derived($page.url.searchParams.get('job_id'));
+
+	let unsubscribeReviewUpdate: (() => void) | null = null;
 
 	onMount(() => {
 		// Initialize filters from URL
@@ -33,6 +37,23 @@
 		}
 		loadItems();
 		review.loadSummary();
+
+		// Connect to WebSocket for real-time updates
+		websocket.connect();
+
+		// Subscribe to review item update events
+		unsubscribeReviewUpdate = websocket.on(WebSocketEventType.REVIEW_ITEM_UPDATE, () => {
+			// The websocket store already triggers review.loadSummary() on this event
+			// Reload items to show new review items from running jobs
+			loadItems(pagination.page);
+		});
+	});
+
+	onDestroy(() => {
+		// Clean up WebSocket subscription
+		if (unsubscribeReviewUpdate) {
+			unsubscribeReviewUpdate();
+		}
 	});
 
 	async function loadItems(pageNum: number = 1) {
@@ -166,14 +187,35 @@
 						Match unmatched games from your imports and syncs
 					</p>
 				</div>
-				{#if summary}
-					<div class="text-right">
-						<div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-							{summary.total_pending}
-						</div>
-						<div class="text-sm text-gray-500 dark:text-gray-400">pending items</div>
+				<div class="flex items-center gap-4">
+					<!-- WebSocket Status Indicator -->
+					<div class="text-sm">
+						{#if wsStatus === 'connected'}
+							<span class="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+								<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+								Live updates
+							</span>
+						{:else if wsStatus === 'polling'}
+							<span class="flex items-center gap-1.5 text-yellow-600 dark:text-yellow-400">
+								<span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
+								Polling mode
+							</span>
+						{:else if wsStatus === 'connecting' || wsStatus === 'reconnecting'}
+							<span class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+								<span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></span>
+								Connecting...
+							</span>
+						{/if}
 					</div>
-				{/if}
+					{#if summary}
+						<div class="text-right">
+							<div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+								{summary.total_pending}
+							</div>
+							<div class="text-sm text-gray-500 dark:text-gray-400">pending items</div>
+						</div>
+					{/if}
+				</div>
 			</div>
 		</div>
 

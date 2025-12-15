@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { jobs, JobType, JobSource, JobStatus, type Job, type JobFilters } from '$lib/stores';
+	import { websocket, WebSocketEventType } from '$lib/stores/websocket.svelte';
 	import { RouteGuard, Pagination } from '$lib/components';
 	import JobCard from '$lib/components/JobCard.svelte';
 	import { getJobTypeLabel, getJobSourceLabel, getJobStatusLabel } from '$lib/types/jobs';
@@ -16,9 +17,28 @@
 	const isLoading = $derived(jobs.value.isLoading);
 	const error = $derived(jobs.value.error);
 	const pagination = $derived(jobs.value.pagination);
+	const wsStatus = $derived(websocket.value.status);
+
+	let unsubscribeJobCreated: (() => void) | null = null;
 
 	onMount(() => {
 		loadJobs();
+
+		// Connect to WebSocket for real-time updates
+		websocket.connect();
+
+		// Subscribe to job_created events to auto-refresh the list
+		unsubscribeJobCreated = websocket.on(WebSocketEventType.JOB_CREATED, () => {
+			// The websocket store already updates jobs.value.jobs,
+			// so we don't need to manually reload
+		});
+	});
+
+	onDestroy(() => {
+		// Clean up WebSocket subscription
+		if (unsubscribeJobCreated) {
+			unsubscribeJobCreated();
+		}
 	});
 
 	async function loadJobs(page: number = 1) {
@@ -87,10 +107,38 @@
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 		<!-- Header -->
 		<div class="mb-8">
-			<h1 class="text-2xl font-bold text-gray-900 dark:text-white">Background Jobs</h1>
-			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				View and manage your sync, import, and export tasks
-			</p>
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-white">Background Jobs</h1>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						View and manage your sync, import, and export tasks
+					</p>
+				</div>
+				<!-- WebSocket Status Indicator -->
+				<div class="flex items-center gap-2 text-sm">
+					{#if wsStatus === 'connected'}
+						<span class="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+							<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+							Live updates
+						</span>
+					{:else if wsStatus === 'polling'}
+						<span class="flex items-center gap-1.5 text-yellow-600 dark:text-yellow-400">
+							<span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
+							Polling mode
+						</span>
+					{:else if wsStatus === 'connecting' || wsStatus === 'reconnecting'}
+						<span class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+							<span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></span>
+							Connecting...
+						</span>
+					{:else}
+						<span class="flex items-center gap-1.5 text-gray-400 dark:text-gray-500">
+							<span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+							Offline
+						</span>
+					{/if}
+				</div>
+			</div>
 		</div>
 
 		<!-- Filters -->
