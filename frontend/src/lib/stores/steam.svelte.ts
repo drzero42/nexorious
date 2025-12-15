@@ -2,6 +2,9 @@ import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { goto } from '$app/navigation';
 import { ui } from './ui.svelte';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.steam;
 
 // Steam API interfaces based on backend schemas
 export interface SteamUserInfo {
@@ -383,7 +386,7 @@ function createSteamStore() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get active import job';
         // Don't throw error for this method - just return null and let caller handle
-        console.warn('Failed to check for active import job:', errorMessage);
+        log.warn('Failed to check for active import job', { error: errorMessage });
         return null;
       }
     },

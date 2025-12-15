@@ -1,4 +1,7 @@
 import { browser } from '$app/environment';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.ui;
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
@@ -78,7 +81,7 @@ function createUIStore() {
           }
         };
       } catch (error) {
-        console.error('Failed to parse stored UI preferences:', error);
+        log.error('Failed to parse stored UI preferences', error);
       }
     }
   }

@@ -78,7 +78,8 @@ vi.mock('$lib/env', () => ({
 
 // Mock $app/environment
 vi.mock('$app/environment', () => ({
-  browser: true
+  browser: true,
+  dev: false
 }));
 
 // Mock auth store

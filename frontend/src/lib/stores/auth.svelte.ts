@@ -1,5 +1,8 @@
 import { browser } from '$app/environment';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.auth;
 
 export interface User {
   id: string;
@@ -40,7 +43,7 @@ function createAuthStore() {
         const parsedAuth = JSON.parse(storedAuth);
         state = parsedAuth;
       } catch (error) {
-        console.error('Failed to parse stored auth:', error);
+        log.error('Failed to parse stored auth', error);
         localStorage.removeItem('auth');
       }
     }
@@ -155,7 +158,7 @@ function createAuthStore() {
           
           return true;
         } catch (error) {
-          console.error('Token refresh failed:', error);
+          log.error('Token refresh failed', error);
           state = initialState;
           if (browser) {
             localStorage.removeItem('auth');
@@ -197,7 +200,7 @@ function createAuthStore() {
         const data = await response.json();
         return data;
       } catch (error) {
-        console.error('Username availability check failed:', error);
+        log.error('Username availability check failed', error);
         return { available: false, username };
       }
     },
@@ -307,7 +310,7 @@ function createAuthStore() {
         const data = await response.json();
         return data;
       } catch (error) {
-        console.error('Setup status check failed:', error);
+        log.error('Setup status check failed', error);
         // Default to not needing setup on error
         return { needs_setup: false };
       }

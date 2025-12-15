@@ -2,7 +2,10 @@ import { auth } from './auth.svelte';
 import type { Game } from './games.svelte';
 import type { Platform, Storefront } from './platforms.svelte';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
 import type { GameId, UserGameId } from '$lib/types/game';
+
+const log = loggers.api;
 
 // Enhanced TypeScript patterns for fine-grained reactivity
 // type DeepPartial<T> = {
@@ -504,7 +507,9 @@ function createUserGamesStore() {
         // If we can't parse the error body, use the default message
       }
       
-      console.error(`API call failed: ${options.method || 'GET'} ${url}`, {
+      log.error('API call failed', {
+        method: options.method || 'GET',
+        url,
         status: response.status,
         statusText: response.statusText,
         errorMessage

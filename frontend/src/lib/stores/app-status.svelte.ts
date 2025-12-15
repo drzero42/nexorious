@@ -1,5 +1,8 @@
 import { browser } from '$app/environment';
 import { config } from '$lib/env';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.api;
 
 export interface AppStatusState {
   igdbConfigured: boolean;
@@ -50,7 +53,7 @@ function createAppStatusStore() {
           hasFetched: true
         };
       } catch (error) {
-        console.error('Failed to fetch app status:', error);
+        log.error('Failed to fetch app status', error);
         state = {
           ...state,
           isLoading: false,

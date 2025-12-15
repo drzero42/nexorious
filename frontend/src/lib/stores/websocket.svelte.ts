@@ -8,6 +8,9 @@
 import { browser } from '$app/environment';
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
+import { loggers } from '$lib/services/logger';
+
+const log = loggers.websocket;
 import { jobs } from './jobs.svelte';
 import { review } from './review.svelte';
 import { notifications } from './notifications.svelte';
@@ -229,7 +232,7 @@ function createWebSocketStore() {
           state.polledJobIds.delete(jobId);
         }
       } catch (error) {
-        console.error(`Failed to poll job ${jobId}:`, error);
+        log.error('Failed to poll job', { jobId, error });
       }
     }
   }
@@ -294,7 +297,7 @@ function createWebSocketStore() {
         }
       }
     } catch (error) {
-      console.error('Failed to parse WebSocket message:', error);
+      log.error('Failed to parse WebSocket message', error);
     }
   }
 

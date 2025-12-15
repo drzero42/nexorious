@@ -1,7 +1,10 @@
 import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { ui } from './ui.svelte';
+import { loggers } from '$lib/services/logger';
 import type { GameId } from '$lib/types/game';
+
+const log = loggers.darkadia;
 import type {
   DarkadiaGameResponse,
   DarkadiaGamesListResponse,
@@ -484,7 +487,7 @@ function createDarkadiaStore() {
           }
         }
       } catch (error) {
-        console.error('Failed to poll import job status:', error);
+        log.error('Failed to poll import job status', error);
         // Continue polling despite errors
         setTimeout(() => this.pollImportJob(jobId), 5000);
       }
@@ -1199,10 +1202,10 @@ function createDarkadiaStore() {
         }
 
         const result = await response.json();
-        console.log('Platform update result:', result);
+        log.debug('Platform update result', result);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update game platform';
-        console.error('Error updating game platform:', error);
+        log.error('Error updating game platform', error);
         throw new Error(errorMessage);
       }
     },
@@ -1227,7 +1230,7 @@ function createDarkadiaStore() {
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get platform options';
-        console.error('Error getting platform options:', error);
+        log.error('Error getting platform options', error);
         throw new Error(errorMessage);
       }
     }
