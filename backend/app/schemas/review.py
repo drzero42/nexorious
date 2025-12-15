@@ -56,6 +56,10 @@ class ReviewItemResponse(BaseModel):
     # IGDB matching
     igdb_candidates: List[Dict[str, Any]] = Field(default_factory=list)
     resolved_igdb_id: Optional[int] = None
+    match_confidence: Optional[float] = Field(
+        default=None,
+        description="Confidence score (1.0 = exact match, >= 0.85 = auto-match, < 0.85 = needs review)"
+    )
 
     # Timestamps
     created_at: datetime
@@ -83,6 +87,10 @@ class ReviewItemDetailResponse(BaseModel):
     # IGDB matching
     igdb_candidates: List[IGDBCandidate] = Field(default_factory=list)
     resolved_igdb_id: Optional[int] = None
+    match_confidence: Optional[float] = Field(
+        default=None,
+        description="Confidence score (1.0 = exact match, >= 0.85 = auto-match, < 0.85 = needs review)"
+    )
 
     # Timestamps
     created_at: datetime
