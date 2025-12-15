@@ -1,6 +1,7 @@
 export { default as RouteGuard } from './RouteGuard.svelte';
 export { default as RouteGuardNew } from './RouteGuardNew.svelte';
 export { default as ErrorBoundary } from './ErrorBoundary.svelte';
+export { default as NavBadge } from './NavBadge.svelte';
 export { default as Pagination } from './Pagination.svelte';
 export { default as PlayStatusDropdown } from './PlayStatusDropdown.svelte';
 export { default as TimeTrackingInput } from './TimeTrackingInput.svelte';
