@@ -39,13 +39,6 @@ def mock_steam_service():
 
 
 @pytest.fixture
-def mock_steam_games_service():
-    """Mock Steam games service for testing - globally available."""
-    with patch('app.services.steam_games.create_steam_games_service') as mock:
-        yield mock
-
-
-@pytest.fixture
 def client_with_shared_session(session):
     """Test client that shares the same database session with tests."""
     from fastapi.testclient import TestClient
@@ -88,6 +81,5 @@ __all__ = [
     'mock_igdb_service',
     'configurable_mock_igdb',
     'client_with_mock_igdb',
-    'mock_steam_service',
-    'mock_steam_games_service'
+    'mock_steam_service'
 ]

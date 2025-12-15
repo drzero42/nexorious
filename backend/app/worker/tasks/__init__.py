@@ -21,7 +21,6 @@ from app.worker.tasks.sync import (
 from app.worker.tasks.import_export import (
     import_nexorious_json,
     import_darkadia_csv,
-    import_steam_library,
     export_collection,
 )
 
@@ -36,6 +35,5 @@ __all__ = [
     # Import/Export
     "import_nexorious_json",
     "import_darkadia_csv",
-    "import_steam_library",
     "export_collection",
 ]
