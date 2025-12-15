@@ -17,19 +17,25 @@ from app.core.database import get_session_context
 from app.models.job import (
     Job,
     BackgroundJobStatus,
+    BackgroundJobSource,
     ReviewItem,
     ReviewItemStatus,
 )
 from app.models.user import User
 from app.models.user_sync_config import UserSyncConfig
-from app.models.steam_game import SteamGame
-from app.models.user_game import UserGame
-from app.models.game import Game
-from app.services.steam import create_steam_service
-from app.services.matching import MatchingService, MatchRequest, MatchStatus
-from app.services.igdb import IGDBService
+from app.models.ignored_external_game import IgnoredExternalGame
+from app.models.user_game import UserGame, UserGamePlatform
+from app.services.steam import SteamService
+from app.services.matching.service import MatchingService
+from app.services.matching.models import MatchRequest, MatchStatus
+from app.services.igdb.service import IGDBService
 
 logger = logging.getLogger(__name__)
+
+# Constants
+STEAM_STOREFRONT_ID = "steam"
+PC_WINDOWS_PLATFORM_ID = "pc-windows"
+AUTO_MATCH_CONFIDENCE_THRESHOLD = 0.85
 
 
 @broker.task(
@@ -46,11 +52,12 @@ async def sync_steam_library(
 
     This task:
     1. Fetches the user's Steam library via Steam API
-    2. For each game, runs through the matching service
-    3. Matched games are added automatically if auto_add is enabled
-    4. Unmatched games are queued for review
-    5. Detects and flags removals (games no longer in Steam library)
-    6. Updates last_synced_at on completion
+    2. Filters out already synced games (check UserGamePlatform)
+    3. Filters out ignored games (check IgnoredExternalGame)
+    4. For remaining games, matches to IGDB using MatchingService
+    5. Auto-links high confidence matches to existing collection games
+    6. Creates ReviewItems for games that need manual review
+    7. Updates last_synced_at on completion
 
     Args:
         job_id: The Job ID for tracking progress
@@ -64,11 +71,12 @@ async def sync_steam_library(
 
     stats = {
         "total_games": 0,
-        "new_games": 0,
-        "matched": 0,
+        "already_synced": 0,
+        "ignored": 0,
+        "auto_linked": 0,
+        "auto_matched": 0,
         "needs_review": 0,
-        "already_in_collection": 0,
-        "removals_detected": 0,
+        "no_match": 0,
         "errors": 0,
     }
 
@@ -100,7 +108,7 @@ async def sync_steam_library(
                 raise ValueError("Steam credentials not configured")
 
             # Create Steam service
-            steam_service = create_steam_service(steam_credentials["api_key"])
+            steam_service = SteamService(api_key=steam_credentials["api_key"])
 
             # Fetch Steam library
             logger.info(f"Fetching Steam library for user {user_id}")
@@ -114,61 +122,160 @@ async def sync_steam_library(
             session.add(job)
             session.commit()
 
-            # Get existing Steam games in our DB
-            existing_steam_games = _get_existing_steam_games(session, user_id)
-            existing_appids = {g.steam_appid for g in existing_steam_games}
-            current_appids = {g.appid for g in steam_games_list}
+            # Get already synced Steam AppIDs
+            synced_appids = _get_synced_steam_appids(session, user_id)
+            logger.info(f"Found {len(synced_appids)} already synced Steam games")
 
-            # Create IGDB service for matching
+            # Get ignored Steam AppIDs
+            ignored_appids = _get_ignored_steam_appids(session, user_id)
+            logger.info(f"Found {len(ignored_appids)} ignored Steam games")
+
+            # Create IGDB service and matching service
             igdb_service = IGDBService()
             matching_service = MatchingService(session, igdb_service)
 
             # Process each game
             for i, steam_game in enumerate(steam_games_list):
                 try:
-                    result = await _process_steam_game(
-                        session=session,
-                        job=job,
-                        user_id=user_id,
-                        steam_game=steam_game,
-                        existing_appids=existing_appids,
-                        matching_service=matching_service,
-                        auto_add=sync_config.auto_add,
-                    )
+                    appid = str(steam_game.appid)
+                    game_name = steam_game.name
 
-                    # Update stats based on result
-                    if result == "new":
-                        stats["new_games"] += 1
-                    elif result == "matched":
-                        stats["matched"] += 1
-                    elif result == "needs_review":
+                    # Update progress
+                    job.progress_current = i + 1
+                    session.add(job)
+                    session.commit()
+
+                    # Skip already synced games
+                    if appid in synced_appids:
+                        logger.debug(f"Skipping already synced game: {game_name} (AppID: {appid})")
+                        stats["already_synced"] += 1
+                        continue
+
+                    # Skip ignored games
+                    if appid in ignored_appids:
+                        logger.debug(f"Skipping ignored game: {game_name} (AppID: {appid})")
+                        stats["ignored"] += 1
+                        continue
+
+                    # Match to IGDB
+                    logger.debug(f"Matching game to IGDB: {game_name} (AppID: {appid})")
+                    match_request = MatchRequest(
+                        source_title=game_name,
+                        source_platform="steam",
+                        platform_id=appid,
+                        source_metadata={"steam_appid": appid},
+                    )
+                    match_result = await matching_service.match_game(match_request)
+
+                    # Process match result
+                    if match_result.status == MatchStatus.MATCHED:
+                        confidence = match_result.confidence_score or 0.0
+                        igdb_id = match_result.igdb_id
+
+                        if not igdb_id:
+                            logger.warning(f"Match result has MATCHED status but no IGDB ID for {game_name}")
+                            stats["errors"] += 1
+                            continue
+
+                        # Check if game already in user's collection
+                        existing_user_game = session.exec(
+                            select(UserGame).where(
+                                UserGame.user_id == user_id,
+                                UserGame.game_id == igdb_id,
+                            )
+                        ).first()
+
+                        if existing_user_game and confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD:
+                            # High confidence + already in collection = auto-link platform association
+                            logger.info(
+                                f"Auto-linking Steam platform for existing game: {game_name} -> "
+                                f"{match_result.igdb_title} (confidence: {confidence:.2f})"
+                            )
+                            _add_steam_platform(session, existing_user_game.id, appid)
+                            stats["auto_linked"] += 1
+                        else:
+                            # Create ReviewItem (either new game or low confidence)
+                            if confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD:
+                                logger.info(
+                                    f"Creating review item for auto-matched new game: {game_name} -> "
+                                    f"{match_result.igdb_title} (confidence: {confidence:.2f})"
+                                )
+                                stats["auto_matched"] += 1
+                            else:
+                                logger.info(
+                                    f"Creating review item for low confidence match: {game_name} -> "
+                                    f"{match_result.igdb_title} (confidence: {confidence:.2f})"
+                                )
+                                stats["needs_review"] += 1
+
+                            _create_review_item(
+                                session=session,
+                                job=job,
+                                user_id=user_id,
+                                source_title=game_name,
+                                steam_appid=appid,
+                                igdb_id=igdb_id,
+                                igdb_title=match_result.igdb_title,
+                                confidence=confidence,
+                                candidates=match_result.candidates or [],
+                            )
+
+                    elif match_result.status == MatchStatus.NEEDS_REVIEW:
+                        # Multiple candidates - needs manual review
+                        logger.info(
+                            f"Creating review item for multiple candidates: {game_name} "
+                            f"({len(match_result.candidates or [])} candidates)"
+                        )
+                        _create_review_item(
+                            session=session,
+                            job=job,
+                            user_id=user_id,
+                            source_title=game_name,
+                            steam_appid=appid,
+                            igdb_id=None,
+                            igdb_title=None,
+                            confidence=0.0,
+                            candidates=match_result.candidates or [],
+                        )
                         stats["needs_review"] += 1
-                    elif result == "already_in_collection":
-                        stats["already_in_collection"] += 1
-                    elif result == "error":
-                        stats["errors"] += 1
+
+                    else:
+                        # No match found
+                        logger.info(f"No match found for game: {game_name} (AppID: {appid})")
+                        _create_review_item(
+                            session=session,
+                            job=job,
+                            user_id=user_id,
+                            source_title=game_name,
+                            steam_appid=appid,
+                            igdb_id=None,
+                            igdb_title=None,
+                            confidence=0.0,
+                            candidates=[],
+                        )
+                        stats["no_match"] += 1
 
                 except Exception as e:
-                    logger.error(f"Error processing Steam game {steam_game.appid}: {e}")
+                    logger.error(f"Error processing Steam game {steam_game.appid} ({steam_game.name}): {e}")
                     stats["errors"] += 1
-
-                # Update progress
-                job.progress_current = i + 1
-                session.add(job)
-                session.commit()
-
-            # Detect removals (games in DB but not in current Steam library)
-            removed_appids = existing_appids - current_appids
-            if removed_appids:
-                stats["removals_detected"] = len(removed_appids)
-                await _handle_removals(session, job, user_id, removed_appids)
 
             # Update sync config last_synced_at
             sync_config.last_synced_at = datetime.now(timezone.utc)
             session.add(sync_config)
 
             # Determine final job status
-            if stats["needs_review"] > 0:
+            pending_count = len(
+                list(
+                    session.exec(
+                        select(ReviewItem).where(
+                            ReviewItem.job_id == job.id,
+                            ReviewItem.status == ReviewItemStatus.PENDING,
+                        )
+                    ).all()
+                )
+            )
+
+            if pending_count > 0:
                 job.status = BackgroundJobStatus.AWAITING_REVIEW
             else:
                 job.status = BackgroundJobStatus.COMPLETED
@@ -180,8 +287,14 @@ async def sync_steam_library(
 
             logger.info(
                 f"Steam sync completed for user {user_id}: "
-                f"{stats['total_games']} total, {stats['matched']} matched, "
-                f"{stats['needs_review']} need review, {stats['errors']} errors"
+                f"{stats['total_games']} total, "
+                f"{stats['already_synced']} already synced, "
+                f"{stats['ignored']} ignored, "
+                f"{stats['auto_linked']} auto-linked, "
+                f"{stats['auto_matched']} auto-matched, "
+                f"{stats['needs_review']} need review, "
+                f"{stats['no_match']} no match, "
+                f"{stats['errors']} errors"
             )
 
             return {"status": "success", **stats}
@@ -221,217 +334,146 @@ def _get_steam_credentials(user: User) -> Optional[Dict[str, str]]:
     return {"api_key": api_key, "steam_id": steam_id}
 
 
-def _get_existing_steam_games(session: Session, user_id: str) -> List[SteamGame]:
-    """Get all existing Steam games for a user."""
-    stmt = select(SteamGame).where(SteamGame.user_id == user_id)
-    return list(session.exec(stmt).all())
-
-
-async def _process_steam_game(
-    session: Session,
-    job: Job,
-    user_id: str,
-    steam_game,
-    existing_appids: set,
-    matching_service: MatchingService,
-    auto_add: bool,
-) -> str:
+def _get_synced_steam_appids(session: Session, user_id: str) -> set[str]:
     """
-    Process a single Steam game during sync.
+    Get all Steam AppIDs already synced for this user.
 
-    Returns:
-        Status string: "new", "matched", "needs_review", "already_in_collection", "error"
+    Checks UserGamePlatform for entries with:
+    - storefront_id = 'steam'
+    - store_game_id = Steam AppID
     """
-    appid = steam_game.appid
-    game_name = steam_game.name
-
-    # Check if already in Steam games table
-    if appid in existing_appids:
-        # Game already imported, check if already in collection
-        stmt = select(SteamGame).where(
-            SteamGame.user_id == user_id,
-            SteamGame.steam_appid == appid,
+    results = session.exec(
+        select(UserGamePlatform.store_game_id)
+        .join(UserGame)
+        .where(
+            UserGame.user_id == user_id,
+            UserGamePlatform.storefront_id == STEAM_STOREFRONT_ID,
+            UserGamePlatform.store_game_id.isnot(None),  # type: ignore
         )
-        existing = session.exec(stmt).first()
+    ).all()
+    return {appid for appid in results if appid}
 
-        if existing and existing.igdb_id:
-            # Check if already in user's collection
-            user_game_stmt = select(UserGame).where(
-                UserGame.user_id == user_id,
-                UserGame.game_id == existing.igdb_id,
-            )
-            if session.exec(user_game_stmt).first():
-                return "already_in_collection"
 
-        return "already_in_collection"
+def _get_ignored_steam_appids(session: Session, user_id: str) -> set[str]:
+    """
+    Get all ignored Steam AppIDs for this user.
 
-    # New game - create SteamGame record
-    new_steam_game = SteamGame(
-        user_id=user_id,
-        steam_appid=appid,
-        game_name=game_name,
-    )
-    session.add(new_steam_game)
-    session.commit()
-    session.refresh(new_steam_game)
-
-    # Attempt to match via matching service
-    match_request = MatchRequest(
-        source_title=game_name,
-        source_platform="steam",
-        platform_id=str(appid),
-    )
-
-    match_result = await matching_service.match_game(match_request)
-
-    if match_result.status == MatchStatus.MATCHED and match_result.igdb_id is not None:
-        # High confidence match
-        new_steam_game.igdb_id = match_result.igdb_id
-        new_steam_game.igdb_title = match_result.igdb_title
-        session.add(new_steam_game)
-
-        if auto_add:
-            # Add to collection automatically
-            await _add_to_collection(
-                session, user_id, match_result.igdb_id, new_steam_game
-            )
-            return "matched"
-        else:
-            # Queue for review even though matched (user wants to review all)
-            _create_review_item(
-                session,
-                job,
-                user_id,
-                game_name,
-                appid,
-                match_result,
-            )
-            return "needs_review"
-
-    elif match_result.status == MatchStatus.NEEDS_REVIEW:
-        # Low confidence or multiple candidates
-        _create_review_item(
-            session,
-            job,
-            user_id,
-            game_name,
-            appid,
-            match_result,
+    Checks IgnoredExternalGame for entries with source = STEAM.
+    """
+    results = session.exec(
+        select(IgnoredExternalGame.external_id).where(
+            IgnoredExternalGame.user_id == user_id,
+            IgnoredExternalGame.source == BackgroundJobSource.STEAM,
         )
-        return "needs_review"
+    ).all()
+    return set(results)
 
-    else:
-        # No match found
-        _create_review_item(
-            session,
-            job,
-            user_id,
-            game_name,
-            appid,
-            match_result,
+
+def _add_steam_platform(session: Session, user_game_id: str, steam_appid: str) -> None:
+    """
+    Add Steam platform association to an existing UserGame.
+
+    Creates a UserGamePlatform entry linking the game to Steam storefront
+    with the Steam AppID stored in store_game_id.
+    """
+    # Check if association already exists
+    existing = session.exec(
+        select(UserGamePlatform).where(
+            UserGamePlatform.user_game_id == user_game_id,
+            UserGamePlatform.storefront_id == STEAM_STOREFRONT_ID,
+            UserGamePlatform.store_game_id == steam_appid,
         )
-        return "needs_review"
+    ).first()
 
-
-async def _add_to_collection(
-    session: Session,
-    user_id: str,
-    igdb_id: int,
-    steam_game: SteamGame,
-) -> None:
-    """Add a matched game to the user's collection."""
-    # Check if game exists in our games table
-    game = session.get(Game, igdb_id)
-    if not game:
-        # Game not in our DB yet - skip adding to collection
-        # The user will need to import this game separately
-        logger.warning(f"IGDB game {igdb_id} not in database, skipping collection add")
-        return
-
-    # Check if already in collection
-    stmt = select(UserGame).where(
-        UserGame.user_id == user_id,
-        UserGame.game_id == igdb_id,
-    )
-    if session.exec(stmt).first():
-        return  # Already in collection
-
-    # Add to collection
-    user_game = UserGame(
-        user_id=user_id,
-        game_id=igdb_id,
-    )
-    session.add(user_game)
-    session.commit()
+    if not existing:
+        platform = UserGamePlatform(
+            user_game_id=user_game_id,
+            platform_id=PC_WINDOWS_PLATFORM_ID,
+            storefront_id=STEAM_STOREFRONT_ID,
+            store_game_id=steam_appid,
+            store_url=f"https://store.steampowered.com/app/{steam_appid}",
+            is_available=True,
+        )
+        session.add(platform)
+        session.commit()
+        logger.debug(f"Added Steam platform association for UserGame {user_game_id}, AppID {steam_appid}")
 
 
 def _create_review_item(
     session: Session,
     job: Job,
     user_id: str,
-    game_name: str,
-    appid: int,
-    match_result,
-) -> None:
-    """Create a review item for a game that needs user decision."""
-    source_metadata = {
-        "steam_appid": appid,
-        "platform": "steam",
-    }
-    if match_result.source_metadata:
-        source_metadata.update(match_result.source_metadata)
+    source_title: str,
+    steam_appid: str,
+    igdb_id: Optional[int],
+    igdb_title: Optional[str],
+    confidence: float,
+    candidates: List,
+) -> ReviewItem:
+    """
+    Create a ReviewItem for user review.
 
+    Args:
+        session: Database session
+        job: The parent job
+        user_id: User ID
+        source_title: Original Steam game title
+        steam_appid: Steam AppID
+        igdb_id: Matched IGDB ID (if any)
+        igdb_title: Matched IGDB title (if any)
+        confidence: Match confidence score (0.0-1.0)
+        candidates: List of IGDB candidate matches
+    """
     # Convert candidates to serializable format
-    candidates = []
-    if match_result.candidates:
-        for c in match_result.candidates:
-            candidates.append(c.to_dict() if hasattr(c, "to_dict") else dict(c))
+    serializable_candidates = []
+    for candidate in candidates:
+        if hasattr(candidate, "to_dict"):
+            serializable_candidates.append(candidate.to_dict())
+        elif isinstance(candidate, dict):
+            serializable_candidates.append(candidate)
+        else:
+            # Convert dataclass or other object to dict
+            try:
+                serializable_candidates.append(candidate.__dict__)
+            except AttributeError:
+                logger.warning(f"Cannot serialize candidate: {candidate}")
+
+    # If we have a matched IGDB ID but it's not in candidates, add it
+    if igdb_id and igdb_title:
+        candidate_ids = {c.get("igdb_id") for c in serializable_candidates}
+        if igdb_id not in candidate_ids:
+            serializable_candidates.insert(
+                0,
+                {
+                    "igdb_id": igdb_id,
+                    "name": igdb_title,
+                    "confidence_score": confidence,
+                },
+            )
+
+    source_metadata = {
+        "steam_appid": steam_appid,
+        "source": "steam",
+    }
 
     review_item = ReviewItem(
         job_id=job.id,
         user_id=user_id,
-        source_title=game_name,
+        source_title=source_title,
         status=ReviewItemStatus.PENDING,
+        resolved_igdb_id=igdb_id if confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD else None,
+        match_confidence=confidence if confidence > 0 else None,
     )
     review_item.set_source_metadata(source_metadata)
-    review_item.set_igdb_candidates(candidates)
+    review_item.set_igdb_candidates(serializable_candidates)
 
     session.add(review_item)
     session.commit()
 
+    logger.debug(
+        f"Created ReviewItem for '{source_title}' "
+        f"(AppID: {steam_appid}, confidence: {confidence:.2f}, "
+        f"candidates: {len(serializable_candidates)})"
+    )
 
-async def _handle_removals(
-    session: Session,
-    job: Job,
-    user_id: str,
-    removed_appids: set,
-) -> None:
-    """Handle games that were removed from Steam library."""
-    logger.info(f"Detected {len(removed_appids)} game removals for user {user_id}")
-
-    for appid in removed_appids:
-        # Get the Steam game record
-        stmt = select(SteamGame).where(
-            SteamGame.user_id == user_id,
-            SteamGame.steam_appid == appid,
-        )
-        steam_game = session.exec(stmt).first()
-
-        if steam_game:
-            # Create a review item for the removal
-            review_item = ReviewItem(
-                job_id=job.id,
-                user_id=user_id,
-                source_title=steam_game.game_name,
-                status=ReviewItemStatus.REMOVAL,
-            )
-            review_item.set_source_metadata({
-                "steam_appid": appid,
-                "platform": "steam",
-                "igdb_id": steam_game.igdb_id,
-                "action": "removal",
-            })
-
-            session.add(review_item)
-
-    session.commit()
+    return review_item
