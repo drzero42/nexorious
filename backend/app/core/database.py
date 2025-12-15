@@ -26,6 +26,7 @@ from ..models import (  # noqa: F401
     DarkadiaGame,
     DarkadiaImport,
 )
+from app.models.ignored_external_game import IgnoredExternalGame  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

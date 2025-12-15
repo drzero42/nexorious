@@ -24,6 +24,7 @@ from .steam_game import SteamGame
 from .darkadia_game import DarkadiaGame
 from .darkadia_import import DarkadiaImport
 from .user_sync_config import UserSyncConfig, SyncFrequency
+from .ignored_external_game import IgnoredExternalGame
 
 __all__ = [
     "User",
@@ -50,4 +51,5 @@ __all__ = [
     "DarkadiaImport",
     "UserSyncConfig",
     "SyncFrequency",
+    "IgnoredExternalGame",
 ]
