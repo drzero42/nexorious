@@ -10,8 +10,8 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.models.steam_game import SteamGame
 from app.models.game import Game
+from app.models.user_game import UserGame, UserGamePlatform
 
 from .models import MatchResult, MatchStatus, MatchSource
 
@@ -26,10 +26,9 @@ async def lookup_by_steam_appid(
     """
     Look up a game by Steam AppID in the existing database.
 
-    First checks if the user has a matched SteamGame with this AppID.
-    If not found but another user has matched it, uses that IGDB ID.
-    Falls back to checking the games table for any game with this Steam ID
-    in its metadata.
+    Checks UserGamePlatform records for this AppID where storefront_id='steam'
+    and store_game_id matches the Steam AppID. First checks user-specific
+    matches, then any user's matches.
 
     Args:
         session: Database session
@@ -41,14 +40,14 @@ async def lookup_by_steam_appid(
     """
     logger.debug(f"Looking up Steam AppID {steam_appid} in database")
 
-    # Strategy 1: Check user's SteamGame records for this AppID
+    # Strategy 1: Check user's UserGamePlatform records for this AppID
     if user_id:
-        user_match = _lookup_user_steam_game(session, steam_appid, user_id)
+        user_match = _lookup_user_platform_game(session, steam_appid, user_id)
         if user_match:
             return user_match
 
-    # Strategy 2: Check any user's SteamGame records for this AppID
-    any_user_match = _lookup_any_user_steam_game(session, steam_appid)
+    # Strategy 2: Check any user's UserGamePlatform records for this AppID
+    any_user_match = _lookup_any_user_platform_game(session, steam_appid)
     if any_user_match:
         return any_user_match
 
@@ -57,55 +56,77 @@ async def lookup_by_steam_appid(
     return None
 
 
-def _lookup_user_steam_game(
+def _lookup_user_platform_game(
     session: Session, steam_appid: int, user_id: str
 ) -> Optional[MatchResult]:
-    """Check if user has already matched this Steam game."""
-    stmt = select(SteamGame).where(
-        SteamGame.steam_appid == steam_appid,
-        SteamGame.user_id == user_id,
-        SteamGame.igdb_id.isnot(None),  # type: ignore[union-attr]
-    )
-    steam_game = session.exec(stmt).first()
+    """Check if user has already matched this Steam game via UserGamePlatform."""
+    # Convert Steam AppID to string for comparison with store_game_id
+    steam_appid_str = str(steam_appid)
 
-    if steam_game and steam_game.igdb_id:
+    # Query UserGamePlatform where storefront_id='steam' and store_game_id matches
+    # Join with UserGame to get the game_id (IGDB ID)
+    stmt = (
+        select(UserGamePlatform, UserGame, Game)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
+        .join(Game, UserGame.game_id == Game.id)
+        .where(
+            UserGamePlatform.storefront_id == "steam",
+            UserGamePlatform.store_game_id == steam_appid_str,
+            UserGame.user_id == user_id,
+        )
+    )
+    result = session.exec(stmt).first()
+
+    if result:
+        platform, user_game, game = result
         logger.info(
             f"Found user's existing match for Steam AppID {steam_appid}: "
-            f"IGDB ID {steam_game.igdb_id}"
+            f"IGDB ID {game.id}"
         )
         return MatchResult(
-            source_title=steam_game.game_name,
+            source_title=game.title,
             status=MatchStatus.MATCHED,
             match_source=MatchSource.PLATFORM_LOOKUP,
-            igdb_id=steam_game.igdb_id,
-            igdb_title=steam_game.igdb_title,
+            igdb_id=game.id,
+            igdb_title=game.title,
             confidence_score=1.0,  # Platform ID lookup is authoritative
             source_metadata={"steam_appid": steam_appid, "user_id": user_id},
         )
     return None
 
 
-def _lookup_any_user_steam_game(
+def _lookup_any_user_platform_game(
     session: Session, steam_appid: int
 ) -> Optional[MatchResult]:
-    """Check if any user has matched this Steam game."""
-    stmt = select(SteamGame).where(
-        SteamGame.steam_appid == steam_appid,
-        SteamGame.igdb_id.isnot(None),  # type: ignore[union-attr]
-    )
-    steam_game = session.exec(stmt).first()
+    """Check if any user has matched this Steam game via UserGamePlatform."""
+    # Convert Steam AppID to string for comparison with store_game_id
+    steam_appid_str = str(steam_appid)
 
-    if steam_game and steam_game.igdb_id:
+    # Query UserGamePlatform where storefront_id='steam' and store_game_id matches
+    # Join with UserGame to get the game_id (IGDB ID)
+    stmt = (
+        select(UserGamePlatform, UserGame, Game)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
+        .join(Game, UserGame.game_id == Game.id)
+        .where(
+            UserGamePlatform.storefront_id == "steam",
+            UserGamePlatform.store_game_id == steam_appid_str,
+        )
+    )
+    result = session.exec(stmt).first()
+
+    if result:
+        platform, user_game, game = result
         logger.info(
             f"Found another user's match for Steam AppID {steam_appid}: "
-            f"IGDB ID {steam_game.igdb_id}"
+            f"IGDB ID {game.id}"
         )
         return MatchResult(
-            source_title=steam_game.game_name,
+            source_title=game.title,
             status=MatchStatus.MATCHED,
             match_source=MatchSource.PLATFORM_LOOKUP,
-            igdb_id=steam_game.igdb_id,
-            igdb_title=steam_game.igdb_title,
+            igdb_id=game.id,
+            igdb_title=game.title,
             confidence_score=1.0,
             source_metadata={"steam_appid": steam_appid},
         )

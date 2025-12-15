@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from .darkadia_import import DarkadiaImport
     from .user_sync_config import UserSyncConfig
     from .ignored_external_game import IgnoredExternalGame
-    from .steam_game import SteamGame
 
 
 class User(SQLModel, table=True):
@@ -61,7 +60,6 @@ class User(SQLModel, table=True):
     darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user")
     sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")
     ignored_external_games: List["IgnoredExternalGame"] = Relationship(back_populates="user")
-    steam_games: List["SteamGame"] = Relationship(back_populates="user")
 
 
 class UserSession(SQLModel, table=True):
