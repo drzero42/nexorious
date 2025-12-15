@@ -1,74 +1,31 @@
 # IGDB API Documentation
 
-> This documentation was downloaded from [api-docs.igdb.com](https://api-docs.igdb.com/) on 2025-12-15.
-> It provides a local reference for the IGDB API used in the nexorious backend.
+> Source: [api-docs.igdb.com](https://api-docs.igdb.com/) (downloaded 2025-12-15)
 
 ---
 
-
-# Getting Started
-
-One of the principles behind IGDB.com is accessibility of data. We 
-wish to share the data with anyone who wants to build cool video game 
-oriented websites, apps and services.
-
-This means that you are not only contributing to the value of IGDB 
-but to thousands of other projects as well. We are looking forward to 
-see what exciting game related projects you come up with. Happy coding!
-
-For a high level overview of our juicy data, check out the [endpoints section](#endpoints).
-
-> **Success:** START USING US NOW, IT'S FREE!
-
-
 ## Account Creation
 
-In order to use our API, you must have a Twitch Account.
+Requirements:
+1. Sign Up with [Twitch](https://dev.twitch.tv/login)
+2. Enable [Two Factor Authentication](https://www.twitch.tv/settings/security)
+3. Register application in the [Twitch Developer Portal](https://dev.twitch.tv/console/apps/create)
+   - OAuth Redirect URL: use `localhost`
+   - Client Type: must be `Confidential`
+4. [Manage](https://dev.twitch.tv/console/apps) your application and generate a Client Secret
+5. Save your Client ID and Client Secret
 
-1. Sign Up with [Twitch](https://dev.twitch.tv/login) for a free account
-2. Ensure you have Two Factor Authentication [enabled](https://www.twitch.tv/settings/security)
-3. Register your application in the [Twitch Developer Portal](https://dev.twitch.tv/console/apps/create)
-
-The OAuth Redirect URL field is not used by IGDB. Please add ’localhost’ to continue.
-The Client Type must be set to Confidential to generate Client Secrets
-4. [Manage](https://dev.twitch.tv/console/apps) your newly created application
-5. Generate a Client Secret by pressing [New Secret]
-6. Take note of the Client ID and Client Secret
-
-The IGDB.com API is free for **non-commercial** usage under the terms of the [Twitch Developer Service Agreement](https://www.twitch.tv/p/legal/developer-agreement/).
-
-> **Info:** **Note:** We offer commercial partnership for users with a commercial
- need in their projects. For more details on that process please reach 
-out to [partner@igdb.com](mailto: partner@igdb.com)
-
+License: Free for **non-commercial** use per [Twitch Developer Service Agreement](https://www.twitch.tv/p/legal/developer-agreement/).
 
 ## Authentication
 
-Now that you have a Client ID and Client Secret you will be authenticating as a Twitch Developer using Oauth2.
+Authenticate via Twitch OAuth2. See [Twitch Developer Docs](https://dev.twitch.tv/docs/authentication).
 
-Detailed information can be found in the [Twitch Developer Docs](https://dev.twitch.tv/docs/authentication).
-
-Make a `POST` request to `https://id.twitch.tv/oauth2/token` with the following query string parameters, substituting your Client ID and Client Secret accordingly.
-
-`client_id=Client ID`
-
-`client_secret=Client Secret`
-
-`grant_type=client_credentials`
-
-
-### Example
-
-If your Client ID is `abcdefg12345` and your Client Secret is `hijklmn67890`, the whole url should look like the following.
-
-
-```yaml
-POST: https://id.twitch.tv/oauth2/token?client_id=abcdefg12345&client_secret=hijklmn67890&grant_type=client_credentials
+```
+POST https://id.twitch.tv/oauth2/token?client_id={CLIENT_ID}&client_secret={CLIENT_SECRET}&grant_type=client_credentials
 ```
 
-The response from this will be a json object containing the access token and the number of second until the token expires.
-
-
+Response:
 ```json
 {
  "access_token": "access12345token",
@@ -77,416 +34,123 @@ The response from this will be a json object containing the access token and the
 }
 ```
 
-> **Info:** **Note:** The *expires_in* shows you the number of seconds before the *access_token* will expire and must be refreshed.
+The `expires_in` field shows seconds until token expiration.
 
 
 ## Requests
 
-- Most of the requests to the API will use the `POST` method
-- The base URL is: **https://api.igdb.com/v4**
-- You define which endpoint you wish to query by appending `/{endpoint name}` to the base URL eg. **https://api.igdb.com/v4/games**
-- Include your `Client ID` and `Access Token` in the `HEADER` of your request so that your headers look like the following.
+- Method: `POST`
+- Base URL: `https://api.igdb.com/v4`
+- Endpoint: append `/{endpoint}` (e.g., `https://api.igdb.com/v4/games`)
+- Headers (note capitalization):
+  ```
+  Client-ID: {CLIENT_ID}
+  Authorization: Bearer {ACCESS_TOKEN}
+  ```
+- Body: query string specifying fields, filters, sorting, etc.
 
-Take special care of the capitalisation. Bearer should be hard-coded infront of your access_token
-
-
-```yaml
-Client-ID: Client ID
-Authorization: Bearer access_token
+Example:
 ```
-
-- You use the `BODY` of your request to specify the fields you want to retrieve as well as any other filters, sorting etc
-
-
-### Example
-
-If your Client ID is `abcdefg12345` and your access_token is `access12345token`, a simple request to get information about 10 games would be.
-
-
-```yaml
-POST: https://api.igdb.com/v4/games
+POST https://api.igdb.com/v4/games
 Client-ID: abcdefg12345
 Authorization: Bearer access12345token
 Body: "fields *;"
 ```
 
-> **Info:** **Note:** If you are trying to make these requests via the 
-Browser you will run into CORS errors as the API does not allow requests
- directly from browsers. You can read more about CORS and how to go 
-around this issue in the [CORS Proxy](#cors-proxy) section
-
-
-### More Examples
-
-You can find some examples requests [here](#examples)
-
-
 ## Rate Limits
 
-There is a rate limit of **4 requests per second**. If you go over this limit you will receive a response with status code `429 Too Many Requests`.
-
-You are able to have up to 8 *open* requests at any moment in 
-time. This can occur if requests take longer than 1 second to respond 
-when multiple requests are being made.
-
+- **4 requests per second** - exceeding returns `429 Too Many Requests`
+- Maximum 8 concurrent open requests
 
 ## Wrappers
 
-Get setup quickly by using one of these wrappers!
-
-
-### Apicalypse
-
-- [NodeJS](https://github.com/igdb/node-apicalypse)
-- [JVM/Kotlin/Java](https://github.com/husnjak/IGDB-API-JVM)
-- [Swift](https://github.com/husnjak/IGDB-SWIFT-API)
 - [Python](https://github.com/twitchtv/igdb-api-python)
+- [NodeJS](https://github.com/igdb/node-apicalypse)
 
+## Examples
 
-### Third Party
-
-- [PHP/Laravel](https://github.com/marcreichel/igdb-laravel)
-- [GO](https://github.com/Henry-Sarabia/apicalypse)
-- [Ruby](https://github.com/ad2games/ruby-apicalypse)
-- [C#/.NET](https://github.com/kamranayub/igdb-dotnet)
-- [Deno](https://github.com/killoblanco/igdb-api-deno)
-
-
-### Third Party Documentation
-
-- [OpenAPI Documentation](https://igdb-openapi.s-crypt.co/)
-- [Postman Collection](https://www.postman.com/aceprosports/workspace/public/collection/18853756-4367eb1d-3f6b-41ee-96cb-3ccb3d094a5c)
-
-
-# Examples
-
-It’s recommended to try out your queries in an API viewer like [Postman](https://www.postman.com/) or [Insomnia](https://insomnia.rest/) before using code. This helps you find problems a lot sooner!
-
-Postman setup example
-
-
-### A very basic example to retrieve the name for 10 games.
-
-**https://api.igdb.com/v4/games/**
-
+### Get 10 game names
 
 ```
 fields name; limit 10;
 ```
 
-
-### Get all information from a specific game
-
-1942, is the ID of a game.
-
-**https://api.igdb.com/v4/games/**
-
-
+### Get specific game by ID
 ```
 fields *; where id = 1942;
 ```
 
-
-### Exclude irrelevant data from your query
-
-Remove alternative_name from your result query
-
-**https://api.igdb.com/v4/platforms/**
-
-
+### Exclude fields
 ```
-fields *;
-exclude alternative_name;
+fields *; exclude alternative_name;
 ```
 
-
-### Get all games from specific genres
-
-Notice how you can comma separate multiple IDs (8, 9, and 11). You 
-can do this with games, companies and anything else. Also note that when
- you have multiple IDs they have to be surrounded by a parenthesis. 
-Single ids can be queried both with and without the parenthesis.
-
-**https://api.igdb.com/v4/genres/**
-
-
+### Filter by multiple IDs (use parentheses)
 ```
 fields *; where id = (8,9,11);
 ```
 
-
-### Count total games that have a rating higher than 75
-
-**https://api.igdb.com/v4/games/count**
-
-
+### Count with filter
 ```
-where rating > 75;
+where rating > 75;  # Use /games/count endpoint
 ```
 
-
-### Order by rating
-
-**https://api.igdb.com/v4/games/**
-
-
+### Sort by field
 ```
 fields name,rating; sort rating desc;
 ```
 
-
-### Coming soon games for Playstation 4
-
-**https://api.igdb.com/v4/release_dates/**
-
-
+### Combined filters (& = AND, | = OR)
 ```
-fields *; where game.platforms = 48 & date > 1538129354; sort date asc;
+fields *; where platforms = 48 & date > 1538129354; sort date asc;
 ```
 
-1538129354: Is the timestamp in milliseconds of 28/09/2018 (This you need to generate yourself)
-48 Is the platform id of Playstation 4.
-
-
-### Recently released games for Playstation 4
-
-
+### Search with fields
 ```
-fields *; where game.platforms = 48 & date < 1538129354; sort date desc;
+search "Halo"; fields name,release_dates.human;
 ```
 
-> **Info:** **Note:** "where game.platforms = 48 & date > 1538129354" It 
-is possible to use either & (AND) or | (OR) to combine filters to 
-better define the behaviour of your query
-
-
-### Search, return certain fields.
-
-**https://api.igdb.com/v4/games/**
-
-
+### Search excluding editions
 ```
-search "Halo"; fields name,release_date.human;
-```
-
-**https://api.igdb.com/v4/games/**
-
-
-```
-fields name, involved_companies; search "Halo";
+search "Assassins Creed"; fields name; where version_parent = null;
 ```
 
 
-### Search games but exclude versions (editions)
-
-**https://api.igdb.com/v4/games/**
-
-
+### Platform exclusives
 ```
-fields name, involved_companies; search "Assassins Creed"; where version_parent = null;
+fields name,platforms; where platforms = 48;  # PS4 only
 ```
 
-This will return search results with ID and name of the game but exclude editions such as “Collectors Edition”.
-
-
-### Searching all endpoints
-
-> **Info:** **Note:** Search is now also it's own endpoint. Search is usable on: Characters, Collections, Games, Platforms, and Themes
-
-The example below searches for “Sonic the Hedgehog” which will find the Character Sonic, the collection Soninc the Hedgehog.
-And of course also several games with names containing Sonic the Hedgehog.
-
-**https://api.igdb.com/v4/search**
-
-
+### Exact platform match (PS4 AND PC only)
 ```
-fields *; search "sonic the hedgehog"; limit 50;
+fields name,platforms; where platforms = {48,6};
 ```
 
-
-### Get versions (editions) of a game
-
-**https://api.igdb.com/v4/game_versions/**
-
-
-```
-fields game.name,games.name; where game = 28540;
-```
-
-The resulting object will contain all games that are a version of the game with id 28540
-
-
-### Get the parent game for a version
-
-**https://api.igdb.com/v4/games/**
-
-
-```
-fields version_parent.*; where id = 39047;
-```
-
-The resulting object will contain all main games
-
-
-### Get all games that are playstation 4 exclusives
-
-
-```
-fields name,category,platforms;
-where category = 0 & platforms = 48;
-```
-
-
-### Get all games that are only released on playstation 4 AND PC
-
-
-```
-fields name,category,platforms;
-where category = 0 & platforms = {48,6};
-```
-
+---
 
 # Endpoints
 
+All endpoints use `POST` to `https://api.igdb.com/v4/{endpoint}` with query in body.
 
 ## Age Rating
 
-
-```shell
-curl 'https://api.igdb.com/v4/age_ratings' \
--d 'fields category,checksum,content_descriptions,organization,rating,rating_category,rating_content_descriptions,rating_cover_url,synopsis;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
-```
-
-> **Warning:** Deprecated Fields:
-
-
-category: DEPRECATED! Use organization instead
-
-
-rating: DEPRECATED! Use rating_category instead
-
-Age Rating according to various rating organisations
-
-
-### Request Path
-
-`https://api.igdb.com/v4/age_ratings`
-
+`/age_ratings`
 
 | field | type | description |
 | --- | --- | --- |
-| category | Category Enum | DEPRECATED! Useorganizationinstead |
-| checksum | uuid | Hash of the object |
-| content_descriptions | Array ofAge Rating Content DescriptionIDs | |
-| organization | Reference ID forAge Rating Organization | The organization that has issued a specific rating |
-| rating | Rating Enum | DEPRECATED! Userating_categoryinstead |
-| rating_category | Reference ID forAge Rating Category | The category of a rating |
-| rating_content_descriptions | Array ofAge Rating Content Description V2IDs | The rating content descriptions |
-| rating_cover_url | String | The url for the image of a age rating |
-| synopsis | String | A free text motivating a rating |
-
-
-### Age Rating Enums
-
-category
-
-
-| name | value |
-| --- | --- |
-| ESRB | 1 |
-| PEGI | 2 |
-| CERO | 3 |
-| USK | 4 |
-| GRAC | 5 |
-| CLASS_IND | 6 |
-| ACB | 7 |
-
-rating
-
-
-| name | value |
-| --- | --- |
-| Three | 1 |
-| Seven | 2 |
-| Twelve | 3 |
-| Sixteen | 4 |
-| Eighteen | 5 |
-| RP | 6 |
-| EC | 7 |
-| E | 8 |
-| E10 | 9 |
-| T | 10 |
-| M | 11 |
-| AO | 12 |
-| CERO_A | 13 |
-| CERO_B | 14 |
-| CERO_C | 15 |
-| CERO_D | 16 |
-| CERO_Z | 17 |
-| USK_0 | 18 |
-| USK_6 | 19 |
-| USK_12 | 20 |
-| USK_16 | 21 |
-| USK_18 | 22 |
-| GRAC_ALL | 23 |
-| GRAC_Twelve | 24 |
-| GRAC_Fifteen | 25 |
-| GRAC_Eighteen | 26 |
-| GRAC_TESTING | 27 |
-| CLASS_IND_L | 28 |
-| CLASS_IND_Ten | 29 |
-| CLASS_IND_Twelve | 30 |
-| CLASS_IND_Fourteen | 31 |
-| CLASS_IND_Sixteen | 32 |
-| CLASS_IND_Eighteen | 33 |
-| ACB_G | 34 |
-| ACB_PG | 35 |
-| ACB_M | 36 |
-| ACB_MA15 | 37 |
-| ACB_R18 | 38 |
-| ACB_RC | 39 |
-
-
-## Age Rating Category
-
-
-```shell
-curl 'https://api.igdb.com/v4/age_rating_categories' \
--d 'fields checksum,created_at,organization,rating,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
-```
-
-The rating category from the organization
-
-
-### Request Path
-
-`https://api.igdb.com/v4/age_rating_categories`
-
-
-| field | type | description |
-| --- | --- | --- |
-| checksum | uuid | Hash of the object |
-| created_at | datetime | Date this was initially added to the IGDB database |
-| organization | Reference ID forAge Rating Organization | The rating organization |
-| rating | String | The rating name |
-| updated_at | datetime | The last date this entry was updated in the IGDB database |
+| organization | Reference ID | Rating organization (ESRB, PEGI, etc.) |
+| rating_category | Reference ID | The rating category |
+| rating_cover_url | String | URL for rating image |
+| synopsis | String | Rating description |
 
 
 ## Age Rating Content Description
 
 
-```shell
-curl 'https://api.igdb.com/v4/age_rating_content_descriptions' \
--d 'fields category,checksum,description;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/age_rating_content_descriptions', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,description;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -605,12 +269,10 @@ category
 ## Age Rating Content Description Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/age_rating_content_description_types' \
--d 'fields checksum,created_at,name,slug,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/age_rating_content_description_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Age Rating Content Description Types
@@ -633,12 +295,10 @@ Age Rating Content Description Types
 ## Age Rating Content Description V2
 
 
-```shell
-curl 'https://api.igdb.com/v4/age_rating_content_descriptions_v2' \
--d 'fields checksum,created_at,description,description_type,organization,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/age_rating_content_descriptions_v2', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,description,description_type,organization,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Age Rating Content Descriptions
@@ -662,12 +322,10 @@ Age Rating Content Descriptions
 ## Age Rating Organization
 
 
-```shell
-curl 'https://api.igdb.com/v4/age_rating_organizations' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/age_rating_organizations', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Age Rating according to various rating organisations
@@ -689,12 +347,10 @@ Age Rating according to various rating organisations
 ## Artwork
 
 
-```shell
-curl 'https://api.igdb.com/v4/artworks' \
--d 'fields alpha_channel,animated,artwork_type,checksum,game,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/artworks', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,artwork_type,checksum,game,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Official artworks (resolution and aspect ratio may vary)
@@ -721,12 +377,10 @@ Official artworks (resolution and aspect ratio may vary)
 ## Alternative Name
 
 
-```shell
-curl 'https://api.igdb.com/v4/alternative_names' \
--d 'fields checksum,comment,game,name;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/alternative_names', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,comment,game,name;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Alternative and international game titles
@@ -748,12 +402,10 @@ Alternative and international game titles
 ## Artwork Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/artwork_types' \
--d 'fields checksum,created_at,name,slug,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/artwork_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Artwork Types
@@ -776,12 +428,10 @@ Artwork Types
 ## Character
 
 
-```shell
-curl 'https://api.igdb.com/v4/characters' \
--d 'fields akas,character_gender,character_species,checksum,country_name,created_at,description,games,gender,mug_shot,name,slug,species,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/characters', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields akas,character_gender,character_species,checksum,country_name,created_at,description,games,gender,mug_shot,name,slug,species,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -845,12 +495,10 @@ species
 ## Character Gender
 
 
-```shell
-curl 'https://api.igdb.com/v4/character_genders' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/character_genders', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Character Genders
@@ -872,12 +520,10 @@ Character Genders
 ## Character Mug Shot
 
 
-```shell
-curl 'https://api.igdb.com/v4/character_mug_shots' \
--d 'fields alpha_channel,animated,checksum,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/character_mug_shots', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Images depicting game characters
@@ -902,12 +548,10 @@ Images depicting game characters
 ## Character Specie
 
 
-```shell
-curl 'https://api.igdb.com/v4/character_species' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/character_species', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Character Species
@@ -929,12 +573,10 @@ Character Species
 ## Collection
 
 
-```shell
-curl 'https://api.igdb.com/v4/collections' \
--d 'fields as_child_relations,as_parent_relations,checksum,created_at,games,name,slug,type,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collections', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields as_child_relations,as_parent_relations,checksum,created_at,games,name,slug,type,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Collection, AKA Series
@@ -962,12 +604,10 @@ Collection, AKA Series
 ## Collection Membership
 
 
-```shell
-curl 'https://api.igdb.com/v4/collection_memberships' \
--d 'fields checksum,collection,created_at,game,type,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collection_memberships', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,collection,created_at,game,type,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The Collection Memberships.
@@ -991,12 +631,10 @@ The Collection Memberships.
 ## Collection Membership Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/collection_membership_types' \
--d 'fields allowed_collection_type,checksum,created_at,description,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collection_membership_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields allowed_collection_type,checksum,created_at,description,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Enums for collection membership types.
@@ -1020,12 +658,10 @@ Enums for collection membership types.
 ## Collection Relation
 
 
-```shell
-curl 'https://api.igdb.com/v4/collection_relations' \
--d 'fields checksum,child_collection,created_at,parent_collection,type,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collection_relations', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,child_collection,created_at,parent_collection,type,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Describes Relationship between Collections.
@@ -1049,12 +685,10 @@ Describes Relationship between Collections.
 ## Collection Relation Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/collection_relation_types' \
--d 'fields allowed_child_type,allowed_parent_type,checksum,created_at,description,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collection_relation_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields allowed_child_type,allowed_parent_type,checksum,created_at,description,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Collection Relation Types
@@ -1079,12 +713,10 @@ Collection Relation Types
 ## Collection Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/collection_types' \
--d 'fields checksum,created_at,description,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/collection_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,description,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Enums for collection types.
@@ -1107,12 +739,10 @@ Enums for collection types.
 ## Company
 
 
-```shell
-curl 'https://api.igdb.com/v4/companies' \
--d 'fields change_date,change_date_category,change_date_format,changed_company_id,checksum,country,created_at,description,developed,logo,name,parent,published,slug,start_date,start_date_category,start_date_format,status,updated_at,url,websites;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/companies', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields change_date,change_date_category,change_date_format,changed_company_id,checksum,country,created_at,description,developed,logo,name,parent,published,slug,start_date,start_date_category,start_date_format,status,updated_at,url,websites;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -1190,12 +820,10 @@ start_date_category
 ## Company Logo
 
 
-```shell
-curl 'https://api.igdb.com/v4/company_logos' \
--d 'fields alpha_channel,animated,checksum,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/company_logos', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The logos of developers and publishers
@@ -1220,12 +848,10 @@ The logos of developers and publishers
 ## Company Status
 
 
-```shell
-curl 'https://api.igdb.com/v4/company_statuses' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/company_statuses', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Company Status
@@ -1247,12 +873,10 @@ Company Status
 ## Company Website
 
 
-```shell
-curl 'https://api.igdb.com/v4/company_websites' \
--d 'fields category,checksum,trusted,type,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/company_websites', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,trusted,type,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -1306,12 +930,10 @@ category
 ## Cover
 
 
-```shell
-curl 'https://api.igdb.com/v4/covers' \
--d 'fields alpha_channel,animated,checksum,game,game_localization,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/covers', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,game,game_localization,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The cover art of games
@@ -1340,12 +962,10 @@ game_localization field |
 ## Date Format
 
 
-```shell
-curl 'https://api.igdb.com/v4/date_formats' \
--d 'fields checksum,created_at,format,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/date_formats', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,format,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The Date Format
@@ -1367,12 +987,10 @@ The Date Format
 ## Event
 
 
-```shell
-curl 'https://api.igdb.com/v4/events' \
--d 'fields checksum,created_at,description,end_time,event_logo,event_networks,games,live_stream_url,name,slug,start_time,time_zone,updated_at,videos;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/events', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,description,end_time,event_logo,event_networks,games,live_stream_url,name,slug,start_time,time_zone,updated_at,videos;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Gaming event like GamesCom, Tokyo Game Show, PAX or GSL
@@ -1404,12 +1022,10 @@ Gaming event like GamesCom, Tokyo Game Show, PAX or GSL
 ## Event Logo
 
 
-```shell
-curl 'https://api.igdb.com/v4/event_logos' \
--d 'fields alpha_channel,animated,checksum,created_at,event,height,image_id,updated_at,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/event_logos', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,created_at,event,height,image_id,updated_at,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Logo for the event
@@ -1437,12 +1053,10 @@ Logo for the event
 ## Event Network
 
 
-```shell
-curl 'https://api.igdb.com/v4/event_networks' \
--d 'fields checksum,created_at,event,network_type,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/event_networks', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,event,network_type,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Urls related to the event like twitter, facebook and youtube
@@ -1466,12 +1080,10 @@ Urls related to the event like twitter, facebook and youtube
 ## External Game
 
 
-```shell
-curl 'https://api.igdb.com/v4/external_games' \
--d 'fields category,checksum,countries,created_at,external_game_source,game,game_release_format,media,name,platform,uid,updated_at,url,year;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/external_games', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,countries,created_at,external_game_source,game,game_release_format,media,name,platform,uid,updated_at,url,year;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -1548,12 +1160,10 @@ media
 ## External Game Source
 
 
-```shell
-curl 'https://api.igdb.com/v4/external_game_sources' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/external_game_sources', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Sources for the external games
@@ -1575,12 +1185,10 @@ Sources for the external games
 ## Franchise
 
 
-```shell
-curl 'https://api.igdb.com/v4/franchises' \
--d 'fields checksum,created_at,games,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/franchises', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,games,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 A list of video game franchises such as Star Wars.
@@ -1605,12 +1213,10 @@ A list of video game franchises such as Star Wars.
 ## Game
 
 
-```shell
-curl 'https://api.igdb.com/v4/games' \
--d 'fields age_ratings,aggregated_rating,aggregated_rating_count,alternative_names,artworks,bundles,category,checksum,collection,collections,cover,created_at,dlcs,expanded_games,expansions,external_games,first_release_date,follows,forks,franchise,franchises,game_engines,game_localizations,game_modes,game_status,game_type,genres,hypes,involved_companies,keywords,language_supports,multiplayer_modes,name,parent_game,platforms,player_perspectives,ports,rating,rating_count,release_dates,remakes,remasters,screenshots,similar_games,slug,standalone_expansions,status,storyline,summary,tags,themes,total_rating,total_rating_count,updated_at,url,version_parent,version_title,videos,websites;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/games', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields age_ratings,aggregated_rating,aggregated_rating_count,alternative_names,artworks,bundles,category,checksum,collection,collections,cover,created_at,dlcs,expanded_games,expansions,external_games,first_release_date,follows,forks,franchise,franchises,game_engines,game_localizations,game_modes,game_status,game_type,genres,hypes,involved_companies,keywords,language_supports,multiplayer_modes,name,parent_game,platforms,player_perspectives,ports,rating,rating_count,release_dates,remakes,remasters,screenshots,similar_games,slug,standalone_expansions,status,storyline,summary,tags,themes,total_rating,total_rating_count,updated_at,url,version_parent,version_title,videos,websites;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -1739,12 +1345,10 @@ status
 ## Game Engine
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_engines' \
--d 'fields checksum,companies,created_at,description,logo,name,platforms,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_engines', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,companies,created_at,description,logo,name,platforms,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Video game engines such as unreal engine.
@@ -1772,12 +1376,10 @@ Video game engines such as unreal engine.
 ## Game Engine Logo
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_engine_logos' \
--d 'fields alpha_channel,animated,checksum,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_engine_logos', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The logos of game engines
@@ -1802,12 +1404,10 @@ The logos of game engines
 ## Game Localization
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_localizations' \
--d 'fields checksum,cover,created_at,game,name,region,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_localizations', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,cover,created_at,game,name,region,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Game localization for a game
@@ -1832,12 +1432,10 @@ Game localization for a game
 ## Game Mode
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_modes' \
--d 'fields checksum,created_at,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_modes', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Single player, Multiplayer etc
@@ -1861,12 +1459,10 @@ Single player, Multiplayer etc
 ## Game Release Format
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_release_formats' \
--d 'fields checksum,created_at,format,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_release_formats', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,format,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The format of the game release
@@ -1888,12 +1484,10 @@ The format of the game release
 ## Game Status
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_statuses' \
--d 'fields checksum,created_at,status,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_statuses', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,status,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The release status of the game
@@ -1915,12 +1509,10 @@ The release status of the game
 ## Game Time To Beat
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_time_to_beats' \
--d 'fields checksum,completely,count,created_at,game_id,hastily,normally,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_time_to_beats', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,completely,count,created_at,game_id,hastily,normally,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Average time to beat times for a game.
@@ -1946,12 +1538,10 @@ Average time to beat times for a game.
 ## Game Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_types' \
--d 'fields checksum,created_at,type,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,type,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The type that this game is
@@ -1973,12 +1563,10 @@ The type that this game is
 ## Game Version
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_versions' \
--d 'fields checksum,created_at,features,game,games,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_versions', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,features,game,games,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Details about game editions and versions.
@@ -2003,12 +1591,10 @@ Details about game editions and versions.
 ## Game Version Feature
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_version_features' \
--d 'fields category,checksum,description,position,title,values;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_version_features', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,description,position,title,values;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Features and descriptions of what makes each version/edition different from the main game
@@ -2043,12 +1629,10 @@ category
 ## Game Version Feature Value
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_version_feature_values' \
--d 'fields checksum,game,game_feature,included_feature,note;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_version_feature_values', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,game,game_feature,included_feature,note;'})
+print ("response: %s" % str(response.json()))
 ```
 
 The bool/text value of the feature
@@ -2083,12 +1667,10 @@ included_feature
 ## Game Video
 
 
-```shell
-curl 'https://api.igdb.com/v4/game_videos' \
--d 'fields checksum,game,name,video_id;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/game_videos', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,game,name,video_id;'})
+print ("response: %s" % str(response.json()))
 ```
 
 A video associated with a game
@@ -2110,12 +1692,10 @@ A video associated with a game
 ## Genre
 
 
-```shell
-curl 'https://api.igdb.com/v4/genres' \
--d 'fields checksum,created_at,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/genres', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Genres of video game
@@ -2139,12 +1719,10 @@ Genres of video game
 ## Involved Company
 
 
-```shell
-curl 'https://api.igdb.com/v4/involved_companies' \
--d 'fields checksum,company,created_at,developer,game,porting,publisher,supporting,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/involved_companies', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,company,created_at,developer,game,porting,publisher,supporting,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -2169,12 +1747,10 @@ curl 'https://api.igdb.com/v4/involved_companies' \
 ## Keyword
 
 
-```shell
-curl 'https://api.igdb.com/v4/keywords' \
--d 'fields checksum,created_at,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/keywords', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Keywords are words or phrases that get tagged to a game such as “world war 2” or “steampunk”.
@@ -2198,12 +1774,10 @@ Keywords are words or phrases that get tagged to a game such as “world war 2�
 ## Language
 
 
-```shell
-curl 'https://api.igdb.com/v4/languages' \
--d 'fields checksum,created_at,locale,name,native_name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/languages', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,locale,name,native_name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Languages that are used in the Language Support endpoint.
@@ -2227,12 +1801,10 @@ Languages that are used in the Language Support endpoint.
 ## Language Support
 
 
-```shell
-curl 'https://api.igdb.com/v4/language_supports' \
--d 'fields checksum,created_at,game,language,language_support_type,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/language_supports', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,game,language,language_support_type,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Games can be played with different languages for voice acting, subtitles, or the interface language.
@@ -2256,12 +1828,10 @@ Games can be played with different languages for voice acting, subtitles, or the
 ## Language Support Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/language_support_types' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/language_support_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Language Support Types contains the identifiers for the support types that Language Support uses.
@@ -2283,12 +1853,10 @@ Language Support Types contains the identifiers for the support types that Langu
 ## Multiplayer Mode
 
 
-```shell
-curl 'https://api.igdb.com/v4/multiplayer_modes' \
--d 'fields campaigncoop,checksum,dropin,game,lancoop,offlinecoop,offlinecoopmax,offlinemax,onlinecoop,onlinecoopmax,onlinemax,platform,splitscreen,splitscreenonline;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/multiplayer_modes', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields campaigncoop,checksum,dropin,game,lancoop,offlinecoop,offlinecoopmax,offlinemax,onlinecoop,onlinecoopmax,onlinemax,platform,splitscreen,splitscreenonline;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Data about the supported multiplayer types
@@ -2320,12 +1888,10 @@ Data about the supported multiplayer types
 ## Network Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/network_types' \
--d 'fields checksum,created_at,event_networks,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/network_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,event_networks,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Social networks related to the event like twitter, facebook and youtube
@@ -2348,12 +1914,10 @@ Social networks related to the event like twitter, facebook and youtube
 ## Platform
 
 
-```shell
-curl 'https://api.igdb.com/v4/platforms' \
--d 'fields abbreviation,alternative_name,category,checksum,created_at,generation,name,platform_family,platform_logo,platform_type,slug,summary,updated_at,url,versions,websites;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platforms', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields abbreviation,alternative_name,category,checksum,created_at,generation,name,platform_family,platform_logo,platform_type,slug,summary,updated_at,url,versions,websites;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2406,12 +1970,10 @@ category
 ## Platform Family
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_families' \
--d 'fields checksum,name,slug;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_families', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,name,slug;'})
+print ("response: %s" % str(response.json()))
 ```
 
 A collection of closely related platforms
@@ -2432,12 +1994,10 @@ A collection of closely related platforms
 ## Platform Logo
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_logos' \
--d 'fields alpha_channel,animated,checksum,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_logos', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Logo for a platform
@@ -2462,12 +2022,10 @@ Logo for a platform
 ## Platform Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_types' \
--d 'fields checksum,created_at,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Types of platforms
@@ -2489,12 +2047,10 @@ Types of platforms
 ## Platform Version
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_versions' \
--d 'fields checksum,companies,connectivity,cpu,graphics,main_manufacturer,media,memory,name,os,output,platform_logo,platform_version_release_dates,resolutions,slug,sound,storage,summary,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_versions', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,companies,connectivity,cpu,graphics,main_manufacturer,media,memory,name,os,output,platform_logo,platform_version_release_dates,resolutions,slug,sound,storage,summary,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -2529,12 +2085,10 @@ curl 'https://api.igdb.com/v4/platform_versions' \
 ## Platform Version Company
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_version_companies' \
--d 'fields checksum,comment,company,developer,manufacturer;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_version_companies', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,comment,company,developer,manufacturer;'})
+print ("response: %s" % str(response.json()))
 ```
 
 A platform developer
@@ -2557,12 +2111,10 @@ A platform developer
 ## Platform Version Release Date
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_version_release_dates' \
--d 'fields category,checksum,created_at,date,date_format,human,m,platform_version,region,release_region,updated_at,y;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_version_release_dates', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,created_at,date,date_format,human,m,platform_version,region,release_region,updated_at,y;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2633,12 +2185,10 @@ region
 ## Platform Website
 
 
-```shell
-curl 'https://api.igdb.com/v4/platform_websites' \
--d 'fields category,checksum,trusted,type,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/platform_websites', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,trusted,type,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2693,12 +2243,10 @@ category
 ## Player Perspective
 
 
-```shell
-curl 'https://api.igdb.com/v4/player_perspectives' \
--d 'fields checksum,created_at,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/player_perspectives', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Player perspectives describe the view/perspective of the player in a video game.
@@ -2722,12 +2270,10 @@ Player perspectives describe the view/perspective of the player in a video game.
 ## Popularity Primitive
 
 
-```shell
-curl 'https://api.igdb.com/v4/popularity_primitives' \
--d 'fields calculated_at,checksum,created_at,external_popularity_source,game_id,popularity_source,popularity_type,updated_at,value;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/popularity_primitives', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields calculated_at,checksum,created_at,external_popularity_source,game_id,popularity_source,popularity_type,updated_at,value;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2768,12 +2314,10 @@ popularity_source
 ## Popularity Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/popularity_types' \
--d 'fields checksum,created_at,external_popularity_source,name,popularity_source,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/popularity_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,external_popularity_source,name,popularity_source,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2812,12 +2356,10 @@ popularity_source
 ## Region
 
 
-```shell
-curl 'https://api.igdb.com/v4/regions' \
--d 'fields category,checksum,created_at,identifier,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/regions', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,created_at,identifier,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Region for game localization
@@ -2841,12 +2383,10 @@ Region for game localization
 ## Release Date
 
 
-```shell
-curl 'https://api.igdb.com/v4/release_dates' \
--d 'fields category,checksum,created_at,date,date_format,game,human,m,platform,region,release_region,status,updated_at,y;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/release_dates', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,created_at,date,date_format,game,human,m,platform,region,release_region,status,updated_at,y;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -2919,12 +2459,10 @@ region
 ## Release Date Region
 
 
-```shell
-curl 'https://api.igdb.com/v4/release_date_regions' \
--d 'fields checksum,created_at,region,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/release_date_regions', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,region,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Regions for release dates
@@ -2946,12 +2484,10 @@ Regions for release dates
 ## Release Date Status
 
 
-```shell
-curl 'https://api.igdb.com/v4/release_date_statuses' \
--d 'fields checksum,created_at,description,name,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/release_date_statuses', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,description,name,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 An endpoint to provide definition of all of the current release date statuses.
@@ -2974,12 +2510,10 @@ An endpoint to provide definition of all of the current release date statuses.
 ## Screenshot
 
 
-```shell
-curl 'https://api.igdb.com/v4/screenshots' \
--d 'fields alpha_channel,animated,checksum,game,height,image_id,url,width;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/screenshots', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alpha_channel,animated,checksum,game,height,image_id,url,width;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Screenshots of games
@@ -3005,12 +2539,10 @@ Screenshots of games
 ## Search
 
 
-```shell
-curl 'https://api.igdb.com/v4/search' \
--d 'fields alternative_name,character,checksum,collection,company,description,game,name,platform,published_at,test_dummy,theme;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/search', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields alternative_name,character,checksum,collection,company,description,game,name,platform,published_at,test_dummy,theme;'})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -3038,12 +2570,10 @@ curl 'https://api.igdb.com/v4/search' \
 ## Theme
 
 
-```shell
-curl 'https://api.igdb.com/v4/themes' \
--d 'fields checksum,created_at,name,slug,updated_at,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/themes', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,name,slug,updated_at,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 Video game themes
@@ -3067,12 +2597,10 @@ Video game themes
 ## Website
 
 
-```shell
-curl 'https://api.igdb.com/v4/websites' \
--d 'fields category,checksum,game,trusted,type,url;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/websites', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields category,checksum,game,trusted,type,url;'})
+print ("response: %s" % str(response.json()))
 ```
 
 > **Warning:** Deprecated Fields:
@@ -3127,12 +2655,10 @@ category
 ## Website Type
 
 
-```shell
-curl 'https://api.igdb.com/v4/website_types' \
--d 'fields checksum,created_at,type,updated_at;' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Accept: application/json'
+```python
+from requests import post
+response = post('https://api.igdb.com/v4/website_types', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'},'data': 'fields checksum,created_at,type,updated_at;'})
+print ("response: %s" % str(response.json()))
 ```
 
 A website type, usually the name of the website
@@ -3325,12 +2851,17 @@ own HTTP endpoint (Webhook) and we will deliver the data to you.
 Using Webhooks will ensure that your data is always up to date!
 
 
-```shell
-curl -X POST 'https://api.igdb.com/v4/ENDPOINT/webhooks/' \
--d 'url=YOUR_WEBHOOK_URL&secret=YOUR_WEBHOOK_SECRET&method=create' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token' \
--H 'Content-Type: application/x-www-form-urlencoded'
+```python
+from requests import post
+response = post(
+    'https://api.igdb.com/v4/ENDPOINT/webhooks/',
+    headers={
+        'Client-ID': 'YOUR_CLIENT_ID',
+        'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    data='url=YOUR_WEBHOOK_URL&secret=YOUR_WEBHOOK_SECRET&method=create'
+)
 ```
 
 
@@ -3395,11 +2926,11 @@ Reactivating the webhook is done by re-registering it, this will update the `act
 > **Info:** **Tip!** Re-register your webhook on service start, to make sure it's always active!
 
 
-```shell
+```python
 # Get ALL registered Webhooks
-curl 'https://api.igdb.com/v4/webhooks/' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token'
+from requests import post
+response = get('https://api.igdb.com/v4/webhooks/', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'}})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -3411,10 +2942,11 @@ To get ALL of your registered webhooks simply send a `GET` request to `/webhooks
 To get information about a specific webhook you can make a `GET` request with the webhook id to `/webhooks/WEBHOOK_ID`, without the endpoint. This will return the webhook of that id.
 
 
-```shell
-curl -X DELETE 'https://api.igdb.com/v4/webhooks/WEBHOOK_ID' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token'
+```python
+# Get ALL registered Webhooks
+from requests import post
+response = get('https://api.igdb.com/v4/webhooks/', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'}})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -3425,10 +2957,15 @@ To remove your existing webhook you need to send a `DELETE` request to `/webhook
 The `DELETE` request will receive the deleted webhook as confirmation.
 
 
-```shell
-curl -X POST 'https://api.igdb.com/v4/ENDPOINT/webhooks/test/WEBHOOK_ID?entityId=ENTITY_ID' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token'
+```python
+from requests import post
+response = post(
+    'https://api.igdb.com/v4/ENDPOINT/webhooks/test/WEBHOOK_ID?entityId=ENTITY_ID',
+    headers={
+        'Client-ID': 'YOUR_CLIENT_ID',
+        'Authorization': 'Bearer YOUR_ACCESS_TOKEN'
+    }
+)
 ```
 
 
@@ -4513,10 +4050,10 @@ Daily updated CSV Data Dumps which can be used to kick start your projects or ke
 > **Info:** *Please note that data dumps are exclusively available to our Data Partners.*
 
 
-```shell
-curl -X GET 'https://api.igdb.com/v4/dumps' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token'
+```python
+from requests import post
+response = get('https://api.igdb.com/v4/dumps', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'}})
+print ("response: %s" % str(response.json()))
 ```
 
 
@@ -4539,10 +4076,10 @@ This will return a list of available Data Dumps describing the `endpoint`, `file
 ```
 
 
-```shell
-curl -X GET 'https://api.igdb.com/v4/dumps/ENDPOINT' \
--H 'Client-ID: Client ID' \
--H 'Authorization: Bearer access_token'
+```python
+from requests import post
+response = get('https://api.igdb.com/v4/dumps', **{'headers': {'Client-ID': 'Client ID', 'Authorization': 'Bearer access_token'}})
+print ("response: %s" % str(response.json()))
 ```
 
 
