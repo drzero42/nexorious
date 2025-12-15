@@ -71,16 +71,6 @@ export type {
   AdminState 
 } from './admin.svelte';
 
-// Steam store
-export { steam } from './steam.svelte';
-export type { 
-  SteamUserInfo,
-  SteamConfig,
-  SteamVerificationResult,
-  VanityUrlResolveResult,
-  SteamState
-} from './steam.svelte';
-
 // Tags store
 export { tags, tagEventBus, DEFAULT_TAG_COLORS } from './tags.svelte';
 export type { 
