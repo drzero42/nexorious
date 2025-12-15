@@ -18,6 +18,10 @@
     "unit-testing@claude-code-workflows": true,
     "javascript-typescript@claude-code-workflows": true,
     "backend-api-security@claude-code-workflows": true,
-    "backend-development@claude-code-workflows": true
+    "backend-development@claude-code-workflows": true,
+    "database-design@claude-code-workflows": true,
+    "database-migrations@claude-code-workflows": true,
+    "developer-essentials@claude-code-workflows": true,
+    "error-diagnostics@claude-code-workflows": true
   }
 }
