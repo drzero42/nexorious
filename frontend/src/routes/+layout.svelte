@@ -1,9 +1,8 @@
 <script lang="ts">
   import '../app.css';
-  import { auth, appStatus } from '$lib/stores';
-  import { platforms, type Storefront } from '$lib/stores/platforms.svelte';
-  import { ToastContainer } from '$lib/components';
-  import { buildIconUrl } from '$lib/utils/icon-utils';
+  import { auth, appStatus, review } from '$lib/stores';
+  import { platforms } from '$lib/stores/platforms.svelte';
+  import { ToastContainer, NavBadge } from '$lib/components';
   import { onMount } from 'svelte';
   
   interface Props {
@@ -13,9 +12,9 @@
   let { children }: Props = $props();
   let mobileMenuOpen = $state(false);
   
-  // Get Steam storefront icon URL
-  const steamStorefront = $derived(platforms.value.storefronts.find((storefront: Storefront) => storefront.name === 'steam'));
-  const steamIconUrl = $derived(steamStorefront ? buildIconUrl(steamStorefront.icon_url) : null);
+  // Get review counts for navigation badges
+  const importReviewCount = $derived(review.value.countsByType?.import_pending ?? 0);
+  const syncReviewCount = $derived(review.value.countsByType?.sync_pending ?? 0);
   
   onMount(async () => {
     // Fetch app status (IGDB configuration, etc.)
@@ -39,19 +38,26 @@
             username: auth.value.user.username,
             isAdmin: auth.value.user.isAdmin
           });
-          
+
           if (auth.value.user.isAdmin) {
             await platforms.fetchAll();
           } else {
             await platforms.fetchActivePlatformsAndStorefronts();
           }
-          
+
           console.log('✅ [LAYOUT] Platforms data loaded successfully');
         } catch (error) {
           console.error('❌ [LAYOUT] Failed to load platforms data:', error);
           // Don't block app loading if platforms fail to load
         }
 
+        // Load review counts for navigation badges
+        try {
+          await review.loadCountsByType();
+        } catch (error) {
+          console.error('❌ [LAYOUT] Failed to load review counts:', error);
+          // Don't block app loading if review counts fail to load
+        }
       }
     }
     
@@ -117,109 +123,32 @@
                 </li>
                 <li>
                   <a
-                    href="/tags"
-                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                    href="/import-export"
+                    class="group flex items-center gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                   >
-                    <span class="text-lg">🏷️</span>
-                    Manage Tags
+                    <span class="text-lg">📥</span>
+                    <span class="flex-1">Import / Export</span>
+                    <NavBadge count={importReviewCount} href="/review?source=import" label="{importReviewCount} import reviews pending" />
                   </a>
                 </li>
                 <li>
                   <a
-                    href="/jobs"
+                    href="/sync"
+                    class="group flex items-center gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                  >
+                    <span class="text-lg">🔄</span>
+                    <span class="flex-1">Sync</span>
+                    <NavBadge count={syncReviewCount} href="/review?source=sync" label="{syncReviewCount} sync reviews pending" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/settings"
                     class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                   >
                     <span class="text-lg">⚙️</span>
-                    Background Jobs
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="/review"
-                    class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                  >
-                    <span class="text-lg">📋</span>
-                    Review Queue
-                  </a>
-                </li>
-                <!-- Import Sources Section -->
-                <li>
-                  <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
-                    Import
-                  </div>
-                  <ul role="list" class="-mx-2 mt-2 space-y-1">
-                    <li>
-                      <a
-                        href="/import"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                      >
-                        <span class="text-lg">📥</span>
-                        Import Games
-                      </a>
-                    </li>
-                    <li>
-                      <a
-                        href="/import/nexorious"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                      >
-                        <span class="text-lg">📦</span>
-                        Nexorious JSON
-                      </a>
-                    </li>
-                    <li>
-                      <a
-                        href="/import/darkadia"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                      >
-                        <span class="text-lg">📊</span>
-                        Darkadia CSV
-                      </a>
-                    </li>
-                    <li>
-                      <a
-                        href="/import/steam"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                      >
-                        {#if steamIconUrl}
-                          <img
-                            src="{steamIconUrl}"
-                            alt="Steam icon"
-                            class="w-5 h-5"
-                            loading="lazy"
-                            onerror={(e) => {
-                              const img = e.target as HTMLImageElement;
-                              const fallback = img.nextElementSibling as HTMLElement;
-                              if (img && fallback) {
-                                img.style.display = 'none';
-                                fallback.style.display = 'inline';
-                              }
-                            }}
-                          />
-                          <span class="text-lg hidden">🎮</span>
-                        {:else}
-                          <span class="text-lg">🎮</span>
-                        {/if}
-                        Steam Library
-                      </a>
-                    </li>
-                  </ul>
-                </li>
-                <!-- Settings Section -->
-                <li>
-                  <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
                     Settings
-                  </div>
-                  <ul role="list" class="-mx-2 mt-2 space-y-1">
-                    <li>
-                      <a
-                        href="/settings/sync"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                      >
-                        <span class="text-lg">🔄</span>
-                        Sync Settings
-                      </a>
-                    </li>
-                  </ul>
+                  </a>
                 </li>
               </ul>
             </li>
@@ -393,117 +322,35 @@
                       </li>
                       <li>
                         <a
-                          href="/tags"
+                          href="/import-export"
                           onclick={closeMobileMenu}
-                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                          class="group flex items-center gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                         >
-                          <span class="text-lg">🏷️</span>
-                          Manage Tags
+                          <span class="text-lg">📥</span>
+                          <span class="flex-1">Import / Export</span>
+                          <NavBadge count={importReviewCount} href="/review?source=import" label="{importReviewCount} import reviews pending" />
                         </a>
                       </li>
                       <li>
                         <a
-                          href="/jobs"
+                          href="/sync"
+                          onclick={closeMobileMenu}
+                          class="group flex items-center gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
+                        >
+                          <span class="text-lg">🔄</span>
+                          <span class="flex-1">Sync</span>
+                          <NavBadge count={syncReviewCount} href="/review?source=sync" label="{syncReviewCount} sync reviews pending" />
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href="/settings"
                           onclick={closeMobileMenu}
                           class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                         >
                           <span class="text-lg">⚙️</span>
-                          Background Jobs
-                        </a>
-                      </li>
-                      <li>
-                        <a
-                          href="/review"
-                          onclick={closeMobileMenu}
-                          class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                        >
-                          <span class="text-lg">📋</span>
-                          Review Queue
-                        </a>
-                      </li>
-                      <!-- Import Sources Section -->
-                      <li>
-                        <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
-                          Import
-                        </div>
-                        <ul role="list" class="-mx-2 mt-2 space-y-1">
-                          <li>
-                            <a
-                              href="/import"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                            >
-                              <span class="text-lg">📥</span>
-                              Import Games
-                            </a>
-                          </li>
-                          <li>
-                            <a
-                              href="/import/nexorious"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                            >
-                              <span class="text-lg">📦</span>
-                              Nexorious JSON
-                            </a>
-                          </li>
-                          <li>
-                            <a
-                              href="/import/darkadia"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                            >
-                              <span class="text-lg">📊</span>
-                              Darkadia CSV
-                            </a>
-                          </li>
-                          <li>
-                            <a
-                              href="/import/steam"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
-                            >
-                              {#if steamIconUrl}
-                                <img
-                                  src="{steamIconUrl}"
-                                  alt="Steam icon"
-                                  class="w-5 h-5"
-                                  loading="lazy"
-                                  onerror={(e) => {
-                                    const img = e.target as HTMLImageElement;
-                                    const fallback = img.nextElementSibling as HTMLElement;
-                                    if (img && fallback) {
-                                      img.style.display = 'none';
-                                      fallback.style.display = 'inline';
-                                    }
-                                  }}
-                                />
-                                <span class="text-lg hidden">🎮</span>
-                              {:else}
-                                <span class="text-lg">🎮</span>
-                              {/if}
-                              Steam Library
-                            </a>
-                          </li>
-                        </ul>
-                      </li>
-                      <!-- Settings Section -->
-                      <li>
-                        <div class="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wide">
                           Settings
-                        </div>
-                        <ul role="list" class="-mx-2 mt-2 space-y-1">
-                          <li>
-                            <a
-                              href="/settings/sync"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                            >
-                              <span class="text-lg">🔄</span>
-                              Sync Settings
-                            </a>
-                          </li>
-                        </ul>
+                        </a>
                       </li>
                     </ul>
                   </li>
