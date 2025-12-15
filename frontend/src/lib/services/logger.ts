@@ -74,9 +74,6 @@ export const logger = new Logger();
 
 // Pre-configured loggers for common modules
 export const loggers = {
-  steam: new Logger({ prefix: 'STEAM' }),
-  steamGames: new Logger({ prefix: 'STEAM-GAMES' }),
-  steamAvailability: new Logger({ prefix: 'STEAM-AVAILABILITY' }),
   platforms: new Logger({ prefix: 'PLATFORMS' }),
   auth: new Logger({ prefix: 'AUTH' }),
   api: new Logger({ prefix: 'API' }),
