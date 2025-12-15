@@ -10,13 +10,13 @@ import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { jobs } from './jobs.svelte';
 import { review } from './review.svelte';
-import type { Job } from '$lib/types/jobs';
+import { JobStatus, type Job } from '$lib/types/jobs';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type WebSocketStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+export type WebSocketStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'polling';
 
 export enum WebSocketEventType {
   CONNECTED = 'connected',
@@ -50,6 +50,10 @@ export interface WebSocketState {
   reconnectAttempts: number;
   lastConnectedAt: Date | null;
   lastMessageAt: Date | null;
+  /** Whether currently using polling fallback mode */
+  isPolling: boolean;
+  /** Job IDs being actively polled */
+  polledJobIds: Set<string>;
 }
 
 export type WebSocketEventCallback = (message: JobWebSocketMessage) => void;
@@ -62,6 +66,7 @@ const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
+const POLLING_INTERVAL_MS = 3000;
 
 // ============================================================================
 // Store Implementation
@@ -73,12 +78,18 @@ const initialState: WebSocketState = {
   lastError: null,
   reconnectAttempts: 0,
   lastConnectedAt: null,
-  lastMessageAt: null
+  lastMessageAt: null,
+  isPolling: false,
+  polledJobIds: new Set()
 };
 
 function createWebSocketStore() {
-  let state = $state<WebSocketState>({ ...initialState });
+  let state = $state<WebSocketState>({
+    ...initialState,
+    polledJobIds: new Set(initialState.polledJobIds)
+  });
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pollingInterval: ReturnType<typeof setInterval> | null = null;
   let eventListeners: Map<WebSocketEventType, Set<WebSocketEventCallback>> = new Map();
 
   /**
@@ -104,6 +115,7 @@ function createWebSocketStore() {
 
   /**
    * Schedule a reconnection attempt.
+   * After max attempts, automatically switches to polling fallback.
    */
   function scheduleReconnect(): void {
     if (reconnectTimeout) {
@@ -111,8 +123,8 @@ function createWebSocketStore() {
     }
 
     if (state.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      state.status = 'disconnected';
-      state.lastError = 'Max reconnection attempts reached';
+      // Switch to polling fallback instead of giving up
+      startPolling();
       return;
     }
 
@@ -126,6 +138,120 @@ function createWebSocketStore() {
   }
 
   /**
+   * Start polling fallback mode.
+   * Polls all tracked jobs every POLLING_INTERVAL_MS.
+   */
+  function startPolling(): void {
+    if (pollingInterval) {
+      return; // Already polling
+    }
+
+    state.isPolling = true;
+    state.status = 'polling';
+    state.lastError = 'WebSocket unavailable, using polling fallback';
+
+    pollingInterval = setInterval(pollJobs, POLLING_INTERVAL_MS);
+
+    // Run an immediate poll
+    pollJobs();
+  }
+
+  /**
+   * Stop polling fallback mode.
+   */
+  function stopPolling(): void {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+    state.isPolling = false;
+  }
+
+  /**
+   * Poll all tracked jobs for updates.
+   */
+  async function pollJobs(): Promise<void> {
+    if (state.polledJobIds.size === 0) {
+      return;
+    }
+
+    const authState = auth.value;
+    if (!authState.accessToken) {
+      return;
+    }
+
+    // Poll each tracked job
+    const jobIds = Array.from(state.polledJobIds);
+    for (const jobId of jobIds) {
+      try {
+        const response = await fetch(`${config.apiUrl}/jobs/${jobId}`, {
+          headers: {
+            Authorization: `Bearer ${authState.accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Job no longer exists, stop tracking it
+            state.polledJobIds.delete(jobId);
+          }
+          continue;
+        }
+
+        const job: Job = await response.json();
+        state.lastMessageAt = new Date();
+
+        // Determine event type based on job status
+        const eventType = getEventTypeForJob(job);
+
+        // Update stores same as WebSocket would
+        updateJobsStore(eventType, job);
+
+        // Notify listeners
+        const message: JobWebSocketMessage = {
+          event: eventType,
+          timestamp: new Date().toISOString(),
+          job
+        };
+        const listeners = eventListeners.get(eventType);
+        if (listeners) {
+          listeners.forEach((callback) => callback(message));
+        }
+
+        // Stop polling completed/failed jobs
+        if (
+          job.status === JobStatus.COMPLETED ||
+          job.status === JobStatus.FAILED ||
+          job.status === JobStatus.CANCELLED
+        ) {
+          state.polledJobIds.delete(jobId);
+        }
+      } catch (error) {
+        console.error(`Failed to poll job ${jobId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Determine the appropriate event type based on job status.
+   */
+  function getEventTypeForJob(job: Job): WebSocketEventType {
+    switch (job.status) {
+      case JobStatus.COMPLETED:
+        return WebSocketEventType.JOB_COMPLETED;
+      case JobStatus.FAILED:
+        return WebSocketEventType.JOB_FAILED;
+      case JobStatus.CANCELLED:
+        return WebSocketEventType.JOB_STATUS_CHANGE;
+      case JobStatus.PROCESSING:
+      case JobStatus.PENDING:
+        return WebSocketEventType.JOB_PROGRESS;
+      default:
+        return WebSocketEventType.JOB_STATUS_CHANGE;
+    }
+  }
+
+  /**
    * Handle incoming WebSocket message.
    */
   function handleMessage(event: MessageEvent): void {
@@ -135,6 +261,8 @@ function createWebSocketStore() {
 
       // Handle connection messages
       if (message.event === WebSocketEventType.CONNECTED) {
+        // Stop polling if we were in polling mode
+        stopPolling();
         state.status = 'connected';
         state.reconnectAttempts = 0;
         state.lastConnectedAt = new Date();
@@ -268,13 +396,16 @@ function createWebSocketStore() {
     },
 
     /**
-     * Disconnect from the WebSocket endpoint.
+     * Disconnect from the WebSocket endpoint and stop polling.
      */
     disconnect: () => {
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
       }
+
+      // Stop polling if active
+      stopPolling();
 
       if (state.connection) {
         state.connection.close(1000, 'Client disconnecting');
@@ -321,7 +452,7 @@ function createWebSocketStore() {
     reset: () => {
       store.disconnect();
       store.clearListeners();
-      state = { ...initialState };
+      state = { ...initialState, polledJobIds: new Set() };
     },
 
     /**
@@ -336,6 +467,69 @@ function createWebSocketStore() {
      */
     get isReconnecting() {
       return state.status === 'reconnecting';
+    },
+
+    /**
+     * Check if currently using polling fallback.
+     */
+    get isPolling() {
+      return state.isPolling;
+    },
+
+    /**
+     * Check if receiving updates (either via WebSocket or polling).
+     */
+    get isReceivingUpdates() {
+      return state.status === 'connected' || state.status === 'polling';
+    },
+
+    /**
+     * Track a job for polling updates.
+     * Call this when you want to receive updates for a specific job.
+     * In WebSocket mode, updates come automatically.
+     * In polling mode, only tracked jobs are polled.
+     */
+    trackJob: (jobId: string) => {
+      state.polledJobIds.add(jobId);
+    },
+
+    /**
+     * Stop tracking a job for polling updates.
+     */
+    untrackJob: (jobId: string) => {
+      state.polledJobIds.delete(jobId);
+    },
+
+    /**
+     * Clear all tracked jobs.
+     */
+    clearTrackedJobs: () => {
+      state.polledJobIds.clear();
+    },
+
+    /**
+     * Force switch to polling mode (useful for testing or manual override).
+     */
+    forcePolling: () => {
+      if (state.connection) {
+        state.connection.close(1000, 'Switching to polling');
+        state.connection = null;
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      startPolling();
+    },
+
+    /**
+     * Attempt to reconnect to WebSocket (exits polling mode if successful).
+     */
+    retryWebSocket: () => {
+      stopPolling();
+      state.reconnectAttempts = 0;
+      state.lastError = null;
+      store.connect();
     }
   };
 
