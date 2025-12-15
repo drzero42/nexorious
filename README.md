@@ -171,9 +171,50 @@ If the application fails to start due to migration errors:
    uv run alembic downgrade <revision_id>
    ```
 
-### Docker Deployment (Coming Soon)
+### Docker/Podman Deployment
 
-Docker support is planned for Phase 5. For now, deploy using standard Python/Node.js deployment methods.
+#### Podman Socket Setup (Required for Rootless Podman)
+
+To use podman-compose or other tools that communicate via the Podman socket, you must enable the user-level Podman socket service:
+
+```bash
+# Enable and start the podman socket for your user
+systemctl --user enable --now podman.socket
+
+# Verify the socket is running
+systemctl --user status podman.socket
+
+# Check the socket path (typically /run/user/$(id -u)/podman/podman.sock)
+podman info --format '{{.Host.RemoteSocket.Path}}'
+```
+
+**Note**: The `--user` flag is important - this runs the socket as your user, not as root. This is the recommended approach for rootless Podman.
+
+If you need the socket to persist across reboots even when not logged in:
+
+```bash
+# Enable lingering for your user (allows user services to run without login)
+loginctl enable-linger $USER
+```
+
+#### Running with Podman Compose
+
+Once the socket is enabled, you can use podman-compose:
+
+```bash
+# Start all services
+podman-compose up --build
+
+# Stop services
+podman-compose down
+
+# Stop and reset database
+podman-compose down -v
+
+# Rebuild specific services
+podman-compose build api
+podman-compose build frontend
+```
 
 ### Environment Variables
 
