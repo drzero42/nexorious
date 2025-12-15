@@ -151,6 +151,12 @@ describe('WebSocket Store', () => {
       expect(typeof websocket.off).toBe('function');
       expect(typeof websocket.clearListeners).toBe('function');
       expect(typeof websocket.reset).toBe('function');
+      // Polling methods
+      expect(typeof websocket.trackJob).toBe('function');
+      expect(typeof websocket.untrackJob).toBe('function');
+      expect(typeof websocket.clearTrackedJobs).toBe('function');
+      expect(typeof websocket.forcePolling).toBe('function');
+      expect(typeof websocket.retryWebSocket).toBe('function');
     });
 
     it('should have correct initial state structure', () => {
@@ -160,8 +166,11 @@ describe('WebSocket Store', () => {
         lastError: null,
         reconnectAttempts: 0,
         lastConnectedAt: null,
-        lastMessageAt: null
+        lastMessageAt: null,
+        isPolling: false
       });
+      expect(websocket.value.polledJobIds).toBeInstanceOf(Set);
+      expect(websocket.value.polledJobIds.size).toBe(0);
     });
 
     it('should have correct state types', () => {
@@ -452,6 +461,40 @@ describe('WebSocket Store', () => {
     it('should report isReconnecting correctly', () => {
       expect(websocket.isReconnecting).toBe(false);
     });
+
+    it('should report isPolling correctly', () => {
+      expect(websocket.isPolling).toBe(false);
+
+      websocket.forcePolling();
+
+      expect(websocket.isPolling).toBe(true);
+
+      websocket.disconnect();
+
+      expect(websocket.isPolling).toBe(false);
+    });
+
+    it('should report isReceivingUpdates for WebSocket', () => {
+      expect(websocket.isReceivingUpdates).toBe(false);
+
+      websocket.connect();
+      const ws = MockWebSocket.getLatest();
+      ws.simulateOpen();
+      ws.simulateMessage({
+        event: WebSocketEventType.CONNECTED,
+        timestamp: new Date().toISOString()
+      });
+
+      expect(websocket.isReceivingUpdates).toBe(true);
+    });
+
+    it('should report isReceivingUpdates for polling', () => {
+      expect(websocket.isReceivingUpdates).toBe(false);
+
+      websocket.forcePolling();
+
+      expect(websocket.isReceivingUpdates).toBe(true);
+    });
   });
 
   describe('Reset', () => {
@@ -516,6 +559,94 @@ describe('WebSocket Store', () => {
 
       expect(unauthWebsocket.value.lastError).toBe('Not authenticated');
       expect(unauthWebsocket.value.status).toBe('disconnected');
+    });
+  });
+
+  describe('Polling Fallback', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    describe('Job Tracking', () => {
+      it('should track jobs for polling', () => {
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-2');
+
+        expect(websocket.value.polledJobIds.size).toBe(2);
+        expect(websocket.value.polledJobIds.has('job-1')).toBe(true);
+        expect(websocket.value.polledJobIds.has('job-2')).toBe(true);
+      });
+
+      it('should untrack jobs', () => {
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-2');
+        websocket.untrackJob('job-1');
+
+        expect(websocket.value.polledJobIds.size).toBe(1);
+        expect(websocket.value.polledJobIds.has('job-1')).toBe(false);
+        expect(websocket.value.polledJobIds.has('job-2')).toBe(true);
+      });
+
+      it('should clear all tracked jobs', () => {
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-2');
+        websocket.trackJob('job-3');
+        websocket.clearTrackedJobs();
+
+        expect(websocket.value.polledJobIds.size).toBe(0);
+      });
+
+      it('should not duplicate tracked jobs', () => {
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-1');
+
+        expect(websocket.value.polledJobIds.size).toBe(1);
+      });
+    });
+
+    describe('Polling Mode', () => {
+      it('should switch to polling when forcePolling is called', () => {
+        websocket.forcePolling();
+
+        expect(websocket.value.status).toBe('polling');
+        expect(websocket.value.isPolling).toBe(true);
+        expect(websocket.isPolling).toBe(true);
+      });
+
+      it('should set lastError when entering polling mode', () => {
+        websocket.forcePolling();
+
+        expect(websocket.value.lastError).toBe('WebSocket unavailable, using polling fallback');
+      });
+
+      it('should stop polling when disconnect is called', () => {
+        websocket.forcePolling();
+        expect(websocket.value.isPolling).toBe(true);
+
+        websocket.disconnect();
+
+        expect(websocket.value.isPolling).toBe(false);
+        expect(websocket.value.status).toBe('disconnected');
+      });
+    });
+
+    describe('Reset with Polling', () => {
+      it('should reset polling state', () => {
+        websocket.forcePolling();
+        websocket.trackJob('job-1');
+        websocket.trackJob('job-2');
+
+        websocket.reset();
+
+        expect(websocket.value.isPolling).toBe(false);
+        expect(websocket.value.polledJobIds.size).toBe(0);
+        expect(websocket.value.status).toBe('disconnected');
+      });
     });
   });
 });
