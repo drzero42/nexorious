@@ -117,6 +117,12 @@ from .ignored_game import (
     IgnoredGameResponse,
     IgnoredGameListResponse,
 )
+from .mapping_resolution import (
+    UnresolvedMapping,
+    UnresolvedMappingsResponse,
+    MappingResolution,
+    ResolveMappingsRequest,
+)
 
 __all__ = [
     # Auth schemas
@@ -227,4 +233,9 @@ __all__ = [
     # Ignored game schemas
     "IgnoredGameResponse",
     "IgnoredGameListResponse",
+    # Mapping resolution schemas
+    "UnresolvedMapping",
+    "UnresolvedMappingsResponse",
+    "MappingResolution",
+    "ResolveMappingsRequest",
 ]

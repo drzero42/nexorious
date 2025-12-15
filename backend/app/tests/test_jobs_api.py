@@ -8,7 +8,6 @@ Tests the following endpoints:
 - DELETE /api/jobs/{job_id} - Delete a job record
 """
 
-import pytest
 from sqlmodel import Session, select
 from datetime import datetime, timezone
 
@@ -846,3 +845,272 @@ class TestJobsApiEdgeCases:
         assert data["jobs"][0]["job_type"] == "import"
         assert data["jobs"][0]["source"] == "steam"
         assert data["jobs"][0]["status"] == "completed"
+
+
+class TestMappingResolutionEndpoints:
+    """Tests for platform/storefront mapping resolution endpoints."""
+
+    def test_get_unresolved_mappings_darkadia_job(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting unresolved mappings for a Darkadia job."""
+        # Create a Darkadia import job with unresolved mappings
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        job.set_result_summary({
+            "unresolved_mappings": {
+                "platforms": [
+                    {
+                        "original_name": "Nintendo Switch",
+                        "suggested_id": "switch",
+                        "suggested_name": "Nintendo Switch",
+                        "confidence": 0.9,
+                        "type": "platform",
+                    }
+                ],
+                "storefronts": [
+                    {
+                        "original_name": "Epic Games Store",
+                        "suggested_id": "epic",
+                        "suggested_name": "Epic Games",
+                        "confidence": 0.85,
+                        "type": "storefront",
+                    }
+                ],
+            }
+        })
+        session.add(job)
+        session.commit()
+
+        response = client.get(
+            f"/api/jobs/{job.id}/unresolved-mappings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["all_resolved"] is False
+        assert len(data["platforms"]) == 1
+        assert len(data["storefronts"]) == 1
+        assert data["platforms"][0]["original_name"] == "Nintendo Switch"
+        assert data["storefronts"][0]["original_name"] == "Epic Games Store"
+
+    def test_get_unresolved_mappings_all_resolved(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting unresolved mappings when all are resolved."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.READY,
+        )
+        job.set_result_summary({
+            "unresolved_mappings": {"platforms": [], "storefronts": []}
+        })
+        session.add(job)
+        session.commit()
+
+        response = client.get(
+            f"/api/jobs/{job.id}/unresolved-mappings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["all_resolved"] is True
+        assert len(data["platforms"]) == 0
+        assert len(data["storefronts"]) == 0
+
+    def test_get_unresolved_mappings_wrong_source(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting unresolved mappings for non-Darkadia job fails."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get(
+            f"/api/jobs/{job.id}/unresolved-mappings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    def test_get_unresolved_mappings_not_found(self, client, auth_headers):
+        """Test getting unresolved mappings for non-existent job."""
+        response = client.get(
+            "/api/jobs/nonexistent-id/unresolved-mappings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
+    def test_get_unresolved_mappings_other_user(
+        self, client, auth_headers, admin_user: User, session: Session
+    ):
+        """Test getting unresolved mappings for another user's job."""
+        job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get(
+            f"/api/jobs/{job.id}/unresolved-mappings",
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
+    def test_resolve_mappings_success(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test resolving platform/storefront mappings."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        job.set_result_summary({
+            "unresolved_mappings": {
+                "platforms": [
+                    {
+                        "original_name": "Nintendo Switch",
+                        "suggested_id": "switch",
+                        "suggested_name": "Nintendo Switch",
+                        "confidence": 0.9,
+                        "type": "platform",
+                    }
+                ],
+                "storefronts": [],
+            }
+        })
+        session.add(job)
+        session.commit()
+
+        response = client.put(
+            f"/api/jobs/{job.id}/resolve-mappings",
+            headers=auth_headers,
+            json={
+                "resolutions": [
+                    {
+                        "original_name": "Nintendo Switch",
+                        "resolved_id": "switch",
+                        "type": "platform",
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["message"] == "Mappings resolved"
+        assert data["resolved_count"] == 1
+
+        # Verify the job was updated
+        session.refresh(job)
+        result_summary = job.get_result_summary()
+        assert result_summary["resolved_mappings"]["platforms"]["Nintendo Switch"] == "switch"
+        assert result_summary["unresolved_mappings"]["platforms"] == []
+
+    def test_resolve_mappings_multiple(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test resolving multiple mappings at once."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.put(
+            f"/api/jobs/{job.id}/resolve-mappings",
+            headers=auth_headers,
+            json={
+                "resolutions": [
+                    {
+                        "original_name": "Nintendo Switch",
+                        "resolved_id": "switch",
+                        "type": "platform",
+                    },
+                    {
+                        "original_name": "Epic Games Store",
+                        "resolved_id": "epic",
+                        "type": "storefront",
+                    },
+                ]
+            },
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["resolved_count"] == 2
+
+        # Verify both mappings were stored
+        session.refresh(job)
+        result_summary = job.get_result_summary()
+        assert result_summary["resolved_mappings"]["platforms"]["Nintendo Switch"] == "switch"
+        assert result_summary["resolved_mappings"]["storefronts"]["Epic Games Store"] == "epic"
+
+    def test_resolve_mappings_wrong_source(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test resolving mappings for non-Darkadia job fails."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.put(
+            f"/api/jobs/{job.id}/resolve-mappings",
+            headers=auth_headers,
+            json={"resolutions": []},
+        )
+        assert response.status_code == 400
+
+    def test_resolve_mappings_not_found(self, client, auth_headers):
+        """Test resolving mappings for non-existent job."""
+        response = client.put(
+            "/api/jobs/nonexistent-id/resolve-mappings",
+            headers=auth_headers,
+            json={"resolutions": []},
+        )
+        assert response.status_code == 404
+
+    def test_resolve_mappings_other_user(
+        self, client, auth_headers, admin_user: User, session: Session
+    ):
+        """Test resolving mappings for another user's job."""
+        job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.put(
+            f"/api/jobs/{job.id}/resolve-mappings",
+            headers=auth_headers,
+            json={"resolutions": []},
+        )
+        assert response.status_code == 404
