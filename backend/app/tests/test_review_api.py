@@ -290,6 +290,212 @@ class TestGetReviewSummary:
         assert data["jobs_with_pending"] == 1
 
 
+class TestGetReviewCountsByType:
+    """Tests for GET /api/review/counts endpoint."""
+
+    def test_get_counts_empty(self, client, auth_headers, test_user: User):
+        """Test getting counts with no review items."""
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 0
+        assert data["sync_pending"] == 0
+
+    def test_get_counts_import_only(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test counts with only import pending items."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create 3 pending items
+        for i in range(3):
+            item = ReviewItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                source_title=f"Import Game {i}",
+                status=ReviewItemStatus.PENDING,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 3
+        assert data["sync_pending"] == 0
+
+    def test_get_counts_sync_only(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test counts with only sync pending items."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create 2 pending items
+        for i in range(2):
+            item = ReviewItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                source_title=f"Sync Game {i}",
+                status=ReviewItemStatus.PENDING,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 0
+        assert data["sync_pending"] == 2
+
+    def test_get_counts_both_types(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test counts with both import and sync pending items."""
+        import_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        sync_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add_all([import_job, sync_job])
+        session.commit()
+        session.refresh(import_job)
+        session.refresh(sync_job)
+
+        # Create import items
+        for i in range(5):
+            item = ReviewItem(
+                job_id=import_job.id,
+                user_id=test_user.id,
+                source_title=f"Import Game {i}",
+                status=ReviewItemStatus.PENDING,
+            )
+            session.add(item)
+
+        # Create sync items
+        for i in range(3):
+            item = ReviewItem(
+                job_id=sync_job.id,
+                user_id=test_user.id,
+                source_title=f"Sync Game {i}",
+                status=ReviewItemStatus.PENDING,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 5
+        assert data["sync_pending"] == 3
+
+    def test_get_counts_excludes_resolved(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that resolved items are not counted."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create items with different statuses
+        statuses = [
+            ReviewItemStatus.PENDING,
+            ReviewItemStatus.PENDING,
+            ReviewItemStatus.MATCHED,
+            ReviewItemStatus.SKIPPED,
+        ]
+        for i, status in enumerate(statuses):
+            item = ReviewItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                source_title=f"Game {i}",
+                status=status,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 2  # Only 2 pending
+        assert data["sync_pending"] == 0
+
+    def test_get_counts_only_own_items(
+        self, client, auth_headers, test_user: User, admin_user: User, session: Session
+    ):
+        """Test that users only see counts for their own items."""
+        # Create jobs for both users
+        user_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+        admin_job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add_all([user_job, admin_job])
+        session.commit()
+        session.refresh(user_job)
+        session.refresh(admin_job)
+
+        # Create items for each user
+        user_item = ReviewItem(
+            job_id=user_job.id,
+            user_id=test_user.id,
+            source_title="User Game",
+            status=ReviewItemStatus.PENDING,
+        )
+        admin_item = ReviewItem(
+            job_id=admin_job.id,
+            user_id=admin_user.id,
+            source_title="Admin Game",
+            status=ReviewItemStatus.PENDING,
+        )
+        session.add_all([user_item, admin_item])
+        session.commit()
+
+        response = client.get("/api/review/counts", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["import_pending"] == 1  # Only user's item
+
+    def test_get_counts_no_auth(self, client):
+        """Test that counts endpoint requires authentication."""
+        response = client.get("/api/review/counts")
+        assert response.status_code == 403
+
+
 class TestGetReviewItem:
     """Tests for GET /api/review/{item_id} endpoint."""
 

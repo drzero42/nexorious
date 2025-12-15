@@ -26,9 +26,11 @@ from ..schemas.review import (
     MatchRequest,
     MatchResponse,
     ReviewSummary,
+    ReviewCountsByType,
     ReviewItemStatus,
     IGDBCandidate,
 )
+from ..models.job import BackgroundJobType
 
 router = APIRouter(prefix="/review", tags=["Review"])
 logger = logging.getLogger(__name__)
@@ -232,6 +234,49 @@ async def get_review_summary(
         total_skipped=skipped_count,
         total_removal=removal_count,
         jobs_with_pending=jobs_with_pending,
+    )
+
+
+@router.get("/counts", response_model=ReviewCountsByType)
+async def get_review_counts_by_type(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get pending review counts grouped by job type.
+
+    Returns separate counts for import and sync operations.
+    Used by navigation badges to show how many items need review.
+    """
+    logger.debug(f"Getting review counts by type for user {current_user.id}")
+
+    # Count pending reviews from import jobs
+    import_count = session.exec(
+        select(func.count())
+        .select_from(ReviewItem)
+        .join(Job, ReviewItem.job_id == Job.id)
+        .where(
+            ReviewItem.user_id == current_user.id,
+            ReviewItem.status == ModelReviewItemStatus.PENDING,
+            Job.job_type == BackgroundJobType.IMPORT,
+        )
+    ).one()
+
+    # Count pending reviews from sync jobs
+    sync_count = session.exec(
+        select(func.count())
+        .select_from(ReviewItem)
+        .join(Job, ReviewItem.job_id == Job.id)
+        .where(
+            ReviewItem.user_id == current_user.id,
+            ReviewItem.status == ModelReviewItemStatus.PENDING,
+            Job.job_type == BackgroundJobType.SYNC,
+        )
+    ).one()
+
+    return ReviewCountsByType(
+        import_pending=import_count,
+        sync_pending=sync_count,
     )
 
 

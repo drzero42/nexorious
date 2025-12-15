@@ -129,3 +129,18 @@ class ReviewSummary(BaseModel):
     total_skipped: int
     total_removal: int
     jobs_with_pending: int
+
+
+class ReviewCountsByType(BaseModel):
+    """Pending review counts grouped by job type (import vs sync).
+
+    Used by navigation badges to show how many items need review
+    for each category.
+    """
+
+    import_pending: int = Field(
+        default=0, description="Pending reviews from import operations"
+    )
+    sync_pending: int = Field(
+        default=0, description="Pending reviews from sync operations"
+    )
