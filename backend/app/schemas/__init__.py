@@ -107,6 +107,12 @@ from .common import (
     SearchParams,
     TimestampMixin,
 )
+from .websocket import (
+    WebSocketEventType,
+    WebSocketMessage,
+    ConnectionMessage,
+    JobWebSocketMessage,
+)
 
 __all__ = [
     # Auth schemas
@@ -209,4 +215,9 @@ __all__ = [
     "SortParams",
     "SearchParams",
     "TimestampMixin",
+    # WebSocket schemas
+    "WebSocketEventType",
+    "WebSocketMessage",
+    "ConnectionMessage",
+    "JobWebSocketMessage",
 ]
