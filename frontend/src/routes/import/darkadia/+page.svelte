@@ -1307,7 +1307,6 @@
   onClose={handleBatchModalClose}
   onCancel={handleBatchCancel}
   isCancelling={isCancelling}
-  store="darkadia"
 />
 
 <!-- Import Progress Modal -->

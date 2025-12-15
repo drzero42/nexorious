@@ -3,7 +3,7 @@
   import { config } from '$lib/env';
   import { auth } from '$lib/stores/auth.svelte';
   import { ui } from '$lib/stores/ui.svelte';
-  import IGDBSearchWidget from './steam/IGDBSearchWidget.svelte';
+  import IGDBSearchWidget from './IGDBSearchWidget.svelte';
   import PlatformStorefrontSelector from './PlatformStorefrontSelector.svelte';
   import type { DarkadiaGameResponse } from '$lib/types/darkadia';
 

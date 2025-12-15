@@ -16,9 +16,7 @@ export { default as Portal } from './Portal.svelte';
 export { default as FormField } from './FormField.svelte';
 export { default as StarRating } from './StarRating.svelte';
 
-// Steam Games components
-export { default as SteamGameCard } from './SteamGameCard.svelte';
-export { default as SteamGamesTable } from './SteamGamesTable.svelte';
+// Batch processing modals
 export { default as BatchProgressModal } from './BatchProgressModal.svelte';
 export { default as ImportProgressModal } from './ImportProgressModal.svelte';
 

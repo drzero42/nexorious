@@ -1,14 +1,8 @@
 <script lang="ts">
   import { RouteGuard } from '$lib/components';
-  import { steamAvailability } from '$lib/stores/steam-availability.svelte';
-  import { onMount } from 'svelte';
-
-  // Check Steam availability on mount
-  onMount(async () => {
-    await steamAvailability.checkAvailability();
-  });
 
   // Import source definitions
+  // Note: Steam uses sync (not import) and is available at /sync
   const importSources = [
     {
       id: 'nexorious',
@@ -22,8 +16,7 @@
         'Restores play status and tags',
         'Non-interactive import'
       ],
-      color: 'indigo',
-      available: true
+      color: 'indigo'
     },
     {
       id: 'darkadia',
@@ -37,34 +30,9 @@
         'Review unmatched titles',
         'Platform detection'
       ],
-      color: 'purple',
-      available: true
-    },
-    {
-      id: 'steam',
-      title: 'Steam Library',
-      description: 'Import your Steam library directly. Requires Steam Web API key configuration.',
-      icon: '🎮',
-      href: '/import/steam',
-      features: [
-        'Direct Steam API integration',
-        'Automatic game detection',
-        'Playtime import',
-        'Periodic sync support'
-      ],
-      color: 'blue',
-      available: true,
-      requiresSteam: true
+      color: 'purple'
     }
   ];
-
-  // Derive which sources are actually available
-  const availableSources = $derived(
-    importSources.map(source => ({
-      ...source,
-      isDisabled: source.requiresSteam && !steamAvailability.isAvailable
-    }))
-  );
 
   type ColorClasses = { bg: string; border: string; hover: string; icon: string; button: string };
 
@@ -98,6 +66,9 @@
     }
     return colorMap.indigo;
   }
+
+  // Remove the 'blue' color since it was only used for Steam
+  // Keeping for potential future use
 </script>
 
 <svelte:head>
@@ -134,11 +105,11 @@
     </div>
 
     <!-- Import Source Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {#each availableSources as source}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {#each importSources as source}
         {@const colors = getColorClasses(source.color)}
         <div
-          class="relative rounded-lg border-2 {colors.border} {colors.bg} p-6 transition-all duration-200 {source.isDisabled ? 'opacity-60 cursor-not-allowed' : colors.hover}"
+          class="relative rounded-lg border-2 {colors.border} {colors.bg} p-6 transition-all duration-200 {colors.hover}"
         >
           <!-- Icon -->
           <div class="flex items-center justify-between mb-4">
@@ -148,11 +119,6 @@
               </div>
               <h2 class="text-lg font-semibold text-gray-900">{source.title}</h2>
             </div>
-            {#if source.isDisabled}
-              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                Unavailable
-              </span>
-            {/if}
           </div>
 
           <!-- Description -->
@@ -173,32 +139,15 @@
           </ul>
 
           <!-- Action Button -->
-          {#if source.isDisabled}
-            <div class="space-y-2">
-              <button
-                disabled
-                class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-400 cursor-not-allowed"
-              >
-                <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                Steam Not Available
-              </button>
-              <p class="text-xs text-gray-500 text-center">
-                {steamAvailability.unavailableReason || 'Steam integration is not enabled'}
-              </p>
-            </div>
-          {:else}
-            <a
-              href={source.href}
-              class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white {colors.button} focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors"
-            >
-              Start Import
-              <svg class="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </a>
-          {/if}
+          <a
+            href={source.href}
+            class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white {colors.button} focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors"
+          >
+            Start Import
+            <svg class="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </a>
         </div>
       {/each}
     </div>
@@ -237,7 +186,7 @@
           <ul class="space-y-2 text-sm text-gray-600">
             <li class="flex items-start">
               <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-100 text-blue-600 text-xs font-medium mr-2 flex-shrink-0">1</span>
-              Upload your file or connect your account
+              Upload your file
             </li>
             <li class="flex items-start">
               <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-100 text-blue-600 text-xs font-medium mr-2 flex-shrink-0">2</span>
@@ -258,11 +207,17 @@
 
     <!-- Quick Links -->
     <div class="flex flex-wrap gap-4 text-sm">
+      <a href="/sync" class="text-primary-600 hover:text-primary-500 inline-flex items-center">
+        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Steam Sync
+      </a>
       <a href="/jobs" class="text-primary-600 hover:text-primary-500 inline-flex items-center">
         <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
-        View Import Jobs
+        View Jobs
       </a>
       <a href="/review" class="text-primary-600 hover:text-primary-500 inline-flex items-center">
         <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -36,27 +36,8 @@ vi.mock('$lib/components', async () => {
   };
 });
 
-// Mock steam availability store - define inside factory to avoid hoisting issues
-vi.mock('$lib/stores/steam-availability.svelte', () => ({
-  steamAvailability: {
-    isAvailable: true,
-    isLoading: false,
-    unavailableReason: null as string | null,
-    checkAvailability: vi.fn().mockResolvedValue(undefined)
-  }
-}));
-
 // Import component after mocks
 import ImportLandingPage from './+page.svelte';
-import { steamAvailability } from '$lib/stores/steam-availability.svelte';
-
-// Type for mutable mock
-const mockSteamAvailability = steamAvailability as {
-  isAvailable: boolean;
-  isLoading: boolean;
-  unavailableReason: string | null;
-  checkAvailability: ReturnType<typeof vi.fn>;
-};
 
 describe('Import Landing Page', () => {
   beforeEach(() => {
@@ -66,12 +47,6 @@ describe('Import Landing Page', () => {
     resetAuthMocks();
     setupFetchMock();
     setAuthenticatedState();
-
-    // Reset mock state
-    mockSteamAvailability.isAvailable = true;
-    mockSteamAvailability.isLoading = false;
-    mockSteamAvailability.unavailableReason = null;
-    mockSteamAvailability.checkAvailability.mockClear();
   });
 
   describe('Core Rendering', () => {
@@ -93,12 +68,6 @@ describe('Import Landing Page', () => {
       const titleElement = document.querySelector('title');
       expect(titleElement?.textContent).toBe('Import Games - Nexorious');
     });
-
-    it('should check steam availability on mount', () => {
-      render(ImportLandingPage);
-
-      expect(mockSteamAvailability.checkAvailability).toHaveBeenCalled();
-    });
   });
 
   describe('Import Source Cards', () => {
@@ -116,11 +85,11 @@ describe('Import Landing Page', () => {
       expect(screen.getByText(/Import your game collection from Darkadia/)).toBeInTheDocument();
     });
 
-    it('should render Steam Library import card', () => {
+    it('should NOT render Steam Library import card (Steam uses sync, not import)', () => {
       render(ImportLandingPage);
 
-      expect(screen.getByText('Steam Library')).toBeInTheDocument();
-      expect(screen.getByText(/Import your Steam library directly/)).toBeInTheDocument();
+      // Steam import was removed - Steam now only uses sync at /sync
+      expect(screen.queryByText('Steam Library')).not.toBeInTheDocument();
     });
 
     it('should display feature lists for each import source', () => {
@@ -133,10 +102,14 @@ describe('Import Landing Page', () => {
       // Darkadia features
       expect(screen.getByText('CSV file upload')).toBeInTheDocument();
       expect(screen.getByText('Automatic IGDB matching')).toBeInTheDocument();
+    });
 
-      // Steam features
-      expect(screen.getByText('Direct Steam API integration')).toBeInTheDocument();
-      expect(screen.getByText('Playtime import')).toBeInTheDocument();
+    it('should render exactly 2 import sources (Nexorious and Darkadia)', () => {
+      render(ImportLandingPage);
+
+      // Should only have 2 Start Import links
+      const importLinks = screen.getAllByRole('link', { name: /Start Import/i });
+      expect(importLinks).toHaveLength(2);
     });
   });
 
@@ -157,57 +130,11 @@ describe('Import Landing Page', () => {
       expect(darkadiaLink).toBeTruthy();
     });
 
-    it('should have link to Steam import page when Steam is available', () => {
-      mockSteamAvailability.isAvailable = true;
-
-      render(ImportLandingPage);
-
-      const steamLinks = screen.getAllByRole('link', { name: /Start Import/i });
-      const steamLink = steamLinks.find(link => link.getAttribute('href') === '/import/steam');
-      expect(steamLink).toBeTruthy();
-    });
-
     it('should have breadcrumb navigation', () => {
       render(ImportLandingPage);
 
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard');
-    });
-  });
-
-  describe('Steam Availability', () => {
-    it('should show Steam as available when steam is configured', () => {
-      mockSteamAvailability.isAvailable = true;
-
-      render(ImportLandingPage);
-
-      // Should have a clickable link
-      const steamLinks = screen.getAllByRole('link', { name: /Start Import/i });
-      const steamLink = steamLinks.find(link => link.getAttribute('href') === '/import/steam');
-      expect(steamLink).toBeTruthy();
-
-      // Should not show unavailable badge
-      expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
-    });
-
-    it('should show Steam as unavailable when not configured', () => {
-      mockSteamAvailability.isAvailable = false;
-      mockSteamAvailability.unavailableReason = 'Steam integration is not enabled';
-
-      render(ImportLandingPage);
-
-      // Should show disabled button
-      expect(screen.getByText('Steam Not Available')).toBeInTheDocument();
-      expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    });
-
-    it('should display unavailable reason for Steam', () => {
-      mockSteamAvailability.isAvailable = false;
-      mockSteamAvailability.unavailableReason = 'Steam API key not configured';
-
-      render(ImportLandingPage);
-
-      expect(screen.getByText('Steam API key not configured')).toBeInTheDocument();
     });
   });
 
@@ -230,17 +157,24 @@ describe('Import Landing Page', () => {
       render(ImportLandingPage);
 
       expect(screen.getByText('Import Workflow')).toBeInTheDocument();
-      expect(screen.getByText(/Upload your file or connect your account/)).toBeInTheDocument();
+      expect(screen.getByText(/Upload your file/)).toBeInTheDocument();
       expect(screen.getByText(/Games are matched to IGDB/)).toBeInTheDocument();
       expect(screen.getByText(/Review any games that couldn't be auto-matched/)).toBeInTheDocument();
     });
   });
 
   describe('Quick Links', () => {
+    it('should have link to Steam Sync page', () => {
+      render(ImportLandingPage);
+
+      const syncLink = screen.getByRole('link', { name: /Steam Sync/i });
+      expect(syncLink).toHaveAttribute('href', '/sync');
+    });
+
     it('should have link to jobs page', () => {
       render(ImportLandingPage);
 
-      const jobsLink = screen.getByRole('link', { name: /View Import Jobs/i });
+      const jobsLink = screen.getByRole('link', { name: /View Jobs/i });
       expect(jobsLink).toHaveAttribute('href', '/jobs');
     });
 

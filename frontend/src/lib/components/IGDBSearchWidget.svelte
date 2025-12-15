@@ -44,7 +44,7 @@
       if (searchTimeout) {
         clearTimeout(searchTimeout);
       }
-      
+
       if (searchQuery.trim().length >= 2) {
         searchTimeout = setTimeout(() => {
           performSearch(searchQuery);
@@ -170,7 +170,7 @@
       <div class="text-xs font-medium text-gray-700 px-2">
         Found {searchResults.length} game{searchResults.length === 1 ? '' : 's'}:
       </div>
-      
+
       {#each searchResults as game (game.igdb_id)}
         <button
           class="w-full p-3 border rounded-lg text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors
@@ -181,8 +181,8 @@
             <!-- Game Cover -->
             <div class="flex-shrink-0 w-12 h-16 bg-gray-100 rounded overflow-hidden">
               {#if game.cover_art_url}
-                <img 
-                  src={getCoverImageUrl(game.cover_art_url)} 
+                <img
+                  src={getCoverImageUrl(game.cover_art_url)}
                   alt="{game.title} cover"
                   class="w-full h-full object-cover"
                   loading="lazy"
@@ -208,7 +208,7 @@
                   </span>
                 {/if}
               </div>
-              
+
               {#if game.platforms && game.platforms.length > 0}
                 <div class="mb-2">
                   <div class="flex flex-wrap gap-1">
@@ -225,7 +225,7 @@
                   </div>
                 </div>
               {/if}
-              
+
               {#if game.description}
                 <p class="text-xs text-gray-600 line-clamp-2">
                   {game.description}
@@ -259,7 +259,7 @@
     >
       Cancel
     </button>
-    
+
     <button
       onclick={handleConfirmSelection}
       disabled={!selectedGameId}
@@ -278,22 +278,22 @@
     line-clamp: 2;
     overflow: hidden;
   }
-  
+
   /* Custom scrollbar for search results */
   .max-h-96::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .max-h-96::-webkit-scrollbar-track {
     background: #f1f5f9;
     border-radius: 3px;
   }
-  
+
   .max-h-96::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 3px;
   }
-  
+
   .max-h-96::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
   }
