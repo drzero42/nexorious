@@ -18,7 +18,12 @@ from ..models.job import (
     Job,
     ReviewItem,
     ReviewItemStatus as ModelReviewItemStatus,
+    BackgroundJobType,
+    BackgroundJobSource,
 )
+from ..models.ignored_external_game import IgnoredExternalGame
+from ..models.user_game import UserGame, UserGamePlatform
+from ..models.game import Game
 from ..schemas.review import (
     ReviewItemResponse,
     ReviewItemDetailResponse,
@@ -31,10 +36,15 @@ from ..schemas.review import (
     ReviewSource,
     IGDBCandidate,
 )
-from ..models.job import BackgroundJobType
+from ..services.game_service import GameService
+from ..services.igdb import IGDBService
 
 router = APIRouter(prefix="/review", tags=["Review"])
 logger = logging.getLogger(__name__)
+
+# Constants for platform associations
+STEAM_STOREFRONT_ID = "steam"
+PC_WINDOWS_PLATFORM_ID = "pc-windows"
 
 
 def _review_item_to_response(item: ReviewItem, session: Session) -> ReviewItemResponse:
@@ -336,6 +346,7 @@ async def match_review_item(
     Match a review item to an IGDB ID.
 
     Sets the resolved_igdb_id and marks the item as matched.
+    For sync sources (Steam), also adds the game to collection and creates platform associations.
     """
     logger.info(
         f"User {current_user.id} matching review item {item_id} to IGDB ID {request.igdb_id}"
@@ -361,6 +372,10 @@ async def match_review_item(
             detail=f"Cannot match item - already resolved with status: {item.status.value}",
         )
 
+    # Get source metadata to determine if this is a sync operation
+    source_metadata = item.get_source_metadata()
+    source = source_metadata.get("source")
+
     # Update the item
     item.status = ModelReviewItemStatus.MATCHED
     item.resolved_igdb_id = request.igdb_id
@@ -368,6 +383,37 @@ async def match_review_item(
 
     session.commit()
     session.refresh(item)
+
+    # Handle sync source finalization (e.g., Steam)
+    if source == "steam":
+        steam_appid = source_metadata.get("steam_appid")
+        if not steam_appid:
+            logger.error(f"Missing steam_appid in source metadata for review item {item_id}")
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="Missing Steam AppID in review item metadata",
+            )
+
+        try:
+            await _finalize_steam_match(
+                session=session,
+                user_id=current_user.id,
+                igdb_id=request.igdb_id,
+                steam_appid=str(steam_appid),
+            )
+            logger.info(
+                f"Finalized Steam match for review item {item_id}: "
+                f"IGDB ID {request.igdb_id}, AppID {steam_appid}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to finalize Steam match for review item {item_id}: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to add game to collection: {str(e)}",
+            )
 
     logger.info(f"Review item {item_id} matched to IGDB ID {request.igdb_id}")
 
@@ -388,6 +434,8 @@ async def skip_review_item(
     Skip a review item without matching.
 
     The game will not be added to the collection.
+    For sync sources (Steam, Epic, GOG), creates an IgnoredExternalGame record
+    to prevent the item from appearing in future syncs.
     """
     logger.info(f"User {current_user.id} skipping review item {item_id}")
 
@@ -411,12 +459,37 @@ async def skip_review_item(
             detail=f"Cannot skip item - already resolved with status: {item.status.value}",
         )
 
+    # Get source metadata to determine if this is a sync operation
+    source_metadata = item.get_source_metadata()
+    source = source_metadata.get("source")
+
     # Update the item
     item.status = ModelReviewItemStatus.SKIPPED
     item.resolved_at = datetime.now(timezone.utc)
 
     session.commit()
     session.refresh(item)
+
+    # Create ignored game record for sync sources
+    if source in ["steam", "epic", "gog"]:
+        try:
+            _create_ignored_external_game(
+                session=session,
+                user_id=current_user.id,
+                source=source,
+                external_id=_get_external_id_from_metadata(source_metadata, source),
+                title=item.source_title,
+            )
+            logger.info(
+                f"Created ignored external game record for {source} game: {item.source_title}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to create ignored external game record for review item {item_id}: {e}",
+                exc_info=True,
+            )
+            # Don't fail the skip operation if ignored game creation fails
+            # The item is still skipped, we just can't prevent it from appearing again
 
     logger.info(f"Review item {item_id} skipped")
 
@@ -532,3 +605,209 @@ async def remove_review_item(
         message="Game marked for removal",
         item=_review_item_to_response(item, session),
     )
+
+
+# Helper functions for sync finalization
+
+
+async def _finalize_steam_match(
+    session: Session,
+    user_id: str,
+    igdb_id: int,
+    steam_appid: str,
+) -> None:
+    """
+    Finalize a Steam sync match by adding the game to collection.
+
+    Creates or updates the game from IGDB, creates a UserGame entry if needed,
+    and adds the Steam platform association.
+
+    Args:
+        session: Database session
+        user_id: User ID
+        igdb_id: IGDB game ID
+        steam_appid: Steam AppID
+    """
+    # Check if user already has this game
+    existing_user_game = session.exec(
+        select(UserGame).where(
+            UserGame.user_id == user_id,
+            UserGame.game_id == igdb_id,
+        )
+    ).first()
+
+    if existing_user_game:
+        # Game already in collection, just add platform association
+        logger.debug(
+            f"Game {igdb_id} already in collection for user {user_id}, "
+            f"adding Steam platform association"
+        )
+        _add_steam_platform(session, existing_user_game.id, steam_appid)
+        return
+
+    # Ensure game exists in games table (fetch from IGDB if needed)
+    game = session.get(Game, igdb_id)
+    if not game:
+        # Create game from IGDB
+        igdb_service = IGDBService()
+        game_service = GameService(session, igdb_service)
+        game = await game_service.create_or_update_game_from_igdb(
+            igdb_id, download_cover_art=True
+        )
+        logger.debug(f"Created game {igdb_id} from IGDB: {game.title}")
+
+    # Create UserGame entry
+    user_game = UserGame(
+        user_id=user_id,
+        game_id=igdb_id,
+    )
+    session.add(user_game)
+    session.commit()
+    session.refresh(user_game)
+
+    logger.info(
+        f"Added game {igdb_id} ({game.title}) to collection for user {user_id}"
+    )
+
+    # Add Steam platform association
+    _add_steam_platform(session, user_game.id, steam_appid)
+
+
+def _add_steam_platform(
+    session: Session,
+    user_game_id: str,
+    steam_appid: str,
+) -> None:
+    """
+    Add Steam platform association to a UserGame.
+
+    Creates a UserGamePlatform entry linking the game to Steam storefront
+    with the Steam AppID stored in store_game_id.
+
+    Args:
+        session: Database session
+        user_game_id: UserGame ID
+        steam_appid: Steam AppID
+    """
+    # Check if association already exists
+    existing = session.exec(
+        select(UserGamePlatform).where(
+            UserGamePlatform.user_game_id == user_game_id,
+            UserGamePlatform.storefront_id == STEAM_STOREFRONT_ID,
+            UserGamePlatform.store_game_id == steam_appid,
+        )
+    ).first()
+
+    if not existing:
+        platform = UserGamePlatform(
+            user_game_id=user_game_id,
+            platform_id=PC_WINDOWS_PLATFORM_ID,
+            storefront_id=STEAM_STOREFRONT_ID,
+            store_game_id=steam_appid,
+            store_url=f"https://store.steampowered.com/app/{steam_appid}",
+            is_available=True,
+        )
+        session.add(platform)
+        session.commit()
+        logger.debug(
+            f"Added Steam platform association for UserGame {user_game_id}, "
+            f"AppID {steam_appid}"
+        )
+    else:
+        logger.debug(
+            f"Steam platform association already exists for UserGame {user_game_id}"
+        )
+
+
+def _create_ignored_external_game(
+    session: Session,
+    user_id: str,
+    source: str,
+    external_id: str,
+    title: str,
+) -> None:
+    """
+    Create an IgnoredExternalGame record to prevent future sync matches.
+
+    Args:
+        session: Database session
+        user_id: User ID
+        source: Source platform (steam, epic, gog)
+        external_id: Platform-specific game ID
+        title: Game title for display
+    """
+    # Convert source string to BackgroundJobSource enum
+    source_enum_map = {
+        "steam": BackgroundJobSource.STEAM,
+        "epic": BackgroundJobSource.EPIC,
+        "gog": BackgroundJobSource.GOG,
+    }
+
+    source_enum = source_enum_map.get(source)
+    if not source_enum:
+        logger.warning(f"Unknown source type for ignored game: {source}")
+        return
+
+    # Check if already ignored
+    existing = session.exec(
+        select(IgnoredExternalGame).where(
+            IgnoredExternalGame.user_id == user_id,
+            IgnoredExternalGame.source == source_enum,
+            IgnoredExternalGame.external_id == external_id,
+        )
+    ).first()
+
+    if existing:
+        logger.debug(
+            f"External game already ignored: {source} {external_id} for user {user_id}"
+        )
+        return
+
+    # Create ignored game record
+    ignored_game = IgnoredExternalGame(
+        user_id=user_id,
+        source=source_enum,
+        external_id=external_id,
+        title=title,
+    )
+    session.add(ignored_game)
+    session.commit()
+    logger.debug(
+        f"Created ignored external game: {source} {external_id} ({title}) "
+        f"for user {user_id}"
+    )
+
+
+def _get_external_id_from_metadata(
+    source_metadata: dict,
+    source: str,
+) -> str:
+    """
+    Extract the external game ID from source metadata.
+
+    Args:
+        source_metadata: Source metadata dictionary
+        source: Source platform (steam, epic, gog)
+
+    Returns:
+        External game ID (e.g., Steam AppID)
+    """
+    # Map source to metadata key
+    id_key_map = {
+        "steam": "steam_appid",
+        "epic": "epic_id",
+        "gog": "gog_id",
+    }
+
+    id_key = id_key_map.get(source)
+    if not id_key:
+        logger.warning(f"Unknown source type: {source}")
+        return ""
+
+    external_id = source_metadata.get(id_key, "")
+    if not external_id:
+        logger.warning(
+            f"Missing external ID in metadata for source {source}: {source_metadata}"
+        )
+
+    return str(external_id)
