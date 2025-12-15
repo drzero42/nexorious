@@ -198,6 +198,12 @@ class ReviewItem(SQLModel, table=True):
     resolved_igdb_id: Optional[int] = Field(
         default=None, description="IGDB ID selected by user"
     )
+    match_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score for auto-match (1.0 = exact match or single result)"
+    )
 
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
