@@ -113,6 +113,10 @@ from .websocket import (
     ConnectionMessage,
     JobWebSocketMessage,
 )
+from .ignored_game import (
+    IgnoredGameResponse,
+    IgnoredGameListResponse,
+)
 
 __all__ = [
     # Auth schemas
@@ -220,4 +224,7 @@ __all__ = [
     "WebSocketMessage",
     "ConnectionMessage",
     "JobWebSocketMessage",
+    # Ignored game schemas
+    "IgnoredGameResponse",
+    "IgnoredGameListResponse",
 ]
