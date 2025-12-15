@@ -150,13 +150,40 @@
                   <ul role="list" class="-mx-2 mt-2 space-y-1">
                     <li>
                       <a
-                        href="/import/steam"
+                        href="/import"
                         class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                       >
+                        <span class="text-lg">📥</span>
+                        Import Games
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/import/nexorious"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                      >
+                        <span class="text-lg">📦</span>
+                        Nexorious JSON
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/import/darkadia"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                      >
+                        <span class="text-lg">📊</span>
+                        Darkadia CSV
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/import/steam"
+                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                      >
                         {#if steamIconUrl}
-                          <img 
-                            src="{steamIconUrl}" 
-                            alt="Steam icon" 
+                          <img
+                            src="{steamIconUrl}"
+                            alt="Steam icon"
                             class="w-5 h-5"
                             loading="lazy"
                             onerror={(e) => {
@@ -168,20 +195,11 @@
                               }
                             }}
                           />
-                          <span class="text-lg hidden">🔥</span>
+                          <span class="text-lg hidden">🎮</span>
                         {:else}
-                          <span class="text-lg">🔥</span>
+                          <span class="text-lg">🎮</span>
                         {/if}
                         Steam Library
-                      </a>
-                    </li>
-                    <li>
-                      <a
-                        href="/import/darkadia"
-                        class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                      >
-                        <span class="text-lg">📊</span>
-                        Darkadia CSV
                       </a>
                     </li>
                   </ul>
@@ -411,14 +429,44 @@
                         <ul role="list" class="-mx-2 mt-2 space-y-1">
                           <li>
                             <a
-                              href="/import/steam"
+                              href="/import"
                               onclick={closeMobileMenu}
                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
                             >
+                              <span class="text-lg">📥</span>
+                              Import Games
+                            </a>
+                          </li>
+                          <li>
+                            <a
+                              href="/import/nexorious"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                            >
+                              <span class="text-lg">📦</span>
+                              Nexorious JSON
+                            </a>
+                          </li>
+                          <li>
+                            <a
+                              href="/import/darkadia"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                            >
+                              <span class="text-lg">📊</span>
+                              Darkadia CSV
+                            </a>
+                          </li>
+                          <li>
+                            <a
+                              href="/import/steam"
+                              onclick={closeMobileMenu}
+                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600 pl-6"
+                            >
                               {#if steamIconUrl}
-                                <img 
-                                  src="{steamIconUrl}" 
-                                  alt="Steam icon" 
+                                <img
+                                  src="{steamIconUrl}"
+                                  alt="Steam icon"
                                   class="w-5 h-5"
                                   loading="lazy"
                                   onerror={(e) => {
@@ -430,25 +478,13 @@
                                     }
                                   }}
                                 />
-                                <span class="text-lg hidden">🔥</span>
+                                <span class="text-lg hidden">🎮</span>
                               {:else}
-                                <span class="text-lg">🔥</span>
+                                <span class="text-lg">🎮</span>
                               {/if}
                               Steam Library
                             </a>
                           </li>
-                          <li>
-                            <a
-                              href="/import/darkadia"
-                              onclick={closeMobileMenu}
-                              class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-gray-300 hover:text-white hover:bg-gray-600"
-                            >
-                              <span class="text-lg">📊</span>
-                              Darkadia CSV
-                            </a>
-                          </li>
-                          
-                          <!-- Future import sources will go here -->
                         </ul>
                       </li>
                       <!-- Settings Section -->
