@@ -12,19 +12,21 @@ import type {
   ReviewItemDetail,
   ReviewListResponse,
   ReviewSummary,
+  ReviewCountsByType,
   MatchResponse,
   ReviewFilters
 } from '$lib/types/jobs';
 import { ReviewItemStatus, ReviewSource } from '$lib/types/jobs';
 
 // Re-export types and enums for convenience
-export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewFilters };
+export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewCountsByType, ReviewFilters };
 export { ReviewItemStatus, ReviewSource };
 
 export interface ReviewState {
   items: ReviewItem[];
   currentItem: ReviewItemDetail | null;
   summary: ReviewSummary | null;
+  countsByType: ReviewCountsByType | null;
   isLoading: boolean;
   error: string | null;
   filters: ReviewFilters;
@@ -40,6 +42,7 @@ const initialState: ReviewState = {
   items: [],
   currentItem: null,
   summary: null,
+  countsByType: null,
   isLoading: false,
   error: null,
   filters: {},
@@ -166,6 +169,25 @@ function createReviewStore() {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Failed to load review summary';
+        state.error = errorMessage;
+        throw error;
+      }
+    },
+
+    /**
+     * Get pending review counts grouped by job type (import vs sync).
+     * Used by navigation badges to show how many items need review.
+     */
+    loadCountsByType: async () => {
+      try {
+        const response = await apiCall(`${config.apiUrl}/review/counts`);
+        const counts: ReviewCountsByType = await response.json();
+
+        state.countsByType = counts;
+        return counts;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to load review counts';
         state.error = errorMessage;
         throw error;
       }

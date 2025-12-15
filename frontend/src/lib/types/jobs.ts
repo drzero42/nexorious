@@ -176,6 +176,15 @@ export interface ReviewFilters {
   source?: ReviewSource;
 }
 
+/**
+ * Pending review counts grouped by job type (import vs sync).
+ * Used by navigation badges to show how many items need review.
+ */
+export interface ReviewCountsByType {
+  import_pending: number;
+  sync_pending: number;
+}
+
 // ============================================================================
 // Sync Types
 // ============================================================================
