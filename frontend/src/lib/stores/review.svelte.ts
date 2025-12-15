@@ -5,8 +5,8 @@
  * viewing details, and resolving items (match, skip, keep, remove).
  */
 
-import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { api } from '$lib/services/api';
 import type {
   ReviewItem,
   ReviewItemDetail,
@@ -57,52 +57,6 @@ const initialState: ReviewState = {
 function createReviewStore() {
   let state = $state<ReviewState>({ ...initialState });
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authState.accessToken}`,
-        ...options.headers
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${auth.value.accessToken}`,
-              ...options.headers
-            }
-          });
-        }
-      }
-
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.detail) {
-          errorMessage = errorBody.detail;
-        }
-      } catch {
-        // Use default message if we can't parse the error body
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    return response;
-  };
-
   const store = {
     get value() {
       return state;
@@ -136,7 +90,7 @@ function createReviewStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`${config.apiUrl}/review/?${params}`);
+        const response = await api.get(`${config.apiUrl}/review/?${params}`);
         const data: ReviewListResponse = await response.json();
 
         state.items = data.items;
@@ -161,7 +115,7 @@ function createReviewStore() {
      */
     loadSummary: async () => {
       try {
-        const response = await apiCall(`${config.apiUrl}/review/summary`);
+        const response = await api.get(`${config.apiUrl}/review/summary`);
         const summary: ReviewSummary = await response.json();
 
         state.summary = summary;
@@ -180,7 +134,7 @@ function createReviewStore() {
      */
     loadCountsByType: async () => {
       try {
-        const response = await apiCall(`${config.apiUrl}/review/counts`);
+        const response = await api.get(`${config.apiUrl}/review/counts`);
         const counts: ReviewCountsByType = await response.json();
 
         state.countsByType = counts;
@@ -201,7 +155,7 @@ function createReviewStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/review/${itemId}`);
+        const response = await api.get(`${config.apiUrl}/review/${itemId}`);
         const item: ReviewItemDetail = await response.json();
 
         state.currentItem = item;
@@ -223,10 +177,7 @@ function createReviewStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/review/${itemId}/match`, {
-          method: 'POST',
-          body: JSON.stringify({ igdb_id: igdbId })
-        });
+        const response = await api.post(`${config.apiUrl}/review/${itemId}/match`, { igdb_id: igdbId });
         const result: MatchResponse = await response.json();
 
         if (result.success && result.item) {
@@ -267,9 +218,7 @@ function createReviewStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/review/${itemId}/skip`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/review/${itemId}/skip`);
         const result: MatchResponse = await response.json();
 
         if (result.success && result.item) {
@@ -310,9 +259,7 @@ function createReviewStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/review/${itemId}/keep`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/review/${itemId}/keep`);
         const result: MatchResponse = await response.json();
 
         if (result.success && result.item) {
@@ -353,9 +300,7 @@ function createReviewStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/review/${itemId}/remove`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/review/${itemId}/remove`);
         const result: MatchResponse = await response.json();
 
         if (result.success && result.item) {

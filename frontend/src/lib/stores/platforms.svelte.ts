@@ -1,6 +1,7 @@
 import { auth } from './auth.svelte';
 import { config } from '$lib/env';
 import { loggers } from '$lib/services/logger';
+import { api } from '$lib/services/api';
 
 const log = loggers.platforms;
 import type {
@@ -95,43 +96,6 @@ const initialState: PlatformsState = {
 function createPlatformsStore() {
   let state = $state<PlatformsState>(initialState);
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authState.accessToken}`,
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Try to refresh token
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          // Retry the request with new token
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${auth.value.accessToken}`,
-              ...options.headers,
-            },
-          });
-        }
-      }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return response;
-  };
-
   return {
     get value() {
       return state;
@@ -153,7 +117,7 @@ function createPlatformsStore() {
 
       try {
         // Load ALL platforms without active_only filter (active_only=false)
-        const response = await apiCall(`${config.apiUrl}/platforms/?active_only=false`);
+        const response = await api.get(`${config.apiUrl}/platforms/?active_only=false`);
         const data = await response.json();
 
         state = {
@@ -179,7 +143,7 @@ function createPlatformsStore() {
 
       try {
         // Load ALL storefronts without active_only filter (active_only=false)
-        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=false`);
+        const response = await api.get(`${config.apiUrl}/platforms/storefronts/?active_only=false`);
         const data = await response.json();
 
         state = {
@@ -203,8 +167,8 @@ function createPlatformsStore() {
       try {
         // Load ALL platforms and storefronts in parallel
         const [platformsResponse, storefrontsResponse] = await Promise.all([
-          apiCall(`${config.apiUrl}/platforms/?active_only=false`),
-          apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=false`)
+          api.get(`${config.apiUrl}/platforms/?active_only=false`),
+          api.get(`${config.apiUrl}/platforms/storefronts/?active_only=false`)
         ]);
 
         const [platformsData, storefrontsData] = await Promise.all([
@@ -251,11 +215,8 @@ function createPlatformsStore() {
           icon_url: platformData.icon_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/platforms/`, {
-          method: 'POST',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/`, cleanedData);
+
         const platform: Platform = await response.json();
 
         state = {
@@ -287,11 +248,8 @@ function createPlatformsStore() {
           icon_url: platformData.icon_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/platforms/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.put(`${config.apiUrl}/platforms/${id}`, cleanedData);
+
         const updatedPlatform: Platform = await response.json();
 
         state = {
@@ -319,9 +277,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`${config.apiUrl}/platforms/${id}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/platforms/${id}`);
 
         state = {
           ...state,
@@ -351,11 +307,8 @@ function createPlatformsStore() {
           base_url: storefrontData.base_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/`, {
-          method: 'POST',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/storefronts/`, cleanedData);
+
         const storefront: Storefront = await response.json();
 
         state = {
@@ -388,11 +341,8 @@ function createPlatformsStore() {
           base_url: storefrontData.base_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.put(`${config.apiUrl}/platforms/storefronts/${id}`, cleanedData);
+
         const updatedStorefront: Storefront = await response.json();
 
         state = {
@@ -420,9 +370,7 @@ function createPlatformsStore() {
       state = { ...state, isLoading: true, error: null };
 
       try {
-        await apiCall(`${config.apiUrl}/platforms/storefronts/${id}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/platforms/storefronts/${id}`);
 
         state = {
           ...state,
@@ -456,8 +404,8 @@ function createPlatformsStore() {
       try {
         // Load only active platforms and storefronts in parallel
         const [platformsResponse, storefrontsResponse] = await Promise.all([
-          apiCall(`${config.apiUrl}/platforms/?active_only=true`),
-          apiCall(`${config.apiUrl}/platforms/storefronts/?active_only=true`)
+          api.get(`${config.apiUrl}/platforms/?active_only=true`),
+          api.get(`${config.apiUrl}/platforms/storefronts/?active_only=true`)
         ]);
         const [platformsData, storefrontsData] = await Promise.all([
           platformsResponse.json(),
@@ -489,7 +437,7 @@ function createPlatformsStore() {
       }
 
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts`);
+        const response = await api.get(`${config.apiUrl}/platforms/${platformId}/storefronts`);
         const data = await response.json();
         return data.storefronts;
       } catch (error) {
@@ -506,10 +454,8 @@ function createPlatformsStore() {
       }
 
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`, {
-          method: 'POST',
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`);
+
         const result = await response.json();
         
         // Note: Platform data will refresh automatically on next load
@@ -529,10 +475,8 @@ function createPlatformsStore() {
       }
 
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`, {
-          method: 'DELETE',
-        });
-        
+        const response = await api.delete(`${config.apiUrl}/platforms/${platformId}/storefronts/${storefrontId}`);
+
         const result = await response.json();
         
         // Note: Platform data will refresh automatically on next load
@@ -555,11 +499,8 @@ function createPlatformsStore() {
     // Get fuzzy matching suggestions for unknown platform names
     getSuggestions: async (request: PlatformSuggestionsRequest): Promise<PlatformSuggestionsResponse> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/suggestions`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/suggestions`, request);
+
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get platform suggestions';
@@ -571,10 +512,10 @@ function createPlatformsStore() {
     // Get pending platform resolutions for the current user
     getPendingResolutions: async (page: number = 1, perPage: number = 20): Promise<PendingResolutionsListResponse> => {
       try {
-        const response = await apiCall(
+        const response = await api.get(
           `${config.apiUrl}/platforms/resolution/pending?page=${page}&per_page=${perPage}`
         );
-        
+
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch pending platform resolutions';
@@ -586,11 +527,8 @@ function createPlatformsStore() {
     // Resolve a single platform mapping
     resolvePlatform: async (request: PlatformResolutionRequest): Promise<PlatformResolutionResult> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/resolve`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/resolve`, request);
+
         const result = await response.json();
         
         // If the resolution was successful and a platform was created, add it to our store
@@ -625,11 +563,8 @@ function createPlatformsStore() {
     // Resolve multiple platforms in a bulk operation
     bulkResolvePlatforms: async (request: BulkPlatformResolutionRequest): Promise<BulkPlatformResolutionResponse> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/bulk-resolve`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/bulk-resolve`, request);
+
         const result = await response.json();
         
         // Add any newly created platforms to our store
@@ -669,9 +604,8 @@ function createPlatformsStore() {
     // Populate platform suggestions for a specific import record
     populateSuggestions: async (importId: string, minConfidence: number = 0.6): Promise<void> => {
       try {
-        await apiCall(
-          `${config.apiUrl}/platforms/resolution/populate-suggestions/${importId}?min_confidence=${minConfidence}`,
-          { method: 'POST' }
+        await api.post(
+          `${config.apiUrl}/platforms/resolution/populate-suggestions/${importId}?min_confidence=${minConfidence}`
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to populate platform suggestions';
@@ -699,11 +633,8 @@ function createPlatformsStore() {
           icon_url: platformData.icon_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/platforms/`, {
-          method: 'POST',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/`, cleanedData);
+
         const platform: Platform = await response.json();
 
         state = {
@@ -715,13 +646,10 @@ function createPlatformsStore() {
         // If we have an import ID, automatically resolve it to the new platform
         if (importId) {
           try {
-            await apiCall(`${config.apiUrl}/platforms/resolution/resolve`, {
-              method: 'POST',
-              body: JSON.stringify({
-                import_id: importId,
-                resolved_platform_id: platform.id,
-                user_notes: `Auto-resolved to newly created platform: ${platform.display_name}`
-              }),
+            await api.post(`${config.apiUrl}/platforms/resolution/resolve`, {
+              import_id: importId,
+              resolved_platform_id: platform.id,
+              user_notes: `Auto-resolved to newly created platform: ${platform.display_name}`
             });
           } catch (error) {
             // Log error but don't throw - platform was created successfully
@@ -742,11 +670,8 @@ function createPlatformsStore() {
     // Get fuzzy matching suggestions for unknown storefront names with platform context
     getStorefrontSuggestions: async (request: StorefrontSuggestionsRequest): Promise<StorefrontSuggestionsResponse> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/storefront-suggestions`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/storefront-suggestions`, request);
+
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get storefront suggestions';
@@ -758,10 +683,10 @@ function createPlatformsStore() {
     // Get pending storefront resolutions for the current user
     getPendingStorefrontResolutions: async (page: number = 1, perPage: number = 20): Promise<PendingStorefrontsListResponse> => {
       try {
-        const response = await apiCall(
+        const response = await api.get(
           `${config.apiUrl}/platforms/resolution/pending-storefronts?page=${page}&per_page=${perPage}`
         );
-        
+
         return await response.json();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch pending storefront resolutions';
@@ -773,11 +698,8 @@ function createPlatformsStore() {
     // Resolve a single storefront mapping
     resolveStorefront: async (request: StorefrontResolutionRequest): Promise<StorefrontResolutionResult> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/resolve-storefront`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/resolve-storefront`, request);
+
         const result = await response.json();
         
         // If the resolution was successful and a storefront was created, add it to our store
@@ -812,11 +734,8 @@ function createPlatformsStore() {
     // Resolve multiple storefronts in a bulk operation
     bulkResolveStorefronts: async (request: BulkStorefrontResolutionRequest): Promise<BulkStorefrontResolutionResponse> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/platforms/resolution/bulk-resolve-storefronts`, {
-          method: 'POST',
-          body: JSON.stringify(request),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/platforms/resolution/bulk-resolve-storefronts`, request);
+
         const result = await response.json();
         
         // Add any newly created storefronts to our store
@@ -873,11 +792,8 @@ function createPlatformsStore() {
           base_url: storefrontData.base_url?.trim() || undefined
         };
 
-        const response = await apiCall(`${config.apiUrl}/storefronts/`, {
-          method: 'POST',
-          body: JSON.stringify(cleanedData),
-        });
-        
+        const response = await api.post(`${config.apiUrl}/storefronts/`, cleanedData);
+
         const storefront: Storefront = await response.json();
 
         state = {
@@ -889,13 +805,10 @@ function createPlatformsStore() {
         // If we have an import ID, automatically resolve it to the new storefront
         if (importId) {
           try {
-            await apiCall(`${config.apiUrl}/platforms/resolution/resolve-storefront`, {
-              method: 'POST',
-              body: JSON.stringify({
-                import_id: importId,
-                resolved_storefront_id: storefront.id,
-                user_notes: `Auto-resolved to newly created storefront: ${storefront.display_name}`
-              }),
+            await api.post(`${config.apiUrl}/platforms/resolution/resolve-storefront`, {
+              import_id: importId,
+              resolved_storefront_id: storefront.id,
+              user_notes: `Auto-resolved to newly created storefront: ${storefront.display_name}`
             });
           } catch (error) {
             // Log error but don't throw - storefront was created successfully

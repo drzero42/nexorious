@@ -1,11 +1,8 @@
-import { auth } from './auth.svelte';
 import type { Game } from './games.svelte';
 import type { Platform, Storefront } from './platforms.svelte';
 import { config } from '$lib/env';
-import { loggers } from '$lib/services/logger';
+import { api } from '$lib/services/api';
 import type { GameId, UserGameId } from '$lib/types/game';
-
-const log = loggers.api;
 
 // Enhanced TypeScript patterns for fine-grained reactivity
 // type DeepPartial<T> = {
@@ -465,62 +462,6 @@ function createUserGamesStore() {
     }
   };
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authState.accessToken}`,
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Try to refresh token
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          // Retry the request with new token
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${auth.value.accessToken}`,
-              ...options.headers,
-            },
-          });
-        }
-      }
-      // Try to get more detailed error info from response body
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.detail) {
-          errorMessage = errorBody.detail;
-        }
-      } catch (e) {
-        // If we can't parse the error body, use the default message
-      }
-      
-      log.error('API call failed', {
-        method: options.method || 'GET',
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        errorMessage
-      });
-      
-      throw new Error(errorMessage);
-    }
-
-    return response;
-  };
-
   const store = {
     get value() {
       // Return backward-compatible state structure
@@ -562,7 +503,7 @@ function createUserGamesStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`${config.apiUrl}/user-games/?${params}`);
+        const response = await api.get(`${config.apiUrl}/user-games/?${params}`);
         const data: UserGameListResponse = await response.json();
 
         // Replace all entities with new data (for pagination/filtering scenarios)
@@ -642,7 +583,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/${id}`);
+        const response = await api.get(`${config.apiUrl}/user-games/${id}`);
         const userGame: UserGame = await response.json();
 
         // Add/update the entity
@@ -665,10 +606,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/`, {
-          method: 'POST',
-          body: JSON.stringify(gameData),
-        });
+        const response = await api.post(`${config.apiUrl}/user-games/`, gameData);
         
         const userGame: UserGame = await response.json();
 
@@ -714,10 +652,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(gameData),
-        });
+        const response = await api.put(`${config.apiUrl}/user-games/${id}`, gameData);
         
         const updatedUserGame: UserGame = await response.json();
         
@@ -761,10 +696,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/${id}/progress`, {
-          method: 'PUT',
-          body: JSON.stringify(progressData),
-        });
+        const response = await api.put(`${config.apiUrl}/user-games/${id}/progress`, progressData);
         
         const updatedUserGame: UserGame = await response.json();
         
@@ -810,9 +742,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        await apiCall(`${config.apiUrl}/user-games/${id}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/user-games/${id}`);
         
         // Commit optimistic update
         entityState.optimisticUpdates.commit(id);
@@ -869,10 +799,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms`, {
-          method: 'POST',
-          body: JSON.stringify(platformData),
-        });
+        const response = await api.post(`${config.apiUrl}/user-games/${userGameId}/platforms`, platformData);
         
         const updatedUserGame: UserGame = await response.json();
         
@@ -927,9 +854,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        await apiCall(`${config.apiUrl}/user-games/${userGameId}/platforms/${platformId}`, {
-          method: 'DELETE',
-        });
+        await api.delete(`${config.apiUrl}/user-games/${userGameId}/platforms/${platformId}`);
         
         // Commit optimistic update (no server response for DELETE)
         entityState.optimisticUpdates.commit(userGameId);
@@ -989,10 +914,7 @@ function createUserGamesStore() {
       entityOperations.updateMany(updates);
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/bulk-update`, {
-          method: 'PUT',
-          body: JSON.stringify(data),
-        });
+        const response = await api.put(`${config.apiUrl}/user-games/bulk-update`, data);
         
         const result: SuccessResponse = await response.json();
         
@@ -1057,7 +979,7 @@ function createUserGamesStore() {
       entityState.pagination.total = Math.max(0, entityState.pagination.total - data.user_game_ids.length);
 
       try {
-        await apiCall(`${config.apiUrl}/user-games/bulk-delete`, {
+        await api.call(`${config.apiUrl}/user-games/bulk-delete`, {
           method: 'DELETE',
           body: JSON.stringify(data),
         });
@@ -1140,17 +1062,14 @@ function createUserGamesStore() {
       entityOperations.updateMany(updates);
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/bulk-add-platforms`, {
-          method: 'POST',
-          body: JSON.stringify(data),
-        });
+        const response = await api.post(`${config.apiUrl}/user-games/bulk-add-platforms`, data);
         
         const result: SuccessResponse = await response.json();
         
         // For platform operations, we need to reload affected games to get proper server IDs
         // But we'll do it more efficiently by only reloading affected games
-        const updatedGamesPromises = data.user_game_ids.map(id => 
-          apiCall(`${config.apiUrl}/user-games/${id}`).then(res => res.json())
+        const updatedGamesPromises = data.user_game_ids.map(id =>
+          api.get(`${config.apiUrl}/user-games/${id}`).then(res => res.json())
         );
         
         const updatedGames: UserGame[] = await Promise.all(updatedGamesPromises);
@@ -1227,7 +1146,7 @@ function createUserGamesStore() {
       entityOperations.updateMany(updates);
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/bulk-remove-platforms`, {
+        const response = await api.call(`${config.apiUrl}/user-games/bulk-remove-platforms`, {
           method: 'DELETE',
           body: JSON.stringify(data),
         });
@@ -1271,7 +1190,7 @@ function createUserGamesStore() {
       entityState.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/user-games/stats`);
+        const response = await api.get(`${config.apiUrl}/user-games/stats`);
         const stats: CollectionStats = await response.json();
 
         entityState.stats = stats;

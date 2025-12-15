@@ -241,12 +241,12 @@ describe('Games Store API Integration', () => {
 
   describe('Error Handling', () => {
     it('should handle API errors and update error state', async () => {
-      // Test error response - apiCall throws "HTTP {status}: {statusText}"
+      // Test error response - ApiService extracts detail from JSON error response
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(404, 'Game not found'));
 
-      await expect(games.getGame(toGameId(99999))).rejects.toThrow('HTTP 404: Error');
+      await expect(games.getGame(toGameId(99999))).rejects.toThrow('Game not found');
 
-      expect(games.value.error).toBe('HTTP 404: Error');
+      expect(games.value.error).toBe('Game not found');
       expect(games.value.isLoading).toBe(false);
     });
 
@@ -262,10 +262,10 @@ describe('Games Store API Integration', () => {
     it('should clear error state when clearError is called', async () => {
       // Create an error state by causing a failed API call
       mockFetch.mockImplementation(APIResponseMock.mockErrorResponse(500, 'Server error'));
-      await expect(games.getGame(toGameId(99999))).rejects.toThrow('HTTP 500: Error');
+      await expect(games.getGame(toGameId(99999))).rejects.toThrow('Server error');
 
       // Verify error state was set
-      expect(games.value.error).toBe('HTTP 500: Error');
+      expect(games.value.error).toBe('Server error');
 
       // Clear the error
       games.clearError();

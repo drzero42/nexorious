@@ -5,8 +5,8 @@
  * cancelling, and deleting background jobs (sync, import, export).
  */
 
-import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { api } from '$lib/services/api';
 import type {
   Job,
   JobListResponse,
@@ -52,52 +52,6 @@ const initialState: JobsState = {
 function createJobsStore() {
   let state = $state<JobsState>({ ...initialState });
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authState.accessToken}`,
-        ...options.headers
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${auth.value.accessToken}`,
-              ...options.headers
-            }
-          });
-        }
-      }
-
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.detail) {
-          errorMessage = errorBody.detail;
-        }
-      } catch {
-        // Use default message if we can't parse the error body
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    return response;
-  };
-
   const store = {
     get value() {
       return state;
@@ -126,7 +80,7 @@ function createJobsStore() {
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());
 
-        const response = await apiCall(`${config.apiUrl}/jobs/?${params}`);
+        const response = await api.get(`${config.apiUrl}/jobs/?${params}`);
         const data: JobListResponse = await response.json();
 
         state.jobs = data.jobs;
@@ -160,7 +114,7 @@ function createJobsStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/jobs/${jobId}`);
+        const response = await api.get(`${config.apiUrl}/jobs/${jobId}`);
         const job: Job = await response.json();
 
         state.currentJob = job;
@@ -188,9 +142,7 @@ function createJobsStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/jobs/${jobId}/cancel`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/jobs/${jobId}/cancel`);
         const result: JobCancelResponse = await response.json();
 
         if (result.success && result.job) {
@@ -221,9 +173,7 @@ function createJobsStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/jobs/${jobId}`, {
-          method: 'DELETE'
-        });
+        const response = await api.delete(`${config.apiUrl}/jobs/${jobId}`);
         const result: JobDeleteResponse = await response.json();
 
         if (result.success) {
@@ -254,9 +204,7 @@ function createJobsStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/jobs/${jobId}/confirm`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/jobs/${jobId}/confirm`);
         const result: JobConfirmResponse = await response.json();
 
         if (result.success && result.job) {

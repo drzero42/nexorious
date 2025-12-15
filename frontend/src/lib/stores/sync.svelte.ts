@@ -5,8 +5,8 @@
  * sync settings, and triggering manual syncs.
  */
 
-import { auth } from './auth.svelte';
 import { config } from '$lib/env';
+import { api } from '$lib/services/api';
 import type {
   SyncConfig,
   SyncConfigListResponse,
@@ -37,52 +37,6 @@ function createSyncStore() {
     error: null
   });
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
-    const authState = auth.value;
-    if (!authState.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authState.accessToken}`,
-        ...options.headers
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        const refreshed = await auth.refreshAuth();
-        if (refreshed) {
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${auth.value.accessToken}`,
-              ...options.headers
-            }
-          });
-        }
-      }
-
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.detail) {
-          errorMessage = errorBody.detail;
-        }
-      } catch {
-        // Use default message if we can't parse the error body
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    return response;
-  };
-
   const store = {
     get value() {
       return state;
@@ -106,7 +60,7 @@ function createSyncStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/sync/config`);
+        const response = await api.get(`${config.apiUrl}/sync/config`);
         const data: SyncConfigListResponse = await response.json();
 
         state.configs = data.configs;
@@ -125,7 +79,7 @@ function createSyncStore() {
      */
     getConfig: async (platform: SyncPlatform) => {
       try {
-        const response = await apiCall(`${config.apiUrl}/sync/config/${platform}`);
+        const response = await api.get(`${config.apiUrl}/sync/config/${platform}`);
         const syncConfig: SyncConfig = await response.json();
 
         // Update in the list
@@ -155,10 +109,7 @@ function createSyncStore() {
       state.error = null;
 
       try {
-        const response = await apiCall(`${config.apiUrl}/sync/config/${platform}`, {
-          method: 'PUT',
-          body: JSON.stringify(updates)
-        });
+        const response = await api.put(`${config.apiUrl}/sync/config/${platform}`, updates);
         const syncConfig: SyncConfig = await response.json();
 
         // Update in the list
@@ -186,9 +137,7 @@ function createSyncStore() {
       state.isSyncing.set(platform, true);
 
       try {
-        const response = await apiCall(`${config.apiUrl}/sync/${platform}`, {
-          method: 'POST'
-        });
+        const response = await api.post(`${config.apiUrl}/sync/${platform}`);
         const result: ManualSyncTriggerResponse = await response.json();
 
         // Update sync status
@@ -213,7 +162,7 @@ function createSyncStore() {
      */
     getSyncStatus: async (platform: SyncPlatform): Promise<SyncStatusResponse> => {
       try {
-        const response = await apiCall(`${config.apiUrl}/sync/${platform}/status`);
+        const response = await api.get(`${config.apiUrl}/sync/${platform}/status`);
         const status: SyncStatusResponse = await response.json();
 
         state.syncStatuses.set(platform, status);
