@@ -3,8 +3,6 @@ Unit tests for business logic functions across the application.
 Tests core utility functions, data processing, and business rules.
 """
 
-from unittest.mock import patch
-
 from app.services.igdb import IGDBService, GameMetadata
 from app.services.storage import StorageService
 
@@ -62,14 +60,31 @@ class TestIGDBServiceBusinessLogic:
 
 class TestStorageServiceBusinessLogic:
     """Test business logic in storage service."""
-    
-    @patch('app.services.storage.Path.mkdir')
-    def test_ensure_directories_creation(self, mock_mkdir):
-        """Test that directories are created during initialization."""
-        StorageService()
-        
-        # mkdir should be called for both storage_path and cover_art_path
-        assert mock_mkdir.call_count >= 2
+
+    def test_ensure_directories_creation(self, tmp_path, monkeypatch):
+        """Test that directories are actually created during initialization."""
+        # Use a temporary directory for the storage path
+        test_storage_path = tmp_path / "test_storage"
+
+        # Patch the settings to use our temporary path
+        monkeypatch.setattr('app.services.storage.settings.storage_path', str(test_storage_path))
+
+        # Directories should not exist before initialization
+        assert not test_storage_path.exists()
+        assert not (test_storage_path / "cover_art").exists()
+
+        # Create the service - this should create the directories
+        service = StorageService()
+
+        # Verify directories were actually created
+        assert test_storage_path.exists()
+        assert test_storage_path.is_dir()
+        assert (test_storage_path / "cover_art").exists()
+        assert (test_storage_path / "cover_art").is_dir()
+
+        # Verify the service paths are set correctly
+        assert service.storage_path == test_storage_path
+        assert service.cover_art_path == test_storage_path / "cover_art"
     
     def test_get_cover_art_filename_generation(self):
         """Test cover art filename generation logic."""
@@ -226,7 +241,6 @@ class TestPydanticRatingValidation:
     def test_valid_rating_in_schema(self):
         """Test that valid ratings are accepted by the schema."""
         from app.schemas.user_game import UserGameCreateRequest
-        import pytest
 
         # Valid ratings should not raise
         for rating in [1.0, 2.5, 3.0, 4.5, 5.0]:
