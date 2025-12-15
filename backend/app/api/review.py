@@ -28,6 +28,7 @@ from ..schemas.review import (
     ReviewSummary,
     ReviewCountsByType,
     ReviewItemStatus,
+    ReviewSource,
     IGDBCandidate,
 )
 from ..models.job import BackgroundJobType
@@ -110,16 +111,19 @@ async def list_review_items(
         default=None, description="Filter by status"
     ),
     job_id: Optional[str] = Query(default=None, description="Filter by job ID"),
+    source: Optional[ReviewSource] = Query(
+        default=None, description="Filter by source type (import or sync)"
+    ),
 ):
     """
     List review items for the current user.
 
-    By default, returns all pending review items. Can be filtered by status
-    or job ID. Results are paginated and sorted by creation date (oldest first)
-    to show items in the order they were created.
+    By default, returns all pending review items. Can be filtered by status,
+    job ID, or source type (import/sync). Results are paginated and sorted
+    by creation date (oldest first) to show items in the order they were created.
     """
     logger.debug(
-        f"Listing review items for user {current_user.id}: status={status}, job_id={job_id}"
+        f"Listing review items for user {current_user.id}: status={status}, job_id={job_id}, source={source}"
     )
 
     # Build query - only show items for the current user
@@ -138,6 +142,11 @@ async def list_review_items(
                 detail="Job not found",
             )
         query = query.where(ReviewItem.job_id == job_id)
+
+    if source:
+        # Filter by job type (import or sync)
+        job_type = BackgroundJobType.IMPORT if source == ReviewSource.IMPORT else BackgroundJobType.SYNC
+        query = query.join(Job, ReviewItem.job_id == Job.id).where(Job.job_type == job_type)
 
     # Get total count before pagination
     count_query = select(func.count()).select_from(query.subquery())

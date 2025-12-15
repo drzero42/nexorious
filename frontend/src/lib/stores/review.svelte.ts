@@ -15,11 +15,11 @@ import type {
   MatchResponse,
   ReviewFilters
 } from '$lib/types/jobs';
-import { ReviewItemStatus } from '$lib/types/jobs';
+import { ReviewItemStatus, ReviewSource } from '$lib/types/jobs';
 
 // Re-export types and enums for convenience
 export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewFilters };
-export { ReviewItemStatus };
+export { ReviewItemStatus, ReviewSource };
 
 export interface ReviewState {
   items: ReviewItem[];
@@ -128,6 +128,7 @@ function createReviewStore() {
 
         if (filters.status) params.append('status', filters.status);
         if (filters.job_id) params.append('job_id', filters.job_id);
+        if (filters.source) params.append('source', filters.source);
 
         params.append('page', page.toString());
         params.append('per_page', per_page.toString());

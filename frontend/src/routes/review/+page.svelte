@@ -5,6 +5,7 @@
 	import {
 		review,
 		ReviewItemStatus,
+		ReviewSource,
 		type ReviewItem,
 		type ReviewFilters,
 		type IGDBCandidate
@@ -25,8 +26,9 @@
 	const pagination = $derived(review.value.pagination);
 	const wsStatus = $derived(websocket.value.status);
 
-	// Parse job_id from URL query params
+	// Parse query params from URL
 	const jobIdFromUrl = $derived($page.url.searchParams.get('job_id'));
+	const sourceFromUrl = $derived($page.url.searchParams.get('source'));
 
 	let unsubscribeReviewUpdate: (() => void) | null = null;
 
@@ -34,6 +36,9 @@
 		// Initialize filters from URL
 		if (jobIdFromUrl) {
 			filters.job_id = jobIdFromUrl;
+		}
+		if (sourceFromUrl === 'import' || sourceFromUrl === 'sync') {
+			filters.source = sourceFromUrl === 'import' ? ReviewSource.IMPORT : ReviewSource.SYNC;
 		}
 		loadItems();
 		review.loadSummary();
@@ -149,7 +154,7 @@
 	}
 
 	const hasFilters = $derived(
-		filters.status !== undefined || filters.job_id !== undefined
+		filters.status !== undefined || filters.job_id !== undefined || filters.source !== undefined
 	);
 
 	// Get candidates from selected item
@@ -261,6 +266,45 @@
 		<div
 			class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6"
 		>
+			<!-- Source Filter Toggle -->
+			<div class="mb-4">
+				<span id="source-filter-label" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Source
+				</span>
+				<div class="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 p-1 bg-gray-50 dark:bg-gray-700/50" role="group" aria-labelledby="source-filter-label">
+					<button
+						type="button"
+						class="px-4 py-2 text-sm font-medium rounded-md transition-colors {filters.source === undefined
+							? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+							: 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+						onclick={() => { delete filters.source; handleFilterChange(); }}
+						aria-pressed={filters.source === undefined}
+					>
+						All
+					</button>
+					<button
+						type="button"
+						class="px-4 py-2 text-sm font-medium rounded-md transition-colors {filters.source === ReviewSource.IMPORT
+							? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+							: 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+						onclick={() => { filters.source = ReviewSource.IMPORT; handleFilterChange(); }}
+						aria-pressed={filters.source === ReviewSource.IMPORT}
+					>
+						Imports
+					</button>
+					<button
+						type="button"
+						class="px-4 py-2 text-sm font-medium rounded-md transition-colors {filters.source === ReviewSource.SYNC
+							? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+							: 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+						onclick={() => { filters.source = ReviewSource.SYNC; handleFilterChange(); }}
+						aria-pressed={filters.source === ReviewSource.SYNC}
+					>
+						Syncs
+					</button>
+				</div>
+			</div>
+
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<!-- Status Filter -->
 				<div>
