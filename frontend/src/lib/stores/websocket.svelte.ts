@@ -10,7 +10,9 @@ import { config } from '$lib/env';
 import { auth } from './auth.svelte';
 import { jobs } from './jobs.svelte';
 import { review } from './review.svelte';
+import { notifications } from './notifications.svelte';
 import { JobStatus, type Job } from '$lib/types/jobs';
+import { getJobTypeLabel, getJobSourceLabel } from '$lib/types/jobs';
 
 // ============================================================================
 // Types
@@ -282,6 +284,9 @@ function createWebSocketStore() {
         // Update jobs store with the new job data
         updateJobsStore(message.event, jobMessage.job);
 
+        // Show toast notifications for job completions and failures
+        showJobNotification(message.event, jobMessage.job);
+
         // Notify event listeners
         const listeners = eventListeners.get(message.event);
         if (listeners) {
@@ -329,6 +334,29 @@ function createWebSocketStore() {
       review.loadSummary().catch(() => {
         // Ignore errors - this is a best-effort refresh
       });
+    }
+  }
+
+  /**
+   * Show toast notifications for job completion and failure events.
+   */
+  function showJobNotification(eventType: WebSocketEventType, job: Job): void {
+    const jobLabel = `${getJobTypeLabel(job.job_type)} (${getJobSourceLabel(job.source)})`;
+
+    switch (eventType) {
+      case WebSocketEventType.JOB_COMPLETED:
+        notifications.showSuccess(`${jobLabel} completed successfully`);
+        break;
+      case WebSocketEventType.JOB_FAILED:
+        notifications.showError(
+          job.error_message
+            ? `${jobLabel} failed: ${job.error_message}`
+            : `${jobLabel} failed`
+        );
+        break;
+      case WebSocketEventType.JOB_CREATED:
+        notifications.showInfo(`${jobLabel} started`);
+        break;
     }
   }
 

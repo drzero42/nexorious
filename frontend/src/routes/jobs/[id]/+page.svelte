@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { jobs, JobStatus } from '$lib/stores';
+	import { websocket, WebSocketEventType, type JobWebSocketMessage } from '$lib/stores/websocket.svelte';
 	import { RouteGuard, ProgressBar } from '$lib/components';
 	import {
 		getJobTypeLabel,
@@ -37,11 +38,45 @@
 	const showProgress = $derived(
 		job?.status === JobStatus.PROCESSING || job?.status === JobStatus.FINALIZING
 	);
+	const wsStatus = $derived(websocket.value.status);
+
+	let unsubscribers: (() => void)[] = [];
 
 	onMount(() => {
 		const jobId = $page.params.id;
 		if (jobId) {
 			jobs.getJob(jobId);
+
+			// Connect to WebSocket for real-time updates
+			websocket.connect();
+
+			// Track this job for polling fallback
+			websocket.trackJob(jobId);
+
+			// Subscribe to relevant events for this specific job
+			const handleJobUpdate = (message: JobWebSocketMessage) => {
+				if (message.job.id === jobId) {
+					// The websocket store already updates currentJob via updateJobsStore
+				}
+			};
+
+			unsubscribers.push(
+				websocket.on(WebSocketEventType.JOB_PROGRESS, handleJobUpdate),
+				websocket.on(WebSocketEventType.JOB_STATUS_CHANGE, handleJobUpdate),
+				websocket.on(WebSocketEventType.JOB_COMPLETED, handleJobUpdate),
+				websocket.on(WebSocketEventType.JOB_FAILED, handleJobUpdate)
+			);
+		}
+	});
+
+	onDestroy(() => {
+		// Clean up WebSocket subscriptions
+		unsubscribers.forEach((unsub) => unsub());
+
+		// Stop tracking job for polling
+		const jobId = $page.params.id;
+		if (jobId) {
+			websocket.untrackJob(jobId);
 		}
 	});
 
@@ -175,6 +210,18 @@
 							>
 								{getJobStatusLabel(job.status)}
 							</span>
+							<!-- WebSocket Status Indicator -->
+							{#if wsStatus === 'connected'}
+								<span class="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400" title="Receiving live updates">
+									<span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+									Live
+								</span>
+							{:else if wsStatus === 'polling'}
+								<span class="flex items-center gap-1.5 text-xs text-yellow-600 dark:text-yellow-400" title="Polling for updates">
+									<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+									Polling
+								</span>
+							{/if}
 							<button
 								class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md"
 								onclick={handleRefresh}
