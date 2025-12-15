@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from .wishlist import Wishlist
     from .import_job import ImportJob
     from .job import Job
-    from .steam_game import SteamGame
     from .darkadia_game import DarkadiaGame
     from .darkadia_import import DarkadiaImport
     from .user_sync_config import UserSyncConfig
@@ -57,7 +56,6 @@ class User(SQLModel, table=True):
     wishlists: List["Wishlist"] = Relationship(back_populates="user")
     import_jobs: List["ImportJob"] = Relationship(back_populates="user")
     jobs: List["Job"] = Relationship(back_populates="user")
-    steam_games: List["SteamGame"] = Relationship(back_populates="user")
     darkadia_games: List["DarkadiaGame"] = Relationship(back_populates="user")
     darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user")
     sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")

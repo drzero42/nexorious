@@ -20,7 +20,6 @@ from .job import (
     BackgroundJobPriority,
     ReviewItemStatus,
 )
-from .steam_game import SteamGame
 from .darkadia_game import DarkadiaGame
 from .darkadia_import import DarkadiaImport
 from .user_sync_config import UserSyncConfig, SyncFrequency
@@ -46,7 +45,6 @@ __all__ = [
     "BackgroundJobStatus",
     "BackgroundJobPriority",
     "ReviewItemStatus",
-    "SteamGame",
     "DarkadiaGame",
     "DarkadiaImport",
     "UserSyncConfig",

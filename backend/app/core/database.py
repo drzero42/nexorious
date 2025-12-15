@@ -22,7 +22,6 @@ from ..models import (  # noqa: F401
     UserGameTag,
     Wishlist,
     ImportJob,
-    SteamGame,
     DarkadiaGame,
     DarkadiaImport,
 )
