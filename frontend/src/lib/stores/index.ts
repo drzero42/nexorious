@@ -126,3 +126,15 @@ export type { IGDBCandidate } from '$lib/types/jobs';
 export { sync } from './sync.svelte';
 export type { SyncConfig, SyncConfigUpdateRequest, SyncStatusResponse, SyncState } from './sync.svelte';
 export { SyncFrequency, SyncPlatform } from './sync.svelte';
+
+// WebSocket store
+export { websocket } from './websocket.svelte';
+export type {
+  WebSocketStatus,
+  WebSocketState,
+  WebSocketMessage,
+  ConnectionMessage,
+  JobWebSocketMessage,
+  WebSocketEventCallback
+} from './websocket.svelte';
+export { WebSocketEventType } from './websocket.svelte';
