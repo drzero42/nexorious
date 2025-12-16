@@ -25,6 +25,7 @@ from .services.batch_session_manager import (
     startup_batch_session_manager,
     shutdown_batch_session_manager,
 )
+from .worker.broker import broker
 
 
 # Configure logging
@@ -67,6 +68,10 @@ async def lifespan(app: FastAPI):
     await startup_batch_session_manager()
     logger.info("Batch session manager initialized")
 
+    # Start the task broker for sending tasks to workers
+    await broker.startup()
+    logger.info("Task broker initialized")
+
     # Warn if IGDB credentials are not configured
     if not settings.igdb_client_id or not settings.igdb_client_secret:
         logger.warning(
@@ -77,6 +82,8 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Nexorious Game Collection Management Service")
+    await broker.shutdown()
+    logger.info("Task broker shutdown completed")
     await shutdown_batch_session_manager()
     logger.info("Batch session manager shutdown completed")
 
@@ -111,11 +118,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     logger.error(f"Errors: {exc.errors()}")
     logger.error(f"Body received: {body.decode() if body else 'No body'}")
 
+    # Safely convert body to string, handling bytes
+    body_content = None
+    if hasattr(exc, "body") and exc.body is not None:
+        if isinstance(exc.body, bytes):
+            body_content = exc.body.decode("utf-8", errors="replace")
+        else:
+            body_content = str(exc.body)
+
     return JSONResponse(
         status_code=422,
         content={
             "detail": exc.errors(),
-            "body": str(exc.body) if hasattr(exc, "body") else None,
+            "body": body_content,
         },
     )
 
