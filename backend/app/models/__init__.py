@@ -18,6 +18,7 @@ from .job import (
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
+    ImportJobSubtype,
     ReviewItemStatus,
 )
 from .darkadia_game import DarkadiaGame
@@ -44,6 +45,7 @@ __all__ = [
     "BackgroundJobSource",
     "BackgroundJobStatus",
     "BackgroundJobPriority",
+    "ImportJobSubtype",
     "ReviewItemStatus",
     "DarkadiaGame",
     "DarkadiaImport",
