@@ -142,14 +142,15 @@ class TestAuthRefreshEndpoint:
         """Test refresh with invalid token."""
         refresh_data = {"refresh_token": "invalid-token"}
         response = client.post("/api/auth/refresh", json=refresh_data)
-        
-        assert_api_error(response, 401, "Invalid refresh token")
-    
+
+        # verify_token raises "Could not validate credentials" for invalid JWT
+        assert_api_error(response, 401, "Could not validate credentials")
+
     def test_refresh_expired_token(self, client: TestClient, session: Session):
         """Test refresh with expired token."""
         user_data = create_test_user_data()
         register_and_login_user(client, user_data)
-        
+
         # Get user and create expired session
         user = session.exec(select(User).where(User.username == user_data["username"])).first()
         assert user is not None, "User should exist after registration"
@@ -161,11 +162,12 @@ class TestAuthRefreshEndpoint:
         )
         session.add(expired_session)
         session.commit()
-        
+
         refresh_data = {"refresh_token": "expired-refresh-token"}
         response = client.post("/api/auth/refresh", json=refresh_data)
-        
-        assert_api_error(response, 401, "Invalid refresh token")
+
+        # verify_token raises "Could not validate credentials" for invalid JWT
+        assert_api_error(response, 401, "Could not validate credentials")
     
     def test_refresh_missing_token(self, client: TestClient):
         """Test refresh with missing token."""

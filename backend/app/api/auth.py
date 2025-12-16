@@ -208,66 +208,58 @@ async def refresh_access_token(
     session: Annotated[Session, Depends(get_session)]
 ):
     """Refresh an access token using a refresh token."""
-    
-    try:
-        # Verify refresh token
-        payload = verify_token(refresh_data.refresh_token, token_type="refresh")
-        user_id = payload.get("sub")
-        
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
-            )
-        
-        # Check if refresh token exists in database
-        refresh_token_hash = hash_token(refresh_data.refresh_token)
-        session_record = session.exec(
-            select(UserSession).where(
-                (UserSession.user_id == user_id) & 
-                (UserSession.refresh_token_hash == refresh_token_hash) &
-                (UserSession.expires_at > datetime.now(timezone.utc))
-            )
-        ).first()
-        
-        if not session_record:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired refresh token"
-            )
-        
-        # Get user
-        user = session.get(User, user_id)
-        if not user or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or disabled"
-            )
-        
-        # Create new access token
-        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-        new_access_token = create_access_token(
-            data={"sub": user_id},
-            expires_delta=access_token_expires
-        )
-        
-        # Update session with new token hash
-        session_record.token_hash = hash_token(new_access_token)
-        session_record.updated_at = datetime.now(timezone.utc)
-        session.commit()
-        
-        return TokenResponse(
-            access_token=new_access_token,
-            refresh_token=refresh_data.refresh_token,  # Keep same refresh token
-            token_type="bearer",
-            expires_in=int(access_token_expires.total_seconds())
-        )
-        
-    except Exception:
+    # Verify refresh token
+    payload = verify_token(refresh_data.refresh_token, token_type="refresh")
+    user_id = payload.get("sub")
+
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token"
         )
+
+    # Check if refresh token exists in database
+    refresh_token_hash = hash_token(refresh_data.refresh_token)
+    session_record = session.exec(
+        select(UserSession).where(
+            (UserSession.user_id == user_id) &
+            (UserSession.refresh_token_hash == refresh_token_hash) &
+            (UserSession.expires_at > datetime.now(timezone.utc))
+        )
+    ).first()
+
+    if not session_record:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token"
+        )
+
+    # Get user
+    user = session.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or disabled"
+        )
+
+    # Create new access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    new_access_token = create_access_token(
+        data={"sub": user_id},
+        expires_delta=access_token_expires
+    )
+
+    # Update session with new token hash
+    session_record.token_hash = hash_token(new_access_token)
+    session_record.updated_at = datetime.now(timezone.utc)
+    session.commit()
+
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=refresh_data.refresh_token,  # Keep same refresh token
+        token_type="bearer",
+        expires_in=int(access_token_expires.total_seconds())
+    )
 
 
 @router.post("/logout", response_model=LogoutResponse)
