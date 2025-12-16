@@ -136,6 +136,7 @@ export interface ReviewItem {
   source_metadata: Record<string, unknown>;
   igdb_candidates: IGDBCandidate[] | Record<string, unknown>[];
   resolved_igdb_id: number | null;
+  match_confidence: number | null;
   created_at: string;
   resolved_at: string | null;
   job_type: string | null;
@@ -246,6 +247,19 @@ export interface SyncStatusResponse {
   active_job_id: string | null;
 }
 
+export interface IgnoredGame {
+  id: string;
+  source: SyncPlatform;
+  external_id: string;
+  title: string;
+  created_at: string;
+}
+
+export interface IgnoredGameListResponse {
+  items: IgnoredGame[];
+  total: number;
+}
+
 // ============================================================================
 // Helper functions
 // ============================================================================
@@ -348,6 +362,33 @@ export function formatDuration(seconds: number | null): string {
     const minutes = Math.round((seconds % 3600) / 60);
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
+}
+
+/**
+ * Review state categories based on match confidence.
+ */
+export type ReviewMatchState = 'auto_matched' | 'needs_input' | 'no_results';
+
+/**
+ * Confidence threshold for auto-matching.
+ * Items with confidence >= this value are considered auto-matched.
+ */
+export const AUTO_MATCH_CONFIDENCE_THRESHOLD = 0.85;
+
+/**
+ * Get the review state for a review item based on match confidence.
+ *
+ * @param item - The review item to check
+ * @returns 'auto_matched' if confidence >= 0.85, 'no_results' if no candidates, 'needs_input' otherwise
+ */
+export function getReviewState(item: ReviewItem | ReviewItemDetail): ReviewMatchState {
+  if (!item.igdb_candidates || item.igdb_candidates.length === 0) {
+    return 'no_results';
+  }
+  if (item.match_confidence !== null && item.match_confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD) {
+    return 'auto_matched';
+  }
+  return 'needs_input';
 }
 
 // ============================================================================
