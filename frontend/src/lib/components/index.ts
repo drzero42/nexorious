@@ -26,10 +26,7 @@ export { default as ImportGameTable } from './ImportGameTable.svelte';
 export { default as ImportStatsOverview } from './ImportStatsOverview.svelte';
 export { default as ImportConfigurationSection } from './ImportConfigurationSection.svelte';
 
-// Darkadia CSV Import components
-export { default as DarkadiaFileUpload } from './DarkadiaFileUpload.svelte';
-export { default as DarkadiaGameCard } from './DarkadiaGameCard.svelte';
-export { default as DarkadiaGamesTable } from './DarkadiaGamesTable.svelte';
+// Platform/Storefront resolution components
 export { default as PlatformStorefrontModal } from './PlatformStorefrontModal.svelte';
 
 // Platform Resolution components (for other parts of app)
