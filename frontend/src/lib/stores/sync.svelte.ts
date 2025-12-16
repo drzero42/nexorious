@@ -12,18 +12,23 @@ import type {
   SyncConfigListResponse,
   SyncConfigUpdateRequest,
   ManualSyncTriggerResponse,
-  SyncStatusResponse
+  SyncStatusResponse,
+  IgnoredGame,
+  IgnoredGameListResponse
 } from '$lib/types/jobs';
 import { SyncFrequency, SyncPlatform } from '$lib/types/jobs';
 
 // Re-export types and enums for convenience
-export type { SyncConfig, SyncConfigUpdateRequest, SyncStatusResponse };
+export type { SyncConfig, SyncConfigUpdateRequest, SyncStatusResponse, IgnoredGame };
 export { SyncFrequency, SyncPlatform };
 
 export interface SyncState {
   configs: SyncConfig[];
   syncStatuses: Map<string, SyncStatusResponse>;
+  ignoredGames: IgnoredGame[];
+  ignoredGamesTotal: number;
   isLoading: boolean;
+  isLoadingIgnored: boolean;
   isSyncing: Map<string, boolean>;
   error: string | null;
 }
@@ -32,7 +37,10 @@ function createSyncStore() {
   let state = $state<SyncState>({
     configs: [],
     syncStatuses: new Map(),
+    ignoredGames: [],
+    ignoredGamesTotal: 0,
     isLoading: false,
+    isLoadingIgnored: false,
     isSyncing: new Map(),
     error: null
   });
@@ -200,6 +208,61 @@ function createSyncStore() {
     },
 
     /**
+     * Load ignored games list with optional source filter.
+     */
+    loadIgnoredGames: async (source?: SyncPlatform, skip: number = 0, limit: number = 100) => {
+      state.isLoadingIgnored = true;
+      state.error = null;
+
+      try {
+        const params = new URLSearchParams();
+        if (source) params.append('source', source);
+        params.append('skip', skip.toString());
+        params.append('limit', limit.toString());
+
+        const response = await api.get(`${config.apiUrl}/sync/ignored?${params}`);
+        const data: IgnoredGameListResponse = await response.json();
+
+        state.ignoredGames = data.items;
+        state.ignoredGamesTotal = data.total;
+        state.isLoadingIgnored = false;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to load ignored games';
+        state.isLoadingIgnored = false;
+        state.error = errorMessage;
+        throw error;
+      }
+    },
+
+    /**
+     * Remove a game from the ignored list (it will appear in the next sync).
+     */
+    unignoreGame: async (id: string) => {
+      state.error = null;
+
+      try {
+        await api.delete(`${config.apiUrl}/sync/ignored/${id}`);
+
+        // Remove from local state
+        state.ignoredGames = state.ignoredGames.filter((g) => g.id !== id);
+        state.ignoredGamesTotal = Math.max(0, state.ignoredGamesTotal - 1);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to unignore game';
+        state.error = errorMessage;
+        throw error;
+      }
+    },
+
+    /**
+     * Get the count of ignored games.
+     */
+    get ignoredCount() {
+      return state.ignoredGamesTotal;
+    },
+
+    /**
      * Clear error state.
      */
     clearError: () => {
@@ -213,7 +276,10 @@ function createSyncStore() {
       state = {
         configs: [],
         syncStatuses: new Map(),
+        ignoredGames: [],
+        ignoredGamesTotal: 0,
         isLoading: false,
+        isLoadingIgnored: false,
         isSyncing: new Map(),
         error: null
       };
