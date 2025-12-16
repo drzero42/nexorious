@@ -287,8 +287,8 @@ async def websocket_jobs(
 
                 # Query active jobs for user
                 # Include non-terminal jobs AND jobs that completed recently
-                # Use naive datetime for DB comparison (SQLite/PostgreSQL store naive timestamps)
-                cutoff_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+                # Use timezone-aware datetime for comparison (PostgreSQL returns aware timestamps)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(
                     seconds=RECENTLY_COMPLETED_WINDOW_SECONDS
                 )
 

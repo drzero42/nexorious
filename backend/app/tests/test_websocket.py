@@ -560,3 +560,35 @@ class TestWebSocketChangeDetection:
 
         event = _detect_event_type(snapshot, snapshot)
         assert event is None
+
+
+class TestJobDurationSeconds:
+    """Tests for Job.duration_seconds property with mixed timezone datetimes."""
+
+    def test_duration_seconds_with_naive_started_at_no_completed_at(self):
+        """Test duration_seconds when started_at is naive and job is still running.
+
+        The duration_seconds property calculates: (completed_at or now()) - started_at
+        If started_at is naive (from DB) and we use timezone-aware now(), this fails with:
+        'can't subtract offset-naive and offset-aware datetime'
+
+        This reproduces the production error seen in WebSocket polling.
+        """
+        # Create a job with naive started_at in UTC (simulating what PostgreSQL returns)
+        # Use utcnow() to get a naive datetime that represents UTC time
+        job = Job(
+            user_id="test-user",
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+            progress_current=50,
+            progress_total=100,
+            started_at=datetime.now(timezone.utc).replace(tzinfo=None),  # Naive UTC datetime
+        )
+
+        # This should NOT raise "can't subtract offset-naive and offset-aware datetime"
+        duration = job.duration_seconds
+        assert duration is not None
+        # Duration should be small (just created) - allow some tolerance
+        assert -1 <= duration <= 10

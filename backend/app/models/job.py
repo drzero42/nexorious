@@ -149,7 +149,18 @@ class Job(SQLModel, table=True):
         if self.started_at is None:
             return None
         end_time = self.completed_at or datetime.now(timezone.utc)
-        return (end_time - self.started_at).total_seconds()
+        # Ensure both datetimes have consistent timezone handling
+        # PostgreSQL may return timezone-aware or naive datetimes depending on configuration
+        if end_time.tzinfo is not None and self.started_at.tzinfo is None:
+            # end_time is aware, started_at is naive - make started_at aware (assume UTC)
+            started = self.started_at.replace(tzinfo=timezone.utc)
+        elif end_time.tzinfo is None and self.started_at.tzinfo is not None:
+            # end_time is naive, started_at is aware - make end_time aware (assume UTC)
+            end_time = end_time.replace(tzinfo=timezone.utc)
+            started = self.started_at
+        else:
+            started = self.started_at
+        return (end_time - started).total_seconds()
 
 
 class ReviewItemStatus(str, Enum):
