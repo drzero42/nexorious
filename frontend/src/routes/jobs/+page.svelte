@@ -12,6 +12,8 @@
 	let confirmCancelJob = $state<Job | null>(null);
 	let isDeleting = $state(false);
 	let isCancelling = $state(false);
+	let cancelError = $state<string | null>(null);
+	let deleteError = $state<string | null>(null);
 
 	const jobsList = $derived(jobs.value.jobs);
 	const isLoading = $derived(jobs.value.isLoading);
@@ -58,30 +60,42 @@
 	}
 
 	async function handleCancel(job: Job) {
+		cancelError = null;
 		confirmCancelJob = job;
 	}
 
 	async function confirmCancel() {
 		if (!confirmCancelJob) return;
 		isCancelling = true;
+		cancelError = null;
 		try {
 			await jobs.cancelJob(confirmCancelJob.id);
 			confirmCancelJob = null;
+		} catch (e) {
+			console.error('Failed to cancel job:', e);
+			cancelError = e instanceof Error ? e.message : 'Failed to cancel job';
+			// Keep dialog open so user can see the error
 		} finally {
 			isCancelling = false;
 		}
 	}
 
 	async function handleDelete(job: Job) {
+		deleteError = null;
 		confirmDeleteJob = job;
 	}
 
 	async function confirmDelete() {
 		if (!confirmDeleteJob) return;
 		isDeleting = true;
+		deleteError = null;
 		try {
 			await jobs.deleteJob(confirmDeleteJob.id);
 			confirmDeleteJob = null;
+		} catch (e) {
+			console.error('Failed to delete job:', e);
+			deleteError = e instanceof Error ? e.message : 'Failed to delete job';
+			// Keep dialog open so user can see the error
 		} finally {
 			isDeleting = false;
 		}
@@ -97,6 +111,7 @@
 			filters.source !== undefined ||
 			filters.status !== undefined
 	);
+
 </script>
 
 <svelte:head>
@@ -299,171 +314,148 @@
 			{/if}
 		{/if}
 	</div>
-
-	<!-- Cancel Confirmation Modal -->
-	{#if confirmCancelJob}
-		<div
-			class="fixed inset-0 z-50 overflow-y-auto"
-			aria-labelledby="modal-title"
-			role="dialog"
-			aria-modal="true"
-		>
-			<div
-				class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"
-			>
-				<div
-					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-					aria-hidden="true"
-					onclick={() => (confirmCancelJob = null)}
-					onkeydown={(e) => e.key === 'Escape' && (confirmCancelJob = null)}
-					role="button"
-					tabindex="-1"
-				></div>
-				<span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true"
-					>&#8203;</span
-				>
-				<div
-					class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
-				>
-					<div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-						<div class="sm:flex sm:items-start">
-							<div
-								class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 dark:bg-yellow-900/20 sm:mx-0 sm:h-10 sm:w-10"
-							>
-								<svg
-									class="h-6 w-6 text-yellow-600 dark:text-yellow-400"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-									/>
-								</svg>
-							</div>
-							<div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-								<h3
-									class="text-lg leading-6 font-medium text-gray-900 dark:text-white"
-									id="modal-title"
-								>
-									Cancel Job
-								</h3>
-								<div class="mt-2">
-									<p class="text-sm text-gray-500 dark:text-gray-400">
-										Are you sure you want to cancel this job? This action cannot be undone.
-									</p>
-								</div>
-							</div>
-						</div>
-					</div>
-					<div
-						class="bg-gray-50 dark:bg-gray-800/50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-2"
-					>
-						<button
-							type="button"
-							class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-yellow-600 text-base font-medium text-white hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-							onclick={confirmCancel}
-							disabled={isCancelling}
-						>
-							{isCancelling ? 'Cancelling...' : 'Cancel Job'}
-						</button>
-						<button
-							type="button"
-							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-							onclick={() => (confirmCancelJob = null)}
-						>
-							Close
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Delete Confirmation Modal -->
-	{#if confirmDeleteJob}
-		<div
-			class="fixed inset-0 z-50 overflow-y-auto"
-			aria-labelledby="modal-title"
-			role="dialog"
-			aria-modal="true"
-		>
-			<div
-				class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"
-			>
-				<div
-					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-					aria-hidden="true"
-					onclick={() => (confirmDeleteJob = null)}
-					onkeydown={(e) => e.key === 'Escape' && (confirmDeleteJob = null)}
-					role="button"
-					tabindex="-1"
-				></div>
-				<span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true"
-					>&#8203;</span
-				>
-				<div
-					class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
-				>
-					<div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-						<div class="sm:flex sm:items-start">
-							<div
-								class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/20 sm:mx-0 sm:h-10 sm:w-10"
-							>
-								<svg
-									class="h-6 w-6 text-red-600 dark:text-red-400"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-									/>
-								</svg>
-							</div>
-							<div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-								<h3
-									class="text-lg leading-6 font-medium text-gray-900 dark:text-white"
-									id="modal-title"
-								>
-									Delete Job
-								</h3>
-								<div class="mt-2">
-									<p class="text-sm text-gray-500 dark:text-gray-400">
-										Are you sure you want to delete this job? This will also delete all associated
-										review items. This action cannot be undone.
-									</p>
-								</div>
-							</div>
-						</div>
-					</div>
-					<div
-						class="bg-gray-50 dark:bg-gray-800/50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-2"
-					>
-						<button
-							type="button"
-							class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-							onclick={confirmDelete}
-							disabled={isDeleting}
-						>
-							{isDeleting ? 'Deleting...' : 'Delete'}
-						</button>
-						<button
-							type="button"
-							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-							onclick={() => (confirmDeleteJob = null)}
-						>
-							Cancel
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	{/if}
 </RouteGuard>
+
+<!-- Cancel Confirmation Modal - OUTSIDE RouteGuard -->
+{#if confirmCancelJob}
+	<!-- Modal backdrop -->
+	<div
+		style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(107, 114, 128, 0.75); z-index: 9998;"
+		onclick={() => { cancelError = null; confirmCancelJob = null; }}
+		onkeydown={(e) => { if (e.key === 'Escape') { cancelError = null; confirmCancelJob = null; } }}
+		role="button"
+		tabindex="-1"
+		aria-hidden="true"
+	></div>
+	<!-- Modal dialog -->
+	<div
+		style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; background: white; border-radius: 8px; max-width: 32rem; width: calc(100% - 32px); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="cancel-modal-title"
+	>
+		<div style="padding: 24px;">
+			<div style="display: flex; align-items: flex-start; gap: 16px;">
+				<div
+					style="flex-shrink: 0; width: 40px; height: 40px; background: #fef3c7; border-radius: 50%; display: flex; align-items: center; justify-content: center;"
+				>
+					<svg
+						style="width: 24px; height: 24px; stroke: #ca8a04;"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+						/>
+					</svg>
+				</div>
+				<div style="flex: 1;">
+					<h3 id="cancel-modal-title" style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">
+						Cancel Job
+					</h3>
+					<p style="font-size: 14px; color: #6b7280; margin: 0;">
+						Are you sure you want to cancel this job? This action cannot be undone.
+					</p>
+					{#if cancelError}
+						<div style="margin-top: 12px; padding: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;">
+							<p style="font-size: 14px; color: #dc2626; margin: 0;">{cancelError}</p>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+		<div style="padding: 12px 24px; background: #f9fafb; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e5e7eb;">
+			<button
+				type="button"
+				style="padding: 8px 16px; background: white; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-weight: 500; cursor: pointer;"
+				onclick={() => { cancelError = null; confirmCancelJob = null; }}
+			>
+				Close
+			</button>
+			<button
+				type="button"
+				style="padding: 8px 16px; background: #ca8a04; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;"
+				onclick={confirmCancel}
+				disabled={isCancelling}
+			>
+				{isCancelling ? 'Cancelling...' : 'Cancel Job'}
+			</button>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete Confirmation Modal -->
+{#if confirmDeleteJob}
+	<!-- Modal backdrop -->
+	<div
+		style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(107, 114, 128, 0.75); z-index: 9998;"
+		onclick={() => { deleteError = null; confirmDeleteJob = null; }}
+		onkeydown={(e) => { if (e.key === 'Escape') { deleteError = null; confirmDeleteJob = null; } }}
+		role="button"
+		tabindex="-1"
+		aria-hidden="true"
+	></div>
+	<!-- Modal dialog -->
+	<div
+		style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; background: white; border-radius: 8px; max-width: 32rem; width: calc(100% - 32px); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="delete-modal-title"
+	>
+		<div style="padding: 24px;">
+			<div style="display: flex; align-items: flex-start; gap: 16px;">
+				<div
+					style="flex-shrink: 0; width: 40px; height: 40px; background: #fee2e2; border-radius: 50%; display: flex; align-items: center; justify-content: center;"
+				>
+					<svg
+						style="width: 24px; height: 24px; stroke: #dc2626;"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+						/>
+					</svg>
+				</div>
+				<div style="flex: 1;">
+					<h3 id="delete-modal-title" style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">
+						Delete Job
+					</h3>
+					<p style="font-size: 14px; color: #6b7280; margin: 0;">
+						Are you sure you want to delete this job? This will also delete all associated review items. This action cannot be undone.
+					</p>
+					{#if deleteError}
+						<div style="margin-top: 12px; padding: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;">
+							<p style="font-size: 14px; color: #dc2626; margin: 0;">{deleteError}</p>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+		<div style="padding: 12px 24px; background: #f9fafb; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e5e7eb;">
+			<button
+				type="button"
+				style="padding: 8px 16px; background: white; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-weight: 500; cursor: pointer;"
+				onclick={() => { deleteError = null; confirmDeleteJob = null; }}
+			>
+				Cancel
+			</button>
+			<button
+				type="button"
+				style="padding: 8px 16px; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;"
+				onclick={confirmDelete}
+				disabled={isDeleting}
+			>
+				{isDeleting ? 'Deleting...' : 'Delete'}
+			</button>
+		</div>
+	</div>
+{/if}

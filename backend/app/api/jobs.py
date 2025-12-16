@@ -28,6 +28,7 @@ from ..schemas.job import (
     JobCancelResponse,
     JobDeleteResponse,
     JobConfirmResponse,
+    JobDiscardResponse,
     JobType,
     JobSource,
     JobStatus,
@@ -308,6 +309,73 @@ async def delete_job(
         success=True,
         message="Job deleted successfully",
         deleted_job_id=job_id,
+    )
+
+
+@router.post("/{job_id}/discard", response_model=JobDiscardResponse)
+async def discard_import(
+    job_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Discard an import job and all associated review items.
+
+    Works for import jobs in PENDING, PROCESSING, or AWAITING_REVIEW status.
+    Completely removes the job and all review items from the database.
+    """
+    logger.info(f"User {current_user.id} requesting to discard import job {job_id}")
+
+    job = session.get(Job, job_id)
+
+    if not job or job.user_id != current_user.id:
+        logger.warning(f"Job {job_id} not found for discard")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    if job.job_type != BackgroundJobType.IMPORT:
+        logger.warning(f"Cannot discard job {job_id} - not an import job")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only import jobs can be discarded",
+        )
+
+    # Allow discarding jobs in PENDING, PROCESSING, or AWAITING_REVIEW status
+    allowed_statuses = {
+        BackgroundJobStatus.PENDING,
+        BackgroundJobStatus.PROCESSING,
+        BackgroundJobStatus.AWAITING_REVIEW,
+    }
+    if job.status not in allowed_statuses:
+        logger.warning(
+            f"Cannot discard job {job_id} - wrong status (status: {job.status})"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot discard job - must be pending, processing, or awaiting review. Current status: {job.status.value}",
+        )
+
+    # Count review items before deletion
+    review_item_count = session.exec(
+        select(func.count()).select_from(ReviewItem).where(ReviewItem.job_id == job_id)
+    ).one()
+
+    # Delete job (cascade will delete review items)
+    session.delete(job)
+    session.commit()
+
+    logger.info(
+        f"Import job {job_id} discarded by user {current_user.id} "
+        f"({review_item_count} review items deleted)"
+    )
+
+    return JobDiscardResponse(
+        success=True,
+        message="Import discarded successfully",
+        deleted_job_id=job_id,
+        deleted_review_items=review_item_count,
     )
 
 

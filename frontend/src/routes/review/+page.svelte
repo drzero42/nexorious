@@ -25,6 +25,9 @@
 	let platformMappings = $state<Record<string, string>>({});
 	let storefrontMappings = $state<Record<string, string>>({});
 	let isFinalizingImport = $state(false);
+	let isDiscardingImport = $state(false);
+	let showDiscardConfirmation = $state(false);
+	let discardError = $state<string | null>(null);
 
 	const items = $derived(review.value.items);
 	const summary = $derived(review.value.summary);
@@ -229,6 +232,24 @@
 			console.error('Failed to finalize import:', e);
 		} finally {
 			isFinalizingImport = false;
+		}
+	}
+
+	async function handleDiscardImport() {
+		if (!jobIdFromUrl) return;
+
+		isDiscardingImport = true;
+		discardError = null;
+		try {
+			await review.discardImport(jobIdFromUrl);
+			showDiscardConfirmation = false;
+			goto('/import/darkadia');
+		} catch (e) {
+			console.error('Failed to discard import:', e);
+			discardError = e instanceof Error ? e.message : 'Failed to discard import';
+			// Keep dialog open so user can see the error
+		} finally {
+			isDiscardingImport = false;
 		}
 	}
 
@@ -456,7 +477,7 @@
 			/>
 		{/if}
 
-		<!-- Finalize Import Button (for Darkadia imports) -->
+		<!-- Finalize/Discard Import Section (for Darkadia imports) -->
 		{#if isDarkadiaImport && jobIdFromUrl}
 			<div class="mb-6 flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-200 dark:border-indigo-800">
 				<div>
@@ -467,22 +488,32 @@
 						Once you've reviewed all items and mapped platforms, click to add games to your collection.
 					</p>
 				</div>
-				<button
-					type="button"
-					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-					disabled={!canFinalize}
-					onclick={handleFinalizeImport}
-				>
-					{#if isFinalizingImport}
-						<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-						</svg>
-						Finalizing...
-					{:else}
-						Finalize Import
-					{/if}
-				</button>
+				<div class="flex items-center gap-3">
+					<button
+						type="button"
+						class="inline-flex items-center px-4 py-2 border border-red-300 dark:border-red-700 text-sm font-medium rounded-md text-red-700 dark:text-red-400 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+						disabled={isDiscardingImport || isFinalizingImport}
+						onclick={() => { discardError = null; showDiscardConfirmation = true; }}
+					>
+						Discard Import
+					</button>
+					<button
+						type="button"
+						class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+						disabled={!canFinalize || isDiscardingImport}
+						onclick={handleFinalizeImport}
+					>
+						{#if isFinalizingImport}
+							<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							</svg>
+							Finalizing...
+						{:else}
+							Finalize Import
+						{/if}
+					</button>
+				</div>
 			</div>
 		{/if}
 
@@ -705,6 +736,80 @@
 							type="button"
 							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
 							onclick={closeModal}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Discard Import Confirmation Dialog -->
+	{#if showDiscardConfirmation}
+		<div
+			class="fixed inset-0 z-50 overflow-y-auto"
+			aria-labelledby="discard-modal-title"
+			role="dialog"
+			aria-modal="true"
+		>
+			<div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+				<div
+					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+					aria-hidden="true"
+					onclick={() => { discardError = null; showDiscardConfirmation = false; }}
+					onkeydown={(e) => { if (e.key === 'Escape') { discardError = null; showDiscardConfirmation = false; } }}
+					role="button"
+					tabindex="-1"
+				></div>
+				<span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+				<div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+					<div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6">
+						<div class="sm:flex sm:items-start">
+							<div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 sm:mx-0 sm:h-10 sm:w-10">
+								<svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+								</svg>
+							</div>
+							<div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+								<h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="discard-modal-title">
+									Discard Import?
+								</h3>
+								<div class="mt-2">
+									<p class="text-sm text-gray-500 dark:text-gray-400">
+										Are you sure you want to discard this import? This will permanently delete all {summary?.total_pending ?? 0} review items. This action cannot be undone.
+									</p>
+								</div>
+								{#if discardError}
+									<div class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200 dark:border-red-800">
+										<p class="text-sm text-red-700 dark:text-red-300">{discardError}</p>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</div>
+					<div class="bg-gray-50 dark:bg-gray-800/50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+						<button
+							type="button"
+							class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={handleDiscardImport}
+							disabled={isDiscardingImport}
+						>
+							{#if isDiscardingImport}
+								<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+								Discarding...
+							{:else}
+								Discard
+							{/if}
+						</button>
+						<button
+							type="button"
+							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
+							onclick={() => { discardError = null; showDiscardConfirmation = false; }}
+							disabled={isDiscardingImport}
 						>
 							Cancel
 						</button>

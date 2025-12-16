@@ -1114,3 +1114,181 @@ class TestMappingResolutionEndpoints:
             json={"resolutions": []},
         )
         assert response.status_code == 404
+
+
+class TestDiscardImport:
+    """Tests for POST /api/jobs/{job_id}/discard endpoint."""
+
+    def test_discard_import_success(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test successfully discarding an import job awaiting review."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Add some review items
+        for i in range(3):
+            review_item = ReviewItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                source_title=f"Test Game {i}",
+                status=ReviewItemStatus.PENDING,
+            )
+            session.add(review_item)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_job_id"] == job.id
+        assert data["deleted_review_items"] == 3
+        assert "discarded" in data["message"].lower()
+
+        # Verify job is deleted
+        deleted_job = session.get(Job, job.id)
+        assert deleted_job is None
+
+        # Verify review items are deleted (cascade)
+        remaining_items = session.exec(
+            select(ReviewItem).where(ReviewItem.job_id == job.id)
+        ).all()
+        assert len(remaining_items) == 0
+
+    def test_discard_job_not_found(self, client, auth_headers):
+        """Test discarding non-existent job returns 404."""
+        response = client.post(
+            "/api/jobs/non-existent-id/discard", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+    def test_discard_other_users_job(
+        self, client, auth_headers, session: Session
+    ):
+        """Test cannot discard another user's job."""
+        # Create a job for a different user
+        other_user = User(
+            username="otheruser",
+            password_hash="hash",
+        )
+        session.add(other_user)
+        session.commit()
+
+        job = Job(
+            user_id=other_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 404
+
+    def test_discard_non_import_job(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test cannot discard a sync job (only imports allowed)."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 409
+        assert "import" in response.json()["error"].lower()
+
+    def test_discard_pending_status_success(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test can discard a job in PENDING status."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PENDING,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_job_id"] == job.id
+
+        # Verify job is deleted
+        deleted_job = session.get(Job, job.id)
+        assert deleted_job is None
+
+    def test_discard_wrong_status_completed(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test cannot discard a completed job."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 409
+
+    def test_discard_processing_status_success(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test can discard a job in PROCESSING status (stuck jobs)."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_job_id"] == job.id
+
+        # Verify job is deleted
+        deleted_job = session.get(Job, job.id)
+        assert deleted_job is None
+
+    def test_discard_wrong_status_failed(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test cannot discard a failed job."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.FAILED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 409

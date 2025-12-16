@@ -16,12 +16,13 @@ import type {
   MatchResponse,
   ReviewFilters,
   PlatformSummaryResponse,
-  FinalizeImportResponse
+  FinalizeImportResponse,
+  JobDiscardResponse
 } from '$lib/types/jobs';
 import { ReviewItemStatus, ReviewSource } from '$lib/types/jobs';
 
 // Re-export types and enums for convenience
-export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewCountsByType, ReviewFilters, PlatformSummaryResponse, FinalizeImportResponse };
+export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewCountsByType, ReviewFilters, PlatformSummaryResponse, FinalizeImportResponse, JobDiscardResponse };
 export { ReviewItemStatus, ReviewSource };
 
 export interface ReviewState {
@@ -444,6 +445,22 @@ function createReviewStore() {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Failed to finalize import';
+        state.error = errorMessage;
+        throw error;
+      }
+    },
+
+    /**
+     * Discard an import job and all its review items.
+     */
+    discardImport: async (jobId: string): Promise<JobDiscardResponse> => {
+      try {
+        const response = await api.post(`${config.apiUrl}/jobs/${jobId}/discard`, {});
+        const data: JobDiscardResponse = await response.json();
+        return data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to discard import';
         state.error = errorMessage;
         throw error;
       }

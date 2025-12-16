@@ -91,6 +91,13 @@ export interface JobConfirmResponse {
   games_removed: number;
 }
 
+export interface JobDiscardResponse {
+  success: boolean;
+  message: string;
+  deleted_job_id: string;
+  deleted_review_items: number;
+}
+
 export interface JobFilters {
   job_type?: JobType;
   source?: JobSource;
