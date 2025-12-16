@@ -59,6 +59,32 @@ services:
     depends_on:
       - api
 
+  # Scheduler must start before workers to create taskiq tables
+  # Uses a wrapper script that creates tables then starts the scheduler
+  scheduler:
+    build: ./backend
+    command: >
+      sh -c "uv run python -c 'import asyncio; from app.worker.broker import broker; asyncio.run(broker.startup())' &&
+             touch /tmp/taskiq_ready &&
+             uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks"
+    environment:
+      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+      # Scheduler creates tables (no TASKIQ_SKIP_TABLE_CREATION)
+    volumes:
+      - ./backend:/app:Z
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/taskiq_ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+    deploy:
+      replicas: 1  # Must remain 1 - taskiq has no leader election
+
   worker:
     build: ./backend
     command: uv run taskiq worker app.worker.broker:broker app.worker.tasks
@@ -66,26 +92,16 @@ services:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
+      # Workers skip table creation - scheduler creates them
+      TASKIQ_SKIP_TABLE_CREATION: "true"
     volumes:
       - ./backend:/app:Z
       - /app/.venv
     depends_on:
       db:
         condition: service_healthy
-
-  scheduler:
-    build: ./backend
-    command: uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks
-    environment:
-      DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
-    volumes:
-      - ./backend:/app:Z
-      - /app/.venv
-    depends_on:
-      db:
+      scheduler:
         condition: service_healthy
-    deploy:
-      replicas: 1  # Must remain 1 - taskiq has no leader election
 
 volumes:
   postgres_data:
