@@ -27,6 +27,7 @@
 	let isFinalizingImport = $state(false);
 	let isDiscardingImport = $state(false);
 	let showDiscardConfirmation = $state(false);
+	let discardError = $state<string | null>(null);
 
 	const items = $derived(review.value.items);
 	const summary = $derived(review.value.summary);
@@ -238,14 +239,17 @@
 		if (!jobIdFromUrl) return;
 
 		isDiscardingImport = true;
+		discardError = null;
 		try {
 			await review.discardImport(jobIdFromUrl);
+			showDiscardConfirmation = false;
 			goto('/import/darkadia');
 		} catch (e) {
 			console.error('Failed to discard import:', e);
+			discardError = e instanceof Error ? e.message : 'Failed to discard import';
+			// Keep dialog open so user can see the error
 		} finally {
 			isDiscardingImport = false;
-			showDiscardConfirmation = false;
 		}
 	}
 
@@ -489,7 +493,7 @@
 						type="button"
 						class="inline-flex items-center px-4 py-2 border border-red-300 dark:border-red-700 text-sm font-medium rounded-md text-red-700 dark:text-red-400 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
 						disabled={isDiscardingImport || isFinalizingImport}
-						onclick={() => (showDiscardConfirmation = true)}
+						onclick={() => { discardError = null; showDiscardConfirmation = true; }}
 					>
 						Discard Import
 					</button>
@@ -753,8 +757,8 @@
 				<div
 					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
 					aria-hidden="true"
-					onclick={() => (showDiscardConfirmation = false)}
-					onkeydown={(e) => e.key === 'Escape' && (showDiscardConfirmation = false)}
+					onclick={() => { discardError = null; showDiscardConfirmation = false; }}
+					onkeydown={(e) => { if (e.key === 'Escape') { discardError = null; showDiscardConfirmation = false; } }}
 					role="button"
 					tabindex="-1"
 				></div>
@@ -776,6 +780,11 @@
 										Are you sure you want to discard this import? This will permanently delete all {summary?.total_pending ?? 0} review items. This action cannot be undone.
 									</p>
 								</div>
+								{#if discardError}
+									<div class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200 dark:border-red-800">
+										<p class="text-sm text-red-700 dark:text-red-300">{discardError}</p>
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -799,7 +808,7 @@
 						<button
 							type="button"
 							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-							onclick={() => (showDiscardConfirmation = false)}
+							onclick={() => { discardError = null; showDiscardConfirmation = false; }}
 							disabled={isDiscardingImport}
 						>
 							Cancel
