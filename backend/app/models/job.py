@@ -6,6 +6,7 @@ replacing the separate ImportJob model and enabling unified job management.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import UniqueConstraint
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
@@ -228,6 +229,10 @@ class ReviewItem(SQLModel, table=True):
     """
 
     __tablename__ = "review_items"  # type: ignore[assignment]
+    __table_args__ = (
+        # Prevent duplicate ReviewItems for the same game title within a job
+        UniqueConstraint("job_id", "source_title", name="uq_review_items_job_source_title"),
+    )
 
     # Primary key
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)

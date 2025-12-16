@@ -16,6 +16,7 @@ from app.worker.tasks.import_export.import_nexorious import (
 from app.worker.tasks.import_export.import_darkadia import (
     import_darkadia_csv,
     _create_column_map,
+    _create_review_item,
     _get_row_value,
     parse_darkadia_platform,
     COLUMN_MAPPINGS,
@@ -29,6 +30,7 @@ from app.models.job import (
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
+    ReviewItem,
     ReviewItemStatus,
 )
 from app.models.user_game import PlayStatus, OwnershipStatus
@@ -529,3 +531,226 @@ class TestImportTaskIntegration:
         session.refresh(job)
 
         assert job.get_result_summary()["steam_id"] == "76561198012345678"
+
+
+class TestCreateReviewItemDuplicatePrevention:
+    """Test duplicate prevention in _create_review_item."""
+
+    @pytest.fixture
+    def mock_match_result(self):
+        """Create a mock match result."""
+        result = MagicMock()
+        result.candidates = []
+        result.igdb_id = 12345
+        result.igdb_title = "Test Game"
+        result.confidence_score = 0.95
+        return result
+
+    def test_creates_review_item_when_none_exists(self, session, test_user):
+        """Creates a ReviewItem when none exists for the job/game combination."""
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        mock_result = MagicMock()
+        mock_result.candidates = []
+        mock_result.igdb_id = 12345
+        mock_result.igdb_title = "Test Game"
+        mock_result.confidence_score = 0.95
+
+        # Create review item
+        _create_review_item(
+            session=session,
+            job=job,
+            user_id=test_user.id,
+            game_name="The Witcher 3",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.MATCHED,
+        )
+
+        # Verify it was created
+        from sqlmodel import select
+        items = session.exec(
+            select(ReviewItem).where(
+                ReviewItem.job_id == job.id,
+                ReviewItem.source_title == "The Witcher 3",
+            )
+        ).all()
+        assert len(items) == 1
+        assert items[0].source_title == "The Witcher 3"
+        assert items[0].status == ReviewItemStatus.MATCHED
+
+    def test_skips_duplicate_review_item(self, session, test_user):
+        """Skips creating a ReviewItem when one already exists for the same job/game."""
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        mock_result = MagicMock()
+        mock_result.candidates = []
+        mock_result.igdb_id = 12345
+        mock_result.igdb_title = "Test Game"
+        mock_result.confidence_score = 0.95
+
+        # Create first review item
+        _create_review_item(
+            session=session,
+            job=job,
+            user_id=test_user.id,
+            game_name="Duplicate Game",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.MATCHED,
+        )
+
+        # Try to create a duplicate
+        _create_review_item(
+            session=session,
+            job=job,
+            user_id=test_user.id,
+            game_name="Duplicate Game",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia", "extra": "data"},
+            status=ReviewItemStatus.PENDING,  # Even with different status
+        )
+
+        # Verify only one exists
+        from sqlmodel import select
+        items = session.exec(
+            select(ReviewItem).where(
+                ReviewItem.job_id == job.id,
+                ReviewItem.source_title == "Duplicate Game",
+            )
+        ).all()
+        assert len(items) == 1
+        # Original item should be preserved (MATCHED status)
+        assert items[0].status == ReviewItemStatus.MATCHED
+
+    def test_allows_same_game_in_different_jobs(self, session, test_user):
+        """Allows the same game name in different jobs."""
+        # Create two jobs
+        job1 = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job2 = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job1)
+        session.add(job2)
+        session.commit()
+        session.refresh(job1)
+        session.refresh(job2)
+
+        mock_result = MagicMock()
+        mock_result.candidates = []
+        mock_result.igdb_id = 12345
+        mock_result.igdb_title = "Test Game"
+        mock_result.confidence_score = 0.95
+
+        # Create review item in first job
+        _create_review_item(
+            session=session,
+            job=job1,
+            user_id=test_user.id,
+            game_name="Same Game",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.MATCHED,
+        )
+
+        # Create review item with same name in second job
+        _create_review_item(
+            session=session,
+            job=job2,
+            user_id=test_user.id,
+            game_name="Same Game",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.MATCHED,
+        )
+
+        # Verify both exist (one per job)
+        from sqlmodel import select
+        items_job1 = session.exec(
+            select(ReviewItem).where(ReviewItem.job_id == job1.id)
+        ).all()
+        items_job2 = session.exec(
+            select(ReviewItem).where(ReviewItem.job_id == job2.id)
+        ).all()
+        assert len(items_job1) == 1
+        assert len(items_job2) == 1
+
+    def test_different_games_same_job_allowed(self, session, test_user):
+        """Allows different games in the same job."""
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        mock_result = MagicMock()
+        mock_result.candidates = []
+        mock_result.igdb_id = 12345
+        mock_result.igdb_title = "Test Game"
+        mock_result.confidence_score = 0.95
+
+        # Create review items for different games
+        _create_review_item(
+            session=session,
+            job=job,
+            user_id=test_user.id,
+            game_name="Game A",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.MATCHED,
+        )
+
+        _create_review_item(
+            session=session,
+            job=job,
+            user_id=test_user.id,
+            game_name="Game B",
+            match_result=mock_result,
+            source_metadata={"source": "darkadia"},
+            status=ReviewItemStatus.PENDING,
+        )
+
+        # Verify both exist
+        from sqlmodel import select
+        items = session.exec(
+            select(ReviewItem).where(ReviewItem.job_id == job.id)
+        ).all()
+        assert len(items) == 2
+        titles = {item.source_title for item in items}
+        assert titles == {"Game A", "Game B"}
