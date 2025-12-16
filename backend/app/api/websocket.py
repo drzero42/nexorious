@@ -367,6 +367,11 @@ async def websocket_jobs(
 
             except Exception as e:
                 logger.error(f"Error in WebSocket polling loop: {e}")
+                # Rollback any invalid transaction state before continuing
+                try:
+                    session.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
                 # Continue polling despite errors
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
