@@ -26,7 +26,7 @@ from app.models import (  # noqa: F401
     Tag,
     UserGameTag,
     Wishlist,
-    ImportJob,
+    Job,
     DarkadiaGame,
     DarkadiaImport,
 )

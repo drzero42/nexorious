@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from .user_game import UserGame
     from .tag import Tag
     from .wishlist import Wishlist
-    from .import_job import ImportJob
     from .job import Job
     from .darkadia_game import DarkadiaGame
     from .darkadia_import import DarkadiaImport
@@ -54,7 +53,6 @@ class User(SQLModel, table=True):
     user_games: List["UserGame"] = Relationship(back_populates="user")
     tags: List["Tag"] = Relationship(back_populates="user")
     wishlists: List["Wishlist"] = Relationship(back_populates="user")
-    import_jobs: List["ImportJob"] = Relationship(back_populates="user")
     jobs: List["Job"] = Relationship(back_populates="user")
     darkadia_games: List["DarkadiaGame"] = Relationship(back_populates="user")
     darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user")

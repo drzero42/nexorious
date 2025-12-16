@@ -26,7 +26,7 @@ from ..models.user import User, UserSession
 from ..models.user_game import UserGame
 from ..models.tag import Tag
 from ..models.wishlist import Wishlist
-from ..models.import_job import ImportJob
+from ..models.job import Job, BackgroundJobType
 from ..schemas.auth import (
     UserRegisterRequest,
     UserLoginRequest,
@@ -640,7 +640,7 @@ async def admin_get_user_deletion_impact(
     total_games = len(session.exec(select(UserGame).where(UserGame.user_id == user_id)).all())
     total_tags = len(session.exec(select(Tag).where(Tag.user_id == user_id)).all())
     total_wishlist_items = len(session.exec(select(Wishlist).where(Wishlist.user_id == user_id)).all())
-    total_import_jobs = len(session.exec(select(ImportJob).where(ImportJob.user_id == user_id)).all())
+    total_import_jobs = len(session.exec(select(Job).where(Job.user_id == user_id, Job.job_type == BackgroundJobType.IMPORT)).all())
     total_sessions = len(session.exec(select(UserSession).where(UserSession.user_id == user_id)).all())
     
     return UserDeletionImpactResponse(
@@ -693,8 +693,8 @@ async def admin_delete_user(
     for wishlist_item in wishlist_items:
         session.delete(wishlist_item)
     
-    # Delete import jobs
-    import_jobs = session.exec(select(ImportJob).where(ImportJob.user_id == user_id)).all()
+    # Delete import jobs (unified Job model filtered by IMPORT type)
+    import_jobs = session.exec(select(Job).where(Job.user_id == user_id, Job.job_type == BackgroundJobType.IMPORT)).all()
     for import_job in import_jobs:
         session.delete(import_job)
     

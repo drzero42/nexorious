@@ -10,7 +10,6 @@ from .game import Game
 from .user_game import UserGame, UserGamePlatform
 from .tag import Tag, UserGameTag
 from .wishlist import Wishlist
-from .import_job import ImportJob
 from .job import (
     Job,
     ReviewItem,
@@ -38,7 +37,6 @@ __all__ = [
     "Tag",
     "UserGameTag",
     "Wishlist",
-    "ImportJob",
     "Job",
     "ReviewItem",
     "BackgroundJobType",
