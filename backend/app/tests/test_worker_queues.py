@@ -1,6 +1,5 @@
 """Tests for priority queue configuration."""
 
-import pytest
 
 from app.worker.queues import (
     QUEUE_HIGH,

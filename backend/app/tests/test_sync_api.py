@@ -1,6 +1,5 @@
 """Tests for sync configuration API endpoints."""
 
-import pytest
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient

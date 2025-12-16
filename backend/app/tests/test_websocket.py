@@ -113,7 +113,7 @@ class TestWebSocketAuthentication:
         """Test WebSocket connection rejection without token."""
         # FastAPI should reject the request due to missing required query param
         with pytest.raises(Exception):
-            with client.websocket_connect("/api/ws/jobs") as websocket:
+            with client.websocket_connect("/api/ws/jobs"):
                 pass
 
     def test_connect_with_inactive_user(self, client: TestClient, ws_session: Session):

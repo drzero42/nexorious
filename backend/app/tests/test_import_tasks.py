@@ -2,13 +2,11 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, date
+from datetime import date
 from decimal import Decimal
-import json
 
 from app.worker.tasks.import_export.import_nexorious import (
     import_nexorious_json,
-    _process_nexorious_game,
     _map_play_status,
     _map_ownership_status,
     _parse_rating,
@@ -31,7 +29,6 @@ from app.models.job import (
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
-    ReviewItem,
     ReviewItemStatus,
 )
 from app.models.user_game import PlayStatus, OwnershipStatus

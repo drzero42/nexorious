@@ -24,7 +24,6 @@ from ..schemas.sync import (
     SyncConfigResponse,
     SyncConfigListResponse,
     SyncConfigUpdateRequest,
-    SyncConfigCreateRequest,
     ManualSyncTriggerResponse,
     SyncStatusResponse,
     SyncFrequency,

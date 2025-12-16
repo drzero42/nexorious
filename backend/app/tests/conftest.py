@@ -40,7 +40,12 @@ def mock_steam_service():
 
 @pytest.fixture
 def client_with_shared_session(session):
-    """Test client that shares the same database session with tests."""
+    """Test client that shares the same database session with tests.
+
+    Note: We don't use the context manager form (with TestClient(app)) because
+    that triggers the app's lifespan events, which would try to connect to the
+    database at settings.database_url instead of the testcontainer's mapped port.
+    """
     from fastapi.testclient import TestClient
     from app.main import app
     from app.core.database import get_session
@@ -52,8 +57,9 @@ def client_with_shared_session(session):
     app.dependency_overrides[get_session] = get_shared_session
 
     try:
-        with TestClient(app) as client:
-            yield client
+        # Don't use context manager to avoid triggering lifespan events
+        client = TestClient(app)
+        yield client
     finally:
         # Clean up the override
         app.dependency_overrides.pop(get_session, None)

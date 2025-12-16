@@ -10,9 +10,9 @@ Uses high priority queue for user-initiated imports.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from typing import Annotated, Optional
-from datetime import datetime, timezone
 import logging
 import json
 import csv
@@ -28,7 +28,6 @@ from ..models.job import (
     BackgroundJobStatus,
     BackgroundJobPriority,
 )
-from ..worker.queues import QUEUE_HIGH
 from ..worker.tasks.import_export import (
     import_nexorious_json as import_nexorious_task,
     import_darkadia_csv as import_darkadia_task,
@@ -58,9 +57,6 @@ class ImportJobCreatedResponse:
         self.status = status
         self.message = message
         self.total_items = total_items
-
-
-from pydantic import BaseModel, Field
 
 
 class ImportJobCreatedResponseModel(BaseModel):

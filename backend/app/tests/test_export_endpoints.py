@@ -13,7 +13,6 @@ from sqlmodel import Session
 from app.models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
 from app.models.game import Game
 from app.models.user_game import UserGame, OwnershipStatus, PlayStatus
-from app.models.user import User
 
 
 @pytest.fixture(autouse=True)

@@ -12,7 +12,6 @@ from app.services.matching import (
     MatchRequest,
     BatchMatchResult,
 )
-from app.services.matching.models import MatchRequest as MatchRequestModel
 from app.services.igdb.models import GameMetadata
 
 
