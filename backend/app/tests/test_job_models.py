@@ -18,6 +18,7 @@ from ..models.job import (
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
+    ImportJobSubtype,
     ReviewItemStatus,
 )
 
@@ -66,11 +67,15 @@ class TestJobModel:
         assert job.priority == BackgroundJobPriority.HIGH
         assert job.progress_current == 0
         assert job.progress_total == 0
+        assert job.successful_items == 0
+        assert job.failed_items == 0
+        assert job.import_subtype is None
         assert job.error_message is None
         assert job.file_path is None
         assert job.taskiq_task_id is None
         assert job.started_at is None
         assert job.completed_at is None
+        assert job.get_error_log() == []
 
     def test_job_all_types(self, session: Session, test_user: User):
         """Test all job types can be created."""
@@ -111,6 +116,119 @@ class TestJobModel:
         assert len(jobs) == len(BackgroundJobSource)
         sources = {j.source for j in jobs}
         assert sources == set(BackgroundJobSource)
+
+    def test_job_all_import_subtypes(self, session: Session, test_user: User):
+        """Test all import job subtypes can be set."""
+        for subtype in ImportJobSubtype:
+            job = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.STEAM,
+                import_subtype=subtype,
+            )
+            session.add(job)
+
+        session.commit()
+
+        jobs = session.exec(
+            select(Job).where(Job.user_id == test_user.id)
+        ).all()
+
+        assert len(jobs) == len(ImportJobSubtype)
+        subtypes = {j.import_subtype for j in jobs}
+        assert subtypes == set(ImportJobSubtype)
+
+    def test_job_successful_and_failed_items(self, session: Session, test_user: User):
+        """Test successful and failed items tracking."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.CSV,
+            import_subtype=ImportJobSubtype.LIBRARY_IMPORT,
+            progress_total=100,
+            progress_current=80,
+            successful_items=70,
+            failed_items=10,
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        assert job.progress_total == 100
+        assert job.progress_current == 80
+        assert job.successful_items == 70
+        assert job.failed_items == 10
+        # Verify: successful + failed = processed
+        assert job.successful_items + job.failed_items == job.progress_current
+
+    def test_job_error_log_json(self, session: Session, test_user: User):
+        """Test error log JSON serialization."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.CSV,
+        )
+
+        # Set error log
+        errors = [
+            {"row": 1, "error": "Invalid game title", "field": "title"},
+            {"row": 5, "error": "Missing platform", "field": "platform"},
+            {"row": 12, "error": "Duplicate entry", "field": "igdb_id"},
+        ]
+        job.set_error_log(errors)
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Get error log
+        retrieved = job.get_error_log()
+        assert retrieved == errors
+        assert len(retrieved) == 3
+        assert retrieved[0]["row"] == 1
+        assert retrieved[1]["error"] == "Missing platform"
+
+    def test_job_add_error(self, session: Session, test_user: User):
+        """Test adding errors incrementally."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+
+        session.add(job)
+        session.commit()
+
+        # Start with empty error log
+        assert job.get_error_log() == []
+
+        # Add errors one by one
+        job.add_error({"row": 1, "error": "First error"})
+        job.add_error({"row": 2, "error": "Second error"})
+        job.add_error({"row": 3, "error": "Third error"})
+
+        session.commit()
+        session.refresh(job)
+
+        errors = job.get_error_log()
+        assert len(errors) == 3
+        assert errors[0]["error"] == "First error"
+        assert errors[2]["error"] == "Third error"
+
+    def test_job_error_log_empty(self, session: Session, test_user: User):
+        """Test empty error log returns empty list."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.EXPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        assert job.get_error_log() == []
 
     def test_job_all_statuses(self, session: Session, test_user: User):
         """Test all job statuses can be set."""
@@ -990,6 +1108,44 @@ class TestJobModelEdgeCases:
 
         # Should return empty dict for invalid JSON
         assert job.get_result_summary() == {}
+
+    def test_invalid_error_log_json_handling(self, session: Session, test_user: User):
+        """Test handling of invalid JSON in error_log."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+        )
+        # Manually set invalid JSON
+        job.error_log_json = "not valid json"
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Should return empty list for invalid JSON
+        assert job.get_error_log() == []
+
+    def test_import_subtype_index(self, session: Session, test_user: User):
+        """Test import_subtype index for efficient subtype filtering."""
+        # Create jobs with different subtypes
+        for subtype in ImportJobSubtype:
+            job = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.CSV,
+                import_subtype=subtype,
+            )
+            session.add(job)
+        session.commit()
+
+        # Query by import_subtype should be efficient
+        library_import_jobs = session.exec(
+            select(Job).where(Job.import_subtype == ImportJobSubtype.LIBRARY_IMPORT)
+        ).all()
+
+        assert len(library_import_jobs) == 1
+        assert library_import_jobs[0].import_subtype == ImportJobSubtype.LIBRARY_IMPORT
 
 
 class TestReviewItemModelEdgeCases:

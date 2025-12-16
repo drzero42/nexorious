@@ -30,6 +30,9 @@ class BackgroundJobSource(str, Enum):
     STEAM = "steam"
     EPIC = "epic"
     GOG = "gog"
+    XBOX = "xbox"
+    PLAYSTATION = "playstation"
+    CSV = "csv"
     DARKADIA = "darkadia"
     NEXORIOUS = "nexorious"
     SYSTEM = "system"
@@ -55,6 +58,17 @@ class BackgroundJobPriority(str, Enum):
     LOW = "low"
 
 
+class ImportJobSubtype(str, Enum):
+    """Subtype for import jobs - specifies the kind of import operation."""
+
+    LIBRARY_IMPORT = "library_import"
+    AUTO_MATCH = "auto_match"
+    BULK_SYNC = "bulk_sync"
+    BULK_UNMATCH = "bulk_unmatch"
+    BULK_UNSYNC = "bulk_unsync"
+    BULK_UNIGNORE = "bulk_unignore"
+
+
 class Job(SQLModel, table=True):
     """
     Unified job model for all background tasks.
@@ -76,10 +90,21 @@ class Job(SQLModel, table=True):
     source: BackgroundJobSource = Field(index=True)
     status: BackgroundJobStatus = Field(default=BackgroundJobStatus.PENDING, index=True)
     priority: BackgroundJobPriority = Field(default=BackgroundJobPriority.HIGH)
+    import_subtype: Optional[ImportJobSubtype] = Field(
+        default=None,
+        index=True,
+        description="Subtype for import jobs (library_import, auto_match, bulk_*)",
+    )
 
     # Progress tracking
     progress_current: int = Field(default=0)
     progress_total: int = Field(default=0)
+    successful_items: int = Field(
+        default=0, description="Number of items processed successfully"
+    )
+    failed_items: int = Field(
+        default=0, description="Number of items that failed processing"
+    )
 
     # Results and errors (stored as JSON strings for compatibility)
     result_summary_json: str = Field(
@@ -87,8 +112,13 @@ class Job(SQLModel, table=True):
         sa_column_kwargs={"name": "result_summary"},
         description="JSON string containing result statistics",
     )
+    error_log_json: str = Field(
+        default="[]",
+        sa_column_kwargs={"name": "error_log"},
+        description="JSON array of error details from processing",
+    )
     error_message: Optional[str] = Field(
-        default=None, max_length=2000, description="Error message if job failed"
+        default=None, max_length=2000, description="Primary error message if job failed"
     )
 
     # File path for exports
@@ -126,6 +156,23 @@ class Job(SQLModel, table=True):
     def set_result_summary(self, value: Dict[str, Any]) -> None:
         """Set result summary from a dictionary."""
         self.result_summary_json = json.dumps(value)
+
+    def get_error_log(self) -> List[Dict[str, Any]]:
+        """Get error log as a list of error details."""
+        try:
+            return json.loads(self.error_log_json)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_error_log(self, value: List[Dict[str, Any]]) -> None:
+        """Set error log from a list of error details."""
+        self.error_log_json = json.dumps(value)
+
+    def add_error(self, error: Dict[str, Any]) -> None:
+        """Append an error to the error log."""
+        errors = self.get_error_log()
+        errors.append(error)
+        self.set_error_log(errors)
 
     @property
     def progress_percent(self) -> int:
