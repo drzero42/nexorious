@@ -22,6 +22,7 @@
     "database-design@claude-code-workflows": true,
     "database-migrations@claude-code-workflows": true,
     "developer-essentials@claude-code-workflows": true,
-    "error-diagnostics@claude-code-workflows": true
+    "error-diagnostics@claude-code-workflows": true,
+    "tdd-workflows@claude-code-workflows": true
   }
 }
