@@ -14,12 +14,14 @@ import type {
   ReviewSummary,
   ReviewCountsByType,
   MatchResponse,
-  ReviewFilters
+  ReviewFilters,
+  PlatformSummaryResponse,
+  FinalizeImportResponse
 } from '$lib/types/jobs';
 import { ReviewItemStatus, ReviewSource } from '$lib/types/jobs';
 
 // Re-export types and enums for convenience
-export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewCountsByType, ReviewFilters };
+export type { ReviewItem, ReviewItemDetail, ReviewSummary, ReviewCountsByType, ReviewFilters, PlatformSummaryResponse, FinalizeImportResponse };
 export { ReviewItemStatus, ReviewSource };
 
 export interface ReviewState {
@@ -405,6 +407,46 @@ function createReviewStore() {
      */
     reset: () => {
       state = { ...initialState };
+    },
+
+    /**
+     * Load platform summary for a job.
+     */
+    loadPlatformSummary: async (jobId: string): Promise<PlatformSummaryResponse> => {
+      try {
+        const response = await api.get(`${config.apiUrl}/review/platform-summary?job_id=${jobId}`);
+        const data: PlatformSummaryResponse = await response.json();
+        return data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to load platform summary';
+        state.error = errorMessage;
+        throw error;
+      }
+    },
+
+    /**
+     * Finalize an import job.
+     */
+    finalizeImport: async (
+      jobId: string,
+      platformMappings: Record<string, string>,
+      storefrontMappings: Record<string, string>
+    ): Promise<FinalizeImportResponse> => {
+      try {
+        const response = await api.post(`${config.apiUrl}/review/finalize`, {
+          job_id: jobId,
+          platform_mappings: platformMappings,
+          storefront_mappings: storefrontMappings
+        });
+        const data: FinalizeImportResponse = await response.json();
+        return data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to finalize import';
+        state.error = errorMessage;
+        throw error;
+      }
     }
   };
 

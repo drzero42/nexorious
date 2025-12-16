@@ -159,3 +159,52 @@ class ReviewCountsByType(BaseModel):
     sync_pending: int = Field(
         default=0, description="Pending reviews from sync operations"
     )
+
+
+class PlatformMappingSuggestion(BaseModel):
+    """A platform or storefront string that needs mapping."""
+
+    original: str = Field(..., description="Original string from CSV")
+    count: int = Field(..., description="Number of games with this value")
+    suggested_id: Optional[str] = Field(None, description="Suggested Platform/Storefront ID")
+    suggested_name: Optional[str] = Field(None, description="Suggested Platform/Storefront name")
+
+
+class PlatformSummaryResponse(BaseModel):
+    """Summary of platform/storefront strings needing mapping for a job."""
+
+    platforms: List[PlatformMappingSuggestion] = Field(default_factory=list)
+    storefronts: List[PlatformMappingSuggestion] = Field(default_factory=list)
+    all_resolved: bool = Field(..., description="True if all strings have suggestions")
+
+
+class PlatformMapping(BaseModel):
+    """A single platform or storefront mapping from original string to resolved ID."""
+
+    original: str = Field(..., description="Original string from CSV")
+    resolved_id: str = Field(..., description="Platform or Storefront ID to map to")
+
+
+class FinalizeImportRequest(BaseModel):
+    """Request model for finalizing a Darkadia import with platform mappings."""
+
+    job_id: str = Field(..., description="The import job ID to finalize")
+    platform_mappings: List[PlatformMapping] = Field(
+        default_factory=list,
+        description="Mappings from original platform strings to Platform IDs"
+    )
+    storefront_mappings: List[PlatformMapping] = Field(
+        default_factory=list,
+        description="Mappings from original storefront strings to Storefront IDs"
+    )
+
+
+class FinalizeImportResponse(BaseModel):
+    """Response model for finalize import operation."""
+
+    success: bool
+    message: str
+    games_created: int = 0
+    games_skipped: int = 0
+    games_failed: int = 0
+    errors: List[str] = Field(default_factory=list)

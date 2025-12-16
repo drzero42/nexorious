@@ -342,3 +342,35 @@ export function formatDuration(seconds: number | null): string {
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
 }
+
+// ============================================================================
+// Platform Summary and Finalize Types
+// ============================================================================
+
+export interface PlatformMappingSuggestion {
+  original: string;
+  count: number;
+  suggested_id: string | null;
+  suggested_name: string | null;
+}
+
+export interface PlatformSummaryResponse {
+  platforms: PlatformMappingSuggestion[];
+  storefronts: PlatformMappingSuggestion[];
+  all_resolved: boolean;
+}
+
+export interface FinalizeImportRequest {
+  job_id: string;
+  platform_mappings: Record<string, string>;
+  storefront_mappings: Record<string, string>;
+}
+
+export interface FinalizeImportResponse {
+  success: boolean;
+  message: string;
+  games_created: number;
+  games_skipped: number;
+  games_failed: number;
+  errors: string[];
+}

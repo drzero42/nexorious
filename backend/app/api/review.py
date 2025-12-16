@@ -7,7 +7,7 @@ IGDB candidates, and resolving items (match, skip, keep, remove).
 
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from sqlmodel import Session, select, func, col
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 from datetime import datetime, timezone
 import logging
 
@@ -20,6 +20,7 @@ from ..models.job import (
     ReviewItemStatus as ModelReviewItemStatus,
     BackgroundJobType,
     BackgroundJobSource,
+    BackgroundJobStatus,
 )
 from ..models.ignored_external_game import IgnoredExternalGame
 from ..models.user_game import UserGame, UserGamePlatform
@@ -35,6 +36,10 @@ from ..schemas.review import (
     ReviewItemStatus,
     ReviewSource,
     IGDBCandidate,
+    PlatformMappingSuggestion,
+    PlatformSummaryResponse,
+    FinalizeImportRequest,
+    FinalizeImportResponse,
 )
 from ..services.game_service import GameService
 from ..services.igdb import IGDBService
@@ -296,6 +301,96 @@ async def get_review_counts_by_type(
     return ReviewCountsByType(
         import_pending=import_count,
         sync_pending=sync_count,
+    )
+
+
+@router.get("/platform-summary", response_model=PlatformSummaryResponse)
+async def get_platform_summary(
+    job_id: str = Query(..., description="Job ID to get platform summary for"),
+    session: Annotated[Session, Depends(get_session)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+):
+    """
+    Get summary of platform/storefront strings needing mapping for a job.
+
+    Extracts unique platform and storefront strings from all ReviewItems
+    for the given job, counts occurrences, and suggests matches to
+    existing Platform/Storefront entities.
+    """
+    from collections import Counter
+    from ..models.platform import Platform, Storefront
+
+    # Verify job exists and belongs to user
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    # Get all review items for this job
+    items = session.exec(
+        select(ReviewItem).where(ReviewItem.job_id == job_id)
+    ).all()
+
+    # Extract and count platform/storefront strings
+    platform_counts: Counter = Counter()
+    storefront_counts: Counter = Counter()
+
+    for item in items:
+        metadata = item.get_source_metadata()
+        for p in metadata.get("platforms", []):
+            if p:
+                platform_counts[p] += 1
+        for s in metadata.get("storefronts", []):
+            if s:
+                storefront_counts[s] += 1
+
+    # Get all platforms and storefronts for matching
+    all_platforms = session.exec(select(Platform).where(Platform.is_active)).all()
+    all_storefronts = session.exec(select(Storefront).where(Storefront.is_active)).all()
+
+    # Build platform suggestions
+    platform_suggestions = []
+    for original, count in platform_counts.items():
+        suggested = _find_best_match(original, [(p.id, p.name, p.display_name) for p in all_platforms])
+        platform_suggestions.append(PlatformMappingSuggestion(
+            original=original,
+            count=count,
+            suggested_id=suggested[0] if suggested else None,
+            suggested_name=suggested[1] if suggested else None,
+        ))
+
+    # Build storefront suggestions
+    storefront_suggestions = []
+    for original, count in storefront_counts.items():
+        suggested = _find_best_match(original, [(s.id, s.name, s.display_name) for s in all_storefronts])
+        storefront_suggestions.append(PlatformMappingSuggestion(
+            original=original,
+            count=count,
+            suggested_id=suggested[0] if suggested else None,
+            suggested_name=suggested[1] if suggested else None,
+        ))
+
+    # Sort by count descending
+    platform_suggestions.sort(key=lambda x: x.count, reverse=True)
+    storefront_suggestions.sort(key=lambda x: x.count, reverse=True)
+
+    # Check if all resolved
+    all_resolved = (
+        all(p.suggested_id for p in platform_suggestions) and
+        all(s.suggested_id for s in storefront_suggestions)
+    )
+
+    return PlatformSummaryResponse(
+        platforms=platform_suggestions,
+        storefronts=storefront_suggestions,
+        all_resolved=all_resolved,
     )
 
 
@@ -607,6 +702,197 @@ async def remove_review_item(
     )
 
 
+@router.post("/finalize", response_model=FinalizeImportResponse)
+async def finalize_import(
+    request: FinalizeImportRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> FinalizeImportResponse:
+    """
+    Finalize a Darkadia import by applying platform/storefront mappings.
+
+    Creates UserGame and UserGamePlatform records for all matched ReviewItems.
+    Uses the provided mappings to resolve original platform/storefront strings
+    to actual Platform and Storefront IDs.
+    """
+    logger.info(
+        f"User {current_user.id} finalizing import job {request.job_id} "
+        f"with {len(request.platform_mappings)} platform mappings and "
+        f"{len(request.storefront_mappings)} storefront mappings"
+    )
+
+    # Verify job exists and belongs to user
+    job = session.get(Job, request.job_id)
+    if not job:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    # Build mapping dictionaries
+    platform_map = {m.original: m.resolved_id for m in request.platform_mappings}
+    storefront_map = {m.original: m.resolved_id for m in request.storefront_mappings}
+
+    # Get all matched review items
+    matched_items = session.exec(
+        select(ReviewItem).where(
+            ReviewItem.job_id == request.job_id,
+            ReviewItem.status == ModelReviewItemStatus.MATCHED,
+            ReviewItem.resolved_igdb_id is not None,
+        )
+    ).all()
+
+    logger.info(f"Found {len(matched_items)} matched items to finalize")
+
+    games_created = 0
+    games_skipped = 0
+    games_failed = 0
+    errors: List[str] = []
+
+    # Process each matched item
+    for item in matched_items:
+        try:
+            # Skip items without resolved_igdb_id (should not happen due to filter, but for safety)
+            if not item.resolved_igdb_id:
+                logger.warning(f"Skipping item {item.id} without resolved_igdb_id")
+                games_skipped += 1
+                continue
+
+            igdb_id = item.resolved_igdb_id
+
+            # Get or create the Game record
+            game = session.get(Game, igdb_id)
+            if not game:
+                # Create game from IGDB
+                igdb_service = IGDBService()
+                game_service = GameService(session, igdb_service)
+                game = await game_service.create_or_update_game_from_igdb(
+                    igdb_id, download_cover_art=True
+                )
+                logger.debug(
+                    f"Created game {igdb_id} from IGDB: {game.title}"
+                )
+
+            # Check if user already has this game
+            existing_user_game = session.exec(
+                select(UserGame).where(
+                    UserGame.user_id == current_user.id,
+                    UserGame.game_id == igdb_id,
+                )
+            ).first()
+
+            if existing_user_game:
+                logger.debug(
+                    f"User {current_user.id} already has game {igdb_id}, "
+                    f"adding platforms"
+                )
+                user_game = existing_user_game
+                games_skipped += 1
+            else:
+                # Create UserGame
+                user_game = UserGame(
+                    user_id=current_user.id,
+                    game_id=igdb_id,
+                )
+                session.add(user_game)
+                session.commit()
+                session.refresh(user_game)
+                logger.info(
+                    f"Created UserGame for user {current_user.id}, "
+                    f"game {igdb_id} ({game.title})"
+                )
+                games_created += 1
+
+            # Apply platform/storefront mappings
+            source_metadata = item.get_source_metadata()
+            platforms = source_metadata.get("platforms", [])
+            storefronts = source_metadata.get("storefronts", [])
+
+            # Create UserGamePlatform records
+            for platform_str in platforms:
+                if platform_str and platform_str in platform_map:
+                    platform_id = platform_map[platform_str]
+
+                    # Check if platform association already exists
+                    existing_platform = session.exec(
+                        select(UserGamePlatform).where(
+                            UserGamePlatform.user_game_id == user_game.id,
+                            UserGamePlatform.platform_id == platform_id,
+                            UserGamePlatform.storefront_id is None,
+                        )
+                    ).first()
+
+                    if not existing_platform:
+                        user_game_platform = UserGamePlatform(
+                            user_game_id=user_game.id,
+                            platform_id=platform_id,
+                            is_available=True,
+                        )
+                        session.add(user_game_platform)
+                        logger.debug(
+                            f"Added platform {platform_id} for UserGame {user_game.id}"
+                        )
+
+            for storefront_str in storefronts:
+                if storefront_str and storefront_str in storefront_map:
+                    storefront_id = storefront_map[storefront_str]
+
+                    # Check if storefront association already exists
+                    existing_storefront = session.exec(
+                        select(UserGamePlatform).where(
+                            UserGamePlatform.user_game_id == user_game.id,
+                            UserGamePlatform.storefront_id == storefront_id,
+                        )
+                    ).first()
+
+                    if not existing_storefront:
+                        user_game_platform = UserGamePlatform(
+                            user_game_id=user_game.id,
+                            storefront_id=storefront_id,
+                            is_available=True,
+                        )
+                        session.add(user_game_platform)
+                        logger.debug(
+                            f"Added storefront {storefront_id} for UserGame {user_game.id}"
+                        )
+
+            session.commit()
+
+        except Exception as e:
+            logger.error(
+                f"Failed to finalize review item {item.id} (game {item.source_title}): {e}",
+                exc_info=True,
+            )
+            games_failed += 1
+            errors.append(f"{item.source_title}: {str(e)}")
+            # Continue processing other items
+
+    # Mark job as completed
+    job.status = BackgroundJobStatus.COMPLETED
+    job.completed_at = datetime.now(timezone.utc)
+    session.commit()
+
+    logger.info(
+        f"Finalized import job {request.job_id}: "
+        f"{games_created} created, {games_skipped} skipped, {games_failed} failed"
+    )
+
+    return FinalizeImportResponse(
+        success=True,
+        message=f"Import finalized: {games_created} games created, "
+        f"{games_skipped} skipped, {games_failed} failed",
+        games_created=games_created,
+        games_skipped=games_skipped,
+        games_failed=games_failed,
+        errors=errors,
+    )
+
+
 # Helper functions for sync finalization
 
 
@@ -811,3 +1097,40 @@ def _get_external_id_from_metadata(
         )
 
     return str(external_id)
+
+
+def _find_best_match(
+    original: str,
+    candidates: list[tuple[str, str, str]],  # (id, name, display_name)
+) -> Optional[tuple[str, str]]:
+    """
+    Find best matching platform/storefront for a string.
+
+    Uses case-insensitive exact matching on name or display_name.
+    Returns (id, display_name) or None.
+    """
+    original_lower = original.lower().strip()
+
+    for id_, name, display_name in candidates:
+        if name.lower() == original_lower or display_name.lower() == original_lower:
+            return (id_, display_name)
+
+    # Try partial matching for common abbreviations
+    abbrev_map = {
+        "ps4": "playstation 4",
+        "ps5": "playstation 5",
+        "ps3": "playstation 3",
+        "xb1": "xbox one",
+        "xsx": "xbox series x",
+        "nsw": "nintendo switch",
+        "psn": "playstation store",
+        "xbl": "xbox live",
+    }
+
+    if original_lower in abbrev_map:
+        expanded = abbrev_map[original_lower]
+        for id_, name, display_name in candidates:
+            if name.lower() == expanded or display_name.lower() == expanded:
+                return (id_, display_name)
+
+    return None

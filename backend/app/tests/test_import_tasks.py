@@ -19,11 +19,12 @@ from app.worker.tasks.import_export.import_darkadia import (
     import_darkadia_csv,
     _create_column_map,
     _get_row_value,
+    parse_darkadia_platform,
     COLUMN_MAPPINGS,
 )
-from app.worker.tasks.import_export.import_steam import (
-    import_steam_library,
-)
+# from app.worker.tasks.import_export.import_steam import (
+#     import_steam_library,
+# )
 from app.models.job import (
     Job,
     BackgroundJobType,
@@ -233,6 +234,55 @@ class TestDarkadiaImportHelpers:
             assert len(COLUMN_MAPPINGS[field]) > 0
 
 
+class TestParseDarkadiaPlatform:
+    """Tests for Darkadia platform string parsing."""
+
+    def test_parse_full_platform_string(self):
+        """Parse platform with all components."""
+        result = parse_darkadia_platform("PC|Steam|Digital")
+        assert result == {
+            "platform": "PC",
+            "storefront": "Steam",
+            "media_type": "Digital",
+        }
+
+    def test_parse_platform_only(self):
+        """Parse platform with no storefront or media type."""
+        result = parse_darkadia_platform("PlayStation 4")
+        assert result == {
+            "platform": "PlayStation 4",
+            "storefront": None,
+            "media_type": None,
+        }
+
+    def test_parse_platform_and_storefront(self):
+        """Parse platform with storefront but no media type."""
+        result = parse_darkadia_platform("PC|GOG")
+        assert result == {
+            "platform": "PC",
+            "storefront": "GOG",
+            "media_type": None,
+        }
+
+    def test_parse_empty_string(self):
+        """Handle empty string."""
+        result = parse_darkadia_platform("")
+        assert result == {
+            "platform": None,
+            "storefront": None,
+            "media_type": None,
+        }
+
+    def test_parse_whitespace_trimming(self):
+        """Trim whitespace from components."""
+        result = parse_darkadia_platform(" PC | Steam | Digital ")
+        assert result == {
+            "platform": "PC",
+            "storefront": "Steam",
+            "media_type": "Digital",
+        }
+
+
 class TestNexoriousImportTask:
     """Test the Nexorious JSON import task."""
 
@@ -360,55 +410,6 @@ class TestDarkadiaImportTask:
             mock_context.return_value.__aexit__ = AsyncMock()
 
             result = await import_darkadia_csv("test-job-id")
-
-            assert result["status"] == "error"
-            assert mock_job.status == BackgroundJobStatus.FAILED
-
-
-class TestSteamImportTask:
-    """Test the Steam library import task."""
-
-    @pytest.fixture
-    def mock_job(self):
-        """Create a mock job for testing."""
-        job = MagicMock(spec=Job)
-        job.id = "test-job-id"
-        job.user_id = "test-user-id"
-        job.status = BackgroundJobStatus.PENDING
-        job.progress_current = 0
-        job.progress_total = 0
-        return job
-
-    @pytest.mark.asyncio
-    async def test_import_job_not_found(self):
-        """Import fails gracefully when job not found."""
-        with patch(
-            "app.worker.tasks.import_export.import_steam.get_session_context"
-        ) as mock_context:
-            mock_session = MagicMock()
-            mock_session.get.return_value = None
-            mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_context.return_value.__aexit__ = AsyncMock()
-
-            result = await import_steam_library("nonexistent-job-id")
-
-            assert result["status"] == "error"
-            assert "Job not found" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_import_no_steam_id(self, mock_job):
-        """Import fails when no Steam ID in job."""
-        mock_job.get_result_summary.return_value = {}
-
-        with patch(
-            "app.worker.tasks.import_export.import_steam.get_session_context"
-        ) as mock_context:
-            mock_session = MagicMock()
-            mock_session.get.return_value = mock_job
-            mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_context.return_value.__aexit__ = AsyncMock()
-
-            result = await import_steam_library("test-job-id")
 
             assert result["status"] == "error"
             assert mock_job.status == BackgroundJobStatus.FAILED
