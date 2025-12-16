@@ -35,6 +35,8 @@ from ..schemas.review import (
     ReviewItemStatus,
     ReviewSource,
     IGDBCandidate,
+    PlatformMappingSuggestion,
+    PlatformSummaryResponse,
 )
 from ..services.game_service import GameService
 from ..services.igdb import IGDBService
@@ -296,6 +298,96 @@ async def get_review_counts_by_type(
     return ReviewCountsByType(
         import_pending=import_count,
         sync_pending=sync_count,
+    )
+
+
+@router.get("/platform-summary", response_model=PlatformSummaryResponse)
+async def get_platform_summary(
+    job_id: str = Query(..., description="Job ID to get platform summary for"),
+    session: Annotated[Session, Depends(get_session)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+):
+    """
+    Get summary of platform/storefront strings needing mapping for a job.
+
+    Extracts unique platform and storefront strings from all ReviewItems
+    for the given job, counts occurrences, and suggests matches to
+    existing Platform/Storefront entities.
+    """
+    from collections import Counter
+    from ..models.platform import Platform, Storefront
+
+    # Verify job exists and belongs to user
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    # Get all review items for this job
+    items = session.exec(
+        select(ReviewItem).where(ReviewItem.job_id == job_id)
+    ).all()
+
+    # Extract and count platform/storefront strings
+    platform_counts: Counter = Counter()
+    storefront_counts: Counter = Counter()
+
+    for item in items:
+        metadata = item.get_source_metadata()
+        for p in metadata.get("platforms", []):
+            if p:
+                platform_counts[p] += 1
+        for s in metadata.get("storefronts", []):
+            if s:
+                storefront_counts[s] += 1
+
+    # Get all platforms and storefronts for matching
+    all_platforms = session.exec(select(Platform).where(Platform.is_active == True)).all()
+    all_storefronts = session.exec(select(Storefront).where(Storefront.is_active == True)).all()
+
+    # Build platform suggestions
+    platform_suggestions = []
+    for original, count in platform_counts.items():
+        suggested = _find_best_match(original, [(p.id, p.name, p.display_name) for p in all_platforms])
+        platform_suggestions.append(PlatformMappingSuggestion(
+            original=original,
+            count=count,
+            suggested_id=suggested[0] if suggested else None,
+            suggested_name=suggested[1] if suggested else None,
+        ))
+
+    # Build storefront suggestions
+    storefront_suggestions = []
+    for original, count in storefront_counts.items():
+        suggested = _find_best_match(original, [(s.id, s.name, s.display_name) for s in all_storefronts])
+        storefront_suggestions.append(PlatformMappingSuggestion(
+            original=original,
+            count=count,
+            suggested_id=suggested[0] if suggested else None,
+            suggested_name=suggested[1] if suggested else None,
+        ))
+
+    # Sort by count descending
+    platform_suggestions.sort(key=lambda x: x.count, reverse=True)
+    storefront_suggestions.sort(key=lambda x: x.count, reverse=True)
+
+    # Check if all resolved
+    all_resolved = (
+        all(p.suggested_id for p in platform_suggestions) and
+        all(s.suggested_id for s in storefront_suggestions)
+    )
+
+    return PlatformSummaryResponse(
+        platforms=platform_suggestions,
+        storefronts=storefront_suggestions,
+        all_resolved=all_resolved,
     )
 
 
@@ -811,3 +903,40 @@ def _get_external_id_from_metadata(
         )
 
     return str(external_id)
+
+
+def _find_best_match(
+    original: str,
+    candidates: list[tuple[str, str, str]],  # (id, name, display_name)
+) -> Optional[tuple[str, str]]:
+    """
+    Find best matching platform/storefront for a string.
+
+    Uses case-insensitive exact matching on name or display_name.
+    Returns (id, display_name) or None.
+    """
+    original_lower = original.lower().strip()
+
+    for id_, name, display_name in candidates:
+        if name.lower() == original_lower or display_name.lower() == original_lower:
+            return (id_, display_name)
+
+    # Try partial matching for common abbreviations
+    abbrev_map = {
+        "ps4": "playstation 4",
+        "ps5": "playstation 5",
+        "ps3": "playstation 3",
+        "xb1": "xbox one",
+        "xsx": "xbox series x",
+        "nsw": "nintendo switch",
+        "psn": "playstation store",
+        "xbl": "xbox live",
+    }
+
+    if original_lower in abbrev_map:
+        expanded = abbrev_map[original_lower]
+        for id_, name, display_name in candidates:
+            if name.lower() == expanded or display_name.lower() == expanded:
+                return (id_, display_name)
+
+    return None

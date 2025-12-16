@@ -1119,3 +1119,36 @@ class TestReviewResponseFields:
         assert data["source_metadata"]["platform_id"] == "steam_123"
         assert data["job_type"] == "import"
         assert data["job_source"] == "nexorious"
+
+
+class TestPlatformSummary:
+    """Tests for GET /api/review/platform-summary endpoint."""
+
+    def test_get_platform_summary_empty_job(
+        self,
+        client,
+        auth_headers,
+        test_user: User,
+        session: Session,
+    ):
+        """Test platform summary returns empty for job with no platform data."""
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.AWAITING_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get(
+            f"/api/review/platform-summary?job_id={job.id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platforms"] == []
+        assert data["storefronts"] == []
+        assert data["all_resolved"] is True

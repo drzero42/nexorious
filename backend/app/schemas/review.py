@@ -159,3 +159,20 @@ class ReviewCountsByType(BaseModel):
     sync_pending: int = Field(
         default=0, description="Pending reviews from sync operations"
     )
+
+
+class PlatformMappingSuggestion(BaseModel):
+    """A platform or storefront string that needs mapping."""
+
+    original: str = Field(..., description="Original string from CSV")
+    count: int = Field(..., description="Number of games with this value")
+    suggested_id: Optional[str] = Field(None, description="Suggested Platform/Storefront ID")
+    suggested_name: Optional[str] = Field(None, description="Suggested Platform/Storefront name")
+
+
+class PlatformSummaryResponse(BaseModel):
+    """Summary of platform/storefront strings needing mapping for a job."""
+
+    platforms: List[PlatformMappingSuggestion] = Field(default_factory=list)
+    storefronts: List[PlatformMappingSuggestion] = Field(default_factory=list)
+    all_resolved: bool = Field(..., description="True if all strings have suggestions")
