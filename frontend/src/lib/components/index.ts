@@ -16,8 +16,7 @@ export { default as Portal } from './Portal.svelte';
 export { default as FormField } from './FormField.svelte';
 export { default as StarRating } from './StarRating.svelte';
 
-// Batch processing modals
-export { default as BatchProgressModal } from './BatchProgressModal.svelte';
+// Import progress modals
 export { default as ImportProgressModal } from './ImportProgressModal.svelte';
 
 // Generic Import components
@@ -25,9 +24,6 @@ export { default as ImportGameCard } from './ImportGameCard.svelte';
 export { default as ImportGameTable } from './ImportGameTable.svelte';
 export { default as ImportStatsOverview } from './ImportStatsOverview.svelte';
 export { default as ImportConfigurationSection } from './ImportConfigurationSection.svelte';
-
-// Platform/Storefront resolution components
-export { default as PlatformStorefrontModal } from './PlatformStorefrontModal.svelte';
 
 // Platform Resolution components (for other parts of app)
 export { default as PlatformMappingRow } from './PlatformMappingRow.svelte';
