@@ -50,7 +50,7 @@ def _build_user_games_query(
     query = (
         select(UserGame)
         .where(UserGame.user_id == user_id)
-        .order_by(UserGame.created_at)
+        .order_by(UserGame.created_at)  # pyrefly: ignore[bad-argument-type]
     )
 
     if export_scope == ExportScope.WISHLIST.value:

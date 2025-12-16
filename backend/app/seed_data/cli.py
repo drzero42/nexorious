@@ -6,7 +6,7 @@ import argparse
 import sys
 from sqlmodel import Session
 
-from ..core.database import engine
+from ..core.database import get_engine
 from .seeder import seed_all_official_data, get_seeding_conflicts
 
 
@@ -32,7 +32,7 @@ def main():
     args = parser.parse_args()
     
     # Use existing database engine and session
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         if args.check_conflicts:
             conflicts = get_seeding_conflicts(session)
             if conflicts["platforms"] or conflicts["storefronts"]:

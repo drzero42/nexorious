@@ -22,7 +22,7 @@ class IgnoredExternalGame(SQLModel, table=True):
     so it won't appear in future syncs.
     """
 
-    __tablename__ = "ignored_external_games"
+    __tablename__ = "ignored_external_games"  # pyrefly: ignore[bad-override]
     __table_args__ = (
         UniqueConstraint(
             "user_id", "source", "external_id",

@@ -9,7 +9,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from jose import JWTError
@@ -37,10 +37,10 @@ POLL_INTERVAL_SECONDS = 1.0
 RECENTLY_COMPLETED_WINDOW_SECONDS = 5
 
 # Optional session factory override for testing
-_session_factory: Optional[callable] = None
+_session_factory: Optional[Callable[[], Session]] = None
 
 
-def set_session_factory(factory: Optional[callable]) -> None:
+def set_session_factory(factory: Optional[Callable[[], Session]]) -> None:
     """Set a custom session factory for testing."""
     global _session_factory
     _session_factory = factory

@@ -161,6 +161,7 @@ async def list_review_items(
     if source:
         # Filter by job type (import or sync)
         job_type = BackgroundJobType.IMPORT if source == ReviewSource.IMPORT else BackgroundJobType.SYNC
+        # pyrefly: ignore[bad-argument-type] - SQLAlchemy comparison returns ColumnElement, not bool
         query = query.join(Job, ReviewItem.job_id == Job.id).where(Job.job_type == job_type)
 
     # Get total count before pagination
@@ -278,7 +279,7 @@ async def get_review_counts_by_type(
     import_count = session.exec(
         select(func.count())
         .select_from(ReviewItem)
-        .join(Job, ReviewItem.job_id == Job.id)
+        .join(Job, ReviewItem.job_id == Job.id)  # pyrefly: ignore[bad-argument-type]
         .where(
             ReviewItem.user_id == current_user.id,
             ReviewItem.status == ModelReviewItemStatus.PENDING,
@@ -290,7 +291,7 @@ async def get_review_counts_by_type(
     sync_count = session.exec(
         select(func.count())
         .select_from(ReviewItem)
-        .join(Job, ReviewItem.job_id == Job.id)
+        .join(Job, ReviewItem.job_id == Job.id)  # pyrefly: ignore[bad-argument-type]
         .where(
             ReviewItem.user_id == current_user.id,
             ReviewItem.status == ModelReviewItemStatus.PENDING,
@@ -307,8 +308,8 @@ async def get_review_counts_by_type(
 @router.get("/platform-summary", response_model=PlatformSummaryResponse)
 async def get_platform_summary(
     job_id: str = Query(..., description="Job ID to get platform summary for"),
-    session: Annotated[Session, Depends(get_session)] = None,
-    current_user: Annotated[User, Depends(get_current_user)] = None,
+    session: Annotated[Session, Depends(get_session)] = None,  # pyrefly: ignore[bad-function-definition]
+    current_user: Annotated[User, Depends(get_current_user)] = None,  # pyrefly: ignore[bad-function-definition]
 ):
     """
     Get summary of platform/storefront strings needing mapping for a job.
