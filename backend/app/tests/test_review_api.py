@@ -1152,3 +1152,24 @@ class TestPlatformSummary:
         assert data["platforms"] == []
         assert data["storefronts"] == []
         assert data["all_resolved"] is True
+
+
+class TestFinalizeImport:
+    """Tests for POST /api/review/finalize endpoint."""
+
+    def test_finalize_import_job_not_found(
+        self,
+        client,
+        auth_headers,
+    ):
+        """Test finalize returns 404 for non-existent job."""
+        response = client.post(
+            "/api/review/finalize",
+            json={
+                "job_id": "non-existent-job-id",
+                "platform_mappings": [],
+                "storefront_mappings": []
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
