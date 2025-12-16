@@ -1209,7 +1209,7 @@ class TestDiscardImport:
 
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
         assert response.status_code == 409
-        assert "import" in response.json()["detail"].lower()
+        assert "import" in response.json()["error"].lower()
 
     def test_discard_wrong_status_pending(
         self, client, auth_headers, test_user: User, session: Session
@@ -1226,7 +1226,7 @@ class TestDiscardImport:
 
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
         assert response.status_code == 409
-        assert "awaiting" in response.json()["detail"].lower()
+        assert "awaiting" in response.json()["error"].lower()
 
     def test_discard_wrong_status_completed(
         self, client, auth_headers, test_user: User, session: Session
