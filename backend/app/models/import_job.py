@@ -79,8 +79,8 @@ class ImportJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = Field(default=None)
     
-    # Relationships
-    user: "User" = Relationship(back_populates="import_jobs")
+    # Relationships (removed back_populates since User.import_jobs relationship was removed)
+    user: "User" = Relationship()
     
     def get_metadata(self) -> Dict[str, Any]:
         """Get metadata as a dictionary."""
