@@ -392,7 +392,25 @@ def _create_review_item(
     source_metadata: Dict[str, Any],
     status: ReviewItemStatus,
 ) -> None:
-    """Create a review item for a game."""
+    """Create a review item for a game.
+
+    Checks for existing ReviewItem with same job_id and source_title
+    to prevent duplicates (e.g., from CSV rows with same game name).
+    """
+    # Check for existing ReviewItem with same job_id and source_title
+    existing = session.exec(
+        select(ReviewItem).where(
+            ReviewItem.job_id == job.id,
+            ReviewItem.source_title == game_name,
+        )
+    ).first()
+
+    if existing:
+        logger.debug(
+            f"Skipping duplicate ReviewItem for '{game_name}' in job {job.id}"
+        )
+        return
+
     # Convert candidates to serializable format
     candidates = []
     if match_result.candidates:

@@ -1019,15 +1019,18 @@ class TestReviewItemModelIndexes:
         session.commit()
 
         # Create items with different statuses
+        # Each source_title must be unique within the job due to unique constraint
+        item_counter = 0
         for status in ReviewItemStatus:
-            for _ in range(2):
+            for i in range(2):
                 review_item = ReviewItem(
                     job_id=job.id,
                     user_id=test_user.id,
-                    source_title=f"Game {status.value}",
+                    source_title=f"Game {status.value} {item_counter}",
                     status=status,
                 )
                 session.add(review_item)
+                item_counter += 1
         session.commit()
 
         # Query by status should be efficient
