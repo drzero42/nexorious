@@ -1,10 +1,17 @@
 """
 Schemas for import API endpoints.
+
+This module provides Pydantic schemas for import-related API responses.
+The schemas are designed to work with the unified Job model, with helper
+functions to convert Job instances to response schemas.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from ..models.job import Job
 
 
 class ImportSourceInfo(BaseModel):
@@ -39,6 +46,37 @@ class ImportJobResponse(BaseModel):
     completed_at: Optional[datetime] = Field(None, description="When the job completed")
     error_message: Optional[str] = Field(None, description="Error message if job failed")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional job metadata")
+
+    @classmethod
+    def from_job(cls, job: "Job") -> "ImportJobResponse":
+        """
+        Create an ImportJobResponse from a unified Job model instance.
+
+        This helper method provides a clean conversion from the Job model
+        to the API response schema, mapping fields appropriately.
+
+        Args:
+            job: A Job model instance (must have job_type=IMPORT)
+
+        Returns:
+            ImportJobResponse with all fields populated from the Job
+        """
+        return cls(
+            id=job.id,
+            source=job.source.value,
+            job_type=job.import_subtype.value if job.import_subtype else "import",
+            status=job.status.value,
+            progress=job.progress_percent,
+            total_items=job.progress_total,
+            processed_items=job.progress_current,
+            successful_items=job.successful_items,
+            failed_items=job.failed_items,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error_message=job.error_message,
+            metadata=job.get_result_summary(),
+        )
 
 
 class ImportJobsListResponse(BaseModel):

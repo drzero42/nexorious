@@ -1269,3 +1269,182 @@ class TestReviewItemModelEdgeCases:
         assert len(retrieved) == 50
         assert retrieved[0]["id"] == 0
         assert retrieved[49]["id"] == 49
+
+
+class TestImportJobResponseFromJob:
+    """Test ImportJobResponse.from_job conversion from Job model."""
+
+    def test_from_job_basic_conversion(self, session: Session, test_user: User):
+        """Test basic Job to ImportJobResponse conversion."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+            import_subtype=ImportJobSubtype.LIBRARY_IMPORT,
+            progress_current=50,
+            progress_total=100,
+            successful_items=45,
+            failed_items=5,
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = ImportJobResponse.from_job(job)
+
+        assert response.id == job.id
+        assert response.source == "steam"
+        assert response.job_type == "library_import"
+        assert response.status == "processing"
+        assert response.progress == 50
+        assert response.total_items == 100
+        assert response.processed_items == 50
+        assert response.successful_items == 45
+        assert response.failed_items == 5
+        assert response.created_at == job.created_at
+        assert response.started_at is None
+        assert response.completed_at is None
+        assert response.error_message is None
+        assert response.metadata == {}
+
+    def test_from_job_with_timestamps(self, session: Session, test_user: User):
+        """Test Job conversion with timestamps populated."""
+        from datetime import timedelta
+        from ..schemas.import_schemas import ImportJobResponse
+
+        now = datetime.now(timezone.utc)
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.CSV,
+            status=BackgroundJobStatus.COMPLETED,
+            import_subtype=ImportJobSubtype.BULK_SYNC,
+            progress_current=100,
+            progress_total=100,
+            successful_items=95,
+            failed_items=5,
+            started_at=now - timedelta(minutes=5),
+            completed_at=now,
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = ImportJobResponse.from_job(job)
+
+        assert response.started_at is not None
+        assert response.completed_at is not None
+        assert response.progress == 100
+
+    def test_from_job_with_error(self, session: Session, test_user: User):
+        """Test Job conversion with error message."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.FAILED,
+            error_message="Connection timeout after 30 seconds",
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = ImportJobResponse.from_job(job)
+
+        assert response.status == "failed"
+        assert response.error_message == "Connection timeout after 30 seconds"
+
+    def test_from_job_with_metadata(self, session: Session, test_user: User):
+        """Test Job conversion with result_summary as metadata."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.GOG,
+            status=BackgroundJobStatus.COMPLETED,
+            import_subtype=ImportJobSubtype.AUTO_MATCH,
+        )
+        job.set_result_summary({
+            "games_matched": 42,
+            "games_skipped": 3,
+            "total_time_seconds": 15.5,
+        })
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = ImportJobResponse.from_job(job)
+
+        assert response.metadata is not None
+        assert response.metadata["games_matched"] == 42
+        assert response.metadata["games_skipped"] == 3
+        assert response.metadata["total_time_seconds"] == 15.5
+
+    def test_from_job_without_import_subtype(self, session: Session, test_user: User):
+        """Test Job conversion when import_subtype is None."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PENDING,
+            import_subtype=None,  # No subtype set
+        )
+
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = ImportJobResponse.from_job(job)
+
+        # When no import_subtype, should default to "import"
+        assert response.job_type == "import"
+
+    def test_from_job_all_sources(self, session: Session, test_user: User):
+        """Test Job conversion works for all BackgroundJobSource values."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        for source in BackgroundJobSource:
+            job = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=source,
+                status=BackgroundJobStatus.PENDING,
+            )
+
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+
+            response = ImportJobResponse.from_job(job)
+            assert response.source == source.value
+
+    def test_from_job_all_statuses(self, session: Session, test_user: User):
+        """Test Job conversion works for all BackgroundJobStatus values."""
+        from ..schemas.import_schemas import ImportJobResponse
+
+        for status in BackgroundJobStatus:
+            job = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.SYSTEM,
+                status=status,
+            )
+
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+
+            response = ImportJobResponse.from_job(job)
+            assert response.status == status.value
