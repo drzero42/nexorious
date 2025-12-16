@@ -96,8 +96,13 @@ npm run test:ui
 
 ### Testing Requirements
 - **Backend**: >80% coverage, all tests must pass
-- **Frontend**: >70% coverage, all tests must pass  
+- **Frontend**: >70% coverage, all tests must pass
 - **Zero tolerance**: Fix failing tests immediately
+
+### Type Checking Requirements
+- **Backend**: Zero pyrefly type errors allowed
+- **Frontend**: Zero svelte-check errors allowed
+- **Zero tolerance**: Fix type errors before committing - do not introduce new type errors
 
 ### Backend Testing (pytest)
 - **Framework**: pytest with pytest-asyncio for async testing
@@ -252,9 +257,10 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 
 ### Quality Gates
 - All tests must pass before committing
+- All type checks must pass before committing (pyrefly for backend, svelte-check for frontend)
 - Backend: >80% coverage required
-- Frontend: >70% coverage required  
-- Fix failing tests immediately in same session
+- Frontend: >70% coverage required
+- Fix failing tests and type errors immediately in same session
 
 ## Project Architecture
 
