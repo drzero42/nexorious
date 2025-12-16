@@ -8,7 +8,6 @@
     "api-testing-observability@claude-code-workflows": true,
     "frontend-design@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
     "superpowers@superpowers-marketplace": true,
     "commit-commands@claude-plugins-official": true,
     "code-refactoring@claude-code-workflows": true,
