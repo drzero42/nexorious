@@ -126,3 +126,12 @@ class JobConfirmResponse(BaseModel):
     games_added: int = 0
     games_skipped: int = 0
     games_removed: int = 0
+
+
+class JobDiscardResponse(BaseModel):
+    """Response model for discarding an import job."""
+
+    success: bool
+    message: str
+    deleted_job_id: str
+    deleted_review_items: int
