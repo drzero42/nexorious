@@ -12,6 +12,8 @@
 	let confirmCancelJob = $state<Job | null>(null);
 	let isDeleting = $state(false);
 	let isCancelling = $state(false);
+	let cancelError = $state<string | null>(null);
+	let deleteError = $state<string | null>(null);
 
 	const jobsList = $derived(jobs.value.jobs);
 	const isLoading = $derived(jobs.value.isLoading);
@@ -58,30 +60,42 @@
 	}
 
 	async function handleCancel(job: Job) {
+		cancelError = null;
 		confirmCancelJob = job;
 	}
 
 	async function confirmCancel() {
 		if (!confirmCancelJob) return;
 		isCancelling = true;
+		cancelError = null;
 		try {
 			await jobs.cancelJob(confirmCancelJob.id);
 			confirmCancelJob = null;
+		} catch (e) {
+			console.error('Failed to cancel job:', e);
+			cancelError = e instanceof Error ? e.message : 'Failed to cancel job';
+			// Keep dialog open so user can see the error
 		} finally {
 			isCancelling = false;
 		}
 	}
 
 	async function handleDelete(job: Job) {
+		deleteError = null;
 		confirmDeleteJob = job;
 	}
 
 	async function confirmDelete() {
 		if (!confirmDeleteJob) return;
 		isDeleting = true;
+		deleteError = null;
 		try {
 			await jobs.deleteJob(confirmDeleteJob.id);
 			confirmDeleteJob = null;
+		} catch (e) {
+			console.error('Failed to delete job:', e);
+			deleteError = e instanceof Error ? e.message : 'Failed to delete job';
+			// Keep dialog open so user can see the error
 		} finally {
 			isDeleting = false;
 		}
@@ -314,8 +328,8 @@
 				<div
 					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
 					aria-hidden="true"
-					onclick={() => (confirmCancelJob = null)}
-					onkeydown={(e) => e.key === 'Escape' && (confirmCancelJob = null)}
+					onclick={() => { cancelError = null; confirmCancelJob = null; }}
+					onkeydown={(e) => { if (e.key === 'Escape') { cancelError = null; confirmCancelJob = null; } }}
 					role="button"
 					tabindex="-1"
 				></div>
@@ -356,6 +370,11 @@
 										Are you sure you want to cancel this job? This action cannot be undone.
 									</p>
 								</div>
+								{#if cancelError}
+									<div class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200 dark:border-red-800">
+										<p class="text-sm text-red-700 dark:text-red-300">{cancelError}</p>
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -373,7 +392,7 @@
 						<button
 							type="button"
 							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-							onclick={() => (confirmCancelJob = null)}
+							onclick={() => { cancelError = null; confirmCancelJob = null; }}
 						>
 							Close
 						</button>
@@ -397,8 +416,8 @@
 				<div
 					class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
 					aria-hidden="true"
-					onclick={() => (confirmDeleteJob = null)}
-					onkeydown={(e) => e.key === 'Escape' && (confirmDeleteJob = null)}
+					onclick={() => { deleteError = null; confirmDeleteJob = null; }}
+					onkeydown={(e) => { if (e.key === 'Escape') { deleteError = null; confirmDeleteJob = null; } }}
 					role="button"
 					tabindex="-1"
 				></div>
@@ -440,6 +459,11 @@
 										review items. This action cannot be undone.
 									</p>
 								</div>
+								{#if deleteError}
+									<div class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200 dark:border-red-800">
+										<p class="text-sm text-red-700 dark:text-red-300">{deleteError}</p>
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -457,7 +481,7 @@
 						<button
 							type="button"
 							class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-							onclick={() => (confirmDeleteJob = null)}
+							onclick={() => { deleteError = null; confirmDeleteJob = null; }}
 						>
 							Cancel
 						</button>
