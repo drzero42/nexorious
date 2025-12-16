@@ -19,11 +19,12 @@ from app.worker.tasks.import_export.import_darkadia import (
     import_darkadia_csv,
     _create_column_map,
     _get_row_value,
+    parse_darkadia_platform,
     COLUMN_MAPPINGS,
 )
-from app.worker.tasks.import_export.import_steam import (
-    import_steam_library,
-)
+# from app.worker.tasks.import_export.import_steam import (
+#     import_steam_library,
+# )
 from app.models.job import (
     Job,
     BackgroundJobType,
@@ -231,6 +232,55 @@ class TestDarkadiaImportHelpers:
         for field in expected_fields:
             assert field in COLUMN_MAPPINGS
             assert len(COLUMN_MAPPINGS[field]) > 0
+
+
+class TestParseDarkadiaPlatform:
+    """Tests for Darkadia platform string parsing."""
+
+    def test_parse_full_platform_string(self):
+        """Parse platform with all components."""
+        result = parse_darkadia_platform("PC|Steam|Digital")
+        assert result == {
+            "platform": "PC",
+            "storefront": "Steam",
+            "media_type": "Digital",
+        }
+
+    def test_parse_platform_only(self):
+        """Parse platform with no storefront or media type."""
+        result = parse_darkadia_platform("PlayStation 4")
+        assert result == {
+            "platform": "PlayStation 4",
+            "storefront": None,
+            "media_type": None,
+        }
+
+    def test_parse_platform_and_storefront(self):
+        """Parse platform with storefront but no media type."""
+        result = parse_darkadia_platform("PC|GOG")
+        assert result == {
+            "platform": "PC",
+            "storefront": "GOG",
+            "media_type": None,
+        }
+
+    def test_parse_empty_string(self):
+        """Handle empty string."""
+        result = parse_darkadia_platform("")
+        assert result == {
+            "platform": None,
+            "storefront": None,
+            "media_type": None,
+        }
+
+    def test_parse_whitespace_trimming(self):
+        """Trim whitespace from components."""
+        result = parse_darkadia_platform(" PC | Steam | Digital ")
+        assert result == {
+            "platform": "PC",
+            "storefront": "Steam",
+            "media_type": "Digital",
+        }
 
 
 class TestNexoriousImportTask:

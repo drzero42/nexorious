@@ -62,6 +62,33 @@ COLUMN_MAPPINGS = {
 }
 
 
+def parse_darkadia_platform(platform_str: str) -> Dict[str, Optional[str]]:
+    """
+    Parse Darkadia platform string into components.
+
+    Darkadia format: "Platform|Storefront|MediaType"
+    Examples:
+        "PC|Steam|Digital" -> {"platform": "PC", "storefront": "Steam", "media_type": "Digital"}
+        "PlayStation 4" -> {"platform": "PlayStation 4", "storefront": None, "media_type": None}
+
+    Args:
+        platform_str: Raw platform string from CSV
+
+    Returns:
+        Dict with platform, storefront, and media_type keys
+    """
+    if not platform_str or not platform_str.strip():
+        return {"platform": None, "storefront": None, "media_type": None}
+
+    parts = [p.strip() for p in platform_str.split("|")]
+
+    return {
+        "platform": parts[0] if len(parts) > 0 and parts[0] else None,
+        "storefront": parts[1] if len(parts) > 1 and parts[1] else None,
+        "media_type": parts[2] if len(parts) > 2 and parts[2] else None,
+    }
+
+
 @broker.task(
     task_name="import.darkadia_csv",
     queue=QUEUE_HIGH,
