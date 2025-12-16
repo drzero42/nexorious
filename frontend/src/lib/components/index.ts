@@ -45,3 +45,4 @@ export { default as PlatformSelector } from './PlatformSelector.svelte';
 // Job and Review components
 export { default as JobCard } from './JobCard.svelte';
 export { default as ReviewItemCard } from './ReviewItemCard.svelte';
+export { default as PlatformMappingSection } from './PlatformMappingSection.svelte';
