@@ -11,11 +11,11 @@ import logging
 from ...core.database import get_session
 from ...core.security import get_current_user
 from ...models.user import User
-from ...models.import_job import ImportJob, ImportStatus
+from ...models.job import Job, BackgroundJobType, BackgroundJobStatus
 from ...schemas.import_schemas import (
     ImportSourceInfo,
     ImportSourcesResponse,
-    ImportJobsListResponse, 
+    ImportJobsListResponse,
     ImportJobResponse,
     ImportJobCancelResponse,
     ImportHistoryResponse
@@ -71,48 +71,37 @@ async def list_import_jobs(
     status: Optional[str] = Query(default=None)
 ) -> ImportJobsListResponse:
     """List import jobs across all sources with filtering."""
-    
-    # Build query
-    query = select(ImportJob).where(ImportJob.user_id == current_user.id)
-    
+
+    # Build query - filter by job_type=IMPORT
+    query = select(Job).where(
+        Job.user_id == current_user.id,
+        Job.job_type == BackgroundJobType.IMPORT
+    )
+
     # Apply filters
     if source:
-        query = query.where(ImportJob.source == source)
+        query = query.where(Job.source == source)
     if status:
-        query = query.where(ImportJob.status == status)
-    
+        query = query.where(Job.status == status)
+
     # Get total count
-    count_query = select(ImportJob).where(ImportJob.user_id == current_user.id)
+    count_query = select(Job).where(
+        Job.user_id == current_user.id,
+        Job.job_type == BackgroundJobType.IMPORT
+    )
     if source:
-        count_query = count_query.where(ImportJob.source == source) 
+        count_query = count_query.where(Job.source == source)
     if status:
-        count_query = count_query.where(ImportJob.status == status)
-    
+        count_query = count_query.where(Job.status == status)
+
     total = len(session.exec(count_query).all())
-    
+
     # Apply pagination and ordering
-    query = query.order_by(desc(ImportJob.created_at)).offset(offset).limit(limit)
+    query = query.order_by(desc(Job.created_at)).offset(offset).limit(limit)
     jobs = session.exec(query).all()
-    
+
     return ImportJobsListResponse(
-        jobs=[
-            ImportJobResponse(
-                id=job.id,
-                source=job.source or job.import_type.value,
-                job_type=job.job_type.value if job.job_type else "legacy",
-                status=job.status.value,
-                progress=job.progress,
-                total_items=job.total_items or job.total_records,
-                processed_items=job.processed_items or job.processed_records,
-                successful_items=job.successful_items,
-                failed_items=job.failed_items or job.failed_records,
-                created_at=job.created_at,
-                started_at=job.started_at,
-                completed_at=job.completed_at,
-                error_message=job.error_message,
-                metadata=job.get_metadata()
-            ) for job in jobs
-        ],
+        jobs=[ImportJobResponse.from_job(job) for job in jobs],
         total=total,
         offset=offset,
         limit=limit
@@ -126,36 +115,22 @@ async def get_import_job(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> ImportJobResponse:
     """Get specific import job details."""
-    
+
     job = session.exec(
-        select(ImportJob).where(
-            ImportJob.id == job_id,
-            ImportJob.user_id == current_user.id
+        select(Job).where(
+            Job.id == job_id,
+            Job.user_id == current_user.id,
+            Job.job_type == BackgroundJobType.IMPORT
         )
     ).first()
-    
+
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Import job not found"
         )
-    
-    return ImportJobResponse(
-        id=job.id,
-        source=job.source or job.import_type.value,
-        job_type=job.job_type.value if job.job_type else "legacy",
-        status=job.status.value,
-        progress=job.progress,
-        total_items=job.total_items or job.total_records,
-        processed_items=job.processed_items or job.processed_records,
-        successful_items=job.successful_items,
-        failed_items=job.failed_items or job.failed_records,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error_message=job.error_message,
-        metadata=job.get_metadata()
-    )
+
+    return ImportJobResponse.from_job(job)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=ImportJobCancelResponse)
@@ -165,36 +140,45 @@ async def cancel_import_job(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> ImportJobCancelResponse:
     """Cancel a running import job."""
-    
+
     job = session.exec(
-        select(ImportJob).where(
-            ImportJob.id == job_id,
-            ImportJob.user_id == current_user.id
+        select(Job).where(
+            Job.id == job_id,
+            Job.user_id == current_user.id,
+            Job.job_type == BackgroundJobType.IMPORT
         )
     ).first()
-    
+
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Import job not found"
         )
-    
-    if job.status not in [ImportStatus.PENDING, ImportStatus.PROCESSING, ImportStatus.RUNNING]:
+
+    # Only allow cancelling jobs that are in cancellable states
+    cancellable_statuses = [
+        BackgroundJobStatus.PENDING,
+        BackgroundJobStatus.PROCESSING,
+        BackgroundJobStatus.AWAITING_REVIEW,
+        BackgroundJobStatus.READY,
+        BackgroundJobStatus.FINALIZING,
+    ]
+    if job.status not in cancellable_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot cancel job with status: {job.status.value}"
         )
-    
+
     # Update job status
-    job.status = ImportStatus.CANCELLED
+    job.status = BackgroundJobStatus.CANCELLED
     job.completed_at = datetime.now(timezone.utc)
-    
+
     session.add(job)
     session.commit()
     session.refresh(job)
-    
+
     logger.info(f"Import job {job_id} cancelled by user {current_user.id}")
-    
+
     return ImportJobCancelResponse(
         message="Import job cancelled successfully",
         job_id=job_id,
@@ -202,7 +186,7 @@ async def cancel_import_job(
     )
 
 
-@router.get("/history", response_model=ImportHistoryResponse)  
+@router.get("/history", response_model=ImportHistoryResponse)
 async def get_import_history(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -211,49 +195,41 @@ async def get_import_history(
     source: Optional[str] = Query(default=None)
 ) -> ImportHistoryResponse:
     """Get paginated import history."""
-    
+
+    # Terminal statuses for history
+    terminal_statuses = [
+        BackgroundJobStatus.COMPLETED,
+        BackgroundJobStatus.FAILED,
+        BackgroundJobStatus.CANCELLED
+    ]
+
     # Build query for completed jobs only
-    query = select(ImportJob).where(
-        ImportJob.user_id == current_user.id,
-        col(ImportJob.status).in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
+    query = select(Job).where(
+        Job.user_id == current_user.id,
+        Job.job_type == BackgroundJobType.IMPORT,
+        col(Job.status).in_(terminal_statuses)
     )
-    
+
     if source:
-        query = query.where(ImportJob.source == source)
-    
+        query = query.where(Job.source == source)
+
     # Get total count
-    count_query = select(ImportJob).where(
-        ImportJob.user_id == current_user.id,
-        col(ImportJob.status).in_([ImportStatus.COMPLETED, ImportStatus.FAILED, ImportStatus.CANCELLED])
+    count_query = select(Job).where(
+        Job.user_id == current_user.id,
+        Job.job_type == BackgroundJobType.IMPORT,
+        col(Job.status).in_(terminal_statuses)
     )
     if source:
-        count_query = count_query.where(ImportJob.source == source)
-    
+        count_query = count_query.where(Job.source == source)
+
     total = len(session.exec(count_query).all())
-    
+
     # Apply pagination and ordering
-    query = query.order_by(desc(ImportJob.completed_at)).offset(offset).limit(limit)
+    query = query.order_by(desc(Job.completed_at)).offset(offset).limit(limit)
     jobs = session.exec(query).all()
-    
+
     return ImportHistoryResponse(
-        history=[
-            ImportJobResponse(
-                id=job.id,
-                source=job.source or job.import_type.value,
-                job_type=job.job_type.value if job.job_type else "legacy",
-                status=job.status.value,
-                progress=job.progress,
-                total_items=job.total_items or job.total_records,
-                processed_items=job.processed_items or job.processed_records,
-                successful_items=job.successful_items,
-                failed_items=job.failed_items or job.failed_records,
-                created_at=job.created_at,
-                started_at=job.started_at,
-                completed_at=job.completed_at,
-                error_message=job.error_message,
-                metadata=job.get_metadata()
-            ) for job in jobs
-        ],
+        history=[ImportJobResponse.from_job(job) for job in jobs],
         total=total,
         offset=offset,
         limit=limit
