@@ -79,7 +79,7 @@ def _check_active_import(
         Job.user_id == user_id,
         Job.job_type == BackgroundJobType.IMPORT,
         Job.source == source,
-        Job.status.in_([
+        Job.status.in_([  # pyrefly: ignore[missing-attribute]
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
             BackgroundJobStatus.AWAITING_REVIEW,

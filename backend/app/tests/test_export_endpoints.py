@@ -178,6 +178,7 @@ class TestExportCollectionCsv:
 
         # Verify result summary has CSV format
         job = session.get(Job, data["job_id"])
+        assert job is not None
         result_summary = job.get_result_summary()
         assert result_summary["format"] == "csv"
         assert result_summary["scope"] == "collection"
@@ -215,6 +216,7 @@ class TestExportWishlistJson:
 
         # Verify result summary
         job = session.get(Job, data["job_id"])
+        assert job is not None
         result_summary = job.get_result_summary()
         assert result_summary["format"] == "json"
         assert result_summary["scope"] == "wishlist"
@@ -253,6 +255,7 @@ class TestExportWishlistCsv:
         assert data["estimated_items"] == 2
 
         job = session.get(Job, data["job_id"])
+        assert job is not None
         result_summary = job.get_result_summary()
         assert result_summary["format"] == "csv"
         assert result_summary["scope"] == "wishlist"

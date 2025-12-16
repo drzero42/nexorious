@@ -186,7 +186,7 @@ class TestDarkadiaImportHelpers:
     def test_get_row_value_found(self):
         """Get row value when column exists."""
         row = {"Name": "Test Game", "Platform": "PC"}
-        column_map = {"name": "Name", "platform": "Platform"}
+        column_map: dict[str, str | None] = {"name": "Name", "platform": "Platform"}
 
         assert _get_row_value(row, column_map, "name") == "Test Game"
         assert _get_row_value(row, column_map, "platform") == "PC"
@@ -201,7 +201,7 @@ class TestDarkadiaImportHelpers:
     def test_get_row_value_empty_string(self):
         """Get row value returns None for empty strings."""
         row = {"Name": "", "Platform": "  "}
-        column_map = {"name": "Name", "platform": "Platform"}
+        column_map: dict[str, str | None] = {"name": "Name", "platform": "Platform"}
 
         assert _get_row_value(row, column_map, "name") is None
         assert _get_row_value(row, column_map, "platform") is None
@@ -209,7 +209,7 @@ class TestDarkadiaImportHelpers:
     def test_get_row_value_strips_whitespace(self):
         """Get row value strips whitespace."""
         row = {"Name": "  Test Game  "}
-        column_map = {"name": "Name"}
+        column_map: dict[str, str | None] = {"name": "Name"}
 
         assert _get_row_value(row, column_map, "name") == "Test Game"
 

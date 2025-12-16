@@ -226,7 +226,7 @@ class TestMatchingServiceIntegration:
 
         assert result.status == MatchStatus.NEEDS_REVIEW
         assert result.match_source == MatchSource.TITLE_SEARCH_REVIEW
-        assert len(result.candidates) > 0
+        assert result.candidates is not None and len(result.candidates) > 0
 
     @pytest.mark.asyncio
     async def test_match_by_title_no_results(self, mock_session, mock_igdb_service):

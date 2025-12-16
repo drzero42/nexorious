@@ -67,8 +67,8 @@ def _lookup_user_platform_game(
     # Join with UserGame to get the game_id (IGDB ID)
     stmt = (
         select(UserGamePlatform, UserGame, Game)
-        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
-        .join(Game, UserGame.game_id == Game.id)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
+        .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
             UserGamePlatform.storefront_id == "steam",
             UserGamePlatform.store_game_id == steam_appid_str,
@@ -106,8 +106,8 @@ def _lookup_any_user_platform_game(
     # Join with UserGame to get the game_id (IGDB ID)
     stmt = (
         select(UserGamePlatform, UserGame, Game)
-        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
-        .join(Game, UserGame.game_id == Game.id)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
+        .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
             UserGamePlatform.storefront_id == "steam",
             UserGamePlatform.store_game_id == steam_appid_str,

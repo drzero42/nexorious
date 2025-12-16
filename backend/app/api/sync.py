@@ -342,6 +342,7 @@ async def list_ignored_games(
         stmt = stmt.where(IgnoredExternalGame.source == source)
 
     # Apply ordering (newest first)
+    # pyrefly: ignore[missing-attribute] - SQLAlchemy column has desc() method
     stmt = stmt.order_by(IgnoredExternalGame.created_at.desc())
 
     # Get total count
