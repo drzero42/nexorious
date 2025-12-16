@@ -1211,10 +1211,10 @@ class TestDiscardImport:
         assert response.status_code == 409
         assert "import" in response.json()["error"].lower()
 
-    def test_discard_wrong_status_pending(
+    def test_discard_pending_status_success(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cannot discard a job in PENDING status."""
+        """Test can discard a job in PENDING status."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -1223,10 +1223,18 @@ class TestDiscardImport:
         )
         session.add(job)
         session.commit()
+        session.refresh(job)
 
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
-        assert "awaiting" in response.json()["error"].lower()
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_job_id"] == job.id
+
+        # Verify job is deleted
+        deleted_job = session.get(Job, job.id)
+        assert deleted_job is None
 
     def test_discard_wrong_status_completed(
         self, client, auth_headers, test_user: User, session: Session
@@ -1244,15 +1252,40 @@ class TestDiscardImport:
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
         assert response.status_code == 409
 
-    def test_discard_wrong_status_processing(
+    def test_discard_processing_status_success(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cannot discard a job still processing."""
+        """Test can discard a job in PROCESSING status (stuck jobs)."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.DARKADIA,
             status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_job_id"] == job.id
+
+        # Verify job is deleted
+        deleted_job = session.get(Job, job.id)
+        assert deleted_job is None
+
+    def test_discard_wrong_status_failed(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test cannot discard a failed job."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.DARKADIA,
+            status=BackgroundJobStatus.FAILED,
         )
         session.add(job)
         session.commit()

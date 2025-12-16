@@ -321,7 +321,7 @@ async def discard_import(
     """
     Discard an import job and all associated review items.
 
-    Only works for import jobs in AWAITING_REVIEW status.
+    Works for import jobs in PENDING, PROCESSING, or AWAITING_REVIEW status.
     Completely removes the job and all review items from the database.
     """
     logger.info(f"User {current_user.id} requesting to discard import job {job_id}")
@@ -342,13 +342,19 @@ async def discard_import(
             detail="Only import jobs can be discarded",
         )
 
-    if job.status != BackgroundJobStatus.AWAITING_REVIEW:
+    # Allow discarding jobs in PENDING, PROCESSING, or AWAITING_REVIEW status
+    allowed_statuses = {
+        BackgroundJobStatus.PENDING,
+        BackgroundJobStatus.PROCESSING,
+        BackgroundJobStatus.AWAITING_REVIEW,
+    }
+    if job.status not in allowed_statuses:
         logger.warning(
-            f"Cannot discard job {job_id} - not awaiting review (status: {job.status})"
+            f"Cannot discard job {job_id} - wrong status (status: {job.status})"
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot discard job - must be awaiting review. Current status: {job.status.value}",
+            detail=f"Cannot discard job - must be pending, processing, or awaiting review. Current status: {job.status.value}",
         )
 
     # Count review items before deletion
