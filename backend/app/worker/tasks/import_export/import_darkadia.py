@@ -283,12 +283,25 @@ async def _process_darkadia_row(
         return "error"
 
     # Get optional fields for matching hints
-    platform = _get_row_value(row, column_map, "platform")
+    platform_raw = _get_row_value(row, column_map, "platform")
     release_year = _get_row_value(row, column_map, "release_year")
+
+    # Parse platform string into components
+    platforms: List[str] = []
+    storefronts: List[str] = []
+    if platform_raw:
+        parsed = parse_darkadia_platform(platform_raw)
+        if parsed["platform"]:
+            platforms.append(parsed["platform"])
+        if parsed["storefront"]:
+            storefronts.append(parsed["storefront"])
 
     # Build source metadata
     source_metadata = {
-        "platform": platform,
+        "source": "darkadia",
+        "platforms": platforms,
+        "storefronts": storefronts,
+        "platform_raw": platform_raw,  # Keep original for reference
         "release_year": release_year,
         "status": _get_row_value(row, column_map, "status"),
         "rating": _get_row_value(row, column_map, "rating"),
