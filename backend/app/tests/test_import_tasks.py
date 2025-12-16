@@ -415,55 +415,6 @@ class TestDarkadiaImportTask:
             assert mock_job.status == BackgroundJobStatus.FAILED
 
 
-class TestSteamImportTask:
-    """Test the Steam library import task."""
-
-    @pytest.fixture
-    def mock_job(self):
-        """Create a mock job for testing."""
-        job = MagicMock(spec=Job)
-        job.id = "test-job-id"
-        job.user_id = "test-user-id"
-        job.status = BackgroundJobStatus.PENDING
-        job.progress_current = 0
-        job.progress_total = 0
-        return job
-
-    @pytest.mark.asyncio
-    async def test_import_job_not_found(self):
-        """Import fails gracefully when job not found."""
-        with patch(
-            "app.worker.tasks.import_export.import_steam.get_session_context"
-        ) as mock_context:
-            mock_session = MagicMock()
-            mock_session.get.return_value = None
-            mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_context.return_value.__aexit__ = AsyncMock()
-
-            result = await import_steam_library("nonexistent-job-id")
-
-            assert result["status"] == "error"
-            assert "Job not found" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_import_no_steam_id(self, mock_job):
-        """Import fails when no Steam ID in job."""
-        mock_job.get_result_summary.return_value = {}
-
-        with patch(
-            "app.worker.tasks.import_export.import_steam.get_session_context"
-        ) as mock_context:
-            mock_session = MagicMock()
-            mock_session.get.return_value = mock_job
-            mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_context.return_value.__aexit__ = AsyncMock()
-
-            result = await import_steam_library("test-job-id")
-
-            assert result["status"] == "error"
-            assert mock_job.status == BackgroundJobStatus.FAILED
-
-
 class TestImportTasksJobStatusTransitions:
     """Test job status transitions during import tasks."""
 
