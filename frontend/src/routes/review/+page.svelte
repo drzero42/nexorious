@@ -11,13 +11,20 @@
 		type IGDBCandidate
 	} from '$lib/stores';
 	import { websocket, WebSocketEventType } from '$lib/stores/websocket.svelte';
-	import { RouteGuard, Pagination } from '$lib/components';
+	import { RouteGuard, Pagination, PlatformMappingSection } from '$lib/components';
 	import ReviewItemCard from '$lib/components/ReviewItemCard.svelte';
+	import type { PlatformSummaryResponse } from '$lib/types/jobs';
 
 	let filters = $state<ReviewFilters>({});
 	let selectedItem = $state<ReviewItem | null>(null);
 	let isProcessing = $state(false);
 	let processingItemId = $state<string | null>(null);
+
+	// Platform mapping state (for Darkadia imports)
+	let platformSummary = $state<PlatformSummaryResponse | null>(null);
+	let platformMappings = $state<Record<string, string>>({});
+	let storefrontMappings = $state<Record<string, string>>({});
+	let isFinalizingImport = $state(false);
 
 	const items = $derived(review.value.items);
 	const summary = $derived(review.value.summary);
@@ -29,6 +36,11 @@
 	// Parse query params from URL
 	const jobIdFromUrl = $derived($page.url.searchParams.get('job_id'));
 	const sourceFromUrl = $derived($page.url.searchParams.get('source'));
+
+	// Check if this is a Darkadia import job (check by source param or items' job_source)
+	const isDarkadiaImport = $derived(
+		sourceFromUrl === 'import' || items.some(item => item.job_source === 'darkadia')
+	);
 
 	let unsubscribeReviewUpdate: (() => void) | null = null;
 
@@ -42,6 +54,11 @@
 		}
 		loadItems();
 		review.loadSummary();
+
+		// Load platform summary if filtering by job
+		if (jobIdFromUrl) {
+			loadPlatformSummary(jobIdFromUrl);
+		}
 
 		// Connect to WebSocket for real-time updates
 		websocket.connect();
@@ -153,8 +170,77 @@
 		loadItems(1);
 	}
 
+	async function loadPlatformSummary(jobId: string) {
+		try {
+			platformSummary = await review.loadPlatformSummary(jobId);
+
+			// Initialize mappings from suggestions
+			for (const p of platformSummary.platforms) {
+				if (p.suggested_id && !platformMappings[p.original]) {
+					platformMappings[p.original] = p.suggested_id;
+				}
+			}
+			for (const s of platformSummary.storefronts) {
+				if (s.suggested_id && !storefrontMappings[s.original]) {
+					storefrontMappings[s.original] = s.suggested_id;
+				}
+			}
+		} catch (e) {
+			console.error('Failed to load platform summary:', e);
+		}
+	}
+
+	function handlePlatformMappingChange(original: string, platformId: string) {
+		if (platformId) {
+			platformMappings[original] = platformId;
+		} else {
+			delete platformMappings[original];
+		}
+		// Force reactivity
+		platformMappings = { ...platformMappings };
+	}
+
+	function handleStorefrontMappingChange(original: string, storefrontId: string) {
+		if (storefrontId) {
+			storefrontMappings[original] = storefrontId;
+		} else {
+			delete storefrontMappings[original];
+		}
+		// Force reactivity
+		storefrontMappings = { ...storefrontMappings };
+	}
+
+	async function handleFinalizeImport() {
+		if (!jobIdFromUrl) return;
+
+		isFinalizingImport = true;
+		try {
+			const result = await review.finalizeImport(
+				jobIdFromUrl,
+				platformMappings,
+				storefrontMappings
+			);
+
+			if (result.success) {
+				// Show success and redirect to collection
+				goto('/games?notification=import_complete&count=' + result.games_created);
+			}
+		} catch (e) {
+			console.error('Failed to finalize import:', e);
+		} finally {
+			isFinalizingImport = false;
+		}
+	}
+
 	const hasFilters = $derived(
 		filters.status !== undefined || filters.job_id !== undefined || filters.source !== undefined
+	);
+
+	const canFinalize = $derived(
+		isDarkadiaImport &&
+		jobIdFromUrl &&
+		items.some(item => item.status === 'matched') &&
+		!isFinalizingImport
 	);
 
 	// Get candidates from selected item
@@ -357,6 +443,48 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Platform Mapping Section (for Darkadia imports) -->
+		{#if isDarkadiaImport && platformSummary && (platformSummary.platforms.length > 0 || platformSummary.storefronts.length > 0)}
+			<PlatformMappingSection
+				platformSuggestions={platformSummary.platforms}
+				storefrontSuggestions={platformSummary.storefronts}
+				{platformMappings}
+				{storefrontMappings}
+				onPlatformMappingChange={handlePlatformMappingChange}
+				onStorefrontMappingChange={handleStorefrontMappingChange}
+			/>
+		{/if}
+
+		<!-- Finalize Import Button (for Darkadia imports) -->
+		{#if isDarkadiaImport && jobIdFromUrl}
+			<div class="mb-6 flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-200 dark:border-indigo-800">
+				<div>
+					<h3 class="text-sm font-medium text-indigo-800 dark:text-indigo-300">
+						Ready to finalize?
+					</h3>
+					<p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1">
+						Once you've reviewed all items and mapped platforms, click to add games to your collection.
+					</p>
+				</div>
+				<button
+					type="button"
+					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled={!canFinalize}
+					onclick={handleFinalizeImport}
+				>
+					{#if isFinalizingImport}
+						<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+						Finalizing...
+					{:else}
+						Finalize Import
+					{/if}
+				</button>
+			</div>
+		{/if}
 
 		<!-- Error State -->
 		{#if error}
