@@ -11,6 +11,9 @@ export {
   useImportFromIGDB,
   useBulkUpdateUserGames,
   useBulkDeleteUserGames,
+  useAddPlatformToUserGame,
+  useUpdatePlatformAssociation,
+  useRemovePlatformFromUserGame,
 } from './use-games';
 
 // Platform hooks
@@ -27,3 +30,17 @@ export {
   useStorefront,
   useStorefrontNames,
 } from './use-platforms';
+
+// Tag hooks
+export {
+  tagKeys,
+  useTags,
+  useAllTags,
+  useTag,
+  useCreateTag,
+  useCreateOrGetTag,
+  useUpdateTag,
+  useDeleteTag,
+  useAssignTagsToGame,
+  useRemoveTagsFromGame,
+} from './use-tags';
