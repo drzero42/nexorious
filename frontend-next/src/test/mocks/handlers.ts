@@ -24,6 +24,68 @@ export const mockTokens = {
   expires_in: 3600,
 };
 
+export const mockPlatforms = [
+  {
+    id: 'platform-1',
+    name: 'pc',
+    display_name: 'PC',
+    icon_url: null,
+    is_active: true,
+    source: 'system',
+    default_storefront_id: 'storefront-1',
+    storefronts: [
+      {
+        id: 'storefront-1',
+        name: 'steam',
+        display_name: 'Steam',
+        icon_url: null,
+        base_url: 'https://store.steampowered.com',
+        is_active: true,
+        source: 'system',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+    ],
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'platform-2',
+    name: 'playstation-5',
+    display_name: 'PlayStation 5',
+    icon_url: null,
+    is_active: true,
+    source: 'system',
+    default_storefront_id: null,
+    storefronts: [],
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const mockTags = [
+  {
+    id: 'tag-1',
+    user_id: 'test-user-id',
+    name: 'RPG',
+    color: '#FF5733',
+    description: 'Role-playing games',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    game_count: 5,
+  },
+  {
+    id: 'tag-2',
+    user_id: 'test-user-id',
+    name: 'Action',
+    color: '#33FF57',
+    description: 'Action games',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    game_count: 3,
+  },
+];
+
 // Default handlers
 export const handlers = [
   // Auth endpoints
@@ -94,11 +156,70 @@ export const handlers = [
 
   // Platform endpoints
   http.get(`${API_URL}/platforms/`, () => {
-    return HttpResponse.json([
-      { id: 1, name: "PC", slug: "pc" },
-      { id: 2, name: "PlayStation 5", slug: "ps5" },
-      { id: 3, name: "Xbox Series X", slug: "xbox-series-x" },
-    ]);
+    return HttpResponse.json({
+      platforms: mockPlatforms,
+      total: mockPlatforms.length,
+      page: 1,
+      per_page: 100,
+      pages: 1,
+    });
+  }),
+
+  // Add platform to user game
+  http.post(`${API_URL}/user-games/:userGameId/platforms`, async ({ params, request }) => {
+    const body = (await request.json()) as {
+      platform_id: string;
+      storefront_id?: string;
+    };
+
+    const platform = mockPlatforms.find((p) => p.id === body.platform_id);
+
+    return HttpResponse.json(
+      {
+        id: `ugp-${Date.now()}`,
+        platform_id: body.platform_id,
+        storefront_id: body.storefront_id ?? null,
+        platform: platform ?? null,
+        storefront: null,
+        store_game_id: null,
+        store_url: null,
+        is_available: true,
+        original_platform_name: null,
+        created_at: new Date().toISOString(),
+      },
+      { status: 201 }
+    );
+  }),
+
+  // Update platform association
+  http.put(
+    `${API_URL}/user-games/:userGameId/platforms/:associationId`,
+    async ({ params, request }) => {
+      const body = (await request.json()) as {
+        platform_id: string;
+        storefront_id?: string;
+      };
+
+      const platform = mockPlatforms.find((p) => p.id === body.platform_id);
+
+      return HttpResponse.json({
+        id: params.associationId,
+        platform_id: body.platform_id,
+        storefront_id: body.storefront_id ?? null,
+        platform: platform ?? null,
+        storefront: null,
+        store_game_id: null,
+        store_url: null,
+        is_available: true,
+        original_platform_name: null,
+        created_at: new Date().toISOString(),
+      });
+    }
+  ),
+
+  // Remove platform from user game
+  http.delete(`${API_URL}/user-games/:userGameId/platforms/:associationId`, () => {
+    return HttpResponse.json({ message: 'Platform removed successfully' });
   }),
 
   // Game endpoints
@@ -118,10 +239,54 @@ export const handlers = [
 
   // Tags endpoints
   http.get(`${API_URL}/tags/`, () => {
-    return HttpResponse.json([
-      { id: 1, name: "RPG", color: "#FF5733" },
-      { id: 2, name: "Action", color: "#33FF57" },
-    ]);
+    return HttpResponse.json({
+      tags: mockTags,
+      total: mockTags.length,
+      page: 1,
+      per_page: 100,
+      total_pages: 1,
+    });
+  }),
+
+  // Assign tags to game
+  http.post(`${API_URL}/tags/assign/:userGameId`, async ({ request }) => {
+    const body = (await request.json()) as { tag_ids: string[] };
+    return HttpResponse.json({
+      message: 'Tags assigned successfully',
+      new_associations: body.tag_ids.length,
+      total_requested: body.tag_ids.length,
+    });
+  }),
+
+  // Remove tags from game
+  http.delete(`${API_URL}/tags/remove/:userGameId`, async ({ request }) => {
+    const body = (await request.json()) as { tag_ids: string[] };
+    return HttpResponse.json({
+      message: 'Tags removed successfully',
+      removed_associations: body.tag_ids.length,
+      total_requested: body.tag_ids.length,
+    });
+  }),
+
+  // Create or get tag
+  http.post(`${API_URL}/tags/create-or-get`, ({ request }) => {
+    const url = new URL(request.url);
+    const name = url.searchParams.get('name') ?? 'New Tag';
+    const color = url.searchParams.get('color') ?? '#808080';
+
+    return HttpResponse.json({
+      tag: {
+        id: `tag-${Date.now()}`,
+        user_id: 'test-user-id',
+        name,
+        color,
+        description: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        game_count: 0,
+      },
+      created: true,
+    });
   }),
 
   // IGDB endpoints

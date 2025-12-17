@@ -7,7 +7,7 @@ import type {
   UserGamesListResponse,
   BulkUpdateData,
 } from '@/api/games';
-import type { UserGame, IGDBGameCandidate, Game, GameId } from '@/types';
+import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform } from '@/types';
 
 // ============================================================================
 // Query Keys
@@ -177,6 +177,69 @@ export function useBulkDeleteUserGames() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+    },
+  });
+}
+
+/**
+ * Hook to add a platform to a user game.
+ */
+export function useAddPlatformToUserGame() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    UserGamePlatform,
+    Error,
+    { userGameId: string; data: gamesApi.UserGamePlatformData }
+  >({
+    mutationFn: ({ userGameId, data }) =>
+      gamesApi.addPlatformToUserGame(userGameId, data),
+    onSuccess: (_result, { userGameId }) => {
+      queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
+      queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to update a platform association.
+ */
+export function useUpdatePlatformAssociation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    UserGamePlatform,
+    Error,
+    {
+      userGameId: string;
+      platformAssociationId: string;
+      data: gamesApi.UserGamePlatformData;
+    }
+  >({
+    mutationFn: ({ userGameId, platformAssociationId, data }) =>
+      gamesApi.updatePlatformAssociation(userGameId, platformAssociationId, data),
+    onSuccess: (_result, { userGameId }) => {
+      queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
+    },
+  });
+}
+
+/**
+ * Hook to remove a platform from a user game.
+ */
+export function useRemovePlatformFromUserGame() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    void,
+    Error,
+    { userGameId: string; platformAssociationId: string }
+  >({
+    mutationFn: ({ userGameId, platformAssociationId }) =>
+      gamesApi.removePlatformFromUserGame(userGameId, platformAssociationId),
+    onSuccess: (_result, { userGameId }) => {
+      queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
+      queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
     },
   });
 }
