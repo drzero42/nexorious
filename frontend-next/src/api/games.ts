@@ -179,6 +179,14 @@ export interface UserGameUpdateData {
   acquiredDate?: string;
 }
 
+export interface UserGamePlatformData {
+  platformId: string;
+  storefrontId?: string;
+  storeGameId?: string;
+  storeUrl?: string;
+  isAvailable?: boolean;
+}
+
 export interface BulkUpdateData {
   playStatus?: PlayStatus;
   ownershipStatus?: OwnershipStatus;
@@ -574,4 +582,59 @@ export async function getCollectionStats(): Promise<{
     averageRating: response.average_rating,
     totalHoursPlayed: response.total_hours_played,
   };
+}
+
+/**
+ * Add a platform association to a user game.
+ */
+export async function addPlatformToUserGame(
+  userGameId: string,
+  data: UserGamePlatformData
+): Promise<UserGamePlatform> {
+  const requestBody = {
+    platform_id: data.platformId,
+    storefront_id: data.storefrontId,
+    store_game_id: data.storeGameId,
+    store_url: data.storeUrl,
+    is_available: data.isAvailable ?? true,
+  };
+
+  const response = await api.post<UserGamePlatformApiResponse>(
+    `/user-games/${userGameId}/platforms`,
+    requestBody
+  );
+  return transformUserGamePlatform(response);
+}
+
+/**
+ * Update a platform association on a user game.
+ */
+export async function updatePlatformAssociation(
+  userGameId: string,
+  platformAssociationId: string,
+  data: UserGamePlatformData
+): Promise<UserGamePlatform> {
+  const requestBody = {
+    platform_id: data.platformId,
+    storefront_id: data.storefrontId,
+    store_game_id: data.storeGameId,
+    store_url: data.storeUrl,
+    is_available: data.isAvailable ?? true,
+  };
+
+  const response = await api.put<UserGamePlatformApiResponse>(
+    `/user-games/${userGameId}/platforms/${platformAssociationId}`,
+    requestBody
+  );
+  return transformUserGamePlatform(response);
+}
+
+/**
+ * Remove a platform association from a user game.
+ */
+export async function removePlatformFromUserGame(
+  userGameId: string,
+  platformAssociationId: string
+): Promise<void> {
+  await api.delete(`/user-games/${userGameId}/platforms/${platformAssociationId}`);
 }
