@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUserGames } from '@/hooks';
 import {
   GameFilters,
@@ -11,6 +12,7 @@ import {
 import type { PlayStatus, UserGame } from '@/types';
 
 export default function GamesPage() {
+  const router = useRouter();
   const [filters, setFilters] = useState<{
     search: string;
     status?: PlayStatus;
@@ -48,8 +50,7 @@ export default function GamesPage() {
   const clearSelection = () => setSelectedIds(new Set());
 
   const handleClickGame = (game: UserGame) => {
-    // For now, just log - future: navigate to game details
-    console.log('Clicked game:', game.id);
+    router.push(`/games/${game.id}`);
   };
 
   return (
