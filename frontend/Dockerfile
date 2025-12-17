@@ -15,5 +15,9 @@ COPY . .
 # Expose Vite dev server port
 EXPOSE 5173
 
-# Run dev server (host 0.0.0.0 to be accessible from outside container)
+# Use entrypoint script to sync dependencies on startup
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

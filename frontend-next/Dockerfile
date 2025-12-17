@@ -15,5 +15,9 @@ COPY . .
 # Expose Next.js dev server port
 EXPOSE 3000
 
-# Run dev server (turbopack for faster rebuilds)
+# Use entrypoint script to sync dependencies on startup
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["npm", "run", "dev"]
