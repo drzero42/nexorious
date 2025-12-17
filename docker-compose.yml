@@ -2,11 +2,12 @@
 # Works with both Docker Compose and Podman Compose (rootless)
 #
 # Services:
-#   db        - PostgreSQL 16 database
-#   api       - FastAPI backend (hot-reload enabled)
-#   frontend  - SvelteKit frontend (hot-reload enabled)
-#   worker    - Taskiq background task worker (scalable)
-#   scheduler - Taskiq scheduled task runner (single instance only)
+#   db           - PostgreSQL 16 database
+#   api          - FastAPI backend (hot-reload enabled)
+#   frontend     - SvelteKit frontend (hot-reload enabled)
+#   frontend-next - Next.js frontend (hot-reload enabled) - port 3000
+#   worker       - Taskiq background task worker (scalable)
+#   scheduler    - Taskiq scheduled task runner (single instance only)
 #
 # Usage:
 #   podman-compose up --build           # Start all services
@@ -56,6 +57,20 @@ services:
     volumes:
       - ./frontend:/app:Z
       - /app/node_modules
+    depends_on:
+      - api
+
+  frontend-next:
+    build: ./frontend-next
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      NEXT_PUBLIC_STATIC_URL: http://localhost:8000
+    volumes:
+      - ./frontend-next:/app:Z
+      - /app/node_modules
+      - /app/.next
     depends_on:
       - api
 

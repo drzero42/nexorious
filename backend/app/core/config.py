@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     
     # CORS
     cors_origins: Union[str, list[str]] = Field(
-        default=["http://localhost:5173"],
+        default=["http://localhost:5173", "http://localhost:3000"],
         description="Allowed CORS origins (comma-separated string or list)"
     )
-    
+
     @field_validator('cors_origins', mode='after')
     @classmethod
     def parse_cors_origins(cls, v):
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
         elif isinstance(v, list):
             return v
         else:
-            return ["http://localhost:5173"]
+            return ["http://localhost:5173", "http://localhost:3000"]
     
     # External APIs
     igdb_client_id: Optional[str] = Field(

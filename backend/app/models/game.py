@@ -3,6 +3,7 @@ Game metadata models with IGDB integration support.
 """
 
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Column, Numeric
 from pydantic import field_validator
 from typing import Optional, List
 from datetime import datetime, date, timezone
@@ -30,7 +31,7 @@ class Game(SQLModel, table=True):
     release_date: Optional[date] = Field(default=None)
     cover_art_url: Optional[str] = Field(default=None, max_length=500)
     rating_average: Optional[Decimal] = Field(
-        default=None, max_digits=3, decimal_places=2
+        default=None, sa_column=Column(Numeric(precision=5, scale=2), nullable=True)
     )
     rating_count: int = Field(default=0)
     game_metadata: str = Field(default="{}")  # JSON string for extensible metadata
