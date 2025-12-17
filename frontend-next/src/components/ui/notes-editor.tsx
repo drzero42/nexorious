@@ -46,6 +46,7 @@ export function NotesEditor({
     ],
     content: value,
     editable,
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: cn(
@@ -197,6 +198,7 @@ export function NotesViewer({ content, className }: { content: string; className
     extensions: [StarterKit],
     content,
     editable: false,
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: cn(
