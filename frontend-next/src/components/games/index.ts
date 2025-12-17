@@ -8,3 +8,5 @@ export { GameGrid } from './game-grid';
 export type { GameGridProps } from './game-grid';
 export { GameList } from './game-list';
 export type { GameListProps } from './game-list';
+export { GameEditForm } from './game-edit-form';
+export type { GameEditFormProps } from './game-edit-form';
