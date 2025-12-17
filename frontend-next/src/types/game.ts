@@ -86,6 +86,7 @@ export interface Game {
   cover_art_url?: string;
   rating_average?: number;
   rating_count: number;
+  game_metadata?: string;
   estimated_playtime_hours?: number;
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
@@ -98,11 +99,14 @@ export interface Game {
 
 export interface UserGamePlatform {
   id: string;
-  platform: Platform;
+  platform_id?: string;
+  storefront_id?: string;
+  platform?: Platform;
   storefront?: Storefront;
   store_game_id?: string;
   store_url?: string;
   is_available: boolean;
+  original_platform_name?: string;
   created_at: string;
 }
 
@@ -121,8 +125,6 @@ export interface UserGame {
   id: UserGameId;
   game: Game;
   ownership_status: OwnershipStatus;
-  is_physical: boolean;
-  physical_location?: string;
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
@@ -181,8 +183,6 @@ export interface UserGameCreateRequest {
 
 export interface UserGameUpdateRequest {
   ownership_status?: OwnershipStatus;
-  is_physical?: boolean;
-  physical_location?: string;
   personal_rating?: number | null;
   is_loved?: boolean;
   play_status?: PlayStatus;
