@@ -7,10 +7,15 @@ import { Button } from '@/components/ui/button';
 import { IGDBSearch } from '@/components/games/igdb-search';
 import type { IGDBGameCandidate } from '@/types';
 
+// Session storage key for passing game data to confirmation page
+export const SELECTED_GAME_STORAGE_KEY = 'nexorious_selected_game';
+
 export default function AddGamePage() {
   const router = useRouter();
 
   const handleGameSelect = (game: IGDBGameCandidate) => {
+    // Store the selected game in sessionStorage for the confirmation page
+    sessionStorage.setItem(SELECTED_GAME_STORAGE_KEY, JSON.stringify(game));
     // Navigate to confirmation step with the selected game's IGDB ID
     router.push(`/games/add/confirm?igdb_id=${game.igdb_id}`);
   };
