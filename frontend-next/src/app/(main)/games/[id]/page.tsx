@@ -18,7 +18,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Edit, Trash2, Heart, Star, Clock, Calendar, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Heart, Clock, Calendar, ExternalLink } from 'lucide-react';
+import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
 import type { PlayStatus, OwnershipStatus } from '@/types';
 
@@ -186,17 +187,12 @@ export default function GameDetailPage() {
               </div>
 
               {/* Quick Stats */}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <Badge className={getStatusColor(game.play_status)}>
                   {formatPlayStatus(game.play_status)}
                 </Badge>
                 <Badge variant="outline">{formatOwnershipStatus(game.ownership_status)}</Badge>
-                {game.personal_rating && (
-                  <Badge variant="secondary" className="flex items-center gap-1">
-                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                    {game.personal_rating}/5
-                  </Badge>
-                )}
+                <StarRating value={game.personal_rating} readonly size="md" showLabel />
               </div>
 
               {/* Game Metadata Grid */}
@@ -325,11 +321,9 @@ export default function GameDetailPage() {
               </dd>
             </div>
             <div className="bg-muted/50 p-4 rounded-lg">
-              <dt className="text-sm text-muted-foreground flex items-center gap-1">
-                <Star className="h-4 w-4" /> Rating
-              </dt>
-              <dd className="mt-1 font-medium">
-                {game.personal_rating ? `${game.personal_rating}/5` : 'Not rated'}
+              <dt className="text-sm text-muted-foreground mb-1">Rating</dt>
+              <dd>
+                <StarRating value={game.personal_rating} readonly size="sm" />
               </dd>
             </div>
             <div className="bg-muted/50 p-4 rounded-lg">
