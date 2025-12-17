@@ -10,7 +10,7 @@ A self-hostable web application for managing personal video game collections wit
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes for your IGDB-sourced games
 - **Bulk Operations**: Import from CSV exports (Darkadia format) with intelligent conflict resolution
 - **Admin Management**: User management, platform configuration, and system administration
-- **Modern Tech Stack**: FastAPI backend with SvelteKit frontend
+- **Modern Tech Stack**: FastAPI backend with SvelteKit frontend (legacy) or Next.js frontend (new)
 
 ## Quick Start
 
@@ -39,8 +39,13 @@ cd backend
 uv sync
 cd ..
 
-# Setup frontend
+# Setup frontend (SvelteKit - legacy)
 cd frontend
+npm install
+cd ..
+
+# Setup frontend-next (Next.js - recommended)
+cd frontend-next
 npm install
 cd ..
 ```
@@ -57,8 +62,13 @@ cd backend
 uv sync  # Install Python dependencies
 cd ..
 
-# Setup frontend  
+# Setup frontend (SvelteKit - legacy)
 cd frontend
+npm install
+cd ..
+
+# Setup frontend-next (Next.js - recommended)
+cd frontend-next
 npm install
 cd ..
 ```
@@ -72,7 +82,14 @@ uv run python -m nexorious.main
 # Backend available at: http://localhost:8000
 ```
 
-#### Start Frontend (Terminal 2)
+#### Start Frontend - Next.js (Terminal 2, Recommended)
+```bash
+cd frontend-next
+npm run dev
+# Frontend available at: http://localhost:3000
+```
+
+#### Start Frontend - SvelteKit (Terminal 2, Legacy)
 ```bash
 cd frontend
 npm run dev
@@ -244,7 +261,15 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:4173
 STORAGE_PATH=/path/to/storage  # For cover art and uploads
 ```
 
-#### Frontend Configuration
+#### Frontend Configuration (Next.js - frontend-next)
+
+```bash
+# API Connection
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+NEXT_PUBLIC_STATIC_URL=http://localhost:8000
+```
+
+#### Frontend Configuration (SvelteKit - frontend)
 
 ```bash
 # API Connection
@@ -502,13 +527,23 @@ npm run check
 ```
 nexorious/
 ├── backend/           # FastAPI Python backend
-│   ├── nexorious/     # Main application package
+│   ├── app/           # Main application package
 │   ├── alembic/       # Database migrations
 │   ├── scripts/       # Import scripts and utilities
 │   └── tests/         # Backend test suite
-├── frontend/          # SvelteKit TypeScript frontend
+├── frontend/          # SvelteKit TypeScript frontend (legacy)
 │   ├── src/           # Application source code
 │   └── tests/         # Frontend test suite
+├── frontend-next/     # Next.js TypeScript frontend (recommended)
+│   ├── src/
+│   │   ├── app/       # App Router pages and layouts
+│   │   ├── api/       # API service layer
+│   │   ├── components/# Reusable UI components
+│   │   ├── hooks/     # TanStack Query hooks
+│   │   ├── providers/ # React context providers
+│   │   ├── types/     # TypeScript type definitions
+│   │   └── lib/       # Utilities and configuration
+│   └── public/        # Static assets
 ├── docs/              # Project documentation
 │   ├── PRD.md         # Product Requirements
 │   └── TASK_BREAKDOWN.md  # Development tasks
@@ -520,19 +555,25 @@ nexorious/
 ```bash
 # Backend development
 cd backend
-uv run python -m nexorious.main  # Start server
+uv run python -m app.main       # Start server
 uv run pytest                    # Run tests
 uv run alembic revision --autogenerate -m "description"  # New migration
 
-# Frontend development  
+# Frontend-next development (Next.js - recommended)
+cd frontend-next
+npm run dev      # Start dev server (port 3000)
+npm run build    # Production build
+npm run lint     # Lint check
+
+# Frontend development (SvelteKit - legacy)
 cd frontend
-npm run dev      # Start dev server
+npm run dev      # Start dev server (port 5173)
 npm run check    # Type checking
 npm run build    # Production build
 
-# Both
-npm run test     # Frontend tests
-uv run pytest   # Backend tests
+# Tests
+cd frontend && npm run test      # SvelteKit tests
+cd backend && uv run pytest      # Backend tests
 ```
 
 ### Development Guidelines
