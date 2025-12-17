@@ -55,5 +55,31 @@ export type {
   StorefrontsListResponse,
 } from './platforms';
 
+// Re-export tags API functions
+export {
+  getTags,
+  getAllTags,
+  getTag,
+  createTag,
+  createOrGetTag,
+  updateTag,
+  deleteTag,
+  assignTagsToGame,
+  removeTagsFromGame,
+  bulkAssignTags,
+  bulkRemoveTags,
+} from './tags';
+
+// Re-export tags API types
+export type {
+  GetTagsParams,
+  TagCreateData,
+  TagUpdateData,
+  TagsListResponse,
+  TagCreateOrGetResponse,
+  TagAssignResponse,
+  TagRemoveResponse,
+} from './tags';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';
