@@ -255,7 +255,7 @@ LOG_LEVEL=INFO
 DEBUG=false
 
 # CORS (for frontend integration)
-CORS_ORIGINS=http://localhost:5173,http://localhost:4173
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:4173
 
 # Storage
 STORAGE_PATH=/path/to/storage  # For cover art and uploads
