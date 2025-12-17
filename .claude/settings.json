@@ -1,6 +1,5 @@
 {
   "enabledPlugins": {
-    "beads@beads-marketplace": true,
     "c4-architecture@claude-code-workflows": true,
     "api-scaffolding@claude-code-workflows": true,
     "code-documentation@claude-code-workflows": true,
@@ -22,6 +21,7 @@
     "database-migrations@claude-code-workflows": true,
     "developer-essentials@claude-code-workflows": true,
     "error-diagnostics@claude-code-workflows": true,
-    "tdd-workflows@claude-code-workflows": true
+    "tdd-workflows@claude-code-workflows": true,
+    "beads@beads-marketplace": true
   }
 }
