@@ -157,7 +157,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Set tokens first so API calls can use them
+      // Update ref immediately so API calls can use the token
+      tokensRef.current = {
+        accessToken: storedAuth.accessToken,
+        refreshToken: storedAuth.refreshToken
+      };
+
+      // Set state for React rendering
       setAccessToken(storedAuth.accessToken);
       setRefreshToken(storedAuth.refreshToken);
       setUser(storedAuth.user);
@@ -174,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // Token is invalid, clear auth state
         clearStoredAuth();
+        tokensRef.current = { accessToken: null, refreshToken: null };
         setUser(null);
         setAccessToken(null);
         setRefreshToken(null);
@@ -196,11 +203,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const newAccessToken = loginResponse.access_token;
       const newRefreshToken = loginResponse.refresh_token;
 
-      // Set tokens so getMe can use them
+      // Update ref immediately so getMe can use the new token
+      // (setState is async, ref update is sync)
+      tokensRef.current = { accessToken: newAccessToken, refreshToken: newRefreshToken };
+
+      // Set state for React rendering
       setAccessToken(newAccessToken);
       setRefreshToken(newRefreshToken);
 
-      // Fetch user data
+      // Fetch user data (now uses token from ref)
       const currentUser = await authApi.getMe();
       setUser(currentUser);
 
@@ -214,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
       setError(errorMessage);
       // Clear any partial state
+      tokensRef.current = { accessToken: null, refreshToken: null };
       setAccessToken(null);
       setRefreshToken(null);
       setUser(null);
