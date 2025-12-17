@@ -27,7 +27,7 @@ export const mockTokens = {
 // Default handlers
 export const handlers = [
   // Auth endpoints
-  http.post(`${API_URL}/api/v1/auth/login`, async ({ request }) => {
+  http.post(`${API_URL}/auth/login`, async ({ request }) => {
     const body = (await request.formData()) as FormData;
     const username = body.get("username");
     const password = body.get("password");
@@ -46,7 +46,7 @@ export const handlers = [
     );
   }),
 
-  http.get(`${API_URL}/api/v1/auth/me`, ({ request }) => {
+  http.get(`${API_URL}/auth/me`, ({ request }) => {
     const authHeader = request.headers.get("Authorization");
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -62,7 +62,7 @@ export const handlers = [
     return HttpResponse.json(mockUser);
   }),
 
-  http.post(`${API_URL}/api/v1/auth/refresh`, async ({ request }) => {
+  http.post(`${API_URL}/auth/refresh`, async ({ request }) => {
     const body = (await request.json()) as { refresh_token: string };
 
     if (body.refresh_token === "mock-refresh-token") {
@@ -75,11 +75,11 @@ export const handlers = [
     return HttpResponse.json({ detail: "Invalid refresh token" }, { status: 401 });
   }),
 
-  http.get(`${API_URL}/api/v1/auth/setup-status`, () => {
+  http.get(`${API_URL}/auth/setup/status`, () => {
     return HttpResponse.json<SetupStatusResponse>({ needs_setup: false });
   }),
 
-  http.post(`${API_URL}/api/v1/auth/setup`, async ({ request }) => {
+  http.post(`${API_URL}/auth/setup/admin`, async ({ request }) => {
     const body = (await request.json()) as { username: string; password: string };
 
     if (body.username && body.password) {
@@ -93,7 +93,7 @@ export const handlers = [
   }),
 
   // Platform endpoints
-  http.get(`${API_URL}/api/v1/platforms`, () => {
+  http.get(`${API_URL}/platforms/`, () => {
     return HttpResponse.json([
       { id: 1, name: "PC", slug: "pc" },
       { id: 2, name: "PlayStation 5", slug: "ps5" },
@@ -102,11 +102,11 @@ export const handlers = [
   }),
 
   // Game endpoints
-  http.get(`${API_URL}/api/v1/games`, () => {
+  http.get(`${API_URL}/user-games/`, () => {
     return HttpResponse.json([]);
   }),
 
-  http.get(`${API_URL}/api/v1/games/:id`, ({ params }) => {
+  http.get(`${API_URL}/user-games/:id`, ({ params }) => {
     const { id } = params;
     return HttpResponse.json({
       id,
@@ -117,7 +117,7 @@ export const handlers = [
   }),
 
   // Tags endpoints
-  http.get(`${API_URL}/api/v1/tags`, () => {
+  http.get(`${API_URL}/tags/`, () => {
     return HttpResponse.json([
       { id: 1, name: "RPG", color: "#FF5733" },
       { id: 2, name: "Action", color: "#33FF57" },
@@ -125,7 +125,7 @@ export const handlers = [
   }),
 
   // IGDB endpoints
-  http.get(`${API_URL}/api/v1/igdb/search`, ({ request }) => {
+  http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
     const url = new URL(request.url);
     const query = url.searchParams.get("query");
 
