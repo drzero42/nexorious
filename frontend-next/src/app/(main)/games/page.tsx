@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Plus } from 'lucide-react';
 import { useUserGames } from '@/hooks';
 import {
   GameFilters,
@@ -9,6 +11,7 @@ import {
   GameList,
   BulkActions,
 } from '@/components/games';
+import { Button } from '@/components/ui/button';
 import type { PlayStatus, UserGame } from '@/types';
 
 export default function GamesPage() {
@@ -57,12 +60,20 @@ export default function GamesPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Game Library</h1>
-        {data && (
-          <span className="text-muted-foreground">
-            {data.total} game{data.total !== 1 ? 's' : ''}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Game Library</h1>
+          {data && (
+            <span className="text-muted-foreground">
+              {data.total} game{data.total !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <Button asChild>
+          <Link href="/games/add">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Game
+          </Link>
+        </Button>
       </div>
 
       {/* Filters */}
