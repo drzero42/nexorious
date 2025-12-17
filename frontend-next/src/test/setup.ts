@@ -89,5 +89,13 @@ Object.defineProperty(window, "IntersectionObserver", {
   value: IntersectionObserverMock,
 });
 
+// Mock scrollIntoView for cmdk and other components that use it
+Element.prototype.scrollIntoView = vi.fn();
+
+// Mock hasPointerCapture for Radix UI components
+Element.prototype.hasPointerCapture = vi.fn(() => false);
+Element.prototype.setPointerCapture = vi.fn();
+Element.prototype.releasePointerCapture = vi.fn();
+
 // Export the localStorage mock for test access
 export { localStorageMock };
