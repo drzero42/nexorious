@@ -23,6 +23,7 @@ import type { PlatformSelection } from '@/components/ui/platform-selector';
 import { useImportFromIGDB, useCreateUserGame } from '@/hooks/use-games';
 import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
+import type { Platform } from '@/types/platform';
 import { toGameId } from '@/types';
 import { SELECTED_GAME_STORAGE_KEY } from '../page';
 
@@ -61,6 +62,36 @@ function formatPlaytime(hours?: number): string | null {
     return `${Math.round(hours * 60)} min`;
   }
   return `${Math.round(hours)} hrs`;
+}
+
+/**
+ * Check if a platform matches any of the IGDB platform names.
+ * Uses case-insensitive comparison on both display_name and name.
+ */
+function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean {
+  if (!igdbPlatforms || igdbPlatforms.length === 0) return false;
+
+  return igdbPlatforms.some(
+    (igdbPlatform) =>
+      igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
+      igdbPlatform.toLowerCase() === platform.name.toLowerCase()
+  );
+}
+
+/**
+ * Filter platforms to only those available on IGDB for this game.
+ */
+function getIGDBPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+  if (!igdbPlatforms || igdbPlatforms.length === 0) return [];
+  return platforms.filter((platform) => isPlatformInIGDB(platform, igdbPlatforms));
+}
+
+/**
+ * Filter platforms to those NOT available on IGDB for this game.
+ */
+function getOtherPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+  if (!igdbPlatforms || igdbPlatforms.length === 0) return platforms;
+  return platforms.filter((platform) => !isPlatformInIGDB(platform, igdbPlatforms));
 }
 
 // ============================================================================
@@ -149,6 +180,123 @@ function GamePreviewCard({ game }: GamePreviewProps) {
             )}
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface PlatformSelectionSectionProps {
+  platforms: Platform[];
+  igdbPlatformNames: string[];
+  selectedPlatforms: PlatformSelection[];
+  onChange: (selections: PlatformSelection[]) => void;
+  disabled?: boolean;
+}
+
+function PlatformSelectionSection({
+  platforms,
+  igdbPlatformNames,
+  selectedPlatforms,
+  onChange,
+  disabled = false,
+}: PlatformSelectionSectionProps) {
+  const [showOtherPlatforms, setShowOtherPlatforms] = React.useState(false);
+
+  // Filter platforms based on IGDB data
+  const igdbPlatforms = React.useMemo(
+    () => getIGDBPlatforms(platforms, igdbPlatformNames),
+    [platforms, igdbPlatformNames]
+  );
+  const otherPlatforms = React.useMemo(
+    () => getOtherPlatforms(platforms, igdbPlatformNames),
+    [platforms, igdbPlatformNames]
+  );
+
+  const hasIGDBPlatforms = igdbPlatforms.length > 0;
+  const hasOtherPlatforms = otherPlatforms.length > 0;
+
+  // If no IGDB platforms found, show all platforms
+  if (!hasIGDBPlatforms) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Monitor className="h-5 w-5" />
+            Select Your Platforms
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Choose which platforms you own this game on (optional)
+          </p>
+        </CardHeader>
+        <CardContent>
+          {platforms.length > 0 ? (
+            <PlatformSelectorCompact
+              selectedPlatforms={selectedPlatforms}
+              availablePlatforms={platforms}
+              onChange={onChange}
+              disabled={disabled}
+            />
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Monitor className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+              <p className="text-sm">No platforms available</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Monitor className="h-5 w-5" />
+          Select Your Platforms
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Choose which platforms you own this game on (optional)
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* IGDB Platforms - Available for this game */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-green-600 dark:text-green-400">
+            <Gamepad2 className="h-4 w-4" />
+            <span>Available on these platforms</span>
+          </div>
+          <PlatformSelectorCompact
+            selectedPlatforms={selectedPlatforms}
+            availablePlatforms={igdbPlatforms}
+            onChange={onChange}
+            disabled={disabled}
+          />
+        </div>
+
+        {/* Other Platforms - Collapsible */}
+        {hasOtherPlatforms && (
+          <div className="space-y-3 pt-2 border-t">
+            <button
+              type="button"
+              onClick={() => setShowOtherPlatforms(!showOtherPlatforms)}
+              className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+            >
+              <Monitor className="h-4 w-4" />
+              <span>Other platforms ({otherPlatforms.length})</span>
+              <span className="ml-auto text-xs">
+                {showOtherPlatforms ? '▼' : '▶'}
+              </span>
+            </button>
+            {showOtherPlatforms && (
+              <PlatformSelectorCompact
+                selectedPlatforms={selectedPlatforms}
+                availablePlatforms={otherPlatforms}
+                onChange={onChange}
+                disabled={disabled}
+              />
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -252,17 +400,31 @@ export default function GameConfirmPage() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [game, setGame] = React.useState<IGDBGameCandidate | null>(null);
   const [gameLoadError, setGameLoadError] = React.useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = React.useState(false);
 
-  // Load game data from sessionStorage on mount
+  // Mark as hydrated after first client render
   React.useEffect(() => {
-    if (!igdbId) return;
+    setIsHydrated(true);
+  }, []);
+
+  // Load game data from sessionStorage after hydration
+  React.useEffect(() => {
+    // Wait for hydration to complete
+    if (!isHydrated) return;
+
+    // If no igdb_id in URL after hydration, show error
+    if (!igdbId) {
+      setGameLoadError('No game ID provided. Please search for a game first.');
+      return;
+    }
 
     try {
       const storedGame = sessionStorage.getItem(SELECTED_GAME_STORAGE_KEY);
       if (storedGame) {
         const parsedGame = JSON.parse(storedGame) as IGDBGameCandidate;
         // Verify the stored game matches the requested IGDB ID
-        if (parsedGame.igdb_id === igdbId) {
+        // Use Number() to ensure consistent comparison (JSON parse gives plain number)
+        if (Number(parsedGame.igdb_id) === Number(igdbId)) {
           setGame(parsedGame);
           // Clear from storage after successful load
           sessionStorage.removeItem(SELECTED_GAME_STORAGE_KEY);
@@ -276,7 +438,7 @@ export default function GameConfirmPage() {
     } catch {
       setGameLoadError('Failed to load game data. Please try again.');
     }
-  }, [igdbId]);
+  }, [isHydrated, igdbId]);
 
   // Fetch available platforms
   const { data: platforms, isLoading: isPlatformsLoading } = useAllPlatforms();
@@ -285,7 +447,8 @@ export default function GameConfirmPage() {
   const importFromIGDB = useImportFromIGDB();
   const createUserGame = useCreateUserGame();
 
-  const isLoading = isPlatformsLoading || (!game && !gameLoadError);
+  // Show loading while hydrating or loading platforms/game data
+  const isLoading = !isHydrated || isPlatformsLoading || (!game && !gameLoadError);
 
   const handleBack = () => {
     router.push('/games/add');
@@ -327,17 +490,7 @@ export default function GameConfirmPage() {
     }
   };
 
-  // Handle missing IGDB ID
-  if (!igdbId) {
-    return (
-      <ErrorState
-        message="No game ID provided. Please search for a game first."
-        onBack={handleBack}
-      />
-    );
-  }
-
-  // Loading state
+  // Loading state (includes hydration)
   if (isLoading) {
     return <ConfirmPageSkeleton />;
   }
@@ -374,32 +527,13 @@ export default function GameConfirmPage() {
       <GamePreviewCard game={game} />
 
       {/* Platform Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            Select Your Platforms
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Choose which platforms you own this game on (optional)
-          </p>
-        </CardHeader>
-        <CardContent>
-          {platforms && platforms.length > 0 ? (
-            <PlatformSelectorCompact
-              selectedPlatforms={selectedPlatforms}
-              availablePlatforms={platforms}
-              onChange={setSelectedPlatforms}
-              disabled={isSubmitting}
-            />
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <Monitor className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-              <p className="text-sm">No platforms available</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PlatformSelectionSection
+        platforms={platforms ?? []}
+        igdbPlatformNames={game.platforms}
+        selectedPlatforms={selectedPlatforms}
+        onChange={setSelectedPlatforms}
+        disabled={isSubmitting}
+      />
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-2">
