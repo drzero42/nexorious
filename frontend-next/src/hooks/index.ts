@@ -47,3 +47,16 @@ export {
 
 // Setup hooks
 export { useSetupStatus } from './use-setup-status';
+
+// Sync hooks
+export {
+  syncKeys,
+  useSyncConfigs,
+  useSyncConfig,
+  useSyncStatus,
+  useSyncStatuses,
+  useIgnoredGames,
+  useUpdateSyncConfig,
+  useTriggerSync,
+  useUnignoreGame,
+} from './use-sync';

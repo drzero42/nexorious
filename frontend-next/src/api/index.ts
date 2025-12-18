@@ -81,5 +81,19 @@ export type {
   TagRemoveResponse,
 } from './tags';
 
+// Re-export sync API functions
+export {
+  getSyncConfigs,
+  getSyncConfig,
+  updateSyncConfig,
+  triggerSync,
+  getSyncStatus,
+  getIgnoredGames,
+  unignoreGame,
+} from './sync';
+
+// Re-export sync API types
+export type { SyncConfigsResponse, IgnoredGamesResponse } from './sync';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';
