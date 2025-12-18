@@ -18,9 +18,17 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+// Mock auth API
+const mockCheckSetupStatus = vi.fn();
+vi.mock("@/api/auth", () => ({
+  checkSetupStatus: () => mockCheckSetupStatus(),
+}));
+
 describe("RouteGuard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: setup complete
+    mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
   });
 
   afterEach(() => {
@@ -28,23 +36,40 @@ describe("RouteGuard", () => {
   });
 
   describe("loading state", () => {
-    it("shows loading spinner while auth is loading", () => {
+    it("shows loading spinner while checking setup status", () => {
+      mockCheckSetupStatus.mockImplementation(() => new Promise(() => {}));
       mockUseAuth.mockReturnValue({
-        isLoading: true,
+        isLoading: false,
         isAuthenticated: false,
       });
 
-      render(
+      const { container } = render(
         <RouteGuard>
           <div data-testid="children">Protected Content</div>
         </RouteGuard>
       );
 
       // Should show loading spinner
-      const spinner = document.querySelector(".animate-spin");
-      expect(spinner).toBeInTheDocument();
+      expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+      expect(screen.queryByTestId("children")).not.toBeInTheDocument();
+    });
 
-      // Should not render children
+    it("shows loading spinner while auth is loading", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
+      mockUseAuth.mockReturnValue({
+        isLoading: true,
+        isAuthenticated: false,
+      });
+
+      const { container } = render(
+        <RouteGuard>
+          <div data-testid="children">Protected Content</div>
+        </RouteGuard>
+      );
+
+      await waitFor(() => {
+        expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+      });
       expect(screen.queryByTestId("children")).not.toBeInTheDocument();
     });
 
@@ -64,8 +89,88 @@ describe("RouteGuard", () => {
     });
   });
 
+  describe("setup status checks", () => {
+    it("redirects to /setup when setup is needed", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: true });
+      mockUseAuth.mockReturnValue({
+        isLoading: false,
+        isAuthenticated: false,
+      });
+
+      render(
+        <RouteGuard>
+          <div data-testid="children">Protected Content</div>
+        </RouteGuard>
+      );
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/setup");
+      });
+    });
+
+    it("does not render children when setup is needed", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: true });
+      mockUseAuth.mockReturnValue({
+        isLoading: false,
+        isAuthenticated: false,
+      });
+
+      render(
+        <RouteGuard>
+          <div data-testid="children">Protected Content</div>
+        </RouteGuard>
+      );
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/setup");
+      });
+
+      expect(screen.queryByTestId("children")).not.toBeInTheDocument();
+    });
+
+    it("proceeds to auth check when setup is not needed", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
+      mockUseAuth.mockReturnValue({
+        isLoading: false,
+        isAuthenticated: true,
+      });
+
+      render(
+        <RouteGuard>
+          <div data-testid="children">Protected Content</div>
+        </RouteGuard>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("children")).toBeInTheDocument();
+      });
+
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it("continues to login redirect if setup check fails", async () => {
+      mockCheckSetupStatus.mockRejectedValue(new Error("Network error"));
+      mockUseAuth.mockReturnValue({
+        isLoading: false,
+        isAuthenticated: false,
+      });
+
+      render(
+        <RouteGuard>
+          <div data-testid="children">Protected Content</div>
+        </RouteGuard>
+      );
+
+      // Should fall through to auth check and redirect to login
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/login");
+      });
+    });
+  });
+
   describe("unauthenticated state", () => {
     it("redirects to login when not authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: false,
@@ -82,28 +187,32 @@ describe("RouteGuard", () => {
       });
     });
 
-    it("renders nothing while redirecting", () => {
+    it("renders nothing while redirecting", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: false,
       });
 
-      const { container } = render(
+      render(
         <RouteGuard>
           <div data-testid="children">Protected Content</div>
         </RouteGuard>
       );
 
+      // Wait for setup check to complete
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/login");
+      });
+
       // Should not render children
       expect(screen.queryByTestId("children")).not.toBeInTheDocument();
-
-      // Should render nothing (null)
-      expect(container.firstChild).toBeNull();
     });
   });
 
   describe("authenticated state", () => {
-    it("renders children when authenticated", () => {
+    it("renders children when authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: true,
@@ -115,11 +224,14 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      expect(screen.getByTestId("children")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId("children")).toBeInTheDocument();
+      });
       expect(screen.getByText("Protected Content")).toBeInTheDocument();
     });
 
-    it("does not redirect when authenticated", () => {
+    it("does not redirect when authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: true,
@@ -131,10 +243,14 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      expect(mockReplace).not.toHaveBeenCalled();
+      // Wait for setup check to complete
+      await waitFor(() => {
+        expect(mockReplace).not.toHaveBeenCalled();
+      });
     });
 
-    it("does not show loading spinner when authenticated", () => {
+    it("does not show loading spinner when authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: true,
@@ -146,8 +262,10 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      const spinner = document.querySelector(".animate-spin");
-      expect(spinner).not.toBeInTheDocument();
+      await waitFor(() => {
+        const spinner = document.querySelector(".animate-spin");
+        expect(spinner).not.toBeInTheDocument();
+      });
     });
   });
 
@@ -224,7 +342,8 @@ describe("RouteGuard", () => {
   });
 
   describe("children rendering", () => {
-    it("renders multiple children when authenticated", () => {
+    it("renders multiple children when authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: true,
@@ -237,11 +356,14 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      expect(screen.getByTestId("child1")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId("child1")).toBeInTheDocument();
+      });
       expect(screen.getByTestId("child2")).toBeInTheDocument();
     });
 
-    it("renders nested components when authenticated", () => {
+    it("renders nested components when authenticated", async () => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: false });
       mockUseAuth.mockReturnValue({
         isLoading: false,
         isAuthenticated: true,
@@ -255,7 +377,9 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      expect(screen.getByTestId("parent")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId("parent")).toBeInTheDocument();
+      });
       expect(screen.getByTestId("nested")).toBeInTheDocument();
     });
   });
