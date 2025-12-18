@@ -62,7 +62,7 @@ export function useSyncStatus(platform: SyncPlatform) {
 }
 
 /**
- * Hook to fetch all sync statuses for all platforms.
+ * Hook to fetch all sync statuses for supported platforms.
  * Returns a map of platform -> status for easy lookup.
  */
 export function useSyncStatuses() {
@@ -70,16 +70,6 @@ export function useSyncStatuses() {
     steam: useQuery({
       queryKey: syncKeys.status(SyncPlatform.STEAM),
       queryFn: () => syncApi.getSyncStatus(SyncPlatform.STEAM),
-      refetchInterval: 10000,
-    }),
-    epic: useQuery({
-      queryKey: syncKeys.status(SyncPlatform.EPIC),
-      queryFn: () => syncApi.getSyncStatus(SyncPlatform.EPIC),
-      refetchInterval: 10000,
-    }),
-    gog: useQuery({
-      queryKey: syncKeys.status(SyncPlatform.GOG),
-      queryFn: () => syncApi.getSyncStatus(SyncPlatform.GOG),
       refetchInterval: 10000,
     }),
   };

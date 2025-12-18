@@ -84,30 +84,6 @@ const mockSteamConfig: SyncConfig = {
   updatedAt: '2025-01-01T00:00:00Z',
 };
 
-const mockEpicConfig: SyncConfig = {
-  id: '2',
-  userId: 'user-1',
-  platform: 'epic' as SyncPlatform,
-  frequency: 'weekly' as SyncFrequency,
-  autoAdd: false,
-  enabled: false,
-  lastSyncedAt: null,
-  createdAt: '2025-01-01T00:00:00Z',
-  updatedAt: '2025-01-01T00:00:00Z',
-};
-
-const mockGogConfig: SyncConfig = {
-  id: '3',
-  userId: 'user-1',
-  platform: 'gog' as SyncPlatform,
-  frequency: 'manual' as SyncFrequency,
-  autoAdd: true,
-  enabled: true,
-  lastSyncedAt: '2025-01-01T12:00:00Z',
-  createdAt: '2025-01-01T00:00:00Z',
-  updatedAt: '2025-01-01T00:00:00Z',
-};
-
 const mockSyncStatus = {
   platform: 'steam',
   isSyncing: false,
@@ -122,8 +98,8 @@ describe('SyncPage', () => {
     // Default mock implementations
     mockUseSyncConfigs.mockReturnValue({
       data: {
-        configs: [mockSteamConfig, mockEpicConfig, mockGogConfig],
-        total: 3,
+        configs: [mockSteamConfig],
+        total: 1,
       },
       isLoading: false,
       error: null,
@@ -161,7 +137,7 @@ describe('SyncPage', () => {
       render(<SyncPage />);
 
       expect(
-        screen.getByText('Manage platform connections and sync your game libraries')
+        screen.getByText('Sync your Steam library with Nexorious. More platforms coming soon.')
       ).toBeInTheDocument();
     });
 
@@ -199,8 +175,6 @@ describe('SyncPage', () => {
       render(<SyncPage />);
 
       expect(screen.queryByTestId('sync-card-steam')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('sync-card-epic')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('sync-card-gog')).not.toBeInTheDocument();
     });
 
     it('does not display info alert while loading', () => {
@@ -270,41 +244,28 @@ describe('SyncPage', () => {
   });
 
   describe('platform cards', () => {
-    it('displays all platform cards when loaded', () => {
+    it('displays platform card when loaded', () => {
       render(<SyncPage />);
 
       expect(screen.getByTestId('sync-card-steam')).toBeInTheDocument();
-      expect(screen.getByTestId('sync-card-epic')).toBeInTheDocument();
-      expect(screen.getByTestId('sync-card-gog')).toBeInTheDocument();
     });
 
-    it('displays platform names correctly', () => {
+    it('displays platform name correctly', () => {
       render(<SyncPage />);
 
       expect(screen.getByTestId('platform-name-steam')).toHaveTextContent('steam');
-      expect(screen.getByTestId('platform-name-epic')).toHaveTextContent('epic');
-      expect(screen.getByTestId('platform-name-gog')).toHaveTextContent('gog');
     });
 
-    it('displays Connected badge for enabled platforms', () => {
+    it('displays Connected badge for enabled platform', () => {
       render(<SyncPage />);
 
       expect(screen.getByTestId('platform-enabled-steam')).toHaveTextContent('Connected');
-      expect(screen.getByTestId('platform-enabled-gog')).toHaveTextContent('Connected');
     });
 
-    it('displays Disconnected badge for disabled platforms', () => {
-      render(<SyncPage />);
-
-      expect(screen.getByTestId('platform-enabled-epic')).toHaveTextContent('Disconnected');
-    });
-
-    it('displays sync status for each platform', () => {
+    it('displays sync status for platform', () => {
       render(<SyncPage />);
 
       expect(screen.getByTestId('platform-syncing-steam')).toHaveTextContent('Idle');
-      expect(screen.getByTestId('platform-syncing-epic')).toHaveTextContent('Idle');
-      expect(screen.getByTestId('platform-syncing-gog')).toHaveTextContent('Idle');
     });
 
     it('renders cards in a grid layout', () => {
@@ -524,7 +485,7 @@ describe('SyncPage', () => {
   });
 
   describe('skeleton loading', () => {
-    it('displays 3 skeleton cards', () => {
+    it('displays skeleton card', () => {
       mockUseSyncConfigs.mockReturnValue({
         data: undefined,
         isLoading: true,
@@ -535,7 +496,7 @@ describe('SyncPage', () => {
 
       // Count the number of Card components in the skeleton
       const cards = container.querySelectorAll('[class*="card"]');
-      expect(cards.length).toBeGreaterThanOrEqual(3);
+      expect(cards.length).toBeGreaterThanOrEqual(1);
     });
 
     it('skeleton cards have proper structure', () => {
@@ -559,12 +520,10 @@ describe('SyncPage', () => {
       expect(mockUseSyncConfigs).toHaveBeenCalled();
     });
 
-    it('calls useSyncStatus for each platform', () => {
+    it('calls useSyncStatus for platform', () => {
       render(<SyncPage />);
 
       expect(mockUseSyncStatus).toHaveBeenCalledWith('steam');
-      expect(mockUseSyncStatus).toHaveBeenCalledWith('epic');
-      expect(mockUseSyncStatus).toHaveBeenCalledWith('gog');
     });
 
     it('calls useUpdateSyncConfig hook', () => {

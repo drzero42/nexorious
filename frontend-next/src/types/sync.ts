@@ -8,6 +8,8 @@ export enum SyncPlatform {
   GOG = 'gog',
 }
 
+export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [SyncPlatform.STEAM];
+
 export enum SyncFrequency {
   MANUAL = 'manual',
   HOURLY = 'hourly',
