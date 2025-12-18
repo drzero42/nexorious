@@ -67,6 +67,30 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 
+// Helper to create mock platform
+const createMockPlatform = (overrides: { id: string; display_name: string; short_name: string }) => ({
+  id: overrides.id,
+  name: overrides.id,
+  display_name: overrides.display_name,
+  short_name: overrides.short_name,
+  is_active: true,
+  source: "official",
+  created_at: "2024-01-01T00:00:00Z",
+  updated_at: "2024-01-01T00:00:00Z",
+});
+
+// Helper to create mock storefront
+const createMockStorefront = (overrides: { id: string; display_name: string; short_name: string }) => ({
+  id: overrides.id,
+  name: overrides.id,
+  display_name: overrides.display_name,
+  short_name: overrides.short_name,
+  is_active: true,
+  source: "official",
+  created_at: "2024-01-01T00:00:00Z",
+  updated_at: "2024-01-01T00:00:00Z",
+});
+
 // Helper to create mock game data
 const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   id: "game-uuid-1234-5678-abcd-123456789012" as UserGameId,
@@ -101,8 +125,8 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
     {
       id: "platform-1",
       platform_id: "nintendo-switch",
-      platform: { id: "nintendo-switch", display_name: "Nintendo Switch", short_name: "Switch" },
-      storefront: { id: "eshop", display_name: "Nintendo eShop", short_name: "eShop" },
+      platform: createMockPlatform({ id: "nintendo-switch", display_name: "Nintendo Switch", short_name: "Switch" }),
+      storefront: createMockStorefront({ id: "eshop", display_name: "Nintendo eShop", short_name: "eShop" }),
       is_available: true,
       created_at: "2024-01-01T00:00:00Z",
     } as UserGamePlatform,
@@ -526,15 +550,15 @@ describe("GameDetailPage", () => {
           platforms: [
             {
               id: "platform-1",
-              platform: { id: "switch", display_name: "Nintendo Switch", short_name: "Switch" },
-              storefront: { id: "eshop", display_name: "eShop", short_name: "eShop" },
+              platform: createMockPlatform({ id: "switch", display_name: "Nintendo Switch", short_name: "Switch" }),
+              storefront: createMockStorefront({ id: "eshop", display_name: "eShop", short_name: "eShop" }),
               is_available: true,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
             {
               id: "platform-2",
-              platform: { id: "pc", display_name: "PC", short_name: "PC" },
-              storefront: { id: "steam", display_name: "Steam", short_name: "Steam" },
+              platform: createMockPlatform({ id: "pc", display_name: "PC", short_name: "PC" }),
+              storefront: createMockStorefront({ id: "steam", display_name: "Steam", short_name: "Steam" }),
               is_available: true,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
@@ -556,7 +580,7 @@ describe("GameDetailPage", () => {
           platforms: [
             {
               id: "platform-1",
-              platform: { id: "switch", display_name: "Nintendo Switch", short_name: "Switch" },
+              platform: createMockPlatform({ id: "switch", display_name: "Nintendo Switch", short_name: "Switch" }),
               storefront: undefined,
               is_available: true,
               created_at: "2024-01-01T00:00:00Z",

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers';
+import * as authApi from '@/api/auth';
 
 interface RouteGuardProps {
   children: React.ReactNode;
@@ -10,16 +11,40 @@ interface RouteGuardProps {
 
 export function RouteGuard({ children }: RouteGuardProps) {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [isCheckingSetup, setIsCheckingSetup] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
+  // Check setup status on mount
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    const checkSetup = async () => {
+      try {
+        const status = await authApi.checkSetupStatus();
+        if (status.needs_setup) {
+          setNeedsSetup(true);
+          router.replace('/setup');
+          return;
+        }
+      } catch {
+        // If setup check fails, continue to auth check
+        // (we'll redirect to login if not authenticated)
+      } finally {
+        setIsCheckingSetup(false);
+      }
+    };
+
+    checkSetup();
+  }, [router]);
+
+  // Handle auth redirect after setup check completes
+  useEffect(() => {
+    if (!isCheckingSetup && !needsSetup && !authLoading && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isCheckingSetup, needsSetup, authLoading, isAuthenticated, router]);
 
-  // Show loading spinner while checking auth
-  if (isLoading) {
+  // Show loading spinner while checking setup or auth
+  if (isCheckingSetup || authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -27,7 +52,12 @@ export function RouteGuard({ children }: RouteGuardProps) {
     );
   }
 
-  // Don't render anything while redirecting
+  // Don't render anything while redirecting to setup
+  if (needsSetup) {
+    return null;
+  }
+
+  // Don't render anything while redirecting to login
   if (!isAuthenticated) {
     return null;
   }
