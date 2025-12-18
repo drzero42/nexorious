@@ -44,3 +44,6 @@ export {
   useAssignTagsToGame,
   useRemoveTagsFromGame,
 } from './use-tags';
+
+// Setup hooks
+export { useSetupStatus } from './use-setup-status';
