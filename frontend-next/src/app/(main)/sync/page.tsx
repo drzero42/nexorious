@@ -9,6 +9,7 @@ import { AlertCircle, Info, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { SUPPORTED_SYNC_PLATFORMS } from '@/types';
 import type { SyncConfig, SyncConfigUpdateData, SyncPlatform } from '@/types';
 
 function SyncPageSkeleton() {
@@ -127,11 +128,11 @@ export default function SyncPage() {
         </Alert>
       )}
 
-      {configs && configs.configs.length > 0 && (
+      {configs && configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).length > 0 && (
         <>
           {/* Connected Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {configs.configs.map((config: SyncConfig) => (
+            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig) => (
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}
