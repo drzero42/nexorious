@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Library, LogOut, User, ChevronDown } from 'lucide-react';
+import { Library, LogOut, User, ChevronDown, LayoutDashboard } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -25,6 +25,7 @@ function Sidebar() {
   const { user, logout } = useAuth();
 
   const navItems: NavItem[] = [
+    { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/games', label: 'Library', icon: <Library className="h-4 w-4" /> },
   ];
 

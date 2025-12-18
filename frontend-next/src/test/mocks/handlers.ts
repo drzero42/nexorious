@@ -1,8 +1,10 @@
 import { http, HttpResponse } from "msw";
 import type { User, LoginResponse, SetupStatusResponse } from "@/types";
 
-// Match the API URL format from env.ts (development mode)
-const API_URL = "http://localhost:8000/api";
+// Match the API URL format from env.ts
+// In test mode, NODE_ENV is 'test' so apiUrl is '/api'
+// MSW in Node interprets relative URLs against http://localhost
+const API_URL = "/api";
 
 // Mock data
 export const mockUser: User = {
@@ -223,6 +225,20 @@ export const handlers = [
   }),
 
   // Game endpoints
+  http.get(`${API_URL}/user-games/stats`, () => {
+    return HttpResponse.json({
+      total_games: 0,
+      completion_stats: {},
+      ownership_stats: {},
+      platform_stats: {},
+      genre_stats: {},
+      pile_of_shame: 0,
+      completion_rate: 0,
+      average_rating: null,
+      total_hours_played: 0,
+    });
+  }),
+
   http.get(`${API_URL}/user-games/`, () => {
     return HttpResponse.json([]);
   }),
