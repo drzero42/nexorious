@@ -10,8 +10,6 @@ vi.mock('@/hooks', () => ({
   useAllPlatforms: vi.fn(),
 }));
 
-// Import type for proper casting
-import type { useAllPlatforms } from '@/hooks';
 
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
@@ -526,7 +524,7 @@ describe('GameFilters', () => {
     });
 
     it('highlights grid button when viewMode is grid', () => {
-      const { container } = render(
+      render(
         <GameFilters {...defaultProps} viewMode="grid" />
       );
 
@@ -536,7 +534,7 @@ describe('GameFilters', () => {
     });
 
     it('highlights list button when viewMode is list', () => {
-      const { container } = render(
+      render(
         <GameFilters {...defaultProps} viewMode="list" />
       );
 

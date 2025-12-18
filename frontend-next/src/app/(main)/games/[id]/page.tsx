@@ -1,8 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useUserGame, useUpdateUserGame, useDeleteUserGame } from '@/hooks';
+import { useUserGame, useDeleteUserGame } from '@/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import Image from 'next/image';
 import { ArrowLeft, Edit, Trash2, Heart, Clock, Calendar, ExternalLink } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
@@ -153,12 +153,14 @@ export default function GameDetailPage() {
           <div className="lg:grid lg:grid-cols-3 lg:gap-8">
             {/* Cover Art */}
             <div className="lg:col-span-1">
-              <div className="aspect-[3/4] overflow-hidden rounded-lg bg-muted shadow-lg">
+              <div className="aspect-[3/4] overflow-hidden rounded-lg bg-muted shadow-lg relative">
                 {game.game.cover_art_url ? (
-                  <img
+                  <Image
                     src={resolveImageUrl(game.game.cover_art_url)}
                     alt={game.game.title}
-                    className="h-full w-full object-cover object-center"
+                    fill
+                    className="object-cover object-center"
+                    unoptimized
                   />
                 ) : (
                   <div className="h-full w-full flex items-center justify-center text-muted-foreground">

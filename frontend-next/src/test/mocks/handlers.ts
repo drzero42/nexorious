@@ -166,7 +166,7 @@ export const handlers = [
   }),
 
   // Add platform to user game
-  http.post(`${API_URL}/user-games/:userGameId/platforms`, async ({ params, request }) => {
+  http.post(`${API_URL}/user-games/:userGameId/platforms`, async ({ request }) => {
     const body = (await request.json()) as {
       platform_id: string;
       storefront_id?: string;

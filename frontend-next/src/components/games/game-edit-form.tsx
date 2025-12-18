@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -244,12 +245,14 @@ export function GameEditForm({ game }: GameEditFormProps) {
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
             {/* Cover Art Thumbnail */}
-            <div className="w-20 h-28 flex-shrink-0 overflow-hidden rounded-md bg-muted">
+            <div className="w-20 h-28 flex-shrink-0 overflow-hidden rounded-md bg-muted relative">
               {coverArtUrl ? (
-                <img
+                <Image
                   src={coverArtUrl}
                   alt={game.game.title}
-                  className="h-full w-full object-cover"
+                  fill
+                  className="object-cover"
+                  unoptimized
                 />
               ) : (
                 <div className="h-full w-full flex items-center justify-center text-2xl">

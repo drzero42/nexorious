@@ -10,8 +10,6 @@ vi.mock('@/hooks', () => ({
   useBulkDeleteUserGames: vi.fn(),
 }));
 
-// Import actual types for proper casting
-import type { useBulkUpdateUserGames, useBulkDeleteUserGames } from '@/hooks';
 
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({

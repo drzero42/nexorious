@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   ArrowLeft,
   Calendar,
@@ -111,10 +112,12 @@ function GamePreviewCard({ game }: GamePreviewProps) {
           {/* Cover Art */}
           <div className="relative w-32 h-44 flex-shrink-0 mx-auto sm:mx-0 rounded-lg overflow-hidden bg-muted shadow-md">
             {game.cover_art_url ? (
-              <img
+              <Image
                 src={game.cover_art_url}
                 alt={`${game.title} cover`}
-                className="h-full w-full object-cover"
+                fill
+                className="object-cover"
+                unoptimized
               />
             ) : (
               <div className="h-full w-full flex items-center justify-center">

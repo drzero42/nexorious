@@ -95,7 +95,6 @@ function PlatformBadge({
 // ============================================================================
 
 interface StorefrontSelectorProps {
-  platformId: string;
   storefronts: Storefront[];
   selectedStorefrontId?: string;
   onStorefrontChange: (storefrontId: string | undefined) => void;
@@ -103,7 +102,6 @@ interface StorefrontSelectorProps {
 }
 
 function StorefrontSelector({
-  platformId,
   storefronts,
   selectedStorefrontId,
   onStorefrontChange,
@@ -423,7 +421,6 @@ export function PlatformSelector({
                 {storefronts.length > 0 && (
                   <div className="flex-shrink-0 w-36">
                     <StorefrontSelector
-                      platformId={selection.platform_id}
                       storefronts={storefronts}
                       selectedStorefrontId={selection.storefront_id}
                       onStorefrontChange={(storefrontId) =>
@@ -562,7 +559,6 @@ export function PlatformSelectorCompact({
                   Storefront:
                 </Label>
                 <StorefrontSelector
-                  platformId={platform.id}
                   storefronts={storefronts}
                   selectedStorefrontId={selection?.storefront_id}
                   onStorefrontChange={(storefrontId) =>

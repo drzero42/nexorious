@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Search, Loader2, Gamepad2, Calendar, Monitor } from 'lucide-react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import {
   Command,
@@ -12,7 +13,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useSearchIGDB } from '@/hooks/use-games';
-import type { IGDBGameCandidate, GameId } from '@/types';
+import type { IGDBGameCandidate } from '@/types';
 
 // ============================================================================
 // Types
@@ -77,11 +78,12 @@ function GameResultItem({ game, onSelect }: GameResultItemProps) {
         {/* Cover Art */}
         <div className="relative h-16 w-12 flex-shrink-0 rounded overflow-hidden bg-muted">
           {game.cover_art_url ? (
-            <img
+            <Image
               src={game.cover_art_url}
               alt={`${game.title} cover`}
-              className="h-full w-full object-cover"
-              loading="lazy"
+              fill
+              className="object-cover"
+              unoptimized
             />
           ) : (
             <div className="h-full w-full flex items-center justify-center">

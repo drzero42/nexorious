@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@/test/test-utils';
+import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import {
   PlatformSelector,
@@ -507,7 +507,6 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('shows storefront selector for selected platforms with storefronts', async () => {
-    const user = userEvent.setup();
     const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
 
     render(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@/test/test-utils';
+import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { TagSelector, TagSelectorCompact } from './tag-selector';
 import type { Tag } from '@/types';
@@ -463,11 +463,10 @@ describe('TagSelector', () => {
 
     // Game counts should not be shown in the list
     const listItems = screen.getAllByRole('option');
-    listItems.forEach(item => {
-      // Check that text content doesn't include standalone numbers
-      const withinItem = within(item);
-      // This is a loose check - the numbers might still be there in other contexts
-      // But they shouldn't be in the count position
+    listItems.forEach((item) => {
+      // Check that text content doesn't include game counts in parentheses
+      // When showGameCounts is false, we shouldn't see "(N games)" patterns
+      expect(item.textContent).not.toMatch(/\(\d+ games?\)/);
     });
   });
 

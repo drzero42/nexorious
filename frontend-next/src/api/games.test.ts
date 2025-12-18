@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { setAuthHandlers } from './client';
-import { PlayStatus, OwnershipStatus, type GameId, type UserGameId } from '@/types';
+import { PlayStatus, OwnershipStatus, type GameId } from '@/types';
 import {
   getUserGames,
   getUserGame,
