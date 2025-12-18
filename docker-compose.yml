@@ -65,8 +65,11 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Client-side (browser) API URL - goes directly to backend
       NEXT_PUBLIC_API_URL: http://localhost:8000/api
       NEXT_PUBLIC_STATIC_URL: http://localhost:8000
+      # Server-side (middleware) API URL - container-to-container
+      INTERNAL_API_URL: http://api:8000/api
     volumes:
       - ./frontend-next:/app:Z
       - /app/node_modules

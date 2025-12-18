@@ -1,6 +1,9 @@
 import { NextResponse, NextRequest } from 'next/server';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+// For server-side requests (middleware), use internal Docker network URL
+// INTERNAL_API_URL is for container-to-container communication
+// Falls back to NEXT_PUBLIC_API_URL for non-Docker environments
+const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
