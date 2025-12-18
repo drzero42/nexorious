@@ -10,6 +10,9 @@ vi.mock('@/hooks', () => ({
   useAllPlatforms: vi.fn(),
 }));
 
+// Import type for proper casting
+import type { useAllPlatforms } from '@/hooks';
+
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
   Grid: ({ className }: { className?: string }) => (
@@ -92,7 +95,7 @@ describe('GameFilters', () => {
       data: mockPlatforms,
       isLoading: false,
       error: null,
-    } as any);
+    } as unknown as ReturnType<typeof useAllPlatforms>);
   });
 
   describe('search input', () => {
@@ -315,7 +318,7 @@ describe('GameFilters', () => {
         data: [],
         isLoading: false,
         error: null,
-      } as any);
+      } as unknown as ReturnType<typeof useAllPlatforms>);
 
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
@@ -334,7 +337,7 @@ describe('GameFilters', () => {
         data: undefined,
         isLoading: false,
         error: null,
-      } as any);
+      } as unknown as ReturnType<typeof useAllPlatforms>);
 
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
