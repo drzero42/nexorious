@@ -392,7 +392,12 @@ class TestDarkadiaImportTask:
         """Import fails gracefully when job not found."""
         with patch(
             "app.worker.tasks.import_export.import_darkadia.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_darkadia.acquire_job_lock",
+            return_value=True,
+        ), patch(
+            "app.worker.tasks.import_export.import_darkadia.release_job_lock"
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = None
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -410,7 +415,12 @@ class TestDarkadiaImportTask:
 
         with patch(
             "app.worker.tasks.import_export.import_darkadia.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_darkadia.acquire_job_lock",
+            return_value=True,
+        ), patch(
+            "app.worker.tasks.import_export.import_darkadia.release_job_lock"
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = mock_job
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
