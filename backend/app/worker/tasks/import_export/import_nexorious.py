@@ -165,6 +165,8 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
 
         except Exception as e:
             logger.error(f"Nexorious import failed for job {job_id}: {e}")
+            # Rollback any pending transaction before updating job status
+            session.rollback()
             job.status = BackgroundJobStatus.FAILED
             job.error_message = str(e)[:2000]
             job.completed_at = datetime.now(timezone.utc)
