@@ -67,8 +67,9 @@ class UserGame(SQLModel, table=True):
     tags: List["UserGameTag"] = Relationship(back_populates="user_game", cascade_delete=True)
     darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user_game", cascade_delete=True)
     
-    # Unique constraint
+    # Unique constraint: each user can only have one entry per game
     __table_args__ = (
+        UniqueConstraint("user_id", "game_id", name="uq_user_games_user_game"),
         {"extend_existing": True},
     )
 
