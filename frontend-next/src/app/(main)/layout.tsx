@@ -75,6 +75,12 @@ function Sidebar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link href="/profile">
+                <User className="mr-2 h-4 w-4" />
+                <span>Profile</span>
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} className="cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
