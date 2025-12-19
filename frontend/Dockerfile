@@ -1,4 +1,4 @@
-# frontend/Dockerfile
+# frontend-next/Dockerfile
 FROM docker.io/node:22-bookworm-slim
 
 WORKDIR /app
@@ -12,12 +12,12 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Expose Vite dev server port
-EXPOSE 5173
+# Expose Next.js dev server port
+EXPOSE 3000
 
 # Use entrypoint script to sync dependencies on startup
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev"]

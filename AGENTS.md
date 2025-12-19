@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Comprehensive guide for agentic coding agents working on the Nexorious game collection app (FastAPI + SvelteKit + TypeScript).
+Comprehensive guide for agentic coding agents working on the Nexorious game collection app (FastAPI + Next.js + TypeScript).
 
 ## Build/Lint/Test Commands
 
@@ -12,12 +12,12 @@ Comprehensive guide for agentic coding agents working on the Nexorious game coll
 - Dev server: `uv run python -m app.main`
 - Migration: `uv run alembic revision --autogenerate -m "description"`
 
-### Frontend (SvelteKit + TypeScript + Vitest)
+### Frontend (Next.js 16 + React 19 + TypeScript + Vitest)
 - Install: `cd frontend && npm install`
 - Test all: `npm run test` (>70% required)
-- Test single: `npm run test GameCard.test.ts`
-- Type check: `npm run check` (must pass)
-- Dev server: `npm run dev`
+- Test single: `npm run test game-card.test.tsx`
+- Type check: `npm run check` (must pass - tsc && eslint)
+- Dev server: `npm run dev` (port 3000)
 - Build: `npm run build`
 
 ## Code Style Guidelines
@@ -32,18 +32,18 @@ Comprehensive guide for agentic coding agents working on the Nexorious game coll
 - **Async**: Use `async def` for database operations and external APIs
 - **Documentation**: Docstrings for classes/functions, type hints for all parameters
 
-### TypeScript Frontend
-- **Imports**: External libraries → Internal (`$lib/...`) → Types (`type`, `interface`)
+### TypeScript Frontend (Next.js + React)
+- **Imports**: External libraries → Internal (`@/...`) → Types (`type`, `interface`)
 - **Naming**: camelCase variables/functions, PascalCase components, UPPER_CASE constants
-- **Svelte 5**: Read `docs/svelte5-syntax-guide.md` - use `$state()`, `$derived()`, `$effect()`, `$props()`
-- **Props**: Interface-typed with default values: `let { game, isLoading = false }: Props = $props()`
-- **State**: `let count = $state(0)` for reactivity, `$derived()` for computed values
-- **Styling**: Tailwind classes, responsive design patterns
+- **React**: Functional components with hooks (useState, useEffect, custom hooks)
+- **Props**: Interface-typed with destructuring: `function GameCard({ game, isLoading = false }: Props)`
+- **State**: TanStack Query for server state, useState for local state
+- **Styling**: Tailwind CSS classes, shadcn/ui components, responsive design patterns
 - **Components**: Single responsibility, clear prop interfaces, accessible markup
 
 ### Testing Conventions
 - **Backend**: `test_*.py` in `app/tests/`, async test functions, comprehensive coverage
-- **Frontend**: `*.test.ts` (not `+*.test.ts`), component testing with @testing-library/svelte
+- **Frontend**: `*.test.ts` or `*.test.tsx` alongside source files, component testing with @testing-library/react
 - **Naming**: `test_should_create_user_when_valid_data()` (descriptive, behavioral)
 - **Assertions**: Clear, specific error messages
 - **Fixtures**: Reusable test data in `conftest.py`
