@@ -11,7 +11,9 @@ from typing import Dict, Any, Optional, List
 from decimal import Decimal
 
 from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
 
+from app.worker.locking import acquire_job_lock, release_job_lock
 from app.worker.broker import broker
 from app.worker.queues import QUEUE_HIGH
 from app.core.database import get_session_context
@@ -63,18 +65,23 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
     }
 
     async with get_session_context() as session:
-        # Get job and update status
-        job = session.get(Job, job_id)
-        if not job:
-            logger.error(f"Job {job_id} not found")
-            return {"status": "error", "error": "Job not found"}
-
-        job.status = BackgroundJobStatus.PROCESSING
-        job.started_at = datetime.now(timezone.utc)
-        session.add(job)
-        session.commit()
+        # Try to acquire advisory lock - prevents duplicate execution
+        if not acquire_job_lock(session, job_id):
+            logger.info(f"Job {job_id} already being processed by another worker")
+            return {"status": "skipped", "reason": "duplicate_execution"}
 
         try:
+            # Get job and update status
+            job = session.get(Job, job_id)
+            if not job:
+                logger.error(f"Job {job_id} not found")
+                return {"status": "error", "error": "Job not found"}
+
+            job.status = BackgroundJobStatus.PROCESSING
+            job.started_at = datetime.now(timezone.utc)
+            session.add(job)
+            session.commit()
+
             # Get import data from job
             result_summary = job.get_result_summary()
             import_data = result_summary.get("_import_data", {})
@@ -162,6 +169,8 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
             session.add(job)
             session.commit()
             return {"status": "error", "error": str(e), **stats}
+        finally:
+            release_job_lock(session, job_id)
 
 
 async def _process_nexorious_game(
@@ -228,7 +237,12 @@ async def _process_nexorious_game(
         acquired_date=_parse_date(game_data.get("acquired_date")),
     )
     session.add(user_game)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        logger.info(f"Game '{title}' already in collection (caught by constraint)")
+        return "already_in_collection"
     session.refresh(user_game)
 
     # Import platforms if present

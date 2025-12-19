@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
 from decimal import Decimal
+from contextlib import asynccontextmanager
 
 from app.worker.tasks.import_export.import_nexorious import (
     import_nexorious_json,
@@ -327,7 +328,10 @@ class TestNexoriousImportTask:
         """Import fails gracefully when job not found."""
         with patch(
             "app.worker.tasks.import_export.import_nexorious.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = None
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -345,7 +349,10 @@ class TestNexoriousImportTask:
 
         with patch(
             "app.worker.tasks.import_export.import_nexorious.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = mock_job
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -839,11 +846,19 @@ class TestNexoriousImportIntegrityError:
         session.commit()
         session.refresh(job)
 
-        # Mock services
+        # Mock get_session_context to use test session
+        @asynccontextmanager
+        async def mock_session_context():
+            yield session
+
+        # Mock services and session context
         with patch(
             "app.worker.tasks.import_export.import_nexorious.IGDBService"
         ), patch(
             "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
         ):
             result = await import_nexorious_json(job.id)
 
