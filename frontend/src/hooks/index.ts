@@ -67,6 +67,7 @@ export {
   useImportNexorious,
   useImportDarkadia,
   useExportCollection,
+  useExportWishlist,
   useDownloadExport,
 } from './use-import-export';
 
