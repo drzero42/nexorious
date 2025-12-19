@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw, Users, Settings } from 'lucide-react';
+import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw, Users, Settings, ArrowLeftRight } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -28,6 +28,7 @@ function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/games', label: 'Library', icon: <Library className="h-4 w-4" /> },
     { href: '/sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
+    { href: '/import-export', label: 'Import / Export', icon: <ArrowLeftRight className="h-4 w-4" /> },
   ];
 
   const adminNavItems: NavItem[] = [

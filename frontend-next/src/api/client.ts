@@ -172,3 +172,116 @@ export const api = {
       return r.json();
     }),
 };
+
+/**
+ * Upload a file using multipart/form-data.
+ * Handles authentication and token refresh.
+ */
+export async function apiUploadFile<T>(
+  path: string,
+  file: File,
+  fieldName: string = 'file'
+): Promise<T> {
+  const token = getAccessToken();
+  if (!token) {
+    throw new ApiErrorException('Not authenticated', 401);
+  }
+
+  const formData = new FormData();
+  formData.append(fieldName, file);
+
+  const url = buildUrl(path);
+
+  let response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Note: Don't set Content-Type - browser will set it with boundary for FormData
+    },
+    body: formData,
+  });
+
+  // Handle 401 with token refresh
+  if (!response.ok && response.status === 401) {
+    const refreshed = await handleTokenRefresh();
+
+    if (refreshed) {
+      const newToken = getAccessToken();
+      if (newToken) {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${newToken}`,
+          },
+          body: formData,
+        });
+      }
+    } else {
+      handleLogout();
+    }
+  }
+
+  if (!response.ok) {
+    await handleApiError(response);
+  }
+
+  return response.json();
+}
+
+/**
+ * Download a file from the API.
+ * Returns the blob and extracts filename from Content-Disposition header.
+ */
+export async function apiDownloadFile(
+  path: string
+): Promise<{ blob: Blob; filename: string }> {
+  const token = getAccessToken();
+  if (!token) {
+    throw new ApiErrorException('Not authenticated', 401);
+  }
+
+  const url = buildUrl(path);
+
+  let response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  // Handle 401 with token refresh
+  if (!response.ok && response.status === 401) {
+    const refreshed = await handleTokenRefresh();
+
+    if (refreshed) {
+      const newToken = getAccessToken();
+      if (newToken) {
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${newToken}`,
+          },
+        });
+      }
+    } else {
+      handleLogout();
+    }
+  }
+
+  if (!response.ok) {
+    await handleApiError(response);
+  }
+
+  // Extract filename from Content-Disposition header
+  const contentDisposition = response.headers.get('Content-Disposition');
+  let filename = 'download';
+  if (contentDisposition) {
+    const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
+    if (filenameMatch) {
+      filename = filenameMatch[1];
+    }
+  }
+
+  const blob = await response.blob();
+  return { blob, filename };
+}

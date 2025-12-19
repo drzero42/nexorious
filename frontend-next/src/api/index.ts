@@ -106,5 +106,15 @@ export {
 // Re-export sync API types
 export type { SyncConfigsResponse, IgnoredGamesResponse } from './sync';
 
+// Re-export import/export API functions
+export {
+  importNexoriousJson,
+  importDarkadiaCsv,
+  exportCollectionJson,
+  exportCollectionCsv,
+  downloadExport,
+  triggerBlobDownload,
+} from './import-export';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';
