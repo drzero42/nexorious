@@ -96,7 +96,7 @@ def _review_item_to_detail_response(
                 cover_url=c.get("cover_url"),
                 summary=c.get("summary"),
                 platforms=c.get("platforms"),
-                similarity_score=c.get("similarity_score"),
+                similarity_score=c.get("similarity_score") or c.get("confidence_score"),
             )
         )
 
