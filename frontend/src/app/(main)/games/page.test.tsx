@@ -4,12 +4,14 @@ import userEvent from "@testing-library/user-event";
 import GamesPage from "./page";
 import type { UserGame, PlayStatus, OwnershipStatus, GameId, UserGameId } from "@/types";
 
-// Mock useUserGames hook
+// Mock useUserGames and useUserGameIds hooks
 const mockRefetch = vi.fn();
 const mockUseUserGames = vi.fn();
+const mockUseUserGameIds = vi.fn();
 
 vi.mock("@/hooks", () => ({
   useUserGames: () => mockUseUserGames(),
+  useUserGameIds: () => mockUseUserGameIds(),
 }));
 
 // Mock child components to simplify testing
@@ -154,15 +156,29 @@ vi.mock("@/components/games", () => ({
     selectedIds,
     onClearSelection,
     onSuccess,
+    selectionMode,
+    visibleCount,
+    totalCount,
+    onSelectAllClick,
   }: {
     selectedIds: Set<string>;
     onClearSelection: () => void;
     onSuccess: () => void;
+    selectionMode?: string;
+    visibleCount?: number;
+    totalCount?: number;
+    onSelectAllClick?: () => void;
   }) => (
     <div data-testid="bulk-actions">
       <span data-testid="selected-count">{selectedIds.size}</span>
+      <span data-testid="selection-mode">{selectionMode || 'manual'}</span>
+      <span data-testid="visible-count">{visibleCount}</span>
+      <span data-testid="total-count">{totalCount}</span>
       <button data-testid="clear-selection" onClick={onClearSelection}>
         Clear
+      </button>
+      <button data-testid="select-all" onClick={onSelectAllClick}>
+        Select All
       </button>
       <button
         data-testid="trigger-success"
@@ -229,6 +245,11 @@ describe("GamesPage", () => {
       data: { items: mockGames, total: 3, page: 1, per_page: 50, pages: 1 },
       isLoading: false,
       refetch: mockRefetch,
+    });
+    mockUseUserGameIds.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      refetch: vi.fn(),
     });
   });
 

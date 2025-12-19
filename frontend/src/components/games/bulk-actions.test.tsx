@@ -44,6 +44,10 @@ const createDefaultProps = (overrides: Partial<BulkActionsProps> = {}): BulkActi
   selectedIds: new Set(['game-1', 'game-2']),
   onClearSelection: vi.fn(),
   onSuccess: vi.fn(),
+  selectionMode: 'manual',
+  visibleCount: 50,
+  totalCount: 100,
+  onSelectAllClick: vi.fn(),
   ...overrides,
 });
 
@@ -75,11 +79,12 @@ describe('BulkActions', () => {
   });
 
   describe('rendering', () => {
-    it('returns null when no games are selected', () => {
+    it('renders select all checkbox when no games are selected but games exist', () => {
       const props = createDefaultProps({ selectedIds: new Set() });
-      const { container } = render(<BulkActions {...props} />);
+      render(<BulkActions {...props} />);
 
-      expect(container.firstChild).toBeNull();
+      // Should render the select all checkbox
+      expect(screen.getByRole('checkbox')).toBeInTheDocument();
     });
 
     it('renders selected count with singular form for one game', () => {
@@ -558,8 +563,8 @@ describe('BulkActions', () => {
   });
 
   describe('edge cases', () => {
-    it('handles empty Set correctly', () => {
-      const props = createDefaultProps({ selectedIds: new Set() });
+    it('renders when totalCount is 0', () => {
+      const props = createDefaultProps({ selectedIds: new Set(), totalCount: 0 });
       const { container } = render(<BulkActions {...props} />);
 
       expect(container.firstChild).toBeNull();
