@@ -585,6 +585,20 @@ export async function getCollectionStats(): Promise<{
 }
 
 /**
+ * Get all user game IDs matching filters (for bulk selection).
+ */
+export async function getUserGameIds(
+  params?: GetUserGamesParams
+): Promise<string[]> {
+  const queryParams = buildUserGamesQueryParams(params);
+  const response = await api.get<{ ids: string[] }>('/user-games/ids', {
+    params: queryParams,
+  });
+
+  return response.ids;
+}
+
+/**
  * Add a platform association to a user game.
  */
 export async function addPlatformToUserGame(

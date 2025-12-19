@@ -70,6 +70,18 @@ export function useCollectionStats() {
   });
 }
 
+/**
+ * Hook to fetch all user game IDs matching filters.
+ * Disabled by default - call refetch() to trigger.
+ */
+export function useUserGameIds(params?: GetUserGamesParams, options?: { enabled?: boolean }) {
+  return useQuery<string[], Error>({
+    queryKey: [...gameKeys.lists(), 'ids', params] as const,
+    queryFn: () => gamesApi.getUserGameIds(params),
+    enabled: options?.enabled ?? false,
+  });
+}
+
 // ============================================================================
 // Mutation Hooks
 // ============================================================================
