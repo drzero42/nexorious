@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw } from 'lucide-react';
+import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw, Users, Settings } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -30,6 +30,10 @@ function Sidebar() {
     { href: '/sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
   ];
 
+  const adminNavItems: NavItem[] = [
+    { href: '/admin/users', label: 'User Management', icon: <Users className="h-4 w-4" /> },
+  ];
+
   return (
     <aside className="w-64 bg-card border-r flex flex-col h-screen">
       {/* Logo */}
@@ -40,7 +44,7 @@ function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 p-4 overflow-y-auto">
         <ul className="space-y-2">
           {navItems.map((item) => (
             <li key={item.href}>
@@ -60,6 +64,37 @@ function Sidebar() {
             </li>
           ))}
         </ul>
+
+        {/* Admin Navigation */}
+        {user?.isAdmin && (
+          <>
+            <div className="mt-6 mb-2 px-3">
+              <span className="text-xs font-semibold uppercase text-muted-foreground flex items-center gap-2">
+                <Settings className="h-3 w-3" />
+                Admin
+              </span>
+            </div>
+            <ul className="space-y-2">
+              {adminNavItems.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
+                      pathname === item.href ||
+                        (pathname.startsWith(item.href) && item.href !== '/')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-muted'
+                    )}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </nav>
 
       {/* User menu at bottom */}
