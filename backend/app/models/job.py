@@ -122,6 +122,18 @@ class Job(SQLModel, table=True):
         default=None, max_length=2000, description="Primary error message if job failed"
     )
 
+    # Batch session tracking (for auto-match and sync operations)
+    processed_item_ids_json: str = Field(
+        default="[]",
+        sa_column_kwargs={"name": "processed_item_ids"},
+        description="JSON array of item IDs that have been processed",
+    )
+    failed_item_ids_json: str = Field(
+        default="[]",
+        sa_column_kwargs={"name": "failed_item_ids"},
+        description="JSON array of item IDs that failed processing",
+    )
+
     # File path for exports
     file_path: Optional[str] = Field(
         default=None, max_length=500, description="File path for export jobs"
@@ -175,12 +187,62 @@ class Job(SQLModel, table=True):
         errors.append(error)
         self.set_error_log(errors)
 
+    def get_processed_item_ids(self) -> List[str]:
+        """Get processed item IDs as a list."""
+        try:
+            return json.loads(self.processed_item_ids_json)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_processed_item_ids(self, value: List[str]) -> None:
+        """Set processed item IDs from a list."""
+        self.processed_item_ids_json = json.dumps(value)
+
+    def add_processed_item_id(self, item_id: str) -> None:
+        """Add an item ID to the processed list."""
+        ids = self.get_processed_item_ids()
+        ids.append(item_id)
+        self.set_processed_item_ids(ids)
+
+    def get_failed_item_ids(self) -> List[str]:
+        """Get failed item IDs as a list."""
+        try:
+            return json.loads(self.failed_item_ids_json)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_failed_item_ids(self, value: List[str]) -> None:
+        """Set failed item IDs from a list."""
+        self.failed_item_ids_json = json.dumps(value)
+
+    def add_failed_item_id(self, item_id: str) -> None:
+        """Add an item ID to the failed list."""
+        ids = self.get_failed_item_ids()
+        ids.append(item_id)
+        self.set_failed_item_ids(ids)
+
     @property
     def progress_percent(self) -> int:
         """Calculate progress percentage."""
         if self.progress_total == 0:
             return 0
         return min(100, int((self.progress_current / self.progress_total) * 100))
+
+    @property
+    def remaining_items(self) -> int:
+        """Calculate remaining items to process."""
+        return max(0, self.progress_total - self.progress_current)
+
+    @property
+    def is_active(self) -> bool:
+        """Check if job is in an active (non-terminal) state."""
+        return self.status in (
+            BackgroundJobStatus.PENDING,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.AWAITING_REVIEW,
+            BackgroundJobStatus.READY,
+            BackgroundJobStatus.FINALIZING,
+        )
 
     @property
     def is_terminal(self) -> bool:
