@@ -160,9 +160,12 @@ export function isRemovalItem(item: ReviewItem): boolean {
 
 /**
  * Format a Unix timestamp to a year string.
+ * Returns empty string for invalid input (null, 0, NaN, or non-numeric values).
  */
 export function formatReleaseYear(timestamp: number | null): string {
-  if (!timestamp) return '';
+  if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp)) return '';
   const date = new Date(timestamp * 1000);
-  return `(${date.getFullYear()})`;
+  const year = date.getFullYear();
+  if (isNaN(year)) return '';
+  return `(${year})`;
 }
