@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw, Users, Settings, ArrowLeftRight, ClipboardList, ClipboardCheck } from 'lucide-react';
+import { Library, LogOut, User, ChevronDown, LayoutDashboard, RefreshCw, Users, Settings, ArrowLeftRight, ClipboardList, ClipboardCheck, Tag, Layers } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -27,6 +27,7 @@ function Sidebar() {
   const navItems: NavItem[] = [
     { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/games', label: 'Library', icon: <Library className="h-4 w-4" /> },
+    { href: '/tags', label: 'Tags', icon: <Tag className="h-4 w-4" /> },
     { href: '/sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
     { href: '/import-export', label: 'Import / Export', icon: <ArrowLeftRight className="h-4 w-4" /> },
     { href: '/review', label: 'Review', icon: <ClipboardCheck className="h-4 w-4" /> },
@@ -34,7 +35,9 @@ function Sidebar() {
   ];
 
   const adminNavItems: NavItem[] = [
+    { href: '/admin', label: 'Admin Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/admin/users', label: 'User Management', icon: <Users className="h-4 w-4" /> },
+    { href: '/admin/platforms', label: 'Platforms', icon: <Layers className="h-4 w-4" /> },
   ];
 
   return (
@@ -78,23 +81,30 @@ function Sidebar() {
               </span>
             </div>
             <ul className="space-y-2">
-              {adminNavItems.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
-                      pathname === item.href ||
-                        (pathname.startsWith(item.href) && item.href !== '/')
-                        ? 'bg-primary text-primary-foreground'
-                        : 'hover:bg-muted'
-                    )}
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </Link>
-                </li>
-              ))}
+              {adminNavItems.map((item) => {
+                // For /admin, require exact match to avoid matching /admin/users etc.
+                const isActive =
+                  item.href === '/admin'
+                    ? pathname === '/admin'
+                    : pathname === item.href ||
+                      (pathname.startsWith(item.href) && item.href !== '/');
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted'
+                      )}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
