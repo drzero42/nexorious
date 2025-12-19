@@ -116,5 +116,8 @@ export {
   triggerBlobDownload,
 } from './import-export';
 
+// Re-export jobs API functions
+export { getJobs, getJob, cancelJob, deleteJob, confirmJob } from './jobs';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';
