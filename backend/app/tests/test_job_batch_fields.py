@@ -1,6 +1,5 @@
 """Tests for Job model batch session fields."""
 
-import pytest
 from app.models.job import (
     Job,
     BackgroundJobType,

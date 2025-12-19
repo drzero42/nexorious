@@ -50,12 +50,12 @@ async def cleanup_stale_batch_jobs(timeout_minutes: int = 30) -> Dict[str, Any]:
             stale_jobs = session.exec(
                 select(Job).where(
                     Job.job_type == BackgroundJobType.IMPORT,
-                    Job.import_subtype.in_([
+                    Job.import_subtype.in_([  # pyrefly: ignore[missing-attribute]
                         ImportJobSubtype.AUTO_MATCH,
                         ImportJobSubtype.BULK_SYNC,
                     ]),
                     Job.status == BackgroundJobStatus.PROCESSING,
-                    Job.started_at < cutoff_time,
+                    Job.started_at < cutoff_time,  # pyrefly: ignore[unsupported-operation]
                 )
             ).all()
 
