@@ -36,7 +36,7 @@ def acquire_job_lock(session: Session, job_id: str) -> bool:
         True if lock acquired, False if another session holds it
     """
     lock_key = job_id_to_lock_key(job_id)
-    result = session.exec(text(f"SELECT pg_try_advisory_lock({lock_key})"))
+    result = session.execute(text(f"SELECT pg_try_advisory_lock({lock_key})"))  # pyrefly: ignore[deprecated]
     return result.scalar() is True
 
 
@@ -50,4 +50,4 @@ def release_job_lock(session: Session, job_id: str) -> None:
         job_id: The job ID to unlock
     """
     lock_key = job_id_to_lock_key(job_id)
-    session.exec(text(f"SELECT pg_advisory_unlock({lock_key})"))
+    session.execute(text(f"SELECT pg_advisory_unlock({lock_key})"))  # pyrefly: ignore[deprecated]

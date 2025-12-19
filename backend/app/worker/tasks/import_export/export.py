@@ -230,12 +230,15 @@ async def export_collection(
             logger.info(f"Job {job_id} already being processed by another worker")
             return {"status": "skipped", "reason": "duplicate_execution"}
 
+        # Get job first (outside try so exception handler can access it)
+        job = session.get(Job, job_id)
+        if not job:
+            logger.error(f"Job {job_id} not found")
+            release_job_lock(session, job_id)
+            return {"status": "error", "error": "Job not found"}
+
         try:
-            # Get job and update status
-            job = session.get(Job, job_id)
-            if not job:
-                logger.error(f"Job {job_id} not found")
-                return {"status": "error", "error": "Job not found"}
+            # Update job status
 
             job.status = BackgroundJobStatus.PROCESSING
             job.started_at = datetime.now(timezone.utc)
