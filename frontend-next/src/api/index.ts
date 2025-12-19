@@ -119,5 +119,19 @@ export {
 // Re-export jobs API functions
 export { getJobs, getJob, cancelJob, deleteJob, confirmJob } from './jobs';
 
+// Re-export review API functions
+export {
+  getReviewItems,
+  getReviewItem,
+  getReviewSummary,
+  getReviewCountsByType,
+  matchReviewItem,
+  skipReviewItem,
+  keepReviewItem,
+  removeReviewItem,
+  getPlatformSummary,
+  finalizeImport,
+} from './review';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';

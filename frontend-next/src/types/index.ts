@@ -4,4 +4,5 @@ export * from './game';
 export * from './import-export';
 export * from './jobs';
 export * from './platform';
+export * from './review';
 export * from './sync';
