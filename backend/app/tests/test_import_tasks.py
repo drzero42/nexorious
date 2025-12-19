@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
 from decimal import Decimal
+from contextlib import asynccontextmanager
 
 from app.worker.tasks.import_export.import_nexorious import (
     import_nexorious_json,
@@ -33,7 +34,8 @@ from app.models.job import (
     ReviewItem,
     ReviewItemStatus,
 )
-from app.models.user_game import PlayStatus, OwnershipStatus
+from app.models.user_game import PlayStatus, OwnershipStatus, UserGame
+from sqlmodel import Session
 
 
 class TestNexoriousImportHelpers:
@@ -326,7 +328,10 @@ class TestNexoriousImportTask:
         """Import fails gracefully when job not found."""
         with patch(
             "app.worker.tasks.import_export.import_nexorious.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = None
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -344,7 +349,10 @@ class TestNexoriousImportTask:
 
         with patch(
             "app.worker.tasks.import_export.import_nexorious.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = mock_job
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -384,7 +392,12 @@ class TestDarkadiaImportTask:
         """Import fails gracefully when job not found."""
         with patch(
             "app.worker.tasks.import_export.import_darkadia.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_darkadia.acquire_job_lock",
+            return_value=True,
+        ), patch(
+            "app.worker.tasks.import_export.import_darkadia.release_job_lock"
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = None
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -402,7 +415,12 @@ class TestDarkadiaImportTask:
 
         with patch(
             "app.worker.tasks.import_export.import_darkadia.get_session_context"
-        ) as mock_context:
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_darkadia.acquire_job_lock",
+            return_value=True,
+        ), patch(
+            "app.worker.tasks.import_export.import_darkadia.release_job_lock"
+        ):
             mock_session = MagicMock()
             mock_session.get.return_value = mock_job
             mock_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -754,3 +772,107 @@ class TestCreateReviewItemDuplicatePrevention:
         assert len(items) == 2
         titles = {item.source_title for item in items}
         assert titles == {"Game A", "Game B"}
+
+
+class TestNexoriousImportLocking:
+    """Test advisory lock behavior in Nexorious import task."""
+
+    @pytest.mark.asyncio
+    async def test_import_skips_when_lock_held(self, session, test_user):
+        """Import returns skipped status when another worker holds the lock."""
+        from app.worker.locking import acquire_job_lock, release_job_lock
+        from app.core.database import get_engine
+
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [{"title": "Test", "igdb_id": 123}],
+            }
+        })
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Simulate another worker holding the lock
+        with Session(get_engine()) as other_session:
+            acquired = acquire_job_lock(other_session, job.id)
+            assert acquired is True
+
+            # Now run the import task - should skip
+            result = await import_nexorious_json(job.id)
+
+            assert result["status"] == "skipped"
+            assert result["reason"] == "duplicate_execution"
+
+            # Release the lock
+            release_job_lock(other_session, job.id)
+
+
+class TestNexoriousImportIntegrityError:
+    """Test IntegrityError handling in Nexorious import task."""
+
+    @pytest.mark.asyncio
+    async def test_import_handles_integrity_error_gracefully(
+        self, session, test_user, test_game
+    ):
+        """Import counts as already_in_collection when IntegrityError occurs."""
+        # Pre-create the UserGame to trigger IntegrityError on import
+        existing = UserGame(
+            user_id=test_user.id,
+            game_id=test_game.id,
+        )
+        session.add(existing)
+        session.commit()
+
+        # Create import job for the same game
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                        "play_status": "completed",
+                    }
+                ],
+            }
+        })
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Mock get_session_context to use test session
+        @asynccontextmanager
+        async def mock_session_context():
+            yield session
+
+        # Mock services and session context
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
+        ):
+            result = await import_nexorious_json(job.id)
+
+        # Should complete with already_in_collection count
+        assert result["status"] == "success"
+        assert result["already_in_collection"] == 1
+        assert result["imported"] == 0

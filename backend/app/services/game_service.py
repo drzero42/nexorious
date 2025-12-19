@@ -11,6 +11,7 @@ import json
 import logging
 
 from sqlmodel import Session
+from sqlalchemy.exc import IntegrityError
 
 from ..models.game import Game
 from ..services.igdb import IGDBService
@@ -138,10 +139,25 @@ class GameService:
                 if key in game_data and value is not None:
                     game_data[key] = value
 
-        # Create the game
+        # Create the game with race condition handling
+        # Another process may have created the same game between our check and insert
         new_game = Game(**game_data)
         self.session.add(new_game)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # Race condition: another process created the game
+            # Rollback and fetch the existing game
+            self.session.rollback()
+            existing_game = self.session.get(Game, igdb_id)
+            if existing_game:
+                logger.info(
+                    f"Race condition handled: game {igdb_id} was created by another process, "
+                    f"returning existing entry"
+                )
+                return existing_game
+            # If still not found, re-raise the error
+            raise
         self.session.refresh(new_game)
 
         # Download cover art if requested and available

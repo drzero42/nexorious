@@ -3,6 +3,7 @@ export {
   gameKeys,
   useUserGames,
   useUserGame,
+  useUserGameIds,
   useSearchIGDB,
   useCollectionStats,
   useCreateUserGame,

@@ -1325,7 +1325,38 @@ class TestAutomaticOwnershipStatusManagement:
         # Remove the platform association
         response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}", headers=auth_headers)
         assert_api_success(response, 200)
-        
+
         # Verify ownership status remains RENTED
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "rented"
+
+
+class TestUserGameIdsEndpoint:
+    """Test GET /api/user-games/ids endpoint."""
+
+    def test_get_user_game_ids_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
+        """Test successful user game IDs retrieval."""
+        response = client.get("/api/user-games/ids", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "ids" in data
+        assert isinstance(data["ids"], list)
+        assert str(test_user_game.id) in data["ids"]
+
+    def test_get_user_game_ids_without_auth(self, client: TestClient):
+        """Test user game IDs without authentication."""
+        response = client.get("/api/user-games/ids")
+
+        assert_api_error(response, 403, "Not authenticated")
+
+    def test_get_user_game_ids_with_filter(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
+        """Test user game IDs with status filter."""
+        response = client.get(
+            f"/api/user-games/ids?play_status={test_user_game.play_status.value}",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert str(test_user_game.id) in data["ids"]

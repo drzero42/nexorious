@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 
 from sqlmodel import Session, select
 
+from app.worker.locking import acquire_job_lock, release_job_lock
 from app.worker.broker import broker
 from app.worker.queues import QUEUE_HIGH
 from app.core.database import get_session_context
@@ -81,18 +82,24 @@ async def sync_steam_library(
     }
 
     async with get_session_context() as session:
-        # Get job and update status
+        # Try to acquire advisory lock - prevents duplicate execution
+        if not acquire_job_lock(session, job_id):
+            logger.info(f"Job {job_id} already being processed by another worker")
+            return {"status": "skipped", "reason": "duplicate_execution"}
+
+        # Get job first (outside try so exception handler can access it)
         job = session.get(Job, job_id)
         if not job:
             logger.error(f"Job {job_id} not found")
+            release_job_lock(session, job_id)
             return {"status": "error", "error": "Job not found"}
 
-        job.status = BackgroundJobStatus.PROCESSING
-        job.started_at = datetime.now(timezone.utc)
-        session.add(job)
-        session.commit()
-
         try:
+            # Update job status
+            job.status = BackgroundJobStatus.PROCESSING
+            job.started_at = datetime.now(timezone.utc)
+            session.add(job)
+            session.commit()
             # Get user and sync config
             user = session.get(User, user_id)
             if not user:
@@ -307,6 +314,8 @@ async def sync_steam_library(
             session.add(job)
             session.commit()
             return {"status": "error", "error": str(e), **stats}
+        finally:
+            release_job_lock(session, job_id)
 
 
 def _get_steam_sync_config(session: Session, user_id: str) -> Optional[UserSyncConfig]:

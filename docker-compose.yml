@@ -9,10 +9,10 @@
 #   scheduler    - Taskiq scheduled task runner (single instance only)
 #
 # Usage:
-#   podman-compose up --build           # Start all services
-#   podman-compose down                 # Stop (keeps volumes)
-#   podman-compose down -v              # Stop and remove volumes (fresh DB)
-#   podman-compose up --scale worker=3  # Scale workers horizontally
+#   podman-compose up --build              # Start all services (1 worker)
+#   podman-compose up --scale worker=2     # Start with 2 workers (recommended)
+#   podman-compose down                    # Stop (keeps volumes)
+#   podman-compose down -v                 # Stop and remove volumes (fresh DB)
 
 services:
   db:
@@ -87,12 +87,12 @@ services:
       timeout: 2s
       retries: 30
       start_period: 5s
-    deploy:
-      replicas: 1  # Must remain 1 - taskiq has no leader election
 
   worker:
     build: ./backend
-    command: uv run taskiq worker app.worker.broker:broker app.worker.tasks
+    # Single worker process per container (Kubernetes-style scaling)
+    # Scale horizontally with: podman-compose up --scale worker=N
+    command: uv run taskiq worker --workers 1 app.worker.broker:broker app.worker.tasks
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
