@@ -227,20 +227,19 @@ export function isJobInProgress(job: Job): boolean {
 
 /**
  * Check if a job can be cancelled.
+ * Jobs can be cancelled at any point before they reach a terminal state.
  */
 export function canCancelJob(job: Job): boolean {
-  return (
-    !job.isTerminal &&
-    job.status !== JobStatus.PENDING &&
-    job.status !== JobStatus.AWAITING_REVIEW
-  );
+  return !job.isTerminal;
 }
 
 /**
  * Check if a job can be deleted.
+ * Jobs can be deleted at any point (terminal or not).
  */
-export function canDeleteJob(job: Job): boolean {
-  return job.isTerminal;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canDeleteJob(_job: Job): boolean {
+  return true;
 }
 
 /**

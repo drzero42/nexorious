@@ -144,11 +144,11 @@ describe('JobCard', () => {
       expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
-    it('does not show Delete button for non-terminal jobs', () => {
+    it('shows Delete button for non-terminal jobs', () => {
       const onDelete = vi.fn();
       render(<JobCard job={mockJob} onDelete={onDelete} />);
 
-      expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+      expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
     it('calls onCancel when Cancel button is clicked', async () => {
@@ -179,7 +179,7 @@ describe('JobCard', () => {
     });
 
     it('shows loading state for Delete button', () => {
-      render(<JobCard job={mockCompletedJob} onDelete={vi.fn()} isDeleting />);
+      render(<JobCard job={mockJob} onDelete={vi.fn()} isDeleting />);
 
       const deleteButton = screen.getByText('Delete').closest('button');
       expect(deleteButton).toBeDisabled();
