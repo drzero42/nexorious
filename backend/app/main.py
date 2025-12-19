@@ -21,10 +21,6 @@ from .api.sync import router as sync_router
 from .api.import_endpoints import router as import_jobs_router
 from .api.export_endpoints import router as export_router
 from .api.websocket import router as websocket_router
-from .services.batch_session_manager import (
-    startup_batch_session_manager,
-    shutdown_batch_session_manager,
-)
 from .worker.broker import broker
 
 
@@ -65,8 +61,6 @@ async def lifespan(app: FastAPI):
     logger.debug(f"Using database {settings.database_url}")
     run_alembic_migrations()
     logger.info("Database initialized")
-    await startup_batch_session_manager()
-    logger.info("Batch session manager initialized")
 
     # Start the task broker for sending tasks to workers
     await broker.startup()
@@ -84,8 +78,6 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Nexorious Game Collection Management Service")
     await broker.shutdown()
     logger.info("Task broker shutdown completed")
-    await shutdown_batch_session_manager()
-    logger.info("Batch session manager shutdown completed")
 
 
 # Create FastAPI app
