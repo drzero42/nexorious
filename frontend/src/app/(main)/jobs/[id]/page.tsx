@@ -25,6 +25,7 @@ import {
   ArrowLeft,
   Check,
   ClipboardList,
+  Download,
   ExternalLink,
   Loader2,
   RefreshCw,
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
-import { useJob, useCancelJob, useDeleteJob, useConfirmJob } from '@/hooks';
+import { useJob, useCancelJob, useDeleteJob, useConfirmJob, useDownloadExport } from '@/hooks';
 import {
   JobStatus,
   getJobTypeLabel,
@@ -102,9 +103,13 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
   const cancelJobMutation = useCancelJob();
   const deleteJobMutation = useDeleteJob();
   const confirmJobMutation = useConfirmJob();
+  const downloadExportMutation = useDownloadExport();
 
   const showProgress =
     job?.status === JobStatus.PROCESSING || job?.status === JobStatus.FINALIZING;
+
+  // Helper to check if job is a completed export
+  const isCompletedExport = job?.jobType === 'export' && job?.status === JobStatus.COMPLETED;
 
   const handleCancel = async () => {
     try {
@@ -135,6 +140,16 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to confirm import');
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!job) return;
+    try {
+      await downloadExportMutation.mutateAsync(job.id);
+      toast.success('Download started');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to download export');
     }
   };
 
@@ -327,6 +342,20 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
         {/* Actions */}
         <CardFooter className="gap-3 border-t pt-6">
           <div className="ml-auto flex gap-3">
+            {isCompletedExport && (
+              <Button
+                onClick={handleDownload}
+                disabled={downloadExportMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {downloadExportMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download Export
+              </Button>
+            )}
             {canConfirmJob(job) && (
               <Button
                 onClick={handleConfirm}

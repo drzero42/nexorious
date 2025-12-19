@@ -89,6 +89,22 @@ export async function exportCollectionCsv(): Promise<ExportJobCreatedResponse> {
 }
 
 /**
+ * Start a JSON export of the user's wishlist.
+ */
+export async function exportWishlistJson(): Promise<ExportJobCreatedResponse> {
+  const response = await api.post<ExportJobApiResponse>('/export/wishlist/json');
+  return transformExportJobResponse(response);
+}
+
+/**
+ * Start a CSV export of the user's wishlist.
+ */
+export async function exportWishlistCsv(): Promise<ExportJobCreatedResponse> {
+  const response = await api.post<ExportJobApiResponse>('/export/wishlist/csv');
+  return transformExportJobResponse(response);
+}
+
+/**
  * Download a completed export file.
  * Returns the file blob for client-side download.
  */
