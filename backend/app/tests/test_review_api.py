@@ -1122,12 +1122,58 @@ class TestReviewResponseFields:
 
 
 class TestSimilarityScoreMapping:
-    """Tests for similarity_score mapping in review API responses."""
+    """Tests for similarity_score mapping in review API responses.
 
-    def test_similarity_score_returned_from_legacy_confidence_score(
+    The frontend expects 'similarity_score' but legacy data may have 'confidence_score'.
+    Both the LIST and DETAIL endpoints must handle this mapping.
+    """
+
+    def test_list_endpoint_similarity_score_from_legacy_confidence_score(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test that legacy confidence_score data is returned as similarity_score."""
+        """Test that LIST endpoint returns similarity_score from legacy confidence_score."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Store candidate with LEGACY key name (confidence_score)
+        item = ReviewItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            source_title="Test Game",
+            status=ReviewItemStatus.PENDING,
+        )
+        item.set_igdb_candidates([
+            {
+                "igdb_id": 12345,
+                "name": "Test Game",
+                "confidence_score": 0.85,  # Legacy key
+            }
+        ])
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+
+        # Test the LIST endpoint (not detail)
+        response = client.get("/api/review/", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["items"]) == 1
+        candidates = data["items"][0]["igdb_candidates"]
+        assert len(candidates) == 1
+        # LIST API should return similarity_score even from legacy confidence_score
+        assert candidates[0]["similarity_score"] == 0.85
+
+    def test_detail_endpoint_similarity_score_from_legacy_confidence_score(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that DETAIL endpoint returns similarity_score from legacy confidence_score."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -1161,13 +1207,53 @@ class TestSimilarityScoreMapping:
         data = response.json()
         candidates = data["igdb_candidates"]
         assert len(candidates) == 1
-        # API should return similarity_score even from legacy confidence_score
+        # DETAIL API should return similarity_score even from legacy confidence_score
         assert candidates[0]["similarity_score"] == 0.85
 
-    def test_similarity_score_returned_from_new_similarity_score(
+    def test_list_endpoint_similarity_score_from_new_key(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test that new similarity_score data is returned correctly."""
+        """Test that LIST endpoint handles new similarity_score key correctly."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Store candidate with NEW key name (similarity_score)
+        item = ReviewItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            source_title="Test Game",
+            status=ReviewItemStatus.PENDING,
+        )
+        item.set_igdb_candidates([
+            {
+                "igdb_id": 12345,
+                "name": "Test Game",
+                "similarity_score": 0.92,  # New key
+            }
+        ])
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+
+        response = client.get("/api/review/", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["items"]) == 1
+        candidates = data["items"][0]["igdb_candidates"]
+        assert len(candidates) == 1
+        assert candidates[0]["similarity_score"] == 0.92
+
+    def test_detail_endpoint_similarity_score_from_new_key(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that DETAIL endpoint handles new similarity_score key correctly."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -1203,10 +1289,49 @@ class TestSimilarityScoreMapping:
         assert len(candidates) == 1
         assert candidates[0]["similarity_score"] == 0.92
 
-    def test_similarity_score_null_when_neither_key_present(
+    def test_list_endpoint_similarity_score_null_when_neither_key(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test that similarity_score is null when no score is stored."""
+        """Test that LIST endpoint returns null when no score is stored."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Store candidate without any score
+        item = ReviewItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            source_title="Test Game",
+            status=ReviewItemStatus.PENDING,
+        )
+        item.set_igdb_candidates([
+            {
+                "igdb_id": 12345,
+                "name": "Test Game",
+            }
+        ])
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+
+        response = client.get("/api/review/", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["items"]) == 1
+        candidates = data["items"][0]["igdb_candidates"]
+        assert len(candidates) == 1
+        assert candidates[0]["similarity_score"] is None
+
+    def test_detail_endpoint_similarity_score_null_when_neither_key(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that DETAIL endpoint returns null when no score is stored."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,

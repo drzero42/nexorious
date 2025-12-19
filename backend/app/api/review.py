@@ -7,7 +7,7 @@ IGDB candidates, and resolving items (match, skip, keep, remove).
 
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from sqlmodel import Session, select, func, col
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional, List, Dict, Any
 from datetime import datetime, timezone
 import logging
 
@@ -52,12 +52,32 @@ STEAM_STOREFRONT_ID = "steam"
 PC_WINDOWS_PLATFORM_ID = "pc-windows"
 
 
+def _normalize_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize candidate dict to use similarity_score key.
+
+    Handles both legacy 'confidence_score' and new 'similarity_score' keys,
+    always outputting 'similarity_score' for API consistency.
+    """
+    normalized = dict(c)
+    # Ensure similarity_score is set from either key
+    if "similarity_score" not in normalized:
+        normalized["similarity_score"] = normalized.pop("confidence_score", None)
+    elif "confidence_score" in normalized:
+        # Remove legacy key if both present
+        del normalized["confidence_score"]
+    return normalized
+
+
 def _review_item_to_response(item: ReviewItem, session: Session) -> ReviewItemResponse:
     """Convert a ReviewItem model to ReviewItemResponse with job context."""
     # Get job for context
     job = session.get(Job, item.job_id)
     job_type = job.job_type.value if job else None
     job_source = job.source.value if job else None
+
+    # Normalize candidates to use similarity_score
+    raw_candidates = item.get_igdb_candidates()
+    normalized_candidates = [_normalize_candidate(c) for c in raw_candidates]
 
     return ReviewItemResponse(
         id=item.id,
@@ -66,7 +86,7 @@ def _review_item_to_response(item: ReviewItem, session: Session) -> ReviewItemRe
         status=ReviewItemStatus(item.status.value),
         source_title=item.source_title,
         source_metadata=item.get_source_metadata(),
-        igdb_candidates=item.get_igdb_candidates(),
+        igdb_candidates=normalized_candidates,
         resolved_igdb_id=item.resolved_igdb_id,
         created_at=item.created_at,
         resolved_at=item.resolved_at,
