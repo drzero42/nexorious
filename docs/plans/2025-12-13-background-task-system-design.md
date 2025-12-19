@@ -312,6 +312,29 @@ Users upgrading will need to:
 2. **Docker Compose changes** - New worker and scheduler containers
 3. **Environment variables** - Database URL must be PostgreSQL format
 
+## Implementation Status
+
+### BatchSessionManager Migration - Completed 2025-12-19
+
+The in-memory BatchSessionManager has been migrated to use the Job model:
+
+- In-memory session storage replaced with PostgreSQL persistence
+- Cleanup asyncio task replaced with scheduled taskiq maintenance task (`cleanup_stale_batch_jobs`)
+- BatchSession dataclass deleted in favor of extended Job model with batch fields
+- Full backwards compatibility maintained for API responses (`session_id` maps to `job.id`)
+
+**Key files created/modified:**
+- `app/models/job.py` - Extended with `processed_item_ids_json`, `failed_item_ids_json` fields and helper methods
+- `app/services/batch_job_service.py` - New service for persistent batch operations
+- `app/models/batch_constants.py` - BatchOperationType enum and BATCH_SIZES
+- `app/worker/tasks/maintenance/cleanup_stale_batch_jobs.py` - Scheduled cleanup task
+
+**Files removed:**
+- `app/services/batch_session_manager.py`
+- `app/models/batch_session.py`
+
+See implementation plan: `docs/plans/2025-12-19-batch-session-taskiq-migration.md`
+
 ## Future Considerations
 
 - **Monitoring**: taskiq provides hooks for metrics; consider Prometheus integration
