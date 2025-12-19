@@ -259,3 +259,124 @@ export async function getStorefrontNames(activeOnly?: boolean): Promise<string[]
     params: { active_only: activeOnly ?? true },
   });
 }
+
+// ============================================================================
+// Admin CRUD Types
+// ============================================================================
+
+export interface PlatformCreateData {
+  name: string;
+  display_name: string;
+  icon_url?: string;
+  is_active?: boolean;
+  default_storefront_id?: string;
+}
+
+export interface PlatformUpdateData {
+  display_name?: string;
+  icon_url?: string | null;
+  is_active?: boolean;
+  default_storefront_id?: string | null;
+}
+
+export interface StorefrontCreateData {
+  name: string;
+  display_name: string;
+  icon_url?: string;
+  base_url?: string;
+  is_active?: boolean;
+}
+
+export interface StorefrontUpdateData {
+  display_name?: string;
+  icon_url?: string | null;
+  base_url?: string | null;
+  is_active?: boolean;
+}
+
+// ============================================================================
+// Admin Platform CRUD Operations
+// ============================================================================
+
+/**
+ * Create a new platform (admin only).
+ */
+export async function createPlatform(data: PlatformCreateData): Promise<Platform> {
+  const response = await api.post<PlatformApiResponse>('/platforms/', data);
+  return transformPlatform(response);
+}
+
+/**
+ * Update an existing platform (admin only).
+ */
+export async function updatePlatform(
+  id: string,
+  data: PlatformUpdateData
+): Promise<Platform> {
+  const response = await api.put<PlatformApiResponse>(`/platforms/${id}`, data);
+  return transformPlatform(response);
+}
+
+/**
+ * Delete a platform (admin only).
+ */
+export async function deletePlatform(id: string): Promise<void> {
+  await api.delete(`/platforms/${id}`);
+}
+
+// ============================================================================
+// Admin Storefront CRUD Operations
+// ============================================================================
+
+/**
+ * Create a new storefront (admin only).
+ */
+export async function createStorefront(data: StorefrontCreateData): Promise<Storefront> {
+  const response = await api.post<StorefrontApiResponse>('/platforms/storefronts/', data);
+  return transformStorefront(response);
+}
+
+/**
+ * Update an existing storefront (admin only).
+ */
+export async function updateStorefront(
+  id: string,
+  data: StorefrontUpdateData
+): Promise<Storefront> {
+  const response = await api.put<StorefrontApiResponse>(
+    `/platforms/storefronts/${id}`,
+    data
+  );
+  return transformStorefront(response);
+}
+
+/**
+ * Delete a storefront (admin only).
+ */
+export async function deleteStorefront(id: string): Promise<void> {
+  await api.delete(`/platforms/storefronts/${id}`);
+}
+
+// ============================================================================
+// Admin Platform-Storefront Association Operations
+// ============================================================================
+
+/**
+ * Create a platform-storefront association (admin only).
+ */
+export async function createPlatformStorefrontAssociation(
+  platformId: string,
+  storefrontId: string
+): Promise<void> {
+  await api.post(`/platforms/${platformId}/storefronts/${storefrontId}`);
+}
+
+/**
+ * Delete a platform-storefront association (admin only).
+ */
+export async function deletePlatformStorefrontAssociation(
+  platformId: string,
+  storefrontId: string
+): Promise<void> {
+  await api.delete(`/platforms/${platformId}/storefronts/${storefrontId}`);
+}

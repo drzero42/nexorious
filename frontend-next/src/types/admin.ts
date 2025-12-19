@@ -42,3 +42,18 @@ export interface UpdateUserRequest {
 export interface ResetPasswordRequest {
   new_password: string;
 }
+
+export interface AdminStatistics {
+  totalUsers: number;
+  totalAdmins: number;
+  totalGames: number;
+  recentUsers: AdminUser[];
+}
+
+export interface SeedDataResult {
+  platformsAdded: number;
+  storefrontsAdded: number;
+  mappingsCreated: number;
+  totalChanges: number;
+  message: string;
+}
