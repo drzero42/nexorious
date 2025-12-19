@@ -50,7 +50,7 @@ class IGDBCandidate:
             "cover_url": self.cover_url,
             "summary": self.summary,
             "platforms": self.platforms,
-            "confidence_score": self.confidence_score,
+            "similarity_score": self.confidence_score,
         }
 
 

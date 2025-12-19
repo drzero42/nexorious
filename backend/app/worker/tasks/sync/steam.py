@@ -447,7 +447,7 @@ def _create_review_item(
                 {
                     "igdb_id": igdb_id,
                     "name": igdb_title,
-                    "confidence_score": confidence,
+                    "similarity_score": confidence,
                 },
             )
 
