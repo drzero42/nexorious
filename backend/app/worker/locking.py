@@ -4,14 +4,18 @@ PostgreSQL advisory locks are used to ensure only one worker processes
 a given job, even when the taskiq-pg broker broadcasts to all workers.
 """
 
+import logging
 from sqlmodel import Session, text
+
+logger = logging.getLogger(__name__)
 
 
 def job_id_to_lock_key(job_id: str) -> int:
     """Convert a job ID string to a PostgreSQL advisory lock key.
 
-    Advisory locks use bigint keys. We hash the job_id and mask to ensure
-    it fits in the positive bigint range (0 to 2^63-1).
+    Advisory locks use bigint keys. We use a deterministic hash (MD5)
+    to ensure the same job_id produces the same lock key across all
+    worker processes, regardless of Python's hash randomization.
 
     Args:
         job_id: The job ID string (typically a UUID)
@@ -19,7 +23,11 @@ def job_id_to_lock_key(job_id: str) -> int:
     Returns:
         A positive integer suitable for pg_advisory_lock
     """
-    return hash(job_id) & 0x7FFFFFFFFFFFFFFF
+    import hashlib
+    # Use MD5 for deterministic hashing (not for security, just consistency)
+    # Take first 8 bytes and convert to int, mask to positive bigint range
+    hash_bytes = hashlib.md5(job_id.encode()).digest()[:8]
+    return int.from_bytes(hash_bytes, byteorder='big') & 0x7FFFFFFFFFFFFFFF
 
 
 def acquire_job_lock(session: Session, job_id: str) -> bool:
@@ -37,7 +45,9 @@ def acquire_job_lock(session: Session, job_id: str) -> bool:
     """
     lock_key = job_id_to_lock_key(job_id)
     result = session.execute(text(f"SELECT pg_try_advisory_lock({lock_key})"))  # pyrefly: ignore[deprecated]
-    return result.scalar() is True
+    acquired = result.scalar() is True
+    logger.info(f"Advisory lock attempt for job {job_id} (key={lock_key}): {'acquired' if acquired else 'BLOCKED'}")
+    return acquired
 
 
 def release_job_lock(session: Session, job_id: str) -> None:
