@@ -11,7 +11,7 @@ from typing import List, Optional
 
 from sqlmodel import Session
 
-from app.models.batch_session import BatchOperationType
+from app.models.batch_constants import BatchOperationType
 from app.models.job import (
     BackgroundJobPriority,
     BackgroundJobSource,

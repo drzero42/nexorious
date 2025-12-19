@@ -11,7 +11,7 @@ from app.models.job import (
     BackgroundJobStatus,
     ImportJobSubtype,
 )
-from app.models.batch_session import BatchOperationType
+from app.models.batch_constants import BatchOperationType
 
 
 class TestBatchJobService:

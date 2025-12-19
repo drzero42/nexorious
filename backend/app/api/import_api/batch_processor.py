@@ -27,10 +27,9 @@ from sqlmodel import Session, and_, col, select
 import logging
 
 from ...core.database import get_session
-from ...models.batch_session import (
+from ...models.batch_constants import (
     BATCH_SIZES,
     BatchOperationType,
-    BatchSessionStatus,
 )
 from ...services.batch_job_service import BatchJobService
 from ...models.job import Job, BackgroundJobStatus, BackgroundJobSource, ImportJobSubtype
