@@ -92,7 +92,9 @@ services:
 
   worker:
     build: ./backend
-    command: uv run taskiq worker app.worker.broker:broker app.worker.tasks
+    # Single worker process per container (Kubernetes-style scaling)
+    # Scale horizontally with: podman-compose up --scale worker=N
+    command: uv run taskiq worker --workers 1 app.worker.broker:broker app.worker.tasks
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
@@ -111,6 +113,8 @@ services:
         condition: service_healthy
       scheduler:
         condition: service_healthy
+    deploy:
+      replicas: 2  # Run 2 worker containers (like Kubernetes pods)
 
 volumes:
   postgres_data:
