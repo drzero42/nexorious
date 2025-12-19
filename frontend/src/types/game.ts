@@ -75,6 +75,14 @@ export enum PlayStatus {
   REPLAY = 'replay',
 }
 
+/**
+ * Selection mode for bulk game selection.
+ * - manual: Individual games selected by clicking
+ * - all-visible: All currently loaded games selected
+ * - all-collection: All games in collection selected (fetched from API)
+ */
+export type SelectionMode = 'manual' | 'all-visible' | 'all-collection';
+
 export interface Game {
   id: GameId;
   title: string;
