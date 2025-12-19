@@ -9,10 +9,10 @@
 #   scheduler    - Taskiq scheduled task runner (single instance only)
 #
 # Usage:
-#   podman-compose up --build           # Start all services
-#   podman-compose down                 # Stop (keeps volumes)
-#   podman-compose down -v              # Stop and remove volumes (fresh DB)
-#   podman-compose up --scale worker=3  # Scale workers horizontally
+#   podman-compose up --build              # Start all services (1 worker)
+#   podman-compose up --scale worker=2     # Start with 2 workers (recommended)
+#   podman-compose down                    # Stop (keeps volumes)
+#   podman-compose down -v                 # Stop and remove volumes (fresh DB)
 
 services:
   db:
@@ -87,8 +87,6 @@ services:
       timeout: 2s
       retries: 30
       start_period: 5s
-    deploy:
-      replicas: 1  # Must remain 1 - taskiq has no leader election
 
   worker:
     build: ./backend
@@ -113,8 +111,6 @@ services:
         condition: service_healthy
       scheduler:
         condition: service_healthy
-    deploy:
-      replicas: 2  # Run 2 worker containers (like Kubernetes pods)
 
 volumes:
   postgres_data:
