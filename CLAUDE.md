@@ -35,7 +35,7 @@ cd /home/abo/workspace/home/nexorious/frontend && npm --version
 ### Important URLs
 - Backend API Docs: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
-- Frontend Dev: http://localhost:5173
+- Frontend Dev: http://localhost:3000
 
 ## Setup & Development
 
@@ -61,7 +61,7 @@ npm install  # Install all dependencies
 
 ### Project Structure
 - `backend/` - FastAPI Python backend with API routes, models, services
-- `frontend/` - SvelteKit TypeScript frontend with components, routes, stores  
+- `frontend/` - Next.js 16 TypeScript frontend with React 19, Tailwind CSS, shadcn/ui, TanStack Query
 - `docs/` - PRD, task breakdown, wireframes
 - `storage/` - Runtime file storage for cover art
 
@@ -99,7 +99,7 @@ npm run test:ui
 
 ### Type Checking Requirements
 - **Backend**: Zero pyrefly type errors allowed
-- **Frontend**: Zero svelte-check errors allowed
+- **Frontend**: Zero TypeScript errors allowed (tsc --noEmit)
 - **Zero tolerance**: Fix type errors before committing - do not introduce new type errors
 
 ### Backend Testing (pytest)
@@ -115,8 +115,8 @@ Comprehensive test coverage (>90%) in `backend/scripts/tests/`:
 - Documentation: `backend/scripts/tests/README.md`
 
 ### Frontend Testing (Vitest)
-- **Framework**: Vitest with @testing-library/svelte  
-- **Test Types**: Component tests, store tests, utility tests
+- **Framework**: Vitest with @testing-library/react
+- **Test Types**: Component tests, hook tests, API service tests
 - **Coverage Reports**: HTML reports in `coverage/` directory
 - **DOM Testing**: jsdom environment
 
@@ -136,7 +136,7 @@ uv run pytest scripts/tests/ -v
 
 ### Test Conventions
 - Backend: `test_*.py` files in `app/tests/`
-- Frontend: `*.test.ts` files (NOT starting with `+` for Svelte files)
+- Frontend: `*.test.ts` or `*.test.tsx` files alongside source files
 
 ## Development Rules
 
@@ -164,14 +164,13 @@ uv run pytest scripts/tests/ -v
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
 - **Alembic Migrations**: Always read `docs/alembic-migrations-guide.md` before creating or modifying database migrations
-- **Svelte Components**: Always read `docs/svelte5-syntax-guide.md` before writing or modifying Svelte components
 
 ### Required After Code Changes
 
 #### Frontend Changes
 ```bash
-npm run check  # Must pass
-npm run test   # Must pass (all 778 tests)
+npm run check  # Must pass (tsc --noEmit && eslint)
+npm run test   # Must pass
 ```
 
 #### Backend Changes
@@ -184,11 +183,11 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 
 ### File Naming Rules
 - Backend tests: `test_*.py` files in `app/tests/`
-- Frontend tests: `*.test.ts` files (NOT starting with `+` for Svelte files)
+- Frontend tests: `*.test.ts` or `*.test.tsx` files alongside source files
 
 ### Quality Gates
 - All tests must pass before committing
-- All type checks must pass before committing (pyrefly for backend, svelte-check for frontend)
+- All type checks must pass before committing (pyrefly for backend, tsc for frontend)
 - Backend: >80% coverage required
 - Frontend: >70% coverage required
 - Fix failing tests and type errors immediately in same session
@@ -204,13 +203,15 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **File Storage**: Local filesystem storage for cover art with configurable paths
 - **Testing**: pytest with >80% coverage requirement
 
-### Frontend Stack  
-- **Framework**: SvelteKit with TypeScript - Modern reactive frontend framework
+### Frontend Stack
+- **Framework**: Next.js 16 with React 19 and TypeScript - Modern React framework with App Router
 - **Styling**: Tailwind CSS for utility-first styling
-- **State Management**: Svelte stores for reactive state
+- **UI Components**: shadcn/ui for accessible, customizable components
+- **State Management**: TanStack Query (React Query) for server state and caching
+- **Forms**: React Hook Form with Zod validation
 - **Rich Text**: TipTap editor for notes and descriptions
-- **Build Tool**: Vite for fast development and optimized builds
-- **Testing**: Vitest with @testing-library/svelte, >70% coverage requirement
+- **Build Tool**: Turbopack for fast development builds
+- **Testing**: Vitest with @testing-library/react, >70% coverage requirement
 
 ### Database Design
 - **Primary Database**: PostgreSQL for production deployments

@@ -10,7 +10,7 @@ A self-hostable web application for managing personal video game collections wit
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes for your IGDB-sourced games
 - **Bulk Operations**: Import from CSV exports (Darkadia format) with intelligent conflict resolution
 - **Admin Management**: User management, platform configuration, and system administration
-- **Modern Tech Stack**: FastAPI backend with SvelteKit frontend (legacy) or Next.js frontend (new)
+- **Modern Tech Stack**: FastAPI backend with Next.js frontend
 
 ## Quick Start
 
@@ -39,13 +39,8 @@ cd backend
 uv sync
 cd ..
 
-# Setup frontend (SvelteKit - legacy)
+# Setup frontend
 cd frontend
-npm install
-cd ..
-
-# Setup frontend-next (Next.js - recommended)
-cd frontend-next
 npm install
 cd ..
 ```
@@ -62,13 +57,8 @@ cd backend
 uv sync  # Install Python dependencies
 cd ..
 
-# Setup frontend (SvelteKit - legacy)
+# Setup frontend
 cd frontend
-npm install
-cd ..
-
-# Setup frontend-next (Next.js - recommended)
-cd frontend-next
 npm install
 cd ..
 ```
@@ -78,22 +68,15 @@ cd ..
 #### Start Backend (Terminal 1)
 ```bash
 cd backend
-uv run python -m nexorious.main
+uv run python -m app.main
 # Backend available at: http://localhost:8000
 ```
 
-#### Start Frontend - Next.js (Terminal 2, Recommended)
-```bash
-cd frontend-next
-npm run dev
-# Frontend available at: http://localhost:3000
-```
-
-#### Start Frontend - SvelteKit (Terminal 2, Legacy)
+#### Start Frontend (Terminal 2)
 ```bash
 cd frontend
 npm run dev
-# Frontend available at: http://localhost:5173
+# Frontend available at: http://localhost:3000
 ```
 
 ### Initial Setup
@@ -261,19 +244,12 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:4173
 STORAGE_PATH=/path/to/storage  # For cover art and uploads
 ```
 
-#### Frontend Configuration (Next.js - frontend-next)
+#### Frontend Configuration
 
 ```bash
 # API Connection
 NEXT_PUBLIC_API_URL=http://localhost:8000/api
 NEXT_PUBLIC_STATIC_URL=http://localhost:8000
-```
-
-#### Frontend Configuration (SvelteKit - frontend)
-
-```bash
-# API Connection
-PUBLIC_API_URL=http://localhost:8000  # Backend URL
 ```
 
 ### Production Checklist
@@ -531,10 +507,7 @@ nexorious/
 │   ├── alembic/       # Database migrations
 │   ├── scripts/       # Import scripts and utilities
 │   └── tests/         # Backend test suite
-├── frontend/          # SvelteKit TypeScript frontend (legacy)
-│   ├── src/           # Application source code
-│   └── tests/         # Frontend test suite
-├── frontend-next/     # Next.js TypeScript frontend (recommended)
+├── frontend/          # Next.js TypeScript frontend
 │   ├── src/
 │   │   ├── app/       # App Router pages and layouts
 │   │   ├── api/       # API service layer
@@ -559,20 +532,15 @@ uv run python -m app.main       # Start server
 uv run pytest                    # Run tests
 uv run alembic revision --autogenerate -m "description"  # New migration
 
-# Frontend-next development (Next.js - recommended)
-cd frontend-next
+# Frontend development
+cd frontend
 npm run dev      # Start dev server (port 3000)
 npm run build    # Production build
-npm run lint     # Lint check
-
-# Frontend development (SvelteKit - legacy)
-cd frontend
-npm run dev      # Start dev server (port 5173)
-npm run check    # Type checking
-npm run build    # Production build
+npm run check    # Type checking (tsc && eslint)
+npm run test     # Run tests
 
 # Tests
-cd frontend && npm run test      # SvelteKit tests
+cd frontend && npm run test      # Frontend tests
 cd backend && uv run pytest      # Backend tests
 ```
 
@@ -603,7 +571,7 @@ All mentioned trademarks, brand names, and logos for gaming platforms and storef
 
 The use of these trademarks and brand names does not imply any affiliation, endorsement, or partnership with the respective companies. All rights to these trademarks remain with their original owners.
 
-The logos and icons used in this application are sourced from SVG Repo and other public repositories under various open-source licenses (MIT, CC0, Logo License, etc.). See individual SOURCE.txt files in the `frontend/static/logos/` directory for specific license information and attribution.
+The logos and icons used in this application are sourced from SVG Repo and other public repositories under various open-source licenses (MIT, CC0, Logo License, etc.).
 
 ## License
 

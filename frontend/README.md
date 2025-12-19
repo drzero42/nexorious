@@ -1,92 +1,36 @@
-# Nexorious Frontend
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-SvelteKit frontend for the Nexorious Game Collection Management Service.
+## Getting Started
 
-## Setup
+First, run the development server:
 
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Start the development server:
 ```bash
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Building
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-To create a production version of your app:
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-```bash
-npm run build
-```
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-You can preview the production build with `npm run preview`.
+## Learn More
 
-## Features
+To learn more about Next.js, take a look at the following resources:
 
-- **SvelteKit**: Modern web framework with TypeScript support
-- **Tailwind CSS**: Utility-first CSS framework with dark mode support
-- **PWA Support**: Progressive Web App with offline capabilities
-- **Authentication**: JWT-based authentication with refresh tokens
-- **Responsive Design**: Mobile-first responsive layout
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-## Configuration
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-The frontend expects the backend API to be available at `http://localhost:8000` by default. You can configure this in the authentication store or add environment variables as needed.
+## Deploy on Vercel
 
-## Development
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run linter (if configured)
-- `npm run format` - Format code (if configured)
-
-## Testing
-
-The frontend uses Vitest for testing with comprehensive coverage reporting.
-
-### Running Tests
-
-- `npm test` - Run tests in watch mode (interactive)
-- `npm run test:ui` - Run tests with Vitest UI interface
-- `npm run test:run` - Run all tests once (CI mode)
-- `npm run test:coverage` - Run tests with coverage report
-
-### Test Coverage
-
-The project maintains a **70% coverage threshold** for:
-- Lines of code
-- Functions
-- Branches
-- Statements
-
-#### Coverage Reports
-
-When running `npm run test:coverage`, three types of reports are generated:
-
-1. **Text Report** - Displayed in terminal with summary statistics
-2. **JSON Report** - Machine-readable coverage data
-3. **HTML Report** - Detailed interactive coverage report in `coverage/` directory
-
-To view the detailed HTML coverage report:
-```bash
-npm run test:coverage
-# Open coverage/index.html in your browser
-```
-
-#### Coverage Configuration
-
-The following files are excluded from coverage analysis:
-- `node_modules/`
-- `src/test-utils/` - Test utilities and mocks
-- `**/*.d.ts` - TypeScript declaration files
-- `**/*.config.*` - Configuration files
-- `src/app.html` - HTML template file
-
-Tests must maintain the 70% coverage threshold to pass. You can view current coverage status by running the coverage command and checking the terminal output or HTML report.
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
