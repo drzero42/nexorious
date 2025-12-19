@@ -1,21 +1,19 @@
 # CLAUDE.md
 
-**Note**: This project uses [bd (beads)](https://github.com/steveyegge/beads) for issue tracking. Use `bd` commands instead of markdown TODOs. See [AGENTS.md](AGENTS.md) for workflow details.
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Quick Reference
 
 ### Common Commands
-| Task | Backend Command | Frontend Command |
-|------|----------------|------------------|
-| Install dependencies | `cd /home/abo/workspace/home/nexorious/backend && uv sync` | `cd /home/abo/workspace/home/nexorious/frontend && npm install` |
-| Start development server | `uv run python -m app.main` | `npm run dev` |
-| Run tests | `uv run pytest` | `npm run test` |
-| Run tests with coverage | `uv run pytest --cov=app --cov-report=term-missing` | `npm run test:coverage` |
-| Type checking | `uv run pyrefly check` | `npm run check` |
-| Linting | `uv run ruff check .` | N/A |
-| Database migrations | `uv run alembic upgrade head` | N/A |
+| Task                     | Backend Command                                            | Frontend Command                                                |
+|--------------------------|------------------------------------------------------------|-----------------------------------------------------------------|
+| Install dependencies     | `cd /home/abo/workspace/home/nexorious/backend && uv sync` | `cd /home/abo/workspace/home/nexorious/frontend && npm install` |
+| Start development server | `uv run python -m app.main`                                | `npm run dev`                                                   |
+| Run tests                | `uv run pytest`                                            | `npm run test`                                                  |
+| Run tests with coverage  | `uv run pytest --cov=app --cov-report=term-missing`        | `npm run test:coverage`                                         |
+| Type checking            | `uv run pyrefly check`                                     | `npm run check`                                                 |
+| Linting                  | `uv run ruff check .`                                      | N/A                                                             |
+| Database migrations      | `uv run alembic upgrade head`                              | N/A                                                             |
 
 ### Environment Validation
 ```bash
@@ -26,13 +24,13 @@ cd /home/abo/workspace/home/nexorious/frontend && npm --version
 ```
 
 ### Docker/Podman Compose (Alternative)
-| Task | Command |
-|------|---------|
-| Start all services | `podman-compose up --build` |
-| Stop services | `podman-compose down` |
-| Stop and reset DB | `podman-compose down -v` |
-| Rebuild backend | `podman-compose build api` |
-| Rebuild frontend | `podman-compose build frontend` |
+| Task               | Command                         |
+|--------------------|---------------------------------|
+| Start all services | `podman-compose up --build`     |
+| Stop services      | `podman-compose down`           |
+| Stop and reset DB  | `podman-compose down -v`        |
+| Rebuild backend    | `podman-compose build api`      |
+| Rebuild frontend   | `podman-compose build frontend` |
 
 ### Important URLs
 - Backend API Docs: http://localhost:8000/docs
@@ -150,73 +148,6 @@ uv run pytest scripts/tests/ -v
 3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
 5. **Documentation**: Use context7 MCP to verify API usage in generated code
-6. **Expert Consultation**: Always consult the experts
-
-### Branch Workflow (MANDATORY)
-
-**You MUST use branches when working on tasks. Never commit directly to main.**
-
-#### Starting Work on a Task
-```bash
-# 1. Ensure you're on main and up to date
-git checkout main
-git pull origin main
-
-# 2. Create a feature branch using the beads issue ID
-git checkout -b bd-42-fix-login-bug  # Format: <issue-id>-<short-description>
-
-# 3. Mark the issue as in progress
-bd update bd-42 --status in_progress
-```
-
-#### Branch Naming Convention
-- Format: `<issue-id>-<short-kebab-case-description>`
-- Examples:
-  - `bd-42-fix-login-bug`
-  - `bd-55-add-dark-mode`
-  - `bd-100-refactor-auth-service`
-
-#### During Development
-```bash
-# Make commits on your feature branch
-git add <files>
-git commit -m "feat(auth): implement JWT refresh logic"
-
-# Keep branch up to date with main (if needed)
-git fetch origin main
-git rebase origin/main  # or merge if preferred
-```
-
-#### Completing Work
-```bash
-# 1. Ensure all tests pass
-uv run pytest  # Backend
-npm run check && npm run test  # Frontend
-
-# 2. Close the beads issue
-bd close bd-42
-
-# 3. Sync beads changes
-bd sync
-
-# 4. Push the branch
-git push -u origin bd-42-fix-login-bug
-
-# 5. Create a pull request
-gh pr create --title "Fix login bug" --body "Closes bd-42"
-
-# 6. Review the PR before merging (MANDATORY)
-gh pr diff  # Review all changes for issues
-gh pr view  # Check PR status
-# Only ask the user if you find potential problems during review
-
-# 7. Merge the PR (only after review - always delete branch on merge)
-gh pr merge --squash --delete-branch
-
-# 8. Return to main
-git checkout main
-git pull origin main
-```
 
 #### Rules
 - ✅ Always create a branch before starting task work

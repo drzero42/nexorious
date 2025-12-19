@@ -1,27 +1,8 @@
 {
   "enabledPlugins": {
-    "c4-architecture@claude-code-workflows": true,
-    "api-scaffolding@claude-code-workflows": true,
-    "code-documentation@claude-code-workflows": true,
-    "python-development@claude-code-workflows": true,
-    "api-testing-observability@claude-code-workflows": true,
     "frontend-design@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "superpowers@superpowers-marketplace": true,
-    "commit-commands@claude-plugins-official": true,
-    "code-refactoring@claude-code-workflows": true,
-    "codebase-cleanup@claude-code-workflows": true,
-    "debugging-toolkit@claude-code-workflows": true,
-    "git-pr-workflows@claude-code-workflows": true,
-    "unit-testing@claude-code-workflows": true,
-    "javascript-typescript@claude-code-workflows": true,
-    "backend-api-security@claude-code-workflows": true,
-    "backend-development@claude-code-workflows": true,
-    "database-design@claude-code-workflows": true,
-    "database-migrations@claude-code-workflows": true,
-    "developer-essentials@claude-code-workflows": true,
-    "error-diagnostics@claude-code-workflows": true,
-    "tdd-workflows@claude-code-workflows": true,
-    "beads@beads-marketplace": true
+    "commit-commands@claude-plugins-official": true
   }
 }
