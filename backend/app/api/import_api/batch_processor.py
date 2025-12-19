@@ -32,7 +32,8 @@ from ...models.batch_session import (
     BatchOperationType,
     BatchSessionStatus,
 )
-from ...services.batch_session_manager import get_batch_session_manager
+from ...services.batch_job_service import BatchJobService
+from ...models.job import Job, BackgroundJobStatus, BackgroundJobSource, ImportJobSubtype
 from ...schemas.batch import (
     BatchCancelResponse,
     BatchNextRequest,
@@ -88,6 +89,19 @@ class ImportSourceService(Protocol):
     ) -> AutoMatchResult: ...
 
     async def sync_game(self, user_id: str, game_id: str) -> SyncResult: ...
+
+
+def _get_job_source_from_config_name(source_name: str) -> BackgroundJobSource:
+    """Map config source name to BackgroundJobSource enum."""
+    source_map = {
+        "Steam": BackgroundJobSource.STEAM,
+        "Darkadia": BackgroundJobSource.DARKADIA,
+        "Epic": BackgroundJobSource.EPIC,
+        "GOG": BackgroundJobSource.GOG,
+        "Xbox": BackgroundJobSource.XBOX,
+        "PlayStation": BackgroundJobSource.PLAYSTATION,
+    }
+    return source_map.get(source_name, BackgroundJobSource.SYSTEM)
 
 
 @dataclass
@@ -190,25 +204,26 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                     message=f"No unmatched {config.source_name} games found to process",
                 )
 
-            # Create the batch session
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.create_session(
+            # Create the batch job
+            batch_service = BatchJobService(db_session)
+            job = batch_service.create_batch_job(
                 user_id=current_user.id,
                 operation_type=BatchOperationType.AUTO_MATCH,
+                source=_get_job_source_from_config_name(config.source_name),
                 total_items=total_items,
             )
 
             logger.info(
-                f"Created batch auto-match session {batch_session.id} for user "
+                f"Created batch auto-match job {job.id} for user "
                 f"{current_user.id} with {total_items} unmatched games "
                 f"({config.source_name})"
             )
 
             return BatchSessionStartResponse(
-                session_id=batch_session.id,
+                session_id=job.id,
                 total_items=total_items,
                 operation_type=BatchOperationType.AUTO_MATCH.value,
-                status=batch_session.status.value,
+                status=job.status.value,
                 message=f"Batch auto-match session started for {total_items} "
                 f"unmatched games",
             )
@@ -242,31 +257,32 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 f"by user {current_user.id} ({config.source_name})"
             )
 
-            # Get the batch session
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.get_session(session_id)
+            # Get the batch job
+            batch_service = BatchJobService(db_session)
+            job = batch_service.get_batch_job(session_id)
 
-            if not batch_session:
+            if not job:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Batch session not found",
                 )
 
-            if batch_session.user_id != current_user.id:
+            if job.user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this batch session",
                 )
 
-            if not batch_session.is_active:
+            if not job.is_active:
                 logger.warning(
                     f"Attempt to process inactive session {session_id} "
-                    f"(status: {batch_session.status})"
+                    f"(status: {job.status})"
                 )
-                return _create_batch_response(config, batch_session, [], "Session is not active")
+                return _create_batch_response(config, job, [], "Session is not active")
 
             # Get next batch of unmatched games
             batch_size = BATCH_SIZES[BatchOperationType.AUTO_MATCH]
+            processed_item_ids = job.get_processed_item_ids()
             query_conditions = [
                 config.game_model.user_id == current_user.id,
                 is_(col(config.game_model.igdb_id), None),
@@ -274,18 +290,18 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             ]
 
             # Exclude already processed games
-            if batch_session.processed_item_ids:
+            if processed_item_ids:
                 query_conditions.append(
                     ~in_(
                         col(config.game_model.id),
-                        batch_session.processed_item_ids,
+                        processed_item_ids,
                     )
                 )
 
             if config.extra_query_conditions:
                 query_conditions.extend(
                     config.extra_query_conditions(
-                        current_user.id, batch_session.processed_item_ids
+                        current_user.id, processed_item_ids
                     )
                 )
 
@@ -298,15 +314,18 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             games_to_process = db_session.exec(unmatched_games_query).all()
 
             if not games_to_process:
-                # No more games to process - mark session as complete
-                if batch_session.status.value != "cancelled":
-                    batch_session.status = BatchSessionStatus.COMPLETED
+                # No more games to process - mark job as complete
+                if job.status != BackgroundJobStatus.CANCELLED:
+                    job.status = BackgroundJobStatus.COMPLETED
+                    db_session.add(job)
+                    db_session.commit()
+                    db_session.refresh(job)
                 logger.info(
                     f"Batch auto-match session {session_id} completed - "
                     f"no more games to process ({config.source_name})"
                 )
                 return _create_batch_response(
-                    config, batch_session, [], "No more games to process"
+                    config, job, [], "No more games to process"
                 )
 
             # Process the batch
@@ -360,9 +379,9 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                     errors.append(error_msg)
                     match_results[game_id] = {"matched": False, "error": str(e)}
 
-            # Update session progress
-            session_manager.update_session_progress(
-                session_id=session_id,
+            # Update job progress
+            batch_service.update_batch_progress(
+                job_id=session_id,
                 processed_count=len(games_to_process),
                 successful_count=successful_count,
                 failed_count=failed_count,
@@ -370,6 +389,8 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 failed_ids=failed_game_ids,
                 errors=errors[-10:],
             )
+            # Refresh job to get updated values
+            db_session.refresh(job)
 
             # Refresh games from database
             updated_games = db_session.exec(
@@ -395,20 +416,20 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             )
 
             return BatchNextResponse(
-                session_id=batch_session.id,
+                session_id=job.id,
                 batch_processed=len(games_to_process),
                 batch_successful=successful_count,
                 batch_failed=failed_count,
                 batch_errors=errors,
                 current_batch_items=current_batch_items,
-                total_items=batch_session.total_items,
-                processed_items=batch_session.processed_items,
-                successful_items=batch_session.successful_items,
-                failed_items=batch_session.failed_items,
-                remaining_items=batch_session.remaining_items,
-                progress_percentage=batch_session.progress_percentage,
-                status=batch_session.status.value,
-                is_complete=batch_session.is_complete,
+                total_items=job.progress_total,
+                processed_items=job.progress_current,
+                successful_items=job.successful_items,
+                failed_items=job.failed_items,
+                remaining_items=job.remaining_items,
+                progress_percentage=float(job.progress_percent),
+                status=job.status.value,
+                is_complete=job.is_terminal,
                 message=message,
             )
 
@@ -420,8 +441,8 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 f"({config.source_name}): {str(e)}"
             )
 
-            session_manager = get_batch_session_manager()
-            session_manager.fail_session(session_id, str(e))
+            batch_service = BatchJobService(db_session)
+            batch_service.fail_batch_job(session_id, str(e))
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -478,25 +499,26 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                     message=f"No matched {config.source_name} games found to sync",
                 )
 
-            # Create the batch session
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.create_session(
+            # Create the batch job
+            batch_service = BatchJobService(db_session)
+            job = batch_service.create_batch_job(
                 user_id=current_user.id,
                 operation_type=BatchOperationType.SYNC,
+                source=_get_job_source_from_config_name(config.source_name),
                 total_items=total_items,
             )
 
             logger.info(
-                f"Created batch sync session {batch_session.id} for user "
+                f"Created batch sync job {job.id} for user "
                 f"{current_user.id} with {total_items} matched games "
                 f"({config.source_name})"
             )
 
             return BatchSessionStartResponse(
-                session_id=batch_session.id,
+                session_id=job.id,
                 total_items=total_items,
                 operation_type=BatchOperationType.SYNC.value,
-                status=batch_session.status.value,
+                status=job.status.value,
                 message=f"Batch sync session started for {total_items} matched games",
             )
 
@@ -529,31 +551,32 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 f"by user {current_user.id} ({config.source_name})"
             )
 
-            # Get the batch session
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.get_session(session_id)
+            # Get the batch job
+            batch_service = BatchJobService(db_session)
+            job = batch_service.get_batch_job(session_id)
 
-            if not batch_session:
+            if not job:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Batch session not found",
                 )
 
-            if batch_session.user_id != current_user.id:
+            if job.user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this batch session",
                 )
 
-            if not batch_session.is_active:
+            if not job.is_active:
                 logger.warning(
                     f"Attempt to process inactive session {session_id} "
-                    f"(status: {batch_session.status})"
+                    f"(status: {job.status})"
                 )
-                return _create_batch_response(config, batch_session, [], "Session is not active")
+                return _create_batch_response(config, job, [], "Session is not active")
 
             # Get next batch of matched games to sync
             batch_size = BATCH_SIZES[BatchOperationType.SYNC]
+            processed_item_ids = job.get_processed_item_ids()
             query_conditions = [
                 config.game_model.user_id == current_user.id,
                 is_not(col(config.game_model.igdb_id), None),
@@ -562,18 +585,18 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             ]
 
             # Exclude already processed games
-            if batch_session.processed_item_ids:
+            if processed_item_ids:
                 query_conditions.append(
                     ~in_(
                         col(config.game_model.id),
-                        batch_session.processed_item_ids,
+                        processed_item_ids,
                     )
                 )
 
             if config.extra_query_conditions:
                 query_conditions.extend(
                     config.extra_query_conditions(
-                        current_user.id, batch_session.processed_item_ids
+                        current_user.id, processed_item_ids
                     )
                 )
 
@@ -586,15 +609,18 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             games_to_process = db_session.exec(matched_games_query).all()
 
             if not games_to_process:
-                # No more games to process - mark session as complete
-                if batch_session.status.value != "cancelled":
-                    batch_session.status = BatchSessionStatus.COMPLETED
+                # No more games to process - mark job as complete
+                if job.status != BackgroundJobStatus.CANCELLED:
+                    job.status = BackgroundJobStatus.COMPLETED
+                    db_session.add(job)
+                    db_session.commit()
+                    db_session.refresh(job)
                 logger.info(
                     f"Batch sync session {session_id} completed - "
                     f"no more games to process ({config.source_name})"
                 )
                 return _create_batch_response(
-                    config, batch_session, [], "No more games to process"
+                    config, job, [], "No more games to process"
                 )
 
             # Process the batch
@@ -639,9 +665,9 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                     logger.error(error_msg)
                     errors.append(error_msg)
 
-            # Update session progress
-            session_manager.update_session_progress(
-                session_id=session_id,
+            # Update job progress
+            batch_service.update_batch_progress(
+                job_id=session_id,
                 processed_count=len(games_to_process),
                 successful_count=successful_count,
                 failed_count=failed_count,
@@ -649,6 +675,8 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 failed_ids=failed_game_ids,
                 errors=errors[-10:],
             )
+            # Refresh job to get updated values
+            db_session.refresh(job)
 
             # Refresh games from database
             updated_games = db_session.exec(
@@ -674,20 +702,20 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
             )
 
             return BatchNextResponse(
-                session_id=batch_session.id,
+                session_id=job.id,
                 batch_processed=len(games_to_process),
                 batch_successful=successful_count,
                 batch_failed=failed_count,
                 batch_errors=errors,
                 current_batch_items=current_batch_items,
-                total_items=batch_session.total_items,
-                processed_items=batch_session.processed_items,
-                successful_items=batch_session.successful_items,
-                failed_items=batch_session.failed_items,
-                remaining_items=batch_session.remaining_items,
-                progress_percentage=batch_session.progress_percentage,
-                status=batch_session.status.value,
-                is_complete=batch_session.is_complete,
+                total_items=job.progress_total,
+                processed_items=job.progress_current,
+                successful_items=job.successful_items,
+                failed_items=job.failed_items,
+                remaining_items=job.remaining_items,
+                progress_percentage=float(job.progress_percent),
+                status=job.status.value,
+                is_complete=job.is_terminal,
                 message=message,
             )
 
@@ -699,8 +727,8 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 f"({config.source_name}): {str(e)}"
             )
 
-            session_manager = get_batch_session_manager()
-            session_manager.fail_session(session_id, str(e))
+            batch_service = BatchJobService(db_session)
+            batch_service.fail_batch_job(session_id, str(e))
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -715,39 +743,50 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
     )
     async def get_batch_status(
         session_id: str,
+        db_session: Annotated[Session, Depends(get_session)],
         current_user: Annotated[Any, Depends(config.auth_dependency)],
     ) -> BatchStatusResponse:
         """Get the current status of a batch session."""
         try:
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.get_session(session_id)
+            batch_service = BatchJobService(db_session)
+            job = batch_service.get_batch_job(session_id)
 
-            if not batch_session:
+            if not job:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Batch session not found",
                 )
 
-            if batch_session.user_id != current_user.id:
+            if job.user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this batch session",
                 )
 
+            # Map import subtype back to operation type for response
+            op_type_map = {
+                ImportJobSubtype.AUTO_MATCH: "auto_match",
+                ImportJobSubtype.BULK_SYNC: "sync",
+            }
+            operation_type = op_type_map.get(job.import_subtype) if job.import_subtype else "unknown"
+
+            # Get errors from error log
+            error_messages = [e.get("message", str(e)) for e in job.get_error_log()]
+
             return BatchStatusResponse(
-                session_id=batch_session.id,
-                operation_type=batch_session.operation_type.value,
-                total_items=batch_session.total_items,
-                processed_items=batch_session.processed_items,
-                successful_items=batch_session.successful_items,
-                failed_items=batch_session.failed_items,
-                remaining_items=batch_session.remaining_items,
-                progress_percentage=batch_session.progress_percentage,
-                status=batch_session.status.value,
-                is_complete=batch_session.is_complete,
-                created_at=batch_session.created_at,
-                updated_at=batch_session.updated_at,
-                errors=batch_session.errors or [],
+                session_id=job.id,
+                operation_type=operation_type,
+                total_items=job.progress_total,
+                processed_items=job.progress_current,
+                successful_items=job.successful_items,
+                failed_items=job.failed_items,
+                remaining_items=job.remaining_items,
+                progress_percentage=float(job.progress_percent),
+                status=job.status.value,
+                is_complete=job.is_terminal,
+                created_at=job.created_at,
+                updated_at=job.started_at or job.created_at,
+                errors=error_messages,
             )
 
         except HTTPException:
@@ -769,6 +808,7 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
     )
     async def cancel_batch_session(
         session_id: str,
+        db_session: Annotated[Session, Depends(get_session)],
         current_user: Annotated[Any, Depends(config.auth_dependency)],
     ) -> BatchCancelResponse:
         """Cancel a batch session."""
@@ -778,12 +818,10 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
                 f"{current_user.id} ({config.source_name})"
             )
 
-            session_manager = get_batch_session_manager()
-            batch_session = session_manager.cancel_session(
-                session_id, current_user.id
-            )
+            batch_service = BatchJobService(db_session)
+            job = batch_service.cancel_batch_job(session_id, current_user.id)
 
-            if not batch_session:
+            if not job:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Batch session not found or access denied",
@@ -791,20 +829,20 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
 
             logger.info(
                 f"Cancelled batch session {session_id}: "
-                f"{batch_session.processed_items} processed, "
-                f"{batch_session.successful_items} successful "
+                f"{job.progress_current} processed, "
+                f"{job.successful_items} successful "
                 f"({config.source_name})"
             )
 
             return BatchCancelResponse(
-                session_id=batch_session.id,
-                status=batch_session.status.value,
-                processed_items=batch_session.processed_items,
-                successful_items=batch_session.successful_items,
-                failed_items=batch_session.failed_items,
+                session_id=job.id,
+                status=job.status.value,
+                processed_items=job.progress_current,
+                successful_items=job.successful_items,
+                failed_items=job.failed_items,
                 message=f"Batch session cancelled. Processed "
-                f"{batch_session.processed_items} games with "
-                f"{batch_session.successful_items} successful operations.",
+                f"{job.progress_current} games with "
+                f"{job.successful_items} successful operations.",
             )
 
         except HTTPException:
@@ -824,25 +862,25 @@ def create_batch_router(config: BatchSourceConfig) -> APIRouter:
 
 def _create_batch_response(
     _config: BatchSourceConfig,
-    batch_session,
+    job: Job,
     current_batch_items: List,
     message: str,
 ) -> BatchNextResponse:
     """Helper function to create a consistent batch response."""
     return BatchNextResponse(
-        session_id=batch_session.id,
+        session_id=job.id,
         batch_processed=len(current_batch_items),
         batch_successful=0,
         batch_failed=0,
         batch_errors=[],
         current_batch_items=current_batch_items,
-        total_items=batch_session.total_items,
-        processed_items=batch_session.processed_items,
-        successful_items=batch_session.successful_items,
-        failed_items=batch_session.failed_items,
-        remaining_items=batch_session.remaining_items,
-        progress_percentage=batch_session.progress_percentage,
-        status=batch_session.status.value,
-        is_complete=batch_session.is_complete,
+        total_items=job.progress_total,
+        processed_items=job.progress_current,
+        successful_items=job.successful_items,
+        failed_items=job.failed_items,
+        remaining_items=job.remaining_items,
+        progress_percentage=float(job.progress_percent),
+        status=job.status.value,
+        is_complete=job.is_terminal,
         message=message,
     )
