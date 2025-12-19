@@ -1,3 +1,14 @@
+// Re-export admin API functions
+export {
+  getUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  resetUserPassword,
+  getUserDeletionImpact,
+  deleteUser,
+} from './admin';
+
 // Re-export auth API functions
 export {
   login,
