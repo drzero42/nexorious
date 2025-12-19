@@ -164,3 +164,8 @@ class CollectionStatsResponse(BaseModel):
     completion_rate: float  # percentage of completed games
     average_rating: Optional[float]
     total_hours_played: int
+
+
+class UserGameIdsResponse(BaseModel):
+    """Response schema for user game IDs list."""
+    ids: List[str] = Field(..., description="List of user game IDs")

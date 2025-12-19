@@ -28,7 +28,8 @@ from ..schemas.user_game import (
     BulkDeleteRequest,
     BulkAddPlatformRequest,
     BulkRemovePlatformRequest,
-    CollectionStatsResponse
+    CollectionStatsResponse,
+    UserGameIdsResponse
 )
 from ..schemas.common import SuccessResponse
 from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
@@ -257,6 +258,75 @@ async def list_user_games(
         per_page=per_page,
         pages=pages
     )
+
+
+@router.get("/ids", response_model=UserGameIdsResponse)
+async def get_user_game_ids(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
+    ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
+    is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
+    platform_id: Optional[str] = Query(default=None, description="Filter by platform"),
+    storefront_id: Optional[str] = Query(default=None, description="Filter by storefront"),
+    rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
+    rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
+    has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
+    q: Optional[str] = Query(default=None, description="Search in game titles and notes"),
+):
+    """Get all user game IDs matching filters (lightweight endpoint for bulk selection)."""
+
+    # Build base query - only select IDs
+    query = select(UserGame.id).where(UserGame.user_id == current_user.id)
+
+    # Apply filters
+    filters: List[Any] = []
+
+    if play_status is not None:
+        filters.append(UserGame.play_status == play_status)
+
+    if ownership_status is not None:
+        filters.append(UserGame.ownership_status == ownership_status)
+
+    if is_loved is not None:
+        filters.append(UserGame.is_loved == is_loved)
+
+    if rating_min is not None:
+        filters.append(col(UserGame.personal_rating) >= rating_min)
+
+    if rating_max is not None:
+        filters.append(col(UserGame.personal_rating) <= rating_max)
+
+    if has_notes is not None:
+        if has_notes:
+            filters.append(is_not(col(UserGame.personal_notes), None))
+            filters.append(UserGame.personal_notes != "")
+        else:
+            filters.append(or_(
+                is_(col(UserGame.personal_notes), None),
+                UserGame.personal_notes == ""
+            ))
+
+    if platform_id:
+        query = query.join(UserGamePlatform).where(UserGamePlatform.platform_id == platform_id)
+
+    if storefront_id:
+        query = query.join(UserGamePlatform).where(UserGamePlatform.storefront_id == storefront_id)
+
+    if filters:
+        query = query.where(and_(*filters))
+
+    if q:
+        query = query.join(Game)
+        query = query.where(or_(
+            col(Game.title).icontains(q),
+            and_(is_not(col(UserGame.personal_notes), None), col(UserGame.personal_notes).icontains(q))
+        ))
+
+    # Execute and return IDs only
+    ids = session.exec(query).all()
+
+    return UserGameIdsResponse(ids=[str(id) for id in ids])
 
 
 @router.get("/stats", response_model=CollectionStatsResponse)
