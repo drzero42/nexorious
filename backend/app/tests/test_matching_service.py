@@ -34,7 +34,7 @@ class TestMatchModels:
 
         assert result["igdb_id"] == 123
         assert result["name"] == "Test Game"
-        assert result["confidence_score"] == 0.95
+        assert result["similarity_score"] == 0.95
         assert "PC" in result["platforms"]
 
     def test_match_result_is_matched_true(self):
