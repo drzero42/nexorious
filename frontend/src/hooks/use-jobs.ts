@@ -7,6 +7,7 @@ import type {
   JobCancelResponse,
   JobDeleteResponse,
   JobConfirmResponse,
+  JobsSummary,
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
@@ -67,6 +68,18 @@ export function useJob(jobId: string | undefined, options?: { enabled?: boolean 
       }
       return false;
     },
+  });
+}
+
+/**
+ * Hook to fetch job summary counts for sidebar badge.
+ * Returns counts of running and failed jobs.
+ */
+export function useJobsSummary() {
+  return useQuery({
+    queryKey: [...jobsKeys.all, 'summary'] as const,
+    queryFn: () => jobsApi.getJobsSummary(),
+    refetchInterval: 10000, // Poll every 10 seconds for badge updates
   });
 }
 
