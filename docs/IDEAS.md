@@ -22,3 +22,15 @@ After refactoring to use IGDB ID as the primary key for games, there are schemas
 
 ## No need to import from IGDB
 It should be transparent that data is pulled in from IGDB. Instead of having a workflow of import-igdb and then adding a user-games entry, the user-games add endpoint should just accept an IGDB ID. If no game with that ID exists in our database it should be imported from IGDB. If one already exists, just use that.
+
+## Switch from taskiq-pg to PGQueuer
+Replace the current taskiq-pg task queue with PGQueuer for true competing consumers semantics.
+
+**Why:** taskiq-pg uses LISTEN/NOTIFY to broadcast tasks to all workers, requiring manual advisory locks to prevent duplicate processing. PGQueuer uses PostgreSQL's `FOR UPDATE SKIP LOCKED` which provides true queue semantics where exactly one worker claims each job atomically.
+
+**Benefits:**
+- No wasted work (workers don't wake up just to fail lock acquisition)
+- Built-in rate limiting and concurrency control
+- Batch operations for high-throughput scenarios
+- Built-in dashboard and Prometheus metrics
+- Can remove the manual advisory lock code in `app/worker/locking.py`
