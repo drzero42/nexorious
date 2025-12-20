@@ -48,8 +48,9 @@ import {
   useSkipReviewItem,
   useKeepReviewItem,
   useRemoveReviewItem,
+  useSearchIGDB,
 } from '@/hooks';
-import type { ReviewItem, ReviewFilters, IGDBCandidate } from '@/types';
+import type { ReviewItem, ReviewFilters, IGDBCandidate, IGDBGameCandidate } from '@/types';
 import { ReviewItemStatus, ReviewSource, formatReleaseYear } from '@/types';
 
 const ITEMS_PER_PAGE = 20;
@@ -99,6 +100,7 @@ export default function ReviewPage() {
   });
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, isLoading, error, refetch, isFetching } = useReviewItems(
     filters,
@@ -120,6 +122,7 @@ export default function ReviewPage() {
   const skipMutation = useSkipReviewItem();
   const keepMutation = useKeepReviewItem();
   const removeMutation = useRemoveReviewItem();
+  const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const hasFilters =
     filters.status !== undefined ||
@@ -234,6 +237,24 @@ export default function ReviewPage() {
       setProcessingItemId(null);
     }
   }, [selectedItem, skipMutation]);
+
+  const handleSearchResultMatch = useCallback(
+    async (igdbId: number) => {
+      if (!selectedItem) return;
+      setProcessingItemId(selectedItem.id);
+      try {
+        await matchMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
+        toast.success(`Matched "${selectedItem.sourceTitle}" to IGDB`);
+        setSelectedItem(null);
+        setSearchQuery('');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to match item');
+      } finally {
+        setProcessingItemId(null);
+      }
+    },
+    [selectedItem, matchMutation]
+  );
 
   if (isLoading) {
     return <ReviewPageSkeleton />;
@@ -473,7 +494,12 @@ export default function ReviewPage() {
       )}
 
       {/* IGDB Candidates Modal */}
-      <Dialog open={!!selectedItem} onOpenChange={() => setSelectedItem(null)}>
+      <Dialog open={!!selectedItem} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedItem(null);
+          setSearchQuery('');
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Match: {selectedItem?.sourceTitle}</DialogTitle>
@@ -499,6 +525,49 @@ export default function ReviewPage() {
               ))}
             </div>
           )}
+
+          {/* IGDB Search Section */}
+          <div className="border-t pt-4">
+            <p className="mb-2 text-sm text-muted-foreground">
+              Can&apos;t find the right match?
+            </p>
+            <div className="relative">
+              <Input
+                placeholder="Search IGDB..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery.length >= 3 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                  {isSearching ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
+                    </div>
+                  ) : searchError ? (
+                    <div className="p-4 text-center text-sm text-destructive">
+                      Search failed. Please try again.
+                    </div>
+                  ) : searchResults && searchResults.length > 0 ? (
+                    <div className="p-1">
+                      {searchResults.map((result) => (
+                        <SearchResultItem
+                          key={result.igdb_id}
+                          result={result}
+                          isProcessing={processingItemId === selectedItem?.id}
+                          onSelect={() => handleSearchResultMatch(result.igdb_id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      No games found for &ldquo;{searchQuery}&rdquo;
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="flex justify-end gap-2 border-t pt-4">
             <Button
@@ -572,6 +641,52 @@ function CandidateButton({ candidate, isBestMatch, isProcessing, onSelect }: Can
           <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
             Best Match
           </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+interface SearchResultItemProps {
+  result: IGDBGameCandidate;
+  isProcessing: boolean;
+  onSelect: () => void;
+}
+
+function SearchResultItem({ result, isProcessing, onSelect }: SearchResultItemProps) {
+  const releaseYear = result.release_date
+    ? new Date(result.release_date).getFullYear()
+    : null;
+
+  return (
+    <button
+      className="flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors hover:bg-muted disabled:opacity-50"
+      onClick={onSelect}
+      disabled={isProcessing}
+    >
+      {result.cover_art_url ? (
+        <img
+          src={result.cover_art_url}
+          alt={result.title}
+          className="h-12 w-9 rounded object-cover"
+        />
+      ) : (
+        <div className="flex h-12 w-9 items-center justify-center rounded bg-muted">
+          <ImageOff className="h-4 w-4 text-muted-foreground" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">
+          {result.title}
+          {releaseYear && (
+            <span className="ml-1 text-muted-foreground">({releaseYear})</span>
+          )}
+        </p>
+        {result.platforms.length > 0 && (
+          <p className="truncate text-xs text-muted-foreground">
+            {result.platforms.slice(0, 3).join(', ')}
+            {result.platforms.length > 3 && ` +${result.platforms.length - 3}`}
+          </p>
         )}
       </div>
     </button>
