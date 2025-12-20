@@ -34,3 +34,6 @@ Replace the current taskiq-pg task queue with PGQueuer for true competing consum
 - Batch operations for high-throughput scenarios
 - Built-in dashboard and Prometheus metrics
 - Can remove the manual advisory lock code in `app/worker/locking.py`
+
+## Use knip to keep frontend lean
+We should use knip.dev to identify dead code in the frontend and help keep the frontend code lean and fresh.
