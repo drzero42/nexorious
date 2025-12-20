@@ -19,7 +19,7 @@ import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const { user, logout } = useAuth();
-  const { mainItems, settingsSection, adminSection } = useNavItems();
+  const { mainItems, manageSection, settingsSection, adminSection } = useNavItems();
 
   const handleNavigate = () => {
     setOpen(false);
@@ -60,8 +60,16 @@ export function MobileNav() {
                 ))}
               </ul>
 
-              {/* Settings section */}
+              {/* Manage section */}
               <div className="mt-6">
+                <NavSectionCollapsible
+                  {...manageSection}
+                  onNavigate={handleNavigate}
+                />
+              </div>
+
+              {/* Settings section */}
+              <div className="mt-4">
                 <NavSectionCollapsible
                   {...settingsSection}
                   onNavigate={handleNavigate}
