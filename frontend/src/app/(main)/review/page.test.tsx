@@ -39,11 +39,12 @@ vi.mock('@/hooks', async () => {
   };
 });
 
-import { useReviewItems, useReviewSummary, useSearchIGDB } from '@/hooks';
+import { useReviewItems, useReviewSummary, useSearchIGDB, useMatchReviewItem } from '@/hooks';
 
 const mockedUseReviewItems = vi.mocked(useReviewItems);
 const mockedUseReviewSummary = vi.mocked(useReviewSummary);
 const mockedUseSearchIGDB = vi.mocked(useSearchIGDB);
+const mockedUseMatchReviewItem = vi.mocked(useMatchReviewItem);
 
 const mockSummaryWithPending = {
   totalPending: 10,
@@ -290,6 +291,66 @@ describe('ReviewPage', () => {
       // Results should appear
       expect(screen.getByText('Search Result Game')).toBeInTheDocument();
       expect(screen.getByText('(2023)')).toBeInTheDocument();
+    });
+
+    it('matches review item when clicking search result', async () => {
+      const user = userEvent.setup();
+      const mockMatchMutate = vi.fn().mockResolvedValue({});
+
+      const mockSearchResults = [
+        {
+          igdb_id: 456,
+          title: 'Clicked Game',
+          release_date: '2022-06-15',
+          cover_art_url: null,
+          platforms: ['PC'],
+          description: 'Another game',
+        },
+      ];
+
+      // Re-mock with custom mutateAsync
+      mockedUseMatchReviewItem.mockReturnValue({
+        mutateAsync: mockMatchMutate,
+      } as unknown as ReturnType<typeof useMatchReviewItem>);
+
+      mockedUseReviewItems.mockReturnValue({
+        data: mockItemsWithReviewItem,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      } as unknown as ReturnType<typeof useReviewItems>);
+
+      mockedUseReviewSummary.mockReturnValue({
+        data: mockSummaryWithPending,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useReviewSummary>);
+
+      mockedUseSearchIGDB.mockReturnValue({
+        data: mockSearchResults,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useSearchIGDB>);
+
+      render(<ReviewPage />);
+
+      // Open modal
+      const viewButton = screen.getByRole('button', { name: /search igdb/i });
+      await user.click(viewButton);
+
+      // Type and click result
+      const searchInput = screen.getByPlaceholderText(/search igdb/i);
+      await user.type(searchInput, 'Clicked');
+
+      const resultButton = screen.getByRole('button', { name: /clicked game/i });
+      await user.click(resultButton);
+
+      // Verify match was called with correct params
+      expect(mockMatchMutate).toHaveBeenCalledWith({
+        itemId: 'item-1',
+        igdbId: 456,
+      });
     });
   });
 });
