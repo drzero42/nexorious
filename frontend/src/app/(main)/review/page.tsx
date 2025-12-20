@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/pagination';
 import {
   AlertCircle,
+  ArrowRight,
   Check,
   CheckCircle,
   Loader2,
@@ -126,13 +127,6 @@ export default function ReviewPage() {
 
   // Check if this job has unresolved platform/storefront mappings
   const { data: platformSummary } = usePlatformSummary(firstImportJobId);
-
-  // Redirect to mapping page if there are unresolved mappings
-  useEffect(() => {
-    if (platformSummary && !platformSummary.allResolved && firstImportJobId) {
-      router.replace(`/import/mapping?job_id=${firstImportJobId}`);
-    }
-  }, [platformSummary, firstImportJobId, router]);
 
   // Smart default: show pending items if there are any and no explicit status filter
   useEffect(() => {
@@ -357,6 +351,30 @@ export default function ReviewPage() {
           )}
         </div>
       </div>
+
+      {/* Unresolved Mappings Alert */}
+      {platformSummary && !platformSummary.allResolved && firstImportJobId && (
+        <Alert className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20">
+          <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+          <AlertTitle className="text-orange-800 dark:text-orange-200">
+            Platform/Storefront Mapping Required
+          </AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-orange-700 dark:text-orange-300">
+              Some platforms or storefronts from your import need to be mapped before you can finalize.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-4 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/40"
+              onClick={() => router.push(`/import/mapping?job_id=${firstImportJobId}`)}
+            >
+              Go to Mapping
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Summary Stats */}
       {summary && (
