@@ -122,7 +122,7 @@ export default function ReviewPage() {
   const skipMutation = useSkipReviewItem();
   const keepMutation = useKeepReviewItem();
   const removeMutation = useRemoveReviewItem();
-  const { data: searchResults, isLoading: isSearching } = useSearchIGDB(searchQuery);
+  const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const hasFilters =
     filters.status !== undefined ||
@@ -543,6 +543,10 @@ export default function ReviewPage() {
                     <div className="flex items-center justify-center p-4">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
+                    </div>
+                  ) : searchError ? (
+                    <div className="p-4 text-center text-sm text-destructive">
+                      Search failed. Please try again.
                     </div>
                   ) : searchResults && searchResults.length > 0 ? (
                     <div className="p-1">

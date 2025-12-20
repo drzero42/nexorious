@@ -352,5 +352,42 @@ describe('ReviewPage', () => {
         igdbId: 456,
       });
     });
+
+    it('displays error message when search fails', async () => {
+      const user = userEvent.setup();
+
+      mockedUseReviewItems.mockReturnValue({
+        data: mockItemsWithReviewItem,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      } as unknown as ReturnType<typeof useReviewItems>);
+
+      mockedUseReviewSummary.mockReturnValue({
+        data: mockSummaryWithPending,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useReviewSummary>);
+
+      mockedUseSearchIGDB.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Search failed'),
+      } as unknown as ReturnType<typeof useSearchIGDB>);
+
+      render(<ReviewPage />);
+
+      // Open modal
+      const viewButton = screen.getByRole('button', { name: /search igdb/i });
+      await user.click(viewButton);
+
+      // Type search query
+      const searchInput = screen.getByPlaceholderText(/search igdb/i);
+      await user.type(searchInput, 'test query');
+
+      // Error message should appear
+      expect(screen.getByText(/search failed/i)).toBeInTheDocument();
+    });
   });
 });
