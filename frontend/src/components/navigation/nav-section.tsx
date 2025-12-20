@@ -1,7 +1,7 @@
 // frontend/src/components/navigation/nav-section.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   Collapsible,
@@ -21,9 +21,17 @@ export function NavSectionCollapsible({
   icon,
   items,
   defaultOpen = false,
+  needsAttention = false,
   onNavigate,
 }: NavSectionCollapsibleProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isOpen, setIsOpen] = useState(defaultOpen || needsAttention);
+
+  // Auto-expand when needsAttention becomes true
+  useEffect(() => {
+    if (needsAttention) {
+      setIsOpen(true);
+    }
+  }, [needsAttention]);
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
