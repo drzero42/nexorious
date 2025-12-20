@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/pagination';
 import {
   AlertCircle,
+  Check,
   CheckCircle,
   Loader2,
   RefreshCw,
@@ -49,7 +50,9 @@ import {
   useKeepReviewItem,
   useRemoveReviewItem,
   useSearchIGDB,
+  useFinalizeImport,
 } from '@/hooks';
+import { useImportMapping } from '@/contexts/import-mapping-context';
 import type { ReviewItem, ReviewFilters, IGDBCandidate, IGDBGameCandidate } from '@/types';
 import { ReviewItemStatus, ReviewSource, formatReleaseYear } from '@/types';
 
@@ -90,6 +93,12 @@ export default function ReviewPage() {
   const jobIdFromUrl = searchParams.get('job_id');
   const sourceFromUrl = searchParams.get('source');
 
+  // Import mapping context
+  const { platformMappings, storefrontMappings, jobId: contextJobId, clearMappings } = useImportMapping();
+  const effectiveJobId = jobIdFromUrl || contextJobId;
+  const hasMappings = Object.keys(platformMappings).length > 0 || Object.keys(storefrontMappings).length > 0;
+  const canFinalize = effectiveJobId && hasMappings;
+
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<ReviewFilters>(() => {
     const initial: ReviewFilters = {};
@@ -122,6 +131,7 @@ export default function ReviewPage() {
   const skipMutation = useSkipReviewItem();
   const keepMutation = useKeepReviewItem();
   const removeMutation = useRemoveReviewItem();
+  const finalizeMutation = useFinalizeImport();
   const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const hasFilters =
@@ -256,6 +266,23 @@ export default function ReviewPage() {
     [selectedItem, matchMutation]
   );
 
+  const handleFinalize = useCallback(async () => {
+    if (!effectiveJobId) return;
+    try {
+      const result = await finalizeMutation.mutateAsync({
+        jobId: effectiveJobId,
+        platformMappings,
+        storefrontMappings,
+      });
+      toast.success(result.message);
+      clearMappings();
+      // Optionally navigate to games page
+      router.push('/games');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to finalize import');
+    }
+  }, [effectiveJobId, platformMappings, storefrontMappings, finalizeMutation, clearMappings, router]);
+
   if (isLoading) {
     return <ReviewPageSkeleton />;
   }
@@ -286,6 +313,26 @@ export default function ReviewPage() {
             )}
             Refresh
           </Button>
+          {canFinalize && (
+            <Button
+              onClick={handleFinalize}
+              disabled={finalizeMutation.isPending}
+              className="bg-green-600 hover:bg-green-700"
+              size="sm"
+            >
+              {finalizeMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Finalizing...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Finalize Import
+                </>
+              )}
+            </Button>
+          )}
           {summary && (
             <div className="text-right">
               <div className="text-2xl font-bold text-primary">{summary.totalPending}</div>

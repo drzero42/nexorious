@@ -17,9 +17,11 @@ vi.mock('next/link', () => ({
 // Mock next/navigation
 const mockSearchParams = new URLSearchParams();
 const mockReplace = vi.fn();
+const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     replace: mockReplace,
+    push: mockPush,
   }),
   useSearchParams: () => mockSearchParams,
 }));
@@ -36,6 +38,7 @@ vi.mock('@/hooks', async () => {
     useKeepReviewItem: vi.fn(() => ({ mutateAsync: vi.fn() })),
     useRemoveReviewItem: vi.fn(() => ({ mutateAsync: vi.fn() })),
     useSearchIGDB: vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
+    useFinalizeImport: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   };
 });
 
