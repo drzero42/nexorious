@@ -242,5 +242,54 @@ describe('ReviewPage', () => {
       // Search input should be visible in modal
       expect(screen.getByPlaceholderText(/search igdb/i)).toBeInTheDocument();
     });
+
+    it('displays search results when typing 3+ characters', async () => {
+      const user = userEvent.setup();
+
+      const mockSearchResults = [
+        {
+          igdb_id: 123,
+          title: 'Search Result Game',
+          release_date: '2023-01-15',
+          cover_art_url: 'https://example.com/cover.jpg',
+          platforms: ['PC', 'PlayStation 5'],
+          description: 'A great game',
+        },
+      ];
+
+      mockedUseReviewItems.mockReturnValue({
+        data: mockItemsWithReviewItem,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      } as unknown as ReturnType<typeof useReviewItems>);
+
+      mockedUseReviewSummary.mockReturnValue({
+        data: mockSummaryWithPending,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useReviewSummary>);
+
+      mockedUseSearchIGDB.mockReturnValue({
+        data: mockSearchResults,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useSearchIGDB>);
+
+      render(<ReviewPage />);
+
+      // Open modal
+      const viewButton = screen.getByRole('button', { name: /search igdb/i });
+      await user.click(viewButton);
+
+      // Type search query
+      const searchInput = screen.getByPlaceholderText(/search igdb/i);
+      await user.type(searchInput, 'Search Result');
+
+      // Results should appear
+      expect(screen.getByText('Search Result Game')).toBeInTheDocument();
+      expect(screen.getByText('(2023)')).toBeInTheDocument();
+    });
   });
 });
