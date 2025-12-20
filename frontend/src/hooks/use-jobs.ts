@@ -7,7 +7,6 @@ import type {
   JobCancelResponse,
   JobDeleteResponse,
   JobConfirmResponse,
-  JobsSummary,
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
