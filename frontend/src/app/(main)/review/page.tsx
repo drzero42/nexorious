@@ -51,6 +51,7 @@ import {
   useRemoveReviewItem,
   useSearchIGDB,
   useFinalizeImport,
+  usePlatformSummary,
 } from '@/hooks';
 import { useImportMapping } from '@/contexts/import-mapping-context';
 import type { ReviewItem, ReviewFilters, IGDBCandidate, IGDBGameCandidate } from '@/types';
@@ -117,6 +118,21 @@ export default function ReviewPage() {
     ITEMS_PER_PAGE
   );
   const { data: summary } = useReviewSummary();
+
+  // Find the first import job from review items that might need platform mapping
+  const firstImportJobId = data?.items.find(
+    (item) => item.jobSource === 'DARKADIA' || item.jobSource === 'darkadia'
+  )?.jobId || null;
+
+  // Check if this job has unresolved platform/storefront mappings
+  const { data: platformSummary } = usePlatformSummary(firstImportJobId);
+
+  // Redirect to mapping page if there are unresolved mappings
+  useEffect(() => {
+    if (platformSummary && !platformSummary.allResolved && firstImportJobId) {
+      router.replace(`/import/mapping?job_id=${firstImportJobId}`);
+    }
+  }, [platformSummary, firstImportJobId, router]);
 
   // Smart default: show pending items if there are any and no explicit status filter
   useEffect(() => {
