@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowRight } from 'lucide-react';
 import { MappingSection } from '@/components/import/mapping-section';
 import { useImportMapping } from '@/contexts/import-mapping-context';
 import {
@@ -16,12 +17,14 @@ import {
   useAllStorefronts,
   useJob,
   useBatchImportMappings,
+  reviewKeys,
 } from '@/hooks';
-import { MappingType } from '@/types';
+import { MappingType } from '@/types/import-mapping';
 
 export default function MappingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const jobId = searchParams.get('job_id');
 
   const {
@@ -37,7 +40,6 @@ export default function MappingPage() {
   const { data: storefronts, isLoading: storefrontsLoading } = useAllStorefronts({ activeOnly: true });
   const { data: job, isLoading: jobLoading } = useJob(jobId || undefined);
   const batchImportMappings = useBatchImportMappings();
-  const [isSaving, setIsSaving] = useState(false);
 
   const isLoading = summaryLoading || platformsLoading || storefrontsLoading || jobLoading;
 
@@ -66,6 +68,64 @@ export default function MappingPage() {
     }
   }, [summary, platformMappings, storefrontMappings, setPlatformMapping, setStorefrontMapping]);
 
+  // Handle platform mapping change - save immediately to backend
+  const handlePlatformMappingChange = useCallback(
+    async (sourceValue: string, targetId: string) => {
+      // Update local context immediately for UI responsiveness
+      setPlatformMapping(sourceValue, targetId);
+
+      // Save to backend immediately
+      if (job) {
+        try {
+          await batchImportMappings.mutateAsync({
+            importSource: job.source,
+            mappings: [
+              {
+                mappingType: MappingType.PLATFORM,
+                sourceValue,
+                targetId,
+              },
+            ],
+          });
+          // Invalidate platform summary to reflect saved state
+          queryClient.invalidateQueries({ queryKey: reviewKeys.platformSummary(jobId || '') });
+        } catch (error) {
+          console.error('Failed to save platform mapping:', error);
+        }
+      }
+    },
+    [job, batchImportMappings, setPlatformMapping, queryClient, jobId]
+  );
+
+  // Handle storefront mapping change - save immediately to backend
+  const handleStorefrontMappingChange = useCallback(
+    async (sourceValue: string, targetId: string) => {
+      // Update local context immediately for UI responsiveness
+      setStorefrontMapping(sourceValue, targetId);
+
+      // Save to backend immediately
+      if (job) {
+        try {
+          await batchImportMappings.mutateAsync({
+            importSource: job.source,
+            mappings: [
+              {
+                mappingType: MappingType.STOREFRONT,
+                sourceValue,
+                targetId,
+              },
+            ],
+          });
+          // Invalidate platform summary to reflect saved state
+          queryClient.invalidateQueries({ queryKey: reviewKeys.platformSummary(jobId || '') });
+        } catch (error) {
+          console.error('Failed to save storefront mapping:', error);
+        }
+      }
+    },
+    [job, batchImportMappings, setStorefrontMapping, queryClient, jobId]
+  );
+
   // Check if all items have mappings (either from suggestions or user selection)
   const allMapped = useMemo(() => {
     if (!summary) return false;
@@ -90,44 +150,10 @@ export default function MappingPage() {
     return unresolvedPlatforms + unresolvedStorefronts;
   }, [summary, platformMappings, storefrontMappings]);
 
-  const handleContinue = async () => {
-    if (!jobId || !job || !summary) return;
-
-    setIsSaving(true);
-    try {
-      // Build the list of mappings to save
-      const mappingsToSave = [
-        // Platform mappings
-        ...summary.platforms.map((p) => ({
-          mappingType: MappingType.PLATFORM,
-          sourceValue: p.original,
-          targetId: platformMappings[p.original] || p.suggestedId || '',
-        })),
-        // Storefront mappings
-        ...summary.storefronts.map((s) => ({
-          mappingType: MappingType.STOREFRONT,
-          sourceValue: s.original,
-          targetId: storefrontMappings[s.original] || s.suggestedId || '',
-        })),
-      ].filter((m) => m.targetId); // Only save mappings with a target
-
-      if (mappingsToSave.length > 0) {
-        // Save mappings to backend using the job's source as the import source
-        await batchImportMappings.mutateAsync({
-          importSource: job.source,
-          mappings: mappingsToSave,
-        });
-      }
-
-      // Navigate to review page
-      router.push(`/review?job_id=${jobId}`);
-    } catch (error) {
-      console.error('Failed to save mappings:', error);
-      // Still navigate even if save fails - mappings are also in context
-      router.push(`/review?job_id=${jobId}`);
-    } finally {
-      setIsSaving(false);
-    }
+  const handleContinue = () => {
+    if (!jobId) return;
+    // Navigate to review page - mappings are already saved
+    router.push(`/review?job_id=${jobId}`);
   };
 
   if (!jobId) {
@@ -206,7 +232,7 @@ export default function MappingPage() {
               items={summary.platforms}
               options={platforms.map((p) => ({ id: p.id, display_name: p.display_name }))}
               mappings={platformMappings}
-              onMappingChange={setPlatformMapping}
+              onMappingChange={handlePlatformMappingChange}
             />
           )}
 
@@ -216,7 +242,7 @@ export default function MappingPage() {
               items={summary.storefronts}
               options={storefronts.map((s) => ({ id: s.id, display_name: s.display_name }))}
               mappings={storefrontMappings}
-              onMappingChange={setStorefrontMapping}
+              onMappingChange={handleStorefrontMappingChange}
             />
           )}
 
@@ -230,18 +256,9 @@ export default function MappingPage() {
 
       {/* Continue Button */}
       <div className="flex justify-end">
-        <Button onClick={handleContinue} disabled={!allMapped || isSaving} size="lg">
-          {isSaving ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving Mappings...
-            </>
-          ) : (
-            <>
-              Continue to Review
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </>
-          )}
+        <Button onClick={handleContinue} disabled={!allMapped} size="lg">
+          Continue to Review
+          <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
 

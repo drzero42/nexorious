@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import MappingPage from './page';
 import {
@@ -114,11 +115,22 @@ describe('MappingPage', () => {
     (useBatchImportMappings as ReturnType<typeof vi.fn>).mockReturnValue(mockBatchImportMappings);
   });
 
+  const createTestQueryClient = () =>
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
   const renderWithProvider = () => {
+    const queryClient = createTestQueryClient();
     return render(
-      <ImportMappingProvider>
-        <MappingPage />
-      </ImportMappingProvider>
+      <QueryClientProvider client={queryClient}>
+        <ImportMappingProvider>
+          <MappingPage />
+        </ImportMappingProvider>
+      </QueryClientProvider>
     );
   };
 
@@ -208,22 +220,22 @@ describe('MappingPage', () => {
     // Map the unresolved items
     const comboboxes = screen.getAllByRole('combobox');
 
-    // Map PS4
+    // Map PS4 - should save immediately
     await user.click(comboboxes[1]);
     await user.click(screen.getByText('PlayStation 4'));
 
-    // Map Epic
+    // Mapping should be saved immediately when selected
+    await waitFor(() => {
+      expect(mockBatchImportMappings.mutateAsync).toHaveBeenCalled();
+    });
+
+    // Map Epic - should also save immediately
     await user.click(comboboxes[3]);
     await user.click(screen.getByText('Epic Games Store'));
 
     // Click continue
     const continueButton = screen.getByRole('button', { name: /continue to review/i });
     await user.click(continueButton);
-
-    // Should save mappings to backend
-    await waitFor(() => {
-      expect(mockBatchImportMappings.mutateAsync).toHaveBeenCalled();
-    });
 
     // Should navigate to review
     await waitFor(() => {
