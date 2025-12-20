@@ -149,6 +149,9 @@ uv run pytest scripts/tests/ -v
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
 5. **Documentation**: Use context7 MCP to verify API usage in generated code
 
+### Branch Workflow (MANDATORY)
+**AI agents MUST use branches when working on tasks. Never commit directly to main.**
+
 #### Rules
 - ✅ Always create a branch before starting task work
 - ✅ Name branches with the beads issue ID
