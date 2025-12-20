@@ -38,33 +38,47 @@ export default function MappingPage() {
     }
   }, [jobId, setJobId]);
 
-  // Redirect to review if all resolved
+  // Pre-populate mappings from auto-resolved suggestions
   useEffect(() => {
-    if (summary?.allResolved && jobId) {
-      router.replace(`/review?job_id=${jobId}`);
+    if (summary) {
+      // Pre-populate platform mappings from suggestions
+      summary.platforms.forEach((p) => {
+        if (p.suggestedId && !platformMappings[p.original]) {
+          setPlatformMapping(p.original, p.suggestedId);
+        }
+      });
+      // Pre-populate storefront mappings from suggestions
+      summary.storefronts.forEach((s) => {
+        if (s.suggestedId && !storefrontMappings[s.original]) {
+          setStorefrontMapping(s.original, s.suggestedId);
+        }
+      });
     }
-  }, [summary?.allResolved, jobId, router]);
+  }, [summary, platformMappings, storefrontMappings, setPlatformMapping, setStorefrontMapping]);
 
-  // Get unresolved items
-  const unresolvedPlatforms = useMemo(
-    () => summary?.platforms.filter((p) => !p.suggestedId) || [],
-    [summary?.platforms]
-  );
-  const unresolvedStorefronts = useMemo(
-    () => summary?.storefronts.filter((s) => !s.suggestedId) || [],
-    [summary?.storefronts]
-  );
-
-  // Check if all unresolved items have mappings
+  // Check if all items have mappings (either from suggestions or user selection)
   const allMapped = useMemo(() => {
-    const platformsMapped = unresolvedPlatforms.every(
-      (p) => platformMappings[p.original]
+    if (!summary) return false;
+    const platformsMapped = summary.platforms.every(
+      (p) => platformMappings[p.original] || p.suggestedId
     );
-    const storefrontsMapped = unresolvedStorefronts.every(
-      (s) => storefrontMappings[s.original]
+    const storefrontsMapped = summary.storefronts.every(
+      (s) => storefrontMappings[s.original] || s.suggestedId
     );
     return platformsMapped && storefrontsMapped;
-  }, [unresolvedPlatforms, unresolvedStorefronts, platformMappings, storefrontMappings]);
+  }, [summary, platformMappings, storefrontMappings]);
+
+  // Count unresolved items (no suggestion and no manual mapping)
+  const unresolvedCount = useMemo(() => {
+    if (!summary) return 0;
+    const unresolvedPlatforms = summary.platforms.filter(
+      (p) => !p.suggestedId && !platformMappings[p.original]
+    ).length;
+    const unresolvedStorefronts = summary.storefronts.filter(
+      (s) => !s.suggestedId && !storefrontMappings[s.original]
+    ).length;
+    return unresolvedPlatforms + unresolvedStorefronts;
+  }, [summary, platformMappings, storefrontMappings]);
 
   const handleContinue = () => {
     if (jobId) {
@@ -129,18 +143,20 @@ export default function MappingPage() {
         </nav>
         <h1 className="text-2xl font-bold">Platform & Storefront Mapping</h1>
         <p className="text-muted-foreground">
-          Some values from your CSV need to be mapped to our system. Please select the correct
-          mapping for each unrecognized value below.
+          Review and confirm the platform/storefront mappings from your CSV import.
+          {unresolvedCount > 0
+            ? ` ${unresolvedCount} item${unresolvedCount > 1 ? 's' : ''} need${unresolvedCount === 1 ? 's' : ''} manual mapping.`
+            : ' All items have been automatically matched.'}
         </p>
       </div>
 
       {/* Mapping Sections */}
       <Card>
         <CardHeader>
-          <CardTitle>Unresolved Mappings</CardTitle>
+          <CardTitle>Platform & Storefront Mappings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-8">
-          {summary && platforms && (
+          {summary && platforms && summary.platforms.length > 0 && (
             <MappingSection
               title="Platforms"
               items={summary.platforms}
@@ -150,7 +166,7 @@ export default function MappingPage() {
             />
           )}
 
-          {summary && storefronts && (
+          {summary && storefronts && summary.storefronts.length > 0 && (
             <MappingSection
               title="Storefronts"
               items={summary.storefronts}
@@ -160,9 +176,9 @@ export default function MappingPage() {
             />
           )}
 
-          {unresolvedPlatforms.length === 0 && unresolvedStorefronts.length === 0 && (
+          {summary && summary.platforms.length === 0 && summary.storefronts.length === 0 && (
             <p className="text-center text-muted-foreground">
-              All platforms and storefronts have been automatically matched.
+              No platform or storefront data found in the import.
             </p>
           )}
         </CardContent>
