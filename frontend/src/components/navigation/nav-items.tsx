@@ -7,6 +7,7 @@ import {
   Plus,
   ArrowLeftRight,
   RefreshCw,
+  ClipboardCheck,
   Settings,
   Tag,
   ClipboardList,
@@ -50,6 +51,11 @@ export function useNavItems() {
       icon: <RefreshCw className="h-4 w-4" />,
       badge: reviewCounts?.syncPending ?? 0,
       badgeHref: '/review?source=sync',
+    },
+    {
+      href: '/review',
+      label: 'Review',
+      icon: <ClipboardCheck className="h-4 w-4" />,
     },
   ];
 
