@@ -77,6 +77,7 @@ export {
   jobsKeys,
   useJobs,
   useJob,
+  useJobsSummary,
   useCancelJob,
   useDeleteJob,
   useConfirmJob,

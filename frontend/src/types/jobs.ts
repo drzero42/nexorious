@@ -102,6 +102,11 @@ export interface JobConfirmResponse {
   gamesRemoved: number;
 }
 
+export interface JobsSummary {
+  runningCount: number;
+  failedCount: number;
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

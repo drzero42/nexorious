@@ -55,4 +55,57 @@ describe('NavSectionCollapsible', () => {
     render(<NavSectionCollapsible {...defaultProps} defaultOpen={true} />);
     expect(screen.getByText('Tags')).toBeInTheDocument();
   });
+
+  describe('needsAttention behavior', () => {
+    it('should auto-expand when needsAttention is true', () => {
+      render(
+        <NavSectionCollapsible
+          {...defaultProps}
+          defaultOpen={false}
+          needsAttention={true}
+        />
+      );
+
+      // Content should be visible because needsAttention overrides defaultOpen
+      expect(screen.getByText('Tags')).toBeInTheDocument();
+    });
+
+    it('should stay collapsed when needsAttention is false and defaultOpen is false', () => {
+      render(
+        <NavSectionCollapsible
+          {...defaultProps}
+          defaultOpen={false}
+          needsAttention={false}
+        />
+      );
+
+      // Content should not be visible
+      expect(screen.queryByText('Tags')).not.toBeInTheDocument();
+    });
+
+    it('should expand when needsAttention changes from false to true', async () => {
+      const { rerender } = render(
+        <NavSectionCollapsible
+          {...defaultProps}
+          defaultOpen={false}
+          needsAttention={false}
+        />
+      );
+
+      // Initially collapsed
+      expect(screen.queryByText('Tags')).not.toBeInTheDocument();
+
+      // Rerender with needsAttention=true
+      rerender(
+        <NavSectionCollapsible
+          {...defaultProps}
+          defaultOpen={false}
+          needsAttention={true}
+        />
+      );
+
+      // Should now be expanded
+      expect(screen.getByText('Tags')).toBeInTheDocument();
+    });
+  });
 });

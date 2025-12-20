@@ -38,6 +38,7 @@ from ..schemas.mapping_resolution import (
     UnresolvedMapping,
     ResolveMappingsRequest,
 )
+from ..schemas.import_schemas import JobsSummaryResponse
 from ..utils.sqlalchemy_typed import desc
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -149,6 +150,45 @@ async def list_jobs(
         page=page,
         per_page=per_page,
         pages=pages,
+    )
+
+
+@router.get("/summary", response_model=JobsSummaryResponse)
+async def get_jobs_summary(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> JobsSummaryResponse:
+    """
+    Get summary counts of running and failed jobs for the current user.
+
+    Used by the frontend sidebar to display badges showing the number of
+    active and failed jobs.
+    """
+    logger.debug(f"Getting jobs summary for user {current_user.id}")
+
+    # Count running jobs (processing, finalizing)
+    running_result = session.exec(
+        select(func.count()).select_from(Job).where(
+            Job.user_id == current_user.id,
+            col(Job.status).in_([BackgroundJobStatus.PROCESSING, BackgroundJobStatus.FINALIZING])
+        )
+    )
+    running_count = running_result.one()
+
+    # Count failed jobs
+    failed_result = session.exec(
+        select(func.count()).select_from(Job).where(
+            Job.user_id == current_user.id,
+            Job.status == BackgroundJobStatus.FAILED
+        )
+    )
+    failed_count = failed_result.one()
+
+    logger.debug(f"Jobs summary for user {current_user.id}: running={running_count}, failed={failed_count}")
+
+    return JobsSummaryResponse(
+        running_count=running_count,
+        failed_count=failed_count
     )
 
 

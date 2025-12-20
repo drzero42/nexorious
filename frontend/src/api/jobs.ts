@@ -6,6 +6,7 @@ import type {
   JobCancelResponse,
   JobDeleteResponse,
   JobConfirmResponse,
+  JobsSummary,
   JobType,
   JobSource,
   JobStatus,
@@ -66,6 +67,11 @@ interface JobConfirmApiResponse {
   games_added: number;
   games_skipped: number;
   games_removed: number;
+}
+
+interface JobsSummaryApiResponse {
+  running_count: number;
+  failed_count: number;
 }
 
 // ============================================================================
@@ -175,5 +181,17 @@ export async function confirmJob(jobId: string): Promise<JobConfirmResponse> {
     gamesAdded: response.games_added,
     gamesSkipped: response.games_skipped,
     gamesRemoved: response.games_removed,
+  };
+}
+
+/**
+ * Get summary counts for jobs (running and failed).
+ * This is a lightweight endpoint for sidebar badge display.
+ */
+export async function getJobsSummary(): Promise<JobsSummary> {
+  const response = await api.get<JobsSummaryApiResponse>('/jobs/summary');
+  return {
+    runningCount: response.running_count,
+    failedCount: response.failed_count,
   };
 }

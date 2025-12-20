@@ -4,6 +4,7 @@ Core import management endpoints for cross-source operations.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, desc, col
+from sqlalchemy import func
 from typing import Annotated, Optional
 from datetime import datetime, timezone
 import logging
@@ -18,7 +19,7 @@ from ...schemas.import_schemas import (
     ImportJobsListResponse,
     ImportJobResponse,
     ImportJobCancelResponse,
-    ImportHistoryResponse
+    ImportHistoryResponse,
 )
 
 router = APIRouter()

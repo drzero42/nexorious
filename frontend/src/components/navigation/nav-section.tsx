@@ -21,12 +21,29 @@ export function NavSectionCollapsible({
   icon,
   items,
   defaultOpen = false,
+  needsAttention = false,
   onNavigate,
 }: NavSectionCollapsibleProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  // Track if the user has manually closed the section
+  const [userClosed, setUserClosed] = useState(false);
+
+  // Open if: needsAttention is true (and user hasn't closed), OR defaultOpen, OR user opened
+  // The key insight: needsAttention=true should force open unless user explicitly closed
+  const isOpen = needsAttention ? !userClosed : defaultOpen;
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+
+  // Final open state: manual override takes precedence, then computed state
+  const finalIsOpen = manualOpen !== null ? manualOpen : isOpen;
+
+  const handleOpenChange = (open: boolean) => {
+    setManualOpen(open);
+    if (!open && needsAttention) {
+      setUserClosed(true);
+    }
+  };
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+    <Collapsible open={finalIsOpen} onOpenChange={handleOpenChange}>
       <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 rounded-md hover:bg-muted transition-colors">
         <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           {icon}

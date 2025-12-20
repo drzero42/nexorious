@@ -102,6 +102,12 @@ class ImportHistoryResponse(BaseModel):
     limit: int = Field(..., description="Pagination limit")
 
 
+class JobsSummaryResponse(BaseModel):
+    """Response for job summary counts."""
+    running_count: int = Field(..., description="Number of jobs currently running (processing, finalizing)")
+    failed_count: int = Field(..., description="Number of failed jobs")
+
+
 # Source-specific config schemas
 class SourceConfigRequest(BaseModel):
     """Base request for source configuration."""
