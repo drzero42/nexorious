@@ -1,6 +1,7 @@
 import { render, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactElement, type ReactNode } from "react";
+import { ImportMappingProvider } from "@/contexts/import-mapping-context";
 
 // Create a fresh QueryClient for each test
 function createTestQueryClient() {
@@ -40,7 +41,11 @@ function customRender(ui: ReactElement, options: CustomRenderOptions = {}) {
 
   function Wrapper({ children }: WrapperProps) {
     return (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ImportMappingProvider>
+          {children}
+        </ImportMappingProvider>
+      </QueryClientProvider>
     );
   }
 

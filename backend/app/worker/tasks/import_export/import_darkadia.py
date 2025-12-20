@@ -31,7 +31,19 @@ logger = logging.getLogger(__name__)
 # Column name mappings for Darkadia CSV
 COLUMN_MAPPINGS = {
     "name": ["Name", "name", "Title", "title", "Game", "game"],
-    "platform": ["Platform", "platform", "Console", "console", "System", "system"],
+    # Platform columns - Darkadia uses "Platforms" for the game's platforms list
+    # and "Copy platform" for individual copy platform
+    "platforms": ["Platforms", "platforms", "Platform", "platform"],
+    "copy_platform": ["Copy platform", "copy_platform"],
+    # Storefront/source columns
+    "copy_source": ["Copy source", "copy_source"],
+    "copy_source_other": ["Copy source other", "copy_source_other"],
+    # Status columns - Darkadia has individual boolean columns
+    "played": ["Played", "played"],
+    "playing": ["Playing", "playing"],
+    "finished": ["Finished", "finished"],
+    "mastered": ["Mastered", "mastered"],
+    "shelved": ["Shelved", "shelved"],
     "status": ["Status", "status", "Play Status", "play_status"],
     "rating": ["Rating", "rating", "Score", "score", "My Rating", "my_rating"],
     "notes": ["Notes", "notes", "Comments", "comments"],
@@ -292,25 +304,42 @@ async def _process_darkadia_row(
         return "error"
 
     # Get optional fields for matching hints
-    platform_raw = _get_row_value(row, column_map, "platform")
     release_year = _get_row_value(row, column_map, "release_year")
 
-    # Parse platform string into components
+    # Extract platforms from multiple possible columns
     platforms: List[str] = []
     storefronts: List[str] = []
-    if platform_raw:
-        parsed = parse_darkadia_platform(platform_raw)
-        if parsed["platform"]:
-            platforms.append(parsed["platform"])
-        if parsed["storefront"]:
-            storefronts.append(parsed["storefront"])
+
+    # Get platforms from "Platforms" column (comma-separated list like "PC, PlayStation 4")
+    platforms_raw = _get_row_value(row, column_map, "platforms")
+    if platforms_raw:
+        # Split by comma and clean up
+        for p in platforms_raw.split(","):
+            p = p.strip()
+            if p:
+                platforms.append(p)
+
+    # Get platform from "Copy platform" column (individual copy platform)
+    copy_platform = _get_row_value(row, column_map, "copy_platform")
+    if copy_platform and copy_platform not in platforms:
+        platforms.append(copy_platform)
+
+    # Get storefront from "Copy source" column
+    copy_source = _get_row_value(row, column_map, "copy_source")
+    if copy_source:
+        storefronts.append(copy_source)
+
+    # Get additional storefront from "Copy source other" column
+    copy_source_other = _get_row_value(row, column_map, "copy_source_other")
+    if copy_source_other and copy_source_other not in storefronts:
+        storefronts.append(copy_source_other)
 
     # Build source metadata
     source_metadata = {
         "source": "darkadia",
         "platforms": platforms,
         "storefronts": storefronts,
-        "platform_raw": platform_raw,  # Keep original for reference
+        "platforms_raw": platforms_raw,  # Keep original for reference
         "release_year": release_year,
         "status": _get_row_value(row, column_map, "status"),
         "rating": _get_row_value(row, column_map, "rating"),

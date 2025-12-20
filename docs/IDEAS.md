@@ -37,3 +37,6 @@ Replace the current taskiq-pg task queue with PGQueuer for true competing consum
 
 ## Use knip to keep frontend lean
 We should use knip.dev to identify dead code in the frontend and help keep the frontend code lean and fresh.
+
+## Darkadia CSV improvement
+The import process should start by just parsing the CSV and creating jobs. Looking up IGDB IDs should happen in a separate step so multiple workers can work on these things individually. Remember that platforms and storefronts must also be resolved at some point. The reason for this refactoring is to speed up things by allowing as much as possible to be done in parallel.

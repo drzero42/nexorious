@@ -160,21 +160,23 @@ class TestDarkadiaImportHelpers:
 
     def test_create_column_map_basic(self):
         """Create column map from standard columns."""
-        columns = ["Name", "Platform", "Status", "Rating"]
+        columns = ["Name", "Platforms", "Copy platform", "Copy source", "Status", "Rating"]
         column_map = _create_column_map(columns)
 
         assert column_map["name"] == "Name"
-        assert column_map["platform"] == "Platform"
+        assert column_map["platforms"] == "Platforms"
+        assert column_map["copy_platform"] == "Copy platform"
+        assert column_map["copy_source"] == "Copy source"
         assert column_map["status"] == "Status"
         assert column_map["rating"] == "Rating"
 
     def test_create_column_map_alternative_names(self):
         """Create column map from alternative column names."""
-        columns = ["Title", "Console", "Play Status", "Score"]
+        columns = ["Title", "Platform", "Play Status", "Score"]
         column_map = _create_column_map(columns)
 
         assert column_map["name"] == "Title"
-        assert column_map["platform"] == "Console"
+        assert column_map["platforms"] == "Platform"  # "Platform" is an alternative for "platforms"
         assert column_map["status"] == "Play Status"
         assert column_map["rating"] == "Score"
 
@@ -184,7 +186,7 @@ class TestDarkadiaImportHelpers:
         column_map = _create_column_map(columns)
 
         assert column_map["name"] == "Name"
-        assert column_map["platform"] is None
+        assert column_map["platforms"] is None
         assert column_map["rating"] is None
 
     def test_get_row_value_found(self):
@@ -221,7 +223,10 @@ class TestDarkadiaImportHelpers:
         """Column mappings are defined for all fields."""
         expected_fields = [
             "name",
-            "platform",
+            "platforms",
+            "copy_platform",
+            "copy_source",
+            "copy_source_other",
             "status",
             "rating",
             "notes",

@@ -203,7 +203,12 @@ export default function ImportExportPage() {
       const result = await importFn(file);
 
       toast.success(`Import started: ${result.message}`);
-      router.push(`/jobs/${result.job_id}`);
+      // Route Darkadia imports to mapping page for platform/storefront resolution
+      if (source === ImportSource.DARKADIA) {
+        router.push(`/import/mapping?job_id=${result.job_id}`);
+      } else {
+        router.push(`/jobs/${result.job_id}`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);

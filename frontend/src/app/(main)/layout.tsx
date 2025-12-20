@@ -3,6 +3,7 @@
 
 import { RouteGuard } from '@/components';
 import { Sidebar, MobileNav } from '@/components/navigation';
+import { ImportMappingProvider } from '@/contexts/import-mapping-context';
 
 export default function MainLayout({
   children,
@@ -11,16 +12,18 @@ export default function MainLayout({
 }) {
   return (
     <RouteGuard>
-      <div className="flex min-h-screen flex-col md:flex-row">
-        {/* Mobile header */}
-        <MobileNav />
+      <ImportMappingProvider>
+        <div className="flex min-h-screen flex-col md:flex-row">
+          {/* Mobile header */}
+          <MobileNav />
 
-        {/* Desktop sidebar */}
-        <Sidebar />
+          {/* Desktop sidebar */}
+          <Sidebar />
 
-        {/* Main content */}
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
-      </div>
+          {/* Main content */}
+          <main className="flex-1 p-6 overflow-auto">{children}</main>
+        </div>
+      </ImportMappingProvider>
     </RouteGuard>
   );
 }
