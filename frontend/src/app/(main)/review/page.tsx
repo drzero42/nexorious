@@ -99,6 +99,7 @@ export default function ReviewPage() {
   });
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, isLoading, error, refetch, isFetching } = useReviewItems(
     filters,
@@ -473,7 +474,12 @@ export default function ReviewPage() {
       )}
 
       {/* IGDB Candidates Modal */}
-      <Dialog open={!!selectedItem} onOpenChange={() => setSelectedItem(null)}>
+      <Dialog open={!!selectedItem} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedItem(null);
+          setSearchQuery('');
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Match: {selectedItem?.sourceTitle}</DialogTitle>
@@ -499,6 +505,18 @@ export default function ReviewPage() {
               ))}
             </div>
           )}
+
+          {/* IGDB Search Section */}
+          <div className="border-t pt-4">
+            <p className="mb-2 text-sm text-muted-foreground">
+              Can't find the right match?
+            </p>
+            <Input
+              placeholder="Search IGDB..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
 
           <div className="flex justify-end gap-2 border-t pt-4">
             <Button

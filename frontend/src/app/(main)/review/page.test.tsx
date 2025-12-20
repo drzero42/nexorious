@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@/test/test-utils';
+import userEvent from '@testing-library/user-event';
 import ReviewPage from './page';
 
 // Mock next/link
@@ -34,13 +35,15 @@ vi.mock('@/hooks', async () => {
     useSkipReviewItem: vi.fn(() => ({ mutateAsync: vi.fn() })),
     useKeepReviewItem: vi.fn(() => ({ mutateAsync: vi.fn() })),
     useRemoveReviewItem: vi.fn(() => ({ mutateAsync: vi.fn() })),
+    useSearchIGDB: vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
   };
 });
 
-import { useReviewItems, useReviewSummary } from '@/hooks';
+import { useReviewItems, useReviewSummary, useSearchIGDB } from '@/hooks';
 
 const mockedUseReviewItems = vi.mocked(useReviewItems);
 const mockedUseReviewSummary = vi.mocked(useReviewSummary);
+const mockedUseSearchIGDB = vi.mocked(useSearchIGDB);
 
 const mockSummaryWithPending = {
   totalPending: 10,
@@ -187,6 +190,57 @@ describe('ReviewPage', () => {
         // Should NOT be "Pending" because URL explicitly set "matched"
         expect(statusSelect).not.toHaveTextContent('Pending');
       });
+    });
+  });
+
+  describe('IGDB Search in Modal', () => {
+    const mockReviewItem = {
+      id: 'item-1',
+      sourceTitle: 'Test Game',
+      status: 'pending',
+      igdbCandidates: [],
+      resolvedIgdbId: null,
+      matchConfidence: null,
+      jobId: 'job-1',
+      source: 'import',
+      sourceMetadata: null,
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-01',
+    };
+
+    const mockItemsWithReviewItem = {
+      items: [mockReviewItem],
+      total: 1,
+      page: 1,
+      perPage: 20,
+      pages: 1,
+    };
+
+    it('shows search input in modal when viewing candidates', async () => {
+      const user = userEvent.setup();
+
+      mockedUseReviewItems.mockReturnValue({
+        data: mockItemsWithReviewItem,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      } as unknown as ReturnType<typeof useReviewItems>);
+
+      mockedUseReviewSummary.mockReturnValue({
+        data: mockSummaryWithPending,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useReviewSummary>);
+
+      render(<ReviewPage />);
+
+      // Click view button to open modal
+      const viewButton = screen.getByRole('button', { name: /search igdb/i });
+      await user.click(viewButton);
+
+      // Search input should be visible in modal
+      expect(screen.getByPlaceholderText(/search igdb/i)).toBeInTheDocument();
     });
   });
 });
