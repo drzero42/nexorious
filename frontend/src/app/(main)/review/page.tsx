@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -106,6 +106,15 @@ export default function ReviewPage() {
     ITEMS_PER_PAGE
   );
   const { data: summary } = useReviewSummary();
+
+  // Smart default: show pending items if there are any and no explicit status filter
+  useEffect(() => {
+    const statusFromUrl = searchParams.get('status');
+    if (!statusFromUrl && summary && summary.totalPending > 0 && filters.status === undefined) {
+      setFilters((prev) => ({ ...prev, status: ReviewItemStatus.PENDING }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only run when summary.totalPending changes
+  }, [summary?.totalPending, searchParams]);
 
   const matchMutation = useMatchReviewItem();
   const skipMutation = useSkipReviewItem();
