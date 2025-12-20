@@ -16,11 +16,11 @@ import {
   Layers,
   Shield,
 } from 'lucide-react';
-import { useReviewCountsByType } from '@/hooks';
+import { useReviewSummary } from '@/hooks';
 import type { NavItem, NavSection } from './types';
 
 export function useNavItems() {
-  const { data: reviewCounts } = useReviewCountsByType();
+  const { data: reviewSummary } = useReviewSummary();
 
   const mainItems: NavItem[] = [
     {
@@ -42,20 +42,17 @@ export function useNavItems() {
       href: '/import-export',
       label: 'Import / Export',
       icon: <ArrowLeftRight className="h-4 w-4" />,
-      badge: reviewCounts?.importPending ?? 0,
-      badgeHref: '/review?source=import',
     },
     {
       href: '/sync',
       label: 'Sync',
       icon: <RefreshCw className="h-4 w-4" />,
-      badge: reviewCounts?.syncPending ?? 0,
-      badgeHref: '/review?source=sync',
     },
     {
       href: '/review',
       label: 'Review',
       icon: <ClipboardCheck className="h-4 w-4" />,
+      badge: reviewSummary?.totalPending ?? 0,
     },
   ];
 
