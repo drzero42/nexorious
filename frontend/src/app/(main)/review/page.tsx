@@ -529,7 +529,7 @@ export default function ReviewPage() {
           {/* IGDB Search Section */}
           <div className="border-t pt-4">
             <p className="mb-2 text-sm text-muted-foreground">
-              Can't find the right match?
+              Can&apos;t find the right match?
             </p>
             <div className="relative">
               <Input
@@ -561,7 +561,7 @@ export default function ReviewPage() {
                     </div>
                   ) : (
                     <div className="p-4 text-center text-sm text-muted-foreground">
-                      No games found for "{searchQuery}"
+                      No games found for &ldquo;{searchQuery}&rdquo;
                     </div>
                   )}
                 </div>
