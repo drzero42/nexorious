@@ -96,3 +96,15 @@ export {
   useRemoveReviewItem,
   useFinalizeImport,
 } from './use-review';
+
+// Import Mapping hooks
+export {
+  importMappingKeys,
+  useImportMappings,
+  useImportMapping,
+  useLookupImportMapping,
+  useCreateImportMapping,
+  useUpdateImportMapping,
+  useDeleteImportMapping,
+  useBatchImportMappings,
+} from './use-import-mappings';

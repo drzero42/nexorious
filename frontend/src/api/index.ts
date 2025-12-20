@@ -133,5 +133,16 @@ export {
   finalizeImport,
 } from './review';
 
+// Re-export import mappings API functions
+export {
+  getImportMappings,
+  getImportMapping,
+  lookupImportMapping,
+  createImportMapping,
+  updateImportMapping,
+  deleteImportMapping,
+  batchImportMappings,
+} from './import-mappings';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';

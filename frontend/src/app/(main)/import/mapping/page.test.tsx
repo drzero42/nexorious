@@ -4,8 +4,15 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import MappingPage from './page';
-import { usePlatformSummary, useAllPlatforms, useAllStorefronts } from '@/hooks';
+import {
+  usePlatformSummary,
+  useAllPlatforms,
+  useAllStorefronts,
+  useJob,
+  useBatchImportMappings,
+} from '@/hooks';
 import { ImportMappingProvider } from '@/contexts/import-mapping-context';
+import { JobSource, JobStatus, JobType, JobPriority } from '@/types';
 
 // Mock next/navigation
 vi.mock('next/navigation', () => ({
@@ -21,6 +28,8 @@ vi.mock('@/hooks', async () => {
     usePlatformSummary: vi.fn(),
     useAllPlatforms: vi.fn(),
     useAllStorefronts: vi.fn(),
+    useJob: vi.fn(),
+    useBatchImportMappings: vi.fn(),
   };
 });
 
@@ -51,6 +60,33 @@ const mockStorefronts = [
   { id: 'epic-games-store', display_name: 'Epic Games Store' },
 ];
 
+const mockJob = {
+  id: 'test-job-123',
+  userId: 'user-1',
+  jobType: JobType.IMPORT,
+  source: JobSource.DARKADIA,
+  status: JobStatus.AWAITING_REVIEW,
+  priority: JobPriority.HIGH,
+  progressCurrent: 100,
+  progressTotal: 100,
+  progressPercent: 100,
+  resultSummary: {},
+  errorMessage: null,
+  filePath: null,
+  taskiqTaskId: null,
+  createdAt: '2024-01-01T00:00:00Z',
+  startedAt: '2024-01-01T00:00:00Z',
+  completedAt: null,
+  isTerminal: false,
+  durationSeconds: null,
+  reviewItemCount: 10,
+  pendingReviewCount: 5,
+};
+
+const mockBatchImportMappings = {
+  mutateAsync: vi.fn().mockResolvedValue({ created: 2, updated: 2 }),
+};
+
 describe('MappingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -71,6 +107,11 @@ describe('MappingPage', () => {
       data: mockStorefronts,
       isLoading: false,
     });
+    (useJob as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: mockJob,
+      isLoading: false,
+    });
+    (useBatchImportMappings as ReturnType<typeof vi.fn>).mockReturnValue(mockBatchImportMappings);
   });
 
   const renderWithProvider = () => {
@@ -179,7 +220,15 @@ describe('MappingPage', () => {
     const continueButton = screen.getByRole('button', { name: /continue to review/i });
     await user.click(continueButton);
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/review?job_id=test-job-123');
+    // Should save mappings to backend
+    await waitFor(() => {
+      expect(mockBatchImportMappings.mutateAsync).toHaveBeenCalled();
+    });
+
+    // Should navigate to review
+    await waitFor(() => {
+      expect(mockRouter.push).toHaveBeenCalledWith('/review?job_id=test-job-123');
+    });
   });
 
   it('should show error when no job_id provided', () => {

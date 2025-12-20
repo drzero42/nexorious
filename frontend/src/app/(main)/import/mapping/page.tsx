@@ -1,16 +1,23 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { MappingSection } from '@/components/import/mapping-section';
 import { useImportMapping } from '@/contexts/import-mapping-context';
-import { usePlatformSummary, useAllPlatforms, useAllStorefronts } from '@/hooks';
+import {
+  usePlatformSummary,
+  useAllPlatforms,
+  useAllStorefronts,
+  useJob,
+  useBatchImportMappings,
+} from '@/hooks';
+import { MappingType } from '@/types';
 
 export default function MappingPage() {
   const router = useRouter();
@@ -28,8 +35,11 @@ export default function MappingPage() {
   const { data: summary, isLoading: summaryLoading, error: summaryError } = usePlatformSummary(jobId);
   const { data: platforms, isLoading: platformsLoading } = useAllPlatforms({ activeOnly: true });
   const { data: storefronts, isLoading: storefrontsLoading } = useAllStorefronts({ activeOnly: true });
+  const { data: job, isLoading: jobLoading } = useJob(jobId || undefined);
+  const batchImportMappings = useBatchImportMappings();
+  const [isSaving, setIsSaving] = useState(false);
 
-  const isLoading = summaryLoading || platformsLoading || storefrontsLoading;
+  const isLoading = summaryLoading || platformsLoading || storefrontsLoading || jobLoading;
 
   // Set job ID in context when page loads
   useEffect(() => {
@@ -80,9 +90,43 @@ export default function MappingPage() {
     return unresolvedPlatforms + unresolvedStorefronts;
   }, [summary, platformMappings, storefrontMappings]);
 
-  const handleContinue = () => {
-    if (jobId) {
+  const handleContinue = async () => {
+    if (!jobId || !job || !summary) return;
+
+    setIsSaving(true);
+    try {
+      // Build the list of mappings to save
+      const mappingsToSave = [
+        // Platform mappings
+        ...summary.platforms.map((p) => ({
+          mappingType: MappingType.PLATFORM,
+          sourceValue: p.original,
+          targetId: platformMappings[p.original] || p.suggestedId || '',
+        })),
+        // Storefront mappings
+        ...summary.storefronts.map((s) => ({
+          mappingType: MappingType.STOREFRONT,
+          sourceValue: s.original,
+          targetId: storefrontMappings[s.original] || s.suggestedId || '',
+        })),
+      ].filter((m) => m.targetId); // Only save mappings with a target
+
+      if (mappingsToSave.length > 0) {
+        // Save mappings to backend using the job's source as the import source
+        await batchImportMappings.mutateAsync({
+          importSource: job.source,
+          mappings: mappingsToSave,
+        });
+      }
+
+      // Navigate to review page
       router.push(`/review?job_id=${jobId}`);
+    } catch (error) {
+      console.error('Failed to save mappings:', error);
+      // Still navigate even if save fails - mappings are also in context
+      router.push(`/review?job_id=${jobId}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -186,9 +230,18 @@ export default function MappingPage() {
 
       {/* Continue Button */}
       <div className="flex justify-end">
-        <Button onClick={handleContinue} disabled={!allMapped} size="lg">
-          Continue to Review
-          <ArrowRight className="ml-2 h-4 w-4" />
+        <Button onClick={handleContinue} disabled={!allMapped || isSaving} size="lg">
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving Mappings...
+            </>
+          ) : (
+            <>
+              Continue to Review
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </>
+          )}
         </Button>
       </div>
 

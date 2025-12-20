@@ -335,11 +335,13 @@ async def get_platform_summary(
     Get summary of platform/storefront strings needing mapping for a job.
 
     Extracts unique platform and storefront strings from all ReviewItems
-    for the given job, counts occurrences, and suggests matches to
+    for the given job, counts occurrences, and suggests matches. First checks
+    for user's saved mappings, then falls back to auto-matching against
     existing Platform/Storefront entities.
     """
     from collections import Counter
     from ..models.platform import Platform, Storefront
+    from ..models.user_import_mapping import UserImportMapping, ImportMappingType
 
     # Verify job exists and belongs to user
     job = session.get(Job, job_id)
@@ -353,6 +355,9 @@ async def get_platform_summary(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Job not found",
         )
+
+    # Get import source from job
+    import_source = job.source.value if job.source else "unknown"
 
     # Get all review items for this job
     items = session.exec(
@@ -372,31 +377,81 @@ async def get_platform_summary(
             if s:
                 storefront_counts[s] += 1
 
-    # Get all platforms and storefronts for matching
+    # Get user's saved mappings for this import source
+    saved_platform_mappings = {
+        m.source_value: m.target_id
+        for m in session.exec(
+            select(UserImportMapping).where(
+                UserImportMapping.user_id == current_user.id,
+                UserImportMapping.import_source == import_source,
+                UserImportMapping.mapping_type == ImportMappingType.PLATFORM,
+            )
+        ).all()
+    }
+    saved_storefront_mappings = {
+        m.source_value: m.target_id
+        for m in session.exec(
+            select(UserImportMapping).where(
+                UserImportMapping.user_id == current_user.id,
+                UserImportMapping.import_source == import_source,
+                UserImportMapping.mapping_type == ImportMappingType.STOREFRONT,
+            )
+        ).all()
+    }
+
+    # Get all platforms and storefronts for matching and display name lookup
     all_platforms = session.exec(select(Platform).where(Platform.is_active)).all()
     all_storefronts = session.exec(select(Storefront).where(Storefront.is_active)).all()
+
+    # Create lookup dicts for display names
+    platform_display_names = {p.id: p.display_name for p in all_platforms}
+    storefront_display_names = {s.id: s.display_name for s in all_storefronts}
 
     # Build platform suggestions
     platform_suggestions = []
     for original, count in platform_counts.items():
-        suggested = _find_best_match(original, [(p.id, p.name, p.display_name) for p in all_platforms])
-        platform_suggestions.append(PlatformMappingSuggestion(
-            original=original,
-            count=count,
-            suggested_id=suggested[0] if suggested else None,
-            suggested_name=suggested[1] if suggested else None,
-        ))
+        # First check for saved mapping
+        if original in saved_platform_mappings:
+            target_id = saved_platform_mappings[original]
+            target_name = platform_display_names.get(target_id)
+            platform_suggestions.append(PlatformMappingSuggestion(
+                original=original,
+                count=count,
+                suggested_id=target_id,
+                suggested_name=target_name,
+            ))
+        else:
+            # Fall back to auto-matching
+            suggested = _find_best_match(original, [(p.id, p.name, p.display_name) for p in all_platforms])
+            platform_suggestions.append(PlatformMappingSuggestion(
+                original=original,
+                count=count,
+                suggested_id=suggested[0] if suggested else None,
+                suggested_name=suggested[1] if suggested else None,
+            ))
 
     # Build storefront suggestions
     storefront_suggestions = []
     for original, count in storefront_counts.items():
-        suggested = _find_best_match(original, [(s.id, s.name, s.display_name) for s in all_storefronts])
-        storefront_suggestions.append(PlatformMappingSuggestion(
-            original=original,
-            count=count,
-            suggested_id=suggested[0] if suggested else None,
-            suggested_name=suggested[1] if suggested else None,
-        ))
+        # First check for saved mapping
+        if original in saved_storefront_mappings:
+            target_id = saved_storefront_mappings[original]
+            target_name = storefront_display_names.get(target_id)
+            storefront_suggestions.append(PlatformMappingSuggestion(
+                original=original,
+                count=count,
+                suggested_id=target_id,
+                suggested_name=target_name,
+            ))
+        else:
+            # Fall back to auto-matching
+            suggested = _find_best_match(original, [(s.id, s.name, s.display_name) for s in all_storefronts])
+            storefront_suggestions.append(PlatformMappingSuggestion(
+                original=original,
+                count=count,
+                suggested_id=suggested[0] if suggested else None,
+                suggested_name=suggested[1] if suggested else None,
+            ))
 
     # Sort by count descending
     platform_suggestions.sort(key=lambda x: x.count, reverse=True)
