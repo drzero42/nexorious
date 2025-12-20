@@ -352,24 +352,54 @@ export default function ReviewPage() {
         </div>
       </div>
 
-      {/* Unresolved Mappings Alert */}
-      {platformSummary && !platformSummary.allResolved && firstImportJobId && (
-        <Alert className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20">
-          <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-          <AlertTitle className="text-orange-800 dark:text-orange-200">
-            Platform/Storefront Mapping Required
+      {/* Platform/Storefront Mapping Info */}
+      {platformSummary && firstImportJobId && (
+        <Alert
+          className={
+            platformSummary.allResolved
+              ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+              : 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20'
+          }
+        >
+          {platformSummary.allResolved ? (
+            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+          )}
+          <AlertTitle
+            className={
+              platformSummary.allResolved
+                ? 'text-green-800 dark:text-green-200'
+                : 'text-orange-800 dark:text-orange-200'
+            }
+          >
+            {platformSummary.allResolved
+              ? 'Platform/Storefront Mappings Ready'
+              : 'Platform/Storefront Mapping Required'}
           </AlertTitle>
           <AlertDescription className="flex items-center justify-between">
-            <span className="text-orange-700 dark:text-orange-300">
-              Some platforms or storefronts from your import need to be mapped before you can finalize.
+            <span
+              className={
+                platformSummary.allResolved
+                  ? 'text-green-700 dark:text-green-300'
+                  : 'text-orange-700 dark:text-orange-300'
+              }
+            >
+              {platformSummary.allResolved
+                ? 'All platforms and storefronts have been mapped. You can review the mappings before finalizing.'
+                : 'Some platforms or storefronts from your import need to be mapped before you can finalize.'}
             </span>
             <Button
               variant="outline"
               size="sm"
-              className="ml-4 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/40"
+              className={
+                platformSummary.allResolved
+                  ? 'ml-4 border-green-300 text-green-700 hover:bg-green-100 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-900/40'
+                  : 'ml-4 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/40'
+              }
               onClick={() => router.push(`/import/mapping?job_id=${firstImportJobId}`)}
             >
-              Go to Mapping
+              {platformSummary.allResolved ? 'View Mappings' : 'Go to Mapping'}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </AlertDescription>
