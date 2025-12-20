@@ -20,7 +20,6 @@ from ...schemas.import_schemas import (
     ImportJobResponse,
     ImportJobCancelResponse,
     ImportHistoryResponse,
-    JobsSummaryResponse
 )
 
 router = APIRouter()
@@ -107,37 +106,6 @@ async def list_import_jobs(
         total=total,
         offset=offset,
         limit=limit
-    )
-
-
-@router.get("/jobs/summary", response_model=JobsSummaryResponse)
-async def get_jobs_summary(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> JobsSummaryResponse:
-    """Get summary counts of running and failed jobs for the current user."""
-
-    # Count running jobs (processing, finalizing)
-    running_result = session.exec(
-        select(func.count()).select_from(Job).where(
-            Job.user_id == current_user.id,
-            col(Job.status).in_([BackgroundJobStatus.PROCESSING, BackgroundJobStatus.FINALIZING])
-        )
-    )
-    running_count = running_result.one()
-
-    # Count failed jobs
-    failed_result = session.exec(
-        select(func.count()).select_from(Job).where(
-            Job.user_id == current_user.id,
-            Job.status == BackgroundJobStatus.FAILED
-        )
-    )
-    failed_count = failed_result.one()
-
-    return JobsSummaryResponse(
-        running_count=running_count,
-        failed_count=failed_count
     )
 
 
