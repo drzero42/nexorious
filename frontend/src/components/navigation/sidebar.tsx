@@ -14,7 +14,7 @@ import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 
 export function Sidebar() {
   const { user, logout } = useAuth();
-  const { mainItems, settingsSection, adminSection } = useNavItems();
+  const { mainItems, manageSection, settingsSection, adminSection } = useNavItems();
 
   return (
     <aside className="hidden md:flex w-64 bg-card border-r flex-col h-screen">
@@ -36,8 +36,13 @@ export function Sidebar() {
           ))}
         </ul>
 
-        {/* Settings section */}
+        {/* Manage section */}
         <div className="mt-6">
+          <NavSectionCollapsible {...manageSection} />
+        </div>
+
+        {/* Settings section */}
+        <div className="mt-4">
           <NavSectionCollapsible {...settingsSection} />
         </div>
 
