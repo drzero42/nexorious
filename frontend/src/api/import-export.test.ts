@@ -51,7 +51,7 @@ describe('importExportApi', () => {
 
       const result = await importExportApi.exportCollectionJson();
 
-      expect(api.post).toHaveBeenCalledWith('/export/collection/json');
+      expect(api.post).toHaveBeenCalledWith('/export/json');
       expect(result.job_id).toBe('export-123');
       expect(result.status).toBe('pending');
       expect(result.estimated_items).toBe(50);
@@ -71,7 +71,7 @@ describe('importExportApi', () => {
 
       const result = await importExportApi.exportCollectionCsv();
 
-      expect(api.post).toHaveBeenCalledWith('/export/collection/csv');
+      expect(api.post).toHaveBeenCalledWith('/export/csv');
       expect(result.job_id).toBe('export-456');
       expect(result.estimated_items).toBe(100);
     });

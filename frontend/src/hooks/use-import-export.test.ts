@@ -142,7 +142,7 @@ describe('use-import-export hooks', () => {
   describe('useExportCollection', () => {
     it('starts JSON export and returns job info', async () => {
       server.use(
-        http.post(`${API_URL}/export/collection/json`, () => {
+        http.post(`${API_URL}/export/json`, () => {
           return HttpResponse.json({
             job_id: 'export-123',
             status: 'pending',
@@ -170,7 +170,7 @@ describe('use-import-export hooks', () => {
 
     it('starts CSV export and returns job info', async () => {
       server.use(
-        http.post(`${API_URL}/export/collection/csv`, () => {
+        http.post(`${API_URL}/export/csv`, () => {
           return HttpResponse.json({
             job_id: 'export-456',
             status: 'pending',
@@ -198,7 +198,7 @@ describe('use-import-export hooks', () => {
 
     it('handles empty collection error', async () => {
       server.use(
-        http.post(`${API_URL}/export/collection/json`, () => {
+        http.post(`${API_URL}/export/json`, () => {
           return HttpResponse.json(
             { detail: 'No games in collection to export.' },
             { status: 400 }
