@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import csv
 import os
 import sys
@@ -345,6 +346,130 @@ def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]
                 unmapped_storefronts.add(copy.storefront)
 
     return unmapped_platforms, unmapped_storefronts
+
+
+# =============================================================================
+# IGDB Integration Functions
+# =============================================================================
+
+async def setup_igdb_service():
+    """Initialize IGDB service with credentials from environment."""
+    from app.services.igdb.service import IGDBService
+    from app.services.igdb.auth import IGDBAuthManager
+
+    client_id = os.environ["IGDB_CLIENT_ID"]
+    client_secret = os.environ["IGDB_CLIENT_SECRET"]
+
+    auth_manager = IGDBAuthManager(client_id, client_secret)
+    service = IGDBService(auth_manager)
+
+    return service
+
+
+async def search_igdb_interactive(
+    service,
+    game_name: str
+) -> Optional[tuple[int, str, Optional[int]]]:
+    """
+    Search IGDB for a game with interactive selection.
+
+    Returns tuple of (igdb_id, title, release_year) or None if skipped.
+    """
+    search_query = game_name
+
+    while True:
+        print(f'\nSearching IGDB for: "{search_query}"')
+
+        results = await service.search_games(search_query)
+
+        if not results:
+            print("No results found.")
+        else:
+            print(f"\nResults ({len(results)} found):")
+            for i, game in enumerate(results[:10], 1):  # Show max 10
+                year = game.get("release_year", "???")
+                platforms = ", ".join(game.get("platforms", [])[:3])
+                if len(game.get("platforms", [])) > 3:
+                    platforms += "..."
+                print(f"  {i}. {game['name']} ({year}) - {platforms}")
+
+        print("\nOptions:")
+        if results:
+            print(f"  [1-{min(len(results), 10)}] Select match")
+        print("  [s] Enter new search query")
+        print("  [x] Skip this game")
+
+        choice = input("\nChoice: ").strip().lower()
+
+        if choice == "x":
+            return None
+        elif choice == "s":
+            search_query = input("New search query: ").strip()
+            if not search_query:
+                search_query = game_name
+            continue
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < min(len(results), 10):
+                selected = results[idx]
+                return (
+                    selected["id"],
+                    selected["name"],
+                    selected.get("release_year")
+                )
+            else:
+                print("Invalid selection.")
+        else:
+            print("Invalid choice.")
+
+
+async def lookup_igdb_ids(
+    service,
+    games: list[ConsolidatedGame]
+) -> list[ConsolidatedGame]:
+    """
+    Look up IGDB IDs for all games with interactive resolution.
+
+    Returns games with igdb_id, igdb_title, and release_year populated.
+    """
+    matched = 0
+    skipped = 0
+
+    for i, game in enumerate(games, 1):
+        print(f"\n[{i}/{len(games)}] Processing: {game.name}")
+
+        # Try automatic match first (single high-confidence result)
+        results = await service.search_games(game.name)
+
+        # Check for exact name match
+        exact_match = None
+        for result in results:
+            if result["name"].lower() == game.name.lower():
+                exact_match = result
+                break
+
+        if exact_match:
+            game.igdb_id = exact_match["id"]
+            game.igdb_title = exact_match["name"]
+            game.release_year = exact_match.get("release_year")
+            print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
+            matched += 1
+        else:
+            # Interactive selection needed
+            result = await search_igdb_interactive(service, game.name)
+
+            if result:
+                game.igdb_id, game.igdb_title, game.release_year = result
+                print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
+                matched += 1
+            else:
+                print(f"  -> Skipped")
+                skipped += 1
+
+    print(f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped")
+
+    # Remove skipped games
+    return [g for g in games if g.igdb_id is not None]
 
 
 def main() -> int:
