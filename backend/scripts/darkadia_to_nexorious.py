@@ -491,7 +491,7 @@ def load_igdb_cache() -> dict[str, Optional[dict[str, Any]]]:
     return {}
 
 
-def save_igdb_cache(cache: dict[str, Optional[int]]) -> None:
+def save_igdb_cache(cache: dict[str, Optional[dict[str, Any] | int]]) -> None:
     """Save IGDB ID cache to temp file."""
     try:
         with open(CACHE_FILE, "w") as f:
