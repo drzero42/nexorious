@@ -64,34 +64,18 @@ export async function importNexoriousJson(file: File): Promise<ImportJobCreatedR
 // ============================================================================
 
 /**
- * Start a JSON export of the user's game collection.
+ * Start a JSON export of all user games.
  */
 export async function exportCollectionJson(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/collection/json');
+  const response = await api.post<ExportJobApiResponse>('/export/json');
   return transformExportJobResponse(response);
 }
 
 /**
- * Start a CSV export of the user's game collection.
+ * Start a CSV export of all user games.
  */
 export async function exportCollectionCsv(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/collection/csv');
-  return transformExportJobResponse(response);
-}
-
-/**
- * Start a JSON export of the user's wishlist.
- */
-export async function exportWishlistJson(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/wishlist/json');
-  return transformExportJobResponse(response);
-}
-
-/**
- * Start a CSV export of the user's wishlist.
- */
-export async function exportWishlistCsv(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/wishlist/csv');
+  const response = await api.post<ExportJobApiResponse>('/export/csv');
   return transformExportJobResponse(response);
 }
 
