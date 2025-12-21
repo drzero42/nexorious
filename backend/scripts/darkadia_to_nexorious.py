@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import csv
-import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -213,7 +212,7 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
 
     with open(filepath, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
-        header = next(reader)  # Skip header row
+        _header = next(reader)  # Skip header row
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (1-indexed, after header)
             if len(row) < 29:
@@ -233,7 +232,7 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
             shelved = row[9]
             rating = row[10]
             copy_label = row[11].strip()
-            copy_release = row[12].strip()
+            _copy_release = row[12].strip()
             copy_platform = row[13].strip()
             copy_media = row[14].strip()
             copy_media_other = row[15].strip()
@@ -322,6 +321,32 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
     return list(games.values())
 
 
+# =============================================================================
+# Validation Functions
+# =============================================================================
+
+def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]]:
+    """
+    Validate all platforms and storefronts have mappings.
+
+    Returns tuple of (unmapped_platforms, unmapped_storefronts).
+    """
+    unmapped_platforms: set[str] = set()
+    unmapped_storefronts: set[str] = set()
+
+    for game in games:
+        for copy in game.copies:
+            # Check platform mapping
+            if copy.platform not in PLATFORM_MAP:
+                unmapped_platforms.add(copy.platform)
+
+            # Check storefront mapping
+            if copy.storefront not in STOREFRONT_MAP:
+                unmapped_storefronts.add(copy.storefront)
+
+    return unmapped_platforms, unmapped_storefronts
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -351,6 +376,27 @@ def main() -> int:
 
     total_copies = sum(len(g.copies) for g in games)
     print(f"Total copies: {total_copies}")
+
+    # Validate mappings (fail fast)
+    print("Validating platform and storefront mappings...")
+    unmapped_platforms, unmapped_storefronts = validate_mappings(games)
+
+    if unmapped_platforms or unmapped_storefronts:
+        print("\nError: Unmapped values found. Add these to the mapping dictionaries:\n")
+
+        if unmapped_platforms:
+            print("Unmapped platforms:")
+            for p in sorted(unmapped_platforms):
+                print(f'    "{p}": "???",  # TODO: map to Nexorious platform')
+
+        if unmapped_storefronts:
+            print("\nUnmapped storefronts:")
+            for s in sorted(unmapped_storefronts):
+                print(f'    "{s}": "???",  # TODO: map to Nexorious storefront')
+
+        return 1
+
+    print("All mappings valid!")
 
     return 0
 
