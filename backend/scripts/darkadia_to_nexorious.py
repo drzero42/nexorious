@@ -478,6 +478,117 @@ async def lookup_igdb_ids(
     return [g for g in games if g.igdb_id is not None]
 
 
+# =============================================================================
+# JSON Generation Functions
+# =============================================================================
+
+def derive_play_status(game: ConsolidatedGame) -> str:
+    """Derive Nexorious play status from Darkadia boolean flags."""
+    # Priority order (highest first)
+    if game.dominated:
+        return "dominated"
+    if game.mastered:
+        return "mastered"
+    if game.finished:
+        return "completed"
+    if game.shelved:
+        return "shelved"
+    if game.playing:
+        return "in_progress"
+    if game.played:
+        return "completed"  # played but not finished = completed (started at least)
+    return "not_started"
+
+
+def derive_ownership_status(game: ConsolidatedGame) -> str:
+    """Derive Nexorious ownership status from Darkadia data."""
+    if game.owned:
+        return "owned"
+    return "no_longer_owned"
+
+
+def generate_nexorious_json(
+    games: list[ConsolidatedGame],
+    user_id: str = "darkadia-import"
+) -> dict:
+    """Generate Nexorious export JSON from consolidated games."""
+    now = datetime.utcnow()
+
+    # Calculate stats
+    stats = {
+        "total_games": len(games),
+        "by_play_status": {},
+        "by_ownership_status": {},
+        "games_with_ratings": 0,
+        "games_with_notes": 0,
+        "games_with_tags": 0,
+        "loved_games": 0,
+        "total_hours_played": 0,
+    }
+
+    exported_games = []
+
+    for game in games:
+        play_status = derive_play_status(game)
+        ownership_status = derive_ownership_status(game)
+
+        # Update stats
+        stats["by_play_status"][play_status] = stats["by_play_status"].get(play_status, 0) + 1
+        stats["by_ownership_status"][ownership_status] = stats["by_ownership_status"].get(ownership_status, 0) + 1
+        if game.rating is not None:
+            stats["games_with_ratings"] += 1
+        if game.notes:
+            stats["games_with_notes"] += 1
+        if game.loved:
+            stats["loved_games"] += 1
+
+        # Build platform entries
+        platforms = []
+        for copy in game.copies:
+            platform_name = PLATFORM_MAP[copy.platform]
+            storefront_name = STOREFRONT_MAP[copy.storefront]
+
+            platforms.append({
+                "platform_id": None,  # Will be resolved on import
+                "platform_name": platform_name,
+                "storefront_id": None,  # Will be resolved on import
+                "storefront_name": storefront_name,
+                "store_game_id": None,
+                "store_url": None,
+                "is_available": True,
+            })
+
+        # Build game entry
+        game_data = {
+            "igdb_id": game.igdb_id,
+            "title": game.igdb_title or game.name,
+            "release_year": game.release_year,
+            "ownership_status": ownership_status,
+            "play_status": play_status,
+            "personal_rating": game.rating,
+            "is_loved": game.loved,
+            "hours_played": 0,  # Not tracked in Darkadia CSV
+            "personal_notes": game.notes if game.notes else None,
+            "acquired_date": game.added_date.isoformat() if game.added_date else None,
+            "platforms": platforms,
+            "tags": [],
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        exported_games.append(game_data)
+
+    return {
+        "export_version": "1.0",
+        "export_date": now.isoformat(),
+        "export_scope": "collection",
+        "user_id": user_id,
+        "total_games": len(exported_games),
+        "export_stats": stats,
+        "games": exported_games,
+    }
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
