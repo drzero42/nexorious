@@ -466,20 +466,32 @@ def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
 CACHE_FILE = Path("/tmp/darkadia_igdb_cache.json")
 
 
-def load_igdb_cache() -> dict[str, Optional[int]]:
-    """Load IGDB ID cache from temp file. Returns dict mapping game name -> igdb_id (or None if skipped)."""
+def load_igdb_cache() -> dict[str, Optional[dict[str, Any] | int]]:
+    """Load IGDB ID cache from temp file. Returns dict mapping game name -> cache entry.
+
+    Cache entry is either:
+    - dict with {igdb_id, title, release_year} for matched games
+    - int (legacy format, will be migrated on use)
+    - None for skipped games
+    """
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE) as f:
                 cache = json.load(f)
+                # Count format types for info message
+                new_format = sum(1 for v in cache.values() if isinstance(v, dict))
+                old_format = sum(1 for v in cache.values() if isinstance(v, int))
+                skipped = sum(1 for v in cache.values() if v is None)
                 print(f"Loaded {len(cache)} cached IGDB decisions from {CACHE_FILE}")
+                if old_format > 0:
+                    print(f"  ({new_format} new format, {old_format} legacy entries to migrate, {skipped} skipped)")
                 return cache
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Could not load cache file: {e}")
     return {}
 
 
-def save_igdb_cache(cache: dict[str, Optional[int]]) -> None:
+def save_igdb_cache(cache: dict[str, Optional[dict[str, Any] | int]]) -> None:
     """Save IGDB ID cache to temp file."""
     try:
         with open(CACHE_FILE, "w") as f:
@@ -604,25 +616,46 @@ async def lookup_igdb_ids(
 
         # Check cache first
         if game.name in cache:
-            cached_id = cache[game.name]
-            if cached_id is not None:
-                # Fetch details for cached ID
-                game_details = await service.get_game_by_id(cached_id)
-                if game_details:
-                    game.igdb_id = cached_id
-                    game.igdb_title = game_details.title
-                    game.release_year = extract_year_from_date(game_details.release_date)
-                    print(f"  -> From cache: {game.igdb_title} ({game.release_year})")
-                    matched += 1
-                    from_cache += 1
-                    continue
-                else:
-                    print(f"  -> Cache hit but IGDB ID {cached_id} not found, re-searching...")
-            else:
+            cached_entry = cache[game.name]
+
+            # Handle skipped games (None)
+            if cached_entry is None:
                 print("  -> From cache: Skipped")
                 skipped += 1
                 from_cache += 1
                 continue
+
+            # Handle new format (dict with full data)
+            if isinstance(cached_entry, dict):
+                game.igdb_id = cached_entry["igdb_id"]
+                game.igdb_title = cached_entry["title"]
+                game.release_year = cached_entry.get("release_year")
+                print(f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})")
+                matched += 1
+                from_cache += 1
+                continue
+
+            # Handle legacy format (int) - migrate by fetching details
+            if isinstance(cached_entry, int):
+                print(f"  -> Migrating legacy cache entry (ID: {cached_entry})...")
+                game_details = await service.get_game_by_id(cached_entry)
+                if game_details:
+                    game.igdb_id = cached_entry
+                    game.igdb_title = game_details.title
+                    game.release_year = extract_year_from_date(game_details.release_date)
+                    # Update cache to new format
+                    cache[game.name] = {
+                        "igdb_id": cached_entry,
+                        "title": game_details.title,
+                        "release_year": game.release_year,
+                    }
+                    save_igdb_cache(cache)
+                    print(f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})")
+                    matched += 1
+                    from_cache += 1
+                    continue
+                else:
+                    print(f"  -> Legacy ID {cached_entry} not found, re-searching...")
 
         # Try automatic match first (single high-confidence result)
         results = await service.search_games(game.name)
@@ -642,7 +675,11 @@ async def lookup_igdb_ids(
             print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
             matched += 1
             # Save to cache
-            cache[game.name] = exact_match.igdb_id
+            cache[game.name] = {
+                "igdb_id": exact_match.igdb_id,
+                "title": exact_match.title,
+                "release_year": game.release_year,
+            }
             save_igdb_cache(cache)
         else:
             # Interactive selection needed
@@ -653,7 +690,11 @@ async def lookup_igdb_ids(
                 print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
                 matched += 1
                 # Save to cache
-                cache[game.name] = game.igdb_id
+                cache[game.name] = {
+                    "igdb_id": game.igdb_id,
+                    "title": game.igdb_title,
+                    "release_year": game.release_year,
+                }
             else:
                 print("  -> Skipped")
                 skipped += 1
