@@ -34,7 +34,6 @@ class BackgroundJobSource(str, Enum):
     XBOX = "xbox"
     PLAYSTATION = "playstation"
     CSV = "csv"
-    DARKADIA = "darkadia"
     NEXORIOUS = "nexorious"
     SYSTEM = "system"
 
