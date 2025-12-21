@@ -649,22 +649,31 @@ def main() -> int:
 
     # Step 3: IGDB lookup
     print("\nStarting IGDB lookup...")
-    games = asyncio.run(async_main(games))
+    try:
+        games = asyncio.run(async_main(games))
+    except Exception as e:
+        print(f"\nError during IGDB lookup: {e}")
+        print("Please check your IGDB credentials and network connection.")
+        return 1
 
     if not games:
         print("No games remaining after IGDB lookup.")
         return 1
 
     # Step 4: Generate JSON
-    print(f"\nGenerating Nexorious JSON...")
+    print("\nGenerating Nexorious JSON...")
     output = generate_nexorious_json(games)
 
     # Step 5: Write output
-    with open(args.output_json, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, default=str)
+    try:
+        with open(args.output_json, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2)
+    except IOError as e:
+        print(f"\nError writing output file: {e}")
+        return 1
 
     print(f"\nSuccess! Wrote {len(games)} games to {args.output_json}")
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Total games: {output['export_stats']['total_games']}")
     print(f"  Games with ratings: {output['export_stats']['games_with_ratings']}")
     print(f"  Games with notes: {output['export_stats']['games_with_notes']}")
