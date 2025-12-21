@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 Darkadia CSV to Nexorious JSON Converter.
 
@@ -7,7 +7,7 @@ Converts Darkadia CSV exports to Nexorious JSON format with IGDB enrichment.
 Usage:
     export IGDB_CLIENT_ID="your_client_id"
     export IGDB_CLIENT_SECRET="your_client_secret"
-    uv run python scripts/darkadia_to_nexorious.py input.csv output.json
+    ./scripts/darkadia_to_nexorious.py input.csv output.json
 """
 
 import argparse
@@ -15,10 +15,18 @@ import asyncio
 import csv
 import json
 import os
+import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, date, timezone
+from pathlib import Path
 from typing import Any, Optional
+
+# Add backend directory to path so we can import app modules
+_backend_dir = Path(__file__).resolve().parent.parent
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
 
 
 # =============================================================================
@@ -115,14 +123,56 @@ STOREFRONT_MAP: dict[str, str] = {
 
     # Special cases
     "Sony Entertainment Network": "playstation-store",
-    "Other": "physical",  # Default fallback for "Other" source
+    # Note: "Other" is NOT mapped here - it's handled specially in parsing:
+    # When Copy platform is "Other", platform=PC and storefront comes from field 14
+
+    # Epic Games Store variants
+    "Epic Game Store": "epic-games-store",
+    "Epic Gamestore": "epic-games-store",
+
+    # Ubisoft variants
+    "Ubisoft Club": "uplay",
+    "Uplay (coupon w/ GTX 970)": "uplay",
+
+    # Key resellers (keys are typically for Steam)
+    "Fanatical": "steam",
+    "Green Man Gaming": "steam",
+    "GameBillet": "steam",
+    "Gamebillet": "steam",
+    "Gamesplanet": "steam",
+    "Gamesplanet UK": "steam",
+    "uk.gamesplanet.com": "steam",
+    "Indie Gala": "steam",
+    "WinGameStore": "steam",
+
+    # Crowdfunding / backer keys (typically Steam keys)
+    "Kickstarter": "steam",
+    "Backer": "steam",
+
+    # Defunct storefronts (map to empty, will be filtered out)
+    "Telltale.com": "",
+    "telltale.com": "",
+
+    # Physical retail stores (Danish/Nordic)
+    "Bilka": "physical",
+    "Coolshop": "physical",
+    "Coolshop.dk": "physical",
+    "Elgiganten": "physical",
+    "GameStop": "physical",
+    "Gamestop": "physical",
+    "Nintendopusheren": "physical",
+    "Powerplay": "physical",
+    "Proshop": "physical",
+    "cdon.com": "physical",
 }
 
 # Valid Nexorious storefront names (for validation)
+# Empty string "" is used for defunct storefronts - these copies will be skipped
 VALID_STOREFRONTS: set[str] = {
     "steam", "epic-games-store", "gog", "playstation-store", "microsoft-store",
     "nintendo-eshop", "itch-io", "origin-ea-app", "apple-app-store",
     "google-play-store", "humble-bundle", "physical", "uplay", "gamersgate",
+    "",  # Empty = defunct storefront, copy will be skipped
 }
 
 
@@ -290,20 +340,30 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
                     game.notes = notes
 
             # Extract copy data
-            # Determine platform: copy_platform takes precedence, else use platforms_field
-            platform = copy_platform
-            if not platform and platforms_field:
-                # Use first platform from comma-separated list as fallback
-                platform = platforms_field.split(",")[0].strip()
+            # Note: Darkadia's "Copy platform" field (field 13) is confusingly named -
+            # it actually contains storefront info, not platform info.
+            # When it's "Other", field 14 (copy_media) contains the actual storefront,
+            # and the platform defaults to PC.
 
-            # Determine storefront: copy_source, or copy_source_other if "Other"
-            storefront = copy_source
-            if storefront.lower() == "other" and copy_source_other:
-                storefront = copy_source_other
-            elif not storefront:
-                storefront = ""
+            if copy_platform.lower() == "other":
+                # "Other" means PC platform, and copy_media has the storefront
+                platform = "PC"
+                storefront = copy_media if copy_media else "Physical"
+            else:
+                # Normal case: copy_platform is the storefront, need to derive platform
+                platform = copy_platform
+                if not platform and platforms_field:
+                    # Use first platform from comma-separated list as fallback
+                    platform = platforms_field.split(",")[0].strip()
 
-            # Determine media type
+                # Determine storefront: copy_source, or copy_source_other if "Other"
+                storefront = copy_source
+                if storefront.lower() == "other" and copy_source_other:
+                    storefront = copy_source_other
+                elif not storefront:
+                    storefront = ""
+
+            # Determine media type (not used for platform/storefront, kept for reference)
             media_type = copy_media
             if media_type.lower() == "other" and copy_media_other:
                 media_type = copy_media_other
@@ -353,6 +413,42 @@ def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]
 # IGDB Integration Functions
 # =============================================================================
 
+
+def normalize_title(title: str) -> str:
+    """
+    Normalize a game title for comparison.
+
+    - Lowercase
+    - Remove punctuation and special characters
+    - Normalize unicode (é -> e)
+    - Collapse whitespace
+    - Handle "The X" vs "X, The" patterns
+    """
+    if not title:
+        return ""
+
+    # Normalize unicode characters (é -> e, etc.)
+    title = unicodedata.normalize('NFKD', title)
+    title = ''.join(c for c in title if not unicodedata.combining(c))
+
+    # Lowercase
+    title = title.lower()
+
+    # Handle "The X" -> "x the" and "X, The" -> "x the" for consistent comparison
+    if title.startswith("the "):
+        title = title[4:] + " the"
+    elif title.endswith(", the"):
+        title = title[:-5] + " the"
+
+    # Remove all punctuation and special characters, keep only alphanumeric and spaces
+    title = re.sub(r'[^\w\s]', '', title)
+
+    # Collapse whitespace
+    title = ' '.join(title.split())
+
+    return title
+
+
 def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
     """Extract year from ISO date string (YYYY-MM-DD format)."""
     if not iso_date:
@@ -361,6 +457,42 @@ def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
         return int(iso_date.split('-')[0])
     except (ValueError, IndexError, AttributeError):
         return None
+
+
+# =============================================================================
+# IGDB Cache Functions (for resumable lookups)
+# =============================================================================
+
+CACHE_FILE = Path("/tmp/darkadia_igdb_cache.json")
+
+
+def load_igdb_cache() -> dict[str, Optional[int]]:
+    """Load IGDB ID cache from temp file. Returns dict mapping game name -> igdb_id (or None if skipped)."""
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE) as f:
+                cache = json.load(f)
+                print(f"Loaded {len(cache)} cached IGDB decisions from {CACHE_FILE}")
+                return cache
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: Could not load cache file: {e}")
+    return {}
+
+
+def save_igdb_cache(cache: dict[str, Optional[int]]) -> None:
+    """Save IGDB ID cache to temp file."""
+    try:
+        with open(CACHE_FILE, "w") as f:
+            json.dump(cache, f, indent=2)
+    except IOError as e:
+        print(f"Warning: Could not save cache file: {e}")
+
+
+def clear_igdb_cache() -> None:
+    """Delete the cache file."""
+    if CACHE_FILE.exists():
+        CACHE_FILE.unlink()
+        print(f"Cleared cache file: {CACHE_FILE}")
 
 
 async def setup_igdb_service():
@@ -405,6 +537,7 @@ async def search_igdb_interactive(
         if results:
             print(f"  [1-{min(len(results), 10)}] Select match")
         print("  [s] Enter new search query")
+        print("  [i] Enter IGDB ID directly")
         print("  [x] Skip this game")
 
         choice = input("\nChoice: ").strip().lower()
@@ -415,6 +548,24 @@ async def search_igdb_interactive(
             search_query = input("New search query: ").strip()
             if not search_query:
                 search_query = game_name
+            continue
+        elif choice == "i":
+            igdb_id_str = input("Enter IGDB ID: ").strip()
+            if igdb_id_str.isdigit():
+                igdb_id = int(igdb_id_str)
+                # Fetch the game details from IGDB to get title and year
+                print(f"Looking up IGDB ID {igdb_id}...")
+                game_details = await service.get_game_by_id(igdb_id)
+                if game_details:
+                    year = extract_year_from_date(game_details.release_date)
+                    print(f"  Found: {game_details.title} ({year or '???'})")
+                    confirm = input("Use this? [Y/n]: ").strip().lower()
+                    if confirm in ("", "y", "yes"):
+                        return (igdb_id, game_details.title, year)
+                else:
+                    print(f"  Could not find game with IGDB ID {igdb_id}")
+            else:
+                print("Invalid IGDB ID (must be a number)")
             continue
         elif choice.isdigit():
             idx = int(choice) - 1
@@ -438,21 +589,49 @@ async def lookup_igdb_ids(
     """
     Look up IGDB IDs for all games with interactive resolution.
 
+    Uses a cache file to remember decisions, allowing resumption after abort.
     Returns games with igdb_id, igdb_title, and release_year populated.
     """
+    # Load existing cache
+    cache = load_igdb_cache()
+
     matched = 0
     skipped = 0
+    from_cache = 0
 
     for i, game in enumerate(games, 1):
         print(f"\n[{i}/{len(games)}] Processing: {game.name}")
 
+        # Check cache first
+        if game.name in cache:
+            cached_id = cache[game.name]
+            if cached_id is not None:
+                # Fetch details for cached ID
+                game_details = await service.get_game_by_id(cached_id)
+                if game_details:
+                    game.igdb_id = cached_id
+                    game.igdb_title = game_details.title
+                    game.release_year = extract_year_from_date(game_details.release_date)
+                    print(f"  -> From cache: {game.igdb_title} ({game.release_year})")
+                    matched += 1
+                    from_cache += 1
+                    continue
+                else:
+                    print(f"  -> Cache hit but IGDB ID {cached_id} not found, re-searching...")
+            else:
+                print("  -> From cache: Skipped")
+                skipped += 1
+                from_cache += 1
+                continue
+
         # Try automatic match first (single high-confidence result)
         results = await service.search_games(game.name)
 
-        # Check for exact name match
+        # Check for exact name match using normalized titles
         exact_match = None
+        game_normalized = normalize_title(game.name)
         for result in results:
-            if result.title.lower() == game.name.lower():
+            if normalize_title(result.title) == game_normalized:
                 exact_match = result
                 break
 
@@ -462,6 +641,9 @@ async def lookup_igdb_ids(
             game.release_year = extract_year_from_date(exact_match.release_date)
             print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
             matched += 1
+            # Save to cache
+            cache[game.name] = exact_match.igdb_id
+            save_igdb_cache(cache)
         else:
             # Interactive selection needed
             result = await search_igdb_interactive(service, game.name)
@@ -470,11 +652,17 @@ async def lookup_igdb_ids(
                 game.igdb_id, game.igdb_title, game.release_year = result
                 print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
                 matched += 1
+                # Save to cache
+                cache[game.name] = game.igdb_id
             else:
                 print("  -> Skipped")
                 skipped += 1
+                # Save skip to cache (as None)
+                cache[game.name] = None
 
-    print(f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped")
+            save_igdb_cache(cache)
+
+    print(f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped ({from_cache} from cache)")
 
     # Remove skipped games
     return [g for g in games if g.igdb_id is not None]
@@ -544,11 +732,15 @@ def generate_nexorious_json(
         if game.loved:
             stats["loved_games"] += 1
 
-        # Build platform entries
+        # Build platform entries (skip copies with empty/defunct storefronts)
         platforms = []
         for copy in game.copies:
             platform_name = PLATFORM_MAP[copy.platform]
             storefront_name = STOREFRONT_MAP[copy.storefront]
+
+            # Skip copies with empty storefront (defunct storefronts like Telltale.com)
+            if not storefront_name:
+                continue
 
             platforms.append({
                 "platform_id": None,  # Will be resolved on import
@@ -598,8 +790,17 @@ def main() -> int:
     )
     parser.add_argument("input_csv", help="Path to Darkadia CSV file")
     parser.add_argument("output_json", help="Path for output Nexorious JSON file")
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the IGDB lookup cache before starting"
+    )
 
     args = parser.parse_args()
+
+    # Handle cache clearing
+    if args.clear_cache:
+        clear_igdb_cache()
 
     # Check environment variables
     client_id = os.environ.get("IGDB_CLIENT_ID")
