@@ -17,11 +17,8 @@ if TYPE_CHECKING:
     from .tag import Tag
     from .wishlist import Wishlist
     from .job import Job
-    from .darkadia_game import DarkadiaGame
-    from .darkadia_import import DarkadiaImport
     from .user_sync_config import UserSyncConfig
     from .ignored_external_game import IgnoredExternalGame
-    from .user_import_mapping import UserImportMapping
 
 
 class User(SQLModel, table=True):
@@ -55,11 +52,8 @@ class User(SQLModel, table=True):
     tags: List["Tag"] = Relationship(back_populates="user")
     wishlists: List["Wishlist"] = Relationship(back_populates="user")
     jobs: List["Job"] = Relationship(back_populates="user")
-    darkadia_games: List["DarkadiaGame"] = Relationship(back_populates="user")
-    darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user")
     sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")
     ignored_external_games: List["IgnoredExternalGame"] = Relationship(back_populates="user")
-    import_mappings: List["UserImportMapping"] = Relationship(back_populates="user")
 
 
 class UserSession(SQLModel, table=True):

@@ -21,7 +21,6 @@ from .api.sync import router as sync_router
 from .api.import_endpoints import router as import_jobs_router
 from .api.export_endpoints import router as export_router
 from .api.websocket import router as websocket_router
-from .api.import_mappings import router as import_mappings_router
 from .worker.broker import broker
 
 
@@ -142,7 +141,6 @@ app.include_router(sync_router, prefix="/api")
 app.include_router(import_jobs_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(websocket_router, prefix="/api")
-app.include_router(import_mappings_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:

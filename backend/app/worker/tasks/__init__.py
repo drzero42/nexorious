@@ -20,7 +20,6 @@ from app.worker.tasks.sync import (
 # Import/export tasks
 from app.worker.tasks.import_export import (
     import_nexorious_json,
-    import_darkadia_csv,
     export_collection,
 )
 
@@ -34,6 +33,5 @@ __all__ = [
     "check_pending_syncs",
     # Import/Export
     "import_nexorious_json",
-    "import_darkadia_csv",
     "export_collection",
 ]
