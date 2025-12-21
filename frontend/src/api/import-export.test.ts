@@ -51,7 +51,7 @@ describe('importExportApi', () => {
 
       const result = await importExportApi.exportCollectionJson();
 
-      expect(api.post).toHaveBeenCalledWith('/export/collection/json');
+      expect(api.post).toHaveBeenCalledWith('/export/json');
       expect(result.job_id).toBe('export-123');
       expect(result.status).toBe('pending');
       expect(result.estimated_items).toBe(50);
@@ -71,48 +71,9 @@ describe('importExportApi', () => {
 
       const result = await importExportApi.exportCollectionCsv();
 
-      expect(api.post).toHaveBeenCalledWith('/export/collection/csv');
+      expect(api.post).toHaveBeenCalledWith('/export/csv');
       expect(result.job_id).toBe('export-456');
       expect(result.estimated_items).toBe(100);
-    });
-  });
-
-  describe('exportWishlistJson', () => {
-    it('should start wishlist JSON export and return job info', async () => {
-      const mockResponse = {
-        job_id: 'wishlist-export-123',
-        status: 'pending',
-        message: 'Wishlist export job created.',
-        estimated_items: 10,
-      };
-
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
-
-      const result = await importExportApi.exportWishlistJson();
-
-      expect(api.post).toHaveBeenCalledWith('/export/wishlist/json');
-      expect(result.job_id).toBe('wishlist-export-123');
-      expect(result.status).toBe('pending');
-      expect(result.estimated_items).toBe(10);
-    });
-  });
-
-  describe('exportWishlistCsv', () => {
-    it('should start wishlist CSV export and return job info', async () => {
-      const mockResponse = {
-        job_id: 'wishlist-export-456',
-        status: 'pending',
-        message: 'Wishlist CSV export job created.',
-        estimated_items: 5,
-      };
-
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
-
-      const result = await importExportApi.exportWishlistCsv();
-
-      expect(api.post).toHaveBeenCalledWith('/export/wishlist/csv');
-      expect(result.job_id).toBe('wishlist-export-456');
-      expect(result.estimated_items).toBe(5);
     });
   });
 

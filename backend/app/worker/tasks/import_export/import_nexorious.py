@@ -22,13 +22,14 @@ from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, PlayStatus, OwnershipStatus
 from app.models.platform import Platform, Storefront
 from app.models.tag import Tag, UserGameTag
+from app.models.wishlist import Wishlist
 from app.services.igdb import IGDBService
 from app.services.game_service import GameService
 
 logger = logging.getLogger(__name__)
 
 # Supported export versions
-SUPPORTED_EXPORT_VERSIONS = ["1.0", "1.1"]
+SUPPORTED_EXPORT_VERSIONS = ["1.0", "1.1", "1.2"]
 
 
 @broker.task(
@@ -62,6 +63,11 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
         "skipped_invalid": 0,
         "skipped_no_igdb_id": 0,
         "errors": 0,
+        # Wishlist stats (v1.2+)
+        "total_wishlist": 0,
+        "wishlist_imported": 0,
+        "wishlist_already_exists": 0,
+        "wishlist_errors": 0,
     }
 
     async with get_session_context() as session:
@@ -142,6 +148,33 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
                 session.add(job)
                 session.commit()
 
+            # Process wishlist items (v1.2+)
+            wishlist_items = import_data.get("wishlist", [])
+            stats["total_wishlist"] = len(wishlist_items)
+
+            for wishlist_data in wishlist_items:
+                try:
+                    result = await _process_wishlist_item(
+                        session=session,
+                        game_service=game_service,
+                        user_id=job.user_id,
+                        wishlist_data=wishlist_data,
+                    )
+
+                    if result == "imported":
+                        stats["wishlist_imported"] += 1
+                    elif result == "already_exists":
+                        stats["wishlist_already_exists"] += 1
+                    else:
+                        stats["wishlist_errors"] += 1
+
+                except Exception as e:
+                    logger.error(
+                        f"Error processing wishlist item: {e}",
+                        exc_info=True,
+                    )
+                    stats["wishlist_errors"] += 1
+
             # Clear import data from result summary to save space
             result_summary.pop("_import_data", None)
             result_summary.update(stats)
@@ -155,10 +188,12 @@ async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
 
             logger.info(
                 f"Nexorious import completed for job {job_id}: "
-                f"{stats['imported']} imported, "
+                f"{stats['imported']} games imported, "
                 f"{stats['already_in_collection']} already in collection, "
                 f"{stats['skipped_no_igdb_id']} skipped (no IGDB ID), "
-                f"{stats['errors']} errors"
+                f"{stats['errors']} errors; "
+                f"{stats['wishlist_imported']} wishlist imported, "
+                f"{stats['wishlist_already_exists']} wishlist already exists"
             )
 
             return {"status": "success", **stats}
@@ -260,6 +295,74 @@ async def _process_nexorious_game(
         await _import_tags(session, user_game, user_id, tags_data)
 
     logger.debug(f"Imported game '{title}' (IGDB ID: {igdb_id})")
+    return "imported"
+
+
+async def _process_wishlist_item(
+    session: Session,
+    game_service: GameService,
+    user_id: str,
+    wishlist_data: Dict[str, Any],
+) -> str:
+    """
+    Process a single wishlist item from Nexorious export.
+
+    Returns:
+        Status string: "imported", "already_exists", "skipped_invalid",
+                      "skipped_no_igdb_id", "error"
+    """
+    # Validate required fields
+    title = wishlist_data.get("title")
+    if not title:
+        logger.warning("Skipping wishlist item without title")
+        return "skipped_invalid"
+
+    igdb_id = wishlist_data.get("igdb_id")
+    if not igdb_id:
+        logger.warning(f"Skipping wishlist item '{title}' without IGDB ID")
+        return "skipped_no_igdb_id"
+
+    try:
+        igdb_id = int(igdb_id)
+    except (ValueError, TypeError):
+        logger.warning(f"Skipping wishlist item '{title}' with invalid IGDB ID: {igdb_id}")
+        return "skipped_invalid"
+
+    # Check if already on wishlist
+    existing_wishlist = session.exec(
+        select(Wishlist).where(
+            Wishlist.user_id == user_id,
+            Wishlist.game_id == igdb_id,
+        )
+    ).first()
+
+    if existing_wishlist:
+        logger.debug(f"Wishlist item '{title}' already exists")
+        return "already_exists"
+
+    # Ensure game exists in our games table (fetch from IGDB if needed)
+    game = session.get(Game, igdb_id)
+    if not game:
+        try:
+            game = await game_service.create_or_update_game_from_igdb(igdb_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch wishlist game '{title}' from IGDB: {e}")
+            return "error"
+
+    # Create wishlist entry
+    wishlist_item = Wishlist(
+        user_id=user_id,
+        game_id=igdb_id,
+    )
+    session.add(wishlist_item)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        logger.info(f"Wishlist item '{title}' already exists (caught by constraint)")
+        return "already_exists"
+
+    logger.debug(f"Imported wishlist item '{title}' (IGDB ID: {igdb_id})")
     return "imported"
 
 

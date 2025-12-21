@@ -12,6 +12,7 @@ from app.worker.tasks.import_export.import_nexorious import (
     _map_ownership_status,
     _parse_rating,
     _parse_date,
+    _process_wishlist_item,
     SUPPORTED_EXPORT_VERSIONS,
 )
 # from app.worker.tasks.import_export.import_steam import (
@@ -27,7 +28,8 @@ from app.models.job import (
     ReviewItemStatus,
 )
 from app.models.user_game import PlayStatus, OwnershipStatus, UserGame
-from sqlmodel import Session
+from app.models.wishlist import Wishlist
+from sqlmodel import Session, select
 
 
 class TestNexoriousImportHelpers:
@@ -145,6 +147,7 @@ class TestNexoriousImportHelpers:
         """Supported export versions are defined."""
         assert "1.0" in SUPPORTED_EXPORT_VERSIONS
         assert "1.1" in SUPPORTED_EXPORT_VERSIONS
+        assert "1.2" in SUPPORTED_EXPORT_VERSIONS
 
 
 class TestNexoriousImportTask:
@@ -420,3 +423,255 @@ class TestNexoriousImportIntegrityError:
         assert result["status"] == "success"
         assert result["already_in_collection"] == 1
         assert result["imported"] == 0
+
+
+class TestWishlistImportFunction:
+    """Test _process_wishlist_item function."""
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_no_title(self, session):
+        """Wishlist item without title is skipped."""
+        mock_game_service = MagicMock()
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id="test-user",
+            wishlist_data={},
+        )
+        assert result == "skipped_invalid"
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_no_igdb_id(self, session):
+        """Wishlist item without IGDB ID is skipped."""
+        mock_game_service = MagicMock()
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id="test-user",
+            wishlist_data={"title": "Test Game"},
+        )
+        assert result == "skipped_no_igdb_id"
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_invalid_igdb_id(self, session):
+        """Wishlist item with invalid IGDB ID is skipped."""
+        mock_game_service = MagicMock()
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id="test-user",
+            wishlist_data={"title": "Test Game", "igdb_id": "not-a-number"},
+        )
+        assert result == "skipped_invalid"
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_already_exists(
+        self, session, test_user, test_game
+    ):
+        """Wishlist item already on wishlist returns already_exists."""
+        # Pre-create wishlist entry
+        existing = Wishlist(user_id=test_user.id, game_id=test_game.id)
+        session.add(existing)
+        session.commit()
+
+        mock_game_service = MagicMock()
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id=test_user.id,
+            wishlist_data={"title": test_game.title, "igdb_id": test_game.id},
+        )
+        assert result == "already_exists"
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_success(self, session, test_user, test_game):
+        """Wishlist item is imported successfully."""
+        mock_game_service = MagicMock()
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id=test_user.id,
+            wishlist_data={"title": test_game.title, "igdb_id": test_game.id},
+        )
+        assert result == "imported"
+
+        # Verify wishlist entry was created
+        wishlist_entry = session.exec(
+            select(Wishlist).where(
+                Wishlist.user_id == test_user.id,
+                Wishlist.game_id == test_game.id,
+            )
+        ).first()
+        assert wishlist_entry is not None
+
+    @pytest.mark.asyncio
+    async def test_process_wishlist_item_error_when_igdb_fails(
+        self, session, test_user
+    ):
+        """Wishlist item returns error when IGDB fetch fails."""
+        mock_game_service = MagicMock()
+        mock_game_service.create_or_update_game_from_igdb = AsyncMock(
+            side_effect=Exception("IGDB API error")
+        )
+
+        result = await _process_wishlist_item(
+            session=session,
+            game_service=mock_game_service,
+            user_id=test_user.id,
+            wishlist_data={"title": "New Game", "igdb_id": 99999},
+        )
+        assert result == "error"
+        mock_game_service.create_or_update_game_from_igdb.assert_called_once_with(99999)
+
+
+class TestWishlistImportIntegration:
+    """Integration tests for wishlist import in Nexorious import task."""
+
+    @pytest.mark.asyncio
+    async def test_nexorious_import_with_wishlist(self, session, test_user, test_game):
+        """Nexorious import processes wishlist items."""
+        # Create import job with wishlist data
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.2",
+                "games": [],
+                "wishlist": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                    }
+                ],
+            }
+        })
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Mock get_session_context to use test session
+        @asynccontextmanager
+        async def mock_session_context():
+            yield session
+
+        # Mock services and session context
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
+        ):
+            result = await import_nexorious_json(job.id)
+
+        # Should complete with wishlist stats
+        assert result["status"] == "success"
+        assert result["total_wishlist"] == 1
+        assert result["wishlist_imported"] == 1
+        assert result["wishlist_already_exists"] == 0
+        assert result["wishlist_errors"] == 0
+
+    @pytest.mark.asyncio
+    async def test_nexorious_import_wishlist_already_exists(
+        self, session, test_user, test_game
+    ):
+        """Nexorious import handles existing wishlist items."""
+        # Pre-create wishlist entry
+        existing = Wishlist(user_id=test_user.id, game_id=test_game.id)
+        session.add(existing)
+        session.commit()
+
+        # Create import job with wishlist data for existing item
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.2",
+                "games": [],
+                "wishlist": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                    }
+                ],
+            }
+        })
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Mock get_session_context to use test session
+        @asynccontextmanager
+        async def mock_session_context():
+            yield session
+
+        # Mock services and session context
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
+        ):
+            result = await import_nexorious_json(job.id)
+
+        # Should complete with wishlist_already_exists count
+        assert result["status"] == "success"
+        assert result["total_wishlist"] == 1
+        assert result["wishlist_imported"] == 0
+        assert result["wishlist_already_exists"] == 1
+
+    @pytest.mark.asyncio
+    async def test_nexorious_import_no_wishlist_array(self, session, test_user):
+        """Nexorious import handles exports without wishlist array (v1.0/1.1)."""
+        # Create import job without wishlist data (simulating v1.0/1.1 export)
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [],
+                # No wishlist key
+            }
+        })
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Mock get_session_context to use test session
+        @asynccontextmanager
+        async def mock_session_context():
+            yield session
+
+        # Mock services and session context
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
+        ):
+            result = await import_nexorious_json(job.id)
+
+        # Should complete successfully with no wishlist items
+        assert result["status"] == "success"
+        assert result["total_wishlist"] == 0
+        assert result["wishlist_imported"] == 0

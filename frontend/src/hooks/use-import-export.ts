@@ -34,7 +34,7 @@ export function useImportNexorious() {
 // ============================================================================
 
 /**
- * Hook to start an export of the user's game collection.
+ * Hook to start an export of all user games.
  * Returns the job ID for tracking progress.
  */
 export function useExportCollection() {
@@ -44,21 +44,6 @@ export function useExportCollection() {
         return importExportApi.exportCollectionJson();
       }
       return importExportApi.exportCollectionCsv();
-    },
-  });
-}
-
-/**
- * Hook to start an export of the user's wishlist.
- * Returns the job ID for tracking progress.
- */
-export function useExportWishlist() {
-  return useMutation<ExportJobCreatedResponse, Error, ExportFormat>({
-    mutationFn: (format) => {
-      if (format === 'json') {
-        return importExportApi.exportWishlistJson();
-      }
-      return importExportApi.exportWishlistCsv();
     },
   });
 }

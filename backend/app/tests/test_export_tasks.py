@@ -10,7 +10,9 @@ from sqlmodel import Session
 from app.worker.tasks.import_export.export import (
     _get_exports_dir,
     _build_user_games_query,
+    _build_wishlist_query,
     _user_game_to_export_data,
+    _wishlist_to_export_data,
     _user_game_to_csv_row,
     _write_json_export,
     _write_csv_export,
@@ -18,9 +20,9 @@ from app.worker.tasks.import_export.export import (
     EXPORT_VERSION,
 )
 from app.schemas.export import (
-    ExportScope,
     ExportGameData,
     ExportTagData,
+    ExportWishlistItem,
     NexoriousExportData,
     CsvExportRow,
 )
@@ -28,6 +30,7 @@ from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
 from app.models.platform import Platform
 from app.models.tag import Tag, UserGameTag
+from app.models.wishlist import Wishlist
 
 
 class TestExportHelpers:
@@ -45,10 +48,10 @@ class TestExportHelpers:
             assert exports_dir.exists()
             assert exports_dir.name == "exports"
 
-    def test_build_user_games_query_collection(
+    def test_build_user_games_query(
         self, session: Session, test_user, test_game
     ):
-        """_build_user_games_query returns all games for collection scope."""
+        """_build_user_games_query returns all games."""
         # Create owned game
         owned_game = UserGame(
             user_id=test_user.id,
@@ -59,50 +62,69 @@ class TestExportHelpers:
         session.add(owned_game)
         session.commit()
 
-        games = _build_user_games_query(
-            session, test_user.id, ExportScope.COLLECTION.value
-        )
+        games = _build_user_games_query(session, test_user.id)
 
         assert len(games) == 1
         assert games[0].id == owned_game.id
 
-    def test_build_user_games_query_wishlist(
-        self, session: Session, test_user
+    def test_build_wishlist_query(
+        self, session: Session, test_user, test_game
     ):
-        """_build_user_games_query filters by no_longer_owned for wishlist."""
-        # Create owned game
-        owned_game_obj = Game(id=3001, title="Owned Game", slug="owned-game")
-        session.add(owned_game_obj)
-        session.commit()
-
-        owned_ug = UserGame(
+        """_build_wishlist_query returns all wishlist items."""
+        wishlist_item = Wishlist(
             user_id=test_user.id,
-            game_id=owned_game_obj.id,
-            ownership_status=OwnershipStatus.OWNED,
-            play_status=PlayStatus.COMPLETED,
+            game_id=test_game.id,
         )
-        session.add(owned_ug)
-
-        # Create wishlist game (no_longer_owned)
-        wishlist_game_obj = Game(id=3002, title="Wishlist Game", slug="wishlist-game")
-        session.add(wishlist_game_obj)
+        session.add(wishlist_item)
         session.commit()
 
-        wishlist_ug = UserGame(
+        items = _build_wishlist_query(session, test_user.id)
+
+        assert len(items) == 1
+        assert items[0].id == wishlist_item.id
+
+
+class TestWishlistToExportData:
+    """Tests for converting Wishlist to export format."""
+
+    def test_basic_conversion(self, session: Session, test_user, test_game):
+        """Convert basic Wishlist to ExportWishlistItem."""
+        wishlist_item = Wishlist(
             user_id=test_user.id,
-            game_id=wishlist_game_obj.id,
-            ownership_status=OwnershipStatus.NO_LONGER_OWNED,
-            play_status=PlayStatus.NOT_STARTED,
+            game_id=test_game.id,
         )
-        session.add(wishlist_ug)
+        session.add(wishlist_item)
+        session.commit()
+        session.refresh(wishlist_item)
+
+        export_data = _wishlist_to_export_data(wishlist_item)
+
+        assert isinstance(export_data, ExportWishlistItem)
+        assert export_data.igdb_id == test_game.id
+        assert export_data.title == test_game.title
+        assert export_data.added_at == wishlist_item.created_at
+
+    def test_conversion_with_release_year(self, session: Session, test_user):
+        """Convert Wishlist with game release date to export format."""
+        game_with_date = Game(
+            id=9999,
+            title="Game With Date",
+            release_date=date(2023, 6, 15),
+        )
+        session.add(game_with_date)
         session.commit()
 
-        games = _build_user_games_query(
-            session, test_user.id, ExportScope.WISHLIST.value
+        wishlist_item = Wishlist(
+            user_id=test_user.id,
+            game_id=game_with_date.id,
         )
+        session.add(wishlist_item)
+        session.commit()
+        session.refresh(wishlist_item)
 
-        assert len(games) == 1
-        assert games[0].ownership_status == OwnershipStatus.NO_LONGER_OWNED
+        export_data = _wishlist_to_export_data(wishlist_item)
+
+        assert export_data.release_year == 2023
 
 
 class TestUserGameToExportData:
@@ -285,7 +307,6 @@ class TestWriteExports:
         export_data = NexoriousExportData(
             export_version="1.0",
             export_date=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
-            export_scope=ExportScope.COLLECTION,
             user_id="test-user-id",
             total_games=1,
             export_stats={"by_play_status": {"completed": 1}},
@@ -427,7 +448,7 @@ class TestExportVersionConstant:
 
     def test_export_version_format(self):
         """Export version follows semantic versioning."""
-        assert EXPORT_VERSION == "1.0"
+        assert EXPORT_VERSION == "1.2"
         # Version should be a valid semver
         parts = EXPORT_VERSION.split(".")
         assert len(parts) >= 2
