@@ -355,13 +355,10 @@ def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]
 async def setup_igdb_service():
     """Initialize IGDB service with credentials from environment."""
     from app.services.igdb.service import IGDBService
-    from app.services.igdb.auth import IGDBAuthManager
 
-    client_id = os.environ["IGDB_CLIENT_ID"]
-    client_secret = os.environ["IGDB_CLIENT_SECRET"]
-
-    auth_manager = IGDBAuthManager(client_id, client_secret)
-    service = IGDBService(auth_manager)
+    # Note: IGDBService reads credentials from app.core.config.settings
+    # which are populated from environment variables (IGDB_CLIENT_ID, IGDB_CLIENT_SECRET)
+    service = IGDBService()
 
     return service
 
