@@ -616,25 +616,46 @@ async def lookup_igdb_ids(
 
         # Check cache first
         if game.name in cache:
-            cached_id = cache[game.name]
-            if cached_id is not None:
-                # Fetch details for cached ID
-                game_details = await service.get_game_by_id(cached_id)
-                if game_details:
-                    game.igdb_id = cached_id
-                    game.igdb_title = game_details.title
-                    game.release_year = extract_year_from_date(game_details.release_date)
-                    print(f"  -> From cache: {game.igdb_title} ({game.release_year})")
-                    matched += 1
-                    from_cache += 1
-                    continue
-                else:
-                    print(f"  -> Cache hit but IGDB ID {cached_id} not found, re-searching...")
-            else:
+            cached_entry = cache[game.name]
+
+            # Handle skipped games (None)
+            if cached_entry is None:
                 print("  -> From cache: Skipped")
                 skipped += 1
                 from_cache += 1
                 continue
+
+            # Handle new format (dict with full data)
+            if isinstance(cached_entry, dict):
+                game.igdb_id = cached_entry["igdb_id"]
+                game.igdb_title = cached_entry["title"]
+                game.release_year = cached_entry.get("release_year")
+                print(f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})")
+                matched += 1
+                from_cache += 1
+                continue
+
+            # Handle legacy format (int) - migrate by fetching details
+            if isinstance(cached_entry, int):
+                print(f"  -> Migrating legacy cache entry (ID: {cached_entry})...")
+                game_details = await service.get_game_by_id(cached_entry)
+                if game_details:
+                    game.igdb_id = cached_entry
+                    game.igdb_title = game_details.title
+                    game.release_year = extract_year_from_date(game_details.release_date)
+                    # Update cache to new format
+                    cache[game.name] = {
+                        "igdb_id": cached_entry,
+                        "title": game_details.title,
+                        "release_year": game.release_year,
+                    }
+                    save_igdb_cache(cache)
+                    print(f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})")
+                    matched += 1
+                    from_cache += 1
+                    continue
+                else:
+                    print(f"  -> Legacy ID {cached_entry} not found, re-searching...")
 
         # Try automatic match first (single high-confidence result)
         results = await service.search_games(game.name)
