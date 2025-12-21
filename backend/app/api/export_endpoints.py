@@ -18,9 +18,9 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..core.config import settings
 from ..models.user import User
-from ..models.user_game import UserGame, OwnershipStatus
+from ..models.user_game import UserGame
 from ..models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
-from ..schemas.export import ExportFormat, ExportScope, ExportJobCreatedResponse
+from ..schemas.export import ExportFormat, ExportJobCreatedResponse
 from ..worker.tasks.import_export.export import export_collection as export_collection_task
 
 router = APIRouter(prefix="/export", tags=["Export"])
@@ -37,25 +37,25 @@ def _get_exports_dir() -> Path:
     return exports_dir
 
 
-@router.post("/collection/json", response_model=ExportJobCreatedResponse)
-async def export_collection_json(
+@router.post("/json", response_model=ExportJobCreatedResponse)
+async def export_json(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ExportJobCreatedResponse:
     """
-    Start a JSON export of the user's game collection.
+    Start a JSON export of all user games.
 
-    Creates a background job that exports all games in the collection
-    to a JSON file with full metadata. The export includes:
+    Creates a background job that exports all games to a JSON file
+    with full metadata. The export includes:
     - IGDB IDs for reliable re-import
-    - All user data (ratings, notes, play status, etc.)
+    - All user data (ratings, notes, play status, ownership status, etc.)
     - Platform and storefront associations
     - Tags
 
     The exported file can be downloaded once the job completes.
     Files are retained for 24 hours before automatic deletion.
     """
-    logger.info(f"User {current_user.id} requesting JSON export of collection")
+    logger.info(f"User {current_user.id} requesting JSON export")
 
     # Count games to estimate export size
     game_count = session.exec(
@@ -65,7 +65,7 @@ async def export_collection_json(
     if game_count == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No games in collection to export.",
+            detail="No games to export.",
         )
 
     # Create export job
@@ -78,7 +78,6 @@ async def export_collection_json(
     )
     job.set_result_summary({
         "format": ExportFormat.JSON.value,
-        "scope": ExportScope.COLLECTION.value,
         "estimated_items": game_count,
     })
 
@@ -90,10 +89,9 @@ async def export_collection_json(
     await export_collection_task.kiq(
         job_id=job.id,
         export_format=ExportFormat.JSON.value,
-        export_scope=ExportScope.COLLECTION.value,
     )
 
-    logger.info(f"Created export job {job.id} for user {current_user.id}")
+    logger.info(f"Created JSON export job {job.id} for user {current_user.id}")
 
     return ExportJobCreatedResponse(
         job_id=job.id,
@@ -103,17 +101,17 @@ async def export_collection_json(
     )
 
 
-@router.post("/collection/csv", response_model=ExportJobCreatedResponse)
-async def export_collection_csv(
+@router.post("/csv", response_model=ExportJobCreatedResponse)
+async def export_csv(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ExportJobCreatedResponse:
     """
-    Start a CSV export of the user's game collection.
+    Start a CSV export of all user games.
 
-    Creates a background job that exports all games in the collection
-    to a CSV file. The CSV format is useful for spreadsheet applications
-    but has some limitations:
+    Creates a background job that exports all games to a CSV file.
+    The CSV format is useful for spreadsheet applications but has
+    some limitations:
     - Platform/storefront data is comma-separated in columns
     - Personal notes may be truncated if very long
     - Not recommended for re-import (use JSON instead)
@@ -121,7 +119,7 @@ async def export_collection_csv(
     The exported file can be downloaded once the job completes.
     Files are retained for 24 hours before automatic deletion.
     """
-    logger.info(f"User {current_user.id} requesting CSV export of collection")
+    logger.info(f"User {current_user.id} requesting CSV export")
 
     # Count games to estimate export size
     game_count = session.exec(
@@ -131,7 +129,7 @@ async def export_collection_csv(
     if game_count == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No games in collection to export.",
+            detail="No games to export.",
         )
 
     # Create export job
@@ -144,7 +142,6 @@ async def export_collection_csv(
     )
     job.set_result_summary({
         "format": ExportFormat.CSV.value,
-        "scope": ExportScope.COLLECTION.value,
         "estimated_items": game_count,
     })
 
@@ -156,7 +153,6 @@ async def export_collection_csv(
     await export_collection_task.kiq(
         job_id=job.id,
         export_format=ExportFormat.CSV.value,
-        export_scope=ExportScope.COLLECTION.value,
     )
 
     logger.info(f"Created CSV export job {job.id} for user {current_user.id}")
@@ -165,136 +161,6 @@ async def export_collection_csv(
         job_id=job.id,
         status=job.status.value,
         message="Export job created. Check job status for progress.",
-        estimated_items=game_count,
-    )
-
-
-@router.post("/wishlist/json", response_model=ExportJobCreatedResponse)
-async def export_wishlist_json(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> ExportJobCreatedResponse:
-    """
-    Start a JSON export of the user's wishlist.
-
-    Creates a background job that exports all games marked as wishlist
-    (ownership_status = 'no_longer_owned' without platforms) to JSON.
-    This is primarily for backup purposes.
-
-    The exported file can be downloaded once the job completes.
-    """
-    logger.info(f"User {current_user.id} requesting JSON export of wishlist")
-
-    # For wishlist, we'd filter by some criteria (depends on implementation)
-    # For now, treating wishlist as a separate export scope
-    game_count = session.exec(
-        select(func.count())
-        .select_from(UserGame)
-        .where(
-            UserGame.user_id == current_user.id,
-            UserGame.ownership_status == OwnershipStatus.NO_LONGER_OWNED,
-        )
-    ).one()
-
-    if game_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No wishlist games to export.",
-        )
-
-    # Create export job
-    job = Job(
-        user_id=current_user.id,
-        job_type=BackgroundJobType.EXPORT,
-        source=BackgroundJobSource.NEXORIOUS,
-        status=BackgroundJobStatus.PENDING,
-        progress_total=game_count,
-    )
-    job.set_result_summary({
-        "format": ExportFormat.JSON.value,
-        "scope": ExportScope.WISHLIST.value,
-        "estimated_items": game_count,
-    })
-
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-
-    # Schedule the export task
-    await export_collection_task.kiq(
-        job_id=job.id,
-        export_format=ExportFormat.JSON.value,
-        export_scope=ExportScope.WISHLIST.value,
-    )
-
-    logger.info(f"Created wishlist export job {job.id} for user {current_user.id}")
-
-    return ExportJobCreatedResponse(
-        job_id=job.id,
-        status=job.status.value,
-        message="Wishlist export job created. Check job status for progress.",
-        estimated_items=game_count,
-    )
-
-
-@router.post("/wishlist/csv", response_model=ExportJobCreatedResponse)
-async def export_wishlist_csv(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> ExportJobCreatedResponse:
-    """
-    Start a CSV export of the user's wishlist.
-
-    Similar to JSON wishlist export but in CSV format for spreadsheet use.
-    """
-    logger.info(f"User {current_user.id} requesting CSV export of wishlist")
-
-    game_count = session.exec(
-        select(func.count())
-        .select_from(UserGame)
-        .where(
-            UserGame.user_id == current_user.id,
-            UserGame.ownership_status == OwnershipStatus.NO_LONGER_OWNED,
-        )
-    ).one()
-
-    if game_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No wishlist games to export.",
-        )
-
-    # Create export job
-    job = Job(
-        user_id=current_user.id,
-        job_type=BackgroundJobType.EXPORT,
-        source=BackgroundJobSource.NEXORIOUS,
-        status=BackgroundJobStatus.PENDING,
-        progress_total=game_count,
-    )
-    job.set_result_summary({
-        "format": ExportFormat.CSV.value,
-        "scope": ExportScope.WISHLIST.value,
-        "estimated_items": game_count,
-    })
-
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-
-    # Schedule the export task
-    await export_collection_task.kiq(
-        job_id=job.id,
-        export_format=ExportFormat.CSV.value,
-        export_scope=ExportScope.WISHLIST.value,
-    )
-
-    logger.info(f"Created CSV wishlist export job {job.id} for user {current_user.id}")
-
-    return ExportJobCreatedResponse(
-        job_id=job.id,
-        status=job.status.value,
-        message="Wishlist export job created. Check job status for progress.",
         estimated_items=game_count,
     )
 
@@ -375,14 +241,13 @@ async def download_export(
     # Determine content type and filename
     result_summary = job.get_result_summary()
     export_format = result_summary.get("format", "json")
-    export_scope = result_summary.get("scope", "collection")
 
     if export_format == "csv":
         media_type = "text/csv"
-        filename = f"nexorious_{export_scope}_{job.created_at.strftime('%Y%m%d_%H%M%S')}.csv"
+        filename = f"nexorious_export_{job.created_at.strftime('%Y%m%d_%H%M%S')}.csv"
     else:
         media_type = "application/json"
-        filename = f"nexorious_{export_scope}_{job.created_at.strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"nexorious_export_{job.created_at.strftime('%Y%m%d_%H%M%S')}.json"
 
     logger.info(f"User {current_user.id} downloading export {job_id}: {filename}")
 
