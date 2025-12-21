@@ -158,7 +158,7 @@ uv run pytest scripts/tests/ -v
 - ✅ Keep branches focused on a single task/issue
 - ✅ Create PRs for code review before merging to main
 - ✅ Review PR diff before merging; ask user only if issues found
-- ✅ Always use `--delete-branch` when merging PRs
+- ✅ Always use `--squash --delete-branch` when merging PRs (squash commits for clean history)
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
 - ❌ Never work on multiple unrelated changes in one branch
