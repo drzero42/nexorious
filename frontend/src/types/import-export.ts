@@ -11,11 +11,6 @@ export enum ExportFormat {
   CSV = 'csv',
 }
 
-export enum ExportScope {
-  COLLECTION = 'collection',
-  WISHLIST = 'wishlist',
-}
-
 export interface ImportJobCreatedResponse {
   job_id: string;
   source: string;
