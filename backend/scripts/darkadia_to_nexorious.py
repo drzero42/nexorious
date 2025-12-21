@@ -466,7 +466,7 @@ def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
 CACHE_FILE = Path("/tmp/darkadia_igdb_cache.json")
 
 
-def load_igdb_cache() -> dict[str, Optional[dict[str, Any]]]:
+def load_igdb_cache() -> dict[str, Optional[dict[str, Any] | int]]:
     """Load IGDB ID cache from temp file. Returns dict mapping game name -> cache entry.
 
     Cache entry is either:
@@ -675,7 +675,11 @@ async def lookup_igdb_ids(
             print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
             matched += 1
             # Save to cache
-            cache[game.name] = exact_match.igdb_id
+            cache[game.name] = {
+                "igdb_id": exact_match.igdb_id,
+                "title": exact_match.title,
+                "release_year": game.release_year,
+            }
             save_igdb_cache(cache)
         else:
             # Interactive selection needed
@@ -686,7 +690,11 @@ async def lookup_igdb_ids(
                 print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
                 matched += 1
                 # Save to cache
-                cache[game.name] = game.igdb_id
+                cache[game.name] = {
+                    "igdb_id": game.igdb_id,
+                    "title": game.igdb_title,
+                    "release_year": game.release_year,
+                }
             else:
                 print("  -> Skipped")
                 skipped += 1
