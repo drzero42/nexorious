@@ -32,6 +32,7 @@ EXPLICIT_STOREFRONT_MAPPINGS = {
     'PSN': 'PlayStation Store',
     'HB': 'Humble Bundle',
     'Epic': 'Epic Games Store',
+    'Origin': 'Origin/EA App',
 
     # Special cases
     'Other': 'Physical',
