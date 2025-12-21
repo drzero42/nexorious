@@ -15,8 +15,8 @@ import csv
 import os
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, date
-from typing import Optional
+from datetime import datetime, date, timezone
+from typing import Any, Optional
 
 
 # =============================================================================
@@ -510,12 +510,12 @@ def derive_ownership_status(game: ConsolidatedGame) -> str:
 def generate_nexorious_json(
     games: list[ConsolidatedGame],
     user_id: str = "darkadia-import"
-) -> dict:
+) -> dict[str, Any]:
     """Generate Nexorious export JSON from consolidated games."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Calculate stats
-    stats = {
+    stats: dict[str, Any] = {
         "total_games": len(games),
         "by_play_status": {},
         "by_ownership_status": {},
