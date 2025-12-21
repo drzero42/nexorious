@@ -103,15 +103,15 @@ def wishlist_games(session: Session, test_user) -> list[UserGame]:
     return games
 
 
-class TestExportCollectionJson:
-    """Tests for JSON collection export endpoint."""
+class TestExportJson:
+    """Tests for JSON export endpoint."""
 
-    def test_export_collection_json_success(
+    def test_export_json_success(
         self, client: TestClient, auth_headers: dict, session: Session, game_in_collection
     ):
-        """POST /export/collection/json creates export job successfully."""
+        """POST /export/json creates export job successfully."""
         response = client.post(
-            "/api/export/collection/json",
+            "/api/export/json",
             headers=auth_headers,
         )
 
@@ -134,14 +134,13 @@ class TestExportCollectionJson:
         # Verify result summary
         result_summary = job.get_result_summary()
         assert result_summary["format"] == "json"
-        assert result_summary["scope"] == "collection"
 
-    def test_export_collection_json_empty_collection(
+    def test_export_json_empty_collection(
         self, client: TestClient, auth_headers: dict
     ):
-        """POST /export/collection/json returns 400 for empty collection."""
+        """POST /export/json returns 400 for empty collection."""
         response = client.post(
-            "/api/export/collection/json",
+            "/api/export/json",
             headers=auth_headers,
         )
 
@@ -150,22 +149,22 @@ class TestExportCollectionJson:
         error_msg = data.get("error", data.get("detail", ""))
         assert "no games" in error_msg.lower()
 
-    def test_export_collection_json_requires_auth(self, client: TestClient):
-        """POST /export/collection/json requires authentication."""
-        response = client.post("/api/export/collection/json")
+    def test_export_json_requires_auth(self, client: TestClient):
+        """POST /export/json requires authentication."""
+        response = client.post("/api/export/json")
         # FastAPI returns 403 Forbidden when no auth header is provided
         assert response.status_code in (401, 403)
 
 
-class TestExportCollectionCsv:
-    """Tests for CSV collection export endpoint."""
+class TestExportCsv:
+    """Tests for CSV export endpoint."""
 
-    def test_export_collection_csv_success(
+    def test_export_csv_success(
         self, client: TestClient, auth_headers: dict, session: Session, game_in_collection
     ):
-        """POST /export/collection/csv creates export job successfully."""
+        """POST /export/csv creates export job successfully."""
         response = client.post(
-            "/api/export/collection/csv",
+            "/api/export/csv",
             headers=auth_headers,
         )
 
@@ -181,84 +180,17 @@ class TestExportCollectionCsv:
         assert job is not None
         result_summary = job.get_result_summary()
         assert result_summary["format"] == "csv"
-        assert result_summary["scope"] == "collection"
 
-    def test_export_collection_csv_empty_collection(
+    def test_export_csv_empty_collection(
         self, client: TestClient, auth_headers: dict
     ):
-        """POST /export/collection/csv returns 400 for empty collection."""
+        """POST /export/csv returns 400 for empty collection."""
         response = client.post(
-            "/api/export/collection/csv",
+            "/api/export/csv",
             headers=auth_headers,
         )
 
         assert response.status_code == 400
-
-
-class TestExportWishlistJson:
-    """Tests for JSON wishlist export endpoint."""
-
-    def test_export_wishlist_json_success(
-        self, client: TestClient, auth_headers: dict, session: Session, wishlist_games
-    ):
-        """POST /export/wishlist/json creates export job successfully."""
-        response = client.post(
-            "/api/export/wishlist/json",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "job_id" in data
-        assert data["status"] == "pending"
-        assert data["estimated_items"] == 2  # Two wishlist games
-
-        # Verify result summary
-        job = session.get(Job, data["job_id"])
-        assert job is not None
-        result_summary = job.get_result_summary()
-        assert result_summary["format"] == "json"
-        assert result_summary["scope"] == "wishlist"
-
-    def test_export_wishlist_json_empty(
-        self, client: TestClient, auth_headers: dict
-    ):
-        """POST /export/wishlist/json returns 400 for empty wishlist."""
-        response = client.post(
-            "/api/export/wishlist/json",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 400
-        data = response.json()
-        error_msg = data.get("error", data.get("detail", ""))
-        assert "wishlist" in error_msg.lower() or "no" in error_msg.lower()
-
-
-class TestExportWishlistCsv:
-    """Tests for CSV wishlist export endpoint."""
-
-    def test_export_wishlist_csv_success(
-        self, client: TestClient, auth_headers: dict, session: Session, wishlist_games
-    ):
-        """POST /export/wishlist/csv creates export job successfully."""
-        response = client.post(
-            "/api/export/wishlist/csv",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "job_id" in data
-        assert data["estimated_items"] == 2
-
-        job = session.get(Job, data["job_id"])
-        assert job is not None
-        result_summary = job.get_result_summary()
-        assert result_summary["format"] == "csv"
-        assert result_summary["scope"] == "wishlist"
 
 
 class TestExportDownload:
@@ -288,7 +220,7 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc),
             )
-            job.set_result_summary({"format": "json", "scope": "collection"})
+            job.set_result_summary({"format": "json"})
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -300,7 +232,7 @@ class TestExportDownload:
 
             assert response.status_code == 200
             assert "application/json" in response.headers.get("content-type", "")
-            assert "nexorious_collection_" in response.headers.get(
+            assert "nexorious_export_" in response.headers.get(
                 "content-disposition", ""
             )
         finally:
@@ -454,7 +386,7 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc) - timedelta(hours=48),  # 48 hours ago
             )
-            job.set_result_summary({"format": "json", "scope": "collection"})
+            job.set_result_summary({"format": "json"})
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -495,7 +427,7 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc),
             )
-            job.set_result_summary({"format": "csv", "scope": "collection"})
+            job.set_result_summary({"format": "csv"})
             session.add(job)
             session.commit()
             session.refresh(job)
