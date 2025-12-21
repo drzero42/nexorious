@@ -11,7 +11,9 @@ Usage:
 """
 
 import argparse
+import asyncio
 import csv
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -612,6 +614,7 @@ def main() -> int:
         print(f"Error: Input file not found: {args.input_csv}")
         return 1
 
+    # Step 1: Parse CSV
     print(f"Parsing {args.input_csv}...")
     games = parse_csv(args.input_csv)
     print(f"Found {len(games)} unique games")
@@ -619,8 +622,12 @@ def main() -> int:
     total_copies = sum(len(g.copies) for g in games)
     print(f"Total copies: {total_copies}")
 
-    # Validate mappings (fail fast)
-    print("Validating platform and storefront mappings...")
+    if not games:
+        print("No games found in CSV.")
+        return 1
+
+    # Step 2: Validate mappings (fail fast)
+    print("\nValidating platform and storefront mappings...")
     unmapped_platforms, unmapped_storefronts = validate_mappings(games)
 
     if unmapped_platforms or unmapped_storefronts:
@@ -640,7 +647,36 @@ def main() -> int:
 
     print("All mappings valid!")
 
+    # Step 3: IGDB lookup
+    print("\nStarting IGDB lookup...")
+    games = asyncio.run(async_main(games))
+
+    if not games:
+        print("No games remaining after IGDB lookup.")
+        return 1
+
+    # Step 4: Generate JSON
+    print(f"\nGenerating Nexorious JSON...")
+    output = generate_nexorious_json(games)
+
+    # Step 5: Write output
+    with open(args.output_json, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, default=str)
+
+    print(f"\nSuccess! Wrote {len(games)} games to {args.output_json}")
+    print(f"\nSummary:")
+    print(f"  Total games: {output['export_stats']['total_games']}")
+    print(f"  Games with ratings: {output['export_stats']['games_with_ratings']}")
+    print(f"  Games with notes: {output['export_stats']['games_with_notes']}")
+    print(f"  Loved games: {output['export_stats']['loved_games']}")
+
     return 0
+
+
+async def async_main(games: list[ConsolidatedGame]) -> list[ConsolidatedGame]:
+    """Async entry point for IGDB operations."""
+    service = await setup_igdb_service()
+    return await lookup_igdb_ids(service, games)
 
 
 if __name__ == "__main__":
