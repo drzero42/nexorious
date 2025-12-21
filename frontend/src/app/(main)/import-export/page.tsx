@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import {
   useImportNexorious,
   useExportCollection,
-  useExportWishlist,
 } from '@/hooks';
 import {
   ImportSource,
@@ -131,13 +130,11 @@ interface ExportCardProps {
   format: ExportFormat;
   onExport: () => void;
   isExporting: boolean;
-  scope?: 'collection' | 'wishlist';
 }
 
-function ExportCard({ format, onExport, isExporting, scope = 'collection' }: ExportCardProps) {
+function ExportCard({ format, onExport, isExporting }: ExportCardProps) {
   const info = getExportFormatDisplayInfo(format);
   const Icon = format === ExportFormat.JSON ? FileJson : FileSpreadsheet;
-  const scopeLabel = scope === 'wishlist' ? 'Wishlist' : 'Collection';
 
   return (
     <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all hover:border-green-400 dark:hover:border-green-600">
@@ -174,7 +171,7 @@ function ExportCard({ format, onExport, isExporting, scope = 'collection' }: Exp
           ) : (
             <>
               <Download className="mr-2 h-4 w-4" />
-              Export {scopeLabel} {format.toUpperCase()}
+              Export {format.toUpperCase()}
             </>
           )}
         </Button>
@@ -187,11 +184,9 @@ export default function ImportExportPage() {
   const router = useRouter();
   const [isUploading, setIsUploading] = useState(false);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(null);
-  const [exportingWishlistFormat, setExportingWishlistFormat] = useState<ExportFormat | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
   const { mutateAsync: exportCollection } = useExportCollection();
-  const { mutateAsync: exportWishlist } = useExportWishlist();
 
   const handleImportFile = async (file: File) => {
     setIsUploading(true);
@@ -220,21 +215,6 @@ export default function ImportExportPage() {
       toast.error(message);
     } finally {
       setExportingCollectionFormat(null);
-    }
-  };
-
-  const handleWishlistExport = async (format: ExportFormat) => {
-    setExportingWishlistFormat(format);
-
-    try {
-      const result = await exportWishlist(format);
-      toast.success(`Wishlist export started: ${result.message}`);
-      router.push(`/jobs/${result.job_id}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Export failed';
-      toast.error(message);
-    } finally {
-      setExportingWishlistFormat(null);
     }
   };
 
@@ -267,40 +247,19 @@ export default function ImportExportPage() {
         </div>
       </section>
 
-      {/* Export Collection Section */}
+      {/* Export Section */}
       <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold">Export Collection</h2>
+        <h2 className="mb-4 text-lg font-semibold">Export</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <ExportCard
             format={ExportFormat.JSON}
             onExport={() => handleCollectionExport(ExportFormat.JSON)}
             isExporting={exportingCollectionFormat === ExportFormat.JSON}
-            scope="collection"
           />
           <ExportCard
             format={ExportFormat.CSV}
             onExport={() => handleCollectionExport(ExportFormat.CSV)}
             isExporting={exportingCollectionFormat === ExportFormat.CSV}
-            scope="collection"
-          />
-        </div>
-      </section>
-
-      {/* Export Wishlist Section */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold">Export Wishlist</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ExportCard
-            format={ExportFormat.JSON}
-            onExport={() => handleWishlistExport(ExportFormat.JSON)}
-            isExporting={exportingWishlistFormat === ExportFormat.JSON}
-            scope="wishlist"
-          />
-          <ExportCard
-            format={ExportFormat.CSV}
-            onExport={() => handleWishlistExport(ExportFormat.CSV)}
-            isExporting={exportingWishlistFormat === ExportFormat.CSV}
-            scope="wishlist"
           />
         </div>
       </section>

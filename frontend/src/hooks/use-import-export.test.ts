@@ -7,7 +7,6 @@ import { setAuthHandlers } from '@/api/client';
 import {
   useImportNexorious,
   useExportCollection,
-  useExportWishlist,
   useDownloadExport,
   importExportKeys,
 } from './use-import-export';
@@ -224,93 +223,6 @@ describe('use-import-export hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('No games in collection to export.');
-    });
-  });
-
-  describe('useExportWishlist', () => {
-    it('starts JSON export of wishlist and returns job info', async () => {
-      server.use(
-        http.post(`${API_URL}/export/wishlist/json`, () => {
-          return HttpResponse.json({
-            job_id: 'wishlist-export-123',
-            status: 'pending',
-            message: 'Wishlist export job created.',
-            estimated_items: 10,
-          });
-        })
-      );
-
-      const { result } = renderHook(() => useExportWishlist(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync(ExportFormat.JSON);
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.job_id).toBe('wishlist-export-123');
-      expect(result.current.data?.estimated_items).toBe(10);
-    });
-
-    it('starts CSV export of wishlist and returns job info', async () => {
-      server.use(
-        http.post(`${API_URL}/export/wishlist/csv`, () => {
-          return HttpResponse.json({
-            job_id: 'wishlist-export-456',
-            status: 'pending',
-            message: 'Wishlist CSV export job created.',
-            estimated_items: 5,
-          });
-        })
-      );
-
-      const { result } = renderHook(() => useExportWishlist(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync(ExportFormat.CSV);
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.job_id).toBe('wishlist-export-456');
-      expect(result.current.data?.estimated_items).toBe(5);
-    });
-
-    it('handles empty wishlist error', async () => {
-      server.use(
-        http.post(`${API_URL}/export/wishlist/json`, () => {
-          return HttpResponse.json(
-            { detail: 'No wishlist games to export.' },
-            { status: 400 }
-          );
-        })
-      );
-
-      const { result } = renderHook(() => useExportWishlist(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        try {
-          await result.current.mutateAsync(ExportFormat.JSON);
-        } catch {
-          // Expected error
-        }
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe('No wishlist games to export.');
     });
   });
 
