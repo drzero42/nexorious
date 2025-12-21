@@ -43,6 +43,10 @@ from ..schemas.review import (
 )
 from ..services.game_service import GameService
 from ..services.igdb import IGDBService
+from ..services.platform_resolution.models import (
+    EXPLICIT_PLATFORM_MAPPINGS,
+    EXPLICIT_STOREFRONT_MAPPINGS,
+)
 
 router = APIRouter(prefix="/review", tags=["Review"])
 logger = logging.getLogger(__name__)
@@ -422,7 +426,11 @@ async def get_platform_summary(
             ))
         else:
             # Fall back to auto-matching
-            suggested = _find_best_match(original, [(p.id, p.name, p.display_name) for p in all_platforms])
+            suggested = _find_best_match(
+                original,
+                [(p.id, p.name, p.display_name) for p in all_platforms],
+                EXPLICIT_PLATFORM_MAPPINGS,
+            )
             platform_suggestions.append(PlatformMappingSuggestion(
                 original=original,
                 count=count,
@@ -445,7 +453,11 @@ async def get_platform_summary(
             ))
         else:
             # Fall back to auto-matching
-            suggested = _find_best_match(original, [(s.id, s.name, s.display_name) for s in all_storefronts])
+            suggested = _find_best_match(
+                original,
+                [(s.id, s.name, s.display_name) for s in all_storefronts],
+                EXPLICIT_STOREFRONT_MAPPINGS,
+            )
             storefront_suggestions.append(PlatformMappingSuggestion(
                 original=original,
                 count=count,
@@ -1178,35 +1190,35 @@ def _get_external_id_from_metadata(
 def _find_best_match(
     original: str,
     candidates: list[tuple[str, str, str]],  # (id, name, display_name)
+    explicit_mappings: dict[str, str] | None = None,
 ) -> Optional[tuple[str, str]]:
     """
     Find best matching platform/storefront for a string.
 
-    Uses case-insensitive exact matching on name or display_name.
+    Uses case-insensitive exact matching on name or display_name,
+    then falls back to explicit mappings for known aliases.
     Returns (id, display_name) or None.
+
+    Args:
+        original: The original string to match
+        candidates: List of (id, name, display_name) tuples
+        explicit_mappings: Optional dict of explicit name mappings
     """
     original_lower = original.lower().strip()
 
+    # First try exact match on name or display_name
     for id_, name, display_name in candidates:
         if name.lower() == original_lower or display_name.lower() == original_lower:
             return (id_, display_name)
 
-    # Try partial matching for common abbreviations
-    abbrev_map = {
-        "ps4": "playstation 4",
-        "ps5": "playstation 5",
-        "ps3": "playstation 3",
-        "xb1": "xbox one",
-        "xsx": "xbox series x",
-        "nsw": "nintendo switch",
-        "psn": "playstation store",
-        "xbl": "xbox live",
-    }
-
-    if original_lower in abbrev_map:
-        expanded = abbrev_map[original_lower]
-        for id_, name, display_name in candidates:
-            if name.lower() == expanded or display_name.lower() == expanded:
-                return (id_, display_name)
+    # Try explicit mappings if provided
+    if explicit_mappings:
+        # Check both original case and stripped version
+        mapped_name = explicit_mappings.get(original) or explicit_mappings.get(original.strip())
+        if mapped_name:
+            mapped_lower = mapped_name.lower()
+            for id_, name, display_name in candidates:
+                if name.lower() == mapped_lower or display_name.lower() == mapped_lower:
+                    return (id_, display_name)
 
     return None

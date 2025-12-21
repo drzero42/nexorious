@@ -53,6 +53,15 @@ OFFICIAL_PLATFORMS: List[Dict[str, Any]] = [
         "default_storefront_name": "playstation-store"
     },
     {
+        "name": "playstation-psp",
+        "display_name": "PlayStation Portable (PSP)",
+        "icon_url": "/static/logos/platforms/playstation-psp/playstation-psp-icon-light.svg",
+        "is_active": True,
+        "source": "official",
+        "version_added": "1.0.0",
+        "default_storefront_name": "playstation-store"
+    },
+    {
         "name": "xbox-series",
         "display_name": "Xbox Series X/S",
         "icon_url": "/static/logos/platforms/xbox-series/xbox-series-icon-light.svg",

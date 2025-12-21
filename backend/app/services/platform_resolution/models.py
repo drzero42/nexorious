@@ -9,16 +9,20 @@ import re
 from typing import Optional
 
 
-# Minimal explicit mappings for cases where fuzzy matching fails
+# Explicit mappings for cases where fuzzy matching fails
 EXPLICIT_PLATFORM_MAPPINGS = {
     # Short forms that are too different for fuzzy matching
     'PC': 'PC (Windows)',
+    'Linux': 'PC (Linux)',
     'PS3': 'PlayStation 3',
     'PS4': 'PlayStation 4',
     'PS5': 'PlayStation 5',
+    'Wii': 'Nintendo Wii',
 
     # Special cases with very different names
     'PlayStation Network (PS3)': 'PlayStation 3',
+    'PlayStation Network (Vita)': 'PlayStation Vita',
+    'PlayStation Network (PSP)': 'PlayStation Portable (PSP)',
     'Xbox 360 Games Store': 'Xbox 360',
 }
 
@@ -28,6 +32,8 @@ EXPLICIT_STOREFRONT_MAPPINGS = {
     'PSN': 'PlayStation Store',
     'HB': 'Humble Bundle',
     'Epic': 'Epic Games Store',
+    'Origin': 'Origin/EA App',
+    'Google Play': 'Google Play Store',
 
     # Special cases
     'Other': 'Physical',

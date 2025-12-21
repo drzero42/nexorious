@@ -1487,3 +1487,94 @@ class TestFinalizeImport:
             headers=auth_headers,
         )
         assert response.status_code == 404
+
+
+class TestFindBestMatch:
+    """Tests for the _find_best_match helper function."""
+
+    def test_exact_match_on_display_name(self):
+        """Test exact matching on display_name."""
+        from app.api.review import _find_best_match
+
+        candidates = [
+            ("pc-windows", "pc-windows", "PC (Windows)"),
+            ("playstation-5", "playstation-5", "PlayStation 5"),
+        ]
+
+        result = _find_best_match("PC (Windows)", candidates)
+        assert result == ("pc-windows", "PC (Windows)")
+
+    def test_exact_match_case_insensitive(self):
+        """Test case-insensitive exact matching."""
+        from app.api.review import _find_best_match
+
+        candidates = [
+            ("steam", "steam", "Steam"),
+        ]
+
+        result = _find_best_match("STEAM", candidates)
+        assert result == ("steam", "Steam")
+
+    def test_explicit_mapping_pc_to_pc_windows(self):
+        """Test that 'PC' maps to 'PC (Windows)' via explicit mappings."""
+        from app.api.review import _find_best_match
+        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
+
+        candidates = [
+            ("pc-windows", "pc-windows", "PC (Windows)"),
+            ("pc-linux", "pc-linux", "PC (Linux)"),
+        ]
+
+        result = _find_best_match("PC", candidates, EXPLICIT_PLATFORM_MAPPINGS)
+        assert result == ("pc-windows", "PC (Windows)")
+
+    def test_explicit_mapping_wii(self):
+        """Test that 'Wii' maps to 'Nintendo Wii' via explicit mappings."""
+        from app.api.review import _find_best_match
+        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
+
+        candidates = [
+            ("nintendo-wii", "nintendo-wii", "Nintendo Wii"),
+            ("nintendo-wii-u", "nintendo-wii-u", "Nintendo Wii U"),
+        ]
+
+        result = _find_best_match("Wii", candidates, EXPLICIT_PLATFORM_MAPPINGS)
+        assert result == ("nintendo-wii", "Nintendo Wii")
+
+    def test_explicit_mapping_playstation_network_vita(self):
+        """Test that 'PlayStation Network (Vita)' maps to 'PlayStation Vita'."""
+        from app.api.review import _find_best_match
+        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
+
+        candidates = [
+            ("playstation-vita", "playstation-vita", "PlayStation Vita"),
+            ("playstation-4", "playstation-4", "PlayStation 4"),
+        ]
+
+        result = _find_best_match("PlayStation Network (Vita)", candidates, EXPLICIT_PLATFORM_MAPPINGS)
+        assert result == ("playstation-vita", "PlayStation Vita")
+
+    def test_explicit_mapping_playstation_network_psp(self):
+        """Test that 'PlayStation Network (PSP)' maps to 'PlayStation Portable (PSP)'."""
+        from app.api.review import _find_best_match
+        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
+
+        candidates = [
+            ("playstation-psp", "playstation-psp", "PlayStation Portable (PSP)"),
+            ("playstation-vita", "playstation-vita", "PlayStation Vita"),
+        ]
+
+        result = _find_best_match("PlayStation Network (PSP)", candidates, EXPLICIT_PLATFORM_MAPPINGS)
+        assert result == ("playstation-psp", "PlayStation Portable (PSP)")
+
+    def test_no_match_returns_none(self):
+        """Test that unrecognized strings return None."""
+        from app.api.review import _find_best_match
+        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
+
+        candidates = [
+            ("pc-windows", "pc-windows", "PC (Windows)"),
+        ]
+
+        result = _find_best_match("Commodore 64", candidates, EXPLICIT_PLATFORM_MAPPINGS)
+        assert result is None
