@@ -38,28 +38,6 @@ describe('importExportApi', () => {
     });
   });
 
-  describe('importDarkadiaCsv', () => {
-    it('should upload file and return transformed response', async () => {
-      const mockFile = new File(['Name,Platform\nGame1,PC'], 'games.csv', { type: 'text/csv' });
-      const mockResponse = {
-        job_id: 'job-456',
-        source: 'darkadia',
-        status: 'pending',
-        message: 'Import job created. Processing 10 games. Review may be required.',
-        total_items: 10,
-      };
-
-      vi.mocked(apiUploadFile).mockResolvedValueOnce(mockResponse);
-
-      const result = await importExportApi.importDarkadiaCsv(mockFile);
-
-      expect(apiUploadFile).toHaveBeenCalledWith('/import/darkadia', mockFile);
-      expect(result.job_id).toBe('job-456');
-      expect(result.source).toBe('darkadia');
-      expect(result.total_items).toBe(10);
-    });
-  });
-
   describe('exportCollectionJson', () => {
     it('should start JSON export and return job info', async () => {
       const mockResponse = {

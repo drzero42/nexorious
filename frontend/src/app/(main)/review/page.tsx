@@ -34,9 +34,6 @@ import {
 } from '@/components/ui/pagination';
 import {
   AlertCircle,
-  ArrowRight,
-  Check,
-  CheckCircle,
   Loader2,
   RefreshCw,
   X,
@@ -51,10 +48,7 @@ import {
   useKeepReviewItem,
   useRemoveReviewItem,
   useSearchIGDB,
-  useFinalizeImport,
-  usePlatformSummary,
 } from '@/hooks';
-import { useImportMapping } from '@/contexts/import-mapping-context';
 import type { ReviewItem, ReviewFilters, IGDBCandidate, IGDBGameCandidate } from '@/types';
 import { ReviewItemStatus, ReviewSource, formatReleaseYear } from '@/types';
 
@@ -95,12 +89,6 @@ export default function ReviewPage() {
   const jobIdFromUrl = searchParams.get('job_id');
   const sourceFromUrl = searchParams.get('source');
 
-  // Import mapping context
-  const { platformMappings, storefrontMappings, jobId: contextJobId, clearMappings } = useImportMapping();
-  const effectiveJobId = jobIdFromUrl || contextJobId;
-  const hasMappings = Object.keys(platformMappings).length > 0 || Object.keys(storefrontMappings).length > 0;
-  const canFinalize = effectiveJobId && hasMappings;
-
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<ReviewFilters>(() => {
     const initial: ReviewFilters = {};
@@ -120,14 +108,6 @@ export default function ReviewPage() {
   );
   const { data: summary } = useReviewSummary();
 
-  // Find the first import job from review items that might need platform mapping
-  const firstImportJobId = data?.items.find(
-    (item) => item.jobSource === 'DARKADIA' || item.jobSource === 'darkadia'
-  )?.jobId || null;
-
-  // Check if this job has unresolved platform/storefront mappings
-  const { data: platformSummary } = usePlatformSummary(firstImportJobId);
-
   // Smart default: show pending items if there are any and no explicit status filter
   useEffect(() => {
     const statusFromUrl = searchParams.get('status');
@@ -141,7 +121,6 @@ export default function ReviewPage() {
   const skipMutation = useSkipReviewItem();
   const keepMutation = useKeepReviewItem();
   const removeMutation = useRemoveReviewItem();
-  const finalizeMutation = useFinalizeImport();
   const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const hasFilters =
@@ -276,22 +255,6 @@ export default function ReviewPage() {
     [selectedItem, matchMutation]
   );
 
-  const handleFinalize = useCallback(async () => {
-    if (!effectiveJobId) return;
-    try {
-      const result = await finalizeMutation.mutateAsync({
-        jobId: effectiveJobId,
-        platformMappings,
-        storefrontMappings,
-      });
-      toast.success(result.message);
-      clearMappings();
-      // Optionally navigate to games page
-      router.push('/games');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to finalize import');
-    }
-  }, [effectiveJobId, platformMappings, storefrontMappings, finalizeMutation, clearMappings, router]);
 
   if (isLoading) {
     return <ReviewPageSkeleton />;
@@ -323,26 +286,6 @@ export default function ReviewPage() {
             )}
             Refresh
           </Button>
-          {canFinalize && (
-            <Button
-              onClick={handleFinalize}
-              disabled={finalizeMutation.isPending}
-              className="bg-green-600 hover:bg-green-700"
-              size="sm"
-            >
-              {finalizeMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Finalizing...
-                </>
-              ) : (
-                <>
-                  <Check className="mr-2 h-4 w-4" />
-                  Finalize Import
-                </>
-              )}
-            </Button>
-          )}
           {summary && (
             <div className="text-right">
               <div className="text-2xl font-bold text-primary">{summary.totalPending}</div>
@@ -351,60 +294,6 @@ export default function ReviewPage() {
           )}
         </div>
       </div>
-
-      {/* Platform/Storefront Mapping Info */}
-      {platformSummary && firstImportJobId && (
-        <Alert
-          className={
-            platformSummary.allResolved
-              ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
-              : 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20'
-          }
-        >
-          {platformSummary.allResolved ? (
-            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-          ) : (
-            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-          )}
-          <AlertTitle
-            className={
-              platformSummary.allResolved
-                ? 'text-green-800 dark:text-green-200'
-                : 'text-orange-800 dark:text-orange-200'
-            }
-          >
-            {platformSummary.allResolved
-              ? 'Platform/Storefront Mappings Ready'
-              : 'Platform/Storefront Mapping Required'}
-          </AlertTitle>
-          <AlertDescription className="flex items-center justify-between">
-            <span
-              className={
-                platformSummary.allResolved
-                  ? 'text-green-700 dark:text-green-300'
-                  : 'text-orange-700 dark:text-orange-300'
-              }
-            >
-              {platformSummary.allResolved
-                ? 'All platforms and storefronts have been mapped. You can review the mappings before finalizing.'
-                : 'Some platforms or storefronts from your import need to be mapped before you can finalize.'}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className={
-                platformSummary.allResolved
-                  ? 'ml-4 border-green-300 text-green-700 hover:bg-green-100 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-900/40'
-                  : 'ml-4 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/40'
-              }
-              onClick={() => router.push(`/import/mapping?job_id=${firstImportJobId}`)}
-            >
-              {platformSummary.allResolved ? 'View Mappings' : 'Go to Mapping'}
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Summary Stats */}
       {summary && (
@@ -534,7 +423,7 @@ export default function ReviewPage() {
       {/* Items List */}
       {data?.items.length === 0 ? (
         <div className="py-12 text-center">
-          <CheckCircle className="mx-auto h-12 w-12 text-muted-foreground" />
+          <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-medium">No items to review</h3>
           <p className="mt-2 text-sm text-muted-foreground">
             {hasFilters

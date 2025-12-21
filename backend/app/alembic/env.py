@@ -27,8 +27,6 @@ from app.models import (  # noqa: F401
     UserGameTag,
     Wishlist,
     Job,
-    DarkadiaGame,
-    DarkadiaImport,
 )
 
 # this is the Alembic Config object, which provides

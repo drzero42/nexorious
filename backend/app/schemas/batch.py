@@ -6,10 +6,8 @@ endpoints, providing consistent data structures for batched operations.
 """
 
 from pydantic import BaseModel
-from typing import List
+from typing import List, Any
 from datetime import datetime
-
-from .darkadia import DarkadiaGameResponse
 
 
 class BatchSessionStartRequest(BaseModel):
@@ -57,7 +55,7 @@ class BatchNextResponse(BaseModel):
     batch_successful: int
     batch_failed: int
     batch_errors: List[str]
-    current_batch_items: List[DarkadiaGameResponse]
+    current_batch_items: List[Any]  # Generic list of items (varies by import source)
     # Overall progress
     total_items: int
     processed_items: int

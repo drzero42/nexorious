@@ -16,7 +16,6 @@ from collections import defaultdict
 
 from ...utils.data_extraction import safe_extract_string, safe_extract_date_string, safe_extract_numeric
 from ...models.platform import Platform
-from ..platform_resolution import PlatformResolutionService
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +73,7 @@ class ConsolidatedGame:
 class CopyConsolidationProcessor:
     """Processor for consolidating multiple CSV rows representing copies of the same game."""
     
-    def __init__(self, platform_resolution_service: Optional[PlatformResolutionService] = None):
+    def __init__(self, platform_resolution_service: Optional[Any] = None):
         self.processed_games = 0
         self.total_copies = 0
         self.consolidated_games = 0

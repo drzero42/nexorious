@@ -1,8 +1,8 @@
-"""initial_schema
+"""initial schema
 
-Revision ID: 77a2404c73d8
+Revision ID: 72d8dfbc57f2
 Revises: 
-Create Date: 2025-12-15 20:36:54.288051
+Create Date: 2025-12-21 17:51:16.906072
 
 """
 from typing import Sequence, Union
@@ -10,11 +10,10 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 import sqlmodel
-import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision: str = '77a2404c73d8'
+revision: str = '72d8dfbc57f2'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,7 +31,7 @@ def upgrade() -> None:
     sa.Column('publisher', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('release_date', sa.Date(), nullable=True),
     sa.Column('cover_art_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
-    sa.Column('rating_average', sa.Numeric(precision=3, scale=2), nullable=True),
+    sa.Column('rating_average', sa.Numeric(precision=5, scale=2), nullable=True),
     sa.Column('rating_count', sa.Integer(), nullable=False),
     sa.Column('game_metadata', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('estimated_playtime_hours', sa.Integer(), nullable=True),
@@ -75,32 +74,10 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
-    op.create_table('darkadia_games',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('external_id', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
-    sa.Column('game_name', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
-    sa.Column('igdb_id', sa.Integer(), nullable=True),
-    sa.Column('igdb_title', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
-    sa.Column('game_id', sa.Integer(), nullable=True),
-    sa.Column('ignored', sa.Boolean(), nullable=False),
-    sa.Column('csv_data', sa.JSON(), nullable=True),
-    sa.Column('transformation_data', sa.JSON(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['game_id'], ['games.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'external_id', name='uq_darkadia_games_user_external')
-    )
-    op.create_index(op.f('ix_darkadia_games_external_id'), 'darkadia_games', ['external_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_games_game_id'), 'darkadia_games', ['game_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_games_igdb_id'), 'darkadia_games', ['igdb_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_games_user_id'), 'darkadia_games', ['user_id'], unique=False)
     op.create_table('ignored_external_games',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'DARKADIA', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
+    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
     sa.Column('external_id', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -111,44 +88,23 @@ def upgrade() -> None:
     op.create_index(op.f('ix_ignored_external_games_external_id'), 'ignored_external_games', ['external_id'], unique=False)
     op.create_index(op.f('ix_ignored_external_games_source'), 'ignored_external_games', ['source'], unique=False)
     op.create_index(op.f('ix_ignored_external_games_user_id'), 'ignored_external_games', ['user_id'], unique=False)
-    op.create_table('import_jobs',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('import_type', sa.Enum('CSV', 'STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'DARKADIA', name='importtype'), nullable=False),
-    sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', name='importstatus'), nullable=False),
-    sa.Column('total_records', sa.Integer(), nullable=False),
-    sa.Column('processed_records', sa.Integer(), nullable=False),
-    sa.Column('failed_records', sa.Integer(), nullable=False),
-    sa.Column('error_log', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('job_metadata', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('job_type', sa.Enum('LIBRARY_IMPORT', 'AUTO_MATCH', 'BULK_SYNC', 'BULK_UNMATCH', 'BULK_UNSYNC', 'BULK_UNIGNORE', name='jobtype'), nullable=True),
-    sa.Column('source', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('started_at', sa.DateTime(), nullable=True),
-    sa.Column('progress', sa.Integer(), nullable=False),
-    sa.Column('total_items', sa.Integer(), nullable=False),
-    sa.Column('processed_items', sa.Integer(), nullable=False),
-    sa.Column('successful_items', sa.Integer(), nullable=False),
-    sa.Column('failed_items', sa.Integer(), nullable=False),
-    sa.Column('error_message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('completed_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_import_jobs_source'), 'import_jobs', ['source'], unique=False)
-    op.create_index(op.f('ix_import_jobs_status'), 'import_jobs', ['status'], unique=False)
-    op.create_index(op.f('ix_import_jobs_user_id'), 'import_jobs', ['user_id'], unique=False)
     op.create_table('jobs',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('job_type', sa.Enum('SYNC', 'IMPORT', 'EXPORT', name='backgroundjobtype'), nullable=False),
-    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'DARKADIA', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
+    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
     sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'AWAITING_REVIEW', 'READY', 'FINALIZING', 'COMPLETED', 'FAILED', 'CANCELLED', name='backgroundjobstatus'), nullable=False),
     sa.Column('priority', sa.Enum('HIGH', 'LOW', name='backgroundjobpriority'), nullable=False),
+    sa.Column('import_subtype', sa.Enum('LIBRARY_IMPORT', 'AUTO_MATCH', 'BULK_SYNC', 'BULK_UNMATCH', 'BULK_UNSYNC', 'BULK_UNIGNORE', name='importjobsubtype'), nullable=True),
     sa.Column('progress_current', sa.Integer(), nullable=False),
     sa.Column('progress_total', sa.Integer(), nullable=False),
+    sa.Column('successful_items', sa.Integer(), nullable=False),
+    sa.Column('failed_items', sa.Integer(), nullable=False),
     sa.Column('result_summary', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('error_log', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('error_message', sqlmodel.sql.sqltypes.AutoString(length=2000), nullable=True),
+    sa.Column('processed_item_ids', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('failed_item_ids', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('file_path', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('taskiq_task_id', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -157,6 +113,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_jobs_import_subtype'), 'jobs', ['import_subtype'], unique=False)
     op.create_index(op.f('ix_jobs_job_type'), 'jobs', ['job_type'], unique=False)
     op.create_index(op.f('ix_jobs_source'), 'jobs', ['source'], unique=False)
     op.create_index(op.f('ix_jobs_status'), 'jobs', ['status'], unique=False)
@@ -205,7 +162,8 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['game_id'], ['games.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_id', 'game_id', name='uq_user_games_user_game')
     )
     op.create_index(op.f('ix_user_games_game_id'), 'user_games', ['game_id'], unique=False)
     op.create_index(op.f('ix_user_games_is_loved'), 'user_games', ['is_loved'], unique=False)
@@ -275,7 +233,8 @@ def upgrade() -> None:
     sa.Column('resolved_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('job_id', 'source_title', name='uq_review_items_job_source_title')
     )
     op.create_index(op.f('ix_review_items_job_id'), 'review_items', ['job_id'], unique=False)
     op.create_index(op.f('ix_review_items_status'), 'review_items', ['status'], unique=False)
@@ -311,67 +270,12 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_user_game_tags_tag_id'), 'user_game_tags', ['tag_id'], unique=False)
     op.create_index(op.f('ix_user_game_tags_user_game_id'), 'user_game_tags', ['user_game_id'], unique=False)
-    op.create_table('darkadia_imports',
-    sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('user_game_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('user_game_platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('csv_row_number', sa.Integer(), nullable=False),
-    sa.Column('game_name', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
-    sa.Column('copy_identifier', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
-    sa.Column('batch_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('csv_file_hash', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
-    sa.Column('import_timestamp', sa.DateTime(), nullable=False),
-    sa.Column('original_csv_data', sa.JSON(), nullable=True),
-    sa.Column('played', sa.Boolean(), nullable=False),
-    sa.Column('playing', sa.Boolean(), nullable=False),
-    sa.Column('finished', sa.Boolean(), nullable=False),
-    sa.Column('mastered', sa.Boolean(), nullable=False),
-    sa.Column('dominated', sa.Boolean(), nullable=False),
-    sa.Column('shelved', sa.Boolean(), nullable=False),
-    sa.Column('physical_copy_data', sa.JSON(), nullable=True),
-    sa.Column('original_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
-    sa.Column('original_storefront_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
-    sa.Column('fallback_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
-    sa.Column('platform_resolved', sa.Boolean(), nullable=False),
-    sa.Column('storefront_resolved', sa.Boolean(), nullable=False),
-    sa.Column('resolved_platform_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('resolved_storefront_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('requires_storefront_resolution', sa.Boolean(), nullable=False),
-    sa.Column('platform_resolution_data', sa.JSON(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['resolved_platform_id'], ['platforms.id'], ),
-    sa.ForeignKeyConstraint(['resolved_storefront_id'], ['storefronts.id'], ),
-    sa.ForeignKeyConstraint(['user_game_id'], ['user_games.id'], ),
-    sa.ForeignKeyConstraint(['user_game_platform_id'], ['user_game_platforms.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'csv_row_number', 'copy_identifier', 'batch_id', name='uq_darkadia_imports_user_row_copy_batch')
-    )
-    op.create_index(op.f('ix_darkadia_imports_batch_id'), 'darkadia_imports', ['batch_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_game_name'), 'darkadia_imports', ['game_name'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_import_timestamp'), 'darkadia_imports', ['import_timestamp'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_platform_resolved'), 'darkadia_imports', ['platform_resolved'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_storefront_resolved'), 'darkadia_imports', ['storefront_resolved'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_user_game_id'), 'darkadia_imports', ['user_game_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_user_game_platform_id'), 'darkadia_imports', ['user_game_platform_id'], unique=False)
-    op.create_index(op.f('ix_darkadia_imports_user_id'), 'darkadia_imports', ['user_id'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_darkadia_imports_user_id'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_user_game_platform_id'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_user_game_id'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_storefront_resolved'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_platform_resolved'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_import_timestamp'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_game_name'), table_name='darkadia_imports')
-    op.drop_index(op.f('ix_darkadia_imports_batch_id'), table_name='darkadia_imports')
-    op.drop_table('darkadia_imports')
     op.drop_index(op.f('ix_user_game_tags_user_game_id'), table_name='user_game_tags')
     op.drop_index(op.f('ix_user_game_tags_tag_id'), table_name='user_game_tags')
     op.drop_table('user_game_tags')
@@ -406,20 +310,12 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_jobs_status'), table_name='jobs')
     op.drop_index(op.f('ix_jobs_source'), table_name='jobs')
     op.drop_index(op.f('ix_jobs_job_type'), table_name='jobs')
+    op.drop_index(op.f('ix_jobs_import_subtype'), table_name='jobs')
     op.drop_table('jobs')
-    op.drop_index(op.f('ix_import_jobs_user_id'), table_name='import_jobs')
-    op.drop_index(op.f('ix_import_jobs_status'), table_name='import_jobs')
-    op.drop_index(op.f('ix_import_jobs_source'), table_name='import_jobs')
-    op.drop_table('import_jobs')
     op.drop_index(op.f('ix_ignored_external_games_user_id'), table_name='ignored_external_games')
     op.drop_index(op.f('ix_ignored_external_games_source'), table_name='ignored_external_games')
     op.drop_index(op.f('ix_ignored_external_games_external_id'), table_name='ignored_external_games')
     op.drop_table('ignored_external_games')
-    op.drop_index(op.f('ix_darkadia_games_user_id'), table_name='darkadia_games')
-    op.drop_index(op.f('ix_darkadia_games_igdb_id'), table_name='darkadia_games')
-    op.drop_index(op.f('ix_darkadia_games_game_id'), table_name='darkadia_games')
-    op.drop_index(op.f('ix_darkadia_games_external_id'), table_name='darkadia_games')
-    op.drop_table('darkadia_games')
     op.drop_index(op.f('ix_users_username'), table_name='users')
     op.drop_table('users')
     op.drop_index(op.f('ix_storefronts_name'), table_name='storefronts')

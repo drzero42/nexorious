@@ -21,10 +21,6 @@ def mock_task_queue():
         "app.api.import_endpoints.import_nexorious_task.kiq",
         new_callable=AsyncMock,
         return_value=mock_result,
-    ), patch(
-        "app.api.import_endpoints.import_darkadia_task.kiq",
-        new_callable=AsyncMock,
-        return_value=mock_result,
     ):
         yield
 
@@ -162,98 +158,6 @@ class TestNexoriousImport:
         assert "already in progress" in error_msg
 
 
-class TestDarkadiaImport:
-    """Tests for Darkadia CSV import endpoint."""
-
-    def test_import_darkadia_success(
-        self, client: TestClient, auth_headers: dict, session: Session, test_user
-    ):
-        """POST /import/darkadia creates import job with valid CSV."""
-        csv_content = "Name,Platform,Status\nThe Witcher 3,PC,Completed\nElden Ring,PC,Playing\n"
-
-        response = client.post(
-            "/api/import/darkadia",
-            headers=auth_headers,
-            files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "job_id" in data
-        assert data["source"] == "darkadia"
-        assert data["status"] == "pending"
-        assert data["total_items"] == 2
-        assert "Review may be required" in data["message"]
-
-        # Verify job in database
-        from sqlmodel import select
-        stmt = select(Job).where(Job.id == data["job_id"])
-        job = session.exec(stmt).first()
-        assert job is not None
-        assert job.job_type == BackgroundJobType.IMPORT
-        assert job.source == BackgroundJobSource.DARKADIA
-        assert job.status == BackgroundJobStatus.PENDING
-
-    def test_import_darkadia_invalid_csv(
-        self, client: TestClient, auth_headers: dict
-    ):
-        """POST /import/darkadia returns 400 for empty CSV."""
-        # Empty CSV (no data rows)
-        csv_content = ""
-
-        response = client.post(
-            "/api/import/darkadia",
-            headers=auth_headers,
-            files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 400
-
-    def test_import_darkadia_missing_name_column(
-        self, client: TestClient, auth_headers: dict
-    ):
-        """POST /import/darkadia returns 400 if Name column missing."""
-        csv_content = "Platform,Status\nPC,Completed\n"
-
-        response = client.post(
-            "/api/import/darkadia",
-            headers=auth_headers,
-            files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 400
-        data = response.json()
-        error_msg = data.get("error", data.get("detail", ""))
-        assert "Name" in error_msg
-
-    def test_import_darkadia_conflict_when_active(
-        self, client: TestClient, auth_headers: dict, session: Session, test_user
-    ):
-        """POST /import/darkadia returns 409 if import already in progress."""
-        # Create an active import job
-        existing_job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-            priority="high",
-        )
-        session.add(existing_job)
-        session.commit()
-
-        # Try to create another import
-        csv_content = "Name\nTest Game\n"
-
-        response = client.post(
-            "/api/import/darkadia",
-            headers=auth_headers,
-            files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 409
-
-
 class TestImportEndpointAuthentication:
     """Tests for import endpoint authentication."""
 
@@ -269,13 +173,3 @@ class TestImportEndpointAuthentication:
 
         assert response.status_code == 403
 
-    def test_darkadia_import_requires_auth(self, client: TestClient):
-        """POST /import/darkadia returns 403 without auth."""
-        csv_content = "Name\nTest Game\n"
-
-        response = client.post(
-            "/api/import/darkadia",
-            files={"file": ("export.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")},
-        )
-
-        assert response.status_code == 403

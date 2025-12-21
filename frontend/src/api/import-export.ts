@@ -59,15 +59,6 @@ export async function importNexoriousJson(file: File): Promise<ImportJobCreatedR
   return transformImportJobResponse(response);
 }
 
-/**
- * Import games from a Darkadia CSV export file.
- * This is an interactive import that requires title-based matching and review.
- */
-export async function importDarkadiaCsv(file: File): Promise<ImportJobCreatedResponse> {
-  const response = await apiUploadFile<ImportJobApiResponse>('/import/darkadia', file);
-  return transformImportJobResponse(response);
-}
-
 // ============================================================================
 // Export API Functions
 // ============================================================================

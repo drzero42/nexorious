@@ -94,7 +94,6 @@ def _get_job_source_from_config_name(source_name: str) -> BackgroundJobSource:
     """Map config source name to BackgroundJobSource enum."""
     source_map = {
         "Steam": BackgroundJobSource.STEAM,
-        "Darkadia": BackgroundJobSource.DARKADIA,
         "Epic": BackgroundJobSource.EPIC,
         "GOG": BackgroundJobSource.GOG,
         "Xbox": BackgroundJobSource.XBOX,

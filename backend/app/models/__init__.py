@@ -20,11 +20,8 @@ from .job import (
     ImportJobSubtype,
     ReviewItemStatus,
 )
-from .darkadia_game import DarkadiaGame
-from .darkadia_import import DarkadiaImport
 from .user_sync_config import UserSyncConfig, SyncFrequency
 from .ignored_external_game import IgnoredExternalGame
-from .user_import_mapping import UserImportMapping, ImportMappingType
 
 __all__ = [
     "User",
@@ -46,11 +43,7 @@ __all__ = [
     "BackgroundJobPriority",
     "ImportJobSubtype",
     "ReviewItemStatus",
-    "DarkadiaGame",
-    "DarkadiaImport",
     "UserSyncConfig",
     "SyncFrequency",
     "IgnoredExternalGame",
-    "UserImportMapping",
-    "ImportMappingType",
 ]

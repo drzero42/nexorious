@@ -66,7 +66,6 @@ export {
 export {
   importExportKeys,
   useImportNexorious,
-  useImportDarkadia,
   useExportCollection,
   useExportWishlist,
   useDownloadExport,

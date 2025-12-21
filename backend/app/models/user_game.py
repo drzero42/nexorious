@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from .game import Game
     from .platform import Platform, Storefront
     from .tag import UserGameTag
-    from .darkadia_import import DarkadiaImport
 
 
 class OwnershipStatus(str, Enum):
@@ -65,7 +64,6 @@ class UserGame(SQLModel, table=True):
     game: "Game" = Relationship(back_populates="user_games")
     platforms: List["UserGamePlatform"] = Relationship(back_populates="user_game", cascade_delete=True)
     tags: List["UserGameTag"] = Relationship(back_populates="user_game", cascade_delete=True)
-    darkadia_imports: List["DarkadiaImport"] = Relationship(back_populates="user_game", cascade_delete=True)
     
     # Unique constraint: each user can only have one entry per game
     __table_args__ = (

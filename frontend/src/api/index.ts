@@ -109,7 +109,6 @@ export type { SyncConfigsResponse, IgnoredGamesResponse } from './sync';
 // Re-export import/export API functions
 export {
   importNexoriousJson,
-  importDarkadiaCsv,
   exportCollectionJson,
   exportCollectionCsv,
   downloadExport,

@@ -29,16 +29,6 @@ export function useImportNexorious() {
   });
 }
 
-/**
- * Hook to import games from a Darkadia CSV export file.
- * Interactive import that requires review for unmatched titles.
- */
-export function useImportDarkadia() {
-  return useMutation<ImportJobCreatedResponse, Error, File>({
-    mutationFn: (file) => importExportApi.importDarkadiaCsv(file),
-  });
-}
-
 // ============================================================================
 // Export Mutation Hooks
 // ============================================================================

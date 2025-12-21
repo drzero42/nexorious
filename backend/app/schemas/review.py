@@ -161,42 +161,10 @@ class ReviewCountsByType(BaseModel):
     )
 
 
-class PlatformMappingSuggestion(BaseModel):
-    """A platform or storefront string that needs mapping."""
-
-    original: str = Field(..., description="Original string from CSV")
-    count: int = Field(..., description="Number of games with this value")
-    suggested_id: Optional[str] = Field(None, description="Suggested Platform/Storefront ID")
-    suggested_name: Optional[str] = Field(None, description="Suggested Platform/Storefront name")
-
-
-class PlatformSummaryResponse(BaseModel):
-    """Summary of platform/storefront strings needing mapping for a job."""
-
-    platforms: List[PlatformMappingSuggestion] = Field(default_factory=list)
-    storefronts: List[PlatformMappingSuggestion] = Field(default_factory=list)
-    all_resolved: bool = Field(..., description="True if all strings have suggestions")
-
-
-class PlatformMapping(BaseModel):
-    """A single platform or storefront mapping from original string to resolved ID."""
-
-    original: str = Field(..., description="Original string from CSV")
-    resolved_id: str = Field(..., description="Platform or Storefront ID to map to")
-
-
 class FinalizeImportRequest(BaseModel):
-    """Request model for finalizing a Darkadia import with platform mappings."""
+    """Request model for finalizing a sync import."""
 
-    job_id: str = Field(..., description="The import job ID to finalize")
-    platform_mappings: List[PlatformMapping] = Field(
-        default_factory=list,
-        description="Mappings from original platform strings to Platform IDs"
-    )
-    storefront_mappings: List[PlatformMapping] = Field(
-        default_factory=list,
-        description="Mappings from original storefront strings to Storefront IDs"
-    )
+    job_id: str = Field(..., description="The sync job ID to finalize")
 
 
 class FinalizeImportResponse(BaseModel):
