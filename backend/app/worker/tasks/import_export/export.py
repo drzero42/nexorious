@@ -18,10 +18,9 @@ from app.worker.queues import QUEUE_HIGH
 from app.core.database import get_session_context
 from app.core.config import settings
 from app.models.job import Job, BackgroundJobStatus
-from app.models.user_game import UserGame, OwnershipStatus
+from app.models.user_game import UserGame
 from app.schemas.export import (
     ExportFormat,
-    ExportScope,
     ExportGameData,
     ExportPlatformData,
     ExportTagData,
@@ -32,7 +31,7 @@ from app.schemas.export import (
 logger = logging.getLogger(__name__)
 
 # Export format version
-EXPORT_VERSION = "1.0"
+EXPORT_VERSION = "1.1"
 
 
 def _get_exports_dir() -> Path:
@@ -45,19 +44,13 @@ def _get_exports_dir() -> Path:
 def _build_user_games_query(
     session: Session,
     user_id: str,
-    export_scope: str,
 ) -> List[UserGame]:
-    """Build and execute query for user games based on export scope."""
+    """Build and execute query for all user games."""
     query = (
         select(UserGame)
         .where(UserGame.user_id == user_id)
         .order_by(UserGame.created_at)  # pyrefly: ignore[bad-argument-type]
     )
-
-    if export_scope == ExportScope.WISHLIST.value:
-        # Wishlist: games marked as no_longer_owned
-        query = query.where(UserGame.ownership_status == OwnershipStatus.NO_LONGER_OWNED)
-    # For COLLECTION scope, include all games
 
     return list(session.exec(query).all())
 
@@ -196,10 +189,9 @@ def _write_csv_export(
 async def export_collection(
     job_id: str,
     export_format: str,
-    export_scope: str,
 ) -> Dict[str, Any]:
     """
-    Export user's game collection or wishlist.
+    Export user's game collection.
 
     Creates a JSON or CSV file containing the user's games with all
     associated metadata. The file is stored in the exports directory
@@ -208,20 +200,18 @@ async def export_collection(
     Args:
         job_id: The Job ID for tracking progress
         export_format: "json" or "csv"
-        export_scope: "collection" or "wishlist"
 
     Returns:
         Dictionary with export statistics.
     """
     logger.info(
-        f"Starting export (job: {job_id}, format: {export_format}, scope: {export_scope})"
+        f"Starting export (job: {job_id}, format: {export_format})"
     )
 
     stats: Dict[str, Any] = {
         "exported_games": 0,
         "file_size_bytes": 0,
         "format": export_format,
-        "scope": export_scope,
     }
 
     async with get_session_context() as session:
@@ -245,7 +235,7 @@ async def export_collection(
             session.add(job)
             session.commit()
             # Query user games
-            user_games = _build_user_games_query(session, job.user_id, export_scope)
+            user_games = _build_user_games_query(session, job.user_id)
             total_games = len(user_games)
 
             job.progress_total = total_games
@@ -256,7 +246,7 @@ async def export_collection(
             exports_dir = _get_exports_dir()
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             extension = "csv" if export_format == ExportFormat.CSV.value else "json"
-            filename = f"{job.user_id}_{export_scope}_{timestamp}.{extension}"
+            filename = f"{job.user_id}_{timestamp}.{extension}"
             file_path = exports_dir / filename
 
             if export_format == ExportFormat.CSV.value:
@@ -297,7 +287,6 @@ async def export_collection(
                 export_data = NexoriousExportData(
                     export_version=EXPORT_VERSION,
                     export_date=datetime.now(timezone.utc),
-                    export_scope=ExportScope(export_scope),
                     user_id=job.user_id,
                     total_games=total_games,
                     export_stats=export_stats,
