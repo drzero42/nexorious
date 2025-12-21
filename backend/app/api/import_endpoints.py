@@ -3,7 +3,6 @@ Import endpoints for triggering background import jobs.
 
 Provides endpoints for:
 - POST /import/nexorious - Upload Nexorious JSON export (non-interactive)
-- POST /import/darkadia - Upload Darkadia CSV (interactive with review)
 
 All endpoints create unified Job records and return job_id for tracking.
 Uses high priority queue for user-initiated imports.
@@ -15,8 +14,6 @@ from sqlmodel import Session, select
 from typing import Annotated, Optional
 import logging
 import json
-import csv
-import io
 
 from ..core.database import get_session
 from ..core.security import get_current_user
@@ -30,7 +27,6 @@ from ..models.job import (
 )
 from ..worker.tasks.import_export import (
     import_nexorious_json as import_nexorious_task,
-    import_darkadia_csv as import_darkadia_task,
 )
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
@@ -38,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 # Maximum file sizes
 MAX_JSON_SIZE = 50 * 1024 * 1024  # 50MB for Nexorious JSON
-MAX_CSV_SIZE = 10 * 1024 * 1024   # 10MB for Darkadia CSV
 
 
 class ImportJobCreatedResponse:
@@ -63,7 +58,7 @@ class ImportJobCreatedResponseModel(BaseModel):
     """Response model for import job creation."""
 
     job_id: str = Field(..., description="ID of the created import job")
-    source: str = Field(..., description="Import source (nexorious, darkadia)")
+    source: str = Field(..., description="Import source (nexorious)")
     status: str = Field(..., description="Initial job status")
     message: str = Field(..., description="Success message")
     total_items: Optional[int] = Field(None, description="Total items to import (if known)")
@@ -221,150 +216,6 @@ async def import_nexorious_json(
         source="nexorious",
         status=job.status.value,
         message=f"Import job created. Processing {total_items} games.",
-        total_items=total_items,
-    )
-
-
-@router.post("/darkadia", response_model=ImportJobCreatedResponseModel)
-async def import_darkadia_csv(
-    file: Annotated[UploadFile, File(description="Darkadia CSV export file")],
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> ImportJobCreatedResponseModel:
-    """
-    Import games from a Darkadia CSV export file.
-
-    This is an interactive import that requires title-based matching.
-    Creates a background job that will:
-    1. Parse the CSV file
-    2. Run each game through the matching service
-    3. High confidence matches are marked ready
-    4. Low confidence matches are queued for user review
-
-    If any games need review, job status changes to AWAITING_REVIEW.
-    User must confirm the final import via the review API.
-
-    Returns the job_id for tracking import progress and reviewing matches.
-    """
-    # Check for existing active import
-    existing_job = _check_active_import(
-        session, current_user.id, BackgroundJobSource.DARKADIA
-    )
-    if existing_job:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Import already in progress. Job ID: {existing_job.id}"
-        )
-
-    # Validate file type
-    if file.content_type and file.content_type not in [
-        "text/csv",
-        "application/csv",
-        "text/plain",
-        "application/octet-stream"
-    ]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type: {file.content_type}. Expected CSV file."
-        )
-
-    # Read and validate file size
-    content = await file.read()
-    if len(content) > MAX_CSV_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large. Maximum size is {MAX_CSV_SIZE // (1024*1024)}MB"
-        )
-
-    # Parse CSV to validate and count items
-    try:
-        text_content = content.decode("utf-8")
-    except UnicodeDecodeError:
-        # Try Latin-1 encoding as fallback
-        try:
-            text_content = content.decode("latin-1")
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File encoding error. Expected UTF-8 or Latin-1 encoded CSV."
-            )
-
-    try:
-        # Parse CSV
-        csv_reader = csv.DictReader(io.StringIO(text_content))
-        rows = list(csv_reader)
-    except csv.Error as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid CSV file: {str(e)}"
-        )
-
-    if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No games found in CSV file."
-        )
-
-    # Validate CSV has required columns
-    if not csv_reader.fieldnames:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV file has no headers."
-        )
-
-    # Check for required Darkadia columns
-    required_columns = {"Name"}  # At minimum we need the game name
-    fieldnames_set = set(csv_reader.fieldnames)
-    missing_columns = required_columns - fieldnames_set
-    if missing_columns:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing required columns: {', '.join(missing_columns)}"
-        )
-
-    total_items = len(rows)
-
-    logger.info(
-        f"User {current_user.id} uploading Darkadia CSV with {total_items} games"
-    )
-
-    # Create job record
-    job = Job(
-        user_id=current_user.id,
-        job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.DARKADIA,
-        status=BackgroundJobStatus.PENDING,
-        priority=BackgroundJobPriority.HIGH,
-        progress_total=total_items,
-    )
-
-    # Store CSV data for the worker to process
-    job.set_result_summary({
-        "file_name": file.filename,
-        "file_size": len(content),
-        "total_games": total_items,
-        "columns": list(csv_reader.fieldnames),
-        # Store raw rows for worker (will be cleared after processing)
-        "_import_rows": rows,
-    })
-
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-
-    # Enqueue the import task
-    task_result = await import_darkadia_task.kiq(job.id)
-    job.taskiq_task_id = task_result.task_id
-    session.add(job)
-    session.commit()
-
-    logger.info(f"Created Darkadia import job {job.id} for user {current_user.id}")
-
-    return ImportJobCreatedResponseModel(
-        job_id=job.id,
-        source="darkadia",
-        status=job.status.value,
-        message=f"Import job created. Processing {total_items} games. Review may be required.",
         total_items=total_items,
     )
 
