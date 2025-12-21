@@ -84,7 +84,7 @@ class TestListReviewItems:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.AWAITING_REVIEW,
         )
         session.add(job)
@@ -365,7 +365,7 @@ class TestGetReviewCountsByType:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -562,7 +562,7 @@ class TestGetReviewItem:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -593,7 +593,7 @@ class TestGetReviewItem:
         assert data["igdb_candidates"][0]["igdb_id"] == 123
         assert data["source_metadata"]["platform_id"] == "steam_400"
         assert data["job_type"] == "import"
-        assert data["job_source"] == "darkadia"
+        assert data["job_source"] == "steam"
 
     def test_get_review_item_not_found(self, client, auth_headers):
         """Test getting a non-existent review item."""
@@ -724,7 +724,7 @@ class TestSkipReviewItem:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -870,7 +870,7 @@ class TestConfirmImport:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.AWAITING_REVIEW,
         )
         session.add(job)
@@ -971,7 +971,7 @@ class TestConfirmImport:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.COMPLETED,
         )
         session.add(job)
@@ -1367,107 +1367,6 @@ class TestSimilarityScoreMapping:
         assert candidates[0]["similarity_score"] is None
 
 
-class TestPlatformSummary:
-    """Tests for GET /api/review/platform-summary endpoint."""
-
-    def test_get_platform_summary_empty_job(
-        self,
-        client,
-        auth_headers,
-        test_user: User,
-        session: Session,
-    ):
-        """Test platform summary returns empty for job with no platform data."""
-        # Create a job
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.get(
-            f"/api/review/platform-summary?job_id={job.id}",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["platforms"] == []
-        assert data["storefronts"] == []
-        assert data["all_resolved"] is True
-
-    def test_get_platform_summary_uses_saved_mappings(
-        self,
-        client,
-        auth_headers,
-        test_user: User,
-        session: Session,
-    ):
-        """Test platform summary uses user's saved mappings over auto-match."""
-        from ..models.user_import_mapping import UserImportMapping, ImportMappingType
-        from ..models.platform import Platform
-
-        # Create a platform that won't auto-match to "MyPlatform"
-        platform = Platform(
-            id="test-platform",
-            name="test-platform",
-            display_name="Test Platform",
-            is_active=True,
-        )
-        session.add(platform)
-        session.commit()
-
-        # Create a saved mapping for the user
-        mapping = UserImportMapping(
-            user_id=test_user.id,
-            import_source="darkadia",
-            mapping_type=ImportMappingType.PLATFORM,
-            source_value="MyPlatform",
-            target_id="test-platform",
-        )
-        session.add(mapping)
-        session.commit()
-
-        # Create a job with a review item that has the mapped platform
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        item = ReviewItem(
-            job_id=job.id,
-            user_id=test_user.id,
-            source_title="Test Game",
-            status=ReviewItemStatus.PENDING,
-        )
-        # Set platform data in source_metadata
-        item.set_source_metadata({"platforms": ["MyPlatform"], "storefronts": []})
-        session.add(item)
-        session.commit()
-
-        # Get platform summary - should use saved mapping
-        response = client.get(
-            f"/api/review/platform-summary?job_id={job.id}",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["platforms"]) == 1
-        assert data["platforms"][0]["original"] == "MyPlatform"
-        assert data["platforms"][0]["suggested_id"] == "test-platform"
-        assert data["platforms"][0]["suggested_name"] == "Test Platform"
-        assert data["all_resolved"] is True
-
-
 class TestFinalizeImport:
     """Tests for POST /api/review/finalize endpoint."""
 
@@ -1481,100 +1380,7 @@ class TestFinalizeImport:
             "/api/review/finalize",
             json={
                 "job_id": "non-existent-job-id",
-                "platform_mappings": [],
-                "storefront_mappings": []
             },
             headers=auth_headers,
         )
         assert response.status_code == 404
-
-
-class TestFindBestMatch:
-    """Tests for the _find_best_match helper function."""
-
-    def test_exact_match_on_display_name(self):
-        """Test exact matching on display_name."""
-        from app.api.review import _find_best_match
-
-        candidates = [
-            ("pc-windows", "pc-windows", "PC (Windows)"),
-            ("playstation-5", "playstation-5", "PlayStation 5"),
-        ]
-
-        result = _find_best_match("PC (Windows)", candidates)
-        assert result == ("pc-windows", "PC (Windows)")
-
-    def test_exact_match_case_insensitive(self):
-        """Test case-insensitive exact matching."""
-        from app.api.review import _find_best_match
-
-        candidates = [
-            ("steam", "steam", "Steam"),
-        ]
-
-        result = _find_best_match("STEAM", candidates)
-        assert result == ("steam", "Steam")
-
-    def test_explicit_mapping_pc_to_pc_windows(self):
-        """Test that 'PC' maps to 'PC (Windows)' via explicit mappings."""
-        from app.api.review import _find_best_match
-        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
-
-        candidates = [
-            ("pc-windows", "pc-windows", "PC (Windows)"),
-            ("pc-linux", "pc-linux", "PC (Linux)"),
-        ]
-
-        result = _find_best_match("PC", candidates, EXPLICIT_PLATFORM_MAPPINGS)
-        assert result == ("pc-windows", "PC (Windows)")
-
-    def test_explicit_mapping_wii(self):
-        """Test that 'Wii' maps to 'Nintendo Wii' via explicit mappings."""
-        from app.api.review import _find_best_match
-        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
-
-        candidates = [
-            ("nintendo-wii", "nintendo-wii", "Nintendo Wii"),
-            ("nintendo-wii-u", "nintendo-wii-u", "Nintendo Wii U"),
-        ]
-
-        result = _find_best_match("Wii", candidates, EXPLICIT_PLATFORM_MAPPINGS)
-        assert result == ("nintendo-wii", "Nintendo Wii")
-
-    def test_explicit_mapping_playstation_network_vita(self):
-        """Test that 'PlayStation Network (Vita)' maps to 'PlayStation Vita'."""
-        from app.api.review import _find_best_match
-        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
-
-        candidates = [
-            ("playstation-vita", "playstation-vita", "PlayStation Vita"),
-            ("playstation-4", "playstation-4", "PlayStation 4"),
-        ]
-
-        result = _find_best_match("PlayStation Network (Vita)", candidates, EXPLICIT_PLATFORM_MAPPINGS)
-        assert result == ("playstation-vita", "PlayStation Vita")
-
-    def test_explicit_mapping_playstation_network_psp(self):
-        """Test that 'PlayStation Network (PSP)' maps to 'PlayStation Portable (PSP)'."""
-        from app.api.review import _find_best_match
-        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
-
-        candidates = [
-            ("playstation-psp", "playstation-psp", "PlayStation Portable (PSP)"),
-            ("playstation-vita", "playstation-vita", "PlayStation Vita"),
-        ]
-
-        result = _find_best_match("PlayStation Network (PSP)", candidates, EXPLICIT_PLATFORM_MAPPINGS)
-        assert result == ("playstation-psp", "PlayStation Portable (PSP)")
-
-    def test_no_match_returns_none(self):
-        """Test that unrecognized strings return None."""
-        from app.api.review import _find_best_match
-        from app.services.platform_resolution.models import EXPLICIT_PLATFORM_MAPPINGS
-
-        candidates = [
-            ("pc-windows", "pc-windows", "PC (Windows)"),
-        ]
-
-        result = _find_best_match("Commodore 64", candidates, EXPLICIT_PLATFORM_MAPPINGS)
-        assert result is None
