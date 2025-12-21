@@ -18,13 +18,6 @@ class ExportFormat(str, Enum):
     CSV = "csv"
 
 
-class ExportScope(str, Enum):
-    """What data to export."""
-
-    COLLECTION = "collection"
-    WISHLIST = "wishlist"
-
-
 class ExportJobCreatedResponse(BaseModel):
     """Response when an export job is created."""
 
@@ -47,7 +40,6 @@ class ExportDownloadResponse(BaseModel):
     download_url: Optional[str] = None
     file_size: Optional[int] = None
     format: ExportFormat
-    scope: ExportScope
     created_at: datetime
     completed_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
@@ -104,9 +96,8 @@ class ExportGameData(BaseModel):
 class NexoriousExportData(BaseModel):
     """Complete Nexorious JSON export format."""
 
-    export_version: str = Field(default="1.0", description="Export format version")
+    export_version: str = Field(default="1.1", description="Export format version")
     export_date: datetime = Field(..., description="When the export was created")
-    export_scope: ExportScope
     user_id: str = Field(..., description="User ID (for reference only)")
 
     # Statistics
