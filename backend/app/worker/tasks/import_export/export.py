@@ -19,11 +19,13 @@ from app.core.database import get_session_context
 from app.core.config import settings
 from app.models.job import Job, BackgroundJobStatus
 from app.models.user_game import UserGame
+from app.models.wishlist import Wishlist
 from app.schemas.export import (
     ExportFormat,
     ExportGameData,
     ExportPlatformData,
     ExportTagData,
+    ExportWishlistItem,
     NexoriousExportData,
     CsvExportRow,
 )
@@ -31,7 +33,7 @@ from app.schemas.export import (
 logger = logging.getLogger(__name__)
 
 # Export format version
-EXPORT_VERSION = "1.1"
+EXPORT_VERSION = "1.2"
 
 
 def _get_exports_dir() -> Path:
@@ -53,6 +55,36 @@ def _build_user_games_query(
     )
 
     return list(session.exec(query).all())
+
+
+def _build_wishlist_query(
+    session: Session,
+    user_id: str,
+) -> List[Wishlist]:
+    """Build and execute query for all user wishlist items."""
+    query = (
+        select(Wishlist)
+        .where(Wishlist.user_id == user_id)
+        .order_by(Wishlist.created_at)  # pyrefly: ignore[bad-argument-type]
+    )
+
+    return list(session.exec(query).all())
+
+
+def _wishlist_to_export_data(
+    wishlist_item: Wishlist,
+) -> ExportWishlistItem:
+    """Convert a Wishlist item to export format."""
+    release_year = None
+    if wishlist_item.game.release_date:
+        release_year = wishlist_item.game.release_date.year
+
+    return ExportWishlistItem(
+        igdb_id=wishlist_item.game.id,
+        title=wishlist_item.game.title,
+        release_year=release_year,
+        added_at=wishlist_item.created_at,
+    )
 
 
 def _user_game_to_export_data(
@@ -210,6 +242,7 @@ async def export_collection(
 
     stats: Dict[str, Any] = {
         "exported_games": 0,
+        "exported_wishlist": 0,
         "file_size_bytes": 0,
         "format": export_format,
     }
@@ -280,6 +313,15 @@ async def export_collection(
 
                 session.commit()
 
+                # Query and process wishlist items
+                wishlist_items = _build_wishlist_query(session, job.user_id)
+                wishlist_data: List[ExportWishlistItem] = []
+                for wishlist_item in wishlist_items:
+                    wishlist_export = _wishlist_to_export_data(wishlist_item)
+                    wishlist_data.append(wishlist_export)
+
+                stats["exported_wishlist"] = len(wishlist_data)
+
                 # Calculate stats for export
                 export_stats = _calculate_export_stats(games_data)
 
@@ -289,8 +331,10 @@ async def export_collection(
                     export_date=datetime.now(timezone.utc),
                     user_id=job.user_id,
                     total_games=total_games,
+                    total_wishlist=len(wishlist_data),
                     export_stats=export_stats,
                     games=games_data,
+                    wishlist=wishlist_data,
                 )
 
                 file_size = _write_json_export(export_data, file_path)

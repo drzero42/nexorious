@@ -65,8 +65,8 @@ export function getExportFormatDisplayInfo(format: ExportFormat): {
   }> = {
     [ExportFormat.JSON]: {
       title: 'JSON Format',
-      description: 'Export your entire game collection to a JSON file for backup or transfer to another instance.',
-      features: ['Complete collection backup', 'Includes all metadata', 'Recommended for re-import'],
+      description: 'Export your entire game collection and wishlist to a JSON file for backup or transfer.',
+      features: ['Complete collection and wishlist', 'Includes all metadata', 'Recommended for re-import'],
     },
     [ExportFormat.CSV]: {
       title: 'CSV Format',

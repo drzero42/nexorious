@@ -19,6 +19,7 @@ from ..core.security import get_current_user
 from ..core.config import settings
 from ..models.user import User
 from ..models.user_game import UserGame
+from ..models.wishlist import Wishlist
 from ..models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
 from ..schemas.export import ExportFormat, ExportJobCreatedResponse
 from ..worker.tasks.import_export.export import export_collection as export_collection_task
@@ -43,29 +44,36 @@ async def export_json(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ExportJobCreatedResponse:
     """
-    Start a JSON export of all user games.
+    Start a JSON export of all user data.
 
-    Creates a background job that exports all games to a JSON file
-    with full metadata. The export includes:
+    Creates a background job that exports all games and wishlist items
+    to a JSON file with full metadata. The export includes:
     - IGDB IDs for reliable re-import
     - All user data (ratings, notes, play status, ownership status, etc.)
     - Platform and storefront associations
     - Tags
+    - Wishlist items
 
     The exported file can be downloaded once the job completes.
     Files are retained for 24 hours before automatic deletion.
     """
     logger.info(f"User {current_user.id} requesting JSON export")
 
-    # Count games to estimate export size
+    # Count games and wishlist items to estimate export size
     game_count = session.exec(
         select(func.count()).select_from(UserGame).where(UserGame.user_id == current_user.id)
     ).one()
 
-    if game_count == 0:
+    wishlist_count = session.exec(
+        select(func.count()).select_from(Wishlist).where(Wishlist.user_id == current_user.id)
+    ).one()
+
+    total_items = game_count + wishlist_count
+
+    if total_items == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No games to export.",
+            detail="No games or wishlist items to export.",
         )
 
     # Create export job
@@ -74,11 +82,13 @@ async def export_json(
         job_type=BackgroundJobType.EXPORT,
         source=BackgroundJobSource.NEXORIOUS,
         status=BackgroundJobStatus.PENDING,
-        progress_total=game_count,
+        progress_total=game_count,  # Progress tracks game export
     )
     job.set_result_summary({
         "format": ExportFormat.JSON.value,
-        "estimated_items": game_count,
+        "estimated_items": total_items,
+        "estimated_games": game_count,
+        "estimated_wishlist": wishlist_count,
     })
 
     session.add(job)
@@ -97,7 +107,7 @@ async def export_json(
         job_id=job.id,
         status=job.status.value,
         message="Export job created. Check job status for progress.",
-        estimated_items=game_count,
+        estimated_items=total_items,
     )
 
 

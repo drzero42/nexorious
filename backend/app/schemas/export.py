@@ -93,21 +93,34 @@ class ExportGameData(BaseModel):
     updated_at: datetime
 
 
+class ExportWishlistItem(BaseModel):
+    """Wishlist item in export format (for JSON exports)."""
+
+    igdb_id: int = Field(..., description="IGDB game ID for reliable re-import")
+    title: str
+    release_year: Optional[int] = None
+    added_at: datetime = Field(..., description="When the game was added to wishlist")
+
+
 class NexoriousExportData(BaseModel):
     """Complete Nexorious JSON export format."""
 
-    export_version: str = Field(default="1.1", description="Export format version")
+    export_version: str = Field(default="1.2", description="Export format version")
     export_date: datetime = Field(..., description="When the export was created")
     user_id: str = Field(..., description="User ID (for reference only)")
 
     # Statistics
     total_games: int
+    total_wishlist: int = Field(default=0, description="Total wishlist items")
     export_stats: Dict[str, Any] = Field(
         default_factory=dict, description="Summary statistics about the export"
     )
 
     # Game data
     games: List[ExportGameData]
+    wishlist: List[ExportWishlistItem] = Field(
+        default_factory=list, description="Games on user's wishlist"
+    )
 
 
 # CSV export row schema

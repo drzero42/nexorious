@@ -10,7 +10,9 @@ from sqlmodel import Session
 from app.worker.tasks.import_export.export import (
     _get_exports_dir,
     _build_user_games_query,
+    _build_wishlist_query,
     _user_game_to_export_data,
+    _wishlist_to_export_data,
     _user_game_to_csv_row,
     _write_json_export,
     _write_csv_export,
@@ -20,6 +22,7 @@ from app.worker.tasks.import_export.export import (
 from app.schemas.export import (
     ExportGameData,
     ExportTagData,
+    ExportWishlistItem,
     NexoriousExportData,
     CsvExportRow,
 )
@@ -27,6 +30,7 @@ from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
 from app.models.platform import Platform
 from app.models.tag import Tag, UserGameTag
+from app.models.wishlist import Wishlist
 
 
 class TestExportHelpers:
@@ -62,6 +66,65 @@ class TestExportHelpers:
 
         assert len(games) == 1
         assert games[0].id == owned_game.id
+
+    def test_build_wishlist_query(
+        self, session: Session, test_user, test_game
+    ):
+        """_build_wishlist_query returns all wishlist items."""
+        wishlist_item = Wishlist(
+            user_id=test_user.id,
+            game_id=test_game.id,
+        )
+        session.add(wishlist_item)
+        session.commit()
+
+        items = _build_wishlist_query(session, test_user.id)
+
+        assert len(items) == 1
+        assert items[0].id == wishlist_item.id
+
+
+class TestWishlistToExportData:
+    """Tests for converting Wishlist to export format."""
+
+    def test_basic_conversion(self, session: Session, test_user, test_game):
+        """Convert basic Wishlist to ExportWishlistItem."""
+        wishlist_item = Wishlist(
+            user_id=test_user.id,
+            game_id=test_game.id,
+        )
+        session.add(wishlist_item)
+        session.commit()
+        session.refresh(wishlist_item)
+
+        export_data = _wishlist_to_export_data(wishlist_item)
+
+        assert isinstance(export_data, ExportWishlistItem)
+        assert export_data.igdb_id == test_game.id
+        assert export_data.title == test_game.title
+        assert export_data.added_at == wishlist_item.created_at
+
+    def test_conversion_with_release_year(self, session: Session, test_user):
+        """Convert Wishlist with game release date to export format."""
+        game_with_date = Game(
+            id=9999,
+            title="Game With Date",
+            release_date=date(2023, 6, 15),
+        )
+        session.add(game_with_date)
+        session.commit()
+
+        wishlist_item = Wishlist(
+            user_id=test_user.id,
+            game_id=game_with_date.id,
+        )
+        session.add(wishlist_item)
+        session.commit()
+        session.refresh(wishlist_item)
+
+        export_data = _wishlist_to_export_data(wishlist_item)
+
+        assert export_data.release_year == 2023
 
 
 class TestUserGameToExportData:
@@ -385,7 +448,7 @@ class TestExportVersionConstant:
 
     def test_export_version_format(self):
         """Export version follows semantic versioning."""
-        assert EXPORT_VERSION == "1.1"
+        assert EXPORT_VERSION == "1.2"
         # Version should be a valid semver
         parts = EXPORT_VERSION.split(".")
         assert len(parts) >= 2
