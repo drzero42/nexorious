@@ -13,6 +13,7 @@ from typing import Optional
 EXPLICIT_PLATFORM_MAPPINGS = {
     # Short forms that are too different for fuzzy matching
     'PC': 'PC (Windows)',
+    'Linux': 'PC (Linux)',
     'PS3': 'PlayStation 3',
     'PS4': 'PlayStation 4',
     'PS5': 'PlayStation 5',
