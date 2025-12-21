@@ -25,13 +25,13 @@ class TestBatchJobService:
         job = service.create_batch_job(
             user_id="user-123",
             operation_type=BatchOperationType.AUTO_MATCH,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             total_items=50,
         )
 
         assert job.user_id == "user-123"
         assert job.job_type == BackgroundJobType.IMPORT
-        assert job.source == BackgroundJobSource.DARKADIA
+        assert job.source == BackgroundJobSource.STEAM
         assert job.import_subtype == ImportJobSubtype.AUTO_MATCH
         assert job.progress_total == 50
         assert job.status == BackgroundJobStatus.PROCESSING
@@ -46,7 +46,7 @@ class TestBatchJobService:
         job = service.create_batch_job(
             user_id="user-123",
             operation_type=BatchOperationType.SYNC,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             total_items=25,
         )
 
@@ -59,7 +59,7 @@ class TestBatchJobService:
             id="job-123",
             user_id="user-123",
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         mock_session.get.return_value = mock_job
 
@@ -76,7 +76,7 @@ class TestBatchJobService:
             id="job-123",
             user_id="user-123",
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             progress_total=100,
             progress_current=0,
         )
@@ -107,7 +107,7 @@ class TestBatchJobService:
             id="job-123",
             user_id="user-123",
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
         )
         mock_session.get.return_value = job
@@ -125,7 +125,7 @@ class TestBatchJobService:
             id="job-123",
             user_id="user-123",
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
         )
         mock_session.get.return_value = job

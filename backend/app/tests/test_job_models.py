@@ -256,7 +256,7 @@ class TestJobModel:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
 
         # Set result summary
@@ -526,7 +526,7 @@ class TestReviewItemModel:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -592,7 +592,7 @@ class TestReviewItemModel:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -744,7 +744,7 @@ class TestReviewItemModel:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -1246,7 +1246,7 @@ class TestReviewItemModelEdgeCases:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
         )
         session.add(job)
         session.commit()
@@ -1351,7 +1351,7 @@ class TestImportJobResponseFromJob:
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.FAILED,
             error_message="Connection timeout after 30 seconds",
         )

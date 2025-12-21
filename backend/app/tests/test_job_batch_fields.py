@@ -14,7 +14,7 @@ def test_job_has_batch_session_fields():
     job = Job(
         user_id="test-user",
         job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.DARKADIA,
+        source=BackgroundJobSource.STEAM,
         import_subtype=ImportJobSubtype.AUTO_MATCH,
     )
 
@@ -39,7 +39,7 @@ def test_job_progress_percentage():
     job = Job(
         user_id="test-user",
         job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.DARKADIA,
+        source=BackgroundJobSource.STEAM,
         progress_total=100,
         progress_current=50,
     )
@@ -52,7 +52,7 @@ def test_job_remaining_items():
     job = Job(
         user_id="test-user",
         job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.DARKADIA,
+        source=BackgroundJobSource.STEAM,
         progress_total=100,
         progress_current=30,
     )
@@ -65,7 +65,7 @@ def test_job_is_active():
     job = Job(
         user_id="test-user",
         job_type=BackgroundJobType.IMPORT,
-        source=BackgroundJobSource.DARKADIA,
+        source=BackgroundJobSource.STEAM,
         status=BackgroundJobStatus.PROCESSING,
     )
 

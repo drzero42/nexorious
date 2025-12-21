@@ -219,7 +219,7 @@ class TestMatchingServiceIntegration:
         service = MatchingService(mock_session, mock_igdb_service, auto_match_threshold=0.85)
         request = MatchRequest(
             source_title="Test Game",
-            source_platform="darkadia",
+            source_platform="steam",
         )
 
         result = await service.match_game(request)

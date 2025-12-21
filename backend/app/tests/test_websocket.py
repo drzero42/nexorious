@@ -245,7 +245,7 @@ class TestWebSocketJobEvents:
         job = Job(
             user_id=ws_test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
             priority=BackgroundJobPriority.HIGH,
             progress_current=90,
@@ -331,7 +331,7 @@ class TestWebSocketJobEvents:
         job = Job(
             user_id=ws_test_user.id,
             job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.DARKADIA,
+            source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.AWAITING_REVIEW,
             priority=BackgroundJobPriority.HIGH,
         )
