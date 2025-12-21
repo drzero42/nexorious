@@ -67,7 +67,6 @@ export {
   importExportKeys,
   useImportNexorious,
   useExportCollection,
-  useExportWishlist,
   useDownloadExport,
 } from './use-import-export';
 
