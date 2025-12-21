@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional
 
@@ -124,6 +125,203 @@ VALID_STOREFRONTS: set[str] = {
 }
 
 
+# =============================================================================
+# Data Classes
+# =============================================================================
+
+@dataclass
+class CopyData:
+    """Data for a single game copy (platform/storefront combination)."""
+    platform: str  # Original Darkadia platform name
+    storefront: str  # Original Darkadia storefront name
+    media_type: str  # Digital/Physical
+    purchase_date: Optional[date] = None
+    copy_label: str = ""
+    csv_row_number: int = 0
+
+
+@dataclass
+class ConsolidatedGame:
+    """Consolidated game data from potentially multiple CSV rows."""
+    name: str
+    copies: list[CopyData] = field(default_factory=list)
+
+    # Consolidated base data (merged from all rows)
+    added_date: Optional[date] = None
+    loved: bool = False
+    owned: bool = False
+    played: bool = False
+    playing: bool = False
+    finished: bool = False
+    mastered: bool = False
+    dominated: bool = False
+    shelved: bool = False
+    rating: Optional[float] = None
+    notes: str = ""
+
+    # IGDB data (filled in later)
+    igdb_id: Optional[int] = None
+    igdb_title: Optional[str] = None
+    release_year: Optional[int] = None
+
+    # Tracking
+    csv_row_numbers: list[int] = field(default_factory=list)
+
+
+# =============================================================================
+# CSV Parsing Functions
+# =============================================================================
+
+def parse_bool(value: str) -> bool:
+    """Parse boolean from CSV (0/1 or empty)."""
+    return value.strip() == "1"
+
+
+def parse_date(value: str) -> Optional[date]:
+    """Parse date from CSV (YYYY-MM-DD format)."""
+    value = value.strip()
+    if not value or value.lower() == "nan":
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def parse_rating(value: str) -> Optional[float]:
+    """Parse rating from CSV (0.0-5.0)."""
+    value = value.strip()
+    if not value or value.lower() == "nan":
+        return None
+    try:
+        rating = float(value)
+        if 0.0 <= rating <= 5.0:
+            return rating
+        return None
+    except ValueError:
+        return None
+
+
+def parse_csv(filepath: str) -> list[ConsolidatedGame]:
+    """
+    Parse Darkadia CSV and consolidate multi-row games.
+
+    Returns list of ConsolidatedGame objects.
+    """
+    games: dict[str, ConsolidatedGame] = {}
+    current_game_name: Optional[str] = None
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader)  # Skip header row
+
+        for row_num, row in enumerate(reader, start=2):  # Start at 2 (1-indexed, after header)
+            if len(row) < 29:
+                print(f"Warning: Row {row_num} has fewer than 29 fields, skipping")
+                continue
+
+            # Extract fields (0-indexed)
+            name = row[0].strip()
+            added = row[1].strip()
+            loved = row[2]
+            owned = row[3]
+            played = row[4]
+            playing = row[5]
+            finished = row[6]
+            mastered = row[7]
+            dominated = row[8]
+            shelved = row[9]
+            rating = row[10]
+            copy_label = row[11].strip()
+            copy_release = row[12].strip()
+            copy_platform = row[13].strip()
+            copy_media = row[14].strip()
+            copy_media_other = row[15].strip()
+            copy_source = row[16].strip()
+            copy_source_other = row[17].strip()
+            copy_purchase_date = row[18].strip()
+            # Rows 19-27: physical copy metadata (box, manual, etc.) - not used
+            platforms_field = row[27].strip() if len(row) > 27 else ""
+            notes = row[28].strip() if len(row) > 28 else ""
+
+            # Determine game name (empty = continuation row)
+            if name:
+                current_game_name = name
+
+            if not current_game_name:
+                print(f"Warning: Row {row_num} has no game name and no previous game, skipping")
+                continue
+
+            # Get or create game entry
+            if current_game_name not in games:
+                games[current_game_name] = ConsolidatedGame(name=current_game_name)
+
+            game = games[current_game_name]
+            game.csv_row_numbers.append(row_num)
+
+            # Merge base data (OR for booleans, highest for rating, concatenate notes)
+            game.loved = game.loved or parse_bool(loved)
+            game.owned = game.owned or parse_bool(owned)
+            game.played = game.played or parse_bool(played)
+            game.playing = game.playing or parse_bool(playing)
+            game.finished = game.finished or parse_bool(finished)
+            game.mastered = game.mastered or parse_bool(mastered)
+            game.dominated = game.dominated or parse_bool(dominated)
+            game.shelved = game.shelved or parse_bool(shelved)
+
+            # Rating: use highest
+            row_rating = parse_rating(rating)
+            if row_rating is not None:
+                if game.rating is None or row_rating > game.rating:
+                    game.rating = row_rating
+
+            # Added date: use most recent
+            row_added = parse_date(added)
+            if row_added is not None:
+                if game.added_date is None or row_added > game.added_date:
+                    game.added_date = row_added
+
+            # Notes: concatenate unique
+            if notes and notes not in game.notes:
+                if game.notes:
+                    game.notes += " | " + notes
+                else:
+                    game.notes = notes
+
+            # Extract copy data
+            # Determine platform: copy_platform takes precedence, else use platforms_field
+            platform = copy_platform
+            if not platform and platforms_field:
+                # Use first platform from comma-separated list as fallback
+                platform = platforms_field.split(",")[0].strip()
+
+            # Determine storefront: copy_source, or copy_source_other if "Other"
+            storefront = copy_source
+            if storefront.lower() == "other" and copy_source_other:
+                storefront = copy_source_other
+            elif not storefront:
+                storefront = ""
+
+            # Determine media type
+            media_type = copy_media
+            if media_type.lower() == "other" and copy_media_other:
+                media_type = copy_media_other
+
+            # Only add copy if we have platform info
+            if platform:
+                copy = CopyData(
+                    platform=platform,
+                    storefront=storefront if storefront else "Physical",  # Default to Physical
+                    media_type=media_type if media_type else "Digital",
+                    purchase_date=parse_date(copy_purchase_date),
+                    copy_label=copy_label,
+                    csv_row_number=row_num,
+                )
+                game.copies.append(copy)
+
+    return list(games.values())
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -147,8 +345,12 @@ def main() -> int:
         print(f"Error: Input file not found: {args.input_csv}")
         return 1
 
-    print(f"Converting {args.input_csv} to {args.output_json}")
-    print("(Implementation pending)")
+    print(f"Parsing {args.input_csv}...")
+    games = parse_csv(args.input_csv)
+    print(f"Found {len(games)} unique games")
+
+    total_copies = sum(len(g.copies) for g in games)
+    print(f"Total copies: {total_copies}")
 
     return 0
 
