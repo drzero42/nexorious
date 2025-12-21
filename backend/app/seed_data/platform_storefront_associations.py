@@ -28,7 +28,15 @@ PLATFORM_STOREFRONT_ASSOCIATIONS: List[Dict[str, str]] = [
     # PlayStation 3 associations
     {"platform_name": "playstation-3", "storefront_name": "playstation-store"},
     {"platform_name": "playstation-3", "storefront_name": "physical"},
-    
+
+    # PlayStation Vita associations
+    {"platform_name": "playstation-vita", "storefront_name": "playstation-store"},
+    {"platform_name": "playstation-vita", "storefront_name": "physical"},
+
+    # PlayStation Portable (PSP) associations
+    {"platform_name": "playstation-psp", "storefront_name": "playstation-store"},
+    {"platform_name": "playstation-psp", "storefront_name": "physical"},
+
     # Xbox Series X/S associations
     {"platform_name": "xbox-series", "storefront_name": "microsoft-store"},
     {"platform_name": "xbox-series", "storefront_name": "physical"},
