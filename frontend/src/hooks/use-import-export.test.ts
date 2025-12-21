@@ -6,7 +6,6 @@ import { QueryWrapper } from '@/test/test-utils';
 import { setAuthHandlers } from '@/api/client';
 import {
   useImportNexorious,
-  useImportDarkadia,
   useExportCollection,
   useExportWishlist,
   useDownloadExport,
@@ -138,71 +137,6 @@ describe('use-import-export hooks', () => {
       });
 
       expect(result.current.error?.message).toContain('Import already in progress');
-    });
-  });
-
-  describe('useImportDarkadia', () => {
-    it('uploads CSV file and returns job info', async () => {
-      server.use(
-        http.post(`${API_URL}/import/darkadia`, () => {
-          return HttpResponse.json({
-            job_id: 'job-456',
-            source: 'darkadia',
-            status: 'pending',
-            message: 'Import job created. Processing 10 games. Review may be required.',
-            total_items: 10,
-          });
-        })
-      );
-
-      const { result } = renderHook(() => useImportDarkadia(), {
-        wrapper: QueryWrapper,
-      });
-
-      const mockFile = new File(['Name,Platform\nGame1,PC'], 'games.csv', { type: 'text/csv' });
-
-      await act(async () => {
-        await result.current.mutateAsync(mockFile);
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.job_id).toBe('job-456');
-      expect(result.current.data?.source).toBe('darkadia');
-      expect(result.current.data?.total_items).toBe(10);
-    });
-
-    it('handles missing required columns', async () => {
-      server.use(
-        http.post(`${API_URL}/import/darkadia`, () => {
-          return HttpResponse.json(
-            { detail: 'Missing required columns: Name' },
-            { status: 400 }
-          );
-        })
-      );
-
-      const { result } = renderHook(() => useImportDarkadia(), {
-        wrapper: QueryWrapper,
-      });
-
-      const mockFile = new File(['BadColumn,Platform'], 'games.csv', { type: 'text/csv' });
-
-      await act(async () => {
-        try {
-          await result.current.mutateAsync(mockFile);
-        } catch {
-          // Expected error
-        }
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toContain('Missing required columns');
     });
   });
 

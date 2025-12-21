@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
-  useImportDarkadia,
   useExportCollection,
   useExportWishlist,
 } from '@/hooks';
@@ -186,34 +185,26 @@ function ExportCard({ format, onExport, isExporting, scope = 'collection' }: Exp
 
 export default function ImportExportPage() {
   const router = useRouter();
-  const [uploadingSource, setUploadingSource] = useState<ImportSource | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(null);
   const [exportingWishlistFormat, setExportingWishlistFormat] = useState<ExportFormat | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
-  const { mutateAsync: importDarkadia } = useImportDarkadia();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutateAsync: exportWishlist } = useExportWishlist();
 
-  const handleImportFile = async (source: ImportSource, file: File) => {
-    setUploadingSource(source);
+  const handleImportFile = async (file: File) => {
+    setIsUploading(true);
 
     try {
-      const importFn = source === ImportSource.NEXORIOUS ? importNexorious : importDarkadia;
-      const result = await importFn(file);
-
+      const result = await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
-      // Route Darkadia imports to mapping page for platform/storefront resolution
-      if (source === ImportSource.DARKADIA) {
-        router.push(`/import/mapping?job_id=${result.job_id}`);
-      } else {
-        router.push(`/jobs/${result.job_id}`);
-      }
+      router.push(`/jobs/${result.job_id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
     } finally {
-      setUploadingSource(null);
+      setIsUploading(false);
     }
   };
 
@@ -270,13 +261,8 @@ export default function ImportExportPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <ImportCard
             source={ImportSource.NEXORIOUS}
-            onFileSelect={(file) => handleImportFile(ImportSource.NEXORIOUS, file)}
-            isUploading={uploadingSource === ImportSource.NEXORIOUS}
-          />
-          <ImportCard
-            source={ImportSource.DARKADIA}
-            onFileSelect={(file) => handleImportFile(ImportSource.DARKADIA, file)}
-            isUploading={uploadingSource === ImportSource.DARKADIA}
+            onFileSelect={handleImportFile}
+            isUploading={isUploading}
           />
         </div>
       </section>
@@ -327,10 +313,6 @@ export default function ImportExportPage() {
           <p className="mb-2">
             <strong>Nexorious JSON</strong> is the recommended format for backups. It preserves all
             metadata including IGDB IDs, ratings, notes, and platform associations.
-          </p>
-          <p className="mb-2">
-            <strong>Darkadia CSV</strong> imports require automatic title matching via IGDB. Some
-            games may need manual review if matches are uncertain.
           </p>
           <p>
             <strong>CSV exports</strong> are useful for spreadsheet analysis but are not
