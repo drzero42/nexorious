@@ -123,5 +123,14 @@ OFFICIAL_STOREFRONTS: List[Dict[str, Any]] = [
         "is_active": True,
         "source": "official",
         "version_added": "1.0.0"
+    },
+    {
+        "name": "gamersgate",
+        "display_name": "GamersGate",
+        "icon_url": "/static/logos/storefronts/gamersgate/gamersgate-icon-light.svg",
+        "base_url": "https://www.gamersgate.com",
+        "is_active": True,
+        "source": "official",
+        "version_added": "1.0.0"
     }
 ]

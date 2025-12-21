@@ -15,6 +15,7 @@ PLATFORM_STOREFRONT_ASSOCIATIONS: List[Dict[str, str]] = [
     {"platform_name": "pc-windows", "storefront_name": "origin-ea-app"},
     {"platform_name": "pc-windows", "storefront_name": "microsoft-store"},
     {"platform_name": "pc-windows", "storefront_name": "itch-io"},
+    {"platform_name": "pc-windows", "storefront_name": "gamersgate"},
     {"platform_name": "pc-windows", "storefront_name": "physical"},
     
     # PlayStation 5 associations
