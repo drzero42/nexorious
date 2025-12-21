@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import asyncio
 import csv
 import os
 import sys
@@ -352,6 +351,16 @@ def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]
 # IGDB Integration Functions
 # =============================================================================
 
+def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
+    """Extract year from ISO date string (YYYY-MM-DD format)."""
+    if not iso_date:
+        return None
+    try:
+        return int(iso_date.split('-')[0])
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
 async def setup_igdb_service():
     """Initialize IGDB service with credentials from environment."""
     from app.services.igdb.service import IGDBService
@@ -384,11 +393,11 @@ async def search_igdb_interactive(
         else:
             print(f"\nResults ({len(results)} found):")
             for i, game in enumerate(results[:10], 1):  # Show max 10
-                year = game.get("release_year", "???")
-                platforms = ", ".join(game.get("platforms", [])[:3])
-                if len(game.get("platforms", [])) > 3:
+                year = extract_year_from_date(game.release_date) or "???"
+                platforms = ", ".join((game.platform_names or [])[:3])
+                if len(game.platform_names or []) > 3:
                     platforms += "..."
-                print(f"  {i}. {game['name']} ({year}) - {platforms}")
+                print(f"  {i}. {game.title} ({year}) - {platforms}")
 
         print("\nOptions:")
         if results:
@@ -410,9 +419,9 @@ async def search_igdb_interactive(
             if 0 <= idx < min(len(results), 10):
                 selected = results[idx]
                 return (
-                    selected["id"],
-                    selected["name"],
-                    selected.get("release_year")
+                    selected.igdb_id,
+                    selected.title,
+                    extract_year_from_date(selected.release_date)
                 )
             else:
                 print("Invalid selection.")
@@ -441,14 +450,14 @@ async def lookup_igdb_ids(
         # Check for exact name match
         exact_match = None
         for result in results:
-            if result["name"].lower() == game.name.lower():
+            if result.title.lower() == game.name.lower():
                 exact_match = result
                 break
 
         if exact_match:
-            game.igdb_id = exact_match["id"]
-            game.igdb_title = exact_match["name"]
-            game.release_year = exact_match.get("release_year")
+            game.igdb_id = exact_match.igdb_id
+            game.igdb_title = exact_match.title
+            game.release_year = extract_year_from_date(exact_match.release_date)
             print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
             matched += 1
         else:
@@ -460,7 +469,7 @@ async def lookup_igdb_ids(
                 print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
                 matched += 1
             else:
-                print(f"  -> Skipped")
+                print("  -> Skipped")
                 skipped += 1
 
     print(f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped")
