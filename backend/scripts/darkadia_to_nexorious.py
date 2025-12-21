@@ -773,9 +773,8 @@ def generate_nexorious_json(
         exported_games.append(game_data)
 
     return {
-        "export_version": "1.0",
+        "export_version": "1.1",
         "export_date": now.isoformat(),
-        "export_scope": "collection",
         "user_id": user_id,
         "total_games": len(exported_games),
         "export_stats": stats,
