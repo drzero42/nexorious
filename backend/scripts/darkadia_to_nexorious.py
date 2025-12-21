@@ -466,13 +466,25 @@ def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
 CACHE_FILE = Path("/tmp/darkadia_igdb_cache.json")
 
 
-def load_igdb_cache() -> dict[str, Optional[int]]:
-    """Load IGDB ID cache from temp file. Returns dict mapping game name -> igdb_id (or None if skipped)."""
+def load_igdb_cache() -> dict[str, Optional[dict[str, Any]]]:
+    """Load IGDB ID cache from temp file. Returns dict mapping game name -> cache entry.
+
+    Cache entry is either:
+    - dict with {igdb_id, title, release_year} for matched games
+    - int (legacy format, will be migrated on use)
+    - None for skipped games
+    """
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE) as f:
                 cache = json.load(f)
+                # Count format types for info message
+                new_format = sum(1 for v in cache.values() if isinstance(v, dict))
+                old_format = sum(1 for v in cache.values() if isinstance(v, int))
+                skipped = sum(1 for v in cache.values() if v is None)
                 print(f"Loaded {len(cache)} cached IGDB decisions from {CACHE_FILE}")
+                if old_format > 0:
+                    print(f"  ({new_format} new format, {old_format} legacy entries to migrate, {skipped} skipped)")
                 return cache
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Could not load cache file: {e}")
