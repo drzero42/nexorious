@@ -33,6 +33,7 @@ EXPLICIT_STOREFRONT_MAPPINGS = {
     'HB': 'Humble Bundle',
     'Epic': 'Epic Games Store',
     'Origin': 'Origin/EA App',
+    'Google Play': 'Google Play Store',
 
     # Special cases
     'Other': 'Physical',
