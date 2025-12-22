@@ -147,7 +147,6 @@ describe('BulkActions', () => {
         expect(screen.getByRole('option', { name: 'Mastered' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Dominated' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Shelved' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'Dropped' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Replay' })).toBeInTheDocument();
       });
     });
@@ -235,7 +234,7 @@ describe('BulkActions', () => {
 
     it('handles status update error gracefully', async () => {
       const user = userEvent.setup();
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
       const mockMutateAsync = vi.fn().mockRejectedValue(new Error('Update failed'));
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
@@ -462,7 +461,7 @@ describe('BulkActions', () => {
 
     it('handles delete error gracefully', async () => {
       const user = userEvent.setup();
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
       const mockMutateAsync = vi.fn().mockRejectedValue(new Error('Delete failed'));
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(

@@ -71,7 +71,6 @@ export enum PlayStatus {
   MASTERED = 'mastered',
   DOMINATED = 'dominated',
   SHELVED = 'shelved',
-  DROPPED = 'dropped',
   REPLAY = 'replay',
 }
 

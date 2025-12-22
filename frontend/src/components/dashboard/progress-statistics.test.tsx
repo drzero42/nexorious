@@ -12,7 +12,6 @@ const createMockStats = (overrides = {}) => ({
     [PlayStatus.MASTERED]: 10,
     [PlayStatus.DOMINATED]: 5,
     [PlayStatus.SHELVED]: 8,
-    [PlayStatus.DROPPED]: 5,
     [PlayStatus.REPLAY]: 2,
   },
   ownershipStats: {
@@ -88,7 +87,6 @@ describe('ProgressStatistics', () => {
       expect(screen.getAllByText('Mastered').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Dominated').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Shelved').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Dropped').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Replay').length).toBeGreaterThanOrEqual(1);
     });
 
@@ -156,7 +154,6 @@ describe('ProgressStatistics', () => {
           [PlayStatus.MASTERED]: 0,
           [PlayStatus.DOMINATED]: 0,
           [PlayStatus.SHELVED]: 0,
-          [PlayStatus.DROPPED]: 0,
           [PlayStatus.REPLAY]: 0,
         },
         totalHoursPlayed: 0,

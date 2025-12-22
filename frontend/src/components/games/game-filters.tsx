@@ -31,7 +31,6 @@ const statusOptions: { value: PlayStatus; label: string }[] = [
   { value: PlayStatus.MASTERED, label: 'Mastered' },
   { value: PlayStatus.DOMINATED, label: 'Dominated' },
   { value: PlayStatus.SHELVED, label: 'Shelved' },
-  { value: PlayStatus.DROPPED, label: 'Dropped' },
   { value: PlayStatus.REPLAY, label: 'Replay' },
 ];
 

@@ -36,7 +36,6 @@ const mockStats = {
     [PlayStatus.MASTERED]: 5,
     [PlayStatus.DOMINATED]: 3,
     [PlayStatus.SHELVED]: 4,
-    [PlayStatus.DROPPED]: 2,
     [PlayStatus.REPLAY]: 1,
   } as Record<PlayStatus, number>,
   ownershipStats: {

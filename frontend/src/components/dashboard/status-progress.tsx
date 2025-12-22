@@ -12,7 +12,6 @@ const statusColors: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: 'bg-purple-500',
   [PlayStatus.DOMINATED]: 'bg-yellow-500',
   [PlayStatus.SHELVED]: 'bg-orange-500',
-  [PlayStatus.DROPPED]: 'bg-red-500',
   [PlayStatus.REPLAY]: 'bg-cyan-500',
 };
 
@@ -23,7 +22,6 @@ const statusLabels: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: 'Mastered',
   [PlayStatus.DOMINATED]: 'Dominated',
   [PlayStatus.SHELVED]: 'Shelved',
-  [PlayStatus.DROPPED]: 'Dropped',
   [PlayStatus.REPLAY]: 'Replay',
 };
 
@@ -34,7 +32,6 @@ const statusIcons: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: '🏆',
   [PlayStatus.DOMINATED]: '👑',
   [PlayStatus.SHELVED]: '📚',
-  [PlayStatus.DROPPED]: '❌',
   [PlayStatus.REPLAY]: '🔄',
 };
 
@@ -45,7 +42,6 @@ const statusDescriptions: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: 'All major content done',
   [PlayStatus.DOMINATED]: '100% completion',
   [PlayStatus.SHELVED]: 'On hold for later',
-  [PlayStatus.DROPPED]: 'No longer playing',
   [PlayStatus.REPLAY]: 'Playing again',
 };
 

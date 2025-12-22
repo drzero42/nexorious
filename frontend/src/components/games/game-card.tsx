@@ -22,7 +22,6 @@ const statusColors: Record<PlayStatus, string> = {
   mastered: 'bg-purple-500',
   dominated: 'bg-yellow-500',
   shelved: 'bg-orange-500',
-  dropped: 'bg-red-500',
   replay: 'bg-cyan-500',
 };
 
@@ -33,7 +32,6 @@ const statusLabels: Record<PlayStatus, string> = {
   mastered: 'Mastered',
   dominated: 'Dominated',
   shelved: 'Shelved',
-  dropped: 'Dropped',
   replay: 'Replay',
 };
 

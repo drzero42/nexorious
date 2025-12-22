@@ -255,7 +255,6 @@ describe('GameFilters', () => {
       expect(screen.getByRole('option', { name: 'Mastered' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Dominated' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Shelved' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Dropped' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Replay' })).toBeInTheDocument();
     });
 

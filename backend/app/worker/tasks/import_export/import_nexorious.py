@@ -325,7 +325,9 @@ async def _process_wishlist_item(
     try:
         igdb_id = int(igdb_id)
     except (ValueError, TypeError):
-        logger.warning(f"Skipping wishlist item '{title}' with invalid IGDB ID: {igdb_id}")
+        logger.warning(
+            f"Skipping wishlist item '{title}' with invalid IGDB ID: {igdb_id}"
+        )
         return "skipped_invalid"
 
     # Check if already on wishlist
@@ -480,13 +482,12 @@ def _map_play_status(status: Optional[str]) -> PlayStatus:
         "mastered": PlayStatus.MASTERED,
         "dominated": PlayStatus.DOMINATED,
         "shelved": PlayStatus.SHELVED,
-        "dropped": PlayStatus.DROPPED,
         "replay": PlayStatus.REPLAY,
         # Common aliases
         "playing": PlayStatus.IN_PROGRESS,
         "finished": PlayStatus.COMPLETED,
         "100%": PlayStatus.MASTERED,
-        "abandoned": PlayStatus.DROPPED,
+        "abandoned": PlayStatus.SHELVED,
         "backlog": PlayStatus.NOT_STARTED,
     }
     return status_mapping.get(status_lower, PlayStatus.NOT_STARTED)

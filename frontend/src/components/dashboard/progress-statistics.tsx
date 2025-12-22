@@ -33,7 +33,6 @@ const statusOrder: PlayStatus[] = [
   PlayStatus.MASTERED,
   PlayStatus.DOMINATED,
   PlayStatus.SHELVED,
-  PlayStatus.DROPPED,
   PlayStatus.REPLAY,
 ];
 
@@ -45,7 +44,6 @@ const statusBgColors: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: 'bg-purple-100',
   [PlayStatus.DOMINATED]: 'bg-yellow-100',
   [PlayStatus.SHELVED]: 'bg-orange-100',
-  [PlayStatus.DROPPED]: 'bg-red-100',
   [PlayStatus.REPLAY]: 'bg-cyan-100',
 };
 
@@ -65,7 +63,6 @@ const journeyDescriptions: Record<PlayStatus, string> = {
   [PlayStatus.MASTERED]: 'games fully explored',
   [PlayStatus.DOMINATED]: 'games at 100%',
   [PlayStatus.SHELVED]: 'games on hold',
-  [PlayStatus.DROPPED]: 'games stopped',
   [PlayStatus.REPLAY]: 'games replaying',
 };
 
