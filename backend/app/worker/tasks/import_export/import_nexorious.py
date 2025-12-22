@@ -372,6 +372,9 @@ async def _import_platforms(
     platforms_data: List[Dict[str, Any]],
 ) -> None:
     """Import platform associations for a user game."""
+    # Track seen platform/storefront combinations to avoid duplicates
+    seen_combinations: set[tuple[Optional[str], Optional[str]]] = set()
+
     for platform_data in platforms_data:
         platform_name = platform_data.get("platform_name") or platform_data.get("name")
         storefront_name = platform_data.get("storefront_name") or platform_data.get(
@@ -395,6 +398,15 @@ async def _import_platforms(
             ).first()
             if storefront:
                 storefront_id = storefront.id
+
+        # Skip duplicate platform/storefront combinations
+        combination_key = (platform_id, storefront_id)
+        if combination_key in seen_combinations:
+            logger.debug(
+                f"Skipping duplicate platform/storefront: {platform_name}/{storefront_name}"
+            )
+            continue
+        seen_combinations.add(combination_key)
 
         # Create platform association
         user_game_platform = UserGamePlatform(

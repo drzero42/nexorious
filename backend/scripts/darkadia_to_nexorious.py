@@ -774,7 +774,9 @@ def generate_nexorious_json(
             stats["loved_games"] += 1
 
         # Build platform entries (skip copies with empty/defunct storefronts)
+        # Use a set to deduplicate platform/storefront combinations
         platforms = []
+        seen_platform_storefronts: set[tuple[str, str]] = set()
         for copy in game.copies:
             platform_name = PLATFORM_MAP[copy.platform]
             storefront_name = STOREFRONT_MAP[copy.storefront]
@@ -782,6 +784,12 @@ def generate_nexorious_json(
             # Skip copies with empty storefront (defunct storefronts like Telltale.com)
             if not storefront_name:
                 continue
+
+            # Skip duplicate platform/storefront combinations
+            key = (platform_name, storefront_name)
+            if key in seen_platform_storefronts:
+                continue
+            seen_platform_storefronts.add(key)
 
             platforms.append({
                 "platform_id": None,  # Will be resolved on import
