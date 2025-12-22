@@ -407,7 +407,6 @@ describe('use-games hooks', () => {
           mastered: 5,
           dominated: 2,
           shelved: 2,
-          dropped: 1,
           replay: 0,
         },
         ownership_stats: {

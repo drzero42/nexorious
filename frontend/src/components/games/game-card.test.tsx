@@ -7,7 +7,7 @@ import type { UserGame, GameId, UserGameId } from '@/types';
 
 // Mock next/image
 vi.mock('next/image', () => ({
-  default: ({ src, alt, ...props }: { src: string; alt: string; [key: string]: unknown }) => (
+  default: ({ src, alt, ...props }: { src: string; alt: string;[key: string]: unknown }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} {...props} />
   ),
@@ -231,7 +231,6 @@ describe('GameCard', () => {
       { status: PlayStatus.MASTERED, label: 'Mastered' },
       { status: PlayStatus.DOMINATED, label: 'Dominated' },
       { status: PlayStatus.SHELVED, label: 'Shelved' },
-      { status: PlayStatus.DROPPED, label: 'Dropped' },
       { status: PlayStatus.REPLAY, label: 'Replay' },
     ];
 

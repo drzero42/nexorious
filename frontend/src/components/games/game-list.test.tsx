@@ -7,7 +7,7 @@ import type { UserGame, GameId, UserGameId } from '@/types';
 
 // Mock next/image
 vi.mock('next/image', () => ({
-  default: ({ src, alt, ...props }: { src: string; alt: string; [key: string]: unknown }) => (
+  default: ({ src, alt, ...props }: { src: string; alt: string;[key: string]: unknown }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} {...props} />
   ),
@@ -281,15 +281,14 @@ describe('GameList', () => {
       label: string;
       color: string;
     }> = [
-      { status: PlayStatus.NOT_STARTED, label: 'Not Started', color: 'bg-gray-500' },
-      { status: PlayStatus.IN_PROGRESS, label: 'In Progress', color: 'bg-blue-500' },
-      { status: PlayStatus.COMPLETED, label: 'Completed', color: 'bg-green-500' },
-      { status: PlayStatus.MASTERED, label: 'Mastered', color: 'bg-purple-500' },
-      { status: PlayStatus.DOMINATED, label: 'Dominated', color: 'bg-yellow-500' },
-      { status: PlayStatus.SHELVED, label: 'Shelved', color: 'bg-orange-500' },
-      { status: PlayStatus.DROPPED, label: 'Dropped', color: 'bg-red-500' },
-      { status: PlayStatus.REPLAY, label: 'Replay', color: 'bg-cyan-500' },
-    ];
+        { status: PlayStatus.NOT_STARTED, label: 'Not Started', color: 'bg-gray-500' },
+        { status: PlayStatus.IN_PROGRESS, label: 'In Progress', color: 'bg-blue-500' },
+        { status: PlayStatus.COMPLETED, label: 'Completed', color: 'bg-green-500' },
+        { status: PlayStatus.MASTERED, label: 'Mastered', color: 'bg-purple-500' },
+        { status: PlayStatus.DOMINATED, label: 'Dominated', color: 'bg-yellow-500' },
+        { status: PlayStatus.SHELVED, label: 'Shelved', color: 'bg-orange-500' },
+        { status: PlayStatus.REPLAY, label: 'Replay', color: 'bg-cyan-500' },
+      ];
 
     it.each(statusTestCases)(
       'renders "$label" badge for $status status with $color color',

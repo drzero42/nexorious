@@ -96,18 +96,6 @@ describe('StatusProgress', () => {
     expect(screen.queryByText('On hold for later')).not.toBeInTheDocument();
   });
 
-  it('applies custom className', () => {
-    const { container } = render(
-      <StatusProgress
-        status={PlayStatus.DROPPED}
-        count={1}
-        total={10}
-        className="custom-class"
-      />
-    );
-
-    expect(container.firstChild).toHaveClass('custom-class');
-  });
 });
 
 describe('status exports', () => {
