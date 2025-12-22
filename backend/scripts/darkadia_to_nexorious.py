@@ -52,7 +52,6 @@ PLATFORM_MAP: dict[str, str] = {
     "iOS": "ios",
     "Android": "android",
     "Mac": "mac",
-
     # Short forms and abbreviations
     "PC": "pc-windows",
     "Linux": "pc-linux",
@@ -66,7 +65,6 @@ PLATFORM_MAP: dict[str, str] = {
     "Wii": "nintendo-wii",
     "Wii U": "nintendo-wii-u",
     "Switch": "nintendo-switch",
-
     # Special cases with very different names
     "PlayStation Network (PS3)": "playstation-3",
     "PlayStation Network (Vita)": "playstation-vita",
@@ -77,12 +75,25 @@ PLATFORM_MAP: dict[str, str] = {
 
 # Valid Nexorious platform names (for validation)
 VALID_PLATFORMS: set[str] = {
-    "pc-windows", "pc-linux", "mac",
-    "playstation", "playstation-2", "playstation-3", "playstation-4", "playstation-5",
-    "playstation-vita", "playstation-psp",
-    "xbox-360", "xbox-one", "xbox-series",
-    "nintendo-wii", "nintendo-wii-u", "nintendo-switch", "nintendo-switch-2",
-    "ios", "android",
+    "pc-windows",
+    "pc-linux",
+    "mac",
+    "playstation",
+    "playstation-2",
+    "playstation-3",
+    "playstation-4",
+    "playstation-5",
+    "playstation-vita",
+    "playstation-psp",
+    "xbox-360",
+    "xbox-one",
+    "xbox-series",
+    "nintendo-wii",
+    "nintendo-wii-u",
+    "nintendo-switch",
+    "nintendo-switch-2",
+    "ios",
+    "android",
 }
 
 
@@ -108,7 +119,6 @@ STOREFRONT_MAP: dict[str, str] = {
     "Uplay": "uplay",
     "UPlay": "uplay",
     "GamersGate": "gamersgate",
-
     # Short forms and abbreviations
     "PSN": "playstation-store",
     "HB": "humble-bundle",
@@ -120,20 +130,16 @@ STOREFRONT_MAP: dict[str, str] = {
     "Google Play Store": "google-play-store",
     "App Store": "apple-app-store",
     "Apple App Store": "apple-app-store",
-
     # Special cases
     "Sony Entertainment Network": "playstation-store",
     # Note: "Other" is NOT mapped here - it's handled specially in parsing:
     # When Copy platform is "Other", platform=PC and storefront comes from field 14
-
     # Epic Games Store variants
     "Epic Game Store": "epic-games-store",
     "Epic Gamestore": "epic-games-store",
-
     # Ubisoft variants
     "Ubisoft Club": "uplay",
     "Uplay (coupon w/ GTX 970)": "uplay",
-
     # Key resellers (keys are typically for Steam)
     "Fanatical": "steam",
     "Green Man Gaming": "steam",
@@ -144,15 +150,12 @@ STOREFRONT_MAP: dict[str, str] = {
     "uk.gamesplanet.com": "steam",
     "Indie Gala": "steam",
     "WinGameStore": "steam",
-
     # Crowdfunding / backer keys (typically Steam keys)
     "Kickstarter": "steam",
     "Backer": "steam",
-
     # Defunct storefronts (map to empty, will be filtered out)
     "Telltale.com": "",
     "telltale.com": "",
-
     # Physical retail stores (Danish/Nordic)
     "Bilka": "physical",
     "Coolshop": "physical",
@@ -169,9 +172,20 @@ STOREFRONT_MAP: dict[str, str] = {
 # Valid Nexorious storefront names (for validation)
 # Empty string "" is used for defunct storefronts - these copies will be skipped
 VALID_STOREFRONTS: set[str] = {
-    "steam", "epic-games-store", "gog", "playstation-store", "microsoft-store",
-    "nintendo-eshop", "itch-io", "origin-ea-app", "apple-app-store",
-    "google-play-store", "humble-bundle", "physical", "uplay", "gamersgate",
+    "steam",
+    "epic-games-store",
+    "gog",
+    "playstation-store",
+    "microsoft-store",
+    "nintendo-eshop",
+    "itch-io",
+    "origin-ea-app",
+    "apple-app-store",
+    "google-play-store",
+    "humble-bundle",
+    "physical",
+    "uplay",
+    "gamersgate",
     "",  # Empty = defunct storefront, copy will be skipped
 }
 
@@ -180,9 +194,11 @@ VALID_STOREFRONTS: set[str] = {
 # Data Classes
 # =============================================================================
 
+
 @dataclass
 class CopyData:
     """Data for a single game copy (platform/storefront combination)."""
+
     platform: str  # Original Darkadia platform name
     storefront: str  # Original Darkadia storefront name
     media_type: str  # Digital/Physical
@@ -194,6 +210,7 @@ class CopyData:
 @dataclass
 class ConsolidatedGame:
     """Consolidated game data from potentially multiple CSV rows."""
+
     name: str
     copies: list[CopyData] = field(default_factory=list)
 
@@ -222,6 +239,7 @@ class ConsolidatedGame:
 # =============================================================================
 # CSV Parsing Functions
 # =============================================================================
+
 
 def parse_bool(value: str) -> bool:
     """Parse boolean from CSV (0/1 or empty)."""
@@ -266,7 +284,9 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
         reader = csv.reader(f)
         _header = next(reader)  # Skip header row
 
-        for row_num, row in enumerate(reader, start=2):  # Start at 2 (1-indexed, after header)
+        for row_num, row in enumerate(
+            reader, start=2
+        ):  # Start at 2 (1-indexed, after header)
             if len(row) < 29:
                 print(f"Warning: Row {row_num} has fewer than 29 fields, skipping")
                 continue
@@ -300,7 +320,9 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
                 current_game_name = name
 
             if not current_game_name:
-                print(f"Warning: Row {row_num} has no game name and no previous game, skipping")
+                print(
+                    f"Warning: Row {row_num} has no game name and no previous game, skipping"
+                )
                 continue
 
             # Get or create game entry
@@ -372,7 +394,9 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
             if platform:
                 copy = CopyData(
                     platform=platform,
-                    storefront=storefront if storefront else "Physical",  # Default to Physical
+                    storefront=storefront
+                    if storefront
+                    else "Physical",  # Default to Physical
                     media_type=media_type if media_type else "Digital",
                     purchase_date=parse_date(copy_purchase_date),
                     copy_label=copy_label,
@@ -386,6 +410,7 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
 # =============================================================================
 # Validation Functions
 # =============================================================================
+
 
 def validate_mappings(games: list[ConsolidatedGame]) -> tuple[set[str], set[str]]:
     """
@@ -428,8 +453,8 @@ def normalize_title(title: str) -> str:
         return ""
 
     # Normalize unicode characters (é -> e, etc.)
-    title = unicodedata.normalize('NFKD', title)
-    title = ''.join(c for c in title if not unicodedata.combining(c))
+    title = unicodedata.normalize("NFKD", title)
+    title = "".join(c for c in title if not unicodedata.combining(c))
 
     # Lowercase
     title = title.lower()
@@ -441,10 +466,10 @@ def normalize_title(title: str) -> str:
         title = title[:-5] + " the"
 
     # Remove all punctuation and special characters, keep only alphanumeric and spaces
-    title = re.sub(r'[^\w\s]', '', title)
+    title = re.sub(r"[^\w\s]", "", title)
 
     # Collapse whitespace
-    title = ' '.join(title.split())
+    title = " ".join(title.split())
 
     return title
 
@@ -454,7 +479,7 @@ def extract_year_from_date(iso_date: Optional[str]) -> Optional[int]:
     if not iso_date:
         return None
     try:
-        return int(iso_date.split('-')[0])
+        return int(iso_date.split("-")[0])
     except (ValueError, IndexError, AttributeError):
         return None
 
@@ -484,7 +509,9 @@ def load_igdb_cache() -> dict[str, Optional[dict[str, Any] | int]]:
                 skipped = sum(1 for v in cache.values() if v is None)
                 print(f"Loaded {len(cache)} cached IGDB decisions from {CACHE_FILE}")
                 if old_format > 0:
-                    print(f"  ({new_format} new format, {old_format} legacy entries to migrate, {skipped} skipped)")
+                    print(
+                        f"  ({new_format} new format, {old_format} legacy entries to migrate, {skipped} skipped)"
+                    )
                 return cache
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Could not load cache file: {e}")
@@ -519,8 +546,7 @@ async def setup_igdb_service():
 
 
 async def search_igdb_interactive(
-    service,
-    game_name: str
+    service, game_name: str
 ) -> Optional[tuple[int, str, Optional[int]]]:
     """
     Search IGDB for a game with interactive selection.
@@ -586,7 +612,7 @@ async def search_igdb_interactive(
                 return (
                     selected.igdb_id,
                     selected.title,
-                    extract_year_from_date(selected.release_date)
+                    extract_year_from_date(selected.release_date),
                 )
             else:
                 print("Invalid selection.")
@@ -595,8 +621,7 @@ async def search_igdb_interactive(
 
 
 async def lookup_igdb_ids(
-    service,
-    games: list[ConsolidatedGame]
+    service, games: list[ConsolidatedGame]
 ) -> list[ConsolidatedGame]:
     """
     Look up IGDB IDs for all games with interactive resolution.
@@ -630,7 +655,9 @@ async def lookup_igdb_ids(
                 game.igdb_id = cached_entry["igdb_id"]
                 game.igdb_title = cached_entry["title"]
                 game.release_year = cached_entry.get("release_year")
-                print(f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})")
+                print(
+                    f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})"
+                )
                 matched += 1
                 from_cache += 1
                 continue
@@ -642,7 +669,9 @@ async def lookup_igdb_ids(
                 if game_details:
                     game.igdb_id = cached_entry
                     game.igdb_title = game_details.title
-                    game.release_year = extract_year_from_date(game_details.release_date)
+                    game.release_year = extract_year_from_date(
+                        game_details.release_date
+                    )
                     # Update cache to new format
                     cache[game.name] = {
                         "igdb_id": cached_entry,
@@ -650,7 +679,9 @@ async def lookup_igdb_ids(
                         "release_year": game.release_year,
                     }
                     save_igdb_cache(cache)
-                    print(f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})")
+                    print(
+                        f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})"
+                    )
                     matched += 1
                     from_cache += 1
                     continue
@@ -703,7 +734,9 @@ async def lookup_igdb_ids(
 
             save_igdb_cache(cache)
 
-    print(f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped ({from_cache} from cache)")
+    print(
+        f"\n\nIGDB lookup complete: {matched} matched, {skipped} skipped ({from_cache} from cache)"
+    )
 
     # Remove skipped games
     return [g for g in games if g.igdb_id is not None]
@@ -712,6 +745,7 @@ async def lookup_igdb_ids(
 # =============================================================================
 # JSON Generation Functions
 # =============================================================================
+
 
 def derive_play_status(game: ConsolidatedGame) -> str:
     """Derive Nexorious play status from Darkadia boolean flags."""
@@ -723,11 +757,11 @@ def derive_play_status(game: ConsolidatedGame) -> str:
     if game.finished:
         return "completed"
     if game.shelved:
-        return "shelved"
+        return "dropped"
     if game.playing:
         return "in_progress"
     if game.played:
-        return "completed"  # played but not finished = completed (started at least)
+        return "shelved"  # played but not finished = shelved (started at least)
     return "not_started"
 
 
@@ -739,8 +773,7 @@ def derive_ownership_status(game: ConsolidatedGame) -> str:
 
 
 def generate_nexorious_json(
-    games: list[ConsolidatedGame],
-    user_id: str = "darkadia-import"
+    games: list[ConsolidatedGame], user_id: str = "darkadia-import"
 ) -> dict[str, Any]:
     """Generate Nexorious export JSON from consolidated games."""
     now = datetime.now(timezone.utc)
@@ -764,8 +797,12 @@ def generate_nexorious_json(
         ownership_status = derive_ownership_status(game)
 
         # Update stats
-        stats["by_play_status"][play_status] = stats["by_play_status"].get(play_status, 0) + 1
-        stats["by_ownership_status"][ownership_status] = stats["by_ownership_status"].get(ownership_status, 0) + 1
+        stats["by_play_status"][play_status] = (
+            stats["by_play_status"].get(play_status, 0) + 1
+        )
+        stats["by_ownership_status"][ownership_status] = (
+            stats["by_ownership_status"].get(ownership_status, 0) + 1
+        )
         if game.rating is not None:
             stats["games_with_ratings"] += 1
         if game.notes:
@@ -791,15 +828,17 @@ def generate_nexorious_json(
                 continue
             seen_platform_storefronts.add(key)
 
-            platforms.append({
-                "platform_id": None,  # Will be resolved on import
-                "platform_name": platform_name,
-                "storefront_id": None,  # Will be resolved on import
-                "storefront_name": storefront_name,
-                "store_game_id": None,
-                "store_url": None,
-                "is_available": True,
-            })
+            platforms.append(
+                {
+                    "platform_id": None,  # Will be resolved on import
+                    "platform_name": platform_name,
+                    "storefront_id": None,  # Will be resolved on import
+                    "storefront_name": storefront_name,
+                    "store_game_id": None,
+                    "store_url": None,
+                    "is_available": True,
+                }
+            )
 
         # Build game entry
         game_data = {
@@ -843,7 +882,7 @@ def main() -> int:
     parser.add_argument(
         "--clear-cache",
         action="store_true",
-        help="Clear the IGDB lookup cache before starting"
+        help="Clear the IGDB lookup cache before starting",
     )
 
     args = parser.parse_args()
@@ -857,7 +896,9 @@ def main() -> int:
     client_secret = os.environ.get("IGDB_CLIENT_SECRET")
 
     if not client_id or not client_secret:
-        print("Error: IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables required")
+        print(
+            "Error: IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables required"
+        )
         return 1
 
     # Check input file exists
@@ -882,7 +923,9 @@ def main() -> int:
     unmapped_platforms, unmapped_storefronts = validate_mappings(games)
 
     if unmapped_platforms or unmapped_storefronts:
-        print("\nError: Unmapped values found. Add these to the mapping dictionaries:\n")
+        print(
+            "\nError: Unmapped values found. Add these to the mapping dictionaries:\n"
+        )
 
         if unmapped_platforms:
             print("Unmapped platforms:")
