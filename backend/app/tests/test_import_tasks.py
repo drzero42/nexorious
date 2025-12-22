@@ -15,7 +15,6 @@ from app.worker.tasks.import_export.import_nexorious import (
     _process_wishlist_item,
     SUPPORTED_EXPORT_VERSIONS,
 )
-
 # from app.worker.tasks.import_export.import_steam import (
 #     import_steam_library,
 # )
@@ -44,6 +43,7 @@ class TestNexoriousImportHelpers:
         assert _map_play_status("mastered") == PlayStatus.MASTERED
         assert _map_play_status("dominated") == PlayStatus.DOMINATED
         assert _map_play_status("shelved") == PlayStatus.SHELVED
+        assert _map_play_status("dropped") == PlayStatus.DROPPED
         assert _map_play_status("replay") == PlayStatus.REPLAY
 
     def test_map_play_status_aliases(self):
@@ -51,7 +51,7 @@ class TestNexoriousImportHelpers:
         assert _map_play_status("playing") == PlayStatus.IN_PROGRESS
         assert _map_play_status("finished") == PlayStatus.COMPLETED
         assert _map_play_status("100%") == PlayStatus.MASTERED
-        assert _map_play_status("abandoned") == PlayStatus.SHELVED
+        assert _map_play_status("abandoned") == PlayStatus.DROPPED
         assert _map_play_status("backlog") == PlayStatus.NOT_STARTED
 
     def test_map_play_status_case_insensitive(self):
@@ -79,9 +79,7 @@ class TestNexoriousImportHelpers:
         assert _map_ownership_status("borrowed") == OwnershipStatus.BORROWED
         assert _map_ownership_status("rented") == OwnershipStatus.RENTED
         assert _map_ownership_status("subscription") == OwnershipStatus.SUBSCRIPTION
-        assert (
-            _map_ownership_status("no_longer_owned") == OwnershipStatus.NO_LONGER_OWNED
-        )
+        assert _map_ownership_status("no_longer_owned") == OwnershipStatus.NO_LONGER_OWNED
 
     def test_map_ownership_status_aliases(self):
         """Map ownership status aliases."""
@@ -194,14 +192,11 @@ class TestNexoriousImportTask:
     @pytest.mark.asyncio
     async def test_import_job_not_found(self):
         """Import fails gracefully when job not found."""
-        with (
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context"
-            ) as mock_context,
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
-                return_value=True,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context"
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
         ):
             mock_session = MagicMock()
             mock_session.get.return_value = None
@@ -218,14 +213,11 @@ class TestNexoriousImportTask:
         """Import fails when no import data in job."""
         mock_job.get_result_summary.return_value = {}
 
-        with (
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context"
-            ) as mock_context,
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
-                return_value=True,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context"
+        ) as mock_context, patch(
+            "app.worker.tasks.import_export.import_nexorious.acquire_job_lock",
+            return_value=True,
         ):
             mock_session = MagicMock()
             mock_session.get.return_value = mock_job
@@ -275,33 +267,28 @@ class TestImportTaskIntegration:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.0",
-                    "games": [
-                        {
-                            "title": "Test Game",
-                            "igdb_id": 12345,
-                            "play_status": "completed",
-                        }
-                    ],
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [
+                    {
+                        "title": "Test Game",
+                        "igdb_id": 12345,
+                        "play_status": "completed",
+                    }
+                ],
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
 
         # Mock IGDB service
-        with (
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.IGDBService"
-            ) as mock_igdb_class,
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.GameService"
-            ) as mock_game_service_class,
-        ):
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ) as mock_igdb_class, patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ) as mock_game_service_class:
             mock_igdb = MagicMock()
             mock_igdb_class.return_value = mock_igdb
 
@@ -314,9 +301,7 @@ class TestImportTaskIntegration:
             # The task would need the session context, which is complex to mock
             # For integration tests, we verify the job is set up correctly
             assert job.status == BackgroundJobStatus.PENDING
-            assert (
-                job.get_result_summary()["_import_data"]["games"][0]["igdb_id"] == 12345
-            )
+            assert job.get_result_summary()["_import_data"]["games"][0]["igdb_id"] == 12345
 
     @pytest.mark.asyncio
     async def test_steam_import_stores_steam_id(self, session, test_user):
@@ -353,14 +338,12 @@ class TestNexoriousImportLocking:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.0",
-                    "games": [{"title": "Test", "igdb_id": 123}],
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [{"title": "Test", "igdb_id": 123}],
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -404,20 +387,18 @@ class TestNexoriousImportIntegrityError:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.0",
-                    "games": [
-                        {
-                            "title": test_game.title,
-                            "igdb_id": test_game.id,
-                            "play_status": "completed",
-                        }
-                    ],
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                        "play_status": "completed",
+                    }
+                ],
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -428,13 +409,13 @@ class TestNexoriousImportIntegrityError:
             yield session
 
         # Mock services and session context
-        with (
-            patch("app.worker.tasks.import_export.import_nexorious.IGDBService"),
-            patch("app.worker.tasks.import_export.import_nexorious.GameService"),
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context",
-                mock_session_context,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
         ):
             result = await import_nexorious_json(job.id)
 
@@ -557,20 +538,18 @@ class TestWishlistImportIntegration:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.2",
-                    "games": [],
-                    "wishlist": [
-                        {
-                            "title": test_game.title,
-                            "igdb_id": test_game.id,
-                        }
-                    ],
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.2",
+                "games": [],
+                "wishlist": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                    }
+                ],
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -581,13 +560,13 @@ class TestWishlistImportIntegration:
             yield session
 
         # Mock services and session context
-        with (
-            patch("app.worker.tasks.import_export.import_nexorious.IGDBService"),
-            patch("app.worker.tasks.import_export.import_nexorious.GameService"),
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context",
-                mock_session_context,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
         ):
             result = await import_nexorious_json(job.id)
 
@@ -616,20 +595,18 @@ class TestWishlistImportIntegration:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.2",
-                    "games": [],
-                    "wishlist": [
-                        {
-                            "title": test_game.title,
-                            "igdb_id": test_game.id,
-                        }
-                    ],
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.2",
+                "games": [],
+                "wishlist": [
+                    {
+                        "title": test_game.title,
+                        "igdb_id": test_game.id,
+                    }
+                ],
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -640,13 +617,13 @@ class TestWishlistImportIntegration:
             yield session
 
         # Mock services and session context
-        with (
-            patch("app.worker.tasks.import_export.import_nexorious.IGDBService"),
-            patch("app.worker.tasks.import_export.import_nexorious.GameService"),
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context",
-                mock_session_context,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
         ):
             result = await import_nexorious_json(job.id)
 
@@ -667,15 +644,13 @@ class TestWishlistImportIntegration:
             status=BackgroundJobStatus.PENDING,
             priority=BackgroundJobPriority.HIGH,
         )
-        job.set_result_summary(
-            {
-                "_import_data": {
-                    "export_version": "1.0",
-                    "games": [],
-                    # No wishlist key
-                }
+        job.set_result_summary({
+            "_import_data": {
+                "export_version": "1.0",
+                "games": [],
+                # No wishlist key
             }
-        )
+        })
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -686,13 +661,13 @@ class TestWishlistImportIntegration:
             yield session
 
         # Mock services and session context
-        with (
-            patch("app.worker.tasks.import_export.import_nexorious.IGDBService"),
-            patch("app.worker.tasks.import_export.import_nexorious.GameService"),
-            patch(
-                "app.worker.tasks.import_export.import_nexorious.get_session_context",
-                mock_session_context,
-            ),
+        with patch(
+            "app.worker.tasks.import_export.import_nexorious.IGDBService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.GameService"
+        ), patch(
+            "app.worker.tasks.import_export.import_nexorious.get_session_context",
+            mock_session_context,
         ):
             result = await import_nexorious_json(job.id)
 
