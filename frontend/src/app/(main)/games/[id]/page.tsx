@@ -41,6 +41,7 @@ function formatPlayStatus(status: PlayStatus): string {
     mastered: 'Mastered',
     dominated: 'Dominated',
     shelved: 'Shelved',
+    dropped: 'Dropped',
     replay: 'Replay',
   };
   return labels[status] || status;
@@ -55,6 +56,7 @@ function getStatusColor(status: PlayStatus): string {
     mastered: 'bg-purple-100 text-purple-800',
     dominated: 'bg-yellow-100 text-yellow-800',
     shelved: 'bg-orange-100 text-orange-800',
+    dropped: 'bg-red-100 text-red-800',
     replay: 'bg-cyan-100 text-cyan-800',
   };
   return colors[status] || 'bg-gray-100 text-gray-800';
@@ -254,36 +256,36 @@ export default function GameDetailPage() {
               {(game.game.howlongtobeat_main ||
                 game.game.howlongtobeat_extra ||
                 game.game.howlongtobeat_completionist) && (
-                  <div>
-                    <h3 className="font-medium mb-2">How Long to Beat</h3>
-                    <div className="grid grid-cols-3 gap-2">
-                      {game.game.howlongtobeat_main && (
-                        <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-center">
-                          <div className="text-xs text-muted-foreground">Main Story</div>
-                          <div className="font-bold text-blue-700 dark:text-blue-300">
-                            {game.game.howlongtobeat_main}h
-                          </div>
+                <div>
+                  <h3 className="font-medium mb-2">How Long to Beat</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {game.game.howlongtobeat_main && (
+                      <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-center">
+                        <div className="text-xs text-muted-foreground">Main Story</div>
+                        <div className="font-bold text-blue-700 dark:text-blue-300">
+                          {game.game.howlongtobeat_main}h
                         </div>
-                      )}
-                      {game.game.howlongtobeat_extra && (
-                        <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg text-center">
-                          <div className="text-xs text-muted-foreground">Main + Extra</div>
-                          <div className="font-bold text-green-700 dark:text-green-300">
-                            {game.game.howlongtobeat_extra}h
-                          </div>
+                      </div>
+                    )}
+                    {game.game.howlongtobeat_extra && (
+                      <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg text-center">
+                        <div className="text-xs text-muted-foreground">Main + Extra</div>
+                        <div className="font-bold text-green-700 dark:text-green-300">
+                          {game.game.howlongtobeat_extra}h
                         </div>
-                      )}
-                      {game.game.howlongtobeat_completionist && (
-                        <div className="bg-purple-50 dark:bg-purple-950 p-3 rounded-lg text-center">
-                          <div className="text-xs text-muted-foreground">Completionist</div>
-                          <div className="font-bold text-purple-700 dark:text-purple-300">
-                            {game.game.howlongtobeat_completionist}h
-                          </div>
+                      </div>
+                    )}
+                    {game.game.howlongtobeat_completionist && (
+                      <div className="bg-purple-50 dark:bg-purple-950 p-3 rounded-lg text-center">
+                        <div className="text-xs text-muted-foreground">Completionist</div>
+                        <div className="font-bold text-purple-700 dark:text-purple-300">
+                          {game.game.howlongtobeat_completionist}h
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+              )}
 
               {/* Description */}
               {game.game.description && (

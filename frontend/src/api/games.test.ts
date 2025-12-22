@@ -545,6 +545,7 @@ describe('games.ts', () => {
               [PlayStatus.MASTERED]: 5,
               [PlayStatus.DOMINATED]: 2,
               [PlayStatus.SHELVED]: 3,
+              [PlayStatus.DROPPED]: 0,
               [PlayStatus.REPLAY]: 0,
             },
             ownership_stats: {

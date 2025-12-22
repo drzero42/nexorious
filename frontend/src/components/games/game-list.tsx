@@ -31,6 +31,7 @@ const statusColors: Record<PlayStatus, string> = {
   mastered: 'bg-purple-500',
   dominated: 'bg-yellow-500',
   shelved: 'bg-orange-500',
+  dropped: 'bg-red-500',
   replay: 'bg-cyan-500',
 };
 
@@ -41,6 +42,7 @@ const statusLabels: Record<PlayStatus, string> = {
   mastered: 'Mastered',
   dominated: 'Dominated',
   shelved: 'Shelved',
+  dropped: 'Dropped',
   replay: 'Replay',
 };
 
@@ -183,9 +185,9 @@ export function GameList({
                   <span className="text-sm text-muted-foreground truncate block max-w-32">
                     {game.platforms && game.platforms.length > 0
                       ? game.platforms
-                        .map((p) => p.platform?.display_name ?? p.platform?.name)
-                        .filter(Boolean)
-                        .join(', ')
+                          .map((p) => p.platform?.display_name ?? p.platform?.name)
+                          .filter(Boolean)
+                          .join(', ')
                       : '-'}
                   </span>
                 </TableCell>

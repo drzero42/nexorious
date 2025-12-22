@@ -535,6 +535,7 @@ const PLAY_STATUS_OPTIONS: { value: PlayStatus; label: string }[] = [
   { value: 'mastered', label: 'Mastered' },
   { value: 'dominated', label: 'Dominated' },
   { value: 'shelved', label: 'Shelved' },
+  { value: 'dropped', label: 'Dropped' },
   { value: 'replay', label: 'Replay' },
 ];
 
@@ -1544,18 +1545,18 @@ bd sync
 
 ## Summary
 
-| Task | Description                           | Files                                            |
-|------|---------------------------------------|--------------------------------------------------|
-| 1    | Add platform management API functions | `api/games.ts`                                   |
-| 2    | Add platform management hooks         | `hooks/use-games.ts`                             |
-| 3    | Create tags hooks file                | `hooks/use-tags.ts` (new)                        |
-| 4    | Update hooks index exports            | `hooks/index.ts`                                 |
-| 5    | Create game edit form component       | `components/games/game-edit-form.tsx` (new)      |
-| 6    | Update games components index         | `components/games/index.ts`                      |
-| 7    | Create game edit page                 | `app/(main)/games/[id]/edit/page.tsx` (new)      |
-| 8    | Add MSW handlers                      | `test/mocks/handlers.ts`                         |
-| 9    | Write tests                           | `components/games/game-edit-form.test.tsx` (new) |
-| 10   | Final verification                    | -                                                |
+| Task | Description | Files |
+|------|-------------|-------|
+| 1 | Add platform management API functions | `api/games.ts` |
+| 2 | Add platform management hooks | `hooks/use-games.ts` |
+| 3 | Create tags hooks file | `hooks/use-tags.ts` (new) |
+| 4 | Update hooks index exports | `hooks/index.ts` |
+| 5 | Create game edit form component | `components/games/game-edit-form.tsx` (new) |
+| 6 | Update games components index | `components/games/index.ts` |
+| 7 | Create game edit page | `app/(main)/games/[id]/edit/page.tsx` (new) |
+| 8 | Add MSW handlers | `test/mocks/handlers.ts` |
+| 9 | Write tests | `components/games/game-edit-form.test.tsx` (new) |
+| 10 | Final verification | - |
 
 **New files created:** 4
 **Files modified:** 5

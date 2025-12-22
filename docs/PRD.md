@@ -311,11 +311,12 @@ To create the definitive self-hosted solution for personal game collection manag
   - Progress visualization components
 - **Play Status Categories**:
   - **Not Started**: Haven't begun playing
-  - **Playing**: Currently playing
+  - **In Progress**: Currently playing
   - **Completed**: Finished main story/campaign
   - **Mastered**: Completed main story plus all side quests and content
   - **Dominated**: 100% completion including all achievements/trophies
-  - **Shelved**: Won't complete
+  - **Shelved**: Temporarily paused with intent to return
+  - **Dropped**: Permanently abandoned
   - **Replay**: Playing again after previous completion
 - **Acceptance Criteria**:
   - Status updates with completion levels (Not Started → Dominated)

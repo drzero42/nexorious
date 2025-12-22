@@ -466,6 +466,7 @@ describe("GameDetailPage", () => {
       ["mastered", "Mastered"],
       ["dominated", "Dominated"],
       ["shelved", "Shelved"],
+      ["dropped", "Dropped"],
       ["replay", "Replay"],
     ] as const)("displays %s status as %s", (status, label) => {
       mockUseUserGame.mockReturnValue({
