@@ -2,21 +2,31 @@ import { api } from './client';
 import type {
   Job,
   JobFilters,
-  JobChildrenFilters,
   JobListResponse,
   JobCancelResponse,
   JobDeleteResponse,
-  JobConfirmResponse,
   JobsSummary,
   JobType,
   JobSource,
   JobStatus,
   JobPriority,
+  JobProgress,
 } from '@/types';
 
 // ============================================================================
 // API Response Types (snake_case from backend)
 // ============================================================================
+
+interface JobProgressApiResponse {
+  pending: number;
+  processing: number;
+  completed: number;
+  pending_review: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  percent: number;
+}
 
 interface JobApiResponse {
   id: string;
@@ -25,20 +35,15 @@ interface JobApiResponse {
   source: string;
   status: string;
   priority: string;
-  progress_current: number;
-  progress_total: number;
-  progress_percent: number;
-  result_summary: Record<string, unknown>;
+  progress: JobProgressApiResponse;
+  total_items: number;
   error_message: string | null;
   file_path: string | null;
-  taskiq_task_id: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
   is_terminal: boolean;
   duration_seconds: number | null;
-  review_item_count: number | null;
-  pending_review_count: number | null;
 }
 
 interface JobListApiResponse {
@@ -61,15 +66,6 @@ interface JobDeleteApiResponse {
   deleted_job_id: string;
 }
 
-interface JobConfirmApiResponse {
-  success: boolean;
-  message: string;
-  job: JobApiResponse | null;
-  games_added: number;
-  games_skipped: number;
-  games_removed: number;
-}
-
 interface JobsSummaryApiResponse {
   running_count: number;
   failed_count: number;
@@ -79,6 +75,19 @@ interface JobsSummaryApiResponse {
 // Transformation Functions
 // ============================================================================
 
+function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
+  return {
+    pending: apiProgress.pending,
+    processing: apiProgress.processing,
+    completed: apiProgress.completed,
+    pendingReview: apiProgress.pending_review,
+    skipped: apiProgress.skipped,
+    failed: apiProgress.failed,
+    total: apiProgress.total,
+    percent: apiProgress.percent,
+  };
+}
+
 function transformJob(apiJob: JobApiResponse): Job {
   return {
     id: apiJob.id,
@@ -87,20 +96,15 @@ function transformJob(apiJob: JobApiResponse): Job {
     source: apiJob.source as JobSource,
     status: apiJob.status as JobStatus,
     priority: apiJob.priority as JobPriority,
-    progressCurrent: apiJob.progress_current,
-    progressTotal: apiJob.progress_total,
-    progressPercent: apiJob.progress_percent,
-    resultSummary: apiJob.result_summary,
+    progress: transformProgress(apiJob.progress),
+    totalItems: apiJob.total_items,
     errorMessage: apiJob.error_message,
     filePath: apiJob.file_path,
-    taskiqTaskId: apiJob.taskiq_task_id,
     createdAt: apiJob.created_at,
     startedAt: apiJob.started_at,
     completedAt: apiJob.completed_at,
     isTerminal: apiJob.is_terminal,
     durationSeconds: apiJob.duration_seconds,
-    reviewItemCount: apiJob.review_item_count,
-    pendingReviewCount: apiJob.pending_review_count,
   };
 }
 
@@ -171,21 +175,6 @@ export async function deleteJob(jobId: string): Promise<JobDeleteResponse> {
 }
 
 /**
- * Confirm an import job after all review items are resolved.
- */
-export async function confirmJob(jobId: string): Promise<JobConfirmResponse> {
-  const response = await api.post<JobConfirmApiResponse>(`/jobs/${jobId}/confirm`);
-  return {
-    success: response.success,
-    message: response.message,
-    job: response.job ? transformJob(response.job) : null,
-    gamesAdded: response.games_added,
-    gamesSkipped: response.games_skipped,
-    gamesRemoved: response.games_removed,
-  };
-}
-
-/**
  * Get summary counts for jobs (running and failed).
  * This is a lightweight endpoint for sidebar badge display.
  */
@@ -195,24 +184,4 @@ export async function getJobsSummary(): Promise<JobsSummary> {
     runningCount: response.running_count,
     failedCount: response.failed_count,
   };
-}
-
-/**
- * Get child jobs for a parent job.
- */
-export async function getJobChildren(
-  jobId: string,
-  filters?: JobChildrenFilters
-): Promise<Job[]> {
-  const params: Record<string, string | number> = {};
-
-  if (filters?.status) params.status = filters.status;
-  if (filters?.limit) params.limit = filters.limit;
-  if (filters?.offset) params.offset = filters.offset;
-
-  const response = await api.get<JobApiResponse[]>(`/jobs/${jobId}/children`, {
-    params,
-  });
-
-  return response.map(transformJob);
 }

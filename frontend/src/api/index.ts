@@ -116,7 +116,7 @@ export {
 } from './import-export';
 
 // Re-export jobs API functions
-export { getJobs, getJob, cancelJob, deleteJob, confirmJob } from './jobs';
+export { getJobs, getJob, cancelJob, deleteJob, getJobsSummary } from './jobs';
 
 // Re-export review API functions
 export {

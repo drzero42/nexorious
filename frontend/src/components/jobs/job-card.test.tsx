@@ -19,20 +19,24 @@ const mockJob: Job = {
   source: JobSource.STEAM,
   status: JobStatus.PROCESSING,
   priority: JobPriority.HIGH,
-  progressCurrent: 50,
-  progressTotal: 100,
-  progressPercent: 50,
-  resultSummary: {},
+  progress: {
+    pending: 20,
+    processing: 5,
+    completed: 50,
+    pendingReview: 3,
+    skipped: 2,
+    failed: 0,
+    total: 100,
+    percent: 50,
+  },
+  totalItems: 100,
   errorMessage: null,
   filePath: null,
-  taskiqTaskId: 'task-123',
   createdAt: '2025-01-01T00:00:00Z',
   startedAt: '2025-01-01T00:01:00Z',
   completedAt: null,
   isTerminal: false,
   durationSeconds: 60,
-  reviewItemCount: 5,
-  pendingReviewCount: 3,
 };
 
 const mockCompletedJob: Job = {
@@ -41,8 +45,13 @@ const mockCompletedJob: Job = {
   status: JobStatus.COMPLETED,
   isTerminal: true,
   completedAt: '2025-01-01T00:02:00Z',
-  progressCurrent: 100,
-  progressPercent: 100,
+  progress: {
+    ...mockJob.progress,
+    pending: 0,
+    processing: 0,
+    completed: 100,
+    percent: 100,
+  },
 };
 
 const mockFailedJob: Job = {
@@ -94,15 +103,16 @@ describe('JobCard', () => {
       expect(screen.getByText('Processing')).toBeInTheDocument();
       expect(screen.getByText('Duration:')).toBeInTheDocument();
       expect(screen.getByText('1m')).toBeInTheDocument();
-      expect(screen.getByText('Review:')).toBeInTheDocument();
-      expect(screen.getByText('3 / 5')).toBeInTheDocument();
+      expect(screen.getByText('Pending Review:')).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
     });
 
     it('shows progress section for processing jobs', () => {
       render(<JobCard job={mockJob} />);
 
       expect(screen.getByText('Progress')).toBeInTheDocument();
-      expect(screen.getByText('50 / 100')).toBeInTheDocument();
+      // 50 completed + 3 pending review + 2 skipped + 0 failed = 55 done / 100 total
+      expect(screen.getByText('55 / 100 (50%)')).toBeInTheDocument();
     });
 
     it('does not show progress section for completed jobs', () => {
@@ -229,27 +239,6 @@ describe('JobCard', () => {
       render(<JobCard job={pendingJob} />);
 
       expect(screen.getByText('Pending')).toBeInTheDocument();
-    });
-
-    it('displays Awaiting Review status correctly', () => {
-      const awaitingReviewJob = { ...mockJob, status: JobStatus.AWAITING_REVIEW };
-      render(<JobCard job={awaitingReviewJob} />);
-
-      expect(screen.getByText('Awaiting Review')).toBeInTheDocument();
-    });
-
-    it('displays Ready status correctly', () => {
-      const readyJob = { ...mockJob, status: JobStatus.READY };
-      render(<JobCard job={readyJob} />);
-
-      expect(screen.getByText('Ready')).toBeInTheDocument();
-    });
-
-    it('displays Finalizing status correctly', () => {
-      const finalizingJob = { ...mockJob, status: JobStatus.FINALIZING };
-      render(<JobCard job={finalizingJob} />);
-
-      expect(screen.getByText('Finalizing')).toBeInTheDocument();
     });
 
     it('displays Failed status correctly', () => {

@@ -47,8 +47,7 @@ export function JobCard({
   isCancelling,
   isDeleting,
 }: JobCardProps) {
-  const showProgress =
-    job.status === JobStatus.PROCESSING || job.status === JobStatus.FINALIZING;
+  const showProgress = job.status === JobStatus.PROCESSING;
 
   if (compact) {
     return (
@@ -70,7 +69,7 @@ export function JobCard({
             </div>
             {showProgress && (
               <div className="w-24 flex-shrink-0">
-                <Progress value={job.progressPercent} className="h-2" />
+                <Progress value={job.progress.percent} className="h-2" />
               </div>
             )}
           </CardContent>
@@ -100,15 +99,15 @@ export function JobCard({
 
       <CardContent className="space-y-4">
         {/* Progress */}
-        {showProgress && (
+        {showProgress && job.progress && (
           <div>
             <div className="mb-2 flex justify-between text-sm text-muted-foreground">
               <span>Progress</span>
               <span>
-                {job.progressCurrent} / {job.progressTotal}
+                {job.progress.completed + job.progress.pendingReview + job.progress.skipped + job.progress.failed} / {job.progress.total} ({job.progress.percent}%)
               </span>
             </div>
-            <Progress value={job.progressPercent} />
+            <Progress value={job.progress.percent} />
           </div>
         )}
 
@@ -119,13 +118,11 @@ export function JobCard({
             <span className="text-muted-foreground">Duration:</span>
             <span className="font-medium">{formatDuration(job.durationSeconds)}</span>
           </div>
-          {job.reviewItemCount !== null && job.reviewItemCount > 0 && (
+          {job.progress && job.progress.pendingReview > 0 && (
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Review:</span>
-              <span className="font-medium">
-                {job.pendingReviewCount} / {job.reviewItemCount}
-              </span>
+              <span className="text-muted-foreground">Pending Review:</span>
+              <span className="font-medium">{job.progress.pendingReview}</span>
             </div>
           )}
         </div>

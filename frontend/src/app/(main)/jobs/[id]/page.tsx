@@ -23,7 +23,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  Check,
   ClipboardList,
   Download,
   ExternalLink,
@@ -38,12 +37,11 @@ import {
   useJob,
   useCancelJob,
   useDeleteJob,
-  useConfirmJob,
   useDownloadExport,
-  useJobChildren,
 } from '@/hooks';
 import {
   JobStatus,
+  JobType,
   getJobTypeLabel,
   getJobSourceLabel,
   getJobStatusLabel,
@@ -51,10 +49,8 @@ import {
   formatDuration,
   canCancelJob,
   canDeleteJob,
-  canConfirmJob,
   isJobInProgress,
 } from '@/types';
-import { JobChildrenList } from '@/components/jobs';
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -110,18 +106,15 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
 
   const cancelJobMutation = useCancelJob();
   const deleteJobMutation = useDeleteJob();
-  const confirmJobMutation = useConfirmJob();
   const downloadExportMutation = useDownloadExport();
 
-  // Query for child jobs
-  const { data: childJobs } = useJobChildren(jobId);
-  const hasChildren = (childJobs?.length ?? 0) > 0;
-
-  const showProgress =
-    job?.status === JobStatus.PROCESSING || job?.status === JobStatus.FINALIZING;
+  const showProgress = job?.status === JobStatus.PROCESSING;
 
   // Helper to check if job is a completed export
-  const isCompletedExport = job?.jobType === 'export' && job?.status === JobStatus.COMPLETED;
+  const isCompletedExport = job?.jobType === JobType.EXPORT && job?.status === JobStatus.COMPLETED;
+
+  // Check if import job has items pending review
+  const hasPendingReview = job?.jobType === JobType.IMPORT && (job?.progress?.pendingReview ?? 0) > 0;
 
   const handleCancel = async () => {
     try {
@@ -141,17 +134,6 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
       router.push('/jobs');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete job');
-    }
-  };
-
-  const handleConfirm = async () => {
-    try {
-      const result = await confirmJobMutation.mutateAsync(jobId);
-      toast.success(
-        `Import confirmed! ${result.gamesAdded} games added, ${result.gamesSkipped} skipped.`
-      );
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to confirm import');
     }
   };
 
@@ -258,22 +240,15 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
 
         <CardContent className="space-y-6">
           {/* Progress */}
-          {showProgress && (
+          {showProgress && job.progress && (
             <div>
               <div className="mb-2 flex justify-between text-sm text-muted-foreground">
                 <span>Progress</span>
                 <span>
-                  {job.progressCurrent} / {job.progressTotal} ({job.progressPercent}%)
+                  {job.progress.completed + job.progress.pendingReview + job.progress.skipped + job.progress.failed} / {job.progress.total} ({job.progress.percent}%)
                 </span>
               </div>
-              <Progress value={job.progressPercent} />
-            </div>
-          )}
-
-          {/* Child Jobs Section */}
-          {hasChildren && (
-            <div className="rounded-lg border p-4">
-              <JobChildrenList jobId={job.id} />
+              <Progress value={job.progress.percent} />
             </div>
           )}
 
@@ -308,24 +283,20 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
               <dt className="font-medium text-muted-foreground">Priority</dt>
               <dd className="mt-1 capitalize">{job.priority}</dd>
             </div>
-            {job.taskiqTaskId && (
-              <div>
-                <dt className="font-medium text-muted-foreground">Task ID</dt>
-                <dd className="mt-1 truncate font-mono text-xs" title={job.taskiqTaskId}>
-                  {job.taskiqTaskId}
-                </dd>
-              </div>
-            )}
+            <div>
+              <dt className="font-medium text-muted-foreground">Total Items</dt>
+              <dd className="mt-1">{job.totalItems}</dd>
+            </div>
           </div>
 
           {/* Review Items Section */}
-          {job.reviewItemCount !== null && job.reviewItemCount > 0 && (
+          {hasPendingReview && (
             <div className="rounded-lg border p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Review Items</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {job.pendingReviewCount} pending out of {job.reviewItemCount} total
+                    {job.progress.pendingReview} pending out of {job.progress.total} total
                   </p>
                 </div>
                 <Button variant="outline" asChild>
@@ -338,21 +309,35 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
             </div>
           )}
 
-          {/* Result Summary */}
-          {Object.keys(job.resultSummary).length > 0 && (
+          {/* Progress Summary */}
+          {job.progress && job.progress.total > 0 && (
             <div>
-              <h3 className="mb-3 font-medium">Result Summary</h3>
+              <h3 className="mb-3 font-medium">Progress Summary</h3>
               <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
-                {Object.entries(job.resultSummary).map(([key, value]) => (
-                  <div key={key}>
-                    <dt className="text-xs font-medium capitalize text-muted-foreground">
-                      {key.replace(/_/g, ' ')}
-                    </dt>
-                    <dd className="mt-1">
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </dd>
-                  </div>
-                ))}
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Completed</dt>
+                  <dd className="mt-1">{job.progress.completed}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Pending Review</dt>
+                  <dd className="mt-1">{job.progress.pendingReview}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Skipped</dt>
+                  <dd className="mt-1">{job.progress.skipped}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Failed</dt>
+                  <dd className="mt-1">{job.progress.failed}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Processing</dt>
+                  <dd className="mt-1">{job.progress.processing}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Pending</dt>
+                  <dd className="mt-1">{job.progress.pending}</dd>
+                </div>
               </div>
             </div>
           )}
@@ -373,20 +358,6 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
                   <Download className="mr-2 h-4 w-4" />
                 )}
                 Download Export
-              </Button>
-            )}
-            {canConfirmJob(job) && (
-              <Button
-                onClick={handleConfirm}
-                disabled={confirmJobMutation.isPending}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {confirmJobMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="mr-2 h-4 w-4" />
-                )}
-                Confirm Import
               </Button>
             )}
             {canCancelJob(job) && (
@@ -445,7 +416,7 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
             <AlertDialogTitle>Delete Job</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete this job? This will also delete all associated
-              review items. This action cannot be undone.
+              job items. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

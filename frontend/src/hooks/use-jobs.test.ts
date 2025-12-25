@@ -7,10 +7,8 @@ import { setAuthHandlers } from '@/api/client';
 import {
   useJobs,
   useJob,
-  useJobChildren,
   useCancelJob,
   useDeleteJob,
-  useConfirmJob,
   jobsKeys,
 } from './use-jobs';
 import { JobType, JobSource, JobStatus } from '@/types';
@@ -25,20 +23,24 @@ const mockJobApi = {
   source: 'steam',
   status: 'processing',
   priority: 'high',
-  progress_current: 50,
-  progress_total: 100,
-  progress_percent: 50,
-  result_summary: {},
+  progress: {
+    pending: 20,
+    processing: 5,
+    completed: 50,
+    pending_review: 3,
+    skipped: 2,
+    failed: 0,
+    total: 100,
+    percent: 50,
+  },
+  total_items: 100,
   error_message: null,
   file_path: null,
-  taskiq_task_id: 'task-123',
   created_at: '2025-01-01T00:00:00Z',
   started_at: '2025-01-01T00:01:00Z',
   completed_at: null,
   is_terminal: false,
   duration_seconds: 60,
-  review_item_count: null,
-  pending_review_count: null,
 };
 
 const mockCompletedJobApi = {
@@ -47,8 +49,13 @@ const mockCompletedJobApi = {
   status: 'completed',
   is_terminal: true,
   completed_at: '2025-01-01T00:02:00Z',
-  progress_current: 100,
-  progress_percent: 100,
+  progress: {
+    ...mockJobApi.progress,
+    pending: 0,
+    processing: 0,
+    completed: 100,
+    percent: 100,
+  },
 };
 
 describe('use-jobs hooks', () => {
@@ -94,16 +101,6 @@ describe('use-jobs hooks', () => {
 
     it('generates correct query keys for detail with id', () => {
       expect(jobsKeys.detail('job-1')).toEqual(['jobs', 'detail', 'job-1']);
-    });
-
-    it('generates correct query keys for children', () => {
-      expect(jobsKeys.children('job-1')).toEqual(['jobs', 'job-1', 'children', undefined]);
-      expect(jobsKeys.children('job-1', { status: JobStatus.COMPLETED })).toEqual([
-        'jobs',
-        'job-1',
-        'children',
-        { status: 'completed' },
-      ]);
     });
   });
 
@@ -215,7 +212,7 @@ describe('use-jobs hooks', () => {
 
       expect(result.current.data?.id).toBe('job-1');
       expect(result.current.data?.jobType).toBe(JobType.SYNC);
-      expect(result.current.data?.progressPercent).toBe(50);
+      expect(result.current.data?.progress.percent).toBe(50);
     });
 
     it('does not fetch when jobId is undefined', () => {
@@ -243,100 +240,6 @@ describe('use-jobs hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Job not found');
-    });
-  });
-
-  describe('useJobChildren', () => {
-    const mockChildJob1 = {
-      ...mockJobApi,
-      id: 'child-1',
-      parent_job_id: 'parent-job-1',
-      job_type: 'igdb_search',
-      status: 'processing',
-      is_terminal: false,
-    };
-
-    const mockChildJob2 = {
-      ...mockJobApi,
-      id: 'child-2',
-      parent_job_id: 'parent-job-1',
-      job_type: 'igdb_search',
-      status: 'completed',
-      is_terminal: true,
-    };
-
-    it('fetches child jobs successfully', async () => {
-      server.use(
-        http.get(`${API_URL}/jobs/parent-job-1/children`, () => {
-          return HttpResponse.json([mockChildJob1, mockChildJob2]);
-        })
-      );
-
-      const { result } = renderHook(() => useJobChildren('parent-job-1'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(2);
-      expect(result.current.data?.[0].id).toBe('child-1');
-      expect(result.current.data?.[1].id).toBe('child-2');
-    });
-
-    it('passes filters to API', async () => {
-      let capturedParams: URLSearchParams | null = null;
-
-      server.use(
-        http.get(`${API_URL}/jobs/parent-job-1/children`, ({ request }) => {
-          const url = new URL(request.url);
-          capturedParams = url.searchParams;
-
-          return HttpResponse.json([mockChildJob2]);
-        })
-      );
-
-      const { result } = renderHook(
-        () => useJobChildren('parent-job-1', { status: JobStatus.COMPLETED, limit: 10, offset: 5 }),
-        { wrapper: QueryWrapper }
-      );
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(capturedParams).not.toBeNull();
-      expect(capturedParams!.get('status')).toBe('completed');
-      expect(capturedParams!.get('limit')).toBe('10');
-      expect(capturedParams!.get('offset')).toBe('5');
-    });
-
-    it('does not fetch when jobId is undefined', () => {
-      const { result } = renderHook(() => useJobChildren(undefined), {
-        wrapper: QueryWrapper,
-      });
-
-      expect(result.current.isLoading).toBe(false);
-      expect(result.current.isFetching).toBe(false);
-    });
-
-    it('handles error state', async () => {
-      server.use(
-        http.get(`${API_URL}/jobs/parent-job-1/children`, () => {
-          return HttpResponse.json({ detail: 'Failed to fetch children' }, { status: 500 });
-        })
-      );
-
-      const { result } = renderHook(() => useJobChildren('parent-job-1'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe('Failed to fetch children');
     });
   });
 
@@ -456,76 +359,6 @@ describe('use-jobs hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Cannot delete job that is not in terminal state');
-    });
-  });
-
-  describe('useConfirmJob', () => {
-    it('confirms import job successfully', async () => {
-      const confirmedJob = {
-        ...mockJobApi,
-        job_type: 'import',
-        status: 'completed',
-        is_terminal: true,
-      };
-
-      server.use(
-        http.post(`${API_URL}/jobs/job-1/confirm`, () => {
-          return HttpResponse.json({
-            success: true,
-            message: 'Import confirmed successfully',
-            job: confirmedJob,
-            games_added: 8,
-            games_skipped: 2,
-            games_removed: 0,
-          });
-        })
-      );
-
-      const { result } = renderHook(() => useConfirmJob(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync('job-1');
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.success).toBe(true);
-      expect(result.current.data?.gamesAdded).toBe(8);
-      expect(result.current.data?.gamesSkipped).toBe(2);
-      expect(result.current.data?.gamesRemoved).toBe(0);
-    });
-
-    it('handles confirm error for job with pending reviews', async () => {
-      server.use(
-        http.post(`${API_URL}/jobs/job-1/confirm`, () => {
-          return HttpResponse.json(
-            { detail: 'Cannot confirm job with pending review items' },
-            { status: 400 }
-          );
-        })
-      );
-
-      const { result } = renderHook(() => useConfirmJob(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        try {
-          await result.current.mutateAsync('job-1');
-        } catch {
-          // Expected error
-        }
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe('Cannot confirm job with pending review items');
     });
   });
 });

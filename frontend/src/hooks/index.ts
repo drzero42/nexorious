@@ -76,10 +76,8 @@ export {
   useJobs,
   useJob,
   useJobsSummary,
-  useJobChildren,
   useCancelJob,
   useDeleteJob,
-  useConfirmJob,
 } from './use-jobs';
 
 // Review hooks

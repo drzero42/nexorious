@@ -25,9 +25,6 @@ export enum JobSource {
 export enum JobStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
-  AWAITING_REVIEW = 'awaiting_review',
-  READY = 'ready',
-  FINALIZING = 'finalizing',
   COMPLETED = 'completed',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
@@ -42,6 +39,20 @@ export enum JobPriority {
 // Interfaces
 // ============================================================================
 
+/**
+ * Progress counts by JobItem status.
+ */
+export interface JobProgress {
+  pending: number;
+  processing: number;
+  completed: number;
+  pendingReview: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  percent: number;
+}
+
 export interface Job {
   id: string;
   userId: string;
@@ -49,20 +60,15 @@ export interface Job {
   source: JobSource;
   status: JobStatus;
   priority: JobPriority;
-  progressCurrent: number;
-  progressTotal: number;
-  progressPercent: number;
-  resultSummary: Record<string, unknown>;
+  progress: JobProgress;
+  totalItems: number;
   errorMessage: string | null;
   filePath: string | null;
-  taskiqTaskId: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
   isTerminal: boolean;
   durationSeconds: number | null;
-  reviewItemCount: number | null;
-  pendingReviewCount: number | null;
 }
 
 export interface JobFilters {
@@ -73,11 +79,7 @@ export interface JobFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
-export interface JobChildrenFilters {
-  status?: JobStatus;
-  limit?: number;
-  offset?: number;
-}
+// Note: JobChildrenFilters removed - child jobs no longer supported
 
 export interface JobListResponse {
   jobs: Job[];
@@ -97,15 +99,6 @@ export interface JobDeleteResponse {
   success: boolean;
   message: string;
   deletedJobId: string;
-}
-
-export interface JobConfirmResponse {
-  success: boolean;
-  message: string;
-  job: Job | null;
-  gamesAdded: number;
-  gamesSkipped: number;
-  gamesRemoved: number;
 }
 
 export interface JobsSummary {
@@ -158,9 +151,6 @@ export function getJobStatusLabel(status: JobStatus): string {
   const labels: Record<JobStatus, string> = {
     [JobStatus.PENDING]: 'Pending',
     [JobStatus.PROCESSING]: 'Processing',
-    [JobStatus.AWAITING_REVIEW]: 'Awaiting Review',
-    [JobStatus.READY]: 'Ready',
-    [JobStatus.FINALIZING]: 'Finalizing',
     [JobStatus.COMPLETED]: 'Completed',
     [JobStatus.FAILED]: 'Failed',
     [JobStatus.CANCELLED]: 'Cancelled',
@@ -176,15 +166,12 @@ export function getJobStatusVariant(
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
     case JobStatus.COMPLETED:
-    case JobStatus.READY:
       return 'default';
     case JobStatus.PROCESSING:
-    case JobStatus.FINALIZING:
       return 'secondary';
     case JobStatus.FAILED:
       return 'destructive';
     case JobStatus.PENDING:
-    case JobStatus.AWAITING_REVIEW:
     case JobStatus.CANCELLED:
     default:
       return 'outline';
@@ -254,12 +241,8 @@ export function canDeleteJob(_job: Job): boolean {
 }
 
 /**
- * Check if an import job can be confirmed.
+ * Check if an import job has items pending review.
  */
-export function canConfirmJob(job: Job): boolean {
-  return (
-    job.jobType === JobType.IMPORT &&
-    (job.status === JobStatus.READY || job.status === JobStatus.AWAITING_REVIEW) &&
-    job.pendingReviewCount === 0
-  );
+export function hasPendingReview(job: Job): boolean {
+  return job.jobType === JobType.IMPORT && job.progress.pendingReview > 0;
 }
