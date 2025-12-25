@@ -7,6 +7,7 @@ background jobs (sync, import, export operations).
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
+from sqlalchemy import update as sa_update
 from typing import Annotated, Optional, List
 from datetime import datetime, timezone
 import logging
@@ -320,6 +321,23 @@ async def cancel_job(
         "cancelled_from_status": previous_status.value,
         "cancelled_by": current_user.id,
     })
+
+    # Cancel all non-terminal children
+    session.execute(
+        sa_update(Job)
+        .where(Job.parent_job_id == job_id)
+        .where(Job.status.in_([
+            BackgroundJobStatus.PENDING,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.AWAITING_REVIEW,
+            BackgroundJobStatus.READY,
+            BackgroundJobStatus.FINALIZING,
+        ]))
+        .values(
+            status=BackgroundJobStatus.CANCELLED,
+            completed_at=datetime.now(timezone.utc),
+        )
+    )
 
     session.commit()
     session.refresh(job)

@@ -547,6 +547,55 @@ class TestCancelJob:
         response = client.post(f"/api/jobs/{admin_job.id}/cancel", headers=auth_headers)
         assert response.status_code == 404
 
+    def test_cancel_job_cascades_to_children(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that cancelling a parent job also cancels pending/processing children."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child jobs with different statuses
+        statuses = [
+            BackgroundJobStatus.PENDING,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.COMPLETED,  # Should NOT be cancelled
+        ]
+        children = []
+        for s in statuses:
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=s,
+            )
+            session.add(child)
+            children.append(child)
+        session.commit()
+        for c in children:
+            session.refresh(c)
+
+        # Cancel parent
+        response = client.post(f"/api/jobs/{parent.id}/cancel", headers=auth_headers)
+        assert response.status_code == 200
+
+        # Refresh children and check statuses
+        session.expire_all()
+        for c in children:
+            session.refresh(c)
+
+        assert children[0].status == BackgroundJobStatus.CANCELLED  # Was PENDING
+        assert children[1].status == BackgroundJobStatus.CANCELLED  # Was PROCESSING
+        assert children[2].status == BackgroundJobStatus.COMPLETED  # Should remain COMPLETED
+
 
 class TestDeleteJob:
     """Tests for DELETE /api/jobs/{job_id} endpoint."""
