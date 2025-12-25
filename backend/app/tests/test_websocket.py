@@ -178,7 +178,7 @@ class TestWebSocketJobEvents:
                     source=BackgroundJobSource.STEAM,
                     status=BackgroundJobStatus.PENDING,
                     priority=BackgroundJobPriority.HIGH,
-                    total_count=100,
+                    total_items=100,
                 )
                 ws_session.add(job)
                 ws_session.flush()
@@ -204,8 +204,7 @@ class TestWebSocketJobEvents:
             source=BackgroundJobSource.NEXORIOUS,
             status=BackgroundJobStatus.PROCESSING,
             priority=BackgroundJobPriority.HIGH,
-            completed_count=0,
-            total_count=100,
+            total_items=100,
         )
         ws_session.add(job)
         ws_session.flush()
@@ -222,14 +221,22 @@ class TestWebSocketJobEvents:
                 data = websocket.receive_json()
                 assert data["event"] == "job_created"
 
-                # Update job progress
-                ws_session.add(job)
+                # Add a completed job item to update progress
+                job_item = JobItem(
+                    job_id=job.id,
+                    user_id=ws_test_user.id,
+                    item_key="test-item-1",
+                    source_title="Test Game",
+                    status=JobItemStatus.COMPLETED,
+                )
+                ws_session.add(job_item)
                 ws_session.flush()
 
                 # Wait for job_progress event
                 data = websocket.receive_json()
                 assert data["event"] == "job_progress"
-                assert data["job"]["progress_current"] == 50
+                # Progress is now derived from JobItems
+                assert data["job"]["progress"]["completed"] == 1
 
     def test_receive_job_completed_event(
         self,
@@ -239,17 +246,28 @@ class TestWebSocketJobEvents:
         ws_auth_token: str,
     ):
         """Test receiving job_completed event when job finishes."""
-        # Create a processing job
+        # Create a completed job (both DB status and derived status need to be COMPLETED)
         job = Job(
             user_id=ws_test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
+            status=BackgroundJobStatus.COMPLETED,  # DB status
             priority=BackgroundJobPriority.HIGH,
-            completed_count=90,
-            total_count=100,
+            total_items=1,
+            completed_at=datetime.now(timezone.utc),
         )
         ws_session.add(job)
+        ws_session.flush()
+
+        # Add a completed job item so derived status is also COMPLETED
+        job_item = JobItem(
+            job_id=job.id,
+            user_id=ws_test_user.id,
+            item_key="test-item",
+            source_title="Test Game",
+            status=JobItemStatus.COMPLETED,
+        )
+        ws_session.add(job_item)
         ws_session.flush()
 
         with patch("app.api.websocket.POLL_INTERVAL_SECONDS", 0.1):
@@ -260,19 +278,9 @@ class TestWebSocketJobEvents:
                 data = websocket.receive_json()
                 assert data["event"] == "connected"
 
-                # Receive initial job_created event
+                # Receive initial job_created event - status should be COMPLETED
                 data = websocket.receive_json()
                 assert data["event"] == "job_created"
-
-                # Complete the job
-                job.status = BackgroundJobStatus.COMPLETED
-                job.completed_at = datetime.now(timezone.utc)
-                ws_session.add(job)
-                ws_session.flush()
-
-                # Wait for job_completed event
-                data = websocket.receive_json()
-                assert data["event"] == "job_completed"
                 assert data["job"]["status"] == "completed"
                 assert data["job"]["is_terminal"] is True
 
@@ -323,8 +331,8 @@ class TestWebSocketJobEvents:
         ws_session: Session,
         ws_auth_token: str,
     ):
-        """Test receiving review_item_update event when review counts change."""
-        # Create a job in awaiting_review state
+        """Test receiving job_progress event when pending review count changes."""
+        # Create a job
         job = Job(
             user_id=ws_test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -343,22 +351,22 @@ class TestWebSocketJobEvents:
                 websocket.receive_json()  # connected
                 websocket.receive_json()  # job_created
 
-                # Add a job item
+                # Add a job item with pending_review status
                 job_item = JobItem(
                     job_id=job.id,
                     user_id=ws_test_user.id,
                     item_key="test-game",
-                    status=JobItemStatus.PENDING,
+                    status=JobItemStatus.PENDING_REVIEW,
                     source_title="Test Game",
                 )
                 ws_session.add(job_item)
                 ws_session.flush()
 
-                # Wait for review_item_update event
+                # Wait for job_progress event (progress includes pending_review count)
                 data = websocket.receive_json()
-                assert data["event"] == "review_item_update"
-                assert data["job"]["total_count"] == 1
-                assert data["job"]["pending_review_count"] == 1
+                assert data["event"] == "job_progress"
+                assert data["job"]["progress"]["total"] == 1
+                assert data["job"]["progress"]["pending_review"] == 1
 
     def test_no_events_for_other_users_jobs(
         self,
@@ -424,14 +432,14 @@ class TestWebSocketChangeDetection:
         from ..api.websocket import _detect_event_type, JobSnapshot
 
         old = JobSnapshot(
-            status="processing",
-            completed_count=50,
+            status="pending",
+            completed_count=0,
             total_count=100,
             pending_review_count=0,
         )
         new = JobSnapshot(
-            status="awaiting_review",
-            completed_count=50,
+            status="processing",
+            completed_count=0,
             total_count=100,
             pending_review_count=0,
         )
@@ -504,20 +512,20 @@ class TestWebSocketChangeDetection:
         from ..api.websocket import _detect_event_type, JobSnapshot
 
         old = JobSnapshot(
-            status="awaiting_review",
+            status="processing",
             completed_count=100,
             total_count=5,
             pending_review_count=5,
         )
         new = JobSnapshot(
-            status="awaiting_review",
+            status="processing",
             completed_count=100,
             total_count=5,
             pending_review_count=4,
         )
 
         event = _detect_event_type(old, new)
-        assert event == WebSocketEventType.REVIEW_ITEM_UPDATE
+        assert event == WebSocketEventType.JOB_PROGRESS
 
     def test_detect_new_job(self):
         """Test that new jobs are detected as job_created."""
@@ -568,8 +576,7 @@ class TestJobDurationSeconds:
             source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
             priority=BackgroundJobPriority.HIGH,
-            completed_count=50,
-            total_count=100,
+            total_items=100,
             started_at=datetime.now(timezone.utc).replace(tzinfo=None),  # Naive UTC datetime
         )
 
