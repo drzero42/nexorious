@@ -200,3 +200,6 @@ __marimo__/
 
 # Direnv
 .direnv
+
+# Git worktrees
+.worktrees/
