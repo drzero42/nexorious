@@ -27,6 +27,7 @@ from app.models import (  # noqa: F401
     UserGameTag,
     Wishlist,
     Job,
+    JobItem,
 )
 
 # this is the Alembic Config object, which provides

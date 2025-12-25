@@ -12,7 +12,6 @@ from typing import Dict, Any, List
 
 from sqlmodel import Session, select
 
-from app.worker.locking import acquire_job_lock, release_job_lock
 from app.worker.broker import broker
 from app.worker.queues import QUEUE_HIGH
 from app.core.database import get_session_context
@@ -248,16 +247,10 @@ async def export_collection(
     }
 
     async with get_session_context() as session:
-        # Try to acquire advisory lock - prevents duplicate execution
-        if not acquire_job_lock(session, job_id):
-            logger.info(f"Job {job_id} already being processed by another worker")
-            return {"status": "skipped", "reason": "duplicate_execution"}
-
         # Get job first (outside try so exception handler can access it)
         job = session.get(Job, job_id)
         if not job:
             logger.error(f"Job {job_id} not found")
-            release_job_lock(session, job_id)
             return {"status": "error", "error": "Job not found"}
 
         try:
@@ -374,8 +367,6 @@ async def export_collection(
                 "error": str(e),
                 **stats,
             }
-        finally:
-            release_job_lock(session, job_id)
 
 
 def _calculate_export_stats(games_data: List[ExportGameData]) -> Dict[str, Any]:
