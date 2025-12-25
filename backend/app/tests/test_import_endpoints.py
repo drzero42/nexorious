@@ -18,7 +18,7 @@ def mock_task_queue():
     mock_result.task_id = "test-task-id"
 
     with patch(
-        "app.api.import_endpoints.import_nexorious_task.kiq",
+        "app.api.import_endpoints.import_nexorious_coordinator.kiq",
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
@@ -156,6 +156,64 @@ class TestNexoriousImport:
         data = response.json()
         error_msg = data.get("error", data.get("detail", ""))
         assert "already in progress" in error_msg
+
+
+    def test_import_nexorious_enqueues_coordinator(
+        self, client: TestClient, auth_headers: dict, session: Session, test_user
+    ):
+        """POST /import/nexorious enqueues the coordinator task for fan-out processing."""
+        # Create a valid Nexorious export JSON
+        export_data = {
+            "export_version": "1.0",
+            "export_date": "2024-01-15T10:30:00Z",
+            "games": [
+                {
+                    "igdb_id": 1942,
+                    "title": "The Witcher 3: Wild Hunt",
+                    "play_status": "completed",
+                },
+                {
+                    "igdb_id": 119133,
+                    "title": "Elden Ring",
+                    "play_status": "playing",
+                },
+            ]
+        }
+        json_content = json.dumps(export_data).encode("utf-8")
+
+        # Mock the coordinator task specifically
+        mock_result = MagicMock()
+        mock_result.task_id = "coordinator-task-id"
+
+        with patch(
+            "app.api.import_endpoints.import_nexorious_coordinator.kiq",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_coordinator_kiq:
+            response = client.post(
+                "/api/import/nexorious",
+                headers=auth_headers,
+                files={"file": ("export.json", io.BytesIO(json_content), "application/json")},
+            )
+
+            # Verify response
+            assert response.status_code == 200
+            data = response.json()
+            assert "job_id" in data
+            assert data["source"] == "nexorious"
+
+            # Verify coordinator task was called with job_id
+            mock_coordinator_kiq.assert_called_once()
+            call_args = mock_coordinator_kiq.call_args
+            job_id_arg = call_args[0][0] if call_args[0] else None
+            assert job_id_arg == data["job_id"]
+
+            # Verify job has the coordinator task_id
+            from sqlmodel import select
+            stmt = select(Job).where(Job.id == data["job_id"])
+            job = session.exec(stmt).first()
+            assert job is not None
+            assert job.taskiq_task_id == "coordinator-task-id"
 
 
 class TestImportEndpointAuthentication:

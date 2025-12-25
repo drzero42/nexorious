@@ -26,7 +26,7 @@ from ..models.job import (
     BackgroundJobPriority,
 )
 from ..worker.tasks.import_export import (
-    import_nexorious_json as import_nexorious_task,
+    import_nexorious_coordinator,
 )
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
@@ -203,8 +203,8 @@ async def import_nexorious_json(
     session.commit()
     session.refresh(job)
 
-    # Enqueue the import task
-    task_result = await import_nexorious_task.kiq(job.id)
+    # Enqueue the coordinator task for fan-out processing
+    task_result = await import_nexorious_coordinator.kiq(job.id)
     job.taskiq_task_id = task_result.task_id
     session.add(job)
     session.commit()
