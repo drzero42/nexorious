@@ -62,6 +62,7 @@ class ImportJobSubtype(str, Enum):
     """Subtype for import jobs - specifies the kind of import operation."""
 
     LIBRARY_IMPORT = "library_import"
+    WISHLIST_IMPORT = "wishlist_import"
     AUTO_MATCH = "auto_match"
     BULK_SYNC = "bulk_sync"
     BULK_UNMATCH = "bulk_unmatch"
