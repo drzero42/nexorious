@@ -7,9 +7,10 @@ job tracking using the unified Job model.
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from sqlmodel import Session
+from sqlalchemy import func, case
+from sqlmodel import Session, select
 
 from app.models.batch_constants import BatchOperationType
 from app.models.job import (
@@ -206,3 +207,51 @@ class BatchJobService:
         logger.error(f"Failed batch job {job_id}: {error_message}")
 
         return job
+
+    def get_aggregated_progress(self, job_id: str) -> Optional[Dict[str, int]]:
+        """
+        Get aggregated progress from child jobs.
+
+        Returns None if job has no children (not a parent job).
+        Otherwise returns dict with counts by status.
+
+        Args:
+            job_id: ID of the parent job
+
+        Returns:
+            Dict with aggregated progress or None if no children
+        """
+        result = self.session.exec(
+            select(
+                func.count(Job.id).label("total"),
+                func.sum(
+                    case((Job.status == BackgroundJobStatus.COMPLETED, 1), else_=0)
+                ).label("completed"),
+                func.sum(
+                    case((Job.status == BackgroundJobStatus.FAILED, 1), else_=0)
+                ).label("failed"),
+                func.sum(
+                    case((Job.status == BackgroundJobStatus.CANCELLED, 1), else_=0)
+                ).label("cancelled"),
+                func.sum(
+                    case((Job.status == BackgroundJobStatus.PROCESSING, 1), else_=0)
+                ).label("processing"),
+                func.sum(
+                    case((Job.status == BackgroundJobStatus.PENDING, 1), else_=0)
+                ).label("pending"),
+            ).where(Job.parent_job_id == job_id)
+        ).one()
+
+        if result.total == 0:
+            return None
+
+        return {
+            "total": result.total,
+            "completed": result.completed or 0,
+            "failed": result.failed or 0,
+            "cancelled": result.cancelled or 0,
+            "processing": result.processing or 0,
+            "pending": result.pending or 0,
+            "progress_current": (result.completed or 0) + (result.failed or 0) + (result.cancelled or 0),
+            "progress_total": result.total,
+        }

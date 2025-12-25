@@ -134,3 +134,65 @@ class TestBatchJobService:
         result = service.cancel_batch_job("job-123", "wrong-user")
 
         assert result is None
+
+    def test_get_aggregated_progress(self, session: Session, test_user):
+        """Test progress aggregation for parent jobs."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child jobs with various statuses
+        child_statuses = [
+            BackgroundJobStatus.COMPLETED,
+            BackgroundJobStatus.COMPLETED,
+            BackgroundJobStatus.FAILED,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.PENDING,
+        ]
+        for s in child_statuses:
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=s,
+            )
+            session.add(child)
+        session.commit()
+
+        # Get aggregated progress
+        service = BatchJobService(session)
+        progress = service.get_aggregated_progress(parent.id)
+
+        assert progress is not None
+        assert progress["total"] == 5
+        assert progress["completed"] == 2
+        assert progress["failed"] == 1
+        assert progress["processing"] == 1
+        assert progress["pending"] == 1
+        assert progress["progress_current"] == 3  # completed + failed
+        assert progress["progress_total"] == 5
+
+    def test_get_aggregated_progress_no_children(self, session: Session, test_user):
+        """Test aggregation returns None when job has no children."""
+        # Create a job without children
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        service = BatchJobService(session)
+        progress = service.get_aggregated_progress(job.id)
+
+        assert progress is None
