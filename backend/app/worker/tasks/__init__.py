@@ -20,6 +20,9 @@ from app.worker.tasks.sync import (
 # Import/export tasks
 from app.worker.tasks.import_export import (
     export_collection,
+    process_import_item_high,
+    process_import_item_low,
+    enqueue_import_task,
 )
 
 __all__ = [
@@ -32,4 +35,7 @@ __all__ = [
     "check_pending_syncs",
     # Import/Export
     "export_collection",
+    "process_import_item_high",
+    "process_import_item_low",
+    "enqueue_import_task",
 ]
