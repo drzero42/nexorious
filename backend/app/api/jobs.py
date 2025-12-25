@@ -34,7 +34,7 @@ from ..schemas.job import (
     JobStatus,
 )
 from ..schemas.import_schemas import JobsSummaryResponse
-from ..utils.sqlalchemy_typed import desc
+from ..utils.sqlalchemy_typed import desc, is_
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -105,6 +105,9 @@ async def list_jobs(
 
     # Build query - only show jobs for the current user
     query = select(Job).where(Job.user_id == current_user.id)
+
+    # Exclude child jobs (they appear in parent's detail view)
+    query = query.where(is_(Job.parent_job_id, None))
 
     # Apply filters
     if job_type:

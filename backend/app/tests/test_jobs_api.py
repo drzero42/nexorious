@@ -245,6 +245,41 @@ class TestListJobs:
         response = client.get("/api/jobs/")
         assert response.status_code == 403  # No token = 403 Forbidden
 
+    def test_list_jobs_excludes_child_jobs(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that job list excludes child jobs by default."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child job
+        child = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            parent_job_id=parent.id,
+        )
+        session.add(child)
+        session.commit()
+
+        # List jobs
+        response = client.get("/api/jobs/", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        job_ids = [job["id"] for job in data["jobs"]]
+
+        # Parent should be in list, child should not
+        assert parent.id in job_ids
+        assert child.id not in job_ids
+
 
 class TestGetJob:
     """Tests for GET /api/jobs/{job_id} endpoint."""
