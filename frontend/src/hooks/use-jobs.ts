@@ -3,6 +3,7 @@ import * as jobsApi from '@/api/jobs';
 import type {
   Job,
   JobFilters,
+  JobChildrenFilters,
   JobListResponse,
   JobCancelResponse,
   JobDeleteResponse,
@@ -21,6 +22,8 @@ export const jobsKeys = {
     [...jobsKeys.lists(), { filters, page, perPage }] as const,
   details: () => [...jobsKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobsKeys.details(), id] as const,
+  children: (id: string, filters?: JobChildrenFilters) =>
+    [...jobsKeys.all, id, 'children', filters] as const,
 };
 
 // ============================================================================
@@ -79,6 +82,29 @@ export function useJobsSummary() {
     queryKey: [...jobsKeys.all, 'summary'] as const,
     queryFn: () => jobsApi.getJobsSummary(),
     refetchInterval: 10000, // Poll every 10 seconds for badge updates
+  });
+}
+
+/**
+ * Hook to fetch child jobs for a parent job.
+ * Automatically polls while there are non-terminal children.
+ */
+export function useJobChildren(
+  jobId: string | undefined,
+  filters?: JobChildrenFilters,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: jobsKeys.children(jobId || '', filters),
+    queryFn: () => jobsApi.getJobChildren(jobId!, filters),
+    enabled: !!jobId && (options?.enabled ?? true),
+    refetchInterval: (query) => {
+      // Poll every 3 seconds if any children are non-terminal
+      const data = query.state.data as Job[] | undefined;
+      if (!data) return false;
+      const hasActiveChildren = data.some((child) => !child.isTerminal);
+      return hasActiveChildren ? 3000 : false;
+    },
   });
 }
 

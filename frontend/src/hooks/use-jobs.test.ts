@@ -7,6 +7,7 @@ import { setAuthHandlers } from '@/api/client';
 import {
   useJobs,
   useJob,
+  useJobChildren,
   useCancelJob,
   useDeleteJob,
   useConfirmJob,
@@ -93,6 +94,16 @@ describe('use-jobs hooks', () => {
 
     it('generates correct query keys for detail with id', () => {
       expect(jobsKeys.detail('job-1')).toEqual(['jobs', 'detail', 'job-1']);
+    });
+
+    it('generates correct query keys for children', () => {
+      expect(jobsKeys.children('job-1')).toEqual(['jobs', 'job-1', 'children', undefined]);
+      expect(jobsKeys.children('job-1', { status: JobStatus.COMPLETED })).toEqual([
+        'jobs',
+        'job-1',
+        'children',
+        { status: 'completed' },
+      ]);
     });
   });
 
@@ -232,6 +243,100 @@ describe('use-jobs hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Job not found');
+    });
+  });
+
+  describe('useJobChildren', () => {
+    const mockChildJob1 = {
+      ...mockJobApi,
+      id: 'child-1',
+      parent_job_id: 'parent-job-1',
+      job_type: 'igdb_search',
+      status: 'processing',
+      is_terminal: false,
+    };
+
+    const mockChildJob2 = {
+      ...mockJobApi,
+      id: 'child-2',
+      parent_job_id: 'parent-job-1',
+      job_type: 'igdb_search',
+      status: 'completed',
+      is_terminal: true,
+    };
+
+    it('fetches child jobs successfully', async () => {
+      server.use(
+        http.get(`${API_URL}/jobs/parent-job-1/children`, () => {
+          return HttpResponse.json([mockChildJob1, mockChildJob2]);
+        })
+      );
+
+      const { result } = renderHook(() => useJobChildren('parent-job-1'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toHaveLength(2);
+      expect(result.current.data?.[0].id).toBe('child-1');
+      expect(result.current.data?.[1].id).toBe('child-2');
+    });
+
+    it('passes filters to API', async () => {
+      let capturedParams: URLSearchParams | null = null;
+
+      server.use(
+        http.get(`${API_URL}/jobs/parent-job-1/children`, ({ request }) => {
+          const url = new URL(request.url);
+          capturedParams = url.searchParams;
+
+          return HttpResponse.json([mockChildJob2]);
+        })
+      );
+
+      const { result } = renderHook(
+        () => useJobChildren('parent-job-1', { status: JobStatus.COMPLETED, limit: 10, offset: 5 }),
+        { wrapper: QueryWrapper }
+      );
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(capturedParams).not.toBeNull();
+      expect(capturedParams!.get('status')).toBe('completed');
+      expect(capturedParams!.get('limit')).toBe('10');
+      expect(capturedParams!.get('offset')).toBe('5');
+    });
+
+    it('does not fetch when jobId is undefined', () => {
+      const { result } = renderHook(() => useJobChildren(undefined), {
+        wrapper: QueryWrapper,
+      });
+
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isFetching).toBe(false);
+    });
+
+    it('handles error state', async () => {
+      server.use(
+        http.get(`${API_URL}/jobs/parent-job-1/children`, () => {
+          return HttpResponse.json({ detail: 'Failed to fetch children' }, { status: 500 });
+        })
+      );
+
+      const { result } = renderHook(() => useJobChildren('parent-job-1'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true);
+      });
+
+      expect(result.current.error?.message).toBe('Failed to fetch children');
     });
   });
 
