@@ -16,6 +16,7 @@ from .api.tags import router as tags_router
 from .api.import_api import router as import_router
 from .api.status import router as status_router
 from .api.jobs import router as jobs_router
+from .api.job_items import router as job_items_router
 from .api.review import router as review_router
 from .api.sync import router as sync_router
 from .api.import_endpoints import router as import_jobs_router
@@ -136,6 +137,7 @@ app.include_router(tags_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
 app.include_router(status_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
+app.include_router(job_items_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
 app.include_router(sync_router, prefix="/api")
 app.include_router(import_jobs_router, prefix="/api")
