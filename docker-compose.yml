@@ -41,6 +41,7 @@ services:
     command:
       - "--jetstream"
       - "--store_dir=/data"
+      - "--http_port=8222"
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1"]
       interval: 5s
