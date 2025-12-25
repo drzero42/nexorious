@@ -19,19 +19,15 @@ from ..models.job import (
     Job,
     JobItem,
     JobItemStatus,
-    ReviewItem,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
-    ReviewItemStatus,
 )
 from ..schemas.job import (
     JobResponse,
     JobListResponse,
     JobCancelResponse,
     JobDeleteResponse,
-    JobConfirmResponse,
-    JobDiscardResponse,
     JobType,
     JobSource,
     JobStatus,
@@ -39,7 +35,7 @@ from ..schemas.job import (
 from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
 from ..services.job_service import get_job_progress, get_derived_job_status
-from ..utils.sqlalchemy_typed import desc, is_
+from ..utils.sqlalchemy_typed import desc
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -96,9 +92,6 @@ async def list_jobs(
 
     # Build query - only show jobs for the current user
     query = select(Job).where(Job.user_id == current_user.id)
-
-    # Exclude child jobs (they appear in parent's detail view)
-    query = query.where(is_(Job.parent_job_id, None))
 
     # Apply filters
     if job_type:
@@ -299,28 +292,6 @@ async def cancel_job(
     previous_status = job.status
     job.status = BackgroundJobStatus.CANCELLED
     job.completed_at = datetime.now(timezone.utc)
-    job.set_result_summary({
-        **job.get_result_summary(),
-        "cancelled_from_status": previous_status.value,
-        "cancelled_by": current_user.id,
-    })
-
-    # Cancel all non-terminal children
-    session.execute(
-        sa_update(Job)
-        .where(Job.parent_job_id == job_id)
-        .where(Job.status.in_([
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
-            BackgroundJobStatus.READY,
-            BackgroundJobStatus.FINALIZING,
-        ]))
-        .values(
-            status=BackgroundJobStatus.CANCELLED,
-            completed_at=datetime.now(timezone.utc),
-        )
-    )
 
     session.commit()
     session.refresh(job)
@@ -380,7 +351,7 @@ async def delete_job(
             detail=f"Cannot delete job - must be in terminal state (completed, failed, or cancelled). Current status: {job.status.value}",
         )
 
-    # Delete the job (cascade will delete review items)
+    # Delete the job (cascade will delete job items)
     session.delete(job)
     session.commit()
 
@@ -390,213 +361,6 @@ async def delete_job(
         success=True,
         message="Job deleted successfully",
         deleted_job_id=job_id,
-    )
-
-
-@router.post("/{job_id}/discard", response_model=JobDiscardResponse)
-async def discard_import(
-    job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    Discard an import job and all associated review items.
-
-    Works for import jobs in PENDING, PROCESSING, or AWAITING_REVIEW status.
-    Completely removes the job and all review items from the database.
-    """
-    logger.info(f"User {current_user.id} requesting to discard import job {job_id}")
-
-    job = session.get(Job, job_id)
-
-    if not job or job.user_id != current_user.id:
-        logger.warning(f"Job {job_id} not found for discard")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    if job.job_type != BackgroundJobType.IMPORT:
-        logger.warning(f"Cannot discard job {job_id} - not an import job")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only import jobs can be discarded",
-        )
-
-    # Allow discarding jobs in PENDING, PROCESSING, or AWAITING_REVIEW status
-    allowed_statuses = {
-        BackgroundJobStatus.PENDING,
-        BackgroundJobStatus.PROCESSING,
-        BackgroundJobStatus.AWAITING_REVIEW,
-    }
-    if job.status not in allowed_statuses:
-        logger.warning(
-            f"Cannot discard job {job_id} - wrong status (status: {job.status})"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot discard job - must be pending, processing, or awaiting review. Current status: {job.status.value}",
-        )
-
-    # Count review items before deletion
-    review_item_count = session.exec(
-        select(func.count()).select_from(ReviewItem).where(ReviewItem.job_id == job_id)
-    ).one()
-
-    # Delete job (cascade will delete review items)
-    session.delete(job)
-    session.commit()
-
-    logger.info(
-        f"Import job {job_id} discarded by user {current_user.id} "
-        f"({review_item_count} review items deleted)"
-    )
-
-    return JobDiscardResponse(
-        success=True,
-        message="Import discarded successfully",
-        deleted_job_id=job_id,
-        deleted_review_items=review_item_count,
-    )
-
-
-@router.post("/{job_id}/confirm", response_model=JobConfirmResponse)
-async def confirm_import(
-    job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    Confirm an import job after review is complete.
-
-    This endpoint is called when all review items have been resolved and
-    the user is ready to finalize the import. Only jobs in 'ready' or
-    'awaiting_review' status can be confirmed (awaiting_review allowed
-    if all review items have been resolved).
-    """
-    logger.info(f"User {current_user.id} requesting to confirm job {job_id}")
-
-    job = session.get(Job, job_id)
-
-    if not job:
-        logger.warning(f"Job {job_id} not found for confirmation")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    # Authorization check
-    if job.user_id != current_user.id:
-        logger.warning(
-            f"User {current_user.id} attempted to confirm job {job_id} owned by {job.user_id}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    # Only import jobs can be confirmed
-    if job.job_type != BackgroundJobType.IMPORT:
-        logger.warning(f"Cannot confirm job {job_id} - not an import job")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only import jobs can be confirmed",
-        )
-
-    # Check if job is in a confirmable state
-    confirmable_statuses = [
-        BackgroundJobStatus.READY,
-        BackgroundJobStatus.AWAITING_REVIEW,
-    ]
-    if job.status not in confirmable_statuses:
-        logger.warning(
-            f"Cannot confirm job {job_id} - status is {job.status.value}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot confirm job - status must be 'ready' or 'awaiting_review'. Current status: {job.status.value}",
-        )
-
-    # Check for pending review items
-    pending_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.PENDING,
-        )
-    ).one()
-
-    if pending_count > 0:
-        logger.warning(
-            f"Cannot confirm job {job_id} - {pending_count} pending review items"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot confirm job - {pending_count} review items still pending",
-        )
-
-    # Count resolved items by status for the response
-    matched_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.MATCHED,
-        )
-    ).one()
-
-    skipped_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.SKIPPED,
-        )
-    ).one()
-
-    removal_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.REMOVAL,
-        )
-    ).one()
-
-    # Update job status to finalizing (the actual game addition
-    # would be handled by a background task in the full implementation)
-    job.status = BackgroundJobStatus.FINALIZING
-
-    # For now, we'll mark it as completed since the actual game addition
-    # logic will be implemented in the import tasks
-    job.status = BackgroundJobStatus.COMPLETED
-    job.completed_at = datetime.now(timezone.utc)
-
-    # Update result summary with confirmation details
-    result_summary = job.get_result_summary()
-    result_summary["confirmed_by"] = current_user.id
-    result_summary["confirmed_at"] = datetime.now(timezone.utc).isoformat()
-    result_summary["games_matched"] = matched_count
-    result_summary["games_skipped"] = skipped_count
-    result_summary["games_removed"] = removal_count
-    job.set_result_summary(result_summary)
-
-    session.commit()
-    session.refresh(job)
-
-    logger.info(
-        f"Job {job_id} confirmed by user {current_user.id}: "
-        f"matched={matched_count}, skipped={skipped_count}, removed={removal_count}"
-    )
-
-    return JobConfirmResponse(
-        success=True,
-        message="Import confirmed successfully",
-        job=_job_to_response(job, session),
-        games_added=matched_count,
-        games_skipped=skipped_count,
-        games_removed=removal_count,
     )
 
 

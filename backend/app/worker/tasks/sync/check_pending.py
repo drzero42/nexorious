@@ -142,18 +142,13 @@ async def _dispatch_sync_for_config(session, config: UserSyncConfig) -> bool:
         from app.worker.tasks.sync.steam import sync_steam_library
 
         # Kick with low priority for scheduled syncs
-        task_result = await sync_steam_library.kicker().with_labels(
+        await sync_steam_library.kicker().with_labels(
             queue=QUEUE_LOW
         ).kiq(
             job_id=job.id,
             user_id=config.user_id,
             is_scheduled=True,
         )
-
-        # Update job with task ID
-        job.taskiq_task_id = task_result.task_id
-        session.add(job)
-        session.commit()
 
         return True
 
