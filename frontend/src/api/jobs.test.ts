@@ -267,4 +267,88 @@ describe('jobsApi', () => {
       expect(result.gamesAdded).toBe(0);
     });
   });
+
+  describe('getJobChildren', () => {
+    it('should fetch children for a parent job', async () => {
+      const childJob1 = {
+        ...mockJobApiResponse,
+        id: 'child-1',
+        status: 'completed',
+      };
+      const childJob2 = {
+        ...mockJobApiResponse,
+        id: 'child-2',
+        status: 'processing',
+      };
+      const mockResponse = [childJob1, childJob2];
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      const result = await jobsApi.getJobChildren('parent-job-1');
+
+      expect(api.get).toHaveBeenCalledWith('/jobs/parent-job-1/children', {
+        params: {},
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('child-1');
+      expect(result[0].status).toBe(JobStatus.COMPLETED);
+      expect(result[1].id).toBe('child-2');
+      expect(result[1].status).toBe(JobStatus.PROCESSING);
+    });
+
+    it('should pass status filter when provided', async () => {
+      const mockResponse = [mockJobApiResponse];
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      await jobsApi.getJobChildren('parent-job-1', {
+        status: JobStatus.COMPLETED,
+      });
+
+      expect(api.get).toHaveBeenCalledWith('/jobs/parent-job-1/children', {
+        params: { status: 'completed' },
+      });
+    });
+
+    it('should pass limit and offset filters when provided', async () => {
+      const mockResponse = [mockJobApiResponse];
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      await jobsApi.getJobChildren('parent-job-1', {
+        limit: 10,
+        offset: 5,
+      });
+
+      expect(api.get).toHaveBeenCalledWith('/jobs/parent-job-1/children', {
+        params: { limit: 10, offset: 5 },
+      });
+    });
+
+    it('should pass all filters when provided', async () => {
+      const mockResponse = [mockJobApiResponse];
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      await jobsApi.getJobChildren('parent-job-1', {
+        status: JobStatus.FAILED,
+        limit: 20,
+        offset: 10,
+      });
+
+      expect(api.get).toHaveBeenCalledWith('/jobs/parent-job-1/children', {
+        params: { status: 'failed', limit: 20, offset: 10 },
+      });
+    });
+
+    it('should return empty array when no children exist', async () => {
+      const mockResponse: typeof mockJobApiResponse[] = [];
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      const result = await jobsApi.getJobChildren('parent-job-1');
+
+      expect(result).toHaveLength(0);
+    });
+  });
 });

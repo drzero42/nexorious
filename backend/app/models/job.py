@@ -62,6 +62,7 @@ class ImportJobSubtype(str, Enum):
     """Subtype for import jobs - specifies the kind of import operation."""
 
     LIBRARY_IMPORT = "library_import"
+    WISHLIST_IMPORT = "wishlist_import"
     AUTO_MATCH = "auto_match"
     BULK_SYNC = "bulk_sync"
     BULK_UNMATCH = "bulk_unmatch"
@@ -146,6 +147,14 @@ class Job(SQLModel, table=True):
         description="Taskiq task ID for status tracking",
     )
 
+    # Parent-child relationship for fan-out tasks
+    parent_job_id: Optional[str] = Field(
+        default=None,
+        foreign_key="jobs.id",
+        index=True,
+        description="ID of parent job for fan-out tasks",
+    )
+
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = Field(default=None)
@@ -156,6 +165,22 @@ class Job(SQLModel, table=True):
     review_items: List["ReviewItem"] = Relationship(
         back_populates="job",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    # Parent-child relationships for fan-out tasks
+    children: List["Job"] = Relationship(
+        back_populates="parent",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[Job.parent_job_id]",
+        },
+    )
+    parent: Optional["Job"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={
+            "remote_side": "[Job.id]",
+            "foreign_keys": "[Job.parent_job_id]",
+        },
     )
 
     def get_result_summary(self) -> Dict[str, Any]:

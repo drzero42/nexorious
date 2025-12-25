@@ -2,6 +2,7 @@ import { api } from './client';
 import type {
   Job,
   JobFilters,
+  JobChildrenFilters,
   JobListResponse,
   JobCancelResponse,
   JobDeleteResponse,
@@ -194,4 +195,24 @@ export async function getJobsSummary(): Promise<JobsSummary> {
     runningCount: response.running_count,
     failedCount: response.failed_count,
   };
+}
+
+/**
+ * Get child jobs for a parent job.
+ */
+export async function getJobChildren(
+  jobId: string,
+  filters?: JobChildrenFilters
+): Promise<Job[]> {
+  const params: Record<string, string | number> = {};
+
+  if (filters?.status) params.status = filters.status;
+  if (filters?.limit) params.limit = filters.limit;
+  if (filters?.offset) params.offset = filters.offset;
+
+  const response = await api.get<JobApiResponse[]>(`/jobs/${jobId}/children`, {
+    params,
+  });
+
+  return response.map(transformJob);
 }

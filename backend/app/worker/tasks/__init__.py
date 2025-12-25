@@ -4,6 +4,9 @@ Import all task modules here to ensure they are registered with the broker.
 The taskiq worker discovers tasks by importing these modules.
 """
 
+# Worker startup handlers (must be imported to register event handlers)
+from app.worker import startup as _startup  # noqa: F401
+
 # Maintenance tasks (scheduled cleanup operations)
 from app.worker.tasks.maintenance import (
     cleanup_task_results,
@@ -19,7 +22,8 @@ from app.worker.tasks.sync import (
 
 # Import/export tasks
 from app.worker.tasks.import_export import (
-    import_nexorious_json,
+    import_nexorious_coordinator,
+    import_nexorious_item,
     export_collection,
 )
 
@@ -32,6 +36,7 @@ __all__ = [
     "sync_steam_library",
     "check_pending_syncs",
     # Import/Export
-    "import_nexorious_json",
+    "import_nexorious_coordinator",
+    "import_nexorious_item",
     "export_collection",
 ]

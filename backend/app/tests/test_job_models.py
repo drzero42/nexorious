@@ -463,6 +463,82 @@ class TestJobModel:
         assert len(pending_jobs) == 1
         assert pending_jobs[0].status == BackgroundJobStatus.PENDING
 
+    def test_job_parent_child_relationship(self, session: Session, test_user: User):
+        """Test that jobs can have parent-child relationships."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child job
+        child = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            parent_job_id=parent.id,
+        )
+        session.add(child)
+        session.commit()
+        session.refresh(child)
+
+        # Verify relationship
+        assert child.parent_job_id == parent.id
+        session.refresh(parent)
+        assert len(parent.children) == 1
+        assert parent.children[0].id == child.id
+
+        # Verify child can access parent
+        session.refresh(child)
+        assert child.parent is not None
+        assert child.parent.id == parent.id
+
+    def test_job_cascade_delete_children(self, session: Session, test_user: User):
+        """Test that deleting a parent job cascades to child jobs."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        parent_id = parent.id
+
+        # Create multiple child jobs
+        child_ids = []
+        for i in range(3):
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+            )
+            session.add(child)
+            session.commit()
+            child_ids.append(child.id)
+
+        # Verify children exist
+        session.refresh(parent)
+        assert len(parent.children) == 3
+
+        # Delete parent job
+        session.delete(parent)
+        session.commit()
+
+        # Verify parent is deleted
+        deleted_parent = session.get(Job, parent_id)
+        assert deleted_parent is None
+
+        # Verify all children are deleted by cascade
+        for child_id in child_ids:
+            deleted_child = session.get(Job, child_id)
+            assert deleted_child is None
+
 
 class TestReviewItemModel:
     """Test ReviewItem model database operations and constraints."""

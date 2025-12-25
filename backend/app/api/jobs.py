@@ -7,7 +7,8 @@ background jobs (sync, import, export operations).
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
-from typing import Annotated, Optional
+from sqlalchemy import update as sa_update
+from typing import Annotated, Optional, List
 from datetime import datetime, timezone
 import logging
 
@@ -34,7 +35,8 @@ from ..schemas.job import (
     JobStatus,
 )
 from ..schemas.import_schemas import JobsSummaryResponse
-from ..utils.sqlalchemy_typed import desc
+from ..services.batch_job_service import BatchJobService
+from ..utils.sqlalchemy_typed import desc, is_
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -55,6 +57,21 @@ def _job_to_response(job: Job, session: Session) -> JobResponse:
     )
     pending_review_count = session.exec(pending_count_stmt).one()
 
+    # Check for aggregated progress from children
+    batch_service = BatchJobService(session)
+    aggregated = batch_service.get_aggregated_progress(job.id)
+
+    if aggregated:
+        # Parent job: use aggregated progress from children
+        progress_current = aggregated["progress_current"]
+        progress_total = aggregated["progress_total"]
+        progress_percent = int((progress_current / progress_total) * 100) if progress_total > 0 else 0
+    else:
+        # Non-parent job or no children: use job's own progress
+        progress_current = job.progress_current
+        progress_total = job.progress_total
+        progress_percent = job.progress_percent
+
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
@@ -62,9 +79,9 @@ def _job_to_response(job: Job, session: Session) -> JobResponse:
         source=JobSource(job.source.value),
         status=JobStatus(job.status.value),
         priority=job.priority,
-        progress_current=job.progress_current,
-        progress_total=job.progress_total,
-        progress_percent=job.progress_percent,
+        progress_current=progress_current,
+        progress_total=progress_total,
+        progress_percent=progress_percent,
         result_summary=job.get_result_summary(),
         error_message=job.error_message,
         file_path=job.file_path,
@@ -105,6 +122,9 @@ async def list_jobs(
 
     # Build query - only show jobs for the current user
     query = select(Job).where(Job.user_id == current_user.id)
+
+    # Exclude child jobs (they appear in parent's detail view)
+    query = query.where(is_(Job.parent_job_id, None))
 
     # Apply filters
     if job_type:
@@ -223,6 +243,48 @@ async def get_job(
     return _job_to_response(job, session)
 
 
+@router.get("/{job_id}/children", response_model=List[JobResponse])
+async def get_job_children(
+    job_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    job_status: Optional[JobStatus] = Query(default=None, description="Filter by status", alias="status"),
+    limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
+    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
+) -> List[JobResponse]:
+    """
+    Get child jobs for a parent job.
+
+    Returns paginated list of child jobs with optional status filtering.
+    Only accessible by the job owner.
+    """
+    logger.debug(f"Getting children for job {job_id}")
+
+    # Verify parent job exists and belongs to user
+    parent_job = session.get(Job, job_id)
+    if not parent_job or parent_job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    # Build query for children
+    query = select(Job).where(Job.parent_job_id == job_id)
+
+    if job_status:
+        query = query.where(Job.status == BackgroundJobStatus(job_status.value))
+
+    # Order by created_at descending (newest first)
+    query = query.order_by(desc(col(Job.created_at)))
+
+    # Apply pagination
+    query = query.offset(offset).limit(limit)
+
+    children = session.exec(query).all()
+
+    return [_job_to_response(job, session) for job in children]
+
+
 @router.post("/{job_id}/cancel", response_model=JobCancelResponse)
 async def cancel_job(
     job_id: str,
@@ -275,6 +337,23 @@ async def cancel_job(
         "cancelled_from_status": previous_status.value,
         "cancelled_by": current_user.id,
     })
+
+    # Cancel all non-terminal children
+    session.execute(
+        sa_update(Job)
+        .where(Job.parent_job_id == job_id)
+        .where(Job.status.in_([
+            BackgroundJobStatus.PENDING,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.AWAITING_REVIEW,
+            BackgroundJobStatus.READY,
+            BackgroundJobStatus.FINALIZING,
+        ]))
+        .values(
+            status=BackgroundJobStatus.CANCELLED,
+            completed_at=datetime.now(timezone.utc),
+        )
+    )
 
     session.commit()
     session.refresh(job)

@@ -245,6 +245,41 @@ class TestListJobs:
         response = client.get("/api/jobs/")
         assert response.status_code == 403  # No token = 403 Forbidden
 
+    def test_list_jobs_excludes_child_jobs(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that job list excludes child jobs by default."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child job
+        child = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            parent_job_id=parent.id,
+        )
+        session.add(child)
+        session.commit()
+
+        # List jobs
+        response = client.get("/api/jobs/", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        job_ids = [job["id"] for job in data["jobs"]]
+
+        # Parent should be in list, child should not
+        assert parent.id in job_ids
+        assert child.id not in job_ids
+
 
 class TestGetJob:
     """Tests for GET /api/jobs/{job_id} endpoint."""
@@ -511,6 +546,55 @@ class TestCancelJob:
 
         response = client.post(f"/api/jobs/{admin_job.id}/cancel", headers=auth_headers)
         assert response.status_code == 404
+
+    def test_cancel_job_cascades_to_children(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that cancelling a parent job also cancels pending/processing children."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child jobs with different statuses
+        statuses = [
+            BackgroundJobStatus.PENDING,
+            BackgroundJobStatus.PROCESSING,
+            BackgroundJobStatus.COMPLETED,  # Should NOT be cancelled
+        ]
+        children = []
+        for s in statuses:
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=s,
+            )
+            session.add(child)
+            children.append(child)
+        session.commit()
+        for c in children:
+            session.refresh(c)
+
+        # Cancel parent
+        response = client.post(f"/api/jobs/{parent.id}/cancel", headers=auth_headers)
+        assert response.status_code == 200
+
+        # Refresh children and check statuses
+        session.expire_all()
+        for c in children:
+            session.refresh(c)
+
+        assert children[0].status == BackgroundJobStatus.CANCELLED  # Was PENDING
+        assert children[1].status == BackgroundJobStatus.CANCELLED  # Was PROCESSING
+        assert children[2].status == BackgroundJobStatus.COMPLETED  # Should remain COMPLETED
 
 
 class TestDeleteJob:
@@ -1023,3 +1107,195 @@ class TestDiscardImport:
 
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
         assert response.status_code == 409
+
+
+class TestGetJobChildren:
+    """Tests for GET /api/jobs/{job_id}/children endpoint."""
+
+    def test_get_job_children(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting child jobs for a parent job."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create child jobs with different statuses
+        for i in range(3):
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=BackgroundJobStatus.COMPLETED if i < 2 else BackgroundJobStatus.FAILED,
+            )
+            session.add(child)
+        session.commit()
+
+        # Get all children
+        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3
+
+        # Filter by status
+        response = client.get(
+            f"/api/jobs/{parent.id}/children?status=completed",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+    def test_get_job_returns_aggregated_progress_for_parent(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that getting a parent job returns aggregated progress from children."""
+        # Create parent job with its own progress values (should be overridden)
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            progress_current=0,
+            progress_total=0,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create completed children
+        for _ in range(3):
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=BackgroundJobStatus.COMPLETED,
+            )
+            session.add(child)
+        # Create one pending child
+        child = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            parent_job_id=parent.id,
+            status=BackgroundJobStatus.PENDING,
+        )
+        session.add(child)
+        session.commit()
+
+        # Get parent job
+        response = client.get(f"/api/jobs/{parent.id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should have aggregated progress from children
+        assert data["progress_total"] == 4
+        assert data["progress_current"] == 3  # 3 completed
+        assert data["progress_percent"] == 75
+
+    def test_get_job_children_empty(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting children for a job with no children."""
+        # Create parent job with no children
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 0
+
+    def test_get_job_children_not_found(
+        self, client, auth_headers, test_user: User
+    ):
+        """Test getting children for a non-existent job."""
+        import uuid
+        fake_id = str(uuid.uuid4())
+        response = client.get(f"/api/jobs/{fake_id}/children", headers=auth_headers)
+        assert response.status_code == 404
+
+    def test_get_job_children_unauthorized(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting children for another user's job."""
+        # Create another user
+        other_user = User(
+            username="otheruser",
+            email="other@example.com",
+            password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqXq.m",
+            is_verified=True,
+        )
+        session.add(other_user)
+        session.commit()
+
+        # Create parent job for other user
+        parent = Job(
+            user_id=other_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Try to access other user's job
+        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
+        assert response.status_code == 404
+
+    def test_get_job_children_pagination(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test pagination of child jobs."""
+        # Create parent job
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create 10 child jobs
+        for i in range(10):
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+            )
+            session.add(child)
+        session.commit()
+
+        # Get first 5
+        response = client.get(
+            f"/api/jobs/{parent.id}/children?limit=5&offset=0",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 5
+
+        # Get next 5
+        response = client.get(
+            f"/api/jobs/{parent.id}/children?limit=5&offset=5",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 5
