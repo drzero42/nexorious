@@ -2,14 +2,14 @@
 
 ## Overview
 
-Refactor the background job and task system to use Valkey (Redis) as the message broker while simplifying the data model. This addresses issues with orphaned tasks after restarts and removes the need for DIY advisory locking.
+Refactor the background job and task system to use NATS JetStream as the message broker while simplifying the data model. JetStream's durable consumers with acknowledgment-based delivery eliminate the need for startup recovery code and DIY advisory locking.
 
 ## Goals
 
-1. **Reliability**: Tasks survive restarts, no orphaned jobs
-2. **Simplicity**: Remove custom locking and recovery code
+1. **Reliability**: JetStream handles message persistence and redelivery automatically
+2. **Simplicity**: Remove custom locking, recovery code, and startup tasks
 3. **Clarity**: Unified data model (Job + JobItem replaces Job + Child Jobs + ReviewItem)
-4. **Idempotency**: All tasks safe to re-run
+4. **Priority Queues**: Subject-based routing for high/low priority tasks
 
 ## Architecture
 
@@ -27,12 +27,72 @@ Refactor the background job and task system to use Valkey (Redis) as the message
                            │ tasks read/write
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               TaskIQ + Valkey (Redis Streams)                │
-│  - RedisStreamBroker (acknowledgment-based)                 │
-│  - Consumer groups (one worker per task)                    │
-│  - PEL + XCLAIM (automatic orphan recovery)                 │
-│  - Idempotent tasks (re-run safe)                          │
+│                 TaskIQ + NATS JetStream                      │
+│  - PullBasedJetStreamBroker (acknowledgment-based)          │
+│  - Durable consumers (automatic redelivery on failure)      │
+│  - Subject-based routing (tasks.high.*, tasks.low.*)        │
+│  - No startup recovery needed (JetStream handles it)        │
 └─────────────────────────────────────────────────────────────┘
+```
+
+## Priority Queue Design
+
+NATS subject hierarchy enables priority routing without separate infrastructure:
+
+```
+Subject Pattern:
+  tasks.high.import.*    - High priority import tasks
+  tasks.high.sync.*      - High priority sync tasks
+  tasks.low.import.*     - Low priority import tasks
+  tasks.low.maintenance  - Low priority maintenance tasks
+
+Worker Subscription:
+  Worker subscribes to "tasks.>" (all tasks)
+  Weighted polling: check high-priority first, then low-priority
+```
+
+### Weighted Polling Implementation
+
+```python
+class PriorityAwareWorker:
+    """Single worker that prioritizes high-priority tasks."""
+
+    def __init__(self, js: JetStreamContext):
+        self.js = js
+        self.high_consumer = None
+        self.low_consumer = None
+
+    async def setup(self):
+        # Create separate consumers for each priority
+        self.high_consumer = await self.js.pull_subscribe(
+            "tasks.high.>",
+            durable="nexorious_high",
+            config=ConsumerConfig(ack_wait=300),  # 5 min ack timeout
+        )
+        self.low_consumer = await self.js.pull_subscribe(
+            "tasks.low.>",
+            durable="nexorious_low",
+            config=ConsumerConfig(ack_wait=300),
+        )
+
+    async def fetch_next_task(self) -> Optional[Msg]:
+        # Always try high priority first
+        try:
+            msgs = await self.high_consumer.fetch(1, timeout=0.1)
+            if msgs:
+                return msgs[0]
+        except TimeoutError:
+            pass
+
+        # Fall back to low priority
+        try:
+            msgs = await self.low_consumer.fetch(1, timeout=1.0)
+            if msgs:
+                return msgs[0]
+        except TimeoutError:
+            pass
+
+        return None
 ```
 
 ## Data Model
@@ -65,7 +125,7 @@ class Job(SQLModel, table=True):
 - `processed_item_ids_json`, `failed_item_ids_json` (JobItem is source of truth)
 - `parent_job_id`, `children`, `parent` (no parent-child pattern)
 - `import_subtype` (context in JobItem if needed)
-- `taskiq_task_id` (not needed with Redis Streams)
+- `taskiq_task_id` (not needed with JetStream durable consumers)
 
 **Removed statuses:**
 - `AWAITING_REVIEW` (derived: has JobItems with `status=PENDING_REVIEW`)
@@ -153,7 +213,7 @@ def get_job_status(session: Session, job_id: str) -> BackgroundJobStatus:
    - Parses input (JSON file, Steam API response, etc.)
    - Creates Job with total_items count
    - Creates JobItems in bulk (all PENDING)
-   - Enqueues one task per JobItem
+   - Enqueues one task per JobItem to appropriate priority subject
    - Returns job_id immediately
 
 2. Each task (parallel across workers):
@@ -161,7 +221,8 @@ def get_job_status(session: Session, job_id: str) -> BackgroundJobStatus:
    - Skips if already processed (idempotency)
    - Processes item (IGDB match, create UserGame, etc.)
    - Updates JobItem status + result
-   - Done
+   - Acknowledges message (JetStream removes from queue)
+   - If task fails without ack, JetStream auto-redelivers
 
 3. Job completion:
    - No explicit finalize step
@@ -172,8 +233,22 @@ def get_job_status(session: Session, job_id: str) -> BackgroundJobStatus:
 ### Task Definition
 
 ```python
-@broker.task(task_name="import.process_item", queue=QUEUE_HIGH)
-async def process_import_item(job_item_id: str) -> dict:
+from taskiq_nats import PullBasedJetStreamBroker
+
+broker = PullBasedJetStreamBroker(
+    servers=["nats://nats:4222"],
+    stream_name="nexorious_tasks",
+)
+
+@broker.task(task_name="tasks.high.import.process_item")
+async def process_import_item_high(job_item_id: str) -> dict:
+    return await _process_import_item(job_item_id)
+
+@broker.task(task_name="tasks.low.import.process_item")
+async def process_import_item_low(job_item_id: str) -> dict:
+    return await _process_import_item(job_item_id)
+
+async def _process_import_item(job_item_id: str) -> dict:
     async with get_session() as session:
         job_item = session.get(JobItem, job_item_id)
         if not job_item:
@@ -199,6 +274,16 @@ async def process_import_item(job_item_id: str) -> dict:
         return {"status": job_item.status}
 ```
 
+### Enqueueing with Priority
+
+```python
+async def enqueue_import_task(job_item_id: str, priority: BackgroundJobPriority):
+    if priority == BackgroundJobPriority.HIGH:
+        await process_import_item_high.kiq(job_item_id)
+    else:
+        await process_import_item_low.kiq(job_item_id)
+```
+
 ### Task Categories
 
 | Category | Job Record | JobItems | Result Backend |
@@ -210,63 +295,53 @@ async def process_import_item(job_item_id: str) -> dict:
 ## Broker Configuration
 
 ```python
-from taskiq_redis import RedisStreamBroker, RedisResultBackend
+from taskiq_nats import PullBasedJetStreamBroker
 
-broker = RedisStreamBroker(
-    url="redis://valkey:6379",
-    queue_name="nexorious_tasks",
-    consumer_group="nexorious_workers",
+broker = PullBasedJetStreamBroker(
+    servers=["nats://nats:4222"],
+    stream_name="nexorious_tasks",
+    durable="nexorious_workers",
+    stream_config={
+        "subjects": ["tasks.>"],
+        "retention": "work_queue",  # Delete messages after ack
+        "storage": "file",          # Persist to disk
+        "max_age": 86400 * 7,       # 7 day retention for unprocessed
+    },
+    consumer_config={
+        "ack_wait": 300,            # 5 minute ack timeout
+        "max_deliver": 3,           # Retry failed tasks up to 3 times
+    },
 )
-
-# Result backend for system/maintenance tasks only
-broker.with_result_backend(RedisResultBackend(url="redis://valkey:6379"))
 ```
 
-## Startup Recovery
+### Result Backend (NATS KV Store)
 
-Handles edge cases where Valkey loses data or tasks were in-flight during shutdown:
+For maintenance tasks that need queryable results, use NATS KV Store instead of Object Store. KV Store is designed for small key-value pairs with TTL support:
 
 ```python
-import asyncio
-from redis.asyncio import Redis
-from redis.exceptions import ConnectionError
+from nats.js.kv import KeyValue
 
-async def wait_for_valkey(url: str, max_retries: int = 30, delay: float = 1.0) -> bool:
-    redis = Redis.from_url(url)
+async def setup_result_store(js: JetStreamContext) -> KeyValue:
+    """Create KV bucket for task results with 7-day TTL."""
+    return await js.create_key_value(
+        bucket="task_results",
+        ttl=86400 * 7,  # 7 days
+    )
 
-    for attempt in range(max_retries):
-        try:
-            await redis.ping()
-            await redis.close()
-            return True
-        except ConnectionError:
-            logger.info(f"Waiting for Valkey... (attempt {attempt + 1}/{max_retries})")
-            await asyncio.sleep(delay)
+async def store_task_result(kv: KeyValue, task_id: str, result: dict):
+    """Store task result (auto-expires after TTL)."""
+    await kv.put(f"task:{task_id}", json.dumps(result).encode())
 
-    await redis.close()
-    return False
-
-@app.on_event("startup")
-async def recover_incomplete_jobs():
-    valkey_url = settings.VALKEY_URL
-
-    if not await wait_for_valkey(valkey_url):
-        logger.error("Valkey not available after retries, skipping recovery")
-        return
-
-    async with get_session() as session:
-        incomplete_items = session.exec(
-            select(JobItem)
-            .where(JobItem.status.in_([JobItemStatus.PENDING, JobItemStatus.PROCESSING]))
-        ).all()
-
-        for item in incomplete_items:
-            item.status = JobItemStatus.PENDING
-            await process_import_item.kiq(item.id)
-
-        session.commit()
-        logger.info(f"Re-queued {len(incomplete_items)} incomplete job items")
+async def get_task_result(kv: KeyValue, task_id: str) -> Optional[dict]:
+    """Retrieve task result if it exists."""
+    try:
+        entry = await kv.get(f"task:{task_id}")
+        return json.loads(entry.value.decode())
+    except KeyNotFoundError:
+        return None
 ```
+
+Note: `taskiq-nats` doesn't have a built-in KV result backend, so maintenance tasks store results directly via the NATS KV API rather than through TaskIQ's result backend abstraction.
 
 ## API Changes
 
@@ -327,36 +402,39 @@ class JobResponse(BaseModel):
 
 ```yaml
 services:
-  valkey:
-    image: valkey/valkey:8-alpine
+  nats:
+    image: nats:2.10-alpine
     ports:
-      - "6379:6379"
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring
     volumes:
-      - valkey_data:/data
-    command: valkey-server --appendonly yes
+      - nats_data:/data
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
 
 volumes:
-  valkey_data:
+  nats_data:
 ```
 
 ### Python Dependencies
 
 | Remove | Add |
 |--------|-----|
-| `taskiq-pg` | `taskiq-redis` |
+| `taskiq-pg` | `taskiq-nats` |
 
 ### Environment Variables
 
 | Variable | Example |
 |----------|---------|
-| `VALKEY_URL` | `redis://valkey:6379` |
+| `NATS_URL` | `nats://nats:4222` |
 
 ## Files to Remove
 
 | File | Reason |
 |------|--------|
 | `app/worker/locking.py` | Advisory locks no longer needed |
-| `app/worker/startup.py` | Replaced by new recovery function |
+| `app/worker/startup.py` | JetStream handles recovery automatically |
 | `app/worker/tasks/import_export/import_nexorious_coordinator.py` | No coordinator pattern |
 | `app/worker/tasks/import_export/import_nexorious_item.py` | Replaced by generic processor |
 | `app/services/batch_job_service.py` | Progress aggregation not needed |
@@ -365,13 +443,14 @@ volumes:
 
 | File | Changes |
 |------|---------|
-| `app/worker/broker.py` | Switch to `taskiq-redis` |
+| `app/worker/broker.py` | Switch to `taskiq-nats` PullBasedJetStreamBroker |
 | `app/models/job.py` | Simplify Job, remove ReviewItem, add JobItem |
 | `app/api/jobs.py` | Derived status, new `/items` endpoint |
 | `app/api/import_endpoints.py` | Fan-out in API, create JobItems |
 | `app/worker/tasks/sync/steam.py` | Use JobItem pattern |
 | `app/worker/tasks/import_export/export.py` | Job-only (no JobItems) |
 | `app/worker/tasks/maintenance/*.py` | No Job record, use result backend |
+| `app/main.py` | Remove startup recovery hook |
 
 ## Database Migration
 
@@ -384,13 +463,14 @@ Since we're resetting the database:
 
 | Topic | Decision |
 |-------|----------|
-| Task framework | Keep TaskIQ, swap broker to Redis Streams |
-| Message broker | Valkey with `taskiq-redis` RedisStreamBroker |
+| Task framework | Keep TaskIQ, swap broker to NATS JetStream |
+| Message broker | NATS with `taskiq-nats` PullBasedJetStreamBroker |
+| Priority queues | Subject-based routing (`tasks.high.*`, `tasks.low.*`) |
+| Worker model | Single worker type with weighted polling (high first) |
 | Job tracking | PostgreSQL remains source of truth |
 | Data model | Job + JobItem (replaces Job + Child Jobs + ReviewItem) |
 | Fan-out pattern | API creates JobItems and enqueues tasks (no coordinator) |
 | Task idempotency | Required - re-runs are safe |
-| Locking | Redis Streams consumer groups (remove DIY locks) |
-| Orphan recovery | Redis Streams PEL + startup recovery function |
+| Orphan recovery | JetStream durable consumers (no startup recovery needed) |
 | Job status | Always derived from JobItem counts |
-| Result backend | Keep for system/maintenance tasks only |
+| Result backend | NATS KV Store for system/maintenance tasks (7-day TTL) |
