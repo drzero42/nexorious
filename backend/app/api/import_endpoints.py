@@ -20,11 +20,14 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.job import (
     Job,
+    JobItem,
+    JobItemStatus,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
 )
+from ..worker.tasks.import_export.process_import_item import enqueue_import_task
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
 logger = logging.getLogger(__name__)
@@ -74,7 +77,6 @@ def _check_active_import(
         Job.status.in_([  # pyrefly: ignore[missing-attribute]
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
         ])
     )
     return session.exec(stmt).first()
@@ -182,31 +184,49 @@ async def import_nexorious_json(
         source=BackgroundJobSource.NEXORIOUS,
         status=BackgroundJobStatus.PENDING,
         priority=BackgroundJobPriority.HIGH,
-        progress_total=total_items,
+        total_items=total_items,
     )
-
-    # Store the JSON data in result_summary for the worker to process
-    job.set_result_summary({
-        "file_name": file.filename,
-        "file_size": len(content),
-        "total_games": total_items,
-        "export_version": data.get("export_version"),
-        "export_date": data.get("export_date"),
-        # Store raw data for worker (will be cleared after processing)
-        "_import_data": data,
-    })
 
     session.add(job)
     session.commit()
     session.refresh(job)
 
-    # Enqueue the coordinator task for fan-out processing
-    task_result = await import_nexorious_coordinator.kiq(job.id)
-    job.taskiq_task_id = task_result.task_id
-    session.add(job)
+    # Create JobItems in bulk for fan-out processing
+    job_items: list[JobItem] = []
+    for index, game_data in enumerate(games):
+        # Use IGDB ID as item_key if available, otherwise use index
+        igdb_id = game_data.get("igdb_id")
+        item_key = f"igdb_{igdb_id}" if igdb_id else f"game_{index}"
+
+        job_item = JobItem(
+            job_id=job.id,
+            user_id=current_user.id,
+            item_key=item_key,
+            source_title=game_data.get("title", f"Game {index}"),
+            source_metadata_json=json.dumps({
+                "item_type": "game",
+                "data": game_data,
+            }),
+            status=JobItemStatus.PENDING,
+        )
+        job_items.append(job_item)
+
+    # Bulk insert JobItems
+    session.add_all(job_items)
     session.commit()
 
-    logger.info(f"Created Nexorious import job {job.id} for user {current_user.id}")
+    # Refresh each item to get their IDs assigned by the database
+    for job_item in job_items:
+        session.refresh(job_item)
+
+    # Enqueue one task per JobItem
+    for job_item in job_items:
+        await enqueue_import_task(job_item.id, job.priority)
+
+    logger.info(
+        f"Created Nexorious import job {job.id} with {total_items} items "
+        f"for user {current_user.id}"
+    )
 
     return ImportJobCreatedResponseModel(
         job_id=job.id,
