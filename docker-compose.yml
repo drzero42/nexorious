@@ -52,6 +52,7 @@ services:
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+      NATS_URL: nats://nats:4222
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
     ports:
@@ -60,6 +61,8 @@ services:
       - ./backend:/app:Z
       - /app/.venv
     depends_on:
+      nats:
+        condition: service_healthy
       db:
         condition: service_healthy
 
