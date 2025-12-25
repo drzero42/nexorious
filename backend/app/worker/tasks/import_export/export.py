@@ -13,7 +13,7 @@ from typing import Dict, Any, List
 from sqlmodel import Session, select
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_HIGH
+from app.worker.queues import SUBJECT_HIGH_EXPORT
 from app.core.database import get_session_context
 from app.core.config import settings
 from app.models.job import Job, BackgroundJobStatus
@@ -213,10 +213,7 @@ def _write_csv_export(
     return file_path.stat().st_size
 
 
-@broker.task(
-    task_name="export.collection",
-    queue=QUEUE_HIGH,
-)
+@broker.task(task_name=SUBJECT_HIGH_EXPORT)
 async def export_collection(
     job_id: str,
     export_format: str,
@@ -264,7 +261,7 @@ async def export_collection(
             user_games = _build_user_games_query(session, job.user_id)
             total_games = len(user_games)
 
-            job.progress_total = total_games
+            job.total_items = total_games
             session.add(job)
             session.commit()
 
@@ -282,12 +279,6 @@ async def export_collection(
                     csv_row = _user_game_to_csv_row(session, user_game)
                     csv_rows.append(csv_row)
 
-                    # Update progress
-                    job.progress_current = i + 1
-                    session.add(job)
-                    if i % 50 == 0:  # Commit every 50 items
-                        session.commit()
-
                 session.commit()
                 file_size = _write_csv_export(csv_rows, file_path)
 
@@ -297,12 +288,6 @@ async def export_collection(
                 for i, user_game in enumerate(user_games):
                     game_data = _user_game_to_export_data(session, user_game)
                     games_data.append(game_data)
-
-                    # Update progress
-                    job.progress_current = i + 1
-                    session.add(job)
-                    if i % 50 == 0:  # Commit every 50 items
-                        session.commit()
 
                 session.commit()
 
@@ -336,9 +321,7 @@ async def export_collection(
             stats["exported_games"] = total_games
             stats["file_size_bytes"] = file_size
 
-            result_summary = job.get_result_summary()
-            result_summary.update(stats)
-            job.set_result_summary(result_summary)
+            logger.info(f"Export completed: {stats}")
 
             job.file_path = str(file_path)
             job.status = BackgroundJobStatus.COMPLETED
