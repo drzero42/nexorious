@@ -46,19 +46,22 @@ async def import_nexorious_item(job_id: str) -> Dict[str, Any]:
     logger.info(f"Starting Nexorious item import (job: {job_id})")
 
     async with get_session_context() as session:
-        # Try to acquire advisory lock - prevents duplicate execution
-        if not acquire_job_lock(session, job_id):
-            logger.info(f"Job {job_id} already being processed by another worker")
-            return {"status": "skipped", "reason": "duplicate_execution"}
-
-        # Get job first (outside try so exception handler can access it)
-        job = session.get(Job, job_id)
-        if not job:
-            logger.error(f"Job {job_id} not found")
-            release_job_lock(session, job_id)
-            return {"status": "error", "error": "Job not found"}
+        # Track lock ownership for safe release
+        lock_acquired = False
+        job: Job | None = None
 
         try:
+            # Try to acquire advisory lock - prevents duplicate execution
+            lock_acquired = acquire_job_lock(session, job_id)
+            if not lock_acquired:
+                logger.info(f"Job {job_id} already being processed by another worker")
+                return {"status": "skipped", "reason": "duplicate_execution"}
+
+            # Get job first
+            job = session.get(Job, job_id)
+            if not job:
+                logger.error(f"Job {job_id} not found")
+                return {"status": "error", "error": "Job not found"}
             # Update job status
             job.status = BackgroundJobStatus.PROCESSING
             job.started_at = datetime.now(timezone.utc)
@@ -117,19 +120,24 @@ async def import_nexorious_item(job_id: str) -> Dict[str, Any]:
             logger.error(f"Nexorious item import failed for job {job_id}: {e}", exc_info=True)
             # Rollback any pending transaction before updating job status
             session.rollback()
-            job.status = BackgroundJobStatus.FAILED
-            job.error_message = str(e)[:2000]
-            job.completed_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
 
-            # Check if all siblings are complete and finalize parent (even on failure)
-            if job.parent_job_id:
-                await _check_and_finalize_parent(session, job.parent_job_id)
+            # Only update job if we successfully retrieved it
+            if job:
+                job.status = BackgroundJobStatus.FAILED
+                job.error_message = str(e)[:2000]
+                job.completed_at = datetime.now(timezone.utc)
+                session.add(job)
+                session.commit()
+
+                # Check if all siblings are complete and finalize parent (even on failure)
+                if job.parent_job_id:
+                    await _check_and_finalize_parent(session, job.parent_job_id)
 
             return {"status": "error", "error": str(e)}
         finally:
-            release_job_lock(session, job_id)
+            # Only release lock if we successfully acquired it
+            if lock_acquired:
+                release_job_lock(session, job_id)
 
 
 async def _check_and_finalize_parent(session: Session, parent_job_id: str) -> None:
