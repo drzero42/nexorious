@@ -17,7 +17,7 @@ from app.core.database import get_session_context
 from app.models.job import Job, BackgroundJobStatus, ImportJobSubtype
 from app.services.igdb import IGDBService
 from app.services.game_service import GameService
-from app.worker.tasks.import_export.import_nexorious import (
+from app.worker.tasks.import_export.import_nexorious_helpers import (
     _process_nexorious_game,
     _process_wishlist_item,
 )

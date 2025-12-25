@@ -1,215 +1,28 @@
-"""Nexorious JSON import task.
+"""Nexorious JSON import helpers.
 
-Non-interactive import of trusted Nexorious JSON exports.
-Validates schema and export_version, looks up IGDB IDs,
-fetches metadata if not cached, and restores user data.
+Helper functions for processing Nexorious JSON exports.
+Used by the import_nexorious_item task for fan-out processing.
 """
 
 import logging
-from datetime import datetime, timezone, date
+from datetime import date
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
 
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
-from app.worker.locking import acquire_job_lock, release_job_lock
-from app.worker.broker import broker
-from app.worker.queues import QUEUE_HIGH
-from app.core.database import get_session_context
-from app.models.job import Job, BackgroundJobStatus
 from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, PlayStatus, OwnershipStatus
 from app.models.platform import Platform, Storefront
 from app.models.tag import Tag, UserGameTag
 from app.models.wishlist import Wishlist
-from app.services.igdb import IGDBService
 from app.services.game_service import GameService
 
 logger = logging.getLogger(__name__)
 
 # Supported export versions
 SUPPORTED_EXPORT_VERSIONS = ["1.0", "1.1", "1.2"]
-
-
-@broker.task(
-    task_name="import.nexorious_json",
-    queue=QUEUE_HIGH,
-)
-async def import_nexorious_json(job_id: str) -> Dict[str, Any]:
-    """
-    Import games from a Nexorious JSON export.
-
-    This is a non-interactive import that trusts IGDB IDs in the export.
-    The task:
-    1. Validates the JSON schema and export version
-    2. Looks up IGDB IDs and fetches metadata if not cached
-    3. Restores user data (play status, rating, notes, tags, platforms)
-
-    No review is required for this import type.
-
-    Args:
-        job_id: The Job ID for tracking progress
-
-    Returns:
-        Dictionary with import statistics.
-    """
-    logger.info(f"Starting Nexorious JSON import (job: {job_id})")
-
-    stats = {
-        "total_games": 0,
-        "imported": 0,
-        "already_in_collection": 0,
-        "skipped_invalid": 0,
-        "skipped_no_igdb_id": 0,
-        "errors": 0,
-        # Wishlist stats (v1.2+)
-        "total_wishlist": 0,
-        "wishlist_imported": 0,
-        "wishlist_already_exists": 0,
-        "wishlist_errors": 0,
-    }
-
-    async with get_session_context() as session:
-        # Try to acquire advisory lock - prevents duplicate execution
-        if not acquire_job_lock(session, job_id):
-            logger.info(f"Job {job_id} already being processed by another worker")
-            return {"status": "skipped", "reason": "duplicate_execution"}
-
-        # Get job first (outside try so exception handler can access it)
-        job = session.get(Job, job_id)
-        if not job:
-            logger.error(f"Job {job_id} not found")
-            release_job_lock(session, job_id)
-            return {"status": "error", "error": "Job not found"}
-
-        try:
-            # Update job status
-            job.status = BackgroundJobStatus.PROCESSING
-            job.started_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
-
-            # Get import data from job
-            result_summary = job.get_result_summary()
-            import_data = result_summary.get("_import_data", {})
-
-            if not import_data:
-                raise ValueError("No import data found in job")
-
-            # Validate export version
-            export_version = import_data.get("export_version", "1.0")
-            if export_version not in SUPPORTED_EXPORT_VERSIONS:
-                logger.warning(
-                    f"Unknown export version {export_version}, "
-                    f"proceeding with best-effort import"
-                )
-
-            games = import_data.get("games", [])
-            stats["total_games"] = len(games)
-            job.progress_total = len(games)
-            session.add(job)
-            session.commit()
-
-            # Create services
-            igdb_service = IGDBService()
-            game_service = GameService(session, igdb_service)
-
-            # Process each game
-            for i, game_data in enumerate(games):
-                try:
-                    result = await _process_nexorious_game(
-                        session=session,
-                        game_service=game_service,
-                        user_id=job.user_id,
-                        game_data=game_data,
-                    )
-
-                    if result == "imported":
-                        stats["imported"] += 1
-                    elif result == "already_in_collection":
-                        stats["already_in_collection"] += 1
-                    elif result == "skipped_no_igdb_id":
-                        stats["skipped_no_igdb_id"] += 1
-                    elif result == "skipped_invalid":
-                        stats["skipped_invalid"] += 1
-                    else:
-                        stats["errors"] += 1
-
-                except Exception as e:
-                    logger.error(
-                        f"Error processing Nexorious game: {e}",
-                        exc_info=True,
-                    )
-                    stats["errors"] += 1
-
-                # Update progress
-                job.progress_current = i + 1
-                session.add(job)
-                session.commit()
-
-            # Process wishlist items (v1.2+)
-            wishlist_items = import_data.get("wishlist", [])
-            stats["total_wishlist"] = len(wishlist_items)
-
-            for wishlist_data in wishlist_items:
-                try:
-                    result = await _process_wishlist_item(
-                        session=session,
-                        game_service=game_service,
-                        user_id=job.user_id,
-                        wishlist_data=wishlist_data,
-                    )
-
-                    if result == "imported":
-                        stats["wishlist_imported"] += 1
-                    elif result == "already_exists":
-                        stats["wishlist_already_exists"] += 1
-                    else:
-                        stats["wishlist_errors"] += 1
-
-                except Exception as e:
-                    logger.error(
-                        f"Error processing wishlist item: {e}",
-                        exc_info=True,
-                    )
-                    stats["wishlist_errors"] += 1
-
-            # Clear import data from result summary to save space
-            result_summary.pop("_import_data", None)
-            result_summary.update(stats)
-            job.set_result_summary(result_summary)
-
-            # Nexorious imports don't need review - complete directly
-            job.status = BackgroundJobStatus.COMPLETED
-            job.completed_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
-
-            logger.info(
-                f"Nexorious import completed for job {job_id}: "
-                f"{stats['imported']} games imported, "
-                f"{stats['already_in_collection']} already in collection, "
-                f"{stats['skipped_no_igdb_id']} skipped (no IGDB ID), "
-                f"{stats['errors']} errors; "
-                f"{stats['wishlist_imported']} wishlist imported, "
-                f"{stats['wishlist_already_exists']} wishlist already exists"
-            )
-
-            return {"status": "success", **stats}
-
-        except Exception as e:
-            logger.error(f"Nexorious import failed for job {job_id}: {e}")
-            # Rollback any pending transaction before updating job status
-            session.rollback()
-            job.status = BackgroundJobStatus.FAILED
-            job.error_message = str(e)[:2000]
-            job.completed_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
-            return {"status": "error", "error": str(e), **stats}
-        finally:
-            release_job_lock(session, job_id)
 
 
 async def _process_nexorious_game(
