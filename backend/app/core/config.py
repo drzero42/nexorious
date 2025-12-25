@@ -85,9 +85,12 @@ class Settings(BaseSettings):
         default="/tmp/nexorious_uploads",
         description="Directory for temporary file uploads and processing"
     )
-    
+
+    # NATS JetStream
+    NATS_URL: str = "nats://localhost:4222"
+
     model_config = SettingsConfigDict(
-        env_file=".env", 
+        env_file=".env",
         case_sensitive=False,
         env_parse_none_str='none'
     )
