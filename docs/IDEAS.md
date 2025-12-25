@@ -43,3 +43,18 @@ The import process should start by just parsing the CSV and creating jobs. Looki
 
 ## Make sure platform/storefront seed data can be loaded
 In the new frontend we don't have a button to load seed data.
+
+## Get rid of all SQLite mentions to avoid confusion
+Documentation should only mention that PostgreSQL is supported.
+We also still have tests that use sqlite.
+
+## Implement distributed rate-limiting using NATS JetSteam KV
+Replace the current rate-limiting functionality (used when talking to IGDB) with a distributed implementation to have all outgoing calls to IGDB rate-limited together. This makes scaling the workers safer and avoids very low limits on individual workers.
+
+## Websocket?
+We have support for websocket, but actually use polling. Should we remove websocket support?
+
+## No more Jobs or Review pages
+Instead of having separate pages for these things, import/export page should handle everything to do with those functions
+A separate maintenance page can handle loading seed data and scheduling of various maintenance jobs.
+And lastly the sync page should handle everything for sync - including reviewing matches of games to IGDB.
