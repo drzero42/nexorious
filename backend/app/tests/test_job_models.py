@@ -45,8 +45,7 @@ class TestJobModel:
         assert job.source == BackgroundJobSource.STEAM
         assert job.status == BackgroundJobStatus.PENDING
         assert job.priority == BackgroundJobPriority.HIGH
-        assert job.progress_current == 0
-        assert job.progress_total == 0
+        assert job.total_items == 0
         assert job.created_at is not None
         assert isinstance(job.created_at, datetime)
 
@@ -233,17 +232,16 @@ class TestJobModel:
         session.add(job)
         session.commit()
 
-        # Update status and progress
+        # Update status and timestamps
         job.status = BackgroundJobStatus.PROCESSING
         job.started_at = datetime.now(timezone.utc)
-        job.progress_current = 10
-        job.progress_total = 100
+        job.total_items = 100
         session.commit()
         session.refresh(job)
 
         assert job.status == BackgroundJobStatus.PROCESSING
         assert job.started_at is not None
-        assert job.progress_current == 10
+        assert job.total_items == 100
 
     def test_delete_job(self, session: Session, test_user: User):
         """Test deleting a Job."""
@@ -339,6 +337,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="test-game",
             source_title="Test Game",
         )
 
@@ -360,10 +359,11 @@ class TestJobItemModel:
         session.add(job)
         session.commit()
 
-        for status in JobItemStatus:
+        for i, status in enumerate(JobItemStatus):
             review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game with status {status.value}",
                 status=status,
             )
@@ -394,6 +394,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="cs-go-730",
             source_title="Counter-Strike: Global Offensive",
         )
 
@@ -429,6 +430,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="ff7-427",
             source_title="Final Fantasy VII",
         )
 
@@ -463,6 +465,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="test-game",
             source_title="Test Game",
         )
 
@@ -489,6 +492,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="test-game",
             source_title="Test Game",
         )
 
@@ -502,8 +506,8 @@ class TestJobItemModel:
 
         # Check reverse relationship
         session.refresh(job)
-        assert len(job.review_items) == 1
-        assert job.review_items[0].id == review_item.id
+        assert len(job.items) == 1
+        assert job.items[0].id == review_item.id
 
     def test_review_item_foreign_key_constraints(self, session: Session, test_user: User):
         """Test foreign key constraints."""
@@ -520,6 +524,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id="nonexistent-job-id",
             user_id=test_user.id,
+            item_key="test-game",
             source_title="Test Game",
         )
         session.add(review_item)
@@ -532,6 +537,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id="nonexistent-user-id",
+            item_key="test-game-2",
             source_title="Test Game",
         )
         session.add(review_item)
@@ -551,20 +557,21 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="cs-go-730",
             source_title="Counter-Strike: Global Offensive",
-            status=JobItemStatus.PENDING,
+            status=JobItemStatus.PENDING_REVIEW,
         )
         session.add(review_item)
         session.commit()
 
-        # Resolve the item
-        review_item.status = JobItemStatus.MATCHED
+        # Resolve the item (mark as completed with IGDB match)
+        review_item.status = JobItemStatus.COMPLETED
         review_item.resolved_igdb_id = 1942
         review_item.resolved_at = datetime.now(timezone.utc)
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == JobItemStatus.MATCHED
+        assert review_item.status == JobItemStatus.COMPLETED
         assert review_item.resolved_igdb_id == 1942
         assert review_item.resolved_at is not None
 
@@ -581,8 +588,9 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="unknown-game",
             source_title="Unknown Game",
-            status=JobItemStatus.PENDING,
+            status=JobItemStatus.PENDING_REVIEW,
         )
         session.add(review_item)
         session.commit()
@@ -596,8 +604,8 @@ class TestJobItemModel:
         assert review_item.status == JobItemStatus.SKIPPED
         assert review_item.resolved_igdb_id is None  # No IGDB match for skipped
 
-    def test_removal_review_item(self, session: Session, test_user: User):
-        """Test review item for game removal detection."""
+    def test_failed_job_item(self, session: Session, test_user: User):
+        """Test job item with failure metadata."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
@@ -609,19 +617,22 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
-            source_title="Removed Game",
-            status=JobItemStatus.REMOVAL,
+            item_key="failed-game-12345",
+            source_title="Failed Game",
+            status=JobItemStatus.FAILED,
+            error_message="IGDB API returned 404",
         )
 
-        metadata = {"reason": "refund", "original_steam_appid": 12345}
+        metadata = {"reason": "api_error", "steam_appid": 12345}
         review_item.set_source_metadata(metadata)
 
         session.add(review_item)
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == JobItemStatus.REMOVAL
-        assert review_item.get_source_metadata()["reason"] == "refund"
+        assert review_item.status == JobItemStatus.FAILED
+        assert review_item.error_message == "IGDB API returned 404"
+        assert review_item.get_source_metadata()["reason"] == "api_error"
 
     def test_delete_review_item(self, session: Session, test_user: User):
         """Test deleting a JobItem."""
@@ -636,6 +647,7 @@ class TestJobItemModel:
         review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="test-game",
             source_title="Test Game",
         )
         session.add(review_item)
@@ -666,6 +678,7 @@ class TestJobItemModel:
             review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
             )
             session.add(review_item)
@@ -703,7 +716,7 @@ class TestJobItemModel:
         statuses = [
             JobItemStatus.PENDING,
             JobItemStatus.PENDING,
-            JobItemStatus.MATCHED,
+            JobItemStatus.COMPLETED,
             JobItemStatus.SKIPPED,
         ]
 
@@ -711,6 +724,7 @@ class TestJobItemModel:
             review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
                 status=status,
             )
@@ -819,11 +833,12 @@ class TestJobItemModelIndexes:
         session.commit()
 
         # Create review items for each job
-        for job in jobs:
+        for idx, job in enumerate(jobs):
             for j in range(5):
                 review_item = JobItem(
                     job_id=job.id,
                     user_id=test_user.id,
+                    item_key=f"game-{idx}-{j}",
                     source_title=f"Game {j} for Job {job.id[:8]}",
                 )
                 session.add(review_item)
@@ -848,13 +863,14 @@ class TestJobItemModelIndexes:
         session.commit()
 
         # Create items with different statuses
-        # Each source_title must be unique within the job due to unique constraint
+        # Each item_key must be unique within the job due to unique constraint
         item_counter = 0
         for status in JobItemStatus:
             for i in range(2):
                 review_item = JobItem(
                     job_id=job.id,
                     user_id=test_user.id,
+                    item_key=f"game-{item_counter}",
                     source_title=f"Game {status.value} {item_counter}",
                     status=status,
                 )

@@ -193,3 +193,19 @@ class JobItem(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("job_id", "item_key", name="uq_job_item_key"),
     )
+
+    def get_source_metadata(self) -> Dict[str, Any]:
+        """Get source metadata as a dictionary."""
+        return json.loads(self.source_metadata_json) if self.source_metadata_json else {}
+
+    def set_source_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Set source metadata from a dictionary."""
+        self.source_metadata_json = json.dumps(metadata)
+
+    def get_igdb_candidates(self) -> List[Dict[str, Any]]:
+        """Get IGDB candidates as a list."""
+        return json.loads(self.igdb_candidates_json) if self.igdb_candidates_json else []
+
+    def set_igdb_candidates(self, candidates: List[Dict[str, Any]]) -> None:
+        """Set IGDB candidates from a list."""
+        self.igdb_candidates_json = json.dumps(candidates)
