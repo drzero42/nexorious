@@ -148,11 +148,11 @@ async def get_jobs_summary(
     """
     logger.debug(f"Getting jobs summary for user {current_user.id}")
 
-    # Count running jobs (processing, finalizing)
+    # Count running jobs (processing)
     running_result = session.exec(
         select(func.count()).select_from(Job).where(
             Job.user_id == current_user.id,
-            col(Job.status).in_([BackgroundJobStatus.PROCESSING, BackgroundJobStatus.FINALIZING])
+            Job.status == BackgroundJobStatus.PROCESSING
         )
     )
     running_count = running_result.one()

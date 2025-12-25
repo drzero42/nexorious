@@ -55,27 +55,40 @@ class ImportJobResponse(BaseModel):
         This helper method provides a clean conversion from the Job model
         to the API response schema, mapping fields appropriately.
 
+        Note: To compute progress statistics, you need to call this with
+        a session and use get_job_progress from job_service.
+
         Args:
             job: A Job model instance (must have job_type=IMPORT)
 
         Returns:
             ImportJobResponse with all fields populated from the Job
         """
+        # Basic counts from job
+        total = job.total_items
+        # For now, provide basic values - caller should compute from job items if needed
+        processed = 0
+        successful = 0
+        failed = 0
+
+        # Compute progress percentage
+        progress_pct = 0 if total == 0 else int((processed / total) * 100)
+
         return cls(
             id=job.id,
             source=job.source.value,
-            job_type=job.import_subtype.value if job.import_subtype else "import",
+            job_type=job.job_type.value,
             status=job.status.value,
-            progress=job.progress_percent,
-            total_items=job.progress_total,
-            processed_items=job.progress_current,
-            successful_items=job.successful_items,
-            failed_items=job.failed_items,
+            progress=progress_pct,
+            total_items=total,
+            processed_items=processed,
+            successful_items=successful,
+            failed_items=failed,
             created_at=job.created_at,
             started_at=job.started_at,
             completed_at=job.completed_at,
             error_message=job.error_message,
-            metadata=job.get_result_summary(),
+            metadata={},  # No longer storing result summary on Job
         )
 
 
