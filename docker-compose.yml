@@ -90,11 +90,14 @@ services:
              uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks"
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
+      NATS_URL: nats://nats:4222
       # Scheduler creates tables (no TASKIQ_SKIP_TABLE_CREATION)
     volumes:
       - ./backend:/app:Z
       - /app/.venv
     depends_on:
+      nats:
+        condition: service_healthy
       db:
         condition: service_healthy
     healthcheck:
