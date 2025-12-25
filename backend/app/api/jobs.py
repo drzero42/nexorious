@@ -7,7 +7,7 @@ background jobs (sync, import, export operations).
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 from datetime import datetime, timezone
 import logging
 
@@ -224,6 +224,48 @@ async def get_job(
         )
 
     return _job_to_response(job, session)
+
+
+@router.get("/{job_id}/children", response_model=List[JobResponse])
+async def get_job_children(
+    job_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    job_status: Optional[JobStatus] = Query(default=None, description="Filter by status", alias="status"),
+    limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
+    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
+) -> List[JobResponse]:
+    """
+    Get child jobs for a parent job.
+
+    Returns paginated list of child jobs with optional status filtering.
+    Only accessible by the job owner.
+    """
+    logger.debug(f"Getting children for job {job_id}")
+
+    # Verify parent job exists and belongs to user
+    parent_job = session.get(Job, job_id)
+    if not parent_job or parent_job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    # Build query for children
+    query = select(Job).where(Job.parent_job_id == job_id)
+
+    if job_status:
+        query = query.where(Job.status == BackgroundJobStatus(job_status.value))
+
+    # Order by created_at descending (newest first)
+    query = query.order_by(desc(col(Job.created_at)))
+
+    # Apply pagination
+    query = query.offset(offset).limit(limit)
+
+    children = session.exec(query).all()
+
+    return [_job_to_response(job, session) for job in children]
 
 
 @router.post("/{job_id}/cancel", response_model=JobCancelResponse)
