@@ -1153,6 +1153,54 @@ class TestGetJobChildren:
         data = response.json()
         assert len(data) == 2
 
+    def test_get_job_returns_aggregated_progress_for_parent(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that getting a parent job returns aggregated progress from children."""
+        # Create parent job with its own progress values (should be overridden)
+        parent = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            progress_current=0,
+            progress_total=0,
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+
+        # Create completed children
+        for _ in range(3):
+            child = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.IMPORT,
+                source=BackgroundJobSource.NEXORIOUS,
+                parent_job_id=parent.id,
+                status=BackgroundJobStatus.COMPLETED,
+            )
+            session.add(child)
+        # Create one pending child
+        child = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            parent_job_id=parent.id,
+            status=BackgroundJobStatus.PENDING,
+        )
+        session.add(child)
+        session.commit()
+
+        # Get parent job
+        response = client.get(f"/api/jobs/{parent.id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should have aggregated progress from children
+        assert data["progress_total"] == 4
+        assert data["progress_current"] == 3  # 3 completed
+        assert data["progress_percent"] == 75
+
     def test_get_job_children_empty(
         self, client, auth_headers, test_user: User, session: Session
     ):

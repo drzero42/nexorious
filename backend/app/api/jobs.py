@@ -35,6 +35,7 @@ from ..schemas.job import (
     JobStatus,
 )
 from ..schemas.import_schemas import JobsSummaryResponse
+from ..services.batch_job_service import BatchJobService
 from ..utils.sqlalchemy_typed import desc, is_
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -56,6 +57,21 @@ def _job_to_response(job: Job, session: Session) -> JobResponse:
     )
     pending_review_count = session.exec(pending_count_stmt).one()
 
+    # Check for aggregated progress from children
+    batch_service = BatchJobService(session)
+    aggregated = batch_service.get_aggregated_progress(job.id)
+
+    if aggregated:
+        # Parent job: use aggregated progress from children
+        progress_current = aggregated["progress_current"]
+        progress_total = aggregated["progress_total"]
+        progress_percent = int((progress_current / progress_total) * 100) if progress_total > 0 else 0
+    else:
+        # Non-parent job or no children: use job's own progress
+        progress_current = job.progress_current
+        progress_total = job.progress_total
+        progress_percent = job.progress_percent
+
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
@@ -63,9 +79,9 @@ def _job_to_response(job: Job, session: Session) -> JobResponse:
         source=JobSource(job.source.value),
         status=JobStatus(job.status.value),
         priority=job.priority,
-        progress_current=job.progress_current,
-        progress_total=job.progress_total,
-        progress_percent=job.progress_percent,
+        progress_current=progress_current,
+        progress_total=progress_total,
+        progress_percent=progress_percent,
         result_summary=job.get_result_summary(),
         error_message=job.error_message,
         file_path=job.file_path,
