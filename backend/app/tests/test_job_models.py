@@ -1,5 +1,5 @@
 """
-Unit tests for Job and ReviewItem models.
+Unit tests for Job and JobItem models.
 
 Tests the unified job model for background tasks (sync, import, export)
 and the review item model for games needing user matching decisions.
@@ -13,13 +13,12 @@ from datetime import datetime, timezone, timedelta
 from ..models.user import User
 from ..models.job import (
     Job,
-    ReviewItem,
+    JobItem,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
-    ImportJobSubtype,
-    ReviewItemStatus,
+    JobItemStatus,
 )
 
 
@@ -65,17 +64,11 @@ class TestJobModel:
 
         assert job.status == BackgroundJobStatus.PENDING
         assert job.priority == BackgroundJobPriority.HIGH
-        assert job.progress_current == 0
-        assert job.progress_total == 0
-        assert job.successful_items == 0
-        assert job.failed_items == 0
-        assert job.import_subtype is None
+        assert job.total_items == 0
         assert job.error_message is None
         assert job.file_path is None
-        assert job.taskiq_task_id is None
         assert job.started_at is None
         assert job.completed_at is None
-        assert job.get_error_log() == []
 
     def test_job_all_types(self, session: Session, test_user: User):
         """Test all job types can be created."""
@@ -117,118 +110,20 @@ class TestJobModel:
         sources = {j.source for j in jobs}
         assert sources == set(BackgroundJobSource)
 
-    def test_job_all_import_subtypes(self, session: Session, test_user: User):
-        """Test all import job subtypes can be set."""
-        for subtype in ImportJobSubtype:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.STEAM,
-                import_subtype=subtype,
-            )
-            session.add(job)
-
-        session.commit()
-
-        jobs = session.exec(
-            select(Job).where(Job.user_id == test_user.id)
-        ).all()
-
-        assert len(jobs) == len(ImportJobSubtype)
-        subtypes = {j.import_subtype for j in jobs}
-        assert subtypes == set(ImportJobSubtype)
-
-    def test_job_successful_and_failed_items(self, session: Session, test_user: User):
-        """Test successful and failed items tracking."""
+    def test_job_total_items(self, session: Session, test_user: User):
+        """Test total items tracking."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.CSV,
-            import_subtype=ImportJobSubtype.LIBRARY_IMPORT,
-            progress_total=100,
-            progress_current=80,
-            successful_items=70,
-            failed_items=10,
+            total_items=100,
         )
 
         session.add(job)
         session.commit()
         session.refresh(job)
 
-        assert job.progress_total == 100
-        assert job.progress_current == 80
-        assert job.successful_items == 70
-        assert job.failed_items == 10
-        # Verify: successful + failed = processed
-        assert job.successful_items + job.failed_items == job.progress_current
-
-    def test_job_error_log_json(self, session: Session, test_user: User):
-        """Test error log JSON serialization."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.CSV,
-        )
-
-        # Set error log
-        errors = [
-            {"row": 1, "error": "Invalid game title", "field": "title"},
-            {"row": 5, "error": "Missing platform", "field": "platform"},
-            {"row": 12, "error": "Duplicate entry", "field": "igdb_id"},
-        ]
-        job.set_error_log(errors)
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Get error log
-        retrieved = job.get_error_log()
-        assert retrieved == errors
-        assert len(retrieved) == 3
-        assert retrieved[0]["row"] == 1
-        assert retrieved[1]["error"] == "Missing platform"
-
-    def test_job_add_error(self, session: Session, test_user: User):
-        """Test adding errors incrementally."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-
-        session.add(job)
-        session.commit()
-
-        # Start with empty error log
-        assert job.get_error_log() == []
-
-        # Add errors one by one
-        job.add_error({"row": 1, "error": "First error"})
-        job.add_error({"row": 2, "error": "Second error"})
-        job.add_error({"row": 3, "error": "Third error"})
-
-        session.commit()
-        session.refresh(job)
-
-        errors = job.get_error_log()
-        assert len(errors) == 3
-        assert errors[0]["error"] == "First error"
-        assert errors[2]["error"] == "Third error"
-
-    def test_job_error_log_empty(self, session: Session, test_user: User):
-        """Test empty error log returns empty list."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.EXPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        assert job.get_error_log() == []
+        assert job.total_items == 100
 
     def test_job_all_statuses(self, session: Session, test_user: User):
         """Test all job statuses can be set."""
@@ -251,69 +146,6 @@ class TestJobModel:
         statuses = {j.status for j in jobs}
         assert statuses == set(BackgroundJobStatus)
 
-    def test_job_result_summary_json(self, session: Session, test_user: User):
-        """Test result summary JSON serialization."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-
-        # Set result summary
-        summary = {"games_added": 42, "games_skipped": 3, "errors": []}
-        job.set_result_summary(summary)
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Get result summary
-        retrieved = job.get_result_summary()
-        assert retrieved == summary
-        assert retrieved["games_added"] == 42
-
-    def test_job_result_summary_empty(self, session: Session, test_user: User):
-        """Test empty result summary returns empty dict."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.EXPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        assert job.get_result_summary() == {}
-
-    def test_job_progress_percent(self, session: Session, test_user: User):
-        """Test progress percentage calculation."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            progress_current=50,
-            progress_total=100,
-        )
-
-        assert job.progress_percent == 50
-
-        # Test edge cases
-        job.progress_current = 0
-        assert job.progress_percent == 0
-
-        job.progress_current = 100
-        assert job.progress_percent == 100
-
-        # Test division by zero
-        job.progress_total = 0
-        assert job.progress_percent == 0
-
-        # Test overflow protection
-        job.progress_total = 100
-        job.progress_current = 150
-        assert job.progress_percent == 100  # Capped at 100
-
     def test_job_is_terminal(self, session: Session, test_user: User):
         """Test terminal state detection."""
         job = Job(
@@ -326,9 +158,6 @@ class TestJobModel:
         for status in [
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
-            BackgroundJobStatus.READY,
-            BackgroundJobStatus.FINALIZING,
         ]:
             job.status = status
             assert not job.is_terminal, f"{status} should not be terminal"
@@ -463,88 +292,11 @@ class TestJobModel:
         assert len(pending_jobs) == 1
         assert pending_jobs[0].status == BackgroundJobStatus.PENDING
 
-    def test_job_parent_child_relationship(self, session: Session, test_user: User):
-        """Test that jobs can have parent-child relationships."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
+class TestJobItemModel:
+    """Test JobItem model database operations and constraints."""
 
-        # Create child job
-        child = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            parent_job_id=parent.id,
-        )
-        session.add(child)
-        session.commit()
-        session.refresh(child)
-
-        # Verify relationship
-        assert child.parent_job_id == parent.id
-        session.refresh(parent)
-        assert len(parent.children) == 1
-        assert parent.children[0].id == child.id
-
-        # Verify child can access parent
-        session.refresh(child)
-        assert child.parent is not None
-        assert child.parent.id == parent.id
-
-    def test_job_cascade_delete_children(self, session: Session, test_user: User):
-        """Test that deleting a parent job cascades to child jobs."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        parent_id = parent.id
-
-        # Create multiple child jobs
-        child_ids = []
-        for i in range(3):
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
-            )
-            session.add(child)
-            session.commit()
-            child_ids.append(child.id)
-
-        # Verify children exist
-        session.refresh(parent)
-        assert len(parent.children) == 3
-
-        # Delete parent job
-        session.delete(parent)
-        session.commit()
-
-        # Verify parent is deleted
-        deleted_parent = session.get(Job, parent_id)
-        assert deleted_parent is None
-
-        # Verify all children are deleted by cascade
-        for child_id in child_ids:
-            deleted_child = session.get(Job, child_id)
-            assert deleted_child is None
-
-
-class TestReviewItemModel:
-    """Test ReviewItem model database operations and constraints."""
-
-    def test_create_review_item_success(self, session: Session, test_user: User):
-        """Test creating a ReviewItem with valid data."""
+    def test_create_job_item_success(self, session: Session, test_user: User):
+        """Test creating a JobItem with valid data."""
         # First create a job
         job = Job(
             user_id=test_user.id,
@@ -555,26 +307,27 @@ class TestReviewItemModel:
         session.commit()
         session.refresh(job)
 
-        # Create review item
-        review_item = ReviewItem(
+        # Create job item
+        job_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
+            item_key="cs-go",
             source_title="Counter-Strike: Global Offensive",
         )
 
-        session.add(review_item)
+        session.add(job_item)
         session.commit()
-        session.refresh(review_item)
+        session.refresh(job_item)
 
-        assert review_item.id is not None
-        assert review_item.job_id == job.id
-        assert review_item.user_id == test_user.id
-        assert review_item.source_title == "Counter-Strike: Global Offensive"
-        assert review_item.status == ReviewItemStatus.PENDING
-        assert review_item.created_at is not None
+        assert job_item.id is not None
+        assert job_item.job_id == job.id
+        assert job_item.user_id == test_user.id
+        assert job_item.source_title == "Counter-Strike: Global Offensive"
+        assert job_item.status == JobItemStatus.PENDING
+        assert job_item.created_at is not None
 
     def test_review_item_defaults(self, session: Session, test_user: User):
-        """Test ReviewItem default values."""
+        """Test JobItem default values."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
@@ -583,7 +336,7 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Test Game",
@@ -593,7 +346,7 @@ class TestReviewItemModel:
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == ReviewItemStatus.PENDING
+        assert review_item.status == JobItemStatus.PENDING
         assert review_item.resolved_igdb_id is None
         assert review_item.resolved_at is None
 
@@ -607,8 +360,8 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        for status in ReviewItemStatus:
-            review_item = ReviewItem(
+        for status in JobItemStatus:
+            review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
                 source_title=f"Game with status {status.value}",
@@ -619,12 +372,12 @@ class TestReviewItemModel:
         session.commit()
 
         items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job.id)
+            select(JobItem).where(JobItem.job_id == job.id)
         ).all()
 
-        assert len(items) == len(ReviewItemStatus)
+        assert len(items) == len(JobItemStatus)
         statuses = {item.status for item in items}
-        assert statuses == set(ReviewItemStatus)
+        assert statuses == set(JobItemStatus)
 
     def test_review_item_source_metadata_json(
         self, session: Session, test_user: User
@@ -638,7 +391,7 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Counter-Strike: Global Offensive",
@@ -673,7 +426,7 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Final Fantasy VII",
@@ -707,7 +460,7 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Test Game",
@@ -733,7 +486,7 @@ class TestReviewItemModel:
         session.commit()
         session.refresh(job)
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Test Game",
@@ -764,7 +517,7 @@ class TestReviewItemModel:
         session.commit()
 
         # Test invalid job_id
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id="nonexistent-job-id",
             user_id=test_user.id,
             source_title="Test Game",
@@ -776,7 +529,7 @@ class TestReviewItemModel:
         session.rollback()
 
         # Test invalid user_id
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id="nonexistent-user-id",
             source_title="Test Game",
@@ -795,23 +548,23 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Counter-Strike: Global Offensive",
-            status=ReviewItemStatus.PENDING,
+            status=JobItemStatus.PENDING,
         )
         session.add(review_item)
         session.commit()
 
         # Resolve the item
-        review_item.status = ReviewItemStatus.MATCHED
+        review_item.status = JobItemStatus.MATCHED
         review_item.resolved_igdb_id = 1942
         review_item.resolved_at = datetime.now(timezone.utc)
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == ReviewItemStatus.MATCHED
+        assert review_item.status == JobItemStatus.MATCHED
         assert review_item.resolved_igdb_id == 1942
         assert review_item.resolved_at is not None
 
@@ -825,22 +578,22 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Unknown Game",
-            status=ReviewItemStatus.PENDING,
+            status=JobItemStatus.PENDING,
         )
         session.add(review_item)
         session.commit()
 
         # Skip the item
-        review_item.status = ReviewItemStatus.SKIPPED
+        review_item.status = JobItemStatus.SKIPPED
         review_item.resolved_at = datetime.now(timezone.utc)
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == ReviewItemStatus.SKIPPED
+        assert review_item.status == JobItemStatus.SKIPPED
         assert review_item.resolved_igdb_id is None  # No IGDB match for skipped
 
     def test_removal_review_item(self, session: Session, test_user: User):
@@ -853,11 +606,11 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Removed Game",
-            status=ReviewItemStatus.REMOVAL,
+            status=JobItemStatus.REMOVAL,
         )
 
         metadata = {"reason": "refund", "original_steam_appid": 12345}
@@ -867,11 +620,11 @@ class TestReviewItemModel:
         session.commit()
         session.refresh(review_item)
 
-        assert review_item.status == ReviewItemStatus.REMOVAL
+        assert review_item.status == JobItemStatus.REMOVAL
         assert review_item.get_source_metadata()["reason"] == "refund"
 
     def test_delete_review_item(self, session: Session, test_user: User):
-        """Test deleting a ReviewItem."""
+        """Test deleting a JobItem."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -880,7 +633,7 @@ class TestReviewItemModel:
         session.add(job)
         session.commit()
 
-        review_item = ReviewItem(
+        review_item = JobItem(
             job_id=job.id,
             user_id=test_user.id,
             source_title="Test Game",
@@ -892,7 +645,7 @@ class TestReviewItemModel:
         session.delete(review_item)
         session.commit()
 
-        deleted_item = session.get(ReviewItem, item_id)
+        deleted_item = session.get(JobItem, item_id)
         assert deleted_item is None
 
     def test_cascade_delete_review_items_with_job(
@@ -910,7 +663,7 @@ class TestReviewItemModel:
 
         # Create multiple review items
         for i in range(3):
-            review_item = ReviewItem(
+            review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
                 source_title=f"Game {i}",
@@ -920,7 +673,7 @@ class TestReviewItemModel:
 
         # Verify items exist
         items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job_id)
+            select(JobItem).where(JobItem.job_id == job_id)
         ).all()
         assert len(items) == 3
 
@@ -948,14 +701,14 @@ class TestReviewItemModel:
 
         # Create items with different statuses
         statuses = [
-            ReviewItemStatus.PENDING,
-            ReviewItemStatus.PENDING,
-            ReviewItemStatus.MATCHED,
-            ReviewItemStatus.SKIPPED,
+            JobItemStatus.PENDING,
+            JobItemStatus.PENDING,
+            JobItemStatus.MATCHED,
+            JobItemStatus.SKIPPED,
         ]
 
         for i, status in enumerate(statuses):
-            review_item = ReviewItem(
+            review_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
                 source_title=f"Game {i}",
@@ -966,14 +719,14 @@ class TestReviewItemModel:
 
         # Query pending items
         pending_items = session.exec(
-            select(ReviewItem).where(
-                ReviewItem.user_id == test_user.id,
-                ReviewItem.status == ReviewItemStatus.PENDING,
+            select(JobItem).where(
+                JobItem.user_id == test_user.id,
+                JobItem.status == JobItemStatus.PENDING,
             )
         ).all()
 
         assert len(pending_items) == 2
-        assert all(item.status == ReviewItemStatus.PENDING for item in pending_items)
+        assert all(item.status == JobItemStatus.PENDING for item in pending_items)
 
 
 class TestJobModelIndexes:
@@ -1048,8 +801,8 @@ class TestJobModelIndexes:
         assert len(import_jobs) == 2
 
 
-class TestReviewItemModelIndexes:
-    """Test ReviewItem model database indexes."""
+class TestJobItemModelIndexes:
+    """Test JobItem model database indexes."""
 
     def test_job_id_index(self, session: Session, test_user: User):
         """Test job_id index for efficient job review queries."""
@@ -1068,7 +821,7 @@ class TestReviewItemModelIndexes:
         # Create review items for each job
         for job in jobs:
             for j in range(5):
-                review_item = ReviewItem(
+                review_item = JobItem(
                     job_id=job.id,
                     user_id=test_user.id,
                     source_title=f"Game {j} for Job {job.id[:8]}",
@@ -1079,7 +832,7 @@ class TestReviewItemModelIndexes:
         # Query by job_id should be efficient
         target_job = jobs[1]
         job_items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == target_job.id)
+            select(JobItem).where(JobItem.job_id == target_job.id)
         ).all()
 
         assert len(job_items) == 5
@@ -1097,9 +850,9 @@ class TestReviewItemModelIndexes:
         # Create items with different statuses
         # Each source_title must be unique within the job due to unique constraint
         item_counter = 0
-        for status in ReviewItemStatus:
+        for status in JobItemStatus:
             for i in range(2):
-                review_item = ReviewItem(
+                review_item = JobItem(
                     job_id=job.id,
                     user_id=test_user.id,
                     source_title=f"Game {status.value} {item_counter}",
@@ -1111,7 +864,7 @@ class TestReviewItemModelIndexes:
 
         # Query by status should be efficient
         pending_items = session.exec(
-            select(ReviewItem).where(ReviewItem.status == ReviewItemStatus.PENDING)
+            select(JobItem).where(JobItem.status == JobItemStatus.PENDING)
         ).all()
 
         assert len(pending_items) == 2
@@ -1151,379 +904,3 @@ class TestJobModelEdgeCases:
 
         assert job.file_path == "/exports/collection_2025-01-01.json"
 
-    def test_taskiq_task_id(self, session: Session, test_user: User):
-        """Test taskiq task ID tracking."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.SYNC,
-            source=BackgroundJobSource.STEAM,
-            taskiq_task_id="abc123-def456",
-        )
-
-        session.add(job)
-        session.commit()
-
-        # Query by taskiq ID should work efficiently
-        found_job = session.exec(
-            select(Job).where(Job.taskiq_task_id == "abc123-def456")
-        ).first()
-
-        assert found_job is not None
-        assert found_job.id == job.id
-
-    def test_invalid_json_handling(self, session: Session, test_user: User):
-        """Test handling of invalid JSON in result_summary."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        # Manually set invalid JSON
-        job.result_summary_json = "not valid json"
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Should return empty dict for invalid JSON
-        assert job.get_result_summary() == {}
-
-    def test_invalid_error_log_json_handling(self, session: Session, test_user: User):
-        """Test handling of invalid JSON in error_log."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        # Manually set invalid JSON
-        job.error_log_json = "not valid json"
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Should return empty list for invalid JSON
-        assert job.get_error_log() == []
-
-    def test_import_subtype_index(self, session: Session, test_user: User):
-        """Test import_subtype index for efficient subtype filtering."""
-        # Create jobs with different subtypes
-        for subtype in ImportJobSubtype:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.CSV,
-                import_subtype=subtype,
-            )
-            session.add(job)
-        session.commit()
-
-        # Query by import_subtype should be efficient
-        library_import_jobs = session.exec(
-            select(Job).where(Job.import_subtype == ImportJobSubtype.LIBRARY_IMPORT)
-        ).all()
-
-        assert len(library_import_jobs) == 1
-        assert library_import_jobs[0].import_subtype == ImportJobSubtype.LIBRARY_IMPORT
-
-
-class TestReviewItemModelEdgeCases:
-    """Test edge cases for ReviewItem model."""
-
-    def test_long_source_title(self, session: Session, test_user: User):
-        """Test source title field length constraints."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        session.add(job)
-        session.commit()
-
-        review_item = ReviewItem(
-            job_id=job.id,
-            user_id=test_user.id,
-            source_title="T" * 500,  # Max length
-        )
-
-        session.add(review_item)
-        session.commit()
-        session.refresh(review_item)
-
-        assert len(review_item.source_title) == 500
-
-    def test_unicode_source_title(self, session: Session, test_user: User):
-        """Test Unicode characters in source title."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        session.add(job)
-        session.commit()
-
-        unicode_titles = [
-            "ファイナルファンタジー VII",  # Japanese
-            "最终幻想 VII",  # Chinese
-            "Последняя Фантазия VII",  # Russian
-            "🎮 Game with Emojis 🎯",
-        ]
-
-        for title in unicode_titles:
-            review_item = ReviewItem(
-                job_id=job.id,
-                user_id=test_user.id,
-                source_title=title,
-            )
-            session.add(review_item)
-
-        session.commit()
-
-        items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job.id)
-        ).all()
-
-        saved_titles = {item.source_title for item in items}
-        assert saved_titles == set(unicode_titles)
-
-    def test_invalid_metadata_json_handling(
-        self, session: Session, test_user: User
-    ):
-        """Test handling of invalid JSON in metadata fields."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        session.add(job)
-        session.commit()
-
-        review_item = ReviewItem(
-            job_id=job.id,
-            user_id=test_user.id,
-            source_title="Test Game",
-        )
-        # Manually set invalid JSON
-        review_item.source_metadata_json = "invalid json"
-        review_item.igdb_candidates_json = "also invalid"
-
-        session.add(review_item)
-        session.commit()
-        session.refresh(review_item)
-
-        # Should return empty dict/list for invalid JSON
-        assert review_item.get_source_metadata() == {}
-        assert review_item.get_igdb_candidates() == []
-
-    def test_large_igdb_candidates_list(
-        self, session: Session, test_user: User
-    ):
-        """Test storing many IGDB candidates."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-        )
-        session.add(job)
-        session.commit()
-
-        review_item = ReviewItem(
-            job_id=job.id,
-            user_id=test_user.id,
-            source_title="Common Game Name",
-        )
-
-        # Create many candidates
-        candidates = [
-            {"id": i, "name": f"Game Variant {i}", "score": 100 - i}
-            for i in range(50)
-        ]
-        review_item.set_igdb_candidates(candidates)
-
-        session.add(review_item)
-        session.commit()
-        session.refresh(review_item)
-
-        retrieved = review_item.get_igdb_candidates()
-        assert len(retrieved) == 50
-        assert retrieved[0]["id"] == 0
-        assert retrieved[49]["id"] == 49
-
-
-class TestImportJobResponseFromJob:
-    """Test ImportJobResponse.from_job conversion from Job model."""
-
-    def test_from_job_basic_conversion(self, session: Session, test_user: User):
-        """Test basic Job to ImportJobResponse conversion."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-            import_subtype=ImportJobSubtype.LIBRARY_IMPORT,
-            progress_current=50,
-            progress_total=100,
-            successful_items=45,
-            failed_items=5,
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = ImportJobResponse.from_job(job)
-
-        assert response.id == job.id
-        assert response.source == "steam"
-        assert response.job_type == "library_import"
-        assert response.status == "processing"
-        assert response.progress == 50
-        assert response.total_items == 100
-        assert response.processed_items == 50
-        assert response.successful_items == 45
-        assert response.failed_items == 5
-        assert response.created_at == job.created_at
-        assert response.started_at is None
-        assert response.completed_at is None
-        assert response.error_message is None
-        assert response.metadata == {}
-
-    def test_from_job_with_timestamps(self, session: Session, test_user: User):
-        """Test Job conversion with timestamps populated."""
-        from datetime import timedelta
-        from ..schemas.import_schemas import ImportJobResponse
-
-        now = datetime.now(timezone.utc)
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.CSV,
-            status=BackgroundJobStatus.COMPLETED,
-            import_subtype=ImportJobSubtype.BULK_SYNC,
-            progress_current=100,
-            progress_total=100,
-            successful_items=95,
-            failed_items=5,
-            started_at=now - timedelta(minutes=5),
-            completed_at=now,
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = ImportJobResponse.from_job(job)
-
-        assert response.started_at is not None
-        assert response.completed_at is not None
-        assert response.progress == 100
-
-    def test_from_job_with_error(self, session: Session, test_user: User):
-        """Test Job conversion with error message."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.FAILED,
-            error_message="Connection timeout after 30 seconds",
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = ImportJobResponse.from_job(job)
-
-        assert response.status == "failed"
-        assert response.error_message == "Connection timeout after 30 seconds"
-
-    def test_from_job_with_metadata(self, session: Session, test_user: User):
-        """Test Job conversion with result_summary as metadata."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.GOG,
-            status=BackgroundJobStatus.COMPLETED,
-            import_subtype=ImportJobSubtype.AUTO_MATCH,
-        )
-        job.set_result_summary({
-            "games_matched": 42,
-            "games_skipped": 3,
-            "total_time_seconds": 15.5,
-        })
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = ImportJobResponse.from_job(job)
-
-        assert response.metadata is not None
-        assert response.metadata["games_matched"] == 42
-        assert response.metadata["games_skipped"] == 3
-        assert response.metadata["total_time_seconds"] == 15.5
-
-    def test_from_job_without_import_subtype(self, session: Session, test_user: User):
-        """Test Job conversion when import_subtype is None."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PENDING,
-            import_subtype=None,  # No subtype set
-        )
-
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = ImportJobResponse.from_job(job)
-
-        # When no import_subtype, should default to "import"
-        assert response.job_type == "import"
-
-    def test_from_job_all_sources(self, session: Session, test_user: User):
-        """Test Job conversion works for all BackgroundJobSource values."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        for source in BackgroundJobSource:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=source,
-                status=BackgroundJobStatus.PENDING,
-            )
-
-            session.add(job)
-            session.commit()
-            session.refresh(job)
-
-            response = ImportJobResponse.from_job(job)
-            assert response.source == source.value
-
-    def test_from_job_all_statuses(self, session: Session, test_user: User):
-        """Test Job conversion works for all BackgroundJobStatus values."""
-        from ..schemas.import_schemas import ImportJobResponse
-
-        for status in BackgroundJobStatus:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.SYSTEM,
-                status=status,
-            )
-
-            session.add(job)
-            session.commit()
-            session.refresh(job)
-
-            response = ImportJobResponse.from_job(job)
-            assert response.status == status.value

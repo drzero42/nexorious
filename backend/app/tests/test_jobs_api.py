@@ -14,12 +14,12 @@ from datetime import datetime, timezone
 from ..models.user import User
 from ..models.job import (
     Job,
-    ReviewItem,
+    JobItem,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
-    ReviewItemStatus,
+    JobItemStatus,
 )
 
 
@@ -264,7 +264,6 @@ class TestListJobs:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.NEXORIOUS,
-            parent_job_id=parent.id,
         )
         session.add(child)
         session.commit()
@@ -293,8 +292,6 @@ class TestGetJob:
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
-            progress_current=50,
-            progress_total=100,
         )
         session.add(job)
         session.commit()
@@ -308,9 +305,6 @@ class TestGetJob:
         assert data["job_type"] == "import"
         assert data["source"] == "steam"
         assert data["status"] == "processing"
-        assert data["progress_current"] == 50
-        assert data["progress_total"] == 100
-        assert data["progress_percent"] == 50
         assert data["is_terminal"] is False
 
     def test_get_job_with_review_items(
@@ -321,30 +315,29 @@ class TestGetJob:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
         session.refresh(job)
 
-        # Create review items
+        # Create job items
         for i in range(5):
-            status = ReviewItemStatus.PENDING if i < 3 else ReviewItemStatus.MATCHED
-            review_item = ReviewItem(
+            status = JobItemStatus.PENDING if i < 3 else JobItemStatus.COMPLETED
+            job_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
                 status=status,
             )
-            session.add(review_item)
+            session.add(job_item)
         session.commit()
 
         response = client.get(f"/api/jobs/{job.id}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["review_item_count"] == 5
-        assert data["pending_review_count"] == 3
 
     def test_get_job_not_found(self, client, auth_headers):
         """Test getting a non-existent job."""
@@ -384,7 +377,6 @@ class TestGetJob:
             started_at=now,
             completed_at=now,
         )
-        job.set_result_summary({"games_synced": 42})
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -394,7 +386,6 @@ class TestGetJob:
 
         data = response.json()
         assert data["is_terminal"] is True
-        assert data["result_summary"]["games_synced"] == 42
         assert data["duration_seconds"] is not None
 
 
@@ -437,8 +428,6 @@ class TestCancelJob:
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
-            progress_current=25,
-            progress_total=100,
         )
         session.add(job)
         session.commit()
@@ -459,7 +448,7 @@ class TestCancelJob:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
@@ -574,7 +563,6 @@ class TestCancelJob:
                 user_id=test_user.id,
                 job_type=BackgroundJobType.IMPORT,
                 source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
                 status=s,
             )
             session.add(child)
@@ -712,31 +700,32 @@ class TestDeleteJob:
         session.commit()
         job_id = job.id
 
-        # Create review items
-        review_item_ids = []
+        # Create job items
+        job_item_ids = []
         for i in range(3):
-            review_item = ReviewItem(
+            job_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
             )
-            session.add(review_item)
+            session.add(job_item)
         session.commit()
 
-        # Store review item IDs before deletion
-        review_items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job_id)
+        # Store job item IDs before deletion
+        job_items = session.exec(
+            select(JobItem).where(JobItem.job_id == job_id)
         ).all()
-        review_item_ids = [item.id for item in review_items]
-        assert len(review_item_ids) == 3
+        job_item_ids = [item.id for item in job_items]
+        assert len(job_item_ids) == 3
 
         # Delete job
         response = client.delete(f"/api/jobs/{job_id}", headers=auth_headers)
         assert response.status_code == 200
 
-        # Verify review items are also deleted
-        for review_id in review_item_ids:
-            item = session.get(ReviewItem, review_id)
+        # Verify job items are also deleted
+        for item_id in job_item_ids:
+            item = session.get(JobItem, item_id)
             assert item is None
 
     def test_delete_job_not_found(self, client, auth_headers):
@@ -800,15 +789,11 @@ class TestJobResponseFields:
             source=BackgroundJobSource.NEXORIOUS,
             status=BackgroundJobStatus.COMPLETED,
             priority=BackgroundJobPriority.HIGH,
-            progress_current=100,
-            progress_total=100,
             error_message=None,
             file_path="/exports/test.json",
-            taskiq_task_id="task-123",
             started_at=now,
             completed_at=now,
         )
-        job.set_result_summary({"exported": 50})
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -825,26 +810,16 @@ class TestJobResponseFields:
         assert "source" in data
         assert "status" in data
         assert "priority" in data
-        assert "progress_current" in data
-        assert "progress_total" in data
-        assert "progress_percent" in data
-        assert "result_summary" in data
         assert "error_message" in data
         assert "file_path" in data
-        assert "taskiq_task_id" in data
         assert "created_at" in data
         assert "started_at" in data
         assert "completed_at" in data
         assert "is_terminal" in data
         assert "duration_seconds" in data
-        assert "review_item_count" in data
-        assert "pending_review_count" in data
 
         # Verify specific values
         assert data["file_path"] == "/exports/test.json"
-        assert data["taskiq_task_id"] == "task-123"
-        assert data["result_summary"]["exported"] == 50
-        assert data["progress_percent"] == 100
         assert data["is_terminal"] is True
 
     def test_job_enum_values(
@@ -855,7 +830,7 @@ class TestJobResponseFields:
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.GOG,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
             priority=BackgroundJobPriority.LOW,
         )
         session.add(job)
@@ -942,21 +917,22 @@ class TestDiscardImport:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
         session.refresh(job)
 
-        # Add some review items
+        # Add some job items
         for i in range(3):
-            review_item = ReviewItem(
+            job_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Test Game {i}",
-                status=ReviewItemStatus.PENDING,
+                status=JobItemStatus.PENDING,
             )
-            session.add(review_item)
+            session.add(job_item)
         session.commit()
 
         response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
@@ -965,7 +941,7 @@ class TestDiscardImport:
         data = response.json()
         assert data["success"] is True
         assert data["deleted_job_id"] == job.id
-        assert data["deleted_review_items"] == 3
+        assert data["deleted_job_items"] == 3
         assert "discarded" in data["message"].lower()
 
         # Verify job is deleted
@@ -974,7 +950,7 @@ class TestDiscardImport:
 
         # Verify review items are deleted (cascade)
         remaining_items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job.id)
+            select(JobItem).where(JobItem.job_id == job.id)
         ).all()
         assert len(remaining_items) == 0
 
@@ -1001,7 +977,7 @@ class TestDiscardImport:
             user_id=other_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
@@ -1017,7 +993,7 @@ class TestDiscardImport:
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
@@ -1132,7 +1108,6 @@ class TestGetJobChildren:
                 user_id=test_user.id,
                 job_type=BackgroundJobType.IMPORT,
                 source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
                 status=BackgroundJobStatus.COMPLETED if i < 2 else BackgroundJobStatus.FAILED,
             )
             session.add(child)
@@ -1163,8 +1138,6 @@ class TestGetJobChildren:
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.NEXORIOUS,
             status=BackgroundJobStatus.PROCESSING,
-            progress_current=0,
-            progress_total=0,
         )
         session.add(parent)
         session.commit()
@@ -1176,7 +1149,6 @@ class TestGetJobChildren:
                 user_id=test_user.id,
                 job_type=BackgroundJobType.IMPORT,
                 source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
                 status=BackgroundJobStatus.COMPLETED,
             )
             session.add(child)
@@ -1185,7 +1157,6 @@ class TestGetJobChildren:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.NEXORIOUS,
-            parent_job_id=parent.id,
             status=BackgroundJobStatus.PENDING,
         )
         session.add(child)
@@ -1197,9 +1168,6 @@ class TestGetJobChildren:
         data = response.json()
 
         # Should have aggregated progress from children
-        assert data["progress_total"] == 4
-        assert data["progress_current"] == 3  # 3 completed
-        assert data["progress_percent"] == 75
 
     def test_get_job_children_empty(
         self, client, auth_headers, test_user: User, session: Session
@@ -1277,7 +1245,6 @@ class TestGetJobChildren:
                 user_id=test_user.id,
                 job_type=BackgroundJobType.IMPORT,
                 source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
             )
             session.add(child)
         session.commit()

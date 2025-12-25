@@ -23,8 +23,8 @@ from app.models.job import (
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
-    ReviewItem,
-    ReviewItemStatus,
+    JobItem,
+    JobItemStatus,
 )
 from app.models.user_game import PlayStatus, OwnershipStatus, UserGame
 from app.models.wishlist import Wishlist
@@ -240,15 +240,17 @@ class TestImportTasksJobStatusTransitions:
         """Verify job status enum values used by import tasks."""
         assert BackgroundJobStatus.PENDING.value == "pending"
         assert BackgroundJobStatus.PROCESSING.value == "processing"
-        assert BackgroundJobStatus.AWAITING_REVIEW.value == "awaiting_review"
         assert BackgroundJobStatus.COMPLETED.value == "completed"
         assert BackgroundJobStatus.FAILED.value == "failed"
 
-    def test_review_item_status_values(self):
-        """Verify review item status enum values."""
-        assert ReviewItemStatus.PENDING.value == "pending"
-        assert ReviewItemStatus.MATCHED.value == "matched"
-        assert ReviewItemStatus.SKIPPED.value == "skipped"
+    def test_job_item_status_values(self):
+        """Verify job item status enum values."""
+        assert JobItemStatus.PENDING.value == "pending"
+        assert JobItemStatus.PROCESSING.value == "processing"
+        assert JobItemStatus.COMPLETED.value == "completed"
+        assert JobItemStatus.PENDING_REVIEW.value == "pending_review"
+        assert JobItemStatus.SKIPPED.value == "skipped"
+        assert JobItemStatus.FAILED.value == "failed"
 
     def test_job_source_values(self):
         """Verify job source enum values for imports."""
