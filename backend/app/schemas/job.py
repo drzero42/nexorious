@@ -5,7 +5,7 @@ Provides request/response models for job listing, detail retrieval,
 cancellation, and deletion endpoints.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -50,6 +50,37 @@ class JobPriority(str, Enum):
     LOW = "low"
 
 
+class JobProgress(BaseModel):
+    """Progress counts by status."""
+
+    pending: int = 0
+    processing: int = 0
+    completed: int = 0
+    pending_review: int = 0
+    skipped: int = 0
+    failed: int = 0
+
+    @computed_field
+    @property
+    def total(self) -> int:
+        return (
+            self.pending
+            + self.processing
+            + self.completed
+            + self.pending_review
+            + self.skipped
+            + self.failed
+        )
+
+    @computed_field
+    @property
+    def percent(self) -> int:
+        if self.total == 0:
+            return 0
+        done = self.completed + self.pending_review + self.skipped + self.failed
+        return int((done / self.total) * 100)
+
+
 class JobResponse(BaseModel):
     """Response model for a single job."""
 
@@ -63,19 +94,14 @@ class JobResponse(BaseModel):
     priority: JobPriority
 
     # Progress tracking
-    progress_current: int
-    progress_total: int
-    progress_percent: int
+    progress: JobProgress
+    total_items: int
 
-    # Results and errors
-    result_summary: Dict[str, Any] = Field(default_factory=dict)
+    # Error tracking
     error_message: Optional[str] = None
 
     # File path for exports
     file_path: Optional[str] = None
-
-    # Taskiq tracking
-    taskiq_task_id: Optional[str] = None
 
     # Timestamps
     created_at: datetime
@@ -85,10 +111,6 @@ class JobResponse(BaseModel):
     # Computed fields
     is_terminal: bool
     duration_seconds: Optional[float] = None
-
-    # Review item count (for jobs with review items)
-    review_item_count: Optional[int] = None
-    pending_review_count: Optional[int] = None
 
 
 class JobListResponse(BaseModel):
