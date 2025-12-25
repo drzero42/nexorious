@@ -122,6 +122,11 @@ async def import_nexorious_item(job_id: str) -> Dict[str, Any]:
             job.completed_at = datetime.now(timezone.utc)
             session.add(job)
             session.commit()
+
+            # Check if all siblings are complete and finalize parent (even on failure)
+            if job.parent_job_id:
+                await _check_and_finalize_parent(session, job.parent_job_id)
+
             return {"status": "error", "error": str(e)}
         finally:
             release_job_lock(session, job_id)
@@ -155,7 +160,8 @@ async def _check_and_finalize_parent(session: Session, parent_job_id: str) -> No
     if all_complete:
         logger.info(f"All children complete, finalizing parent job {parent_job_id}")
         parent = session.get(Job, parent_job_id)
-        if parent:
+        # Idempotency check: only update if not already completed
+        if parent and parent.status != BackgroundJobStatus.COMPLETED:
             parent.status = BackgroundJobStatus.COMPLETED
             parent.completed_at = datetime.now(timezone.utc)
             session.add(parent)
