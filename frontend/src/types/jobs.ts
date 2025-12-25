@@ -73,6 +73,12 @@ export interface JobFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
+export interface JobChildrenFilters {
+  status?: JobStatus;
+  limit?: number;
+  offset?: number;
+}
+
 export interface JobListResponse {
   jobs: Job[];
   total: number;
