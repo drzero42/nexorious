@@ -4,6 +4,9 @@ Import all task modules here to ensure they are registered with the broker.
 The taskiq worker discovers tasks by importing these modules.
 """
 
+# Worker startup handlers (must be imported to register event handlers)
+from app.worker import startup as _startup  # noqa: F401
+
 # Maintenance tasks (scheduled cleanup operations)
 from app.worker.tasks.maintenance import (
     cleanup_task_results,
