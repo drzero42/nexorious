@@ -82,14 +82,8 @@ async def export_json(
         job_type=BackgroundJobType.EXPORT,
         source=BackgroundJobSource.NEXORIOUS,
         status=BackgroundJobStatus.PENDING,
-        progress_total=game_count,  # Progress tracks game export
+        total_items=total_items,
     )
-    job.set_result_summary({
-        "format": ExportFormat.JSON.value,
-        "estimated_items": total_items,
-        "estimated_games": game_count,
-        "estimated_wishlist": wishlist_count,
-    })
 
     session.add(job)
     session.commit()
@@ -148,12 +142,8 @@ async def export_csv(
         job_type=BackgroundJobType.EXPORT,
         source=BackgroundJobSource.NEXORIOUS,
         status=BackgroundJobStatus.PENDING,
-        progress_total=game_count,
+        total_items=game_count,
     )
-    job.set_result_summary({
-        "format": ExportFormat.CSV.value,
-        "estimated_items": game_count,
-    })
 
     session.add(job)
     session.commit()
@@ -248,9 +238,8 @@ async def download_export(
                 detail="Export file has expired.",
             )
 
-    # Determine content type and filename
-    result_summary = job.get_result_summary()
-    export_format = result_summary.get("format", "json")
+    # Determine content type and filename from file extension
+    export_format = "csv" if job.file_path and job.file_path.endswith(".csv") else "json"
 
     if export_format == "csv":
         media_type = "text/csv"

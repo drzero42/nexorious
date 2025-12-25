@@ -12,13 +12,13 @@ from .tag import Tag, UserGameTag
 from .wishlist import Wishlist
 from .job import (
     Job,
-    ReviewItem,
+    JobItem,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
     ImportJobSubtype,
-    ReviewItemStatus,
+    JobItemStatus,
 )
 from .user_sync_config import UserSyncConfig, SyncFrequency
 from .ignored_external_game import IgnoredExternalGame
@@ -36,13 +36,13 @@ __all__ = [
     "UserGameTag",
     "Wishlist",
     "Job",
-    "ReviewItem",
+    "JobItem",
     "BackgroundJobType",
     "BackgroundJobSource",
     "BackgroundJobStatus",
     "BackgroundJobPriority",
     "ImportJobSubtype",
-    "ReviewItemStatus",
+    "JobItemStatus",
     "UserSyncConfig",
     "SyncFrequency",
     "IgnoredExternalGame",

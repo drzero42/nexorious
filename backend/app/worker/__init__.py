@@ -1,22 +1,27 @@
-"""Background task processing with taskiq and PostgreSQL."""
+"""Background task processing with taskiq and NATS JetStream."""
 
-from app.worker.broker import broker, result_backend
+from app.worker.broker import broker
 from app.worker.queues import (
     QUEUE_HIGH,
     QUEUE_LOW,
-    QUEUE_DEFAULT,
-    get_queue_for_user_initiated,
-    get_queue_for_scheduled,
+    SUBJECT_HIGH_IMPORT,
+    SUBJECT_HIGH_SYNC,
+    SUBJECT_HIGH_EXPORT,
+    SUBJECT_LOW_IMPORT,
+    SUBJECT_LOW_SYNC,
+    SUBJECT_LOW_MAINTENANCE,
 )
 from app.worker.schedules import scheduler
 
 __all__ = [
     "broker",
-    "result_backend",
     "scheduler",
     "QUEUE_HIGH",
     "QUEUE_LOW",
-    "QUEUE_DEFAULT",
-    "get_queue_for_user_initiated",
-    "get_queue_for_scheduled",
+    "SUBJECT_HIGH_IMPORT",
+    "SUBJECT_HIGH_SYNC",
+    "SUBJECT_HIGH_EXPORT",
+    "SUBJECT_LOW_IMPORT",
+    "SUBJECT_LOW_SYNC",
+    "SUBJECT_LOW_MAINTENANCE",
 ]

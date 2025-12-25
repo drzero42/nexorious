@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_LOW
+from app.worker.queues import SUBJECT_LOW_MAINTENANCE
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,8 @@ EXPORT_RETENTION_HOURS = 24
 
 
 @broker.task(
-    task_name="maintenance.cleanup_expired_exports",
+    task_name=SUBJECT_LOW_MAINTENANCE,
     schedule=[{"cron": "0 4 * * *"}],  # Daily at 4:00 AM UTC
-    queue=QUEUE_LOW,
 )
 async def cleanup_expired_exports() -> Dict[str, Any]:
     """

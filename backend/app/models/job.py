@@ -43,9 +43,6 @@ class BackgroundJobStatus(str, Enum):
 
     PENDING = "pending"
     PROCESSING = "processing"
-    AWAITING_REVIEW = "awaiting_review"
-    READY = "ready"
-    FINALIZING = "finalizing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -56,6 +53,15 @@ class BackgroundJobPriority(str, Enum):
 
     HIGH = "high"
     LOW = "low"
+
+
+class JobItemStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    PENDING_REVIEW = "pending_review"
+    SKIPPED = "skipped"
+    FAILED = "failed"
 
 
 class ImportJobSubtype(str, Enum):
@@ -91,68 +97,18 @@ class Job(SQLModel, table=True):
     source: BackgroundJobSource = Field(index=True)
     status: BackgroundJobStatus = Field(default=BackgroundJobStatus.PENDING, index=True)
     priority: BackgroundJobPriority = Field(default=BackgroundJobPriority.HIGH)
-    import_subtype: Optional[ImportJobSubtype] = Field(
-        default=None,
-        index=True,
-        description="Subtype for import jobs (library_import, auto_match, bulk_*)",
-    )
-
-    # Progress tracking
-    progress_current: int = Field(default=0)
-    progress_total: int = Field(default=0)
-    successful_items: int = Field(
-        default=0, description="Number of items processed successfully"
-    )
-    failed_items: int = Field(
-        default=0, description="Number of items that failed processing"
-    )
-
-    # Results and errors (stored as JSON strings for compatibility)
-    result_summary_json: str = Field(
-        default="{}",
-        sa_column_kwargs={"name": "result_summary"},
-        description="JSON string containing result statistics",
-    )
-    error_log_json: str = Field(
-        default="[]",
-        sa_column_kwargs={"name": "error_log"},
-        description="JSON array of error details from processing",
-    )
-    error_message: Optional[str] = Field(
-        default=None, max_length=2000, description="Primary error message if job failed"
-    )
-
-    # Batch session tracking (for auto-match and sync operations)
-    processed_item_ids_json: str = Field(
-        default="[]",
-        sa_column_kwargs={"name": "processed_item_ids"},
-        description="JSON array of item IDs that have been processed",
-    )
-    failed_item_ids_json: str = Field(
-        default="[]",
-        sa_column_kwargs={"name": "failed_item_ids"},
-        description="JSON array of item IDs that failed processing",
-    )
 
     # File path for exports
     file_path: Optional[str] = Field(
         default=None, max_length=500, description="File path for export jobs"
     )
 
-    # Taskiq task ID for tracking
-    taskiq_task_id: Optional[str] = Field(
-        default=None,
-        max_length=100,
-        index=True,
-        description="Taskiq task ID for status tracking",
-    )
+    # Progress tracking
+    total_items: int = Field(default=0)
 
-    # Parent-child relationship for fan-out tasks
-    parent_job_id: Optional[str] = Field(
-        default=None,
-        foreign_key="jobs.id",
-        index=True,
-        description="ID of parent job for fan-out tasks",
+    # Error tracking
+    error_message: Optional[str] = Field(
+        default=None, max_length=2000, description="Primary error message if job failed"
     )
 
     # Timestamps
@@ -162,100 +118,10 @@ class Job(SQLModel, table=True):
 
     # Relationships
     user: "User" = Relationship(back_populates="jobs")
-    review_items: List["ReviewItem"] = Relationship(
+    items: list["JobItem"] = Relationship(
         back_populates="job",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-
-    # Parent-child relationships for fan-out tasks
-    children: List["Job"] = Relationship(
-        back_populates="parent",
-        sa_relationship_kwargs={
-            "cascade": "all, delete-orphan",
-            "foreign_keys": "[Job.parent_job_id]",
-        },
-    )
-    parent: Optional["Job"] = Relationship(
-        back_populates="children",
-        sa_relationship_kwargs={
-            "remote_side": "[Job.id]",
-            "foreign_keys": "[Job.parent_job_id]",
-        },
-    )
-
-    def get_result_summary(self) -> Dict[str, Any]:
-        """Get result summary as a dictionary."""
-        try:
-            return json.loads(self.result_summary_json)
-        except (json.JSONDecodeError, TypeError):
-            return {}
-
-    def set_result_summary(self, value: Dict[str, Any]) -> None:
-        """Set result summary from a dictionary."""
-        self.result_summary_json = json.dumps(value)
-
-    def get_error_log(self) -> List[Dict[str, Any]]:
-        """Get error log as a list of error details."""
-        try:
-            return json.loads(self.error_log_json)
-        except (json.JSONDecodeError, TypeError):
-            return []
-
-    def set_error_log(self, value: List[Dict[str, Any]]) -> None:
-        """Set error log from a list of error details."""
-        self.error_log_json = json.dumps(value)
-
-    def add_error(self, error: Dict[str, Any]) -> None:
-        """Append an error to the error log."""
-        errors = self.get_error_log()
-        errors.append(error)
-        self.set_error_log(errors)
-
-    def get_processed_item_ids(self) -> List[str]:
-        """Get processed item IDs as a list."""
-        try:
-            return json.loads(self.processed_item_ids_json)
-        except (json.JSONDecodeError, TypeError):
-            return []
-
-    def set_processed_item_ids(self, value: List[str]) -> None:
-        """Set processed item IDs from a list."""
-        self.processed_item_ids_json = json.dumps(value)
-
-    def add_processed_item_id(self, item_id: str) -> None:
-        """Add an item ID to the processed list."""
-        ids = self.get_processed_item_ids()
-        ids.append(item_id)
-        self.set_processed_item_ids(ids)
-
-    def get_failed_item_ids(self) -> List[str]:
-        """Get failed item IDs as a list."""
-        try:
-            return json.loads(self.failed_item_ids_json)
-        except (json.JSONDecodeError, TypeError):
-            return []
-
-    def set_failed_item_ids(self, value: List[str]) -> None:
-        """Set failed item IDs from a list."""
-        self.failed_item_ids_json = json.dumps(value)
-
-    def add_failed_item_id(self, item_id: str) -> None:
-        """Add an item ID to the failed list."""
-        ids = self.get_failed_item_ids()
-        ids.append(item_id)
-        self.set_failed_item_ids(ids)
-
-    @property
-    def progress_percent(self) -> int:
-        """Calculate progress percentage."""
-        if self.progress_total == 0:
-            return 0
-        return min(100, int((self.progress_current / self.progress_total) * 100))
-
-    @property
-    def remaining_items(self) -> int:
-        """Calculate remaining items to process."""
-        return max(0, self.progress_total - self.progress_current)
 
     @property
     def is_active(self) -> bool:
@@ -263,9 +129,6 @@ class Job(SQLModel, table=True):
         return self.status in (
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
-            BackgroundJobStatus.READY,
-            BackgroundJobStatus.FINALIZING,
         )
 
     @property
@@ -297,88 +160,52 @@ class Job(SQLModel, table=True):
         return (end_time - started).total_seconds()
 
 
-class ReviewItemStatus(str, Enum):
-    """Status of a review item."""
+class JobItem(SQLModel, table=True):
+    __tablename__ = "job_items"
 
-    PENDING = "pending"
-    MATCHED = "matched"
-    SKIPPED = "skipped"
-    REMOVAL = "removal"
-
-
-class ReviewItem(SQLModel, table=True):
-    """
-    Review item for games that need user matching decisions.
-
-    Created during sync/import when automatic matching fails or
-    when sync detects games removed from a platform library.
-    """
-
-    __tablename__ = "review_items"  # type: ignore[assignment]
-    __table_args__ = (
-        # Prevent duplicate ReviewItems for the same game title within a job
-        UniqueConstraint("job_id", "source_title", name="uq_review_items_job_source_title"),
-    )
-
-    # Primary key
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-
-    # Associations
     job_id: str = Field(foreign_key="jobs.id", index=True)
     user_id: str = Field(foreign_key="users.id", index=True)
 
-    # Status
-    status: ReviewItemStatus = Field(default=ReviewItemStatus.PENDING, index=True)
+    # Item identification
+    item_key: str = Field(index=True)
+    source_title: str = Field(max_length=500)
+    source_metadata_json: str = Field(default="{}")
 
-    # Source data
-    source_title: str = Field(max_length=500, description="Game title from source")
-    source_metadata_json: str = Field(
-        default="{}",
-        sa_column_kwargs={"name": "source_metadata"},
-        description="JSON string with platform ID, release year, etc.",
-    )
+    # Processing outcome
+    status: JobItemStatus = Field(default=JobItemStatus.PENDING, index=True)
+    result_json: str = Field(default="{}")
+    error_message: str | None = None
 
-    # IGDB matching
-    igdb_candidates_json: str = Field(
-        default="[]",
-        sa_column_kwargs={"name": "igdb_candidates"},
-        description="JSON array of IGDB search results for user to pick from",
-    )
-    resolved_igdb_id: Optional[int] = Field(
-        default=None, description="IGDB ID selected by user"
-    )
-    match_confidence: Optional[float] = Field(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for auto-match (1.0 = exact match or single result)"
-    )
+    # Review fields (when status=PENDING_REVIEW)
+    igdb_candidates_json: str = Field(default="[]")
+    resolved_igdb_id: int | None = None
+    match_confidence: float | None = None
 
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    resolved_at: Optional[datetime] = Field(default=None)
+    processed_at: datetime | None = None
+    resolved_at: datetime | None = None
 
     # Relationships
-    job: Job = Relationship(back_populates="review_items")
+    job: "Job" = Relationship(back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "item_key", name="uq_job_item_key"),
+    )
 
     def get_source_metadata(self) -> Dict[str, Any]:
         """Get source metadata as a dictionary."""
-        try:
-            return json.loads(self.source_metadata_json)
-        except (json.JSONDecodeError, TypeError):
-            return {}
+        return json.loads(self.source_metadata_json) if self.source_metadata_json else {}
 
-    def set_source_metadata(self, value: Dict[str, Any]) -> None:
+    def set_source_metadata(self, metadata: Dict[str, Any]) -> None:
         """Set source metadata from a dictionary."""
-        self.source_metadata_json = json.dumps(value)
+        self.source_metadata_json = json.dumps(metadata)
 
     def get_igdb_candidates(self) -> List[Dict[str, Any]]:
         """Get IGDB candidates as a list."""
-        try:
-            return json.loads(self.igdb_candidates_json)
-        except (json.JSONDecodeError, TypeError):
-            return []
+        return json.loads(self.igdb_candidates_json) if self.igdb_candidates_json else []
 
-    def set_igdb_candidates(self, value: List[Dict[str, Any]]) -> None:
+    def set_igdb_candidates(self, candidates: List[Dict[str, Any]]) -> None:
         """Set IGDB candidates from a list."""
-        self.igdb_candidates_json = json.dumps(value)
+        self.igdb_candidates_json = json.dumps(candidates)

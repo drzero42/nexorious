@@ -14,12 +14,12 @@ from datetime import datetime, timezone
 from ..models.user import User
 from ..models.job import (
     Job,
-    ReviewItem,
+    JobItem,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
     BackgroundJobPriority,
-    ReviewItemStatus,
+    JobItemStatus,
 )
 
 
@@ -127,28 +127,37 @@ class TestListJobs:
     def test_list_jobs_filter_by_status(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test filtering jobs by status."""
-        # Create jobs with different statuses
-        for status in [
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.COMPLETED,
-        ]:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.SYNC,
-                source=BackgroundJobSource.STEAM,
-                status=status,
-            )
-            session.add(job)
+        """Test filtering jobs by terminal status (filtering works on DB status).
+
+        Note: PENDING/PROCESSING are derived from JobItems, but FAILED/CANCELLED
+        are stored explicitly. This test verifies filtering by FAILED status.
+        """
+        # Create job with FAILED status (explicit, not derived)
+        job_failed = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.FAILED,
+            error_message="Test failure",
+        )
+        session.add(job_failed)
+
+        # Create job with PENDING status (default)
+        job_pending = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add(job_pending)
         session.commit()
 
-        response = client.get("/api/jobs/?status=processing", headers=auth_headers)
+        # Filter by failed status
+        response = client.get("/api/jobs/?status=failed", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["total"] == 1
-        assert data["jobs"][0]["status"] == "processing"
+        assert data["jobs"][0]["status"] == "failed"
 
     def test_list_jobs_pagination(
         self, client, auth_headers, test_user: User, session: Session
@@ -245,58 +254,29 @@ class TestListJobs:
         response = client.get("/api/jobs/")
         assert response.status_code == 403  # No token = 403 Forbidden
 
-    def test_list_jobs_excludes_child_jobs(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test that job list excludes child jobs by default."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create child job
-        child = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            parent_job_id=parent.id,
-        )
-        session.add(child)
-        session.commit()
-
-        # List jobs
-        response = client.get("/api/jobs/", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        job_ids = [job["id"] for job in data["jobs"]]
-
-        # Parent should be in list, child should not
-        assert parent.id in job_ids
-        assert child.id not in job_ids
-
-
 class TestGetJob:
     """Tests for GET /api/jobs/{job_id} endpoint."""
 
     def test_get_job_success(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test getting a specific job."""
+        """Test getting a specific job (status is derived from JobItems)."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-            progress_current=50,
-            progress_total=100,
         )
         session.add(job)
+        session.commit()
+
+        # Add a PROCESSING item to derive PROCESSING status
+        session.add(JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game-1",
+            source_title="Test Game",
+            status=JobItemStatus.PROCESSING,
+        ))
         session.commit()
         session.refresh(job)
 
@@ -308,9 +288,6 @@ class TestGetJob:
         assert data["job_type"] == "import"
         assert data["source"] == "steam"
         assert data["status"] == "processing"
-        assert data["progress_current"] == 50
-        assert data["progress_total"] == 100
-        assert data["progress_percent"] == 50
         assert data["is_terminal"] is False
 
     def test_get_job_with_review_items(
@@ -321,30 +298,29 @@ class TestGetJob:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
         session.refresh(job)
 
-        # Create review items
+        # Create job items
         for i in range(5):
-            status = ReviewItemStatus.PENDING if i < 3 else ReviewItemStatus.MATCHED
-            review_item = ReviewItem(
+            status = JobItemStatus.PENDING if i < 3 else JobItemStatus.COMPLETED
+            job_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
                 status=status,
             )
-            session.add(review_item)
+            session.add(job_item)
         session.commit()
 
         response = client.get(f"/api/jobs/{job.id}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["review_item_count"] == 5
-        assert data["pending_review_count"] == 3
 
     def test_get_job_not_found(self, client, auth_headers):
         """Test getting a non-existent job."""
@@ -384,7 +360,6 @@ class TestGetJob:
             started_at=now,
             completed_at=now,
         )
-        job.set_result_summary({"games_synced": 42})
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -394,7 +369,6 @@ class TestGetJob:
 
         data = response.json()
         assert data["is_terminal"] is True
-        assert data["result_summary"]["games_synced"] == 42
         assert data["duration_seconds"] is not None
 
 
@@ -437,8 +411,6 @@ class TestCancelJob:
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.STEAM,
             status=BackgroundJobStatus.PROCESSING,
-            progress_current=25,
-            progress_total=100,
         )
         session.add(job)
         session.commit()
@@ -459,7 +431,7 @@ class TestCancelJob:
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
         session.commit()
@@ -546,56 +518,6 @@ class TestCancelJob:
 
         response = client.post(f"/api/jobs/{admin_job.id}/cancel", headers=auth_headers)
         assert response.status_code == 404
-
-    def test_cancel_job_cascades_to_children(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test that cancelling a parent job also cancels pending/processing children."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create child jobs with different statuses
-        statuses = [
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.COMPLETED,  # Should NOT be cancelled
-        ]
-        children = []
-        for s in statuses:
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
-                status=s,
-            )
-            session.add(child)
-            children.append(child)
-        session.commit()
-        for c in children:
-            session.refresh(c)
-
-        # Cancel parent
-        response = client.post(f"/api/jobs/{parent.id}/cancel", headers=auth_headers)
-        assert response.status_code == 200
-
-        # Refresh children and check statuses
-        session.expire_all()
-        for c in children:
-            session.refresh(c)
-
-        assert children[0].status == BackgroundJobStatus.CANCELLED  # Was PENDING
-        assert children[1].status == BackgroundJobStatus.CANCELLED  # Was PROCESSING
-        assert children[2].status == BackgroundJobStatus.COMPLETED  # Should remain COMPLETED
-
 
 class TestDeleteJob:
     """Tests for DELETE /api/jobs/{job_id} endpoint."""
@@ -712,31 +634,32 @@ class TestDeleteJob:
         session.commit()
         job_id = job.id
 
-        # Create review items
-        review_item_ids = []
+        # Create job items
+        job_item_ids = []
         for i in range(3):
-            review_item = ReviewItem(
+            job_item = JobItem(
                 job_id=job.id,
                 user_id=test_user.id,
+                item_key=f"game-{i}",
                 source_title=f"Game {i}",
             )
-            session.add(review_item)
+            session.add(job_item)
         session.commit()
 
-        # Store review item IDs before deletion
-        review_items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job_id)
+        # Store job item IDs before deletion
+        job_items = session.exec(
+            select(JobItem).where(JobItem.job_id == job_id)
         ).all()
-        review_item_ids = [item.id for item in review_items]
-        assert len(review_item_ids) == 3
+        job_item_ids = [item.id for item in job_items]
+        assert len(job_item_ids) == 3
 
         # Delete job
         response = client.delete(f"/api/jobs/{job_id}", headers=auth_headers)
         assert response.status_code == 200
 
-        # Verify review items are also deleted
-        for review_id in review_item_ids:
-            item = session.get(ReviewItem, review_id)
+        # Verify job items are also deleted
+        for item_id in job_item_ids:
+            item = session.get(JobItem, item_id)
             assert item is None
 
     def test_delete_job_not_found(self, client, auth_headers):
@@ -800,15 +723,11 @@ class TestJobResponseFields:
             source=BackgroundJobSource.NEXORIOUS,
             status=BackgroundJobStatus.COMPLETED,
             priority=BackgroundJobPriority.HIGH,
-            progress_current=100,
-            progress_total=100,
             error_message=None,
             file_path="/exports/test.json",
-            taskiq_task_id="task-123",
             started_at=now,
             completed_at=now,
         )
-        job.set_result_summary({"exported": 50})
         session.add(job)
         session.commit()
         session.refresh(job)
@@ -825,26 +744,16 @@ class TestJobResponseFields:
         assert "source" in data
         assert "status" in data
         assert "priority" in data
-        assert "progress_current" in data
-        assert "progress_total" in data
-        assert "progress_percent" in data
-        assert "result_summary" in data
         assert "error_message" in data
         assert "file_path" in data
-        assert "taskiq_task_id" in data
         assert "created_at" in data
         assert "started_at" in data
         assert "completed_at" in data
         assert "is_terminal" in data
         assert "duration_seconds" in data
-        assert "review_item_count" in data
-        assert "pending_review_count" in data
 
         # Verify specific values
         assert data["file_path"] == "/exports/test.json"
-        assert data["taskiq_task_id"] == "task-123"
-        assert data["result_summary"]["exported"] == 50
-        assert data["progress_percent"] == 100
         assert data["is_terminal"] is True
 
     def test_job_enum_values(
@@ -855,7 +764,7 @@ class TestJobResponseFields:
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.GOG,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
+            status=BackgroundJobStatus.PROCESSING,
             priority=BackgroundJobPriority.LOW,
         )
         session.add(job)
@@ -868,7 +777,8 @@ class TestJobResponseFields:
         data = response.json()
         assert data["job_type"] == "sync"
         assert data["source"] == "gog"
-        assert data["status"] == "awaiting_review"
+        # Status is derived from JobItems - no items means PENDING
+        assert data["status"] == "pending"
         assert data["priority"] == "low"
 
 
@@ -895,31 +805,35 @@ class TestJobsApiEdgeCases:
     def test_list_jobs_combined_filters(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test combining multiple filters."""
-        # Create various jobs
+        """Test combining multiple filters.
+
+        Note: Status filtering uses the explicit DB status, not derived status.
+        FAILED and CANCELLED are terminal/explicit statuses stored in DB.
+        """
+        # Create various jobs with FAILED status (explicit/terminal)
         job1 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         job2 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.GOG,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         job3 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         session.add_all([job1, job2, job3])
         session.commit()
 
         response = client.get(
-            "/api/jobs/?job_type=import&source=steam&status=completed",
+            "/api/jobs/?job_type=import&source=steam&status=failed",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -928,374 +842,11 @@ class TestJobsApiEdgeCases:
         assert data["total"] == 1
         assert data["jobs"][0]["job_type"] == "import"
         assert data["jobs"][0]["source"] == "steam"
-        assert data["jobs"][0]["status"] == "completed"
+        assert data["jobs"][0]["status"] == "failed"
 
 
-class TestDiscardImport:
-    """Tests for POST /api/jobs/{job_id}/discard endpoint."""
 
-    def test_discard_import_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test successfully discarding an import job awaiting review."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Add some review items
-        for i in range(3):
-            review_item = ReviewItem(
-                job_id=job.id,
-                user_id=test_user.id,
-                source_title=f"Test Game {i}",
-                status=ReviewItemStatus.PENDING,
-            )
-            session.add(review_item)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-        assert data["deleted_review_items"] == 3
-        assert "discarded" in data["message"].lower()
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-        # Verify review items are deleted (cascade)
-        remaining_items = session.exec(
-            select(ReviewItem).where(ReviewItem.job_id == job.id)
-        ).all()
-        assert len(remaining_items) == 0
-
-    def test_discard_job_not_found(self, client, auth_headers):
-        """Test discarding non-existent job returns 404."""
-        response = client.post(
-            "/api/jobs/non-existent-id/discard", headers=auth_headers
-        )
-        assert response.status_code == 404
-
-    def test_discard_other_users_job(
-        self, client, auth_headers, session: Session
-    ):
-        """Test cannot discard another user's job."""
-        # Create a job for a different user
-        other_user = User(
-            username="otheruser",
-            password_hash="hash",
-        )
-        session.add(other_user)
-        session.commit()
-
-        job = Job(
-            user_id=other_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 404
-
-    def test_discard_non_import_job(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a sync job (only imports allowed)."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.SYNC,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.AWAITING_REVIEW,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
-        assert "import" in response.json()["error"].lower()
-
-    def test_discard_pending_status_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test can discard a job in PENDING status."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PENDING,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-    def test_discard_wrong_status_completed(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a completed job."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
-
-    def test_discard_processing_status_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test can discard a job in PROCESSING status (stuck jobs)."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-    def test_discard_wrong_status_failed(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a failed job."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.FAILED,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
+# Note: TestDiscardImport class removed - /discard endpoint does not exist.
+# Delete functionality is provided by DELETE /api/jobs/{job_id} endpoint instead.
 
 
-class TestGetJobChildren:
-    """Tests for GET /api/jobs/{job_id}/children endpoint."""
-
-    def test_get_job_children(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test getting child jobs for a parent job."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create child jobs with different statuses
-        for i in range(3):
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
-                status=BackgroundJobStatus.COMPLETED if i < 2 else BackgroundJobStatus.FAILED,
-            )
-            session.add(child)
-        session.commit()
-
-        # Get all children
-        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 3
-
-        # Filter by status
-        response = client.get(
-            f"/api/jobs/{parent.id}/children?status=completed",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 2
-
-    def test_get_job_returns_aggregated_progress_for_parent(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test that getting a parent job returns aggregated progress from children."""
-        # Create parent job with its own progress values (should be overridden)
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            status=BackgroundJobStatus.PROCESSING,
-            progress_current=0,
-            progress_total=0,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create completed children
-        for _ in range(3):
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
-                status=BackgroundJobStatus.COMPLETED,
-            )
-            session.add(child)
-        # Create one pending child
-        child = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            parent_job_id=parent.id,
-            status=BackgroundJobStatus.PENDING,
-        )
-        session.add(child)
-        session.commit()
-
-        # Get parent job
-        response = client.get(f"/api/jobs/{parent.id}", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-
-        # Should have aggregated progress from children
-        assert data["progress_total"] == 4
-        assert data["progress_current"] == 3  # 3 completed
-        assert data["progress_percent"] == 75
-
-    def test_get_job_children_empty(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test getting children for a job with no children."""
-        # Create parent job with no children
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 0
-
-    def test_get_job_children_not_found(
-        self, client, auth_headers, test_user: User
-    ):
-        """Test getting children for a non-existent job."""
-        import uuid
-        fake_id = str(uuid.uuid4())
-        response = client.get(f"/api/jobs/{fake_id}/children", headers=auth_headers)
-        assert response.status_code == 404
-
-    def test_get_job_children_unauthorized(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test getting children for another user's job."""
-        # Create another user
-        other_user = User(
-            username="otheruser",
-            email="other@example.com",
-            password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqXq.m",
-            is_verified=True,
-        )
-        session.add(other_user)
-        session.commit()
-
-        # Create parent job for other user
-        parent = Job(
-            user_id=other_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Try to access other user's job
-        response = client.get(f"/api/jobs/{parent.id}/children", headers=auth_headers)
-        assert response.status_code == 404
-
-    def test_get_job_children_pagination(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test pagination of child jobs."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create 10 child jobs
-        for i in range(10):
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                parent_job_id=parent.id,
-            )
-            session.add(child)
-        session.commit()
-
-        # Get first 5
-        response = client.get(
-            f"/api/jobs/{parent.id}/children?limit=5&offset=0",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 5
-
-        # Get next 5
-        response = client.get(
-            f"/api/jobs/{parent.id}/children?limit=5&offset=5",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 5

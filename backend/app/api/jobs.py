@@ -8,7 +8,7 @@ background jobs (sync, import, export operations).
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
 from sqlalchemy import update as sa_update
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional
 from datetime import datetime, timezone
 import logging
 
@@ -17,26 +17,25 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.job import (
     Job,
-    ReviewItem,
+    JobItem,
+    JobItemStatus,
     BackgroundJobType,
     BackgroundJobSource,
     BackgroundJobStatus,
-    ReviewItemStatus,
 )
 from ..schemas.job import (
     JobResponse,
     JobListResponse,
     JobCancelResponse,
     JobDeleteResponse,
-    JobConfirmResponse,
-    JobDiscardResponse,
     JobType,
     JobSource,
     JobStatus,
 )
+from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
-from ..services.batch_job_service import BatchJobService
-from ..utils.sqlalchemy_typed import desc, is_
+from ..services.job_service import get_job_progress, get_derived_job_status
+from ..utils.sqlalchemy_typed import desc
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -44,55 +43,26 @@ logger = logging.getLogger(__name__)
 
 def _job_to_response(job: Job, session: Session) -> JobResponse:
     """Convert a Job model to JobResponse with computed fields."""
-    # Count review items for this job
-    review_count_stmt = select(func.count()).select_from(ReviewItem).where(
-        ReviewItem.job_id == job.id
-    )
-    review_item_count = session.exec(review_count_stmt).one()
-
-    # Count pending review items
-    pending_count_stmt = select(func.count()).select_from(ReviewItem).where(
-        ReviewItem.job_id == job.id,
-        ReviewItem.status == ReviewItemStatus.PENDING,
-    )
-    pending_review_count = session.exec(pending_count_stmt).one()
-
-    # Check for aggregated progress from children
-    batch_service = BatchJobService(session)
-    aggregated = batch_service.get_aggregated_progress(job.id)
-
-    if aggregated:
-        # Parent job: use aggregated progress from children
-        progress_current = aggregated["progress_current"]
-        progress_total = aggregated["progress_total"]
-        progress_percent = int((progress_current / progress_total) * 100) if progress_total > 0 else 0
-    else:
-        # Non-parent job or no children: use job's own progress
-        progress_current = job.progress_current
-        progress_total = job.progress_total
-        progress_percent = job.progress_percent
+    # Get derived status and progress from job items
+    derived_status = get_derived_job_status(session, job)
+    progress = get_job_progress(session, job.id)
 
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
         job_type=JobType(job.job_type.value),
         source=JobSource(job.source.value),
-        status=JobStatus(job.status.value),
+        status=JobStatus(derived_status.value),
         priority=job.priority,
-        progress_current=progress_current,
-        progress_total=progress_total,
-        progress_percent=progress_percent,
-        result_summary=job.get_result_summary(),
+        progress=progress,
+        total_items=progress.total,
         error_message=job.error_message,
         file_path=job.file_path,
-        taskiq_task_id=job.taskiq_task_id,
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
         is_terminal=job.is_terminal,
         duration_seconds=job.duration_seconds,
-        review_item_count=review_item_count,
-        pending_review_count=pending_review_count,
     )
 
 
@@ -122,9 +92,6 @@ async def list_jobs(
 
     # Build query - only show jobs for the current user
     query = select(Job).where(Job.user_id == current_user.id)
-
-    # Exclude child jobs (they appear in parent's detail view)
-    query = query.where(is_(Job.parent_job_id, None))
 
     # Apply filters
     if job_type:
@@ -181,11 +148,11 @@ async def get_jobs_summary(
     """
     logger.debug(f"Getting jobs summary for user {current_user.id}")
 
-    # Count running jobs (processing, finalizing)
+    # Count running jobs (processing)
     running_result = session.exec(
         select(func.count()).select_from(Job).where(
             Job.user_id == current_user.id,
-            col(Job.status).in_([BackgroundJobStatus.PROCESSING, BackgroundJobStatus.FINALIZING])
+            Job.status == BackgroundJobStatus.PROCESSING
         )
     )
     running_count = running_result.one()
@@ -243,46 +210,39 @@ async def get_job(
     return _job_to_response(job, session)
 
 
-@router.get("/{job_id}/children", response_model=List[JobResponse])
-async def get_job_children(
+@router.get("/{job_id}/items", response_model=JobItemListResponse)
+async def list_job_items(
     job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    job_status: Optional[JobStatus] = Query(default=None, description="Filter by status", alias="status"),
-    limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
-    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
-) -> List[JobResponse]:
-    """
-    Get child jobs for a parent job.
+    status: JobItemStatus | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """List items for a job with optional status filter."""
+    # Verify job belongs to user
+    job = session.get(Job, job_id)
+    if not job or job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    Returns paginated list of child jobs with optional status filtering.
-    Only accessible by the job owner.
-    """
-    logger.debug(f"Getting children for job {job_id}")
+    query = select(JobItem).where(JobItem.job_id == job_id)
+    if status:
+        query = query.where(JobItem.status == status)
 
-    # Verify parent job exists and belongs to user
-    parent_job = session.get(Job, job_id)
-    if not parent_job or parent_job.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
+    # Count total
+    count_query = select(func.count()).select_from(query.subquery())
+    total = session.exec(count_query).one()
 
-    # Build query for children
-    query = select(Job).where(Job.parent_job_id == job_id)
+    # Paginate
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    items = session.exec(query).all()
 
-    if job_status:
-        query = query.where(Job.status == BackgroundJobStatus(job_status.value))
-
-    # Order by created_at descending (newest first)
-    query = query.order_by(desc(col(Job.created_at)))
-
-    # Apply pagination
-    query = query.offset(offset).limit(limit)
-
-    children = session.exec(query).all()
-
-    return [_job_to_response(job, session) for job in children]
+    return JobItemListResponse(
+        items=[JobItemResponse.model_validate(item) for item in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/{job_id}/cancel", response_model=JobCancelResponse)
@@ -332,28 +292,6 @@ async def cancel_job(
     previous_status = job.status
     job.status = BackgroundJobStatus.CANCELLED
     job.completed_at = datetime.now(timezone.utc)
-    job.set_result_summary({
-        **job.get_result_summary(),
-        "cancelled_from_status": previous_status.value,
-        "cancelled_by": current_user.id,
-    })
-
-    # Cancel all non-terminal children
-    session.execute(
-        sa_update(Job)
-        .where(Job.parent_job_id == job_id)
-        .where(Job.status.in_([
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
-            BackgroundJobStatus.READY,
-            BackgroundJobStatus.FINALIZING,
-        ]))
-        .values(
-            status=BackgroundJobStatus.CANCELLED,
-            completed_at=datetime.now(timezone.utc),
-        )
-    )
 
     session.commit()
     session.refresh(job)
@@ -413,7 +351,7 @@ async def delete_job(
             detail=f"Cannot delete job - must be in terminal state (completed, failed, or cancelled). Current status: {job.status.value}",
         )
 
-    # Delete the job (cascade will delete review items)
+    # Delete the job (cascade will delete job items)
     session.delete(job)
     session.commit()
 
@@ -423,213 +361,6 @@ async def delete_job(
         success=True,
         message="Job deleted successfully",
         deleted_job_id=job_id,
-    )
-
-
-@router.post("/{job_id}/discard", response_model=JobDiscardResponse)
-async def discard_import(
-    job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    Discard an import job and all associated review items.
-
-    Works for import jobs in PENDING, PROCESSING, or AWAITING_REVIEW status.
-    Completely removes the job and all review items from the database.
-    """
-    logger.info(f"User {current_user.id} requesting to discard import job {job_id}")
-
-    job = session.get(Job, job_id)
-
-    if not job or job.user_id != current_user.id:
-        logger.warning(f"Job {job_id} not found for discard")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    if job.job_type != BackgroundJobType.IMPORT:
-        logger.warning(f"Cannot discard job {job_id} - not an import job")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only import jobs can be discarded",
-        )
-
-    # Allow discarding jobs in PENDING, PROCESSING, or AWAITING_REVIEW status
-    allowed_statuses = {
-        BackgroundJobStatus.PENDING,
-        BackgroundJobStatus.PROCESSING,
-        BackgroundJobStatus.AWAITING_REVIEW,
-    }
-    if job.status not in allowed_statuses:
-        logger.warning(
-            f"Cannot discard job {job_id} - wrong status (status: {job.status})"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot discard job - must be pending, processing, or awaiting review. Current status: {job.status.value}",
-        )
-
-    # Count review items before deletion
-    review_item_count = session.exec(
-        select(func.count()).select_from(ReviewItem).where(ReviewItem.job_id == job_id)
-    ).one()
-
-    # Delete job (cascade will delete review items)
-    session.delete(job)
-    session.commit()
-
-    logger.info(
-        f"Import job {job_id} discarded by user {current_user.id} "
-        f"({review_item_count} review items deleted)"
-    )
-
-    return JobDiscardResponse(
-        success=True,
-        message="Import discarded successfully",
-        deleted_job_id=job_id,
-        deleted_review_items=review_item_count,
-    )
-
-
-@router.post("/{job_id}/confirm", response_model=JobConfirmResponse)
-async def confirm_import(
-    job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    Confirm an import job after review is complete.
-
-    This endpoint is called when all review items have been resolved and
-    the user is ready to finalize the import. Only jobs in 'ready' or
-    'awaiting_review' status can be confirmed (awaiting_review allowed
-    if all review items have been resolved).
-    """
-    logger.info(f"User {current_user.id} requesting to confirm job {job_id}")
-
-    job = session.get(Job, job_id)
-
-    if not job:
-        logger.warning(f"Job {job_id} not found for confirmation")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    # Authorization check
-    if job.user_id != current_user.id:
-        logger.warning(
-            f"User {current_user.id} attempted to confirm job {job_id} owned by {job.user_id}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
-
-    # Only import jobs can be confirmed
-    if job.job_type != BackgroundJobType.IMPORT:
-        logger.warning(f"Cannot confirm job {job_id} - not an import job")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only import jobs can be confirmed",
-        )
-
-    # Check if job is in a confirmable state
-    confirmable_statuses = [
-        BackgroundJobStatus.READY,
-        BackgroundJobStatus.AWAITING_REVIEW,
-    ]
-    if job.status not in confirmable_statuses:
-        logger.warning(
-            f"Cannot confirm job {job_id} - status is {job.status.value}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot confirm job - status must be 'ready' or 'awaiting_review'. Current status: {job.status.value}",
-        )
-
-    # Check for pending review items
-    pending_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.PENDING,
-        )
-    ).one()
-
-    if pending_count > 0:
-        logger.warning(
-            f"Cannot confirm job {job_id} - {pending_count} pending review items"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot confirm job - {pending_count} review items still pending",
-        )
-
-    # Count resolved items by status for the response
-    matched_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.MATCHED,
-        )
-    ).one()
-
-    skipped_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.SKIPPED,
-        )
-    ).one()
-
-    removal_count = session.exec(
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.REMOVAL,
-        )
-    ).one()
-
-    # Update job status to finalizing (the actual game addition
-    # would be handled by a background task in the full implementation)
-    job.status = BackgroundJobStatus.FINALIZING
-
-    # For now, we'll mark it as completed since the actual game addition
-    # logic will be implemented in the import tasks
-    job.status = BackgroundJobStatus.COMPLETED
-    job.completed_at = datetime.now(timezone.utc)
-
-    # Update result summary with confirmation details
-    result_summary = job.get_result_summary()
-    result_summary["confirmed_by"] = current_user.id
-    result_summary["confirmed_at"] = datetime.now(timezone.utc).isoformat()
-    result_summary["games_matched"] = matched_count
-    result_summary["games_skipped"] = skipped_count
-    result_summary["games_removed"] = removal_count
-    job.set_result_summary(result_summary)
-
-    session.commit()
-    session.refresh(job)
-
-    logger.info(
-        f"Job {job_id} confirmed by user {current_user.id}: "
-        f"matched={matched_count}, skipped={skipped_count}, removed={removal_count}"
-    )
-
-    return JobConfirmResponse(
-        success=True,
-        message="Import confirmed successfully",
-        job=_job_to_response(job, session),
-        games_added=matched_count,
-        games_skipped=skipped_count,
-        games_removed=removal_count,
     )
 
 

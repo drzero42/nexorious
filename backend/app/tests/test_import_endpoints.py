@@ -8,19 +8,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
+from app.models.job import Job, JobItem, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
 
 
 @pytest.fixture(autouse=True)
 def mock_task_queue():
     """Mock the task queue to prevent actual task enqueuing during tests."""
-    mock_result = MagicMock()
-    mock_result.task_id = "test-task-id"
-
     with patch(
-        "app.api.import_endpoints.import_nexorious_coordinator.kiq",
+        "app.api.import_endpoints.enqueue_import_task",
         new_callable=AsyncMock,
-        return_value=mock_result,
     ):
         yield
 
@@ -75,7 +71,14 @@ class TestNexoriousImport:
         assert job.job_type == BackgroundJobType.IMPORT
         assert job.source == BackgroundJobSource.NEXORIOUS
         assert job.status == BackgroundJobStatus.PENDING
-        assert job.progress_total == 2
+        assert job.total_items == 2
+
+        # Verify JobItems were created
+        stmt = select(JobItem).where(JobItem.job_id == data["job_id"])
+        job_items = session.exec(stmt).all()
+        assert len(job_items) == 2
+        assert job_items[0].source_title == "The Witcher 3: Wild Hunt"
+        assert job_items[1].source_title == "Elden Ring"
 
     def test_import_nexorious_invalid_json(
         self, client: TestClient, auth_headers: dict
@@ -158,10 +161,10 @@ class TestNexoriousImport:
         assert "already in progress" in error_msg
 
 
-    def test_import_nexorious_enqueues_coordinator(
+    def test_import_nexorious_enqueues_items(
         self, client: TestClient, auth_headers: dict, session: Session, test_user
     ):
-        """POST /import/nexorious enqueues the coordinator task for fan-out processing."""
+        """POST /import/nexorious creates JobItems and enqueues tasks for each."""
         # Create a valid Nexorious export JSON
         export_data = {
             "export_version": "1.0",
@@ -181,15 +184,10 @@ class TestNexoriousImport:
         }
         json_content = json.dumps(export_data).encode("utf-8")
 
-        # Mock the coordinator task specifically
-        mock_result = MagicMock()
-        mock_result.task_id = "coordinator-task-id"
-
         with patch(
-            "app.api.import_endpoints.import_nexorious_coordinator.kiq",
+            "app.api.import_endpoints.enqueue_import_task",
             new_callable=AsyncMock,
-            return_value=mock_result,
-        ) as mock_coordinator_kiq:
+        ) as mock_enqueue:
             response = client.post(
                 "/api/import/nexorious",
                 headers=auth_headers,
@@ -201,19 +199,16 @@ class TestNexoriousImport:
             data = response.json()
             assert "job_id" in data
             assert data["source"] == "nexorious"
+            assert data["total_items"] == 2
 
-            # Verify coordinator task was called with job_id
-            mock_coordinator_kiq.assert_called_once()
-            call_args = mock_coordinator_kiq.call_args
-            job_id_arg = call_args[0][0] if call_args[0] else None
-            assert job_id_arg == data["job_id"]
+            # Verify enqueue_import_task was called twice (once per game)
+            assert mock_enqueue.call_count == 2
 
-            # Verify job has the coordinator task_id
+            # Verify JobItems were created
             from sqlmodel import select
-            stmt = select(Job).where(Job.id == data["job_id"])
-            job = session.exec(stmt).first()
-            assert job is not None
-            assert job.taskiq_task_id == "coordinator-task-id"
+            stmt = select(JobItem).where(JobItem.job_id == data["job_id"])
+            job_items = session.exec(stmt).all()
+            assert len(job_items) == 2
 
 
 class TestImportEndpointAuthentication:

@@ -2,25 +2,25 @@
 
 Fetches user's Steam library and syncs games to the collection.
 Uses the matching service to match games to IGDB and creates
-review items for games that need manual matching.
+job items for games that need manual matching.
 """
 
 import logging
+import json
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from sqlmodel import Session, select
 
-from app.worker.locking import acquire_job_lock, release_job_lock
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_HIGH
+from app.worker.queues import SUBJECT_HIGH_SYNC
 from app.core.database import get_session_context
 from app.models.job import (
     Job,
+    JobItem,
+    JobItemStatus,
     BackgroundJobStatus,
     BackgroundJobSource,
-    ReviewItem,
-    ReviewItemStatus,
 )
 from app.models.user import User
 from app.models.user_sync_config import UserSyncConfig
@@ -39,10 +39,7 @@ PC_WINDOWS_PLATFORM_ID = "pc-windows"
 AUTO_MATCH_CONFIDENCE_THRESHOLD = 0.85
 
 
-@broker.task(
-    task_name="sync.steam_library",
-    queue=QUEUE_HIGH,  # Default to high priority (can be overridden via labels)
-)
+@broker.task(task_name=SUBJECT_HIGH_SYNC)
 async def sync_steam_library(
     job_id: str,
     user_id: str,
@@ -57,7 +54,7 @@ async def sync_steam_library(
     3. Filters out ignored games (check IgnoredExternalGame)
     4. For remaining games, matches to IGDB using MatchingService
     5. Auto-links high confidence matches to existing collection games
-    6. Creates ReviewItems for games that need manual review
+    6. Creates JobItems for games that need manual review
     7. Updates last_synced_at on completion
 
     Args:
@@ -82,16 +79,10 @@ async def sync_steam_library(
     }
 
     async with get_session_context() as session:
-        # Try to acquire advisory lock - prevents duplicate execution
-        if not acquire_job_lock(session, job_id):
-            logger.info(f"Job {job_id} already being processed by another worker")
-            return {"status": "skipped", "reason": "duplicate_execution"}
-
         # Get job first (outside try so exception handler can access it)
         job = session.get(Job, job_id)
         if not job:
             logger.error(f"Job {job_id} not found")
-            release_job_lock(session, job_id)
             return {"status": "error", "error": "Job not found"}
 
         try:
@@ -124,8 +115,8 @@ async def sync_steam_library(
             )
             stats["total_games"] = len(steam_games_list)
 
-            # Update job progress
-            job.progress_total = len(steam_games_list)
+            # Update job total_items
+            job.total_items = len(steam_games_list)
             session.add(job)
             session.commit()
 
@@ -146,11 +137,6 @@ async def sync_steam_library(
                 try:
                     appid = str(steam_game.appid)
                     game_name = steam_game.name
-
-                    # Update progress
-                    job.progress_current = i + 1
-                    session.add(job)
-                    session.commit()
 
                     # Skip already synced games
                     if appid in synced_appids:
@@ -201,21 +187,21 @@ async def sync_steam_library(
                             _add_steam_platform(session, existing_user_game.id, appid)
                             stats["auto_linked"] += 1
                         else:
-                            # Create ReviewItem (either new game or low confidence)
+                            # Create JobItem (either new game or low confidence)
                             if confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD:
                                 logger.info(
-                                    f"Creating review item for auto-matched new game: {game_name} -> "
+                                    f"Creating job item for auto-matched new game: {game_name} -> "
                                     f"{match_result.igdb_title} (confidence: {confidence:.2f})"
                                 )
                                 stats["auto_matched"] += 1
                             else:
                                 logger.info(
-                                    f"Creating review item for low confidence match: {game_name} -> "
+                                    f"Creating job item for low confidence match: {game_name} -> "
                                     f"{match_result.igdb_title} (confidence: {confidence:.2f})"
                                 )
                                 stats["needs_review"] += 1
 
-                            _create_review_item(
+                            _create_job_item(
                                 session=session,
                                 job=job,
                                 user_id=user_id,
@@ -230,10 +216,10 @@ async def sync_steam_library(
                     elif match_result.status == MatchStatus.NEEDS_REVIEW:
                         # Multiple candidates - needs manual review
                         logger.info(
-                            f"Creating review item for multiple candidates: {game_name} "
+                            f"Creating job item for multiple candidates: {game_name} "
                             f"({len(match_result.candidates or [])} candidates)"
                         )
-                        _create_review_item(
+                        _create_job_item(
                             session=session,
                             job=job,
                             user_id=user_id,
@@ -249,7 +235,7 @@ async def sync_steam_library(
                     else:
                         # No match found
                         logger.info(f"No match found for game: {game_name} (AppID: {appid})")
-                        _create_review_item(
+                        _create_job_item(
                             session=session,
                             job=job,
                             user_id=user_id,
@@ -270,25 +256,9 @@ async def sync_steam_library(
             sync_config.last_synced_at = datetime.now(timezone.utc)
             session.add(sync_config)
 
-            # Determine final job status
-            pending_count = len(
-                list(
-                    session.exec(
-                        select(ReviewItem).where(
-                            ReviewItem.job_id == job.id,
-                            ReviewItem.status == ReviewItemStatus.PENDING,
-                        )
-                    ).all()
-                )
-            )
-
-            if pending_count > 0:
-                job.status = BackgroundJobStatus.AWAITING_REVIEW
-            else:
-                job.status = BackgroundJobStatus.COMPLETED
-
+            # Set final job status
+            job.status = BackgroundJobStatus.COMPLETED
             job.completed_at = datetime.now(timezone.utc)
-            job.set_result_summary(stats)
             session.add(job)
             session.commit()
 
@@ -314,8 +284,6 @@ async def sync_steam_library(
             session.add(job)
             session.commit()
             return {"status": "error", "error": str(e), **stats}
-        finally:
-            release_job_lock(session, job_id)
 
 
 def _get_steam_sync_config(session: Session, user_id: str) -> Optional[UserSyncConfig]:
@@ -408,7 +376,7 @@ def _add_steam_platform(session: Session, user_game_id: str, steam_appid: str) -
         logger.debug(f"Added Steam platform association for UserGame {user_game_id}, AppID {steam_appid}")
 
 
-def _create_review_item(
+def _create_job_item(
     session: Session,
     job: Job,
     user_id: str,
@@ -418,9 +386,9 @@ def _create_review_item(
     igdb_title: Optional[str],
     confidence: float,
     candidates: List,
-) -> ReviewItem:
+) -> JobItem:
     """
-    Create a ReviewItem for user review.
+    Create a JobItem for this sync item.
 
     Args:
         session: Database session
@@ -463,26 +431,36 @@ def _create_review_item(
     source_metadata = {
         "steam_appid": steam_appid,
         "source": "steam",
+        "data": {"title": source_title},
     }
 
-    review_item = ReviewItem(
+    # Determine status based on match result
+    if igdb_id and confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD:
+        status = JobItemStatus.COMPLETED
+    elif candidates:
+        status = JobItemStatus.PENDING_REVIEW
+    else:
+        status = JobItemStatus.PENDING_REVIEW
+
+    job_item = JobItem(
         job_id=job.id,
         user_id=user_id,
+        item_key=f"steam_{steam_appid}",
         source_title=source_title,
-        status=ReviewItemStatus.PENDING,
-        resolved_igdb_id=igdb_id if confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD else None,
+        source_metadata_json=json.dumps(source_metadata),
+        status=status,
+        igdb_candidates_json=json.dumps(serializable_candidates),
+        resolved_igdb_id=igdb_id if status == JobItemStatus.COMPLETED else None,
         match_confidence=confidence if confidence > 0 else None,
     )
-    review_item.set_source_metadata(source_metadata)
-    review_item.set_igdb_candidates(serializable_candidates)
 
-    session.add(review_item)
+    session.add(job_item)
     session.commit()
 
     logger.debug(
-        f"Created ReviewItem for '{source_title}' "
-        f"(AppID: {steam_appid}, confidence: {confidence:.2f}, "
+        f"Created JobItem for '{source_title}' "
+        f"(AppID: {steam_appid}, status: {status}, confidence: {confidence:.2f}, "
         f"candidates: {len(serializable_candidates)})"
     )
 
-    return review_item
+    return job_item

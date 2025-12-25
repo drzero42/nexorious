@@ -19,7 +19,7 @@ from ..core.config import settings
 from ..core.database import get_engine
 from ..core.security import hash_token
 from ..models.user import User, UserSession
-from ..models.job import Job, ReviewItem, BackgroundJobStatus, ReviewItemStatus
+from ..models.job import Job, BackgroundJobStatus
 from ..schemas.job import JobResponse, JobType, JobSource, JobStatus
 from ..schemas.websocket import (
     WebSocketEventType,
@@ -58,10 +58,9 @@ class JobSnapshot:
     """Snapshot of job state for change detection."""
 
     status: str
-    progress_current: int
-    progress_total: int
-    review_item_count: int
+    completed_count: int
     pending_review_count: int
+    total_count: int
 
 
 def _get_ws_user(token: str, session: Session) -> Optional[User]:
@@ -120,57 +119,38 @@ def _get_ws_user(token: str, session: Session) -> Optional[User]:
 
 def _job_to_response(job: Job, session: Session) -> JobResponse:
     """Convert a Job model to JobResponse with computed fields."""
-    from sqlmodel import func
+    from ..services.job_service import get_job_progress, get_derived_job_status
 
-    # Count review items for this job
-    review_count_stmt = (
-        select(func.count()).select_from(ReviewItem).where(ReviewItem.job_id == job.id)
-    )
-    review_item_count = session.exec(review_count_stmt).one()
-
-    # Count pending review items
-    pending_count_stmt = (
-        select(func.count())
-        .select_from(ReviewItem)
-        .where(
-            ReviewItem.job_id == job.id,
-            ReviewItem.status == ReviewItemStatus.PENDING,
-        )
-    )
-    pending_review_count = session.exec(pending_count_stmt).one()
+    # Get derived status and progress from job items
+    derived_status = get_derived_job_status(session, job)
+    progress = get_job_progress(session, job.id)
 
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
         job_type=JobType(job.job_type.value),
         source=JobSource(job.source.value),
-        status=JobStatus(job.status.value),
+        status=JobStatus(derived_status.value),
         priority=job.priority,
-        progress_current=job.progress_current,
-        progress_total=job.progress_total,
-        progress_percent=job.progress_percent,
-        result_summary=job.get_result_summary(),
+        progress=progress,
+        total_items=progress.total,
         error_message=job.error_message,
         file_path=job.file_path,
-        taskiq_task_id=job.taskiq_task_id,
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
         is_terminal=job.is_terminal,
         duration_seconds=job.duration_seconds,
-        review_item_count=review_item_count,
-        pending_review_count=pending_review_count,
     )
 
 
-def _create_snapshot(job: Job, review_item_count: int, pending_review_count: int) -> JobSnapshot:
+def _create_snapshot(job: Job, completed_count: int, pending_review_count: int, total_count: int) -> JobSnapshot:
     """Create a snapshot of job state for change detection."""
     return JobSnapshot(
         status=job.status.value,
-        progress_current=job.progress_current,
-        progress_total=job.progress_total,
-        review_item_count=review_item_count,
+        completed_count=completed_count,
         pending_review_count=pending_review_count,
+        total_count=total_count,
     )
 
 
@@ -195,16 +175,12 @@ def _detect_event_type(
         else:
             return WebSocketEventType.JOB_STATUS_CHANGE
 
-    # Progress change
-    if old_snapshot.progress_current != new_snapshot.progress_current:
-        return WebSocketEventType.JOB_PROGRESS
-
-    # Review item change
+    # Progress change (completed or pending review count changed)
     if (
-        old_snapshot.review_item_count != new_snapshot.review_item_count
+        old_snapshot.completed_count != new_snapshot.completed_count
         or old_snapshot.pending_review_count != new_snapshot.pending_review_count
     ):
-        return WebSocketEventType.REVIEW_ITEM_UPDATE
+        return WebSocketEventType.JOB_PROGRESS
 
     return None
 
@@ -242,7 +218,6 @@ async def websocket_jobs(
     - job_status_change: Status changed
     - job_completed: Job finished successfully
     - job_failed: Job encountered error
-    - review_item_update: Review item counts changed
     """
     # Create session for authentication
     session = _get_session()
@@ -314,26 +289,19 @@ async def websocket_jobs(
                 for job in jobs:
                     current_job_ids.add(job.id)
 
-                    # Get review counts
+                    # Get progress from job service
+                    from ..services.job_service import get_job_progress
                     from sqlmodel import func
 
-                    review_count = session.exec(
-                        select(func.count())
-                        .select_from(ReviewItem)
-                        .where(ReviewItem.job_id == job.id)
-                    ).one()
-
-                    pending_count = session.exec(
-                        select(func.count())
-                        .select_from(ReviewItem)
-                        .where(
-                            ReviewItem.job_id == job.id,
-                            ReviewItem.status == ReviewItemStatus.PENDING,
-                        )
-                    ).one()
+                    progress = get_job_progress(session, job.id)
 
                     # Create new snapshot
-                    new_snapshot = _create_snapshot(job, review_count, pending_count)
+                    new_snapshot = _create_snapshot(
+                        job,
+                        progress.completed,
+                        progress.pending_review,
+                        progress.total
+                    )
 
                     # Detect changes
                     old_snapshot = job_snapshots.get(job.id)

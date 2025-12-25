@@ -160,9 +160,6 @@ async def cancel_import_job(
     cancellable_statuses = [
         BackgroundJobStatus.PENDING,
         BackgroundJobStatus.PROCESSING,
-        BackgroundJobStatus.AWAITING_REVIEW,
-        BackgroundJobStatus.READY,
-        BackgroundJobStatus.FINALIZING,
     ]
     if job.status not in cancellable_statuses:
         raise HTTPException(

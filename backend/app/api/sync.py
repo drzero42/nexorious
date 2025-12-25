@@ -223,7 +223,6 @@ async def trigger_manual_sync(
         Job.status.in_([  # type: ignore[union-attr]
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
         ]),
     )
     active_job = session.exec(active_job_stmt).first()
@@ -283,7 +282,6 @@ async def get_sync_status(
         Job.status.in_([  # type: ignore[union-attr]
             BackgroundJobStatus.PENDING,
             BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.AWAITING_REVIEW,
         ]),
     )
     active_job = session.exec(active_job_stmt).first()

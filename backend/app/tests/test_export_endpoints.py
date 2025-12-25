@@ -129,11 +129,7 @@ class TestExportJson:
         assert job.job_type == BackgroundJobType.EXPORT
         assert job.source == BackgroundJobSource.NEXORIOUS
         assert job.status == BackgroundJobStatus.PENDING
-        assert job.progress_total == 1
-
-        # Verify result summary
-        result_summary = job.get_result_summary()
-        assert result_summary["format"] == "json"
+        assert job.total_items == 1
 
     def test_export_json_empty_collection(
         self, client: TestClient, auth_headers: dict
@@ -175,11 +171,9 @@ class TestExportCsv:
         assert data["status"] == "pending"
         assert data["estimated_items"] == 1
 
-        # Verify result summary has CSV format
+        # Verify job was created
         job = session.get(Job, data["job_id"])
         assert job is not None
-        result_summary = job.get_result_summary()
-        assert result_summary["format"] == "csv"
 
     def test_export_csv_empty_collection(
         self, client: TestClient, auth_headers: dict
@@ -220,7 +214,6 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc),
             )
-            job.set_result_summary({"format": "json"})
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -386,7 +379,6 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc) - timedelta(hours=48),  # 48 hours ago
             )
-            job.set_result_summary({"format": "json"})
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -427,7 +419,6 @@ class TestExportDownload:
                 file_path=temp_file_path,
                 completed_at=datetime.now(timezone.utc),
             )
-            job.set_result_summary({"format": "csv"})
             session.add(job)
             session.commit()
             session.refresh(job)
