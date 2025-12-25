@@ -19,8 +19,6 @@ from app.worker.tasks.sync import (
 
 # Import/export tasks
 from app.worker.tasks.import_export import (
-    import_nexorious_coordinator,
-    import_nexorious_item,
     export_collection,
 )
 
@@ -33,7 +31,5 @@ __all__ = [
     "sync_steam_library",
     "check_pending_syncs",
     # Import/Export
-    "import_nexorious_coordinator",
-    "import_nexorious_item",
     "export_collection",
 ]

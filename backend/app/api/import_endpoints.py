@@ -25,9 +25,6 @@ from ..models.job import (
     BackgroundJobStatus,
     BackgroundJobPriority,
 )
-from ..worker.tasks.import_export import (
-    import_nexorious_coordinator,
-)
 
 router = APIRouter(prefix="/import", tags=["Import Jobs"])
 logger = logging.getLogger(__name__)
