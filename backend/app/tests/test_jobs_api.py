@@ -127,28 +127,37 @@ class TestListJobs:
     def test_list_jobs_filter_by_status(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test filtering jobs by status."""
-        # Create jobs with different statuses
-        for status in [
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.COMPLETED,
-        ]:
-            job = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.SYNC,
-                source=BackgroundJobSource.STEAM,
-                status=status,
-            )
-            session.add(job)
+        """Test filtering jobs by terminal status (filtering works on DB status).
+
+        Note: PENDING/PROCESSING are derived from JobItems, but FAILED/CANCELLED
+        are stored explicitly. This test verifies filtering by FAILED status.
+        """
+        # Create job with FAILED status (explicit, not derived)
+        job_failed = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.FAILED,
+            error_message="Test failure",
+        )
+        session.add(job_failed)
+
+        # Create job with PENDING status (default)
+        job_pending = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add(job_pending)
         session.commit()
 
-        response = client.get("/api/jobs/?status=processing", headers=auth_headers)
+        # Filter by failed status
+        response = client.get("/api/jobs/?status=failed", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["total"] == 1
-        assert data["jobs"][0]["status"] == "processing"
+        assert data["jobs"][0]["status"] == "failed"
 
     def test_list_jobs_pagination(
         self, client, auth_headers, test_user: User, session: Session
@@ -245,55 +254,29 @@ class TestListJobs:
         response = client.get("/api/jobs/")
         assert response.status_code == 403  # No token = 403 Forbidden
 
-    def test_list_jobs_excludes_child_jobs(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test that job list excludes child jobs by default."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create child job
-        child = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-        )
-        session.add(child)
-        session.commit()
-
-        # List jobs
-        response = client.get("/api/jobs/", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        job_ids = [job["id"] for job in data["jobs"]]
-
-        # Parent should be in list, child should not
-        assert parent.id in job_ids
-        assert child.id not in job_ids
-
-
 class TestGetJob:
     """Tests for GET /api/jobs/{job_id} endpoint."""
 
     def test_get_job_success(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test getting a specific job."""
+        """Test getting a specific job (status is derived from JobItems)."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
         )
         session.add(job)
+        session.commit()
+
+        # Add a PROCESSING item to derive PROCESSING status
+        session.add(JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game-1",
+            source_title="Test Game",
+            status=JobItemStatus.PROCESSING,
+        ))
         session.commit()
         session.refresh(job)
 
