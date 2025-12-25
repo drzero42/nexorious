@@ -12,7 +12,7 @@ from typing import Dict, Any
 from sqlmodel import select
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_LOW
+from app.worker.queues import SUBJECT_LOW_MAINTENANCE
 from app.core.database import get_session_context
 from app.models.job import Job, BackgroundJobStatus, BackgroundJobType, ImportJobSubtype
 
@@ -20,9 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 @broker.task(
-    task_name="maintenance.cleanup_stale_batch_jobs",
+    task_name=SUBJECT_LOW_MAINTENANCE,
     schedule=[{"cron": "*/30 * * * *"}],  # Every 30 minutes
-    queue=QUEUE_LOW,
 )
 async def cleanup_stale_batch_jobs(timeout_minutes: int = 30) -> Dict[str, Any]:
     """

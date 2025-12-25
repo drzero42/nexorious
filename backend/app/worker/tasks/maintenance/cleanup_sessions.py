@@ -11,16 +11,15 @@ from typing import Dict, Any
 from sqlalchemy import text
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_LOW
+from app.worker.queues import SUBJECT_LOW_MAINTENANCE
 from app.core.database import get_engine
 
 logger = logging.getLogger(__name__)
 
 
 @broker.task(
-    task_name="maintenance.cleanup_expired_sessions",
+    task_name=SUBJECT_LOW_MAINTENANCE,
     schedule=[{"cron": "*/30 * * * *"}],  # Every 30 minutes
-    queue=QUEUE_LOW,
 )
 async def cleanup_expired_sessions() -> Dict[str, Any]:
     """

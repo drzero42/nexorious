@@ -11,7 +11,7 @@ from typing import Dict, Any
 from sqlalchemy import text
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_LOW
+from app.worker.queues import SUBJECT_LOW_MAINTENANCE
 from app.core.database import get_engine
 
 logger = logging.getLogger(__name__)
@@ -21,9 +21,8 @@ RESULT_RETENTION_DAYS = 7
 
 
 @broker.task(
-    task_name="maintenance.cleanup_task_results",
+    task_name=SUBJECT_LOW_MAINTENANCE,
     schedule=[{"cron": "0 3 * * *"}],  # Daily at 3:00 AM UTC
-    queue=QUEUE_LOW,
 )
 async def cleanup_task_results() -> Dict[str, Any]:
     """
