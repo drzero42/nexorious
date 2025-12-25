@@ -34,7 +34,14 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
-import { useJob, useCancelJob, useDeleteJob, useConfirmJob, useDownloadExport } from '@/hooks';
+import {
+  useJob,
+  useCancelJob,
+  useDeleteJob,
+  useConfirmJob,
+  useDownloadExport,
+  useJobChildren,
+} from '@/hooks';
 import {
   JobStatus,
   getJobTypeLabel,
@@ -47,6 +54,7 @@ import {
   canConfirmJob,
   isJobInProgress,
 } from '@/types';
+import { JobChildrenList } from '@/components/jobs';
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -104,6 +112,10 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
   const deleteJobMutation = useDeleteJob();
   const confirmJobMutation = useConfirmJob();
   const downloadExportMutation = useDownloadExport();
+
+  // Query for child jobs
+  const { data: childJobs } = useJobChildren(jobId);
+  const hasChildren = (childJobs?.length ?? 0) > 0;
 
   const showProgress =
     job?.status === JobStatus.PROCESSING || job?.status === JobStatus.FINALIZING;
@@ -255,6 +267,13 @@ export default function JobDetailPage({ params }: JobDetailPageProps) {
                 </span>
               </div>
               <Progress value={job.progressPercent} />
+            </div>
+          )}
+
+          {/* Child Jobs Section */}
+          {hasChildren && (
+            <div className="rounded-lg border p-4">
+              <JobChildrenList jobId={job.id} />
             </div>
           )}
 
