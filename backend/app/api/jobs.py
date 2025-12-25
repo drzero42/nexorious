@@ -8,7 +8,7 @@ background jobs (sync, import, export operations).
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
 from sqlalchemy import update as sa_update
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional
 from datetime import datetime, timezone
 import logging
 
@@ -17,6 +17,8 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.job import (
     Job,
+    JobItem,
+    JobItemStatus,
     ReviewItem,
     BackgroundJobType,
     BackgroundJobSource,
@@ -34,8 +36,9 @@ from ..schemas.job import (
     JobSource,
     JobStatus,
 )
+from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
-from ..services.batch_job_service import BatchJobService
+from ..services.job_service import get_job_progress, get_derived_job_status
 from ..utils.sqlalchemy_typed import desc, is_
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -44,55 +47,26 @@ logger = logging.getLogger(__name__)
 
 def _job_to_response(job: Job, session: Session) -> JobResponse:
     """Convert a Job model to JobResponse with computed fields."""
-    # Count review items for this job
-    review_count_stmt = select(func.count()).select_from(ReviewItem).where(
-        ReviewItem.job_id == job.id
-    )
-    review_item_count = session.exec(review_count_stmt).one()
-
-    # Count pending review items
-    pending_count_stmt = select(func.count()).select_from(ReviewItem).where(
-        ReviewItem.job_id == job.id,
-        ReviewItem.status == ReviewItemStatus.PENDING,
-    )
-    pending_review_count = session.exec(pending_count_stmt).one()
-
-    # Check for aggregated progress from children
-    batch_service = BatchJobService(session)
-    aggregated = batch_service.get_aggregated_progress(job.id)
-
-    if aggregated:
-        # Parent job: use aggregated progress from children
-        progress_current = aggregated["progress_current"]
-        progress_total = aggregated["progress_total"]
-        progress_percent = int((progress_current / progress_total) * 100) if progress_total > 0 else 0
-    else:
-        # Non-parent job or no children: use job's own progress
-        progress_current = job.progress_current
-        progress_total = job.progress_total
-        progress_percent = job.progress_percent
+    # Get derived status and progress from job items
+    derived_status = get_derived_job_status(session, job)
+    progress = get_job_progress(session, job.id)
 
     return JobResponse(
         id=job.id,
         user_id=job.user_id,
         job_type=JobType(job.job_type.value),
         source=JobSource(job.source.value),
-        status=JobStatus(job.status.value),
+        status=JobStatus(derived_status.value),
         priority=job.priority,
-        progress_current=progress_current,
-        progress_total=progress_total,
-        progress_percent=progress_percent,
-        result_summary=job.get_result_summary(),
+        progress=progress,
+        total_items=progress.total,
         error_message=job.error_message,
         file_path=job.file_path,
-        taskiq_task_id=job.taskiq_task_id,
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
         is_terminal=job.is_terminal,
         duration_seconds=job.duration_seconds,
-        review_item_count=review_item_count,
-        pending_review_count=pending_review_count,
     )
 
 
@@ -243,46 +217,39 @@ async def get_job(
     return _job_to_response(job, session)
 
 
-@router.get("/{job_id}/children", response_model=List[JobResponse])
-async def get_job_children(
+@router.get("/{job_id}/items", response_model=JobItemListResponse)
+async def list_job_items(
     job_id: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    job_status: Optional[JobStatus] = Query(default=None, description="Filter by status", alias="status"),
-    limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
-    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
-) -> List[JobResponse]:
-    """
-    Get child jobs for a parent job.
+    status: JobItemStatus | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """List items for a job with optional status filter."""
+    # Verify job belongs to user
+    job = session.get(Job, job_id)
+    if not job or job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    Returns paginated list of child jobs with optional status filtering.
-    Only accessible by the job owner.
-    """
-    logger.debug(f"Getting children for job {job_id}")
+    query = select(JobItem).where(JobItem.job_id == job_id)
+    if status:
+        query = query.where(JobItem.status == status)
 
-    # Verify parent job exists and belongs to user
-    parent_job = session.get(Job, job_id)
-    if not parent_job or parent_job.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found",
-        )
+    # Count total
+    count_query = select(func.count()).select_from(query.subquery())
+    total = session.exec(count_query).one()
 
-    # Build query for children
-    query = select(Job).where(Job.parent_job_id == job_id)
+    # Paginate
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    items = session.exec(query).all()
 
-    if job_status:
-        query = query.where(Job.status == BackgroundJobStatus(job_status.value))
-
-    # Order by created_at descending (newest first)
-    query = query.order_by(desc(col(Job.created_at)))
-
-    # Apply pagination
-    query = query.offset(offset).limit(limit)
-
-    children = session.exec(query).all()
-
-    return [_job_to_response(job, session) for job in children]
+    return JobItemListResponse(
+        items=[JobItemResponse.model_validate(item) for item in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/{job_id}/cancel", response_model=JobCancelResponse)
