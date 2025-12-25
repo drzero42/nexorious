@@ -2,7 +2,7 @@
 
 Fetches user's Steam library and syncs games to the collection.
 Uses the matching service to match games to IGDB and creates
-review items for games that need manual matching.
+job items for games that need manual matching.
 """
 
 import logging
@@ -54,7 +54,7 @@ async def sync_steam_library(
     3. Filters out ignored games (check IgnoredExternalGame)
     4. For remaining games, matches to IGDB using MatchingService
     5. Auto-links high confidence matches to existing collection games
-    6. Creates ReviewItems for games that need manual review
+    6. Creates JobItems for games that need manual review
     7. Updates last_synced_at on completion
 
     Args:
