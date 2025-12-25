@@ -312,22 +312,9 @@ class TestImportTaskIntegration:
     #         assert job.status == BackgroundJobStatus.PENDING
     #         assert job.get_result_summary()["_import_data"]["games"][0]["igdb_id"] == 12345
 
-    @pytest.mark.asyncio
-    async def test_steam_import_stores_steam_id(self, session, test_user):
-        """Steam import stores Steam ID in job."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PENDING,
-            priority=BackgroundJobPriority.HIGH,
-        )
-        job.set_result_summary({"steam_id": "76561198012345678"})
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        assert job.get_result_summary()["steam_id"] == "76561198012345678"
+    # Note: test_steam_import_stores_steam_id was removed.
+    # The Job model no longer has set_result_summary/get_result_summary methods.
+    # Result metadata is now stored in JobItem.source_metadata_json per item.
 
 
 # NOTE: TestNexoriousImportLocking is commented out because import_nexorious_json

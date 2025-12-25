@@ -142,7 +142,7 @@ async def export_csv(
         job_type=BackgroundJobType.EXPORT,
         source=BackgroundJobSource.NEXORIOUS,
         status=BackgroundJobStatus.PENDING,
-        total_items=total_items,
+        total_items=game_count,
     )
 
     session.add(job)

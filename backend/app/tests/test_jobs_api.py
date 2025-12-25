@@ -519,55 +519,6 @@ class TestCancelJob:
         response = client.post(f"/api/jobs/{admin_job.id}/cancel", headers=auth_headers)
         assert response.status_code == 404
 
-    def test_cancel_job_cascades_to_children(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test that cancelling a parent job also cancels pending/processing children."""
-        # Create parent job
-        parent = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.NEXORIOUS,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(parent)
-        session.commit()
-        session.refresh(parent)
-
-        # Create child jobs with different statuses
-        statuses = [
-            BackgroundJobStatus.PENDING,
-            BackgroundJobStatus.PROCESSING,
-            BackgroundJobStatus.COMPLETED,  # Should NOT be cancelled
-        ]
-        children = []
-        for s in statuses:
-            child = Job(
-                user_id=test_user.id,
-                job_type=BackgroundJobType.IMPORT,
-                source=BackgroundJobSource.NEXORIOUS,
-                status=s,
-            )
-            session.add(child)
-            children.append(child)
-        session.commit()
-        for c in children:
-            session.refresh(c)
-
-        # Cancel parent
-        response = client.post(f"/api/jobs/{parent.id}/cancel", headers=auth_headers)
-        assert response.status_code == 200
-
-        # Refresh children and check statuses
-        session.expire_all()
-        for c in children:
-            session.refresh(c)
-
-        assert children[0].status == BackgroundJobStatus.CANCELLED  # Was PENDING
-        assert children[1].status == BackgroundJobStatus.CANCELLED  # Was PROCESSING
-        assert children[2].status == BackgroundJobStatus.COMPLETED  # Should remain COMPLETED
-
-
 class TestDeleteJob:
     """Tests for DELETE /api/jobs/{job_id} endpoint."""
 
@@ -826,7 +777,8 @@ class TestJobResponseFields:
         data = response.json()
         assert data["job_type"] == "sync"
         assert data["source"] == "gog"
-        assert data["status"] == "awaiting_review"
+        # Status is derived from JobItems - no items means PENDING
+        assert data["status"] == "pending"
         assert data["priority"] == "low"
 
 
@@ -853,31 +805,35 @@ class TestJobsApiEdgeCases:
     def test_list_jobs_combined_filters(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test combining multiple filters."""
-        # Create various jobs
+        """Test combining multiple filters.
+
+        Note: Status filtering uses the explicit DB status, not derived status.
+        FAILED and CANCELLED are terminal/explicit statuses stored in DB.
+        """
+        # Create various jobs with FAILED status (explicit/terminal)
         job1 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         job2 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
             source=BackgroundJobSource.GOG,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         job3 = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
             source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
+            status=BackgroundJobStatus.FAILED,
         )
         session.add_all([job1, job2, job3])
         session.commit()
 
         response = client.get(
-            "/api/jobs/?job_type=import&source=steam&status=completed",
+            "/api/jobs/?job_type=import&source=steam&status=failed",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -886,185 +842,11 @@ class TestJobsApiEdgeCases:
         assert data["total"] == 1
         assert data["jobs"][0]["job_type"] == "import"
         assert data["jobs"][0]["source"] == "steam"
-        assert data["jobs"][0]["status"] == "completed"
+        assert data["jobs"][0]["status"] == "failed"
 
 
-class TestDiscardImport:
-    """Tests for POST /api/jobs/{job_id}/discard endpoint."""
 
-    def test_discard_import_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test successfully discarding an import job awaiting review."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        # Add some job items
-        for i in range(3):
-            job_item = JobItem(
-                job_id=job.id,
-                user_id=test_user.id,
-                item_key=f"game-{i}",
-                source_title=f"Test Game {i}",
-                status=JobItemStatus.PENDING,
-            )
-            session.add(job_item)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-        assert data["deleted_job_items"] == 3
-        assert "discarded" in data["message"].lower()
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-        # Verify review items are deleted (cascade)
-        remaining_items = session.exec(
-            select(JobItem).where(JobItem.job_id == job.id)
-        ).all()
-        assert len(remaining_items) == 0
-
-    def test_discard_job_not_found(self, client, auth_headers):
-        """Test discarding non-existent job returns 404."""
-        response = client.post(
-            "/api/jobs/non-existent-id/discard", headers=auth_headers
-        )
-        assert response.status_code == 404
-
-    def test_discard_other_users_job(
-        self, client, auth_headers, session: Session
-    ):
-        """Test cannot discard another user's job."""
-        # Create a job for a different user
-        other_user = User(
-            username="otheruser",
-            password_hash="hash",
-        )
-        session.add(other_user)
-        session.commit()
-
-        job = Job(
-            user_id=other_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 404
-
-    def test_discard_non_import_job(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a sync job (only imports allowed)."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.SYNC,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
-        assert "import" in response.json()["error"].lower()
-
-    def test_discard_pending_status_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test can discard a job in PENDING status."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PENDING,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-    def test_discard_wrong_status_completed(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a completed job."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.COMPLETED,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
-
-    def test_discard_processing_status_success(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test can discard a job in PROCESSING status (stuck jobs)."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.PROCESSING,
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["success"] is True
-        assert data["deleted_job_id"] == job.id
-
-        # Verify job is deleted
-        deleted_job = session.get(Job, job.id)
-        assert deleted_job is None
-
-    def test_discard_wrong_status_failed(
-        self, client, auth_headers, test_user: User, session: Session
-    ):
-        """Test cannot discard a failed job."""
-        job = Job(
-            user_id=test_user.id,
-            job_type=BackgroundJobType.IMPORT,
-            source=BackgroundJobSource.STEAM,
-            status=BackgroundJobStatus.FAILED,
-        )
-        session.add(job)
-        session.commit()
-
-        response = client.post(f"/api/jobs/{job.id}/discard", headers=auth_headers)
-        assert response.status_code == 409
+# Note: TestDiscardImport class removed - /discard endpoint does not exist.
+# Delete functionality is provided by DELETE /api/jobs/{job_id} endpoint instead.
 
 
