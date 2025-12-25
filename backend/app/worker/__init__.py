@@ -1,6 +1,6 @@
-"""Background task processing with taskiq and PostgreSQL."""
+"""Background task processing with taskiq and NATS JetStream."""
 
-from app.worker.broker import broker, result_backend
+from app.worker.broker import broker
 from app.worker.queues import (
     QUEUE_HIGH,
     QUEUE_LOW,
@@ -12,7 +12,6 @@ from app.worker.schedules import scheduler
 
 __all__ = [
     "broker",
-    "result_backend",
     "scheduler",
     "QUEUE_HIGH",
     "QUEUE_LOW",
