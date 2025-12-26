@@ -94,6 +94,3 @@ export function JobItemCard({
     </Card>
   );
 }
-
-// Keep old export name for backwards compatibility during migration
-export { JobItemCard as ReviewItemCard };

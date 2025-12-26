@@ -5,5 +5,4 @@ export * from './import-export';
 export * from './import-mapping';
 export * from './jobs';
 export * from './platform';
-export * from './review';
 export * from './sync';

@@ -25,8 +25,7 @@ import {
   JobItemStatus,
 } from '@/types';
 import type { SyncConfigUpdateData, JobItem, IGDBGameCandidate } from '@/types';
-import { ReviewItemCard } from '@/components/review';
-import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
+import { JobItemCard, JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -500,7 +499,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           ) : (
             <div className="space-y-4">
               {reviewData?.items.map((item) => (
-                <ReviewItemCard
+                <JobItemCard
                   key={item.id}
                   item={item}
                   onMatch={handleMatch}
