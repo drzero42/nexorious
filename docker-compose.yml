@@ -115,7 +115,7 @@ services:
     build: ./backend
     # Single worker process per container (Kubernetes-style scaling)
     # Scale horizontally with: podman-compose up --scale worker=N
-    command: uv run taskiq worker --workers 1 app.worker.broker:broker app.worker.tasks
+    command: uv run taskiq worker --workers 1 --max-async-tasks 5 app.worker.broker:broker app.worker.tasks
     environment:
       DATABASE_URL: postgresql://nexorious:nexorious@db:5432/nexorious
       NATS_URL: nats://nats:4222
