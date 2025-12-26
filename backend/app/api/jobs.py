@@ -256,10 +256,11 @@ async def cancel_job(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Cancel an in-progress job.
+    Cancel and delete an in-progress job.
 
     Only jobs that are not in a terminal state (completed, failed, cancelled)
-    can be cancelled. Users can only cancel their own jobs.
+    can be cancelled. Cancelling a job immediately deletes it and all associated
+    items. Users can only cancel their own jobs.
     """
     logger.info(f"User {current_user.id} requesting to cancel job {job_id}")
 
@@ -292,22 +293,22 @@ async def cancel_job(
             detail=f"Cannot cancel job - already in terminal state: {job.status.value}",
         )
 
-    # Update job status to cancelled
+    # Log the cancellation before deleting
     previous_status = job.status
-    job.status = BackgroundJobStatus.CANCELLED
-    job.completed_at = datetime.now(timezone.utc)
-
-    session.commit()
-    session.refresh(job)
-
     logger.info(
-        f"Job {job_id} cancelled by user {current_user.id} (was {previous_status.value})"
+        f"Cancelling and deleting job {job_id} for user {current_user.id} (was {previous_status.value})"
     )
+
+    # Delete the job (cascade will delete job items)
+    session.delete(job)
+    session.commit()
+
+    logger.info(f"Job {job_id} cancelled and removed by user {current_user.id}")
 
     return JobCancelResponse(
         success=True,
-        message=f"Job cancelled successfully (was {previous_status.value})",
-        job=_job_to_response(job, session),
+        message="Job cancelled and removed",
+        job=None,
     )
 
 

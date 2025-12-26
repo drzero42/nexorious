@@ -378,7 +378,7 @@ class TestCancelJob:
     def test_cancel_pending_job(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cancelling a pending job."""
+        """Test cancelling a pending job - job is immediately deleted."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -388,24 +388,24 @@ class TestCancelJob:
         session.add(job)
         session.commit()
         session.refresh(job)
+        job_id = job.id
 
-        response = client.post(f"/api/jobs/{job.id}/cancel", headers=auth_headers)
+        response = client.post(f"/api/jobs/{job_id}/cancel", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["success"] is True
-        assert "pending" in data["message"]
-        assert data["job"]["status"] == "cancelled"
+        assert data["message"] == "Job cancelled and removed"
+        assert data["job"] is None
 
-        # Verify database state
-        session.refresh(job)
-        assert job.status == BackgroundJobStatus.CANCELLED
-        assert job.completed_at is not None
+        # Verify job is deleted from database
+        deleted_job = session.get(Job, job_id)
+        assert deleted_job is None
 
     def test_cancel_processing_job(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cancelling a processing job."""
+        """Test cancelling a processing job - job is immediately deleted."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
@@ -415,13 +415,19 @@ class TestCancelJob:
         session.add(job)
         session.commit()
         session.refresh(job)
+        job_id = job.id
 
-        response = client.post(f"/api/jobs/{job.id}/cancel", headers=auth_headers)
+        response = client.post(f"/api/jobs/{job_id}/cancel", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["success"] is True
-        assert data["job"]["status"] == "cancelled"
+        assert data["message"] == "Job cancelled and removed"
+        assert data["job"] is None
+
+        # Verify job is deleted from database
+        deleted_job = session.get(Job, job_id)
+        assert deleted_job is None
 
     def test_cancel_awaiting_review_job(
         self, client, auth_headers, test_user: User, session: Session
