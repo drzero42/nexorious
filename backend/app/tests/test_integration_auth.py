@@ -66,6 +66,44 @@ class TestAuthRegisterEndpoint:
         assert user.password_hash.startswith("$2b$")  # Bcrypt identifier
 
 
+class TestAuthRegisterValidation:
+    """Test registration field validation."""
+
+    def test_username_too_short(self, client: TestClient):
+        """Test registration with username too short (less than 3 chars)."""
+        register_data = {
+            "username": "ab",
+            "password": "password123"
+        }
+        response = client.post("/api/auth/register", json=register_data)
+
+        assert_api_error(response, 422)
+        result = response.json()
+        assert any("username" in str(error).lower() for error in result["detail"])
+
+    def test_password_too_short(self, client: TestClient):
+        """Test registration with password too short (less than 8 chars)."""
+        register_data = {
+            "username": "testuser",
+            "password": "short"
+        }
+        response = client.post("/api/auth/register", json=register_data)
+
+        assert_api_error(response, 422)
+        result = response.json()
+        assert any("password" in str(error).lower() for error in result["detail"])
+
+    def test_empty_required_fields(self, client: TestClient):
+        """Test registration with empty required fields."""
+        register_data = {
+            "username": "",
+            "password": ""
+        }
+        response = client.post("/api/auth/register", json=register_data)
+
+        assert_api_error(response, 422)
+
+
 class TestAuthLoginEndpoint:
     """Test /api/auth/login endpoint."""
 
