@@ -4,8 +4,7 @@ Tests game import from IGDB, existing game handling, and error cases.
 """
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
+from sqlmodel import Session
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import date
 from sqlalchemy.exc import IntegrityError
@@ -16,16 +15,9 @@ from ..services.igdb import IGDBService, GameMetadata, TwitchAuthError, IGDBErro
 
 
 @pytest.fixture(name="service_session")
-def service_session_fixture():
-    """Create a test database session for service tests."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
+def service_session_fixture(session):
+    """Use the shared PostgreSQL test session."""
+    return session
 
 
 @pytest.fixture(name="mock_igdb_service")
@@ -391,103 +383,77 @@ class TestGameServiceCreateOrUpdateFromIGDB:
         self,
         mock_igdb_service: Mock,
         sample_game_metadata: GameMetadata,
+        session: Session,
     ):
         """Test that race condition (duplicate key) is handled gracefully.
 
         Simulates the scenario where another process creates the same game
         between our existence check and our INSERT.
         """
-        # Create a fresh engine and session for this test
-        engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
+        mock_igdb_service.get_game_by_id.return_value = sample_game_metadata
+        mock_igdb_service.download_and_store_cover_art.return_value = None
+
+        game_service = GameService(session, mock_igdb_service)
+
+        # Create the game that will be "found" after rollback
+        existing_game = Game(
+            id=12345,
+            title="The Witcher 3: Wild Hunt",
+            description="Created by another process",
         )
-        SQLModel.metadata.create_all(engine)
 
-        with Session(engine) as session:
-            mock_igdb_service.get_game_by_id.return_value = sample_game_metadata
-            mock_igdb_service.download_and_store_cover_art.return_value = None
+        # Track call count to simulate race condition
+        original_commit = session.commit
+        commit_call_count = [0]
 
-            game_service = GameService(session, mock_igdb_service)
+        def mock_commit():
+            commit_call_count[0] += 1
+            if commit_call_count[0] == 1:
+                # First commit (after adding new_game) - simulate IntegrityError
+                session.rollback()
+                session.add(existing_game)
+                original_commit()
+                raise IntegrityError(
+                    "INSERT INTO games",
+                    params={},
+                    orig=Exception("duplicate key value violates unique constraint")
+                )
+            else:
+                original_commit()
 
-            # Create the game that will be "found" after rollback
-            existing_game = Game(
-                id=12345,
-                title="The Witcher 3: Wild Hunt",
-                description="Created by another process",
+        with patch.object(session, 'commit', side_effect=mock_commit):
+            result = await game_service.create_or_update_game_from_igdb(
+                igdb_id=12345,
+                download_cover_art=False,
             )
 
-            # Track call count to simulate race condition
-            original_commit = session.commit
-            commit_call_count = [0]
-
-            def mock_commit():
-                commit_call_count[0] += 1
-                if commit_call_count[0] == 1:
-                    # First commit (after adding new_game) - simulate IntegrityError
-                    # First we need to rollback and add the "existing" game
-                    session.rollback()
-                    session.add(existing_game)
-                    original_commit()
-                    # Now raise IntegrityError as if the commit failed
-                    raise IntegrityError(
-                        "INSERT INTO games",
-                        params={},
-                        orig=Exception("duplicate key value violates unique constraint")
-                    )
-                else:
-                    # Subsequent commits succeed
-                    original_commit()
-
-            with patch.object(session, 'commit', side_effect=mock_commit):
-                result = await game_service.create_or_update_game_from_igdb(
-                    igdb_id=12345,
-                    download_cover_art=False,
-                )
-
-            # Should return the existing game that was "found" after rollback
-            assert result.id == 12345
-            assert result.description == "Created by another process"
+        assert result.id == 12345
+        assert result.description == "Created by another process"
 
     @pytest.mark.asyncio
     async def test_race_condition_reraises_if_game_not_found(
         self,
         mock_igdb_service: Mock,
         sample_game_metadata: GameMetadata,
+        session: Session,
     ):
-        """Test that IntegrityError is re-raised if game still not found after rollback.
+        """Test that IntegrityError is re-raised if game still not found after rollback."""
+        mock_igdb_service.get_game_by_id.return_value = sample_game_metadata
+        mock_igdb_service.download_and_store_cover_art.return_value = None
 
-        This handles the edge case where the IntegrityError is NOT caused by
-        a duplicate game (e.g., some other constraint violation).
-        """
-        engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
-        SQLModel.metadata.create_all(engine)
+        game_service = GameService(session, mock_igdb_service)
 
-        with Session(engine) as session:
-            mock_igdb_service.get_game_by_id.return_value = sample_game_metadata
-            mock_igdb_service.download_and_store_cover_art.return_value = None
+        def mock_commit():
+            session.rollback()
+            raise IntegrityError(
+                "INSERT INTO games",
+                params={},
+                orig=Exception("some other constraint violation")
+            )
 
-            game_service = GameService(session, mock_igdb_service)
-
-            original_commit = session.commit
-
-            def mock_commit():
-                # Always raise IntegrityError, and don't create the game
-                session.rollback()
-                raise IntegrityError(
-                    "INSERT INTO games",
-                    params={},
-                    orig=Exception("some other constraint violation")
+        with patch.object(session, 'commit', side_effect=mock_commit):
+            with pytest.raises(IntegrityError):
+                await game_service.create_or_update_game_from_igdb(
+                    igdb_id=12345,
+                    download_cover_art=False,
                 )
-
-            with patch.object(session, 'commit', side_effect=mock_commit):
-                with pytest.raises(IntegrityError):
-                    await game_service.create_or_update_game_from_igdb(
-                        igdb_id=12345,
-                        download_cover_art=False,
-                    )

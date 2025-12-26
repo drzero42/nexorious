@@ -18,7 +18,7 @@ A self-hostable web application for managing personal video game collections wit
 
 - **Python 3.13+** with uv package manager
 - **Node.js 18+** with npm
-- **PostgreSQL 13+** (production) or SQLite (development)
+- **PostgreSQL 16+**
 - **Nix** (optional, recommended for reproducible development environment)
 - **IGDB API Credentials** (required) - See [IGDB Setup Guide](docs/igdb-setup.md)
 
@@ -96,7 +96,7 @@ npm run dev
 - **Automatic Execution**: When the application starts, it automatically runs `alembic upgrade head`
 - **Error Handling**: If migrations fail, the application will not start and will log detailed error information
 - **Logging**: Migration progress is logged at INFO level for monitoring
-- **Database Support**: Works with both PostgreSQL (production) and SQLite (development)
+- **Database Support**: Works PostgreSQL
 
 #### Migration Behavior
 
@@ -115,8 +115,6 @@ Ensure your environment variables are configured correctly:
 ```bash
 # Required: Database connection
 DATABASE_URL=postgresql://user:password@localhost:5432/nexorious
-# Or for SQLite (development)
-DATABASE_URL=sqlite:///./nexorious.db
 
 # Optional: Migration logging
 LOG_LEVEL=INFO  # To see migration progress

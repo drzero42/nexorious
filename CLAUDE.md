@@ -106,7 +106,7 @@ npm run test:ui
 - **Framework**: pytest with pytest-asyncio for async testing
 - **Test Types**: Unit tests, API integration tests, IGDB mocking
 - **Coverage Reports**: HTML reports in `htmlcov/` directory
-- **Database Testing**: PostgreSQL and SQLite support
+- **Database Testing**: PostgreSQL support
 
 #### CSV Import Testing
 Comprehensive test coverage (>90%) in `backend/scripts/tests/`:
@@ -199,7 +199,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 
 ### Backend Stack
 - **Framework**: FastAPI (Python 3.13) - High-performance async web framework  
-- **Database**: SQLModel ORM supporting both PostgreSQL (production) and SQLite (development)
+- **Database**: SQLModel ORM supporting PostgreSQL
 - **Migrations**: Alembic for database schema versioning
 - **Authentication**: JWT tokens with refresh mechanism
 - **External APIs**: IGDB integration for game metadata and cover art
@@ -217,8 +217,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Testing**: Vitest with @testing-library/react, >70% coverage requirement
 
 ### Database Design
-- **Primary Database**: PostgreSQL for production deployments
-- **Development Database**: SQLite for local development and testing
+- **Database**: PostgreSQL
 - **Schema**: Comprehensive game collection models with platform/storefront relationships
 - **Migrations**: Automatic schema management via Alembic
 - **Seeding**: Idempotent seed data for platforms and storefronts

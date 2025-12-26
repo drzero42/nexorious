@@ -16,8 +16,7 @@ from io import BytesIO
 
 import httpx
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
+from sqlmodel import Session
 from PIL import Image
 
 from app.main import app
@@ -35,19 +34,10 @@ from app.models.user import User
 # ============================================================================
 
 @pytest.fixture
-def client():
-    """Create test client with in-memory database."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        echo=False,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool
-    )
-    SQLModel.metadata.create_all(engine)
-
+def client(session):
+    """Create test client using PostgreSQL session."""
     def get_test_session():
-        with Session(engine) as session:
-            yield session
+        yield session
 
     app.dependency_overrides[get_session] = get_test_session
 
