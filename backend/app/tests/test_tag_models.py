@@ -5,8 +5,7 @@ Tests model validation, relationships, constraints, and database operations.
 
 import pytest
 from datetime import datetime
-from sqlmodel import Session, SQLModel, create_engine, select, and_
-from sqlmodel.pool import StaticPool
+from sqlmodel import Session, select, and_
 from sqlalchemy.exc import IntegrityError
 
 from ..models.tag import Tag, UserGameTag
@@ -18,16 +17,9 @@ from ..utils.sqlalchemy_typed import in_
 
 
 @pytest.fixture(name="model_session")
-def model_session_fixture():
-    """Create a test database session for model tests."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
+def model_session_fixture(session):
+    """Use the shared PostgreSQL test session."""
+    return session
 
 
 @pytest.fixture(name="test_user_for_model")
