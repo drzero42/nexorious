@@ -44,10 +44,6 @@ The import process should start by just parsing the CSV and creating jobs. Looki
 ## Make sure platform/storefront seed data can be loaded
 In the new frontend we don't have a button to load seed data.
 
-## Get rid of all SQLite mentions to avoid confusion
-Documentation should only mention that PostgreSQL is supported.
-We also still have tests that use sqlite.
-
 ## Implement distributed rate-limiting using NATS JetSteam KV
 Replace the current rate-limiting functionality (used when talking to IGDB) with a distributed implementation to have all outgoing calls to IGDB rate-limited together. This makes scaling the workers safer and avoids very low limits on individual workers.
 
