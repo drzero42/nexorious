@@ -12,8 +12,7 @@ from typing import Dict, Any, Optional
 from unittest.mock import MagicMock
 from datetime import date
 
-# Configure testcontainers to use Podman if Docker is not available
-os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+# Configure testcontainers to use Podman
 os.environ.setdefault("DOCKER_HOST", f"unix:///run/user/{os.getuid()}/podman/podman.sock")
 
 from testcontainers.postgres import PostgresContainer
