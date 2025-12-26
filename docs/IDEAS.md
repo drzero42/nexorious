@@ -36,3 +36,11 @@ And lastly the sync page should handle everything for sync - including reviewing
 ## Remove dependent relationships from docker-compose
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
+
+## Testcontainer postgresql keeps running
+When tests run they start postgresql containers that are not shut down at the end.
+
+## Steam sync thinks it is configured even when it is not.
+
+## Import page keeps showing it as running, even after it reaches 100%
+
