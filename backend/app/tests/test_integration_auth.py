@@ -322,9 +322,16 @@ class TestAuthMeEndpoint:
         """Test GET /me with invalid token."""
         headers = {"Authorization": "Bearer invalid-token"}
         response = client.get("/api/auth/me", headers=headers)
-        
+
         assert_api_error(response, 401, "Could not validate credentials")
-    
+
+    def test_get_me_malformed_header(self, client: TestClient):
+        """Test GET /me with malformed authorization header (missing Bearer prefix)."""
+        headers = {"Authorization": "invalid_header_format"}
+        response = client.get("/api/auth/me", headers=headers)
+
+        assert_api_error(response, 403, "Not authenticated")
+
     def test_update_me_success(self, client: TestClient):
         """Test successful PUT /me."""
         user_data = create_test_user_data()
