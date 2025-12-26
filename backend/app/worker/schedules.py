@@ -1,8 +1,8 @@
 """Taskiq scheduler configuration for scheduled background tasks.
 
-Uses LabelScheduleSource to define cron-based schedules for:
-- Maintenance tasks (cleanup old results, expired sessions)
-- Sync scheduler (check for pending syncs)
+Uses ResilientScheduleSource to define cron-based schedules with connection
+resilience - the scheduler pauses during NATS/PostgreSQL outages and
+automatically resumes when connections recover.
 
 The scheduler runs as a separate process and triggers tasks at specified intervals.
 
@@ -14,12 +14,40 @@ from taskiq import TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 
 from app.worker.broker import broker
+from app.worker.connection_monitor import ConnectionMonitor, get_connection_monitor
 
-# Initialize scheduler with LabelScheduleSource
-# LabelScheduleSource reads 'schedule' labels from task decorators
+
+class ResilientScheduleSource(LabelScheduleSource):
+    """Schedule source that checks connections before dispatching tasks.
+
+    Wraps LabelScheduleSource to add connection resilience. Before returning
+    schedules, it waits for both NATS and PostgreSQL to be available.
+    """
+
+    def __init__(self, broker, monitor: ConnectionMonitor | None = None):
+        """Initialize the resilient schedule source.
+
+        Args:
+            broker: The taskiq broker instance.
+            monitor: Optional ConnectionMonitor instance (uses global if not provided).
+        """
+        super().__init__(broker)
+        self._monitor = monitor if monitor is not None else get_connection_monitor()
+
+    async def get_schedules(self):
+        """Get schedules after ensuring connections are available.
+
+        Blocks until both NATS and PostgreSQL connections are healthy,
+        then returns the schedules from the parent class.
+        """
+        await self._monitor.wait_for_connections()
+        return await super().get_schedules()
+
+
+# Initialize scheduler with ResilientScheduleSource for connection resilience
 scheduler = TaskiqScheduler(
     broker=broker,
-    sources=[LabelScheduleSource(broker)],
+    sources=[ResilientScheduleSource(broker)],
 )
 
 # Schedule definitions are applied via task decorators using the 'schedule' label.
