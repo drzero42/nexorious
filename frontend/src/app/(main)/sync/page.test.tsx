@@ -35,12 +35,14 @@ const mockUseSyncConfigs = vi.fn();
 const mockUseUpdateSyncConfig = vi.fn();
 const mockUseTriggerSync = vi.fn();
 const mockUseSyncStatus = vi.fn();
+const mockUseReviewCountsByType = vi.fn();
 
 vi.mock('@/hooks', () => ({
   useSyncConfigs: () => mockUseSyncConfigs(),
   useUpdateSyncConfig: () => mockUseUpdateSyncConfig(),
   useTriggerSync: () => mockUseTriggerSync(),
   useSyncStatus: (platform: SyncPlatform) => mockUseSyncStatus(platform),
+  useReviewCountsByType: () => mockUseReviewCountsByType(),
 }));
 
 // Mock the SyncServiceCard component
@@ -117,6 +119,12 @@ describe('SyncPage', () => {
 
     mockUseSyncStatus.mockReturnValue({
       data: mockSyncStatus,
+      isLoading: false,
+      error: null,
+    });
+
+    mockUseReviewCountsByType.mockReturnValue({
+      data: { importPending: 0, syncPending: 0 },
       isLoading: false,
       error: null,
     });
@@ -328,20 +336,6 @@ describe('SyncPage', () => {
       expect(screen.getByText('Quick Links')).toBeInTheDocument();
     });
 
-    it('displays Review Sync Items link', () => {
-      render(<SyncPage />);
-
-      const reviewLink = screen.getByRole('link', { name: /review sync items/i });
-      expect(reviewLink).toBeInTheDocument();
-      expect(reviewLink).toHaveAttribute('href', '/sync/review');
-    });
-
-    it('displays Review Sync Items description', () => {
-      render(<SyncPage />);
-
-      expect(screen.getByText('Approve or ignore pending games from syncs')).toBeInTheDocument();
-    });
-
     it('displays Import/Export link', () => {
       render(<SyncPage />);
 
@@ -370,12 +364,12 @@ describe('SyncPage', () => {
       expect(screen.getByText('Browse and manage your game library')).toBeInTheDocument();
     });
 
-    it('renders exactly 3 quick links', () => {
+    it('renders exactly 2 quick links', () => {
       render(<SyncPage />);
 
       const quickLinksCard = screen.getByText('Quick Links').closest('[class*="card"]');
       const links = quickLinksCard?.querySelectorAll('a');
-      expect(links?.length).toBe(3);
+      expect(links?.length).toBe(2);
     });
   });
 
