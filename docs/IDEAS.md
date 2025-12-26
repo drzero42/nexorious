@@ -28,16 +28,8 @@ In the new frontend we don't have a button to load seed data.
 ## Websocket?
 We have support for websocket, but actually use polling. Should we remove websocket support?
 
-## No more Jobs or Review pages
-Instead of having separate pages for these things, import/export page should handle everything to do with those functions
-A separate maintenance page can handle loading seed data and scheduling of various maintenance jobs.
-And lastly the sync page should handle everything for sync - including reviewing matches of games to IGDB.
-
 ## Remove dependent relationships from docker-compose
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
-
-## Testcontainer postgresql keeps running
-When tests run they start postgresql containers that are not shut down at the end.
 
 ## Steam sync thinks it is configured even when it is not.
