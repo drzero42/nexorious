@@ -123,10 +123,6 @@ services:
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
       # Workers skip table creation - scheduler creates them
       TASKIQ_SKIP_TABLE_CREATION: "true"
-      # Lower IGDB rate limits for workers to prevent violations from concurrent tasks
-      # API uses full 4 req/s; workers use 1 req/s each to share the limit safely
-      IGDB_REQUESTS_PER_SECOND: "1.0"
-      IGDB_BURST_CAPACITY: "2"
     volumes:
       - ./backend:/app:Z
       - /app/.venv
