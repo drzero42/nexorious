@@ -11,11 +11,9 @@ import {
   useTriggerSync,
   useJob,
   useCancelJob,
-  useReviewItems,
-  useMatchReviewItem,
-  useSkipReviewItem,
-  useKeepReviewItem,
-  useRemoveReviewItem,
+  useJobItems,
+  useResolveJobItem,
+  useSkipJobItem,
   useSearchIGDB,
 } from '@/hooks';
 import {
@@ -24,11 +22,10 @@ import {
   SUPPORTED_SYNC_PLATFORMS,
   getPlatformDisplayInfo,
   getSyncFrequencyLabel,
-  ReviewItemStatus,
-  ReviewSource,
+  JobItemStatus,
   formatReleaseYear,
 } from '@/types';
-import type { SyncConfigUpdateData, ReviewItem, ReviewFilters, IGDBCandidate, IGDBGameCandidate } from '@/types';
+import type { SyncConfigUpdateData, JobItem, IGDBCandidate, IGDBGameCandidate } from '@/types';
 import { ReviewItemCard } from '@/components/review';
 import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -140,7 +137,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const [localAutoAdd, setLocalAutoAdd] = useState<boolean | null>(null);
 
   // State for review functionality
-  const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<JobItem | null>(null);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -158,9 +155,14 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
     enabled: !!status?.activeJobId,
   });
 
-  // Fetch review items filtered by sync source
-  const reviewFilters: ReviewFilters = { source: ReviewSource.SYNC, status: ReviewItemStatus.PENDING };
-  const { data: reviewData, isLoading: reviewLoading } = useReviewItems(reviewFilters, 1, 20);
+  // Fetch items needing review for the active job
+  const { data: reviewData, isLoading: reviewLoading } = useJobItems(
+    activeJob?.id ?? '',
+    JobItemStatus.PENDING_REVIEW,
+    1,
+    20,
+    { enabled: !!activeJob?.id }
+  );
   const pendingReviewCount = reviewData?.total ?? 0;
 
   // Mutations
@@ -168,11 +170,9 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const { mutateAsync: triggerSync, isPending: isTriggeringSyncPending } = useTriggerSync();
   const { mutateAsync: cancelJob, isPending: isCancelling } = useCancelJob();
 
-  // Review mutations
-  const matchMutation = useMatchReviewItem();
-  const skipMutation = useSkipReviewItem();
-  const keepMutation = useKeepReviewItem();
-  const removeMutation = useRemoveReviewItem();
+  // Job item mutations
+  const resolveMutation = useResolveJobItem();
+  const skipMutation = useSkipJobItem();
   const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const platformInfo = getPlatformDisplayInfo(platform);
@@ -236,10 +236,10 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
 
   // Review handlers
   const handleMatch = useCallback(
-    async (item: ReviewItem, igdbId: number) => {
+    async (item: JobItem, igdbId: number) => {
       setProcessingItemId(item.id);
       try {
-        await matchMutation.mutateAsync({ itemId: item.id, igdbId });
+        await resolveMutation.mutateAsync({ itemId: item.id, igdbId });
         toast.success(`Matched "${item.sourceTitle}" to IGDB`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to match item');
@@ -247,14 +247,14 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
         setProcessingItemId(null);
       }
     },
-    [matchMutation]
+    [resolveMutation]
   );
 
   const handleSkip = useCallback(
-    async (item: ReviewItem) => {
+    async (item: JobItem) => {
       setProcessingItemId(item.id);
       try {
-        await skipMutation.mutateAsync(item.id);
+        await skipMutation.mutateAsync({ itemId: item.id });
         toast.success(`Skipped "${item.sourceTitle}"`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to skip item');
@@ -265,37 +265,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
     [skipMutation]
   );
 
-  const handleKeep = useCallback(
-    async (item: ReviewItem) => {
-      setProcessingItemId(item.id);
-      try {
-        await keepMutation.mutateAsync(item.id);
-        toast.success(`Kept "${item.sourceTitle}" in collection`);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to keep item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [keepMutation]
-  );
-
-  const handleRemove = useCallback(
-    async (item: ReviewItem) => {
-      setProcessingItemId(item.id);
-      try {
-        await removeMutation.mutateAsync(item.id);
-        toast.success(`Removed "${item.sourceTitle}" from collection`);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [removeMutation]
-  );
-
-  const handleView = useCallback((item: ReviewItem) => {
+  const handleView = useCallback((item: JobItem) => {
     setSelectedItem(item);
   }, []);
 
@@ -304,7 +274,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       if (!selectedItem) return;
       setProcessingItemId(selectedItem.id);
       try {
-        await matchMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
+        await resolveMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
         toast.success(`Matched "${selectedItem.sourceTitle}" to IGDB`);
         setSelectedItem(null);
       } catch (err) {
@@ -313,14 +283,14 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
         setProcessingItemId(null);
       }
     },
-    [selectedItem, matchMutation]
+    [selectedItem, resolveMutation]
   );
 
   const handleModalSkip = useCallback(async () => {
     if (!selectedItem) return;
     setProcessingItemId(selectedItem.id);
     try {
-      await skipMutation.mutateAsync(selectedItem.id);
+      await skipMutation.mutateAsync({ itemId: selectedItem.id });
       toast.success(`Skipped "${selectedItem.sourceTitle}"`);
       setSelectedItem(null);
     } catch (err) {
@@ -335,7 +305,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       if (!selectedItem) return;
       setProcessingItemId(selectedItem.id);
       try {
-        await matchMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
+        await resolveMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
         toast.success(`Matched "${selectedItem.sourceTitle}" to IGDB`);
         setSelectedItem(null);
         setSearchQuery('');
@@ -345,7 +315,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
         setProcessingItemId(null);
       }
     },
-    [selectedItem, matchMutation]
+    [selectedItem, resolveMutation]
   );
 
   if (isLoading) {
@@ -553,8 +523,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
                   item={item}
                   onMatch={handleMatch}
                   onSkip={handleSkip}
-                  onKeep={handleKeep}
-                  onRemove={handleRemove}
                   onView={handleView}
                   isProcessing={processingItemId === item.id}
                 />
