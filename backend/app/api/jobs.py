@@ -35,7 +35,7 @@ from ..schemas.job import (
 from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
 from ..services.job_service import get_job_progress, get_derived_job_status
-from ..utils.sqlalchemy_typed import desc
+from ..utils.sqlalchemy_typed import desc, not_in
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -172,6 +172,36 @@ async def get_jobs_summary(
         running_count=running_count,
         failed_count=failed_count
     )
+
+
+@router.get("/active/{job_type}", response_model=JobResponse | None)
+async def get_active_job(
+    job_type: JobType,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Get the active (non-terminal) job for a specific type, if any."""
+    job = session.exec(
+        select(Job)
+        .where(Job.user_id == current_user.id)
+        .where(Job.job_type == BackgroundJobType(job_type.value))
+        .where(
+            not_in(
+                Job.status,
+                [
+                    BackgroundJobStatus.COMPLETED,
+                    BackgroundJobStatus.FAILED,
+                    BackgroundJobStatus.CANCELLED,
+                ],
+            )
+        )
+        .order_by(desc(Job.created_at))
+    ).first()
+
+    if not job:
+        return None
+
+    return _job_to_response(job, session)
 
 
 @router.get("/{job_id}", response_model=JobResponse)
