@@ -21,7 +21,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
+import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import {
   AlertCircle,
   Upload,
@@ -407,6 +407,15 @@ export default function ImportExportPage() {
           </p>
         </AlertDescription>
       </Alert>
+
+      {/* Recent Activity - shows completed jobs from last 7 days */}
+      {!showJobProgress && (
+        <section className="mb-6">
+          <RecentActivity
+            excludeJobIds={[activeImportJob?.id, activeExportJob?.id].filter((id): id is string => !!id)}
+          />
+        </section>
+      )}
 
       {/* Quick Links - always visible */}
       <Card>
