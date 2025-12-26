@@ -33,3 +33,6 @@ We don't have dependent relationships in Kubernetes, so our software must handle
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
 
 ## Steam sync thinks it is configured even when it is not.
+
+## Add retrying failed imports
+Either automatically or have a button to try them again.
