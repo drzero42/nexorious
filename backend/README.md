@@ -134,7 +134,23 @@ Or use the project's docker-compose setup which includes PostgreSQL.
 
 ### IGDB Rate Limiting
 
-The application includes built-in rate limiting for IGDB API calls to respect their 4 requests per second limit. You can configure the rate limiting behavior via environment variables:
+The application includes built-in rate limiting for IGDB API calls to respect their 4 requests per second limit. Rate limiting can operate in two modes:
+
+#### Distributed Rate Limiting (Default)
+
+When NATS is available, rate limiting is coordinated across all workers using NATS KV (Key-Value store). This ensures that the total rate across all instances stays within IGDB's limits, regardless of how many workers are running.
+
+**How it works:**
+- Token bucket state is stored in NATS KV
+- Workers use CAS (Compare-and-Swap) for atomic token acquisition
+- Tokens refill lazily on each access
+- Falls back to local rate limiting if NATS is unavailable
+
+#### Local Rate Limiting (Fallback)
+
+If NATS is unavailable, each worker maintains its own rate limiter. In this mode, you should scale the rate limit proportionally to the number of workers.
+
+#### Configuration
 
 ```bash
 # IGDB rate limiting configuration
@@ -142,13 +158,21 @@ IGDB_REQUESTS_PER_SECOND=4.0      # Requests per second (default: 4.0)
 IGDB_BURST_CAPACITY=8             # Maximum burst tokens (default: 8)
 IGDB_BACKOFF_FACTOR=1.0          # Retry backoff factor in seconds (default: 1.0)
 IGDB_MAX_RETRIES=3               # Maximum retry attempts (default: 3)
+
+# Distributed rate limiter settings (optional)
+RATE_LIMITER_NATS_BUCKET=rate-limiters  # NATS KV bucket name
+RATE_LIMITER_CAS_MAX_RETRIES=10         # Max CAS retry attempts
+RATE_LIMITER_CAS_RETRY_BASE_MS=5        # Base jitter delay (ms)
+RATE_LIMITER_CAS_RETRY_MAX_MS=50        # Max jitter delay (ms)
 ```
 
 #### Rate Limiting Features
 
 - **Token Bucket Algorithm**: Allows brief bursts while maintaining average rate
+- **Distributed Coordination**: All workers share a single token bucket via NATS KV
 - **Automatic Retries**: Failed requests are retried with exponential backoff
-- **Concurrent Safety**: Multiple simultaneous requests are properly queued
+- **Concurrent Safety**: CAS-based atomic operations prevent race conditions
+- **Graceful Fallback**: Falls back to local rate limiting if NATS is unavailable
 - **Monitoring**: Rate limiter status can be monitored via the IGDBService
 - **Error Handling**: Rate limit violations are converted to user-friendly errors
 
@@ -161,7 +185,7 @@ You can monitor rate limiter status programmatically:
 from app.services.igdb import IGDBService
 
 async with IGDBService() as igdb:
-    status = igdb.get_rate_limiter_status()
+    status = await igdb.get_rate_limiter_status()
     print(f"Tokens available: {status['tokens_available']}")
     print(f"Utilization: {status['utilization']*100:.1f}%")
 ```
