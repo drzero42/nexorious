@@ -48,12 +48,15 @@ class TestDistributedTokenBucketRateLimiter:
     @pytest.fixture
     def mock_nats(self):
         """Create a mock NATS client with KV store."""
-        nats_client = AsyncMock()
+        # Use MagicMock for nats_client since jetstream() is a sync method
+        nats_client = MagicMock()
         kv_store = AsyncMock()
-        js = AsyncMock()
+        js = MagicMock()
 
         nats_client.jetstream.return_value = js
-        js.key_value.return_value = kv_store
+        # key_value and create_key_value are async methods
+        js.key_value = AsyncMock(return_value=kv_store)
+        js.create_key_value = AsyncMock(return_value=kv_store)
 
         return nats_client, kv_store, js
 
@@ -324,7 +327,8 @@ class TestDistributedTokenBucketRateLimiter:
 
         status = await limiter.get_status()
 
-        assert status['tokens_available'] == 4.0
+        # Use pytest.approx for floating point comparison (tokens may have refilled slightly)
+        assert status['tokens_available'] == pytest.approx(4.0, abs=0.1)
         assert status['max_tokens'] == 8
         assert status['requests_per_second'] == 4.0
-        assert status['utilization'] == 0.5  # 4/8 tokens used
+        assert status['utilization'] == pytest.approx(0.5, abs=0.02)  # ~4/8 tokens used
