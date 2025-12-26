@@ -36,6 +36,14 @@ from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
 from ..services.job_service import get_job_progress, get_derived_job_status
 from ..utils.sqlalchemy_typed import desc, not_in
+from pydantic import BaseModel
+
+
+class PendingReviewCountResponse(BaseModel):
+    """Response for pending review count endpoint."""
+
+    pending_review_count: int
+
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -172,6 +180,26 @@ async def get_jobs_summary(
         running_count=running_count,
         failed_count=failed_count
     )
+
+
+@router.get("/pending-review-count", response_model=PendingReviewCountResponse)
+async def get_pending_review_count(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PendingReviewCountResponse:
+    """
+    Get total count of items needing review across all jobs.
+
+    Used by the frontend navigation to show a badge with pending items.
+    """
+    count = session.exec(
+        select(func.count())
+        .select_from(JobItem)
+        .where(JobItem.user_id == current_user.id)
+        .where(JobItem.status == JobItemStatus.PENDING_REVIEW)
+    ).one()
+
+    return PendingReviewCountResponse(pending_review_count=count)
 
 
 @router.get("/active/{job_type}", response_model=JobResponse | None)

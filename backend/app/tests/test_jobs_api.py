@@ -1054,6 +1054,88 @@ class TestGetActiveJob:
         assert response.status_code == 422
 
 
+class TestPendingReviewCount:
+    """Tests for GET /api/jobs/pending-review-count endpoint."""
+
+    def test_pending_review_count_empty(self, client, auth_headers, test_user: User):
+        """Test pending review count when user has no items."""
+        response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() == {"pending_review_count": 0}
+
+    def test_pending_review_count_with_items(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test pending review count with items needing review."""
+        # Create a job with items
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add items with different statuses
+        for i, status in enumerate([
+            JobItemStatus.PENDING_REVIEW,
+            JobItemStatus.PENDING_REVIEW,
+            JobItemStatus.COMPLETED,
+            JobItemStatus.FAILED,
+        ]):
+            item = JobItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                item_key=f"game_{i}",
+                source_title=f"Game {i}",
+                status=status,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() == {"pending_review_count": 2}
+
+    def test_pending_review_count_excludes_other_users(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that pending review count only includes current user's items."""
+        # Create another user
+        other_user = User(
+            username="other_user",
+            password_hash="$2b$12$test_hash",
+        )
+        session.add(other_user)
+        session.commit()
+
+        # Create job for other user
+        other_job = Job(
+            user_id=other_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+        )
+        session.add(other_job)
+        session.commit()
+
+        # Add pending review item for other user
+        other_item = JobItem(
+            job_id=other_job.id,
+            user_id=other_user.id,
+            item_key="other_game",
+            source_title="Other Game",
+            status=JobItemStatus.PENDING_REVIEW,
+        )
+        session.add(other_item)
+        session.commit()
+
+        # Current user should see 0
+        response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() == {"pending_review_count": 0}
+
+
 # Note: TestDiscardImport class removed - /discard endpoint does not exist.
 # Delete functionality is provided by DELETE /api/jobs/{job_id} endpoint instead.
 
