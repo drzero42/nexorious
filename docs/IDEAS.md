@@ -41,6 +41,3 @@ Both API backend and workers/scheduler must gracefully handle when database and/
 When tests run they start postgresql containers that are not shut down at the end.
 
 ## Steam sync thinks it is configured even when it is not.
-
-## Import page does not show results of latest import
-
