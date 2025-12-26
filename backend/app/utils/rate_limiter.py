@@ -484,15 +484,143 @@ IGDB_RATE_LIMIT_CONFIG = RateLimitConfig(
 def create_igdb_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimitedClient:
     """
     Create a rate limiter configured for IGDB API calls.
-    
+
     Args:
         config: Optional custom configuration, uses IGDB defaults if None
-        
+
     Returns:
         RateLimitedClient configured for IGDB
     """
     if config is None:
         config = IGDB_RATE_LIMIT_CONFIG
-    
+
     rate_limiter = TokenBucketRateLimiter(config)
     return RateLimitedClient(rate_limiter)
+
+
+class DistributedRateLimitedClient:
+    """
+    A wrapper that adds distributed rate limiting to async function calls.
+
+    This class wraps DistributedTokenBucketRateLimiter with automatic retries
+    and exponential backoff, providing the same interface as RateLimitedClient.
+    """
+
+    def __init__(self, rate_limiter: DistributedTokenBucketRateLimiter):
+        """
+        Initialize the distributed rate limited client.
+
+        Args:
+            rate_limiter: The distributed rate limiter to use
+        """
+        self.rate_limiter = rate_limiter
+        self.config = rate_limiter.config
+
+    async def call(
+        self,
+        func: Callable[[], Awaitable[Any]],
+        timeout: Optional[float] = 30.0,
+        tokens_needed: float = 1.0
+    ) -> Any:
+        """
+        Make a rate-limited function call with retries.
+
+        Args:
+            func: Async function to call
+            timeout: Timeout for acquiring rate limit tokens
+            tokens_needed: Number of tokens needed for this call
+
+        Returns:
+            Result of the function call
+
+        Raises:
+            RateLimitExceeded: If rate limit cannot be satisfied
+            Any exception raised by the function
+        """
+        last_exception = None
+
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                # Wait for rate limit tokens
+                if not await self.rate_limiter.wait_for_tokens(tokens_needed, timeout):
+                    retry_after = 1.0 / self.config.requests_per_second
+                    raise RateLimitExceeded(
+                        f"Rate limit exceeded, could not acquire {tokens_needed} tokens within {timeout}s",
+                        retry_after=retry_after
+                    )
+
+                # Make the actual call
+                logger.debug(f"Making distributed rate-limited call (attempt {attempt + 1})")
+                result = await func()
+
+                if attempt > 0:
+                    logger.info(f"Distributed rate-limited call succeeded on attempt {attempt + 1}")
+
+                return result
+
+            except RateLimitExceeded:
+                # Don't retry on rate limit exceeded
+                raise
+            except CASRetriesExhausted:
+                # Don't retry on CAS exhaustion
+                raise RateLimitExceeded("Rate limiter CAS retries exhausted")
+            except Exception as e:
+                last_exception = e
+
+                if attempt < self.config.max_retries:
+                    # Calculate backoff delay
+                    delay = self.config.backoff_factor * (2 ** attempt)
+                    logger.warning(
+                        f"Distributed rate-limited call failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}, "
+                        f"retrying in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"Distributed rate-limited call failed after {self.config.max_retries + 1} attempts: {str(e)}"
+                    )
+                    break
+
+        # If we get here, all retries failed
+        raise last_exception or Exception("All retries failed")
+
+    async def get_status(self) -> dict:
+        """Get current status of the rate limiter."""
+        return await self.rate_limiter.get_status()
+
+
+async def create_distributed_igdb_rate_limiter(
+    nats_client: Any,
+    config: Optional[RateLimitConfig] = None,
+    bucket_name: str = "rate-limiters",
+    max_cas_retries: int = 10,
+    cas_retry_base_ms: int = 5,
+    cas_retry_max_ms: int = 50,
+) -> DistributedRateLimitedClient:
+    """
+    Create a distributed rate limiter configured for IGDB API calls.
+
+    Args:
+        nats_client: Connected NATS client
+        config: Optional custom configuration, uses IGDB defaults if None
+        bucket_name: NATS KV bucket name
+        max_cas_retries: Maximum CAS retry attempts
+        cas_retry_base_ms: Minimum jitter delay in milliseconds
+        cas_retry_max_ms: Maximum jitter delay in milliseconds
+
+    Returns:
+        DistributedRateLimitedClient configured for IGDB
+    """
+    if config is None:
+        config = IGDB_RATE_LIMIT_CONFIG
+
+    rate_limiter = DistributedTokenBucketRateLimiter(
+        nats_client=nats_client,
+        resource_name="igdb",
+        config=config,
+        bucket_name=bucket_name,
+        max_cas_retries=max_cas_retries,
+        cas_retry_base_ms=cas_retry_base_ms,
+        cas_retry_max_ms=cas_retry_max_ms,
+    )
+    return DistributedRateLimitedClient(rate_limiter)
