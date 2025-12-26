@@ -405,15 +405,15 @@ class RateLimitedClient:
     async def call(
         self,
         func: Callable[[], Awaitable[Any]],
-        timeout: Optional[float] = 30.0,
+        timeout: Optional[float] = 5.0,
         tokens_needed: int = 1
     ) -> Any:
         """
         Make a rate-limited function call with retries.
-        
+
         Args:
             func: Async function to call
-            timeout: Timeout for acquiring rate limit tokens
+            timeout: Timeout for acquiring rate limit tokens (default 5s)
             tokens_needed: Number of tokens needed for this call
             
         Returns:
@@ -519,7 +519,7 @@ class DistributedRateLimitedClient:
     async def call(
         self,
         func: Callable[[], Awaitable[Any]],
-        timeout: Optional[float] = 30.0,
+        timeout: Optional[float] = 5.0,
         tokens_needed: float = 1.0
     ) -> Any:
         """
@@ -527,7 +527,7 @@ class DistributedRateLimitedClient:
 
         Args:
             func: Async function to call
-            timeout: Timeout for acquiring rate limit tokens
+            timeout: Timeout for acquiring rate limit tokens (default 5s)
             tokens_needed: Number of tokens needed for this call
 
         Returns:
