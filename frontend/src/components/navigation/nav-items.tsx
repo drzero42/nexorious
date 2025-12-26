@@ -16,14 +16,14 @@ import {
   Boxes,
   Wrench,
 } from 'lucide-react';
-import { useReviewSummary, useJobsSummary } from '@/hooks';
+import { usePendingReviewCount, useJobsSummary } from '@/hooks';
 import type { NavItem, NavSection } from './types';
 
 export function useNavItems() {
-  const { data: reviewSummary } = useReviewSummary();
+  const { data: pendingReviewData } = usePendingReviewCount();
   const { data: jobsSummary } = useJobsSummary();
 
-  const pendingReviews = reviewSummary?.totalPending ?? 0;
+  const pendingReviews = pendingReviewData?.pendingReviewCount ?? 0;
   const failedJobs = jobsSummary?.failedCount ?? 0;
 
   // Items needing attention trigger auto-expand
