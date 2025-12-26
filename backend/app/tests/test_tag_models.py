@@ -183,8 +183,7 @@ class TestTagModel:
 
     def test_tag_max_length_validation(self, model_session: Session, test_user_for_model: User):
         """Test tag name and color field length constraints at validation level."""
-        # Note: SQLite doesn't enforce varchar length constraints at DB level
-        # These would be enforced by Pydantic validation in the API layer
+        # Note: VARCHAR length constraints are enforced by Pydantic validation in the API layer
         
         # Test that we can create tags with the expected field lengths
         # Long name (100 chars - should be acceptable)
@@ -332,7 +331,6 @@ class TestUserGameTagModel:
 
     def test_user_game_tag_cascade_delete(self, model_session: Session, test_user_for_model: User, test_user_game_for_model: UserGame):
         """Test that user game tags must be manually deleted before tag deletion."""
-        # Note: SQLite doesn't automatically cascade foreign key deletes by default
         # In the service layer, we manually delete associations before deleting tags
         
         # Create a tag
