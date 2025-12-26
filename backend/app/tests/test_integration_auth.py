@@ -46,8 +46,22 @@ class TestAuthRegisterEndpoint:
         """Test registration with missing required fields."""
         incomplete_data = {"username": "testuser"}
         response = client.post("/api/auth/register", json=incomplete_data)
-        
+
         assert_api_error(response, 422)
+
+    def test_password_is_hashed_with_bcrypt(self, client: TestClient, session: Session):
+        """Test that password is properly hashed using bcrypt."""
+        user_data = create_test_user_data()
+        response = client.post("/api/auth/register", json=user_data)
+
+        assert_api_success(response, 201)
+
+        # Verify password is hashed with bcrypt in database
+        user = session.exec(select(User).where(User.username == user_data["username"])).first()
+        assert user is not None
+        assert user.password_hash != user_data["password"]
+        assert len(user.password_hash) > 50  # Bcrypt hashes are long
+        assert user.password_hash.startswith("$2b$")  # Bcrypt identifier
 
 
 class TestAuthLoginEndpoint:
