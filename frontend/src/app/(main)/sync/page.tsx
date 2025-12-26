@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, useReviewCountsByType } from '@/hooks';
+import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,12 +41,10 @@ function SyncServiceCardWithStatus({
   config,
   onUpdate,
   onTriggerSync,
-  pendingReviewCount,
 }: {
   config: SyncConfig;
   onUpdate: (platform: SyncPlatform, data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: (platform: SyncPlatform) => Promise<void>;
-  pendingReviewCount?: number;
 }) {
   const { data: status } = useSyncStatus(config.platform);
   const { isPending: isUpdating } = useUpdateSyncConfig();
@@ -68,7 +66,6 @@ function SyncServiceCardWithStatus({
       onTriggerSync={handleTriggerSync}
       isUpdating={isUpdating}
       isSyncing={isSyncing}
-      pendingReviewCount={pendingReviewCount}
     />
   );
 }
@@ -78,7 +75,6 @@ export default function SyncPage() {
   const { data: configs, isLoading, error } = useSyncConfigs();
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
-  const { data: reviewCounts } = useReviewCountsByType();
 
   const handleUpdateConfig = async (platform: SyncPlatform, data: SyncConfigUpdateData) => {
     try {
@@ -136,13 +132,12 @@ export default function SyncPage() {
         <>
           {/* Connected Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig, index: number) => (
+            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig) => (
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}
                 onUpdate={handleUpdateConfig}
                 onTriggerSync={handleTriggerSync}
-                pendingReviewCount={index === 0 ? reviewCounts?.syncPending : undefined}
               />
             ))}
           </div>

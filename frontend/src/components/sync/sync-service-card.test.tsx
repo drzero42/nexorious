@@ -450,49 +450,6 @@ describe('SyncServiceCard', () => {
     });
   });
 
-  describe('pending review badge', () => {
-    it('shows pending badge when pendingReviewCount is greater than 0', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          pendingReviewCount={5}
-        />
-      );
-
-      expect(screen.getByText('5 pending')).toBeInTheDocument();
-    });
-
-    it('does not show pending badge when pendingReviewCount is 0', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          pendingReviewCount={0}
-        />
-      );
-
-      expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
-    });
-
-    it('does not show pending badge when pendingReviewCount is undefined', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
-    });
-  });
-
   describe('last sync time formatting', () => {
     beforeEach(() => {
       vi.useFakeTimers();

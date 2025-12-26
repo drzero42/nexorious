@@ -28,7 +28,6 @@ interface SyncServiceCardProps {
   onTriggerSync: () => Promise<void>;
   isUpdating?: boolean;
   isSyncing?: boolean;
-  pendingReviewCount?: number;
 }
 
 function formatLastSync(dateStr: string | null): string {
@@ -54,7 +53,6 @@ export function SyncServiceCard({
   onTriggerSync,
   isUpdating = false,
   isSyncing = false,
-  pendingReviewCount,
 }: SyncServiceCardProps) {
   const [localEnabled, setLocalEnabled] = useState(config.enabled);
   const [localFrequency, setLocalFrequency] = useState(config.frequency);
@@ -151,20 +149,13 @@ export function SyncServiceCard({
       </CardContent>
 
       <CardFooter className="flex items-center justify-between border-t bg-muted/50 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/sync/${config.platform}`}
-            className="flex items-center gap-1 text-sm text-primary hover:underline"
-          >
-            <History className="h-4 w-4" />
-            View details
-          </Link>
-          {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              {pendingReviewCount} pending
-            </Badge>
-          )}
-        </div>
+        <Link
+          href={`/sync/${config.platform}`}
+          className="flex items-center gap-1 text-sm text-primary hover:underline"
+        >
+          <History className="h-4 w-4" />
+          View details
+        </Link>
         <Button
           onClick={onTriggerSync}
           disabled={!localEnabled || isCurrentlySyncing}
