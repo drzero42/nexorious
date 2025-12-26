@@ -23,9 +23,8 @@ import {
   getPlatformDisplayInfo,
   getSyncFrequencyLabel,
   JobItemStatus,
-  formatReleaseYear,
 } from '@/types';
-import type { SyncConfigUpdateData, JobItem, IGDBCandidate, IGDBGameCandidate } from '@/types';
+import type { SyncConfigUpdateData, JobItem, IGDBGameCandidate } from '@/types';
 import { ReviewItemCard } from '@/components/review';
 import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -268,23 +267,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const handleView = useCallback((item: JobItem) => {
     setSelectedItem(item);
   }, []);
-
-  const handleModalMatch = useCallback(
-    async (igdbId: number) => {
-      if (!selectedItem) return;
-      setProcessingItemId(selectedItem.id);
-      try {
-        await resolveMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
-        toast.success(`Matched "${selectedItem.sourceTitle}" to IGDB`);
-        setSelectedItem(null);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to match item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [selectedItem, resolveMutation]
-  );
 
   const handleModalSkip = useCallback(async () => {
     if (!selectedItem) return;
@@ -545,30 +527,10 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <DialogDescription>Select the correct IGDB match for this game</DialogDescription>
           </DialogHeader>
 
-          {selectedItem?.igdbCandidates.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-muted-foreground">
-                No IGDB candidates found. Try searching manually.
-              </p>
-            </div>
-          ) : (
-            <div className="max-h-96 space-y-3 overflow-y-auto">
-              {selectedItem?.igdbCandidates.map((candidate, index) => (
-                <CandidateButton
-                  key={candidate.igdbId}
-                  candidate={candidate}
-                  isBestMatch={index === 0}
-                  isProcessing={processingItemId === selectedItem.id}
-                  onSelect={() => handleModalMatch(candidate.igdbId)}
-                />
-              ))}
-            </div>
-          )}
-
           {/* IGDB Search Section */}
-          <div className="border-t pt-4">
+          <div className="pt-2">
             <p className="mb-2 text-sm text-muted-foreground">
-              Can&apos;t find the right match?
+              Search for the correct game on IGDB:
             </p>
             <div className="relative">
               <Input
@@ -659,67 +621,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   );
 }
 
-// Helper components for IGDB candidate selection
-interface CandidateButtonProps {
-  candidate: IGDBCandidate;
-  isBestMatch: boolean;
-  isProcessing: boolean;
-  onSelect: () => void;
-}
-
-function CandidateButton({ candidate, isBestMatch, isProcessing, onSelect }: CandidateButtonProps) {
-  return (
-    <button
-      className="w-full rounded-lg border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50 disabled:opacity-50"
-      onClick={onSelect}
-      disabled={isProcessing}
-    >
-      <div className="flex items-start gap-3">
-        {candidate.coverUrl ? (
-          <img
-            src={candidate.coverUrl}
-            alt={candidate.name}
-            className="h-20 w-16 rounded object-cover"
-          />
-        ) : (
-          <div className="flex h-20 w-16 items-center justify-center rounded bg-muted">
-            <ImageOff className="h-8 w-8 text-muted-foreground" />
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">
-            {candidate.name}
-            {candidate.firstReleaseDate && (
-              <span className="ml-1 text-muted-foreground">
-                {formatReleaseYear(candidate.firstReleaseDate)}
-              </span>
-            )}
-          </p>
-          {candidate.similarityScore !== null && (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Match confidence: {Math.round(candidate.similarityScore * 100)}%
-            </p>
-          )}
-          {candidate.summary && (
-            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{candidate.summary}</p>
-          )}
-          {candidate.platforms && candidate.platforms.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Platforms: {candidate.platforms.slice(0, 5).join(', ')}
-              {candidate.platforms.length > 5 && ` +${candidate.platforms.length - 5} more`}
-            </p>
-          )}
-        </div>
-        {isBestMatch && (
-          <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
-            Best Match
-          </span>
-        )}
-      </div>
-    </button>
-  );
-}
-
+// Helper component for IGDB search results
 interface SearchResultItemProps {
   result: IGDBGameCandidate;
   isProcessing: boolean;
