@@ -9,7 +9,9 @@ import asyncio
 import time
 import logging
 from typing import Optional, Callable, Any, Awaitable
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import json
+import random  # noqa: F401 - used in later tasks for jitter
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +19,34 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RateLimitConfig:
     """Configuration for rate limiting."""
-    
+
     requests_per_second: float = 4.0
     burst_capacity: int = 10
     backoff_factor: float = 1.0
     max_retries: int = 3
+
+
+@dataclass
+class TokenBucketState:
+    """State stored in NATS KV for distributed rate limiting."""
+
+    tokens: float
+    last_refill_at: float
+
+    def to_json(self) -> bytes:
+        """Serialize state to JSON bytes."""
+        return json.dumps(asdict(self)).encode('utf-8')
+
+    @classmethod
+    def from_json(cls, data: bytes) -> "TokenBucketState":
+        """Deserialize state from JSON bytes."""
+        parsed = json.loads(data.decode('utf-8'))
+        return cls(tokens=parsed['tokens'], last_refill_at=parsed['last_refill_at'])
+
+
+class CASRetriesExhausted(Exception):
+    """Exception raised when CAS retries are exhausted."""
+    pass
 
 
 class RateLimitExceeded(Exception):
