@@ -237,11 +237,15 @@ async def list_job_items(
     query = query.offset((page - 1) * page_size).limit(page_size)
     items = session.exec(query).all()
 
+    # Calculate total pages
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+
     return JobItemListResponse(
         items=[JobItemResponse.model_validate(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
+        pages=pages,
     )
 
 
