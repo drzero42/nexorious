@@ -42,5 +42,5 @@ When tests run they start postgresql containers that are not shut down at the en
 
 ## Steam sync thinks it is configured even when it is not.
 
-## Import page keeps showing it as running, even after it reaches 100%
+## Import page does not show results of latest import
 
