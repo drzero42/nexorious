@@ -6,6 +6,8 @@ import type {
   JobListResponse,
   JobCancelResponse,
   JobDeleteResponse,
+  JobItemStatus,
+  JobType,
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
@@ -20,6 +22,9 @@ export const jobsKeys = {
     [...jobsKeys.lists(), { filters, page, perPage }] as const,
   details: () => [...jobsKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobsKeys.details(), id] as const,
+  items: (jobId: string, status?: JobItemStatus, page?: number) =>
+    [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
+  active: (jobType: JobType) => [...jobsKeys.all, 'active', jobType] as const,
 };
 
 // ============================================================================
@@ -78,6 +83,42 @@ export function useJobsSummary() {
     queryKey: [...jobsKeys.all, 'summary'] as const,
     queryFn: () => jobsApi.getJobsSummary(),
     refetchInterval: 10000, // Poll every 10 seconds for badge updates
+  });
+}
+
+/**
+ * Hook to fetch paginated list of items for a specific job.
+ * Useful for viewing details of what a job processed.
+ */
+export function useJobItems(
+  jobId: string,
+  status?: JobItemStatus,
+  page: number = 1,
+  pageSize: number = 50,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: jobsKeys.items(jobId, status, page),
+    queryFn: () => jobsApi.getJobItems(jobId, status, page, pageSize),
+    enabled: options?.enabled !== false && !!jobId,
+  });
+}
+
+/**
+ * Hook to check for an active job of a specific type.
+ * Polls every 3 seconds when there's an active job.
+ * Returns null if no active job exists.
+ */
+export function useActiveJob(jobType: JobType, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: jobsKeys.active(jobType),
+    queryFn: () => jobsApi.getActiveJob(jobType),
+    enabled: options?.enabled !== false,
+    refetchInterval: (query) => {
+      // Poll every 3 seconds if there's an active job
+      const job = query.state.data as Job | null;
+      return job && !job.isTerminal ? 3000 : false;
+    },
   });
 }
 
