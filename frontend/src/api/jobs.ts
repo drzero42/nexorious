@@ -14,6 +14,8 @@ import type {
   JobItem,
   JobItemStatus,
   JobItemListResponse,
+  PendingReviewCountResponse,
+  JobItemDetail,
 } from '@/types';
 
 // ============================================================================
@@ -95,6 +97,18 @@ interface JobItemListApiResponse {
   pages: number;
 }
 
+interface PendingReviewCountApiResponse {
+  pending_review_count: number;
+}
+
+interface JobItemDetailApiResponse extends JobItemApiResponse {
+  source_metadata_json: string;
+  result_json: string;
+  igdb_candidates_json: string;
+  resolved_igdb_id: number | null;
+  resolved_at: string | null;
+}
+
 // ============================================================================
 // Transformation Functions
 // ============================================================================
@@ -144,6 +158,17 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     resultIgdbId: apiItem.result_igdb_id,
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
+  };
+}
+
+function transformJobItemDetail(apiItem: JobItemDetailApiResponse): JobItemDetail {
+  return {
+    ...transformJobItem(apiItem),
+    sourceMetadataJson: apiItem.source_metadata_json,
+    resultJson: apiItem.result_json,
+    igdbCandidatesJson: apiItem.igdb_candidates_json,
+    resolvedIgdbId: apiItem.resolved_igdb_id,
+    resolvedAt: apiItem.resolved_at,
   };
 }
 
@@ -258,4 +283,35 @@ export async function getJobItems(
 export async function getActiveJob(jobType: JobType): Promise<Job | null> {
   const response = await api.get<JobApiResponse | null>(`/jobs/active/${jobType}`);
   return response ? transformJob(response) : null;
+}
+
+/**
+ * Get total count of items needing review across all jobs.
+ * Used for nav badge display.
+ */
+export async function getPendingReviewCount(): Promise<PendingReviewCountResponse> {
+  const response = await api.get<PendingReviewCountApiResponse>('/jobs/pending-review-count');
+  return { pendingReviewCount: response.pending_review_count };
+}
+
+/**
+ * Resolve a job item to an IGDB game.
+ */
+export async function resolveJobItem(itemId: string, igdbId: number): Promise<JobItemDetail> {
+  const response = await api.post<JobItemDetailApiResponse>(
+    `/job-items/${itemId}/resolve`,
+    { igdb_id: igdbId }
+  );
+  return transformJobItemDetail(response);
+}
+
+/**
+ * Skip a job item without matching.
+ */
+export async function skipJobItem(itemId: string, reason?: string): Promise<JobItemDetail> {
+  const response = await api.post<JobItemDetailApiResponse>(
+    `/job-items/${itemId}/skip`,
+    { reason }
+  );
+  return transformJobItemDetail(response);
 }

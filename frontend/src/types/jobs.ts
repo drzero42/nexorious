@@ -136,6 +136,18 @@ export interface JobsSummary {
   failedCount: number;
 }
 
+export interface PendingReviewCountResponse {
+  pendingReviewCount: number;
+}
+
+export interface JobItemDetail extends JobItem {
+  sourceMetadataJson: string;
+  resultJson: string;
+  igdbCandidatesJson: string;
+  resolvedIgdbId: number | null;
+  resolvedAt: string | null;
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
