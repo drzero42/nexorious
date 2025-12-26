@@ -8,12 +8,12 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlmodel import Session
+from sqlmodel import Session, select, func, col
 
 from app.worker.broker import broker
 from app.worker.queues import SUBJECT_HIGH_IMPORT, SUBJECT_LOW_IMPORT
 from app.core.database import get_sync_session
-from app.models.job import JobItem, JobItemStatus, BackgroundJobPriority
+from app.models.job import Job, JobItem, JobItemStatus, BackgroundJobStatus, BackgroundJobPriority
 from app.services.igdb.service import IGDBService
 from app.services.game_service import GameService
 from app.worker.tasks.import_export.import_nexorious_helpers import (
@@ -64,17 +64,75 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> dict:
     try:
         job_item = session.get(JobItem, job_item_id)
         if job_item:
+            job_id = job_item.job_id
             job_item.status = JobItemStatus.FAILED
             job_item.error_message = error_message
             job_item.processed_at = datetime.now(timezone.utc)
             session.add(job_item)
             session.commit()
+
+            # Check if all items are processed and update job status
+            _check_and_update_job_completion(session, job_id)
     except Exception as update_error:
         logger.error(f"Failed to update JobItem {job_item_id} with error: {update_error}")
     finally:
         session.close()
 
     return {"status": "error", "error": error_message}
+
+
+def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
+    """Check if all job items are processed and update job status if complete.
+
+    Args:
+        session: Database session
+        job_id: The Job ID to check
+
+    Returns:
+        True if job was marked as complete, False otherwise
+    """
+    # Count items that are still pending or processing
+    pending_count = session.exec(
+        select(func.count())
+        .select_from(JobItem)
+        .where(
+            JobItem.job_id == job_id,
+            col(JobItem.status).in_([JobItemStatus.PENDING, JobItemStatus.PROCESSING])
+        )
+    ).one()
+
+    if pending_count > 0:
+        return False
+
+    # All items are processed - update job status
+    job = session.get(Job, job_id)
+    if not job:
+        logger.error(f"Job {job_id} not found when checking completion")
+        return False
+
+    # Only update if job is not already in a terminal state
+    if job.status in (BackgroundJobStatus.COMPLETED, BackgroundJobStatus.FAILED, BackgroundJobStatus.CANCELLED):
+        return False
+
+    # Check if any items failed to determine final status
+    failed_count = session.exec(
+        select(func.count())
+        .select_from(JobItem)
+        .where(JobItem.job_id == job_id, JobItem.status == JobItemStatus.FAILED)
+    ).one()
+
+    if failed_count > 0:
+        # Some items failed but job completed processing
+        job.status = BackgroundJobStatus.COMPLETED
+    else:
+        job.status = BackgroundJobStatus.COMPLETED
+
+    job.completed_at = datetime.now(timezone.utc)
+    session.add(job)
+    session.commit()
+
+    logger.info(f"Job {job_id} marked as {job.status.value}")
+    return True
 
 
 async def _process_import_item(job_item_id: str) -> dict:
@@ -122,6 +180,7 @@ async def _process_import_item(job_item_id: str) -> dict:
 
         # Extract data we need before closing session
         user_id = job_item.user_id
+        job_id = job_item.job_id
         source_metadata_json = job_item.source_metadata_json
     finally:
         session.close()
@@ -197,6 +256,9 @@ async def _process_import_item(job_item_id: str) -> dict:
 
             session.add(job_item)
             session.commit()
+
+            # Check if all items are processed and update job status
+            _check_and_update_job_completion(session, job_id)
 
         logger.info(
             f"Processed JobItem {job_item_id}: {result_status} -> {job_item_status.value}"
