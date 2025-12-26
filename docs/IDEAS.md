@@ -54,3 +54,7 @@ We have support for websocket, but actually use polling. Should we remove websoc
 Instead of having separate pages for these things, import/export page should handle everything to do with those functions
 A separate maintenance page can handle loading seed data and scheduling of various maintenance jobs.
 And lastly the sync page should handle everything for sync - including reviewing matches of games to IGDB.
+
+## Remove dependent relationships from docker-compose
+We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
+Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
