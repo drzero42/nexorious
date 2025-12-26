@@ -3,11 +3,13 @@ Integration tests for games endpoints.
 Tests all games API endpoints with proper request/response validation.
 """
 
+from datetime import date
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 from typing import Dict
 
 from ..models.game import Game
+from ..services.game_service import parse_date_string
 from .integration_test_utils import (
     assert_api_error,
     assert_api_success
@@ -343,4 +345,38 @@ class TestGamesEndpointsSecurity:
         # Test game detail endpoint
         response = client_with_mock_igdb.get(f"/api/games/{test_game.id}")
         assert_api_error(response, 403, "Not authenticated")
-    
+
+
+class TestParseDateString:
+    """Tests for parse_date_string utility function."""
+
+    def test_parse_full_date(self):
+        """Test parsing YYYY-MM-DD format."""
+        result = parse_date_string("2015-05-19")
+        assert result == date(2015, 5, 19)
+
+    def test_parse_year_only(self):
+        """Test parsing YYYY format."""
+        result = parse_date_string("2015")
+        assert result == date(2015, 1, 1)
+
+    def test_parse_none(self):
+        """Test parsing None returns None."""
+        result = parse_date_string(None)
+        assert result is None
+
+    def test_parse_empty_string(self):
+        """Test parsing empty string returns None."""
+        result = parse_date_string("")
+        assert result is None
+
+    def test_parse_invalid_format(self):
+        """Test parsing invalid format returns None."""
+        result = parse_date_string("19-05-2015")
+        assert result is None
+
+    def test_parse_invalid_date(self):
+        """Test parsing invalid date returns None."""
+        result = parse_date_string("2015-13-45")
+        assert result is None
+
