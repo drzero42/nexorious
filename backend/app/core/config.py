@@ -94,6 +94,20 @@ class Settings(BaseSettings):
         description="Maximum delay in ms for CAS retry jitter"
     )
 
+    # Scheduler Connection Resilience
+    scheduler_reconnect_initial_delay: float = Field(
+        default=5.0,
+        description="Initial delay in seconds before reconnection attempt"
+    )
+    scheduler_reconnect_max_delay: float = Field(
+        default=60.0,
+        description="Maximum delay in seconds between reconnection attempts"
+    )
+    scheduler_reconnect_backoff_multiplier: float = Field(
+        default=2.0,
+        description="Multiplier for exponential backoff between reconnection attempts"
+    )
+
     # Storage
     storage_path: Optional[str] = Field(
         default="storage",
