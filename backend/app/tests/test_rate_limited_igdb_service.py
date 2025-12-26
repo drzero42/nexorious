@@ -8,7 +8,7 @@ import time
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.igdb import IGDBService, IGDBError
-from app.utils.rate_limiter import RateLimitConfig, RateLimitExceeded
+from app.utils.rate_limiter import RateLimitConfig, RateLimitExceeded, create_igdb_rate_limiter
 
 
 class TestRateLimitedIGDBService:
@@ -37,15 +37,30 @@ class TestRateLimitedIGDBService:
     
     @pytest.fixture
     def igdb_service(self, mock_settings):
-        """Create IGDBService instance for testing."""
-        return IGDBService()
-    
-    def test_rate_limiter_initialization(self, mock_settings):
+        """Create IGDBService instance for testing with a pre-initialized rate limiter."""
+        rate_config = RateLimitConfig(
+            requests_per_second=4.0,
+            burst_capacity=8,
+            backoff_factor=1.0,
+            max_retries=3
+        )
+        rate_limiter = create_igdb_rate_limiter(rate_config)
+        return IGDBService(rate_limiter=rate_limiter)
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_initialization(self, mock_settings):
         """Test that rate limiter is properly initialized."""
-        service = IGDBService()
-        
+        rate_config = RateLimitConfig(
+            requests_per_second=4.0,
+            burst_capacity=8,
+            backoff_factor=1.0,
+            max_retries=3
+        )
+        rate_limiter = create_igdb_rate_limiter(rate_config)
+        service = IGDBService(rate_limiter=rate_limiter)
+
         # Rate limiter should be initialized with config from settings
-        status = service.get_rate_limiter_status()
+        status = await service.get_rate_limiter_status()
         assert status['requests_per_second'] == 4.0
         assert status['max_tokens'] == 8
         assert status['tokens_available'] == 8.0  # Should start with full bucket
@@ -176,10 +191,10 @@ class TestRateLimitedIGDBService:
     @pytest.mark.asyncio
     async def test_rate_limiter_status_monitoring(self, igdb_service, mock_wrapper):
         """Test rate limiter status monitoring."""
-        initial_status = igdb_service.get_rate_limiter_status()
+        initial_status = await igdb_service.get_rate_limiter_status()
         assert initial_status['tokens_available'] == 8.0
         assert initial_status['utilization'] == 0.0
-        
+
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test"}]'
 
         async def mock_get_wrapper():
@@ -191,7 +206,7 @@ class TestRateLimitedIGDBService:
             await igdb_service._rate_limited_api_request('games', 'fields id;')
 
             # Status should show reduced tokens (allow for small floating-point differences)
-            status = igdb_service.get_rate_limiter_status()
+            status = await igdb_service.get_rate_limiter_status()
             assert 5.5 <= status['tokens_available'] <= 6.5  # Should be around 6, allow for refill
             assert 0.20 <= status['utilization'] <= 0.30  # Should be around 0.25
     
@@ -281,17 +296,26 @@ class TestRateLimitedIGDBService:
     @pytest.mark.asyncio
     async def test_multiple_service_instances_independent_rate_limiting(self, mock_settings):
         """Test that multiple service instances have independent rate limiters."""
-        service1 = IGDBService()
-        service2 = IGDBService()
-        
+        rate_config = RateLimitConfig(
+            requests_per_second=4.0,
+            burst_capacity=8,
+            backoff_factor=1.0,
+            max_retries=3
+        )
+        # Each service gets its own rate limiter for true independence
+        rate_limiter1 = create_igdb_rate_limiter(rate_config)
+        rate_limiter2 = create_igdb_rate_limiter(rate_config)
+        service1 = IGDBService(rate_limiter=rate_limiter1)
+        service2 = IGDBService(rate_limiter=rate_limiter2)
+
         try:
             # Each service should have its own rate limiter
-            status1 = service1.get_rate_limiter_status()
-            status2 = service2.get_rate_limiter_status()
-            
+            status1 = await service1.get_rate_limiter_status()
+            status2 = await service2.get_rate_limiter_status()
+
             assert status1['tokens_available'] == 8.0
             assert status2['tokens_available'] == 8.0
-            
+
             # Using tokens in one service shouldn't affect the other
             mock_wrapper = MagicMock()
             mock_wrapper.api_request.return_value = b'[{"id": 1}]'
@@ -303,12 +327,12 @@ class TestRateLimitedIGDBService:
                 await service1._rate_limited_api_request('games', 'fields id;')
 
             # Service1 should have fewer tokens, service2 should be unchanged
-            status1_after = service1.get_rate_limiter_status()
-            status2_after = service2.get_rate_limiter_status()
-            
+            status1_after = await service1.get_rate_limiter_status()
+            status2_after = await service2.get_rate_limiter_status()
+
             assert status1_after['tokens_available'] == 7.0
             assert status2_after['tokens_available'] == 8.0
-            
+
         finally:
             await service1.__aexit__(None, None, None)
             await service2.__aexit__(None, None, None)

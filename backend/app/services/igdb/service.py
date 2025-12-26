@@ -7,7 +7,7 @@ Main facade for all IGDB API interactions.
 import json
 import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 import httpx
 
@@ -15,9 +15,13 @@ from app.core.config import settings
 from app.services.storage import storage_service
 from app.utils.rate_limiter import (
     RateLimitConfig,
+    RateLimitedClient,
+    DistributedRateLimitedClient,
     create_igdb_rate_limiter,
+    create_distributed_igdb_rate_limiter,
     RateLimitExceeded
 )
+from app.utils.nats_client import get_nats_client
 
 from .models import GameMetadata, IGDBError
 from .auth import IGDBAuthManager
@@ -36,26 +40,56 @@ logger = logging.getLogger(__name__)
 class IGDBService:
     """Service for interacting with IGDB API."""
 
-    def __init__(self):
+    _rate_limiter: Union[RateLimitedClient, DistributedRateLimitedClient, None]
+
+    def __init__(
+        self,
+        rate_limiter: Optional[Union[RateLimitedClient, DistributedRateLimitedClient]] = None
+    ):
         self._http_client = httpx.AsyncClient()
         self._auth_manager = IGDBAuthManager(self._http_client)
+        self._rate_limiter = rate_limiter
+        self._rate_limiter_initialized = rate_limiter is not None
 
-        # Initialize rate limiter with settings
+        # Backwards compatibility: expose wrapper reference
+        self._wrapper: Any = None  # Lazily set by _auth_manager.get_wrapper()
+
+    async def _ensure_rate_limiter(self):
+        """Ensure rate limiter is initialized."""
+        if self._rate_limiter_initialized:
+            return
+
+        # Create distributed rate limiter
         rate_config = RateLimitConfig(
             requests_per_second=settings.igdb_requests_per_second,
             burst_capacity=settings.igdb_burst_capacity,
             backoff_factor=settings.igdb_backoff_factor,
             max_retries=settings.igdb_max_retries
         )
-        self._rate_limiter = create_igdb_rate_limiter(rate_config)
 
-        logger.info(
-            f"IGDB service initialized with rate limiting: {rate_config.requests_per_second} req/s, "
-            f"burst: {rate_config.burst_capacity}, retries: {rate_config.max_retries}"
-        )
+        try:
+            nats_client = await get_nats_client()
+            self._rate_limiter = await create_distributed_igdb_rate_limiter(
+                nats_client=nats_client,
+                config=rate_config,
+                bucket_name=settings.rate_limiter_nats_bucket,
+                max_cas_retries=settings.rate_limiter_cas_max_retries,
+                cas_retry_base_ms=settings.rate_limiter_cas_retry_base_ms,
+                cas_retry_max_ms=settings.rate_limiter_cas_retry_max_ms,
+            )
+            logger.info(
+                f"IGDB service initialized with distributed rate limiting: "
+                f"{rate_config.requests_per_second} req/s, burst: {rate_config.burst_capacity}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create distributed rate limiter, falling back to local: {e}")
+            self._rate_limiter = create_igdb_rate_limiter(rate_config)
+            logger.info(
+                f"IGDB service initialized with local rate limiting: "
+                f"{rate_config.requests_per_second} req/s, burst: {rate_config.burst_capacity}"
+            )
 
-        # Backwards compatibility: expose wrapper reference
-        self._wrapper: Any = None  # Lazily set by _auth_manager.get_wrapper()
+        self._rate_limiter_initialized = True
 
     @property
     def client_id(self):
@@ -89,6 +123,8 @@ class IGDBService:
             IGDBError: If API request fails
             RateLimitExceeded: If rate limit cannot be satisfied
         """
+        await self._ensure_rate_limiter()
+
         try:
             wrapper = await self._get_wrapper()
 
@@ -464,14 +500,22 @@ class IGDBService:
             'filled_fields': filled_fields
         }
 
-    def get_rate_limiter_status(self) -> dict:
+    async def get_rate_limiter_status(self) -> dict:
         """
         Get current rate limiter status for monitoring.
 
         Returns:
             Dictionary with rate limiter status information
         """
-        return self._rate_limiter.get_status()
+        await self._ensure_rate_limiter()
+
+        if hasattr(self._rate_limiter, 'get_status'):
+            result = self._rate_limiter.get_status()
+            # Handle both sync and async get_status
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+        return {}
 
     # Backwards compatibility wrapper methods for internal functions
     def _detect_keywords(self, query: str):
