@@ -783,8 +783,8 @@ class TestJobResponseFields:
         data = response.json()
         assert data["job_type"] == "sync"
         assert data["source"] == "gog"
-        # Status is derived from JobItems - no items means PENDING
-        assert data["status"] == "pending"
+        # Status is derived from JobItems, or falls back to job's stored status if no items
+        assert data["status"] == "processing"
         assert data["priority"] == "low"
 
 

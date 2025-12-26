@@ -205,16 +205,38 @@ export default function ImportExportPage() {
   const { data: activeImportJob, refetch: refetchImport } = useActiveJob(JobType.IMPORT);
   const { data: activeExportJob, refetch: refetchExport } = useActiveJob(JobType.EXPORT);
 
-  // Determine which job to display (prioritize in-progress jobs)
-  const activeJob = activeImportJob?.id !== dismissedJobId ? activeImportJob :
-                    activeExportJob?.id !== dismissedJobId ? activeExportJob : null;
+  // Determine which job to display
+  // Priority: 1) In-progress jobs, 2) Most recently completed job
+  const getActiveJob = () => {
+    const importNotDismissed = activeImportJob && activeImportJob.id !== dismissedJobId;
+    const exportNotDismissed = activeExportJob && activeExportJob.id !== dismissedJobId;
+
+    // First, check for any in-progress job
+    if (importNotDismissed && !activeImportJob.isTerminal) return activeImportJob;
+    if (exportNotDismissed && !activeExportJob.isTerminal) return activeExportJob;
+
+    // Then, show the most recently completed job
+    if (importNotDismissed && exportNotDismissed) {
+      // Compare completion times, show the most recent
+      const importTime = activeImportJob.completedAt ? new Date(activeImportJob.completedAt).getTime() : 0;
+      const exportTime = activeExportJob.completedAt ? new Date(activeExportJob.completedAt).getTime() : 0;
+      return exportTime > importTime ? activeExportJob : activeImportJob;
+    }
+
+    if (importNotDismissed) return activeImportJob;
+    if (exportNotDismissed) return activeExportJob;
+
+    return null;
+  };
+  const activeJob = getActiveJob();
 
   // Check if there's an active job that should show inline progress
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
-  const isExportJobCompleted = activeExportJob?.isTerminal &&
-                                activeExportJob?.status === JobStatus.COMPLETED &&
-                                activeExportJob?.id !== dismissedJobId;
+  // Check if the currently displayed job is a completed export (for download button)
+  const isActiveJobCompletedExport = activeJob?.isTerminal &&
+                                      activeJob?.status === JobStatus.COMPLETED &&
+                                      activeJob?.jobType === JobType.EXPORT;
 
   const handleImportFile = async (file: File) => {
     setIsUploading(true);
@@ -268,9 +290,9 @@ export default function ImportExportPage() {
   };
 
   const handleDownloadExport = () => {
-    if (!activeExportJob) return;
+    if (!activeJob || activeJob.jobType !== JobType.EXPORT) return;
 
-    downloadExport(activeExportJob.id, {
+    downloadExport(activeJob.id, {
       onSuccess: () => {
         toast.success('Download started');
       },
@@ -323,7 +345,7 @@ export default function ImportExportPage() {
           {activeJob.isTerminal && (
             <div className="flex gap-3">
               {/* Download button for completed exports */}
-              {isExportJobCompleted && activeExportJob && (
+              {isActiveJobCompletedExport && (
                 <Button
                   onClick={handleDownloadExport}
                   disabled={isDownloading}
@@ -356,8 +378,8 @@ export default function ImportExportPage() {
         </section>
       )}
 
-      {/* Import Section - hidden when job is active */}
-      {!showJobProgress && (
+      {/* Import Section - hidden only when job is in progress */}
+      {!hasActiveJob && (
         <section className="mb-8">
           <h2 className="mb-4 text-lg font-semibold">Import Games</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -371,8 +393,8 @@ export default function ImportExportPage() {
         </section>
       )}
 
-      {/* Export Section - hidden when job is active */}
-      {!showJobProgress && (
+      {/* Export Section - hidden only when job is in progress */}
+      {!hasActiveJob && (
         <section className="mb-8">
           <h2 className="mb-4 text-lg font-semibold">Export</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -27,15 +27,24 @@ def get_job_progress(session: Session, job_id: str) -> JobProgress:
 
 
 def get_derived_job_status(session: Session, job: Job) -> BackgroundJobStatus:
-    """Derive job status from its items."""
-    # Explicit statuses take precedence
-    if job.status in (BackgroundJobStatus.FAILED, BackgroundJobStatus.CANCELLED):
+    """Derive job status from its items.
+
+    For jobs that don't use items (like exports), falls back to the job's
+    stored status.
+    """
+    # Explicit terminal statuses take precedence
+    if job.status in (
+        BackgroundJobStatus.FAILED,
+        BackgroundJobStatus.CANCELLED,
+        BackgroundJobStatus.COMPLETED,
+    ):
         return job.status
 
     progress = get_job_progress(session, job.id)
 
+    # Jobs without items (e.g., exports) use their stored status
     if progress.total == 0:
-        return BackgroundJobStatus.PENDING
+        return job.status
 
     if progress.processing > 0 or progress.pending > 0:
         return BackgroundJobStatus.PROCESSING

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
 from sqlalchemy import update as sa_update
 from typing import Annotated, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 
 from ..core.database import get_session
@@ -208,8 +208,19 @@ async def get_active_job(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """Get the active (non-terminal) job for a specific type, if any."""
-    job = session.exec(
+    """
+    Get the active or most recent job for a specific type.
+
+    Returns:
+    - An in-progress job if one exists (pending/processing)
+    - Otherwise, the most recently completed job (within last hour)
+    - None if no relevant job exists
+
+    This allows the frontend to show download buttons for recently
+    completed export jobs.
+    """
+    # First, check for any in-progress job
+    in_progress_job = session.exec(
         select(Job)
         .where(Job.user_id == current_user.id)
         .where(Job.job_type == BackgroundJobType(job_type.value))
@@ -226,10 +237,24 @@ async def get_active_job(
         .order_by(desc(Job.created_at))
     ).first()
 
-    if not job:
-        return None
+    if in_progress_job:
+        return _job_to_response(in_progress_job, session)
 
-    return _job_to_response(job, session)
+    # No in-progress job, check for recently completed job (within last hour)
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent_job = session.exec(
+        select(Job)
+        .where(Job.user_id == current_user.id)
+        .where(Job.job_type == BackgroundJobType(job_type.value))
+        .where(Job.completed_at.is_not(None))  # type: ignore[union-attr]
+        .where(Job.completed_at >= one_hour_ago)  # type: ignore[operator]
+        .order_by(desc(Job.completed_at))
+    ).first()
+
+    if recent_job:
+        return _job_to_response(recent_job, session)
+
+    return None
 
 
 @router.get("/{job_id}", response_model=JobResponse)
