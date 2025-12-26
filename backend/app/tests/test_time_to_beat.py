@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import json
 
 from app.services.igdb import IGDBService, GameMetadata, map_igdb_time_to_beat_to_db_fields
+from app.utils.rate_limiter import RateLimitConfig, create_igdb_rate_limiter
 
 
 class TestTimeToBeatMapping:
@@ -107,7 +108,14 @@ class TestIGDBService:
             mock_settings.igdb_burst_capacity = 8
             mock_settings.igdb_backoff_factor = 1.0
             mock_settings.igdb_max_retries = 3
-            service = IGDBService()
+            rate_config = RateLimitConfig(
+                requests_per_second=4.0,
+                burst_capacity=8,
+                backoff_factor=1.0,
+                max_retries=3
+            )
+            rate_limiter = create_igdb_rate_limiter(rate_config)
+            service = IGDBService(rate_limiter=rate_limiter)
             return service
     
     @pytest.mark.asyncio

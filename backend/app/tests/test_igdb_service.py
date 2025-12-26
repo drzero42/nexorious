@@ -5,6 +5,19 @@ Tests for IGDB service functionality including fuzzy matching.
 import pytest
 from unittest.mock import Mock, patch
 from app.services.igdb import IGDBService, GameMetadata, TwitchAuthError, IGDBError
+from app.utils.rate_limiter import RateLimitConfig, create_igdb_rate_limiter
+
+
+def create_test_igdb_service() -> IGDBService:
+    """Create an IGDBService with a local rate limiter for testing."""
+    rate_config = RateLimitConfig(
+        requests_per_second=4.0,
+        burst_capacity=8,
+        backoff_factor=1.0,
+        max_retries=3
+    )
+    rate_limiter = create_igdb_rate_limiter(rate_config)
+    return IGDBService(rate_limiter=rate_limiter)
 
 
 class TestIGDBService:
@@ -12,7 +25,7 @@ class TestIGDBService:
 
     def test_rank_games_by_fuzzy_match_exact_match(self):
         """Test that exact matches get highest priority."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3"),
@@ -28,7 +41,7 @@ class TestIGDBService:
     
     def test_rank_games_by_fuzzy_match_partial_match(self):
         """Test that partial matches work correctly."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3: Wild Hunt"),
@@ -44,7 +57,7 @@ class TestIGDBService:
     
     def test_rank_games_by_fuzzy_match_threshold_filtering(self):
         """Test that threshold filtering works correctly."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3"),
@@ -59,7 +72,7 @@ class TestIGDBService:
     
     def test_rank_games_by_fuzzy_match_empty_input(self):
         """Test handling of empty input."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         result = service._rank_games_by_fuzzy_match([], "test", threshold=0.5)
         assert result == []
@@ -70,7 +83,7 @@ class TestIGDBService:
     
     def test_rank_games_by_fuzzy_match_case_insensitive(self):
         """Test that matching is case insensitive."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3"),
@@ -83,7 +96,7 @@ class TestIGDBService:
     
     def test_rank_games_by_fuzzy_match_token_sorting(self):
         """Test that token sorting works for reordered words."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="Grand Theft Auto V"),
@@ -99,7 +112,7 @@ class TestIGDBService:
     @pytest.mark.asyncio
     async def test_search_games_calls_fuzzy_matching(self):
         """Test that search_games calls fuzzy matching."""
-        service = IGDBService()
+        service = create_test_igdb_service()
 
         # Mock the IGDB wrapper and API response
         mock_wrapper = Mock()
@@ -126,7 +139,7 @@ class TestIGDBService:
     @pytest.mark.asyncio
     async def test_search_games_error_handling(self):
         """Test error handling in search_games."""
-        service = IGDBService()
+        service = create_test_igdb_service()
 
         # Mock authentication error - _get_wrapper is now async
         async def mock_get_wrapper():
@@ -139,7 +152,7 @@ class TestIGDBService:
     @pytest.mark.asyncio
     async def test_get_game_by_id_success(self):
         """Test successful game retrieval by ID."""
-        service = IGDBService()
+        service = create_test_igdb_service()
 
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = b'[{"id": 1, "name": "Test Game"}]'
@@ -160,7 +173,7 @@ class TestIGDBService:
     @pytest.mark.asyncio
     async def test_get_game_by_id_not_found(self):
         """Test handling of game not found."""
-        service = IGDBService()
+        service = create_test_igdb_service()
 
         mock_wrapper = Mock()
         mock_wrapper.api_request.return_value = b'[]'
@@ -220,7 +233,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_goty(self):
         """Test detection of GOTY keyword."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test various forms of GOTY
         test_cases = [
@@ -237,7 +250,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_no_match(self):
         """Test that non-keywords are not detected."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test cases that should NOT match
         test_cases = [
@@ -254,7 +267,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_word_boundaries(self):
         """Test that keyword detection respects word boundaries."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # These should NOT match because goty is part of a larger word
         no_match_cases = [
@@ -269,7 +282,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries(self):
         """Test generation of expanded queries."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         test_cases = [
             ("GOTY 2023", {"goty": "Game of the Year"}, ["Game of the Year 2023"]),
@@ -283,7 +296,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_case_preservation(self):
         """Test that case is handled correctly in expanded queries."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test mixed case scenarios
         keywords = {"goty": "Game of the Year"}
@@ -299,7 +312,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_telltale_series(self):
         """Test detection of 'The Telltale Series' keyword."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test various forms of The Telltale Series
         test_cases = [
@@ -316,7 +329,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_telltale_series_no_match(self):
         """Test that partial telltale matches don't trigger false positives."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test cases that should NOT match
         test_cases = [
@@ -334,7 +347,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_telltale_removal(self):
         """Test generation of queries with Telltale Series removal."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         test_cases = [
             # Standard cases
@@ -360,7 +373,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_telltale_cleanup(self):
         """Test whitespace cleanup after Telltale Series removal."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test edge cases for whitespace cleanup
         keywords = {"The Telltale Series": ""}
@@ -384,7 +397,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_trademark_symbol(self):
         """Test detection of ® registered trademark symbol."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test various cases with trademark symbol
         test_cases = [
@@ -402,7 +415,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_trademark_symbol_no_match(self):
         """Test that similar characters don't trigger false positives for ®."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test cases that should NOT match
         test_cases = [
@@ -419,7 +432,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_trademark_removal(self):
         """Test generation of queries with ® symbol removal."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         test_cases = [
             # Standard cases
@@ -446,7 +459,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_mixed_keywords_with_symbols(self):
         """Test that symbol keywords work alongside text keywords."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test mixed keywords: text + symbol
         test_query = "FIFA® GOTY Edition"
@@ -467,7 +480,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_number_one(self):
         """Test detection of standalone number '1'."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test various cases with number 1
         test_cases = [
@@ -484,7 +497,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_number_one_no_match(self):
         """Test that '1' detection avoids false positives."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test cases that should NOT match
         test_cases = [
@@ -504,7 +517,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_year_parentheses(self):
         """Test detection of years in parentheses."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test various year formats
         test_cases = [
@@ -522,7 +535,7 @@ class TestKeywordExpansion:
     
     def test_detect_keywords_year_parentheses_no_match(self):
         """Test that year parentheses detection avoids false positives."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test cases that should NOT match
         test_cases = [
@@ -543,7 +556,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_number_removal(self):
         """Test generation of queries with number '1' removal."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         test_cases = [
             # Standard cases - note that trailing spaces are cleaned up
@@ -561,7 +574,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_year_removal(self):
         """Test generation of queries with year parentheses removal."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         test_cases = [
             # Standard cases
@@ -580,7 +593,7 @@ class TestKeywordExpansion:
     
     def test_generate_expanded_queries_complex_mixed_patterns(self):
         """Test complex scenarios with multiple pattern types."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test mixed patterns: number + year + other keywords
         test_query = "Mass Effect 1 GOTY (2007)"
@@ -605,7 +618,7 @@ class TestKeywordExpansion:
     
     def test_merge_and_deduplicate_results(self):
         """Test result merging and deduplication."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Create test data with some overlapping IGDB IDs
         original_results = [
@@ -641,7 +654,7 @@ class TestKeywordExpansion:
     
     def test_merge_and_deduplicate_results_with_limit(self):
         """Test result merging respects limit."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         original_results = [
             GameMetadata(igdb_id=1, title="Game A"),
@@ -668,7 +681,7 @@ class TestKeywordExpansion:
     
     def test_merge_and_deduplicate_empty_results(self):
         """Test merging with empty results."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Test with empty original results
         result = service._merge_and_deduplicate_results([], [[GameMetadata(igdb_id=1, title="Game A")]], limit=10)
@@ -688,7 +701,7 @@ class TestKeywordExpansion:
     @pytest.mark.asyncio
     async def test_search_games_with_keyword_expansion(self):
         """Test end-to-end search with keyword expansion."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         # Mock the single search method to return different results
         original_game = GameMetadata(igdb_id=1, title="GOTY Award Winner")
@@ -719,7 +732,7 @@ class TestKeywordExpansion:
     @pytest.mark.asyncio
     async def test_search_games_without_keywords(self):
         """Test search without keywords works normally."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         game = GameMetadata(igdb_id=1, title="Regular Game")
         
@@ -738,7 +751,7 @@ class TestKeywordExpansion:
     @pytest.mark.asyncio
     async def test_search_games_expansion_failure_fallback(self):
         """Test that expansion failures don't break the search."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         original_game = GameMetadata(igdb_id=1, title="GOTY Winner")
         

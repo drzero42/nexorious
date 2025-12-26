@@ -50,10 +50,38 @@ async def process_import_item_low(job_item_id: str) -> dict:
     return await _process_import_item(job_item_id)
 
 
+async def _update_job_item_error(job_item_id: str, error_message: str) -> dict:
+    """Update a JobItem with error status using a fresh session.
+
+    Args:
+        job_item_id: The JobItem ID to update
+        error_message: Error message to set
+
+    Returns:
+        Dictionary with error details
+    """
+    session = get_sync_session()
+    try:
+        job_item = session.get(JobItem, job_item_id)
+        if job_item:
+            job_item.status = JobItemStatus.FAILED
+            job_item.error_message = error_message
+            job_item.processed_at = datetime.now(timezone.utc)
+            session.add(job_item)
+            session.commit()
+    except Exception as update_error:
+        logger.error(f"Failed to update JobItem {job_item_id} with error: {update_error}")
+    finally:
+        session.close()
+
+    return {"status": "error", "error": error_message}
+
+
 async def _process_import_item(job_item_id: str) -> dict:
     """Process a single import item.
 
     Implementation details:
+    - Uses short-lived DB sessions to avoid holding connections during rate-limited API calls
     - Checks idempotency (skip if not PENDING or PROCESSING)
     - Sets status to PROCESSING before processing
     - Parses source_metadata_json to determine item type
@@ -68,10 +96,9 @@ async def _process_import_item(job_item_id: str) -> dict:
     Returns:
         Dictionary with processing result details
     """
-    session: Session = get_sync_session()
-
+    # Phase 1: Fetch job item and validate (short-lived session)
+    session = get_sync_session()
     try:
-        # Fetch the JobItem
         job_item = session.get(JobItem, job_item_id)
         if not job_item:
             logger.error(f"JobItem {job_item_id} not found")
@@ -93,28 +120,31 @@ async def _process_import_item(job_item_id: str) -> dict:
         session.add(job_item)
         session.commit()
 
-        # Parse source_metadata_json to get item type and data
-        try:
-            source_metadata = json.loads(job_item.source_metadata_json)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse source_metadata_json for JobItem {job_item_id}: {e}")
-            job_item.status = JobItemStatus.FAILED
-            job_item.error_message = f"Invalid JSON in source_metadata: {str(e)}"
-            job_item.processed_at = datetime.now(timezone.utc)
-            session.add(job_item)
-            session.commit()
-            return {"status": "error", "error": "Invalid JSON in source_metadata"}
+        # Extract data we need before closing session
+        user_id = job_item.user_id
+        source_metadata_json = job_item.source_metadata_json
+    finally:
+        session.close()
 
-        item_type = source_metadata.get("item_type")
-        if not item_type:
-            logger.error(f"No item_type found in source_metadata for JobItem {job_item_id}")
-            job_item.status = JobItemStatus.FAILED
-            job_item.error_message = "No item_type in source_metadata"
-            job_item.processed_at = datetime.now(timezone.utc)
-            session.add(job_item)
-            session.commit()
-            return {"status": "error", "error": "No item_type in source_metadata"}
+    # Phase 2: Parse metadata (no DB needed)
+    try:
+        source_metadata = json.loads(source_metadata_json)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse source_metadata_json for JobItem {job_item_id}: {e}")
+        return await _update_job_item_error(
+            job_item_id, f"Invalid JSON in source_metadata: {str(e)}"
+        )
 
+    item_type = source_metadata.get("item_type")
+    if not item_type:
+        logger.error(f"No item_type found in source_metadata for JobItem {job_item_id}")
+        return await _update_job_item_error(
+            job_item_id, "No item_type in source_metadata"
+        )
+
+    # Phase 3: Process with fresh session (may involve rate-limited IGDB calls)
+    session = get_sync_session()
+    try:
         # Initialize services
         igdb_service = IGDBService()
         game_service = GameService(session, igdb_service)
@@ -124,21 +154,19 @@ async def _process_import_item(job_item_id: str) -> dict:
         if item_type == "game":
             game_data = source_metadata.get("data", {})
             result_status = await _process_nexorious_game(
-                session, game_service, job_item.user_id, game_data
+                session, game_service, user_id, game_data
             )
         elif item_type == "wishlist":
             wishlist_data = source_metadata.get("data", {})
             result_status = await _process_wishlist_item(
-                session, game_service, job_item.user_id, wishlist_data
+                session, game_service, user_id, wishlist_data
             )
         else:
             logger.error(f"Unknown item_type '{item_type}' for JobItem {job_item_id}")
-            job_item.status = JobItemStatus.FAILED
-            job_item.error_message = f"Unknown item_type: {item_type}"
-            job_item.processed_at = datetime.now(timezone.utc)
-            session.add(job_item)
-            session.commit()
-            return {"status": "error", "error": f"Unknown item_type: {item_type}"}
+            session.close()
+            return await _update_job_item_error(
+                job_item_id, f"Unknown item_type: {item_type}"
+            )
 
         # Map result string to JobItemStatus
         status_mapping = {
@@ -152,21 +180,23 @@ async def _process_import_item(job_item_id: str) -> dict:
 
         job_item_status = status_mapping.get(result_status, JobItemStatus.FAILED)
 
-        # Update JobItem with result
-        job_item.status = job_item_status
-        job_item.result_json = json.dumps({
-            "result": result_status,
-            "item_type": item_type,
-            "title": source_metadata.get("data", {}).get("title"),
-        })
-        job_item.processed_at = datetime.now(timezone.utc)
+        # Re-fetch job_item in this session and update with result
+        job_item = session.get(JobItem, job_item_id)
+        if job_item:
+            job_item.status = job_item_status
+            job_item.result_json = json.dumps({
+                "result": result_status,
+                "item_type": item_type,
+                "title": source_metadata.get("data", {}).get("title"),
+            })
+            job_item.processed_at = datetime.now(timezone.utc)
 
-        # Set error message if status is FAILED
-        if job_item_status == JobItemStatus.FAILED:
-            job_item.error_message = f"Processing returned error status: {result_status}"
+            # Set error message if status is FAILED
+            if job_item_status == JobItemStatus.FAILED:
+                job_item.error_message = f"Processing returned error status: {result_status}"
 
-        session.add(job_item)
-        session.commit()
+            session.add(job_item)
+            session.commit()
 
         logger.info(
             f"Processed JobItem {job_item_id}: {result_status} -> {job_item_status.value}"
@@ -181,22 +211,8 @@ async def _process_import_item(job_item_id: str) -> dict:
 
     except Exception as e:
         logger.error(f"Failed to process JobItem {job_item_id}: {e}", exc_info=True)
-
-        # Try to update JobItem with error
-        try:
-            job_item = session.get(JobItem, job_item_id)
-            if job_item:
-                job_item.status = JobItemStatus.FAILED
-                job_item.error_message = str(e)[:500]  # Limit error message length
-                job_item.processed_at = datetime.now(timezone.utc)
-                session.add(job_item)
-                session.commit()
-        except Exception as update_error:
-            logger.error(
-                f"Failed to update JobItem {job_item_id} with error: {update_error}"
-            )
-
-        return {"status": "error", "error": str(e)}
+        session.close()
+        return await _update_job_item_error(job_item_id, str(e)[:500])
 
     finally:
         session.close()

@@ -5,14 +5,27 @@ Tests core utility functions, data processing, and business rules.
 
 from app.services.igdb import IGDBService, GameMetadata
 from app.services.storage import StorageService
+from app.utils.rate_limiter import RateLimitConfig, create_igdb_rate_limiter
+
+
+def create_test_igdb_service() -> IGDBService:
+    """Create an IGDBService with a local rate limiter for testing."""
+    rate_config = RateLimitConfig(
+        requests_per_second=4.0,
+        burst_capacity=8,
+        backoff_factor=1.0,
+        max_retries=3
+    )
+    rate_limiter = create_igdb_rate_limiter(rate_config)
+    return IGDBService(rate_limiter=rate_limiter)
 
 
 class TestIGDBServiceBusinessLogic:
     """Test business logic in IGDB service."""
-    
+
     def test_rank_games_by_fuzzy_match_scoring(self):
         """Test the scoring logic of fuzzy matching."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3: Wild Hunt"),
@@ -35,13 +48,13 @@ class TestIGDBServiceBusinessLogic:
     
     def test_rank_games_empty_list(self):
         """Test ranking with empty game list."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         result = service._rank_games_by_fuzzy_match([], "Any Query", threshold=0.5)
         assert result == []
-    
+
     def test_rank_games_threshold_filtering(self):
         """Test that threshold properly filters results."""
-        service = IGDBService()
+        service = create_test_igdb_service()
         
         games = [
             GameMetadata(igdb_id=1, title="The Witcher 3"),

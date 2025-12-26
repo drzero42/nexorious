@@ -7,11 +7,12 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.igdb import IGDBService, GameMetadata
 from app.services.storage import StorageService
+from app.utils.rate_limiter import RateLimitConfig, create_igdb_rate_limiter
 
 
 class TestIGDBMetadataService:
     """Test IGDB metadata service functionality."""
-    
+
     @pytest.fixture
     def igdb_service(self):
         """Create IGDB service instance for testing."""
@@ -19,8 +20,15 @@ class TestIGDBMetadataService:
             mock_settings.igdb_client_id = "test_client_id"
             mock_settings.igdb_client_secret = "test_client_secret"
             mock_settings.igdb_access_token = "test_token"
-            
-            service = IGDBService()
+
+            rate_config = RateLimitConfig(
+                requests_per_second=4.0,
+                burst_capacity=8,
+                backoff_factor=1.0,
+                max_retries=3
+            )
+            rate_limiter = create_igdb_rate_limiter(rate_config)
+            service = IGDBService(rate_limiter=rate_limiter)
             service._http_client = AsyncMock()
             service._wrapper = AsyncMock()
             return service

@@ -75,7 +75,25 @@ class Settings(BaseSettings):
         default=3,
         description="Maximum number of retries for IGDB API calls (default: 3)"
     )
-    
+
+    # Distributed Rate Limiting
+    rate_limiter_nats_bucket: str = Field(
+        default="rate-limiters",
+        description="NATS KV bucket name for distributed rate limiting"
+    )
+    rate_limiter_cas_max_retries: int = Field(
+        default=10,
+        description="Maximum CAS retry attempts for distributed rate limiter"
+    )
+    rate_limiter_cas_retry_base_ms: int = Field(
+        default=5,
+        description="Base delay in ms for CAS retry jitter"
+    )
+    rate_limiter_cas_retry_max_ms: int = Field(
+        default=50,
+        description="Maximum delay in ms for CAS retry jitter"
+    )
+
     # Storage
     storage_path: Optional[str] = Field(
         default="storage",
