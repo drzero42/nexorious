@@ -1,22 +1,27 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
   useExportCollection,
+  useActiveJob,
+  useCancelJob,
+  useDownloadExport,
 } from '@/hooks';
 import {
   ImportSource,
   ExportFormat,
+  JobType,
+  JobStatus,
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import {
   AlertCircle,
   Upload,
@@ -26,15 +31,17 @@ import {
   Check,
   Loader2,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react';
 
 interface ImportCardProps {
   source: ImportSource;
   onFileSelect: (file: File) => void;
   isUploading: boolean;
+  disabled?: boolean;
 }
 
-function ImportCard({ source, onFileSelect, isUploading }: ImportCardProps) {
+function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const info = getImportSourceDisplayInfo(source);
 
@@ -73,9 +80,10 @@ function ImportCard({ source, onFileSelect, isUploading }: ImportCardProps) {
   };
 
   const colors = colorClasses[info.color];
+  const isDisabled = disabled || isUploading;
 
   return (
-    <Card className={`${colors.bg} ${colors.border} border-2 transition-all ${colors.hover}`}>
+    <Card className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center gap-3">
           <div className={`${colors.icon} rounded-lg p-3`}>
@@ -102,11 +110,12 @@ function ImportCard({ source, onFileSelect, isUploading }: ImportCardProps) {
           accept={acceptTypes}
           onChange={handleFileChange}
           className="hidden"
+          disabled={isDisabled}
         />
 
         <Button
           onClick={handleButtonClick}
-          disabled={isUploading}
+          disabled={isDisabled}
           className={`w-full ${colors.button}`}
         >
           {isUploading ? (
@@ -130,14 +139,16 @@ interface ExportCardProps {
   format: ExportFormat;
   onExport: () => void;
   isExporting: boolean;
+  disabled?: boolean;
 }
 
-function ExportCard({ format, onExport, isExporting }: ExportCardProps) {
+function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps) {
   const info = getExportFormatDisplayInfo(format);
   const Icon = format === ExportFormat.JSON ? FileJson : FileSpreadsheet;
+  const isDisabled = disabled || isExporting;
 
   return (
-    <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all hover:border-green-400 dark:hover:border-green-600">
+    <Card className={`bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all ${!isDisabled ? 'hover:border-green-400 dark:hover:border-green-600' : 'opacity-60'}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center gap-3">
           <div className="bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 rounded-lg p-3">
@@ -160,7 +171,7 @@ function ExportCard({ format, onExport, isExporting }: ExportCardProps) {
 
         <Button
           onClick={onExport}
-          disabled={isExporting}
+          disabled={isDisabled}
           className="w-full bg-green-600 hover:bg-green-700"
         >
           {isExporting ? (
@@ -181,12 +192,29 @@ function ExportCard({ format, onExport, isExporting }: ExportCardProps) {
 }
 
 export default function ImportExportPage() {
-  const router = useRouter();
   const [isUploading, setIsUploading] = useState(false);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(null);
+  const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
   const { mutateAsync: exportCollection } = useExportCollection();
+  const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
+  const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
+
+  // Check for active import and export jobs
+  const { data: activeImportJob, refetch: refetchImport } = useActiveJob(JobType.IMPORT);
+  const { data: activeExportJob, refetch: refetchExport } = useActiveJob(JobType.EXPORT);
+
+  // Determine which job to display (prioritize in-progress jobs)
+  const activeJob = activeImportJob?.id !== dismissedJobId ? activeImportJob :
+                    activeExportJob?.id !== dismissedJobId ? activeExportJob : null;
+
+  // Check if there's an active job that should show inline progress
+  const showJobProgress = activeJob != null;
+  const hasActiveJob = activeJob != null && !activeJob.isTerminal;
+  const isExportJobCompleted = activeExportJob?.isTerminal &&
+                                activeExportJob?.status === JobStatus.COMPLETED &&
+                                activeExportJob?.id !== dismissedJobId;
 
   const handleImportFile = async (file: File) => {
     setIsUploading(true);
@@ -194,7 +222,10 @@ export default function ImportExportPage() {
     try {
       const result = await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
-      router.push(`/jobs/${result.job_id}`);
+      // Reset dismissed job to show the new job
+      setDismissedJobId(null);
+      // Refetch to get the new job
+      refetchImport();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
@@ -209,12 +240,49 @@ export default function ImportExportPage() {
     try {
       const result = await exportCollection(format);
       toast.success(`Export started: ${result.message}`);
-      router.push(`/jobs/${result.job_id}`);
+      // Reset dismissed job to show the new job
+      setDismissedJobId(null);
+      // Refetch to get the new job
+      refetchExport();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export failed';
       toast.error(message);
     } finally {
       setExportingCollectionFormat(null);
+    }
+  };
+
+  const handleCancelJob = async () => {
+    if (!activeJob) return;
+
+    cancelJob(activeJob.id, {
+      onSuccess: () => {
+        toast.success('Job cancelled');
+        refetchImport();
+        refetchExport();
+      },
+      onError: (error) => {
+        toast.error(error.message || 'Failed to cancel job');
+      },
+    });
+  };
+
+  const handleDownloadExport = () => {
+    if (!activeExportJob) return;
+
+    downloadExport(activeExportJob.id, {
+      onSuccess: () => {
+        toast.success('Download started');
+      },
+      onError: (error) => {
+        toast.error(error.message || 'Failed to download export');
+      },
+    });
+  };
+
+  const handleDismissJob = () => {
+    if (activeJob) {
+      setDismissedJobId(activeJob.id);
     }
   };
 
@@ -235,36 +303,96 @@ export default function ImportExportPage() {
         </p>
       </div>
 
-      {/* Import Section */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold">Import Games</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ImportCard
-            source={ImportSource.NEXORIOUS}
-            onFileSelect={handleImportFile}
-            isUploading={isUploading}
+      {/* Active Job Progress View */}
+      {showJobProgress && activeJob && (
+        <section className="mb-8 space-y-4">
+          <JobProgressCard
+            job={activeJob}
+            onCancel={handleCancelJob}
+            isCancelling={isCancelling}
           />
-        </div>
-      </section>
 
-      {/* Export Section */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold">Export</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ExportCard
-            format={ExportFormat.JSON}
-            onExport={() => handleCollectionExport(ExportFormat.JSON)}
-            isExporting={exportingCollectionFormat === ExportFormat.JSON}
-          />
-          <ExportCard
-            format={ExportFormat.CSV}
-            onExport={() => handleCollectionExport(ExportFormat.CSV)}
-            isExporting={exportingCollectionFormat === ExportFormat.CSV}
-          />
-        </div>
-      </section>
+          {activeJob.progress && (
+            <JobItemsDetails
+              jobId={activeJob.id}
+              progress={activeJob.progress}
+            />
+          )}
 
-      {/* Info Alert */}
+          {/* Actions for completed jobs */}
+          {activeJob.isTerminal && (
+            <div className="flex gap-3">
+              {/* Download button for completed exports */}
+              {isExportJobCompleted && activeExportJob && (
+                <Button
+                  onClick={handleDownloadExport}
+                  disabled={isDownloading}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Export
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Start New button */}
+              <Button
+                variant="outline"
+                onClick={handleDismissJob}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Start New
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Import Section - hidden when job is active */}
+      {!showJobProgress && (
+        <section className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold">Import Games</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ImportCard
+              source={ImportSource.NEXORIOUS}
+              onFileSelect={handleImportFile}
+              isUploading={isUploading}
+              disabled={hasActiveJob}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Export Section - hidden when job is active */}
+      {!showJobProgress && (
+        <section className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold">Export</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ExportCard
+              format={ExportFormat.JSON}
+              onExport={() => handleCollectionExport(ExportFormat.JSON)}
+              isExporting={exportingCollectionFormat === ExportFormat.JSON}
+              disabled={hasActiveJob}
+            />
+            <ExportCard
+              format={ExportFormat.CSV}
+              onExport={() => handleCollectionExport(ExportFormat.CSV)}
+              isExporting={exportingCollectionFormat === ExportFormat.CSV}
+              disabled={hasActiveJob}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Info Alert - always visible */}
       <Alert className="mb-6">
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>About Import / Export</AlertTitle>
@@ -280,7 +408,7 @@ export default function ImportExportPage() {
         </AlertDescription>
       </Alert>
 
-      {/* Quick Links */}
+      {/* Quick Links - always visible */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Links</CardTitle>

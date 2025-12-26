@@ -35,7 +35,7 @@ from ..schemas.job import (
 from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
 from ..services.job_service import get_job_progress, get_derived_job_status
-from ..utils.sqlalchemy_typed import desc
+from ..utils.sqlalchemy_typed import desc, not_in
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 logger = logging.getLogger(__name__)
@@ -174,6 +174,36 @@ async def get_jobs_summary(
     )
 
 
+@router.get("/active/{job_type}", response_model=JobResponse | None)
+async def get_active_job(
+    job_type: JobType,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Get the active (non-terminal) job for a specific type, if any."""
+    job = session.exec(
+        select(Job)
+        .where(Job.user_id == current_user.id)
+        .where(Job.job_type == BackgroundJobType(job_type.value))
+        .where(
+            not_in(
+                Job.status,
+                [
+                    BackgroundJobStatus.COMPLETED,
+                    BackgroundJobStatus.FAILED,
+                    BackgroundJobStatus.CANCELLED,
+                ],
+            )
+        )
+        .order_by(desc(Job.created_at))
+    ).first()
+
+    if not job:
+        return None
+
+    return _job_to_response(job, session)
+
+
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
@@ -237,11 +267,15 @@ async def list_job_items(
     query = query.offset((page - 1) * page_size).limit(page_size)
     items = session.exec(query).all()
 
+    # Calculate total pages
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+
     return JobItemListResponse(
         items=[JobItemResponse.model_validate(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
+        pages=pages,
     )
 
 
@@ -252,10 +286,11 @@ async def cancel_job(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Cancel an in-progress job.
+    Cancel and delete an in-progress job.
 
     Only jobs that are not in a terminal state (completed, failed, cancelled)
-    can be cancelled. Users can only cancel their own jobs.
+    can be cancelled. Cancelling a job immediately deletes it and all associated
+    items. Users can only cancel their own jobs.
     """
     logger.info(f"User {current_user.id} requesting to cancel job {job_id}")
 
@@ -288,22 +323,22 @@ async def cancel_job(
             detail=f"Cannot cancel job - already in terminal state: {job.status.value}",
         )
 
-    # Update job status to cancelled
+    # Log the cancellation before deleting
     previous_status = job.status
-    job.status = BackgroundJobStatus.CANCELLED
-    job.completed_at = datetime.now(timezone.utc)
-
-    session.commit()
-    session.refresh(job)
-
     logger.info(
-        f"Job {job_id} cancelled by user {current_user.id} (was {previous_status.value})"
+        f"Cancelling and deleting job {job_id} for user {current_user.id} (was {previous_status.value})"
     )
+
+    # Delete the job (cascade will delete job items)
+    session.delete(job)
+    session.commit()
+
+    logger.info(f"Job {job_id} cancelled and removed by user {current_user.id}")
 
     return JobCancelResponse(
         success=True,
-        message=f"Job cancelled successfully (was {previous_status.value})",
-        job=_job_to_response(job, session),
+        message="Job cancelled and removed",
+        job=None,
     )
 
 

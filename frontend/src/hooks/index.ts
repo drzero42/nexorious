@@ -76,6 +76,8 @@ export {
   useJobs,
   useJob,
   useJobsSummary,
+  useJobItems,
+  useActiveJob,
   useCancelJob,
   useDeleteJob,
 } from './use-jobs';

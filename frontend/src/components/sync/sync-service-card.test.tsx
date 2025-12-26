@@ -405,8 +405,8 @@ describe('SyncServiceCard', () => {
     });
   });
 
-  describe('view history link', () => {
-    it('has view history link', () => {
+  describe('view details link', () => {
+    it('has view details link', () => {
       const config = createMockConfig({ platform: SyncPlatform.STEAM });
       render(
         <SyncServiceCard
@@ -416,12 +416,12 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      const link = screen.getByRole('link', { name: /view history/i });
+      const link = screen.getByRole('link', { name: /view details/i });
       expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute('href', '/jobs?source=steam&job_type=sync');
+      expect(link).toHaveAttribute('href', '/sync/steam');
     });
 
-    it('creates correct history link for GOG platform', () => {
+    it('creates correct details link for GOG platform', () => {
       const config = createMockConfig({ platform: SyncPlatform.GOG });
       render(
         <SyncServiceCard
@@ -431,11 +431,11 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      const link = screen.getByRole('link', { name: /view history/i });
-      expect(link).toHaveAttribute('href', '/jobs?source=gog&job_type=sync');
+      const link = screen.getByRole('link', { name: /view details/i });
+      expect(link).toHaveAttribute('href', '/sync/gog');
     });
 
-    it('creates correct history link for Epic platform', () => {
+    it('creates correct details link for Epic platform', () => {
       const config = createMockConfig({ platform: SyncPlatform.EPIC });
       render(
         <SyncServiceCard
@@ -445,8 +445,51 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      const link = screen.getByRole('link', { name: /view history/i });
-      expect(link).toHaveAttribute('href', '/jobs?source=epic&job_type=sync');
+      const link = screen.getByRole('link', { name: /view details/i });
+      expect(link).toHaveAttribute('href', '/sync/epic');
+    });
+  });
+
+  describe('pending review badge', () => {
+    it('shows pending badge when pendingReviewCount is greater than 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+          pendingReviewCount={5}
+        />
+      );
+
+      expect(screen.getByText('5 pending')).toBeInTheDocument();
+    });
+
+    it('does not show pending badge when pendingReviewCount is 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+          pendingReviewCount={0}
+        />
+      );
+
+      expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
+    });
+
+    it('does not show pending badge when pendingReviewCount is undefined', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
     });
   });
 

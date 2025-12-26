@@ -378,7 +378,7 @@ class TestCancelJob:
     def test_cancel_pending_job(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cancelling a pending job."""
+        """Test cancelling a pending job - job is immediately deleted."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.IMPORT,
@@ -388,24 +388,24 @@ class TestCancelJob:
         session.add(job)
         session.commit()
         session.refresh(job)
+        job_id = job.id
 
-        response = client.post(f"/api/jobs/{job.id}/cancel", headers=auth_headers)
+        response = client.post(f"/api/jobs/{job_id}/cancel", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["success"] is True
-        assert "pending" in data["message"]
-        assert data["job"]["status"] == "cancelled"
+        assert data["message"] == "Job cancelled and removed"
+        assert data["job"] is None
 
-        # Verify database state
-        session.refresh(job)
-        assert job.status == BackgroundJobStatus.CANCELLED
-        assert job.completed_at is not None
+        # Verify job is deleted from database
+        deleted_job = session.get(Job, job_id)
+        assert deleted_job is None
 
     def test_cancel_processing_job(
         self, client, auth_headers, test_user: User, session: Session
     ):
-        """Test cancelling a processing job."""
+        """Test cancelling a processing job - job is immediately deleted."""
         job = Job(
             user_id=test_user.id,
             job_type=BackgroundJobType.SYNC,
@@ -415,13 +415,19 @@ class TestCancelJob:
         session.add(job)
         session.commit()
         session.refresh(job)
+        job_id = job.id
 
-        response = client.post(f"/api/jobs/{job.id}/cancel", headers=auth_headers)
+        response = client.post(f"/api/jobs/{job_id}/cancel", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["success"] is True
-        assert data["job"]["status"] == "cancelled"
+        assert data["message"] == "Job cancelled and removed"
+        assert data["job"] is None
+
+        # Verify job is deleted from database
+        deleted_job = session.get(Job, job_id)
+        assert deleted_job is None
 
     def test_cancel_awaiting_review_job(
         self, client, auth_headers, test_user: User, session: Session
@@ -844,6 +850,208 @@ class TestJobsApiEdgeCases:
         assert data["jobs"][0]["source"] == "steam"
         assert data["jobs"][0]["status"] == "failed"
 
+
+
+class TestGetActiveJob:
+    """Tests for GET /api/jobs/active/{job_type} endpoint."""
+
+    def test_get_active_job_none(self, client, auth_headers, test_user: User):
+        """Test getting active job when no jobs exist."""
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_get_active_job_pending(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting active job that is pending."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PENDING,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data is not None
+        assert data["id"] == job.id
+        assert data["job_type"] == "import"
+
+    def test_get_active_job_processing(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test getting active job that is processing."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        response = client.get("/api/jobs/active/sync", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data is not None
+        assert data["id"] == job.id
+        assert data["job_type"] == "sync"
+
+    def test_get_active_job_excludes_completed(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that completed jobs are not returned as active."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.EXPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get("/api/jobs/active/export", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_get_active_job_excludes_failed(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that failed jobs are not returned as active."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.FAILED,
+            error_message="Test error",
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_get_active_job_excludes_cancelled(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that cancelled jobs are not returned as active."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.CANCELLED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.get("/api/jobs/active/sync", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_get_active_job_filters_by_type(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that active job filters correctly by job type."""
+        # Create jobs of different types
+        import_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        sync_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add_all([import_job, sync_job])
+        session.commit()
+        session.refresh(import_job)
+        session.refresh(sync_job)
+
+        # Check import type returns import job
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == import_job.id
+        assert data["job_type"] == "import"
+
+        # Check sync type returns sync job
+        response = client.get("/api/jobs/active/sync", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == sync_job.id
+        assert data["job_type"] == "sync"
+
+    def test_get_active_job_returns_most_recent(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that most recent active job is returned when multiple exist."""
+        # Create older job
+        older_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PENDING,
+        )
+        session.add(older_job)
+        session.commit()
+
+        # Create newer job
+        newer_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.GOG,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(newer_job)
+        session.commit()
+        session.refresh(newer_job)
+
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["id"] == newer_job.id
+
+    def test_get_active_job_only_own_jobs(
+        self, client, auth_headers, test_user: User, admin_user: User, session: Session
+    ):
+        """Test that only user's own active jobs are returned."""
+        # Create admin's job
+        admin_job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(admin_job)
+        session.commit()
+
+        # User should not see admin's job
+        response = client.get("/api/jobs/active/import", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_get_active_job_no_auth(self, client):
+        """Test that getting active job requires authentication."""
+        response = client.get("/api/jobs/active/import")
+        assert response.status_code == 403
+
+    def test_get_active_job_invalid_type(self, client, auth_headers):
+        """Test that invalid job type returns validation error."""
+        response = client.get("/api/jobs/active/invalid", headers=auth_headers)
+        assert response.status_code == 422
 
 
 # Note: TestDiscardImport class removed - /discard endpoint does not exist.

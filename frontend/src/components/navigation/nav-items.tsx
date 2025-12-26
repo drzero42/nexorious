@@ -7,15 +7,14 @@ import {
   Plus,
   ArrowLeftRight,
   RefreshCw,
-  ClipboardCheck,
   Settings,
   Tag,
-  ClipboardList,
   User,
   Users,
   Layers,
   Shield,
   Boxes,
+  Wrench,
 } from 'lucide-react';
 import { useReviewSummary, useJobsSummary } from '@/hooks';
 import type { NavItem, NavSection } from './types';
@@ -25,9 +24,7 @@ export function useNavItems() {
   const { data: jobsSummary } = useJobsSummary();
 
   const pendingReviews = reviewSummary?.totalPending ?? 0;
-  const runningJobs = jobsSummary?.runningCount ?? 0;
   const failedJobs = jobsSummary?.failedCount ?? 0;
-  const jobsBadgeCount = runningJobs + failedJobs;
 
   // Items needing attention trigger auto-expand
   const manageNeedsAttention = pendingReviews > 0 || failedJobs > 0;
@@ -63,18 +60,6 @@ export function useNavItems() {
         href: '/sync',
         label: 'Sync',
         icon: <RefreshCw className="h-4 w-4" />,
-      },
-      {
-        href: '/review',
-        label: 'Review',
-        icon: <ClipboardCheck className="h-4 w-4" />,
-        badge: pendingReviews,
-      },
-      {
-        href: '/jobs',
-        label: 'Jobs',
-        icon: <ClipboardList className="h-4 w-4" />,
-        badge: jobsBadgeCount,
       },
       {
         href: '/tags',
@@ -117,6 +102,11 @@ export function useNavItems() {
         href: '/admin/platforms',
         label: 'Platforms',
         icon: <Layers className="h-4 w-4" />,
+      },
+      {
+        href: '/admin/maintenance',
+        label: 'Maintenance',
+        icon: <Wrench className="h-4 w-4" />,
       },
     ],
     defaultOpen: false,

@@ -1,11 +1,11 @@
 'use client';
 
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus } from '@/hooks';
+import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, useReviewCountsByType } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, ExternalLink } from 'lucide-react';
+import { AlertCircle, Info, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -41,10 +41,12 @@ function SyncServiceCardWithStatus({
   config,
   onUpdate,
   onTriggerSync,
+  pendingReviewCount,
 }: {
   config: SyncConfig;
   onUpdate: (platform: SyncPlatform, data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: (platform: SyncPlatform) => Promise<void>;
+  pendingReviewCount?: number;
 }) {
   const { data: status } = useSyncStatus(config.platform);
   const { isPending: isUpdating } = useUpdateSyncConfig();
@@ -66,6 +68,7 @@ function SyncServiceCardWithStatus({
       onTriggerSync={handleTriggerSync}
       isUpdating={isUpdating}
       isSyncing={isSyncing}
+      pendingReviewCount={pendingReviewCount}
     />
   );
 }
@@ -75,6 +78,7 @@ export default function SyncPage() {
   const { data: configs, isLoading, error } = useSyncConfigs();
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
+  const { data: reviewCounts } = useReviewCountsByType();
 
   const handleUpdateConfig = async (platform: SyncPlatform, data: SyncConfigUpdateData) => {
     try {
@@ -89,9 +93,9 @@ export default function SyncPage() {
 
   const handleTriggerSync = async (platform: SyncPlatform) => {
     try {
-      const result = await triggerSync(platform);
+      await triggerSync(platform);
       toast.success(`${platform} sync started successfully`);
-      router.push(`/jobs/${result.jobId}`);
+      router.push(`/sync/${platform}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to trigger sync';
       toast.error(message);
@@ -132,12 +136,13 @@ export default function SyncPage() {
         <>
           {/* Connected Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig) => (
+            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig, index: number) => (
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}
                 onUpdate={handleUpdateConfig}
                 onTriggerSync={handleTriggerSync}
+                pendingReviewCount={index === 0 ? reviewCounts?.syncPending : undefined}
               />
             ))}
           </div>
@@ -166,18 +171,6 @@ export default function SyncPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <Link
-                href="/sync/review"
-                className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-              >
-                <div>
-                  <div className="font-medium">Review Sync Items</div>
-                  <div className="text-sm text-muted-foreground">
-                    Approve or ignore pending games from syncs
-                  </div>
-                </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-              </Link>
-              <Link
                 href="/import-export"
                 className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
               >
@@ -187,7 +180,7 @@ export default function SyncPage() {
                     Bulk import or export your collection
                   </div>
                 </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </Link>
               <Link
                 href="/games"
@@ -199,7 +192,7 @@ export default function SyncPage() {
                     Browse and manage your game library
                   </div>
                 </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </Link>
             </CardContent>
           </Card>
