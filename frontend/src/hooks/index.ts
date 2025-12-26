@@ -80,6 +80,9 @@ export {
   useActiveJob,
   useCancelJob,
   useDeleteJob,
+  usePendingReviewCount,
+  useResolveJobItem,
+  useSkipJobItem,
 } from './use-jobs';
 
 // Review hooks

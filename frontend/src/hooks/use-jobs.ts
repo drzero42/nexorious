@@ -8,6 +8,7 @@ import type {
   JobDeleteResponse,
   JobItemStatus,
   JobType,
+  JobItemDetail,
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
@@ -122,6 +123,18 @@ export function useActiveJob(jobType: JobType, options?: { enabled?: boolean }) 
   });
 }
 
+/**
+ * Hook to fetch total count of items needing review.
+ * Polls every 30 seconds for badge updates.
+ */
+export function usePendingReviewCount() {
+  return useQuery({
+    queryKey: [...jobsKeys.all, 'pendingReviewCount'] as const,
+    queryFn: () => jobsApi.getPendingReviewCount(),
+    refetchInterval: 30000,
+  });
+}
+
 // ============================================================================
 // Mutation Hooks
 // ============================================================================
@@ -164,3 +177,32 @@ export function useDeleteJob() {
   });
 }
 
+/**
+ * Hook to resolve a job item to an IGDB ID.
+ */
+export function useResolveJobItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation<JobItemDetail, Error, { itemId: string; igdbId: number }>({
+    mutationFn: ({ itemId, igdbId }) => jobsApi.resolveJobItem(itemId, igdbId),
+    onSuccess: () => {
+      // Invalidate job queries to refresh progress counts
+      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
+    },
+  });
+}
+
+/**
+ * Hook to skip a job item.
+ */
+export function useSkipJobItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation<JobItemDetail, Error, { itemId: string; reason?: string }>({
+    mutationFn: ({ itemId, reason }) => jobsApi.skipJobItem(itemId, reason),
+    onSuccess: () => {
+      // Invalidate job queries to refresh progress counts
+      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
+    },
+  });
+}
