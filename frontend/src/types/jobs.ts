@@ -30,6 +30,15 @@ export enum JobStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum JobItemStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  PENDING_REVIEW = 'pending_review',
+  SKIPPED = 'skipped',
+  FAILED = 'failed',
+}
+
 export enum JobPriority {
   HIGH = 'high',
   LOW = 'low',
@@ -86,6 +95,27 @@ export interface JobListResponse {
   total: number;
   page: number;
   perPage: number;
+  pages: number;
+}
+
+export interface JobItem {
+  id: string;
+  jobId: string;
+  itemKey: string;
+  sourceTitle: string;
+  status: JobItemStatus;
+  errorMessage: string | null;
+  resultGameTitle: string | null;
+  resultIgdbId: number | null;
+  createdAt: string;
+  processedAt: string | null;
+}
+
+export interface JobItemListResponse {
+  items: JobItem[];
+  total: number;
+  page: number;
+  pageSize: number;
   pages: number;
 }
 
@@ -245,4 +275,37 @@ export function canDeleteJob(_job: Job): boolean {
  */
 export function hasPendingReview(job: Job): boolean {
   return job.jobType === JobType.IMPORT && job.progress.pendingReview > 0;
+}
+
+/**
+ * Get a human-readable label for a job item status.
+ */
+export function getJobItemStatusLabel(status: JobItemStatus): string {
+  const labels: Record<JobItemStatus, string> = {
+    [JobItemStatus.PENDING]: 'Pending',
+    [JobItemStatus.PROCESSING]: 'Processing',
+    [JobItemStatus.COMPLETED]: 'Completed',
+    [JobItemStatus.PENDING_REVIEW]: 'Needs Review',
+    [JobItemStatus.SKIPPED]: 'Skipped',
+    [JobItemStatus.FAILED]: 'Failed',
+  };
+  return labels[status];
+}
+
+/**
+ * Get CSS classes for a job item status badge.
+ */
+export function getJobItemStatusVariant(
+  status: JobItemStatus
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status) {
+    case JobItemStatus.COMPLETED:
+      return 'default';
+    case JobItemStatus.FAILED:
+      return 'destructive';
+    case JobItemStatus.PENDING_REVIEW:
+      return 'secondary';
+    default:
+      return 'outline';
+  }
 }

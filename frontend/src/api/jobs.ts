@@ -11,6 +11,9 @@ import type {
   JobStatus,
   JobPriority,
   JobProgress,
+  JobItem,
+  JobItemStatus,
+  JobItemListResponse,
 } from '@/types';
 
 // ============================================================================
@@ -71,6 +74,27 @@ interface JobsSummaryApiResponse {
   failed_count: number;
 }
 
+interface JobItemApiResponse {
+  id: string;
+  job_id: string;
+  item_key: string;
+  source_title: string;
+  status: string;
+  error_message: string | null;
+  result_game_title: string | null;
+  result_igdb_id: number | null;
+  created_at: string;
+  processed_at: string | null;
+}
+
+interface JobItemListApiResponse {
+  items: JobItemApiResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
 // ============================================================================
 // Transformation Functions
 // ============================================================================
@@ -105,6 +129,21 @@ function transformJob(apiJob: JobApiResponse): Job {
     completedAt: apiJob.completed_at,
     isTerminal: apiJob.is_terminal,
     durationSeconds: apiJob.duration_seconds,
+  };
+}
+
+function transformJobItem(apiItem: JobItemApiResponse): JobItem {
+  return {
+    id: apiItem.id,
+    jobId: apiItem.job_id,
+    itemKey: apiItem.item_key,
+    sourceTitle: apiItem.source_title,
+    status: apiItem.status as JobItemStatus,
+    errorMessage: apiItem.error_message,
+    resultGameTitle: apiItem.result_game_title,
+    resultIgdbId: apiItem.result_igdb_id,
+    createdAt: apiItem.created_at,
+    processedAt: apiItem.processed_at,
   };
 }
 
@@ -184,4 +223,39 @@ export async function getJobsSummary(): Promise<JobsSummary> {
     runningCount: response.running_count,
     failedCount: response.failed_count,
   };
+}
+
+/**
+ * Get paginated list of items for a specific job.
+ */
+export async function getJobItems(
+  jobId: string,
+  status?: JobItemStatus,
+  page: number = 1,
+  pageSize: number = 50
+): Promise<JobItemListResponse> {
+  const params: Record<string, string | number> = { page, page_size: pageSize };
+  if (status) params.status = status;
+
+  const response = await api.get<JobItemListApiResponse>(
+    `/jobs/${jobId}/items`,
+    { params }
+  );
+
+  return {
+    items: response.items.map(transformJobItem),
+    total: response.total,
+    page: response.page,
+    pageSize: response.page_size,
+    pages: response.pages,
+  };
+}
+
+/**
+ * Get the currently active job for a specific job type.
+ * Returns null if no active job exists.
+ */
+export async function getActiveJob(jobType: JobType): Promise<Job | null> {
+  const response = await api.get<JobApiResponse | null>(`/jobs/active/${jobType}`);
+  return response ? transformJob(response) : null;
 }
