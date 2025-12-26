@@ -107,7 +107,7 @@ The project aims for:
 
 ## Database
 
-The application requires **PostgreSQL** (SQLite is no longer supported). Configure the `DATABASE_URL` in your `.env` file:
+The application requires **PostgreSQL**. Configure the `DATABASE_URL` in your `.env` file:
 
 ```bash
 DATABASE_URL=postgresql://username:password@localhost:5432/nexorious
@@ -129,15 +129,6 @@ podman run -d \
 ```
 
 Or use the project's docker-compose setup which includes PostgreSQL.
-
-### Breaking Change (v0.2.0)
-
-**SQLite support has been removed.** If you were using SQLite, you must migrate to PostgreSQL:
-
-1. Export your data from SQLite
-2. Set up a PostgreSQL database
-3. Import your data to PostgreSQL
-4. Update your `DATABASE_URL` environment variable
 
 ## Configuration
 
@@ -232,12 +223,12 @@ The CLI tool intelligently handles conflicts with existing data:
 
 #### CLI Options Reference
 
-| Option | Description |
-|--------|-------------|
-| `--help` | Show usage information |
+| Option              | Description                                        |
+|---------------------|----------------------------------------------------|
+| `--help`            | Show usage information                             |
 | `--version VERSION` | Set version string for tracking (default: "1.0.0") |
-| `--check-conflicts` | Check for conflicts without making changes |
-| `--force` | Skip confirmation prompts and force seeding |
+| `--check-conflicts` | Check for conflicts without making changes         |
+| `--force`           | Skip confirmation prompts and force seeding        |
 
 ## Environment Variables
 

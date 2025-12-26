@@ -636,8 +636,7 @@ To create the definitive self-hosted solution for personal game collection manag
 **Priority**: P0 (Critical) - **IMPLEMENTED**
 - **User Story**: As a user, I want flexible database options so I can choose what works best for my setup
 - **Requirements**:
-  - PostgreSQL support for production deployments
-  - SQLite support for single-instance, small deployments
+  - PostgreSQL
   - SQLModel ORM for type-safe database operations
   - Alembic for automatic database migrations
   - Automatic timestamp management via SQLModel for created_at and updated_at fields
@@ -661,7 +660,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Backend automatically runs pending Alembic migrations during application startup
   - Migration process is logged with clear status messages
   - Application startup fails gracefully if migrations fail
-  - Migration process works for both PostgreSQL and SQLite databases
+  - Migration process works for PostgreSQL 
   - No manual intervention required for database schema updates
 - **Implementation Details**:
   - Replace `create_db_and_tables()` with `run_alembic_migrations()` in startup lifespan
@@ -693,7 +692,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Backend Testing Requirements**:
   - Unit tests for all business logic with >80% code coverage
   - Integration tests for all API endpoints
-  - Database tests verifying SQLModel operations on both PostgreSQL and SQLite
+  - Database tests verifying SQLModel operations on PostgreSQL
   - Authentication and authorization tests
   - External API integration tests with mocked responses
   - Performance tests for critical operations
@@ -709,11 +708,11 @@ To create the definitive self-hosted solution for personal game collection manag
   - Pull requests cannot be merged without passing tests
   - Test execution in CI/CD pipeline before deployment
   - Automated test reports with coverage metrics
-  - Database migration tests for both PostgreSQL and SQLite
+  - Database migration tests for PostgreSQL
 - **Acceptance Criteria**:
   - Backend test coverage exceeds 80%
   - Frontend test coverage exceeds 70%
-  - All tests pass on both PostgreSQL and SQLite databases
+  - All tests pass on PostgreSQL
   - CI/CD pipeline blocks deployments if tests fail
   - All API endpoints have corresponding integration tests
 
@@ -795,7 +794,7 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ### Backend
 - **FastAPI** (Python) with SQLModel ORM
-- **PostgreSQL** (production) / **SQLite** (development)
+- **PostgreSQL**
 - **JWT authentication** with refresh tokens
 - **IGDB API** integration for game metadata
 
@@ -868,7 +867,7 @@ Complete database schema and models are implemented using SQLModel and can be fo
 
 Key architectural decisions:
 - UUID primary keys for security and distribution
-- Support for both PostgreSQL (production) and SQLite (development)
+- Support for PostgreSQL
 - Multi-platform game ownership tracking
 - User-defined tagging and rating systems
 - IGDB integration with both ID (for display) and slug (for functional links) storage
