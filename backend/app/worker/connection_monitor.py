@@ -16,6 +16,14 @@ from app.core.database import get_engine
 logger = logging.getLogger(__name__)
 
 
+async def _quiet_error_callback(e: Exception) -> None:
+    """Quiet error callback for NATS client during connection checks.
+
+    Logs connection errors as warnings without full tracebacks.
+    """
+    logger.warning(f"NATS connection error: {e}")
+
+
 class ConnectionMonitor:
     """Monitors NATS and PostgreSQL connections with exponential backoff reconnection.
 
@@ -77,7 +85,10 @@ class ConnectionMonitor:
             True if NATS connection succeeds, False otherwise.
         """
         try:
-            client = await nats.connect(settings.NATS_URL)
+            client = await nats.connect(
+                settings.NATS_URL,
+                error_cb=_quiet_error_callback,
+            )
             is_connected = client.is_connected
             await client.close()
             return is_connected
