@@ -1,6 +1,7 @@
 """Service for job operations with derived status."""
 
 from sqlmodel import Session, select, func
+from sqlalchemy import update as sa_update
 
 from app.models.job import Job, JobItem, JobItemStatus, BackgroundJobStatus
 from app.schemas.job import JobProgress
@@ -50,3 +51,27 @@ def get_derived_job_status(session: Session, job: Job) -> BackgroundJobStatus:
         return BackgroundJobStatus.PROCESSING
 
     return BackgroundJobStatus.COMPLETED
+
+
+def retry_failed_items(session: Session, job_id: str) -> int:
+    """Reset all failed items in a job to pending status.
+
+    Args:
+        session: Database session
+        job_id: The job ID to retry failed items for
+
+    Returns:
+        Number of items reset
+    """
+    result = session.execute(
+        sa_update(JobItem)
+        .where(JobItem.job_id == job_id)
+        .where(JobItem.status == JobItemStatus.FAILED)
+        .values(
+            status=JobItemStatus.PENDING,
+            error_message=None,
+            processed_at=None,
+        )
+    )
+    session.commit()
+    return result.rowcount
