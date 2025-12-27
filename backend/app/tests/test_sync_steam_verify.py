@@ -516,3 +516,83 @@ class TestSteamVerifyRequestValidation:
         )
 
         assert response.status_code == 422
+
+
+class TestSteamDisconnect:
+    """Tests for DELETE /sync/steam/connection endpoint."""
+
+    def test_disconnect_clears_credentials(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        test_user: User,
+        session: Session,
+    ) -> None:
+        """Test disconnect clears Steam credentials from preferences."""
+        # Set up Steam credentials
+        test_user.preferences_json = '{"steam": {"web_api_key": "test", "steam_id": "123", "is_verified": true}}'
+        session.commit()
+
+        response = client.delete(
+            "/api/sync/steam/connection",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+        # Verify credentials were cleared
+        session.refresh(test_user)
+        preferences = test_user.preferences
+        assert "steam" not in preferences
+
+    def test_disconnect_disables_sync(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        test_user: User,
+        session: Session,
+    ) -> None:
+        """Test disconnect disables Steam sync config."""
+        from app.models.user_sync_config import UserSyncConfig
+
+        # Create enabled sync config
+        config = UserSyncConfig(
+            user_id=test_user.id,
+            platform="steam",
+            enabled=True,
+        )
+        session.add(config)
+        session.commit()
+
+        response = client.delete(
+            "/api/sync/steam/connection",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+
+        # Verify sync was disabled
+        session.refresh(config)
+        assert config.enabled is False
+
+    def test_disconnect_works_without_existing_config(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Test disconnect works even if no sync config exists."""
+        response = client.delete(
+            "/api/sync/steam/connection",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_disconnect_requires_auth(self, client: TestClient) -> None:
+        """Test disconnect requires authentication."""
+        response = client.delete("/api/sync/steam/connection")
+        assert response.status_code == 403

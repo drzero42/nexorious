@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
 from typing import Annotated, Optional
 from datetime import datetime, timezone
+import json
 import logging
 import re
 import uuid
@@ -416,6 +417,46 @@ async def verify_steam_credentials(
             valid=False,
             error="network_error"
         )
+
+
+@router.delete("/steam/connection", response_model=SuccessResponse)
+async def disconnect_steam(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SuccessResponse:
+    """
+    Disconnect Steam integration.
+
+    Clears Steam credentials from user preferences and disables sync.
+    """
+    logger.info(f"Disconnecting Steam for user {current_user.id}")
+
+    # Clear Steam credentials from preferences
+    preferences = current_user.preferences or {}
+    if "steam" in preferences:
+        del preferences["steam"]
+        current_user.preferences_json = json.dumps(preferences)
+
+    # Disable Steam sync config if it exists
+    stmt = select(UserSyncConfig).where(
+        UserSyncConfig.user_id == current_user.id,
+        UserSyncConfig.platform == "steam",
+    )
+    config = session.exec(stmt).first()
+
+    if config:
+        config.enabled = False
+        config.updated_at = datetime.now(timezone.utc)
+
+    current_user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+
+    logger.info(f"Steam disconnected for user {current_user.id}")
+
+    return SuccessResponse(
+        success=True,
+        message="Steam disconnected successfully"
+    )
 
 
 @router.get("/ignored", response_model=IgnoredGameListResponse)
