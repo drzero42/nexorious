@@ -28,13 +28,14 @@ from ..schemas.job import (
     JobListResponse,
     JobCancelResponse,
     JobDeleteResponse,
+    RetryFailedResponse,
     JobType,
     JobSource,
     JobStatus,
 )
 from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
-from ..services.job_service import get_job_progress, get_derived_job_status
+from ..services.job_service import get_job_progress, get_derived_job_status, retry_failed_items
 from ..utils.sqlalchemy_typed import desc, not_in
 from pydantic import BaseModel
 
@@ -449,6 +450,74 @@ async def delete_job(
         success=True,
         message="Job deleted successfully",
         deleted_job_id=job_id,
+    )
+
+
+@router.post("/{job_id}/retry-failed", response_model=RetryFailedResponse)
+async def retry_failed_job_items(
+    job_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Retry all failed items in a job.
+
+    Resets failed items to PENDING status and re-enqueues them for processing.
+    Only works on jobs in terminal state (completed, failed, cancelled).
+    """
+    logger.info(f"User {current_user.id} requesting retry of failed items for job {job_id}")
+
+    job = session.get(Job, job_id)
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    if not job.is_terminal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job must be completed to retry items",
+        )
+
+    # Count failed items before reset
+    failed_count = session.exec(
+        select(func.count())
+        .select_from(JobItem)
+        .where(JobItem.job_id == job_id)
+        .where(JobItem.status == JobItemStatus.FAILED)
+    ).one()
+
+    if failed_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No failed items to retry",
+        )
+
+    # Reset failed items
+    retried_count = retry_failed_items(session, job_id)
+
+    # Set job back to processing
+    job.status = BackgroundJobStatus.PROCESSING
+    job.completed_at = None
+    session.add(job)
+    session.commit()
+
+    logger.info(f"Retrying {retried_count} failed items for job {job_id}")
+
+    # Note: Re-enqueue logic will be added in Task 7
+
+    return RetryFailedResponse(
+        success=True,
+        message=f"Retrying {retried_count} failed items",
+        retried_count=retried_count,
     )
 
 
