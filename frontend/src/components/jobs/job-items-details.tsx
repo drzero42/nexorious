@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Collapsible,
   CollapsibleContent,
@@ -9,8 +10,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChevronDown, ChevronRight, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
-import { useJobItems } from '@/hooks';
+import { ChevronDown, ChevronRight, AlertCircle, CheckCircle, Clock, Loader2, RotateCcw } from 'lucide-react';
+import { useJobItems, useRetryFailedItems, useRetryJobItem } from '@/hooks';
 import { JobItemStatus, getJobItemStatusLabel, getJobItemStatusVariant } from '@/types';
 
 interface JobItemsDetailsProps {
@@ -23,6 +24,7 @@ interface JobItemsDetailsProps {
     skipped: number;
     failed: number;
   };
+  isTerminal: boolean;
 }
 
 interface StatusSectionProps {
@@ -30,12 +32,40 @@ interface StatusSectionProps {
   status: JobItemStatus;
   count: number;
   defaultOpen?: boolean;
+  isTerminal: boolean;
 }
 
-function StatusSection({ jobId, status, count, defaultOpen = false }: StatusSectionProps) {
+function StatusSection({ jobId, status, count, defaultOpen = false, isTerminal }: StatusSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useJobItems(jobId, status, page, 20, { enabled: isOpen && count > 0 });
+  const { data, isLoading, refetch } = useJobItems(jobId, status, page, 20, { enabled: isOpen && count > 0 });
+
+  // Retry mutations
+  const retryAllMutation = useRetryFailedItems();
+  const retryItemMutation = useRetryJobItem();
+
+  // Determine if retry buttons should be shown
+  const isFailedSection = status === JobItemStatus.FAILED;
+  const canRetry = isFailedSection && isTerminal;
+
+  const handleRetryAll = async () => {
+    try {
+      const result = await retryAllMutation.mutateAsync(jobId);
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to retry items');
+    }
+  };
+
+  const handleRetryItem = async (itemId: string) => {
+    try {
+      await retryItemMutation.mutateAsync(itemId);
+      toast.success('Item queued for retry');
+      refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to retry item');
+    }
+  };
 
   if (count === 0) return null;
 
@@ -57,7 +87,28 @@ function StatusSection({ jobId, status, count, defaultOpen = false }: StatusSect
             {iconMap[status]}
             <span>{getJobItemStatusLabel(status)}</span>
           </div>
-          <Badge variant={getJobItemStatusVariant(status)}>{count}</Badge>
+          <div className="flex items-center gap-2">
+            {canRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRetryAll();
+                }}
+                disabled={retryAllMutation.isPending}
+                className="h-7"
+              >
+                {retryAllMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                )}
+                Retry All
+              </Button>
+            )}
+            <Badge variant={getJobItemStatusVariant(status)}>{count}</Badge>
+          </div>
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
@@ -86,6 +137,21 @@ function StatusSection({ jobId, status, count, defaultOpen = false }: StatusSect
                       <div className="text-red-600 text-xs mt-1">{item.errorMessage}</div>
                     )}
                   </div>
+                  {canRetry && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRetryItem(item.id)}
+                      disabled={retryItemMutation.isPending}
+                      className="ml-2 h-8"
+                    >
+                      {retryItemMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               ))}
               {data && data.pages > 1 && (
@@ -119,7 +185,7 @@ function StatusSection({ jobId, status, count, defaultOpen = false }: StatusSect
   );
 }
 
-export function JobItemsDetails({ jobId, progress }: JobItemsDetailsProps) {
+export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetailsProps) {
   const sections = [
     { status: JobItemStatus.FAILED, count: progress.failed, defaultOpen: progress.failed > 0 },
     { status: JobItemStatus.PROCESSING, count: progress.processing, defaultOpen: false },
@@ -148,6 +214,7 @@ export function JobItemsDetails({ jobId, progress }: JobItemsDetailsProps) {
             status={status}
             count={count}
             defaultOpen={defaultOpen}
+            isTerminal={isTerminal}
           />
         ))}
       </div>

@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import update as sa_update
 from sqlmodel import Session, select, func, col
 
 from app.worker.broker import broker
@@ -72,7 +73,14 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> dict:
             session.commit()
 
             # Check if all items are processed and update job status
-            _check_and_update_job_completion(session, job_id)
+            # If items need retry, re-enqueue them
+            _completed, items_to_retry = _check_and_update_job_completion(session, job_id)
+            if items_to_retry:
+                # Get job priority for re-enqueue
+                job = session.get(Job, job_id)
+                priority = job.priority if job else BackgroundJobPriority.HIGH
+                for item_id in items_to_retry:
+                    await enqueue_import_task(item_id, priority)
     except Exception as update_error:
         logger.error(f"Failed to update JobItem {job_item_id} with error: {update_error}")
     finally:
@@ -81,15 +89,18 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> dict:
     return {"status": "error", "error": error_message}
 
 
-def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
+def _check_and_update_job_completion(session: Session, job_id: str) -> tuple[bool, list[str]]:
     """Check if all job items are processed and update job status if complete.
+
+    Implements automatic retry: if this is the first completion pass and there
+    are failed items, reset them to PENDING for retry.
 
     Args:
         session: Database session
         job_id: The Job ID to check
 
     Returns:
-        True if job was marked as complete, False otherwise
+        Tuple of (job_completed, item_ids_to_retry)
     """
     # Count items that are still pending or processing
     pending_count = session.exec(
@@ -102,37 +113,63 @@ def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
     ).one()
 
     if pending_count > 0:
-        return False
+        return False, []
 
-    # All items are processed - update job status
+    # All items are processed - check job status
     job = session.get(Job, job_id)
     if not job:
         logger.error(f"Job {job_id} not found when checking completion")
-        return False
+        return False, []
 
     # Only update if job is not already in a terminal state
     if job.status in (BackgroundJobStatus.COMPLETED, BackgroundJobStatus.FAILED, BackgroundJobStatus.CANCELLED):
-        return False
+        return False, []
 
-    # Check if any items failed to determine final status
+    # Count failed items
     failed_count = session.exec(
         select(func.count())
         .select_from(JobItem)
         .where(JobItem.job_id == job_id, JobItem.status == JobItemStatus.FAILED)
     ).one()
 
-    if failed_count > 0:
-        # Some items failed but job completed processing
-        job.status = BackgroundJobStatus.COMPLETED
-    else:
-        job.status = BackgroundJobStatus.COMPLETED
+    # Check if we should trigger automatic retry
+    if failed_count > 0 and not job.auto_retry_done:
+        logger.info(f"Job {job_id}: triggering automatic retry for {failed_count} failed items")
 
+        # Mark auto retry as done
+        job.auto_retry_done = True
+        session.add(job)
+
+        # Get failed item IDs before reset
+        failed_item_ids = list(session.exec(
+            select(JobItem.id)
+            .where(JobItem.job_id == job_id)
+            .where(JobItem.status == JobItemStatus.FAILED)
+        ).all())
+
+        # Reset failed items to PENDING
+        session.execute(
+            sa_update(JobItem)
+            .where(JobItem.job_id == job_id)
+            .where(JobItem.status == JobItemStatus.FAILED)
+            .values(
+                status=JobItemStatus.PENDING,
+                error_message=None,
+                processed_at=None,
+            )
+        )
+        session.commit()
+
+        return False, [str(item_id) for item_id in failed_item_ids]
+
+    # No retry needed or retry already done - complete the job
+    job.status = BackgroundJobStatus.COMPLETED
     job.completed_at = datetime.now(timezone.utc)
     session.add(job)
     session.commit()
 
     logger.info(f"Job {job_id} marked as {job.status.value}")
-    return True
+    return True, []
 
 
 async def _process_import_item(job_item_id: str) -> dict:
@@ -258,7 +295,14 @@ async def _process_import_item(job_item_id: str) -> dict:
             session.commit()
 
             # Check if all items are processed and update job status
-            _check_and_update_job_completion(session, job_id)
+            # If items need retry, re-enqueue them
+            _completed, items_to_retry = _check_and_update_job_completion(session, job_id)
+            if items_to_retry:
+                # Get job priority for re-enqueue
+                job = session.get(Job, job_id)
+                priority = job.priority if job else BackgroundJobPriority.HIGH
+                for item_id in items_to_retry:
+                    await enqueue_import_task(item_id, priority)
 
         logger.info(
             f"Processed JobItem {job_item_id}: {result_status} -> {job_item_status.value}"

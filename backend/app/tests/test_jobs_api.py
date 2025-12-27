@@ -8,6 +8,8 @@ Tests the following endpoints:
 - DELETE /api/jobs/{job_id} - Delete a job record
 """
 
+import pytest
+from unittest.mock import AsyncMock, patch
 from sqlmodel import Session, select
 from datetime import datetime, timezone
 
@@ -1138,5 +1140,117 @@ class TestPendingReviewCount:
 
 # Note: TestDiscardImport class removed - /discard endpoint does not exist.
 # Delete functionality is provided by DELETE /api/jobs/{job_id} endpoint instead.
+
+
+class TestRetryFailedItems:
+    """Tests for POST /api/jobs/{job_id}/retry-failed endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def mock_task_queue(self):
+        """Mock the task queue to prevent actual task enqueuing during tests."""
+        with patch(
+            "app.api.jobs.enqueue_import_task",
+            new_callable=AsyncMock,
+        ):
+            yield
+
+    def test_retry_failed_items_success(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test successful retry of failed items."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add failed items
+        for i in range(3):
+            item = JobItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                item_key=f"game_{i}",
+                source_title=f"Game {i}",
+                status=JobItemStatus.FAILED,
+                error_message="IGDB timeout",
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert data["retried_count"] == 3
+
+    def test_retry_failed_items_job_not_terminal(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retry fails if job is not in terminal state."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 400
+        assert "must be completed" in response.json()["error"].lower()
+
+    def test_retry_failed_items_no_failed_items(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retry fails if no failed items exist."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add only completed items
+        item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        session.add(item)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 400
+        assert "no failed items" in response.json()["error"].lower()
+
+    def test_retry_failed_items_not_found(self, client, auth_headers):
+        """Test retry returns 404 for non-existent job."""
+        response = client.post("/api/jobs/nonexistent-id/retry-failed", headers=auth_headers)
+        assert response.status_code == 404
+
+    def test_retry_failed_items_other_user(
+        self, client, auth_headers, test_user: User, admin_user: User, session: Session
+    ):
+        """Test that users cannot retry other users' jobs."""
+        job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 404
 
 

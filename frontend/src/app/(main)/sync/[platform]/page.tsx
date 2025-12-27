@@ -391,7 +391,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
           {activeJob.progress && (
-            <JobItemsDetails jobId={activeJob.id} progress={activeJob.progress} />
+            <JobItemsDetails jobId={activeJob.id} progress={activeJob.progress} isTerminal={activeJob.isTerminal} />
           )}
         </div>
       )}

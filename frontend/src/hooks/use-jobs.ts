@@ -9,6 +9,7 @@ import type {
   JobItemStatus,
   JobType,
   JobItemDetail,
+  RetryFailedResponse,
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
@@ -202,6 +203,40 @@ export function useSkipJobItem() {
     mutationFn: ({ itemId, reason }) => jobsApi.skipJobItem(itemId, reason),
     onSuccess: () => {
       // Invalidate job queries to refresh progress counts
+      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
+    },
+  });
+}
+
+/**
+ * Hook to retry all failed items in a job.
+ */
+export function useRetryFailedItems() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RetryFailedResponse, Error, string>({
+    mutationFn: (jobId) => jobsApi.retryFailedItems(jobId),
+    onSuccess: (result, jobId) => {
+      if (result.success) {
+        // Invalidate job detail to refresh progress
+        queryClient.invalidateQueries({ queryKey: jobsKeys.detail(jobId) });
+        // Invalidate job lists
+        queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
+      }
+    },
+  });
+}
+
+/**
+ * Hook to retry a single failed job item.
+ */
+export function useRetryJobItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation<JobItemDetail, Error, string>({
+    mutationFn: (itemId) => jobsApi.retryJobItem(itemId),
+    onSuccess: () => {
+      // Invalidate all job queries to refresh progress
       queryClient.invalidateQueries({ queryKey: jobsKeys.all });
     },
   });

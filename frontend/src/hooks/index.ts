@@ -83,6 +83,8 @@ export {
   usePendingReviewCount,
   useResolveJobItem,
   useSkipJobItem,
+  useRetryFailedItems,
+  useRetryJobItem,
 } from './use-jobs';
 
 // Import Mapping hooks

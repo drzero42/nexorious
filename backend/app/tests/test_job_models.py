@@ -920,3 +920,16 @@ class TestJobModelEdgeCases:
 
         assert job.file_path == "/exports/collection_2025-01-01.json"
 
+    def test_job_auto_retry_done_default_false(self, session: Session, test_user: User):
+        """Test that auto_retry_done defaults to False."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        assert job.auto_retry_done is False
+

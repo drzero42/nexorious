@@ -156,3 +156,11 @@ class JobDiscardResponse(BaseModel):
     message: str
     deleted_job_id: str
     deleted_review_items: int
+
+
+class RetryFailedResponse(BaseModel):
+    """Response for retry failed items endpoint."""
+
+    success: bool
+    message: str
+    retried_count: int

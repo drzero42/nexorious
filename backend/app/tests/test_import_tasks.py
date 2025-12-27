@@ -683,3 +683,317 @@ class TestWishlistImportFunction:
 #         assert result["status"] == "success"
 #         assert result["total_wishlist"] == 0
 #         assert result["wishlist_imported"] == 0
+
+
+class TestAutoRetryLogic:
+    """Test automatic retry logic in _check_and_update_job_completion."""
+
+    def test_auto_retry_triggers_when_first_completion_has_failures(
+        self, session, test_user
+    ):
+        """Auto retry triggers when first completion has failed items."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job with auto_retry_done=False (default)
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create job items - some completed, some failed
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        item2 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game2",
+            source_title="Game 2",
+            status=JobItemStatus.FAILED,
+            error_message="IGDB timeout",
+        )
+        item3 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game3",
+            source_title="Game 3",
+            status=JobItemStatus.FAILED,
+            error_message="Rate limited",
+        )
+        session.add_all([item1, item2, item3])
+        session.commit()
+        session.refresh(item2)
+        session.refresh(item3)
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should not complete yet, but return items to retry
+        assert completed is False
+        assert len(items_to_retry) == 2
+        assert item2.id in items_to_retry
+        assert item3.id in items_to_retry
+
+        # Verify job state
+        session.refresh(job)
+        assert job.auto_retry_done is True
+        assert job.status == BackgroundJobStatus.PROCESSING  # Still processing
+
+        # Verify failed items were reset to PENDING
+        session.refresh(item2)
+        session.refresh(item3)
+        assert item2.status == JobItemStatus.PENDING
+        assert item2.error_message is None
+        assert item2.processed_at is None
+        assert item3.status == JobItemStatus.PENDING
+        assert item3.error_message is None
+        assert item3.processed_at is None
+
+    def test_job_completes_after_retry_pass_even_with_failures(
+        self, session, test_user
+    ):
+        """Job completes after retry pass even if there are still failures."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job with auto_retry_done=True (retry already done)
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+            auto_retry_done=True,  # Retry already performed
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create job items - some completed, some still failed after retry
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        item2 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game2",
+            source_title="Game 2",
+            status=JobItemStatus.FAILED,  # Still failed after retry
+            error_message="IGDB timeout again",
+        )
+        session.add_all([item1, item2])
+        session.commit()
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should complete with no items to retry
+        assert completed is True
+        assert items_to_retry == []
+
+        # Verify job state
+        session.refresh(job)
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert job.completed_at is not None
+
+    def test_auto_retry_skipped_when_no_failures(self, session, test_user):
+        """Auto retry is skipped when there are no failed items."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job with auto_retry_done=False
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create job items - all completed, no failures
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        item2 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game2",
+            source_title="Game 2",
+            status=JobItemStatus.COMPLETED,
+        )
+        session.add_all([item1, item2])
+        session.commit()
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should complete immediately with no items to retry
+        assert completed is True
+        assert items_to_retry == []
+
+        # Verify job state
+        session.refresh(job)
+        assert job.auto_retry_done is False  # Never needed to retry
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert job.completed_at is not None
+
+    def test_no_completion_when_items_still_pending(self, session, test_user):
+        """No completion check when items are still pending."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create job items - some still pending
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        item2 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game2",
+            source_title="Game 2",
+            status=JobItemStatus.PENDING,  # Still pending
+        )
+        session.add_all([item1, item2])
+        session.commit()
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should not complete, no items to retry
+        assert completed is False
+        assert items_to_retry == []
+
+        # Verify job state unchanged
+        session.refresh(job)
+        assert job.status == BackgroundJobStatus.PROCESSING
+
+    def test_no_update_for_terminal_job_states(self, session, test_user):
+        """No update when job is already in a terminal state."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job that's already completed
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,  # Already terminal
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create a failed job item (shouldn't trigger retry since job is complete)
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.FAILED,
+        )
+        session.add(item1)
+        session.commit()
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should not complete (already completed), no items to retry
+        assert completed is False
+        assert items_to_retry == []
+
+        # Verify job state unchanged
+        session.refresh(job)
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert job.auto_retry_done is False
+
+    def test_skipped_items_dont_trigger_retry(self, session, test_user):
+        """Skipped items don't trigger auto retry (only failed items do)."""
+        from app.worker.tasks.import_export.process_import_item import (
+            _check_and_update_job_completion,
+        )
+
+        # Create a job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.PROCESSING,
+            priority=BackgroundJobPriority.HIGH,
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        # Create job items - completed and skipped (no failed)
+        item1 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game1",
+            source_title="Game 1",
+            status=JobItemStatus.COMPLETED,
+        )
+        item2 = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game2",
+            source_title="Game 2",
+            status=JobItemStatus.SKIPPED,  # Skipped, not failed
+        )
+        session.add_all([item1, item2])
+        session.commit()
+
+        # Call _check_and_update_job_completion
+        completed, items_to_retry = _check_and_update_job_completion(session, job.id)
+
+        # Should complete immediately with no items to retry
+        assert completed is True
+        assert items_to_retry == []
+
+        # Verify job state
+        session.refresh(job)
+        assert job.auto_retry_done is False  # No retry needed
+        assert job.status == BackgroundJobStatus.COMPLETED

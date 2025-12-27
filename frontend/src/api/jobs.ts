@@ -16,6 +16,7 @@ import type {
   JobItemListResponse,
   PendingReviewCountResponse,
   JobItemDetail,
+  RetryFailedResponse,
 } from '@/types';
 
 // ============================================================================
@@ -107,6 +108,12 @@ interface JobItemDetailApiResponse extends JobItemApiResponse {
   igdb_candidates_json: string;
   resolved_igdb_id: number | null;
   resolved_at: string | null;
+}
+
+interface RetryFailedApiResponse {
+  success: boolean;
+  message: string;
+  retried_count: number;
 }
 
 // ============================================================================
@@ -313,5 +320,25 @@ export async function skipJobItem(itemId: string, reason?: string): Promise<JobI
     `/job-items/${itemId}/skip`,
     { reason }
   );
+  return transformJobItemDetail(response);
+}
+
+/**
+ * Retry all failed items in a job.
+ */
+export async function retryFailedItems(jobId: string): Promise<RetryFailedResponse> {
+  const response = await api.post<RetryFailedApiResponse>(`/jobs/${jobId}/retry-failed`);
+  return {
+    success: response.success,
+    message: response.message,
+    retriedCount: response.retried_count,
+  };
+}
+
+/**
+ * Retry a single failed job item.
+ */
+export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
+  const response = await api.post<JobItemDetailApiResponse>(`/job-items/${itemId}/retry`);
   return transformJobItemDetail(response);
 }

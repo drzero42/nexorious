@@ -338,6 +338,7 @@ export default function ImportExportPage() {
             <JobItemsDetails
               jobId={activeJob.id}
               progress={activeJob.progress}
+              isTerminal={activeJob.isTerminal}
             />
           )}
 

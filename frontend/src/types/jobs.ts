@@ -140,6 +140,12 @@ export interface PendingReviewCountResponse {
   pendingReviewCount: number;
 }
 
+export interface RetryFailedResponse {
+  success: boolean;
+  message: string;
+  retriedCount: number;
+}
+
 export interface JobItemDetail extends JobItem {
   sourceMetadataJson: string;
   resultJson: string;

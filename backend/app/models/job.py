@@ -116,6 +116,9 @@ class Job(SQLModel, table=True):
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
 
+    # Retry tracking
+    auto_retry_done: bool = Field(default=False, description="Whether automatic retry has been performed")
+
     # Relationships
     user: "User" = Relationship(back_populates="jobs")
     items: list["JobItem"] = Relationship(

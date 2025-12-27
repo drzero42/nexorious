@@ -239,7 +239,7 @@ function JobActivityItem({ job, isExpanded, onToggle }: JobActivityItemProps) {
 
             {/* Job items details */}
             {job.progress && (
-              <JobItemsDetails jobId={job.id} progress={job.progress} />
+              <JobItemsDetails jobId={job.id} progress={job.progress} isTerminal={job.isTerminal} />
             )}
           </div>
         </CollapsibleContent>
