@@ -60,6 +60,8 @@ export {
   useUpdateSyncConfig,
   useTriggerSync,
   useUnignoreGame,
+  useVerifySteamCredentials,
+  useDisconnectSteam,
 } from './use-sync';
 
 // Import/Export hooks
