@@ -9,9 +9,11 @@ import {
   useJob,
   useCancelJob,
   useDeleteJob,
+  useRetryFailedItems,
+  useRetryJobItem,
   jobsKeys,
 } from './use-jobs';
-import { JobType, JobSource, JobStatus } from '@/types';
+import { JobType, JobSource, JobStatus, JobItemStatus } from '@/types';
 
 const API_URL = '/api';
 
@@ -359,6 +361,128 @@ describe('use-jobs hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Cannot delete job that is not in terminal state');
+    });
+  });
+
+  describe('useRetryFailedItems', () => {
+    it('should invalidate queries on success', async () => {
+      server.use(
+        http.post(`${API_URL}/jobs/job-123/retry-failed`, () => {
+          return HttpResponse.json({
+            success: true,
+            message: 'Retrying 3 items',
+            retried_count: 3,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useRetryFailedItems(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync('job-123');
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data?.success).toBe(true);
+      expect(result.current.data?.retriedCount).toBe(3);
+    });
+
+    it('handles retry error', async () => {
+      server.use(
+        http.post(`${API_URL}/jobs/job-123/retry-failed`, () => {
+          return HttpResponse.json({ detail: 'No failed items to retry' }, { status: 400 });
+        })
+      );
+
+      const { result } = renderHook(() => useRetryFailedItems(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        try {
+          await result.current.mutateAsync('job-123');
+        } catch {
+          // Expected error
+        }
+      });
+
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true);
+      });
+
+      expect(result.current.error?.message).toBe('No failed items to retry');
+    });
+  });
+
+  describe('useRetryJobItem', () => {
+    it('should invalidate queries on success', async () => {
+      server.use(
+        http.post(`${API_URL}/job-items/item-123/retry`, () => {
+          return HttpResponse.json({
+            id: 'item-123',
+            job_id: 'job-123',
+            item_key: 'game_1',
+            source_title: 'Test Game',
+            status: 'pending',
+            error_message: null,
+            result_game_title: null,
+            result_igdb_id: null,
+            created_at: '2024-01-01T00:00:00Z',
+            processed_at: null,
+            source_metadata_json: '{}',
+            result_json: '{}',
+            igdb_candidates_json: '[]',
+            resolved_igdb_id: null,
+            resolved_at: null,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useRetryJobItem(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync('item-123');
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data?.id).toBe('item-123');
+      expect(result.current.data?.status).toBe(JobItemStatus.PENDING);
+    });
+
+    it('handles retry error for non-failed item', async () => {
+      server.use(
+        http.post(`${API_URL}/job-items/item-123/retry`, () => {
+          return HttpResponse.json({ detail: 'Item is not in failed state' }, { status: 400 });
+        })
+      );
+
+      const { result } = renderHook(() => useRetryJobItem(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        try {
+          await result.current.mutateAsync('item-123');
+        } catch {
+          // Expected error
+        }
+      });
+
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true);
+      });
+
+      expect(result.current.error?.message).toBe('Item is not in failed state');
     });
   });
 });
