@@ -22,6 +22,7 @@ const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   lastSyncedAt: '2024-01-01T12:00:00Z',
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
+  isConfigured: true,
   ...overrides,
 });
 
@@ -83,8 +84,8 @@ describe('SyncServiceCard', () => {
   });
 
   describe('connection badge', () => {
-    it('shows Connected badge when enabled', () => {
-      const config = createMockConfig({ enabled: true });
+    it('shows Enabled badge when configured and enabled', () => {
+      const config = createMockConfig({ enabled: true, isConfigured: true });
       render(
         <SyncServiceCard
           config={config}
@@ -93,11 +94,11 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      expect(screen.getByText('Connected')).toBeInTheDocument();
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
     });
 
-    it('shows Disconnected badge when not enabled', () => {
-      const config = createMockConfig({ enabled: false });
+    it('shows Disabled badge when configured but not enabled', () => {
+      const config = createMockConfig({ enabled: false, isConfigured: true });
       render(
         <SyncServiceCard
           config={config}
@@ -106,7 +107,20 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      expect(screen.getByText('Disconnected')).toBeInTheDocument();
+      expect(screen.getByText('Disabled')).toBeInTheDocument();
+    });
+
+    it('shows Not Configured badge when not configured', () => {
+      const config = createMockConfig({ enabled: true, isConfigured: false });
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.getByText('Not Configured')).toBeInTheDocument();
     });
   });
 
@@ -166,6 +180,21 @@ describe('SyncServiceCard', () => {
       // First switch is enable toggle
       expect(switches[0]).toBeDisabled();
     });
+
+    it('disables toggle when not configured', () => {
+      const config = createMockConfig({ isConfigured: false });
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      const switches = screen.getAllByRole('switch');
+      // First switch is enable toggle
+      expect(switches[0]).toBeDisabled();
+    });
   });
 
   describe('frequency select', () => {
@@ -213,6 +242,20 @@ describe('SyncServiceCard', () => {
           onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
           isUpdating={true}
+        />
+      );
+
+      const trigger = screen.getByRole('combobox');
+      expect(trigger).toBeDisabled();
+    });
+
+    it('disables frequency select when not configured', () => {
+      const config = createMockConfig({ enabled: true, isConfigured: false });
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
         />
       );
 
@@ -292,6 +335,21 @@ describe('SyncServiceCard', () => {
       // Second switch is auto-add toggle
       expect(switches[1]).toBeDisabled();
     });
+
+    it('disables auto-add toggle when not configured', () => {
+      const config = createMockConfig({ enabled: true, isConfigured: false });
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      const switches = screen.getAllByRole('switch');
+      // Second switch is auto-add toggle
+      expect(switches[1]).toBeDisabled();
+    });
   });
 
   describe('sync button', () => {
@@ -356,6 +414,20 @@ describe('SyncServiceCard', () => {
       );
 
       const syncButton = screen.getByRole('button', { name: /syncing/i });
+      expect(syncButton).toBeDisabled();
+    });
+
+    it('disables sync button when not configured', () => {
+      const config = createMockConfig({ enabled: true, isConfigured: false });
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      const syncButton = screen.getByRole('button', { name: /sync now/i });
       expect(syncButton).toBeDisabled();
     });
   });

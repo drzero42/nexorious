@@ -99,8 +99,23 @@ export function SyncServiceCard({
               </p>
             </div>
           </div>
-          <Badge variant={localEnabled ? 'default' : 'secondary'}>
-            {localEnabled ? 'Connected' : 'Disconnected'}
+          <Badge
+            variant={
+              !config.isConfigured
+                ? 'outline'
+                : localEnabled
+                  ? 'default'
+                  : 'secondary'
+            }
+            className={
+              !config.isConfigured
+                ? 'bg-muted text-muted-foreground'
+                : localEnabled
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+            }
+          >
+            {!config.isConfigured ? 'Not Configured' : localEnabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </div>
       </CardHeader>
@@ -112,7 +127,7 @@ export function SyncServiceCard({
           <Switch
             checked={localEnabled}
             onCheckedChange={handleEnabledChange}
-            disabled={isUpdating}
+            disabled={isUpdating || !config.isConfigured}
           />
         </div>
 
@@ -122,7 +137,7 @@ export function SyncServiceCard({
           <Select
             value={localFrequency}
             onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-            disabled={!localEnabled || isUpdating}
+            disabled={!localEnabled || isUpdating || !config.isConfigured}
           >
             <SelectTrigger className="w-[140px]">
               <SelectValue />
@@ -143,7 +158,7 @@ export function SyncServiceCard({
           <Switch
             checked={localAutoAdd}
             onCheckedChange={handleAutoAddChange}
-            disabled={!localEnabled || isUpdating}
+            disabled={!localEnabled || isUpdating || !config.isConfigured}
           />
         </div>
       </CardContent>
@@ -158,7 +173,7 @@ export function SyncServiceCard({
         </Link>
         <Button
           onClick={onTriggerSync}
-          disabled={!localEnabled || isCurrentlySyncing}
+          disabled={!localEnabled || isCurrentlySyncing || !config.isConfigured}
           size="sm"
         >
           {isCurrentlySyncing ? (

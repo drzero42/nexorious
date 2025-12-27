@@ -50,7 +50,7 @@ class UserSyncConfig(SQLModel, table=True):
         default=False,
         description="If True, matched games are added automatically. If False, queued for review.",
     )
-    enabled: bool = Field(default=True, description="Whether sync is enabled for this platform")
+    enabled: bool = Field(default=False, description="Whether sync is enabled for this platform")
 
     # Tracking
     last_synced_at: Optional[datetime] = Field(

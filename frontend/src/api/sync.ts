@@ -7,6 +7,7 @@ import type {
   IgnoredGame,
   SyncPlatform,
   SyncFrequency,
+  SteamVerifyResponse,
 } from '@/types';
 
 // ============================================================================
@@ -23,6 +24,7 @@ interface SyncConfigApiResponse {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+  is_configured: boolean;
 }
 
 interface SyncConfigListApiResponse {
@@ -86,6 +88,7 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
     lastSyncedAt: apiConfig.last_synced_at,
     createdAt: apiConfig.created_at,
     updatedAt: apiConfig.updated_at,
+    isConfigured: apiConfig.is_configured,
   };
 }
 
@@ -210,4 +213,49 @@ export async function getIgnoredGames(params?: {
  */
 export async function unignoreGame(id: string): Promise<void> {
   await api.delete(`/sync/ignored/${id}`);
+}
+
+// ============================================================================
+// Steam Verification Types
+// ============================================================================
+
+interface SteamVerifyApiRequest {
+  steam_id: string;
+  web_api_key: string;
+}
+
+interface SteamVerifyApiResponse {
+  valid: boolean;
+  steam_username: string | null;
+  error: string | null;
+}
+
+// ============================================================================
+// Steam Verification Functions
+// ============================================================================
+
+/**
+ * Verify Steam credentials before saving.
+ */
+export async function verifySteamCredentials(
+  steamId: string,
+  webApiKey: string
+): Promise<SteamVerifyResponse> {
+  const response = await api.post<SteamVerifyApiResponse>('/sync/steam/verify', {
+    steam_id: steamId,
+    web_api_key: webApiKey,
+  } as SteamVerifyApiRequest);
+
+  return {
+    valid: response.valid,
+    steamUsername: response.steam_username,
+    error: response.error,
+  };
+}
+
+/**
+ * Disconnect Steam integration.
+ */
+export async function disconnectSteam(): Promise<void> {
+  await api.delete('/sync/steam/connection');
 }

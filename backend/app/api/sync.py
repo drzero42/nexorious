@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
 from typing import Annotated, Optional
 from datetime import datetime, timezone
+import json
 import logging
+import re
 import uuid
 
 from ..core.database import get_session
@@ -28,7 +30,10 @@ from ..schemas.sync import (
     SyncStatusResponse,
     SyncFrequency,
     SyncPlatform,
+    SteamVerifyRequest,
+    SteamVerifyResponse,
 )
+from ..services.steam import SteamService, SteamAPIError, SteamAuthenticationError
 from ..schemas.ignored_game import (
     IgnoredGameResponse,
     IgnoredGameListResponse,
@@ -50,7 +55,21 @@ FREQUENCY_SCHEMA_TO_MODEL = {
 FREQUENCY_MODEL_TO_SCHEMA = {v: k for k, v in FREQUENCY_SCHEMA_TO_MODEL.items()}
 
 
-def _config_to_response(config: UserSyncConfig) -> SyncConfigResponse:
+def _is_platform_configured(user: User, platform: str) -> bool:
+    """Check if a platform has verified credentials configured."""
+    if platform == "steam":
+        preferences = user.preferences or {}
+        steam_config = preferences.get("steam", {})
+        return bool(
+            steam_config.get("web_api_key")
+            and steam_config.get("steam_id")
+            and steam_config.get("is_verified", False)
+        )
+    # Other platforms not yet supported
+    return False
+
+
+def _config_to_response(config: UserSyncConfig, user: User) -> SyncConfigResponse:
     """Convert UserSyncConfig model to response schema."""
     return SyncConfigResponse(
         id=config.id,
@@ -62,6 +81,7 @@ def _config_to_response(config: UserSyncConfig) -> SyncConfigResponse:
         last_synced_at=config.last_synced_at,
         created_at=config.created_at,
         updated_at=config.updated_at,
+        is_configured=_is_platform_configured(user, config.platform),
     )
 
 
@@ -89,7 +109,7 @@ async def get_sync_configs(
     configs_response = []
     for platform in SyncPlatform:
         if platform.value in config_map:
-            configs_response.append(_config_to_response(config_map[platform.value]))
+            configs_response.append(_config_to_response(config_map[platform.value], current_user))
         else:
             # Create a default config for this platform (not persisted yet)
             default_config = UserSyncConfig(
@@ -98,11 +118,11 @@ async def get_sync_configs(
                 platform=platform.value,
                 frequency=ModelSyncFrequency.MANUAL,
                 auto_add=False,
-                enabled=True,
+                enabled=False,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
-            configs_response.append(_config_to_response(default_config))
+            configs_response.append(_config_to_response(default_config, current_user))
 
     return SyncConfigListResponse(configs=configs_response, total=len(configs_response))
 
@@ -128,7 +148,7 @@ async def get_sync_config(
     config = session.exec(stmt).first()
 
     if config:
-        return _config_to_response(config)
+        return _config_to_response(config, current_user)
 
     # Return default config (not persisted)
     default_config = UserSyncConfig(
@@ -137,11 +157,11 @@ async def get_sync_config(
         platform=platform.value,
         frequency=ModelSyncFrequency.MANUAL,
         auto_add=False,
-        enabled=True,
+        enabled=False,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
-    return _config_to_response(default_config)
+    return _config_to_response(default_config, current_user)
 
 
 @router.put("/config/{platform}", response_model=SyncConfigResponse)
@@ -195,7 +215,7 @@ async def update_sync_config(
         f"frequency={config.frequency}, auto_add={config.auto_add}, enabled={config.enabled}"
     )
 
-    return _config_to_response(config)
+    return _config_to_response(config, current_user)
 
 
 @router.post("/{platform}", response_model=ManualSyncTriggerResponse)
@@ -309,6 +329,134 @@ def _platform_to_job_source(platform: SyncPlatform) -> BackgroundJobSource:
         SyncPlatform.GOG: BackgroundJobSource.GOG,
     }
     return mapping[platform]
+
+
+@router.post("/steam/verify", response_model=SteamVerifyResponse)
+async def verify_steam_credentials(
+    request: SteamVerifyRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SteamVerifyResponse:
+    """
+    Verify Steam credentials before saving them.
+
+    Validates format and tests the credentials against Steam Web API.
+    Returns the Steam username on success for user confirmation.
+    """
+    logger.info(f"Verifying Steam credentials for user {current_user.id}")
+
+    # Validate Steam ID format (17 digits starting with 7656119)
+    if not re.match(r"^7656119\d{10}$", request.steam_id):
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_steam_id"
+        )
+
+    # Validate API key format (32 alphanumeric characters)
+    if not re.match(r"^[A-Fa-f0-9]{32}$", request.web_api_key):
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_api_key"
+        )
+
+    # Test credentials against Steam API
+    try:
+        steam_service = SteamService(request.web_api_key)
+
+        # Verify API key is valid
+        if not await steam_service.verify_api_key():
+            return SteamVerifyResponse(
+                valid=False,
+                error="invalid_api_key"
+            )
+
+        # Get user info to verify Steam ID and get username
+        user_info = await steam_service.get_user_info(request.steam_id)
+
+        if not user_info:
+            return SteamVerifyResponse(
+                valid=False,
+                error="invalid_steam_id"
+            )
+
+        # Check if profile is public (communityvisibilitystate 3 = public)
+        if user_info.community_visibility_state != 3:
+            return SteamVerifyResponse(
+                valid=False,
+                error="private_profile"
+            )
+
+        logger.info(
+            f"Steam credentials verified for user {current_user.id}: "
+            f"Steam username '{user_info.persona_name}'"
+        )
+
+        return SteamVerifyResponse(
+            valid=True,
+            steam_username=user_info.persona_name
+        )
+
+    except SteamAuthenticationError:
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_api_key"
+        )
+    except SteamAPIError as e:
+        logger.error(f"Steam API error during verification: {str(e)}")
+        if "rate limit" in str(e).lower():
+            return SteamVerifyResponse(
+                valid=False,
+                error="rate_limited"
+            )
+        return SteamVerifyResponse(
+            valid=False,
+            error="network_error"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during Steam verification: {str(e)}")
+        return SteamVerifyResponse(
+            valid=False,
+            error="network_error"
+        )
+
+
+@router.delete("/steam/connection", response_model=SuccessResponse)
+async def disconnect_steam(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SuccessResponse:
+    """
+    Disconnect Steam integration.
+
+    Clears Steam credentials from user preferences and disables sync.
+    """
+    logger.info(f"Disconnecting Steam for user {current_user.id}")
+
+    # Clear Steam credentials from preferences
+    preferences = current_user.preferences or {}
+    if "steam" in preferences:
+        del preferences["steam"]
+        current_user.preferences_json = json.dumps(preferences)
+
+    # Disable Steam sync config if it exists
+    stmt = select(UserSyncConfig).where(
+        UserSyncConfig.user_id == current_user.id,
+        UserSyncConfig.platform == "steam",
+    )
+    config = session.exec(stmt).first()
+
+    if config:
+        config.enabled = False
+        config.updated_at = datetime.now(timezone.utc)
+
+    current_user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+
+    logger.info(f"Steam disconnected for user {current_user.id}")
+
+    return SuccessResponse(
+        success=True,
+        message="Steam disconnected successfully"
+    )
 
 
 @router.get("/ignored", response_model=IgnoredGameListResponse)

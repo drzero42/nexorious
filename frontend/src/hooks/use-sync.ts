@@ -6,6 +6,7 @@ import type {
   SyncConfigUpdateData,
   SyncStatus,
   ManualSyncResponse,
+  SteamVerifyResponse,
 } from '@/types';
 
 // ============================================================================
@@ -136,6 +137,35 @@ export function useUnignoreGame() {
     onSuccess: () => {
       // Invalidate ignored games list
       queryClient.invalidateQueries({ queryKey: syncKeys.ignoredGames() });
+    },
+  });
+}
+
+/**
+ * Hook to verify Steam credentials before saving.
+ */
+export function useVerifySteamCredentials() {
+  return useMutation<
+    SteamVerifyResponse,
+    Error,
+    { steamId: string; webApiKey: string }
+  >({
+    mutationFn: ({ steamId, webApiKey }) =>
+      syncApi.verifySteamCredentials(steamId, webApiKey),
+  });
+}
+
+/**
+ * Hook to disconnect Steam integration.
+ */
+export function useDisconnectSteam() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, void>({
+    mutationFn: () => syncApi.disconnectSteam(),
+    onSuccess: () => {
+      // Invalidate all sync-related queries
+      queryClient.invalidateQueries({ queryKey: syncKeys.all });
     },
   });
 }

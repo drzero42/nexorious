@@ -4,7 +4,9 @@ import { use, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  syncKeys,
   useSyncConfig,
   useSyncStatus,
   useUpdateSyncConfig,
@@ -16,6 +18,8 @@ import {
   useSkipJobItem,
   useSearchIGDB,
 } from '@/hooks';
+import { useCurrentUser, authKeys } from '@/hooks/use-auth';
+import { SteamConnectionCard } from '@/components/sync/steam-connection-card';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -128,6 +132,7 @@ function SyncDetailPageSkeleton() {
 export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const { platform: platformParam } = use(params);
   const platform = platformParam as SyncPlatform;
+  const queryClient = useQueryClient();
 
   // Local state for optimistic updates
   const [localEnabled, setLocalEnabled] = useState<boolean | null>(null);
@@ -143,6 +148,15 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   if (!SUPPORTED_SYNC_PLATFORMS.includes(platform)) {
     notFound();
   }
+
+  // Get current user for Steam preferences
+  const { data: currentUser } = useCurrentUser();
+
+  // Extract Steam credentials from user preferences
+  const steamPrefs = currentUser?.preferences?.steam as {
+    steam_id?: string;
+    username?: string;
+  } | undefined;
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(platform);
@@ -343,7 +357,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           <span className="text-foreground">{platformInfo.name}</span>
         </nav>
 
-        <Button onClick={handleTriggerSync} disabled={!effectiveEnabled || isSyncing}>
+        <Button onClick={handleTriggerSync} disabled={!effectiveEnabled || isSyncing || !config.isConfigured}>
           {isSyncing ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -377,13 +391,37 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
               </CardDescription>
             </div>
             <div className="ml-auto">
-              <Badge variant={effectiveEnabled ? 'default' : 'secondary'} className="text-sm">
-                {effectiveEnabled ? 'Enabled' : 'Disabled'}
+              <Badge
+                variant="outline"
+                className={
+                  !config.isConfigured
+                    ? 'bg-muted text-muted-foreground'
+                    : effectiveEnabled
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                }
+              >
+                {!config.isConfigured ? 'Not Configured' : effectiveEnabled ? 'Enabled' : 'Disabled'}
               </Badge>
             </div>
           </div>
         </CardHeader>
       </Card>
+
+      {/* Steam Connection Card - only show for Steam platform */}
+      {platform === SyncPlatform.STEAM && (
+        <SteamConnectionCard
+          isConfigured={config.isConfigured}
+          enabled={effectiveEnabled}
+          steamId={steamPrefs?.steam_id}
+          steamUsername={steamPrefs?.username}
+          onConnectionChange={() => {
+            // Invalidate queries to refresh data
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: authKeys.me() });
+          }}
+        />
+      )}
 
       {/* Active Sync Progress */}
       {isSyncing && activeJob && (
@@ -419,7 +457,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <Switch
               checked={effectiveEnabled}
               onCheckedChange={handleEnabledChange}
-              disabled={isUpdating}
+              disabled={isUpdating || !config.isConfigured}
             />
           </div>
 
@@ -434,7 +472,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <Select
               value={effectiveFrequency}
               onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-              disabled={!effectiveEnabled || isUpdating}
+              disabled={!effectiveEnabled || isUpdating || !config.isConfigured}
             >
               <SelectTrigger className="w-[160px]">
                 <SelectValue />
@@ -460,7 +498,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <Switch
               checked={effectiveAutoAdd}
               onCheckedChange={handleAutoAddChange}
-              disabled={!effectiveEnabled || isUpdating}
+              disabled={!effectiveEnabled || isUpdating || !config.isConfigured}
             />
           </div>
         </CardContent>
