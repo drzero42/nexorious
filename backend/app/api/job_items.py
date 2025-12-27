@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ..core.database import get_session
 from ..core.security import get_current_user
-from ..models.job import JobItem, JobItemStatus
+from ..models.job import Job, JobItem, JobItemStatus, BackgroundJobStatus
 from ..models.user import User
 from ..schemas.job_item import (
     JobItemDetailResponse,
@@ -76,5 +76,46 @@ async def skip_job_item(
         item.result_json = f'{{"skip_reason": "{request.reason}"}}'
     session.commit()
     session.refresh(item)
+
+    return JobItemDetailResponse.model_validate(item)
+
+
+@router.post("/{item_id}/retry", response_model=JobItemDetailResponse)
+async def retry_job_item(
+    item_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Retry a single failed job item."""
+    item = session.get(JobItem, item_id)
+    if not item or item.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Job item not found")
+
+    # Check parent job is terminal
+    job = session.get(Job, item.job_id)
+    if not job or not job.is_terminal:
+        raise HTTPException(
+            status_code=400,
+            detail="Job must be completed to retry items",
+        )
+
+    if item.status != JobItemStatus.FAILED:
+        raise HTTPException(status_code=400, detail="Item is not in failed status")
+
+    # Reset the item
+    item.status = JobItemStatus.PENDING
+    item.error_message = None
+    item.processed_at = None
+    session.add(item)
+
+    # Set job back to processing
+    job.status = BackgroundJobStatus.PROCESSING
+    job.completed_at = None
+    session.add(job)
+
+    session.commit()
+    session.refresh(item)
+
+    # Note: Re-enqueue logic will be added in Task 7
 
     return JobItemDetailResponse.model_validate(item)
