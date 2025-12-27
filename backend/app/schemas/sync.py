@@ -81,7 +81,7 @@ class SyncConfigCreateRequest(BaseModel):
         default=False,
         description="If True, matched games are added automatically. If False, queued for review.",
     )
-    enabled: bool = Field(default=True, description="Whether sync is enabled")
+    enabled: bool = Field(default=False, description="Whether sync is enabled")
 
 
 class ManualSyncTriggerResponse(BaseModel):

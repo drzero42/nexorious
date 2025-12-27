@@ -98,7 +98,7 @@ async def get_sync_configs(
                 platform=platform.value,
                 frequency=ModelSyncFrequency.MANUAL,
                 auto_add=False,
-                enabled=True,
+                enabled=False,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
@@ -137,7 +137,7 @@ async def get_sync_config(
         platform=platform.value,
         frequency=ModelSyncFrequency.MANUAL,
         auto_add=False,
-        enabled=True,
+        enabled=False,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )

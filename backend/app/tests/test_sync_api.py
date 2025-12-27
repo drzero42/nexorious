@@ -35,7 +35,7 @@ class TestSyncConfigEndpoints:
         for config in data["configs"]:
             assert config["frequency"] == "manual"
             assert config["auto_add"] is False
-            assert config["enabled"] is True
+            assert config["enabled"] is False
 
     def test_get_sync_configs_returns_existing_configs(
         self, client: TestClient, auth_headers: dict, session: Session, test_user
@@ -79,7 +79,7 @@ class TestSyncConfigEndpoints:
         assert data["platform"] == "steam"
         assert data["frequency"] == "manual"  # Default
         assert data["auto_add"] is False
-        assert data["enabled"] is True
+        assert data["enabled"] is False
 
     def test_get_sync_config_invalid_platform(
         self, client: TestClient, auth_headers: dict
