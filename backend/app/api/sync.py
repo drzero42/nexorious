@@ -12,6 +12,7 @@ from sqlmodel import Session, select, func
 from typing import Annotated, Optional
 from datetime import datetime, timezone
 import logging
+import re
 import uuid
 
 from ..core.database import get_session
@@ -28,7 +29,10 @@ from ..schemas.sync import (
     SyncStatusResponse,
     SyncFrequency,
     SyncPlatform,
+    SteamVerifyRequest,
+    SteamVerifyResponse,
 )
+from ..services.steam import SteamService, SteamAPIError, SteamAuthenticationError
 from ..schemas.ignored_game import (
     IgnoredGameResponse,
     IgnoredGameListResponse,
@@ -324,6 +328,94 @@ def _platform_to_job_source(platform: SyncPlatform) -> BackgroundJobSource:
         SyncPlatform.GOG: BackgroundJobSource.GOG,
     }
     return mapping[platform]
+
+
+@router.post("/steam/verify", response_model=SteamVerifyResponse)
+async def verify_steam_credentials(
+    request: SteamVerifyRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SteamVerifyResponse:
+    """
+    Verify Steam credentials before saving them.
+
+    Validates format and tests the credentials against Steam Web API.
+    Returns the Steam username on success for user confirmation.
+    """
+    logger.info(f"Verifying Steam credentials for user {current_user.id}")
+
+    # Validate Steam ID format (17 digits starting with 7656119)
+    if not re.match(r"^7656119\d{10}$", request.steam_id):
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_steam_id"
+        )
+
+    # Validate API key format (32 alphanumeric characters)
+    if not re.match(r"^[A-Fa-f0-9]{32}$", request.web_api_key):
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_api_key"
+        )
+
+    # Test credentials against Steam API
+    try:
+        steam_service = SteamService(request.web_api_key)
+
+        # Verify API key is valid
+        if not await steam_service.verify_api_key():
+            return SteamVerifyResponse(
+                valid=False,
+                error="invalid_api_key"
+            )
+
+        # Get user info to verify Steam ID and get username
+        user_info = await steam_service.get_user_info(request.steam_id)
+
+        if not user_info:
+            return SteamVerifyResponse(
+                valid=False,
+                error="invalid_steam_id"
+            )
+
+        # Check if profile is public (communityvisibilitystate 3 = public)
+        if user_info.community_visibility_state != 3:
+            return SteamVerifyResponse(
+                valid=False,
+                error="private_profile"
+            )
+
+        logger.info(
+            f"Steam credentials verified for user {current_user.id}: "
+            f"Steam username '{user_info.persona_name}'"
+        )
+
+        return SteamVerifyResponse(
+            valid=True,
+            steam_username=user_info.persona_name
+        )
+
+    except SteamAuthenticationError:
+        return SteamVerifyResponse(
+            valid=False,
+            error="invalid_api_key"
+        )
+    except SteamAPIError as e:
+        logger.error(f"Steam API error during verification: {str(e)}")
+        if "rate limit" in str(e).lower():
+            return SteamVerifyResponse(
+                valid=False,
+                error="rate_limited"
+            )
+        return SteamVerifyResponse(
+            valid=False,
+            error="network_error"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during Steam verification: {str(e)}")
+        return SteamVerifyResponse(
+            valid=False,
+            error="network_error"
+        )
 
 
 @router.get("/ignored", response_model=IgnoredGameListResponse)

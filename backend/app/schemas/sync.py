@@ -108,3 +108,28 @@ class SyncStatusResponse(BaseModel):
     active_job_id: Optional[str] = Field(
         default=None, description="ID of the active sync job if syncing"
     )
+
+
+class SteamVerifyRequest(BaseModel):
+    """Request model for verifying Steam credentials."""
+
+    steam_id: str = Field(
+        description="Steam ID (17 digits starting with 7656119)"
+    )
+    web_api_key: str = Field(
+        description="Steam Web API key (32 alphanumeric characters)"
+    )
+
+
+class SteamVerifyResponse(BaseModel):
+    """Response model for Steam verification result."""
+
+    valid: bool = Field(description="Whether the credentials are valid")
+    steam_username: Optional[str] = Field(
+        default=None,
+        description="Steam display name if verification succeeded"
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error code if verification failed"
+    )
