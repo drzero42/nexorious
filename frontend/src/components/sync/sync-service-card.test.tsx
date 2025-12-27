@@ -22,6 +22,7 @@ const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   lastSyncedAt: '2024-01-01T12:00:00Z',
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
+  isConfigured: true,
   ...overrides,
 });
 
