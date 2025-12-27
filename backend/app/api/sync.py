@@ -50,7 +50,21 @@ FREQUENCY_SCHEMA_TO_MODEL = {
 FREQUENCY_MODEL_TO_SCHEMA = {v: k for k, v in FREQUENCY_SCHEMA_TO_MODEL.items()}
 
 
-def _config_to_response(config: UserSyncConfig) -> SyncConfigResponse:
+def _is_platform_configured(user: User, platform: str) -> bool:
+    """Check if a platform has verified credentials configured."""
+    if platform == "steam":
+        preferences = user.preferences or {}
+        steam_config = preferences.get("steam", {})
+        return bool(
+            steam_config.get("web_api_key")
+            and steam_config.get("steam_id")
+            and steam_config.get("is_verified", False)
+        )
+    # Other platforms not yet supported
+    return False
+
+
+def _config_to_response(config: UserSyncConfig, user: User) -> SyncConfigResponse:
     """Convert UserSyncConfig model to response schema."""
     return SyncConfigResponse(
         id=config.id,
@@ -62,6 +76,7 @@ def _config_to_response(config: UserSyncConfig) -> SyncConfigResponse:
         last_synced_at=config.last_synced_at,
         created_at=config.created_at,
         updated_at=config.updated_at,
+        is_configured=_is_platform_configured(user, config.platform),
     )
 
 
@@ -89,7 +104,7 @@ async def get_sync_configs(
     configs_response = []
     for platform in SyncPlatform:
         if platform.value in config_map:
-            configs_response.append(_config_to_response(config_map[platform.value]))
+            configs_response.append(_config_to_response(config_map[platform.value], current_user))
         else:
             # Create a default config for this platform (not persisted yet)
             default_config = UserSyncConfig(
@@ -102,7 +117,7 @@ async def get_sync_configs(
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
-            configs_response.append(_config_to_response(default_config))
+            configs_response.append(_config_to_response(default_config, current_user))
 
     return SyncConfigListResponse(configs=configs_response, total=len(configs_response))
 
@@ -128,7 +143,7 @@ async def get_sync_config(
     config = session.exec(stmt).first()
 
     if config:
-        return _config_to_response(config)
+        return _config_to_response(config, current_user)
 
     # Return default config (not persisted)
     default_config = UserSyncConfig(
@@ -141,7 +156,7 @@ async def get_sync_config(
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
-    return _config_to_response(default_config)
+    return _config_to_response(default_config, current_user)
 
 
 @router.put("/config/{platform}", response_model=SyncConfigResponse)
@@ -195,7 +210,7 @@ async def update_sync_config(
         f"frequency={config.frequency}, auto_add={config.auto_add}, enabled={config.enabled}"
     )
 
-    return _config_to_response(config)
+    return _config_to_response(config, current_user)
 
 
 @router.post("/{platform}", response_model=ManualSyncTriggerResponse)

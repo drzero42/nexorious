@@ -46,6 +46,10 @@ class SyncConfigResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+    is_configured: bool = Field(
+        default=False,
+        description="Whether platform credentials have been verified"
+    )
 
 
 class SyncConfigListResponse(BaseModel):
