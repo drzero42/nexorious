@@ -12,7 +12,7 @@ from app.models.job import (
     BackgroundJobStatus,
     JobItemStatus,
 )
-from app.services.job_service import retry_failed_items
+from app.services.job_service import retry_failed_items, retry_job_item
 
 
 class TestRetryFailedItems:
@@ -128,3 +128,72 @@ class TestRetryFailedItems:
         assert failed_item.status == JobItemStatus.PENDING
         assert completed_item.status == JobItemStatus.COMPLETED
         assert skipped_item.status == JobItemStatus.SKIPPED
+
+
+class TestRetryJobItem:
+    """Tests for retry_job_item service function."""
+
+    def test_retry_job_item_resets_status(self, session: Session, test_user: User):
+        """Test that a single failed item is reset to PENDING."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        failed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_1",
+            source_title="Test Game",
+            status=JobItemStatus.FAILED,
+            error_message="IGDB timeout",
+            processed_at=datetime.now(timezone.utc),
+        )
+        session.add(failed_item)
+        session.commit()
+
+        result = retry_job_item(session, failed_item.id)
+
+        assert result is True
+        session.refresh(failed_item)
+        assert failed_item.status == JobItemStatus.PENDING
+        assert failed_item.error_message is None
+        assert failed_item.processed_at is None
+
+    def test_retry_job_item_returns_false_if_not_failed(
+        self, session: Session, test_user: User
+    ):
+        """Test that retry returns False if item is not in FAILED status."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        completed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_1",
+            source_title="Test Game",
+            status=JobItemStatus.COMPLETED,
+        )
+        session.add(completed_item)
+        session.commit()
+
+        result = retry_job_item(session, completed_item.id)
+
+        assert result is False
+        session.refresh(completed_item)
+        assert completed_item.status == JobItemStatus.COMPLETED
+
+    def test_retry_job_item_returns_false_if_not_found(self, session: Session):
+        """Test that retry returns False if item doesn't exist."""
+        result = retry_job_item(session, "nonexistent-id")
+        assert result is False

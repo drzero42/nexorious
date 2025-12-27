@@ -75,3 +75,25 @@ def retry_failed_items(session: Session, job_id: str) -> int:
     )
     session.commit()
     return result.rowcount
+
+
+def retry_job_item(session: Session, item_id: str) -> bool:
+    """Reset a single failed item to pending status.
+
+    Args:
+        session: Database session
+        item_id: The job item ID to retry
+
+    Returns:
+        True if item was reset, False if not found or not in FAILED status
+    """
+    item = session.get(JobItem, item_id)
+    if not item or item.status != JobItemStatus.FAILED:
+        return False
+
+    item.status = JobItemStatus.PENDING
+    item.error_message = None
+    item.processed_at = None
+    session.add(item)
+    session.commit()
+    return True
