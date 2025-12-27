@@ -1,6 +1,8 @@
 """Tests for job item API endpoints."""
 
+import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 from sqlmodel import Session
 
@@ -17,6 +19,15 @@ from app.models.job import (
 
 class TestRetryJobItem:
     """Tests for POST /api/job-items/{item_id}/retry endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def mock_task_queue(self):
+        """Mock the task queue to prevent actual task enqueuing during tests."""
+        with patch(
+            "app.api.job_items.enqueue_import_task",
+            new_callable=AsyncMock,
+        ):
+            yield
 
     def test_retry_job_item_success(
         self, client, auth_headers, test_user: User, session: Session

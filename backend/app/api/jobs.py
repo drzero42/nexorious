@@ -8,11 +8,13 @@ background jobs (sync, import, export operations).
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func, col
 from sqlalchemy import update as sa_update
+from sqlmodel import select as sql_select
 from typing import Annotated, Optional
 from datetime import datetime, timezone, timedelta
 import logging
 
 from ..core.database import get_session
+from ..worker.tasks.import_export.process_import_item import enqueue_import_task
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.job import (
@@ -487,15 +489,14 @@ async def retry_failed_job_items(
             detail="Job must be completed to retry items",
         )
 
-    # Count failed items before reset
-    failed_count = session.exec(
-        select(func.count())
-        .select_from(JobItem)
+    # Get failed items before reset (we need the IDs for re-enqueueing)
+    failed_items = session.exec(
+        sql_select(JobItem)
         .where(JobItem.job_id == job_id)
         .where(JobItem.status == JobItemStatus.FAILED)
-    ).one()
+    ).all()
 
-    if failed_count == 0:
+    if len(failed_items) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No failed items to retry",
@@ -512,7 +513,9 @@ async def retry_failed_job_items(
 
     logger.info(f"Retrying {retried_count} failed items for job {job_id}")
 
-    # Note: Re-enqueue logic will be added in Task 7
+    # Re-enqueue items for processing
+    for item in failed_items:
+        await enqueue_import_task(str(item.id), job.priority)
 
     return RetryFailedResponse(
         success=True,

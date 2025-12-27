@@ -14,6 +14,7 @@ from ..schemas.job_item import (
     ResolveJobItemRequest,
     SkipJobItemRequest,
 )
+from ..worker.tasks.import_export.process_import_item import enqueue_import_task
 
 router = APIRouter(prefix="/job-items", tags=["job-items"])
 
@@ -116,6 +117,7 @@ async def retry_job_item(
     session.commit()
     session.refresh(item)
 
-    # Note: Re-enqueue logic will be added in Task 7
+    # Re-enqueue item for processing
+    await enqueue_import_task(str(item.id), job.priority)
 
     return JobItemDetailResponse.model_validate(item)

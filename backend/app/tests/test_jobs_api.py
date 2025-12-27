@@ -8,6 +8,8 @@ Tests the following endpoints:
 - DELETE /api/jobs/{job_id} - Delete a job record
 """
 
+import pytest
+from unittest.mock import AsyncMock, patch
 from sqlmodel import Session, select
 from datetime import datetime, timezone
 
@@ -1142,6 +1144,15 @@ class TestPendingReviewCount:
 
 class TestRetryFailedItems:
     """Tests for POST /api/jobs/{job_id}/retry-failed endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def mock_task_queue(self):
+        """Mock the task queue to prevent actual task enqueuing during tests."""
+        with patch(
+            "app.api.jobs.enqueue_import_task",
+            new_callable=AsyncMock,
+        ):
+            yield
 
     def test_retry_failed_items_success(
         self, client, auth_headers, test_user: User, session: Session
