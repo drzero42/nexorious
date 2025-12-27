@@ -236,4 +236,54 @@ describe('jobsApi', () => {
       expect(result.failedCount).toBe(1);
     });
   });
+
+  describe('retryFailedItems', () => {
+    it('should call POST /jobs/{jobId}/retry-failed', async () => {
+      const mockResponse = {
+        success: true,
+        message: 'Retrying 3 failed items',
+        retried_count: 3,
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await jobsApi.retryFailedItems('job-123');
+
+      expect(api.post).toHaveBeenCalledWith('/jobs/job-123/retry-failed');
+      expect(result).toEqual({
+        success: true,
+        message: 'Retrying 3 failed items',
+        retriedCount: 3,
+      });
+    });
+  });
+
+  describe('retryJobItem', () => {
+    it('should call POST /job-items/{itemId}/retry', async () => {
+      const mockResponse = {
+        id: 'item-123',
+        job_id: 'job-123',
+        item_key: 'game_1',
+        source_title: 'Test Game',
+        status: 'pending',
+        error_message: null,
+        result_game_title: null,
+        result_igdb_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        processed_at: null,
+        source_metadata_json: '{}',
+        result_json: '{}',
+        igdb_candidates_json: '[]',
+        resolved_igdb_id: null,
+        resolved_at: null,
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await jobsApi.retryJobItem('item-123');
+
+      expect(api.post).toHaveBeenCalledWith('/job-items/item-123/retry');
+      expect(result.status).toBe('pending');
+    });
+  });
 });
