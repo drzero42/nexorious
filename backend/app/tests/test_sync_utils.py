@@ -41,17 +41,17 @@ class TestGenericSyncFunction:
         session.add(user_game)
         session.commit()
 
-        # Create platform association
+        # Create platform association (use name slugs, not UUIDs)
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
 
-        # Test the function
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        # Test the function (use name slugs, not UUIDs)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         assert result is True
 
     def test_is_game_synced_false_when_no_association(self, session: Session, test_user: User, steam_dependencies):
@@ -69,8 +69,8 @@ class TestGenericSyncFunction:
         session.add(game)
         session.commit()
 
-        # Test the function without creating association
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        # Test the function without creating association (use name slugs)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         assert result is False
 
     def test_is_game_synced_false_when_user_game_exists_but_no_platform(self, session: Session, test_user: User, steam_dependencies):
@@ -96,8 +96,8 @@ class TestGenericSyncFunction:
         session.add(user_game)
         session.commit()
 
-        # Test the function
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        # Test the function (use name slugs)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         assert result is False
 
     def test_is_game_synced_false_for_different_user(self, session: Session, test_user: User, steam_dependencies):
@@ -130,19 +130,18 @@ class TestGenericSyncFunction:
 
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
 
         # Test with test_user (should be False)
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         assert result is False
 
         # Test with other_user (should be True)
-        result = is_game_synced(session, other_user.id, game.id, pc_platform.id, steam_storefront.id)
-        assert result is True
+        result = is_game_synced(session, other_user.id, game.id, pc_platform.name, steam_storefront.name)
 
     def test_is_game_synced_different_platforms(self, session: Session, test_user: User, steam_dependencies):
         """Test that is_game_synced is specific to platform/storefront combinations."""
@@ -188,21 +187,21 @@ class TestGenericSyncFunction:
         session.add(user_game)
         session.commit()
 
-        # Create Steam platform association only
+        # Create Steam platform association only (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
 
         # Test Steam combination (should be True)
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         assert result is True
 
         # Test PlayStation combination (should be False)
-        result = is_game_synced(session, test_user.id, game.id, ps5_platform.id, ps_storefront.id)
+        result = is_game_synced(session, test_user.id, game.id, ps5_platform.name, ps_storefront.name)
         assert result is False
 
 
@@ -236,11 +235,11 @@ class TestSteamSpecificFunction:
         result = is_steam_game_synced(session, test_user.id, game.id)
         assert result is False
 
-        # Create Steam association
+        # Create Steam association (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
@@ -283,11 +282,11 @@ class TestSteamSpecificFunction:
         session.add(user_game)
         session.commit()
 
-        # Create Epic association (not Steam)
+        # Create Epic association (not Steam) - use name slugs
         epic_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=epic_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=epic_storefront.name
         )
         session.add(epic_association)
         session.commit()
@@ -296,11 +295,11 @@ class TestSteamSpecificFunction:
         result = is_steam_game_synced(session, test_user.id, game.id)
         assert result is False
 
-        # Create Steam association
+        # Create Steam association (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
@@ -400,7 +399,7 @@ class TestPerformance:
             session.add(game)
         session.commit()
 
-        # Create user games and platform associations
+        # Create user games and platform associations (use name slugs)
         for game in games:
             user_game = UserGame(
                 user_id=test_user.id,
@@ -411,16 +410,16 @@ class TestPerformance:
 
             user_game_platform = UserGamePlatform(
                 user_game_id=user_game.id,
-                platform_id=pc_platform.id,
-                storefront_id=steam_storefront.id
+                platform_id=pc_platform.name,
+                storefront_id=steam_storefront.name
             )
             session.add(user_game_platform)
         session.commit()
 
-        # Test performance
+        # Test performance (use name slugs)
         start_time = time.time()
         for game in games:
-            result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+            result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
             assert result is True
         end_time = time.time()
 
@@ -464,15 +463,15 @@ class TestPerformance:
 
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
 
-        # Test single query performance - should be <50ms
+        # Test single query performance - should be <50ms (use name slugs)
         start_time = time.time()
-        result = is_game_synced(session, test_user.id, game.id, pc_platform.id, steam_storefront.id)
+        result = is_game_synced(session, test_user.id, game.id, pc_platform.name, steam_storefront.name)
         end_time = time.time()
 
         assert result is True
@@ -516,12 +515,12 @@ class TestPerformance:
             )
             user_games.append(user_game)
 
-            # Only sync every 10th game to create mixed scenarios
+            # Only sync every 10th game to create mixed scenarios (use name slugs)
             if i % 10 == 0:
                 platform_assoc = UserGamePlatform(
                     user_game_id=user_game.id if hasattr(user_game, 'id') else f"temp_{i}",
-                    platform_id=pc_platform.id,
-                    storefront_id=steam_storefront.id
+                    platform_id=pc_platform.name,
+                    storefront_id=steam_storefront.name
                 )
                 platform_associations.append((platform_assoc, user_game))
 
@@ -587,8 +586,8 @@ class TestPerformance:
 
         platform_assoc = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.id,
-            storefront_id=steam_storefront.id
+            platform_id=pc_platform.name,
+            storefront_id=steam_storefront.name
         )
         session.add(platform_assoc)
         session.commit()

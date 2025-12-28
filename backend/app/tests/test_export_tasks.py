@@ -176,7 +176,7 @@ class TestUserGameToExportData:
         # Add platform association
         platform_assoc = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             store_game_id="12345",
             store_url="https://store.example.com/game",
             is_available=True,
@@ -189,7 +189,7 @@ class TestUserGameToExportData:
 
         assert len(export_data.platforms) == 1
         platform_data = export_data.platforms[0]
-        assert platform_data.platform_id == test_platform.id
+        assert platform_data.platform_id == test_platform.name  # FK now references name
         assert platform_data.platform_name == test_platform.name
         assert platform_data.store_game_id == "12345"
         assert platform_data.store_url == "https://store.example.com/game"
@@ -286,7 +286,7 @@ class TestUserGameToCsvRow:
         for platform in [platform1, platform2]:
             assoc = UserGamePlatform(
                 user_game_id=user_game.id,
-                platform_id=platform.id,
+                platform_id=platform.name,
             )
             session.add(assoc)
         session.commit()

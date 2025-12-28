@@ -12,7 +12,6 @@ from sqlalchemy import update as sa_update
 from sqlmodel import Session, select, func, col
 
 from app.worker.broker import broker
-from app.worker.queues import SUBJECT_HIGH_IMPORT, SUBJECT_LOW_IMPORT
 from app.core.database import get_sync_session
 from app.models.job import Job, JobItem, JobItemStatus, BackgroundJobStatus, BackgroundJobPriority
 from app.services.igdb.service import IGDBService
@@ -25,22 +24,9 @@ from app.worker.tasks.import_export.import_nexorious_helpers import (
 logger = logging.getLogger(__name__)
 
 
-@broker.task(task_name=SUBJECT_HIGH_IMPORT)
-async def process_import_item_high(job_item_id: str) -> dict:
-    """Process high-priority import item.
-
-    Args:
-        job_item_id: The JobItem ID to process
-
-    Returns:
-        Dictionary with processing result details
-    """
-    return await _process_import_item(job_item_id)
-
-
-@broker.task(task_name=SUBJECT_LOW_IMPORT)
-async def process_import_item_low(job_item_id: str) -> dict:
-    """Process low-priority import item.
+@broker.task(task_name="import.process_item")
+async def process_import_item(job_item_id: str) -> dict:
+    """Process import item.
 
     Args:
         job_item_id: The JobItem ID to process
@@ -333,7 +319,5 @@ async def enqueue_import_task(job_item_id: str, priority: BackgroundJobPriority)
         job_item_id: The JobItem ID to process
         priority: Priority level (HIGH or LOW)
     """
-    if priority == BackgroundJobPriority.HIGH:
-        await process_import_item_high.kiq(job_item_id)
-    else:
-        await process_import_item_low.kiq(job_item_id)
+    from app.worker.queues import enqueue_task
+    await enqueue_task(process_import_item, job_item_id, priority=priority)

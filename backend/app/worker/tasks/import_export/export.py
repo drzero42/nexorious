@@ -13,7 +13,6 @@ from typing import Dict, Any, List
 from sqlmodel import Session, select
 
 from app.worker.broker import broker
-from app.worker.queues import SUBJECT_HIGH_EXPORT
 from app.core.database import get_session_context
 from app.core.config import settings
 from app.models.job import Job, BackgroundJobStatus
@@ -213,7 +212,7 @@ def _write_csv_export(
     return file_path.stat().st_size
 
 
-@broker.task(task_name=SUBJECT_HIGH_EXPORT)
+@broker.task(task_name="export.collection")
 async def export_collection(
     job_id: str,
     export_format: str,
