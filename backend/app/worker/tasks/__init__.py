@@ -13,7 +13,8 @@ from app.worker.tasks.maintenance import (
 
 # Sync tasks (platform library synchronization)
 from app.worker.tasks.sync import (
-    sync_steam_library,
+    dispatch_sync_items,
+    process_sync_item,
     check_pending_syncs,
 )
 
@@ -30,7 +31,8 @@ __all__ = [
     "cleanup_expired_exports",
     "cleanup_expired_sessions",
     # Sync
-    "sync_steam_library",
+    "dispatch_sync_items",
+    "process_sync_item",
     "check_pending_syncs",
     # Import/Export
     "export_collection",
