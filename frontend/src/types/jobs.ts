@@ -109,6 +109,7 @@ export interface JobItem {
   resultIgdbId: number | null;
   createdAt: string;
   processedAt: string | null;
+  igdbCandidatesJson?: string;  // Optional - present for PENDING_REVIEW items
 }
 
 export interface JobItemListResponse {
@@ -152,6 +153,31 @@ export interface JobItemDetail extends JobItem {
   igdbCandidatesJson: string;
   resolvedIgdbId: number | null;
   resolvedAt: string | null;
+}
+
+export interface JobItemSummary {
+  sourceTitle: string;
+  resultGameTitle: string | null;
+  resultIgdbId: number | null;
+  errorMessage: string | null;
+  isNewAddition: boolean;
+}
+
+export interface RecentJobDetail {
+  id: string;
+  createdAt: string;
+  completedAt: string | null;
+  totalItems: number;
+  completedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  completedItems: JobItemSummary[];
+  skippedItems: JobItemSummary[];
+  failedItems: JobItemSummary[];
+}
+
+export interface RecentJobsResponse {
+  jobs: RecentJobDetail[];
 }
 
 // ============================================================================

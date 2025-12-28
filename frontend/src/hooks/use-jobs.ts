@@ -27,6 +27,7 @@ export const jobsKeys = {
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   active: (jobType: JobType) => [...jobsKeys.all, 'active', jobType] as const,
+  recent: (source: string, limit?: number) => [...jobsKeys.all, 'recent', source, limit] as const,
 };
 
 // ============================================================================
@@ -133,6 +134,17 @@ export function usePendingReviewCount() {
     queryKey: [...jobsKeys.all, 'pendingReviewCount'] as const,
     queryFn: () => jobsApi.getPendingReviewCount(),
     refetchInterval: 30000,
+  });
+}
+
+/**
+ * Hook to fetch recent completed jobs for a source with item details.
+ */
+export function useRecentJobs(source: string, limit: number = 5, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: jobsKeys.recent(source, limit),
+    queryFn: () => jobsApi.getRecentJobs(source, limit),
+    enabled: options?.enabled !== false,
   });
 }
 

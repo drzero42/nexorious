@@ -21,6 +21,7 @@ from app.models.job import (
     BackgroundJobType,
     BackgroundJobSource,
 )
+from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform
 from app.models.user_sync_config import UserSyncConfig
 from app.models.ignored_external_game import IgnoredExternalGame
@@ -202,10 +203,7 @@ async def _process_with_resolved_id(
             session, existing_user_game.id,
             platform_id, storefront_id, external_id
         )
-        return await _complete_job_item(
-            session, job_item_id, job_id,
-            JobItemStatus.COMPLETED, "linked_existing"
-        )
+        result = "linked_existing"
     else:
         # Create new UserGame and add platform association
         igdb_service = IGDBService()
@@ -227,10 +225,27 @@ async def _process_with_resolved_id(
             session, user_game.id,
             platform_id, storefront_id, external_id
         )
-        return await _complete_job_item(
-            session, job_item_id, job_id,
-            JobItemStatus.COMPLETED, "imported_new"
-        )
+        result = "imported_new"
+
+    # Fetch the game title for result_json
+    game = session.get(Game, igdb_id)
+    igdb_title = game.title if game else source_title
+
+    # Update JobItem with result data for recent activity display
+    job_item = session.get(JobItem, job_item_id)
+    if job_item:
+        job_item.resolved_igdb_id = igdb_id
+        job_item.result_json = json.dumps({
+            "igdb_title": igdb_title,
+            "igdb_id": igdb_id,
+            "result_type": result,
+        })
+        session.add(job_item)
+
+    return await _complete_job_item(
+        session, job_item_id, job_id,
+        JobItemStatus.COMPLETED, result
+    )
 
 
 async def _process_with_matching(
@@ -357,11 +372,16 @@ async def _auto_import_game(
         )
         result = "auto_imported"
 
-    # Update JobItem with match info
+    # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
     if job_item:
         job_item.resolved_igdb_id = igdb_id
         job_item.match_confidence = confidence
+        job_item.result_json = json.dumps({
+            "igdb_title": match_result.igdb_title,
+            "igdb_id": igdb_id,
+            "result_type": result,
+        })
         session.add(job_item)
 
     return await _complete_job_item(
@@ -379,11 +399,12 @@ def _add_platform_association(
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
+    # Note: unique constraint is on (user_game_id, platform_id, storefront_id)
     existing = session.exec(
         select(UserGamePlatform).where(
             UserGamePlatform.user_game_id == user_game_id,
+            UserGamePlatform.platform_id == platform_id,
             UserGamePlatform.storefront_id == storefront_id,
-            UserGamePlatform.store_game_id == external_id,
         )
     ).first()
 
@@ -497,22 +518,33 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> Dict[s
 def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
     """Check if all job items are processed and update job status.
 
+    A job is considered complete only when ALL items are in terminal states:
+    - COMPLETED
+    - SKIPPED
+    - FAILED
+
+    PENDING_REVIEW items block completion - user must resolve them first.
+
     Also updates last_synced_at for SYNC jobs when complete.
 
     Returns:
         True if job was marked complete, False otherwise
     """
-    # Count items still pending or processing
-    pending_count = session.exec(
+    # Count items that are NOT in terminal state (still need work)
+    non_terminal_count = session.exec(
         select(func.count())
         .select_from(JobItem)
         .where(
             JobItem.job_id == job_id,
-            col(JobItem.status).in_([JobItemStatus.PENDING, JobItemStatus.PROCESSING])
+            col(JobItem.status).in_([
+                JobItemStatus.PENDING,
+                JobItemStatus.PROCESSING,
+                JobItemStatus.PENDING_REVIEW,  # PENDING_REVIEW blocks completion
+            ])
         )
     ).one()
 
-    if pending_count > 0:
+    if non_terminal_count > 0:
         return False
 
     # All items processed - update job

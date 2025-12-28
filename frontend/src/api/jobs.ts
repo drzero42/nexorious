@@ -17,6 +17,9 @@ import type {
   PendingReviewCountResponse,
   JobItemDetail,
   RetryFailedResponse,
+  JobItemSummary,
+  RecentJobDetail,
+  RecentJobsResponse,
 } from '@/types';
 
 // ============================================================================
@@ -88,6 +91,7 @@ interface JobItemApiResponse {
   result_igdb_id: number | null;
   created_at: string;
   processed_at: string | null;
+  igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
 }
 
 interface JobItemListApiResponse {
@@ -114,6 +118,31 @@ interface RetryFailedApiResponse {
   success: boolean;
   message: string;
   retried_count: number;
+}
+
+interface JobItemSummaryApiResponse {
+  source_title: string;
+  result_game_title: string | null;
+  result_igdb_id: number | null;
+  error_message: string | null;
+  is_new_addition: boolean;
+}
+
+interface RecentJobDetailApiResponse {
+  id: string;
+  created_at: string;
+  completed_at: string | null;
+  total_items: number;
+  completed_count: number;
+  skipped_count: number;
+  failed_count: number;
+  completed_items: JobItemSummaryApiResponse[];
+  skipped_items: JobItemSummaryApiResponse[];
+  failed_items: JobItemSummaryApiResponse[];
+}
+
+interface RecentJobsApiResponse {
+  jobs: RecentJobDetailApiResponse[];
 }
 
 // ============================================================================
@@ -165,6 +194,7 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     resultIgdbId: apiItem.result_igdb_id,
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
+    igdbCandidatesJson: apiItem.igdb_candidates_json,
   };
 }
 
@@ -176,6 +206,31 @@ function transformJobItemDetail(apiItem: JobItemDetailApiResponse): JobItemDetai
     igdbCandidatesJson: apiItem.igdb_candidates_json,
     resolvedIgdbId: apiItem.resolved_igdb_id,
     resolvedAt: apiItem.resolved_at,
+  };
+}
+
+function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary {
+  return {
+    sourceTitle: api.source_title,
+    resultGameTitle: api.result_game_title,
+    resultIgdbId: api.result_igdb_id,
+    errorMessage: api.error_message,
+    isNewAddition: api.is_new_addition,
+  };
+}
+
+function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
+  return {
+    id: api.id,
+    createdAt: api.created_at,
+    completedAt: api.completed_at,
+    totalItems: api.total_items,
+    completedCount: api.completed_count,
+    skippedCount: api.skipped_count,
+    failedCount: api.failed_count,
+    completedItems: api.completed_items.map(transformJobItemSummary),
+    skippedItems: api.skipped_items.map(transformJobItemSummary),
+    failedItems: api.failed_items.map(transformJobItemSummary),
   };
 }
 
@@ -341,4 +396,16 @@ export async function retryFailedItems(jobId: string): Promise<RetryFailedRespon
 export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
   const response = await api.post<JobItemDetailApiResponse>(`/job-items/${itemId}/retry`);
   return transformJobItemDetail(response);
+}
+
+/**
+ * Get recent completed jobs for a specific source with item details.
+ */
+export async function getRecentJobs(source: string, limit: number = 5): Promise<RecentJobsResponse> {
+  const response = await api.get<RecentJobsApiResponse>(`/jobs/recent/${source}`, {
+    params: { limit },
+  });
+  return {
+    jobs: response.jobs.map(transformRecentJob),
+  };
 }

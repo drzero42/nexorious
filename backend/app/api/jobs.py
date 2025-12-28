@@ -11,6 +11,7 @@ from sqlalchemy import update as sa_update
 from sqlmodel import select as sql_select
 from typing import Annotated, Optional
 from datetime import datetime, timezone, timedelta
+import json
 import logging
 
 from ..core.database import get_session
@@ -34,6 +35,9 @@ from ..schemas.job import (
     JobType,
     JobSource,
     JobStatus,
+    JobItemSummary,
+    RecentJobDetail,
+    RecentJobsResponse,
 )
 from ..schemas.job_item import JobItemListResponse, JobItemResponse
 from ..schemas.import_schemas import JobsSummaryResponse
@@ -258,6 +262,108 @@ async def get_active_job(
         return _job_to_response(recent_job, session)
 
     return None
+
+
+@router.get("/recent/{source}", response_model=RecentJobsResponse)
+async def get_recent_jobs(
+    source: str,
+    limit: int = Query(default=5, ge=1, le=20),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get recent completed sync jobs for a platform with item details.
+
+    Returns the most recent completed jobs with their items grouped by status.
+    """
+    # Map source string to enum
+    try:
+        job_source = BackgroundJobSource(source)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid source: {source}")
+
+    # Fetch recent completed jobs
+    jobs = session.exec(
+        select(Job)
+        .where(
+            Job.user_id == current_user.id,
+            Job.source == job_source,
+            Job.job_type == BackgroundJobType.SYNC,
+            Job.status == BackgroundJobStatus.COMPLETED,
+        )
+        .order_by(col(Job.completed_at).desc())
+        .limit(limit)
+    ).all()
+
+    result = []
+    for job in jobs:
+        # Fetch items grouped by status
+        completed_items = session.exec(
+            select(JobItem)
+            .where(JobItem.job_id == job.id, JobItem.status == JobItemStatus.COMPLETED)
+        ).all()
+
+        skipped_items = session.exec(
+            select(JobItem)
+            .where(JobItem.job_id == job.id, JobItem.status == JobItemStatus.SKIPPED)
+        ).all()
+
+        failed_items = session.exec(
+            select(JobItem)
+            .where(JobItem.job_id == job.id, JobItem.status == JobItemStatus.FAILED)
+        ).all()
+
+        result.append(RecentJobDetail(
+            id=job.id,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+            total_items=job.total_items,
+            completed_count=len(completed_items),
+            skipped_count=len(skipped_items),
+            failed_count=len(failed_items),
+            completed_items=[
+                JobItemSummary(
+                    source_title=item.source_title,
+                    result_game_title=_get_result_game_title(item),
+                    result_igdb_id=item.resolved_igdb_id,
+                    is_new_addition=_check_is_new_addition(item),
+                )
+                for item in completed_items
+            ],
+            skipped_items=[
+                JobItemSummary(source_title=item.source_title)
+                for item in skipped_items
+            ],
+            failed_items=[
+                JobItemSummary(
+                    source_title=item.source_title,
+                    error_message=item.error_message,
+                )
+                for item in failed_items
+            ],
+        ))
+
+    return RecentJobsResponse(jobs=result)
+
+
+def _get_result_game_title(item: JobItem) -> Optional[str]:
+    """Extract game title from result JSON."""
+    try:
+        result = json.loads(item.result_json) if item.result_json else {}
+        return result.get("igdb_title") or result.get("game_title")
+    except json.JSONDecodeError:
+        return None
+
+
+def _check_is_new_addition(item: JobItem) -> bool:
+    """Check if the item was a new addition vs already in library."""
+    try:
+        result = json.loads(item.result_json) if item.result_json else {}
+        # Check result type from processing
+        result_type = result.get("result_type", "")
+        return result_type in ("auto_imported", "imported_new", "linked_new")
+    except json.JSONDecodeError:
+        return False
 
 
 @router.get("/{job_id}", response_model=JobResponse)

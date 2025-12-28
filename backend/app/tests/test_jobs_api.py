@@ -1142,6 +1142,229 @@ class TestPendingReviewCount:
 # Delete functionality is provided by DELETE /api/jobs/{job_id} endpoint instead.
 
 
+class TestRecentJobs:
+    """Tests for GET /api/jobs/recent/{source} endpoint."""
+
+    def test_recent_jobs_empty(self, client, auth_headers, test_user: User):
+        """Test recent jobs when no completed jobs exist."""
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["jobs"] == []
+
+    def test_recent_jobs_returns_completed_sync_jobs(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that only completed sync jobs are returned."""
+        # Create a completed sync job
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+            total_items=3,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add items
+        for i, status in enumerate([
+            JobItemStatus.COMPLETED,
+            JobItemStatus.SKIPPED,
+            JobItemStatus.FAILED,
+        ]):
+            item = JobItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                item_key=f"game_{i}",
+                source_title=f"Game {i}",
+                status=status,
+                error_message="Test error" if status == JobItemStatus.FAILED else None,
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["jobs"]) == 1
+        job_data = data["jobs"][0]
+        assert job_data["completed_count"] == 1
+        assert job_data["skipped_count"] == 1
+        assert job_data["failed_count"] == 1
+        assert len(job_data["completed_items"]) == 1
+        assert len(job_data["skipped_items"]) == 1
+        assert len(job_data["failed_items"]) == 1
+        assert job_data["failed_items"][0]["error_message"] == "Test error"
+
+    def test_recent_jobs_excludes_non_sync_jobs(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that import/export jobs are not returned."""
+        # Create an import job (should be excluded)
+        import_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+        )
+        session.add(import_job)
+        session.commit()
+
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["jobs"] == []
+
+    def test_recent_jobs_excludes_non_completed_jobs(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that processing/failed jobs are not returned."""
+        # Create a processing sync job
+        processing_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(processing_job)
+        session.commit()
+
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["jobs"] == []
+
+    def test_recent_jobs_filters_by_source(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that jobs are filtered by source."""
+        # Create Steam sync job
+        steam_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+        )
+        # Create GOG sync job
+        gog_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.GOG,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+        )
+        session.add_all([steam_job, gog_job])
+        session.commit()
+
+        # Query Steam jobs
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["jobs"]) == 1
+        assert data["jobs"][0]["id"] == steam_job.id
+
+    def test_recent_jobs_respects_limit(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that limit parameter is respected."""
+        # Create 10 sync jobs
+        for i in range(10):
+            job = Job(
+                user_id=test_user.id,
+                job_type=BackgroundJobType.SYNC,
+                source=BackgroundJobSource.STEAM,
+                status=BackgroundJobStatus.COMPLETED,
+                completed_at=datetime.now(timezone.utc),
+            )
+            session.add(job)
+        session.commit()
+
+        # Query with limit=3
+        response = client.get("/api/jobs/recent/steam?limit=3", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["jobs"]) == 3
+
+    def test_recent_jobs_invalid_source(self, client, auth_headers):
+        """Test that invalid source returns 400 error."""
+        response = client.get("/api/jobs/recent/invalid", headers=auth_headers)
+        assert response.status_code == 400
+        assert "Invalid source" in response.json()["error"]
+
+    def test_recent_jobs_excludes_other_users(
+        self, client, auth_headers, test_user: User, admin_user: User, session: Session
+    ):
+        """Test that only current user's jobs are returned."""
+        # Create job for admin user
+        admin_job = Job(
+            user_id=admin_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+        )
+        session.add(admin_job)
+        session.commit()
+
+        # Current user should see no jobs
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["jobs"] == []
+
+    def test_recent_jobs_no_auth(self, client):
+        """Test that authentication is required."""
+        response = client.get("/api/jobs/recent/steam")
+        assert response.status_code == 403
+
+    def test_recent_jobs_item_details(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that item details are properly populated."""
+        import json as json_module
+
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+            total_items=1,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add completed item with result_json
+        item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_1",
+            source_title="Test Game",
+            status=JobItemStatus.COMPLETED,
+            resolved_igdb_id=12345,
+            result_json=json_module.dumps({
+                "igdb_title": "Test Game IGDB",
+                "result_type": "auto_imported",
+            }),
+        )
+        session.add(item)
+        session.commit()
+
+        response = client.get("/api/jobs/recent/steam", headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["jobs"]) == 1
+        completed_items = data["jobs"][0]["completed_items"]
+        assert len(completed_items) == 1
+        assert completed_items[0]["source_title"] == "Test Game"
+        assert completed_items[0]["result_game_title"] == "Test Game IGDB"
+        assert completed_items[0]["result_igdb_id"] == 12345
+        assert completed_items[0]["is_new_addition"] is True
+
+
 class TestRetryFailedItems:
     """Tests for POST /api/jobs/{job_id}/retry-failed endpoint."""
 
