@@ -15,7 +15,7 @@ import {
   useCancelJob,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard } from '@/components/sync/steam-connection-card';
+import { SteamConnectionCard, RecentActivity } from '@/components/sync';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -405,37 +405,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       </Card>
 
       {/* Recent Sync Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Recent Activity
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {config.lastSyncedAt ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div>
-                  <div className="font-medium">Last Sync</div>
-                  <div className="text-sm text-muted-foreground">
-                    {new Date(config.lastSyncedAt).toLocaleString()}
-                  </div>
-                </div>
-                <Badge variant="outline">{formatLastSync(config.lastSyncedAt)}</Badge>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-              <Clock className="h-12 w-12 mb-4 opacity-50" />
-              <p>No sync history yet</p>
-              <p className="text-sm mt-1">
-                Start your first sync to see activity here
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <RecentActivity platform={platform} />
     </div>
   );
 }

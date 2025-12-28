@@ -83,6 +83,7 @@ export {
   useCancelJob,
   useDeleteJob,
   usePendingReviewCount,
+  useRecentJobs,
   useResolveJobItem,
   useSkipJobItem,
   useRetryFailedItems,
