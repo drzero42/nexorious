@@ -441,31 +441,31 @@ class TestUserGamePlatformsEndpoints:
         # Add platform association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
-        
+
         response = client.get(f"/api/user-games/{test_user_game.id}/platforms", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert len(data) == 1
-        assert data[0]["platform_id"] == str(test_platform.id)
+        assert data[0]["platform_id"] == test_platform.name
         assert data[0]["is_available"] is True
     
     def test_create_user_game_platform(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str]):
         """Test creating a user game platform association."""
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "steam_12345",
             "store_url": "https://store.example.com/game/12345",
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        
+
         assert_api_success(response, 201)
         data = response.json()
         # Verify the response is a UserGameResponse with the new platform added
@@ -473,8 +473,8 @@ class TestUserGamePlatformsEndpoints:
         assert "platforms" in data
         assert len(data["platforms"]) == 1
         platform = data["platforms"][0]
-        assert platform["platform_id"] == str(test_platform.id)
-        assert platform["storefront_id"] == str(test_storefront.id)
+        assert platform["platform_id"] == test_platform.name
+        assert platform["storefront_id"] == test_storefront.name
         assert platform["store_game_id"] == "steam_12345"
         assert platform["store_url"] == "https://store.example.com/game/12345"
         assert platform["is_available"] is True
@@ -482,11 +482,11 @@ class TestUserGamePlatformsEndpoints:
     def test_create_user_game_platform_without_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str]):
         """Test creating a user game platform association without storefront."""
         platform_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        
+
         assert_api_success(response, 201)
         data = response.json()
         # Verify the response is a UserGameResponse with the new platform added
@@ -494,7 +494,7 @@ class TestUserGamePlatformsEndpoints:
         assert "platforms" in data
         assert len(data["platforms"]) == 1
         platform = data["platforms"][0]
-        assert platform["platform_id"] == str(test_platform.id)
+        assert platform["platform_id"] == test_platform.name
         assert platform["storefront_id"] is None
     
     def test_create_user_game_platform_duplicate_platform_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str], session: Session):
@@ -502,21 +502,21 @@ class TestUserGamePlatformsEndpoints:
         # Create existing association with specific storefront
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront.id,
+            platform_id=test_platform.name,
+            storefront_id=test_storefront.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
-        
+
         # Try to create the same platform+storefront combination
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        
+
         assert_api_error(response, 409, "already exists")
     
     def test_delete_user_game_platform(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
@@ -524,15 +524,15 @@ class TestUserGamePlatformsEndpoints:
         # Create association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Platform association deleted successfully"
@@ -546,8 +546,8 @@ class TestUpdatePlatformAssociation:
         # Create initial association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront.id,
+            platform_id=test_platform.name,
+            storefront_id=test_storefront.name,
             store_game_id="old_id",
             store_url="https://old.example.com",
             is_available=True
@@ -555,21 +555,21 @@ class TestUpdatePlatformAssociation:
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         # Update the association
         update_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront_2.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront_2.name,
             "store_game_id": "new_id",
             "store_url": "https://new.example.com",
             "is_available": False
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["storefront_id"] == str(test_storefront_2.id)
+        assert data["platform_id"] == test_platform.name
+        assert data["storefront_id"] == test_storefront_2.name
         assert data["store_game_id"] == "new_id"
         assert data["store_url"] == "https://new.example.com/"
         assert data["is_available"] is False
@@ -579,14 +579,14 @@ class TestUpdatePlatformAssociation:
         # Create two associations
         association1 = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront.id,
+            platform_id=test_platform.name,
+            storefront_id=test_storefront.name,
             is_available=True
         )
         association2 = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront_2.id,
+            platform_id=test_platform.name,
+            storefront_id=test_storefront_2.name,
             is_available=True
         )
         session.add(association1)
@@ -594,25 +594,25 @@ class TestUpdatePlatformAssociation:
         session.commit()
         session.refresh(association1)
         session.refresh(association2)
-        
+
         # Try to update association1 to have the same platform+storefront as association2
         update_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront_2.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront_2.name,
             "is_available": True
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{association1.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_error(response, 409, "already exists")
     
     def test_update_platform_association_not_found(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str]):
         """Test update with non-existent platform association."""
         update_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": True
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/non-existent-id", json=update_data, headers=auth_headers)
-        
+
         assert_api_error(response, 404, "Platform association not found")
     
     def test_update_platform_association_invalid_platform(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
@@ -620,19 +620,19 @@ class TestUpdatePlatformAssociation:
         # Create association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         update_data = {
             "platform_id": "non-existent-platform",
             "is_available": True
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_error(response, 404, "Platform not found")
     
     def test_update_platform_association_invalid_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
@@ -640,20 +640,20 @@ class TestUpdatePlatformAssociation:
         # Create association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         update_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "storefront_id": "non-existent-storefront",
             "is_available": True
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_error(response, 404, "Storefront not found")
 
     def test_update_platform_association_without_auth(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, session: Session):
@@ -661,19 +661,19 @@ class TestUpdatePlatformAssociation:
         # Create association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         update_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": False
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data)
-        
+
         assert_api_error(response, 403, "Not authenticated")
     
     def test_update_platform_association_wrong_user(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, session: Session):
@@ -681,23 +681,23 @@ class TestUpdatePlatformAssociation:
         # Create association
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
         session.refresh(platform_association)
-        
+
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
         other_headers = register_and_login_user(client, other_user_data)
-        
+
         update_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": False
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=other_headers)
-        
+
         assert_api_error(response, 404, "Platform association not found")
 
 
@@ -708,89 +708,89 @@ class TestUserGamePlatformMultipleStorefronts:
         """Test adding multiple storefronts for the same platform."""
         # Add first storefront for platform
         platform_data_1 = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "steam_123",
             "is_available": True
         }
         response1 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_1, headers=auth_headers)
         assert_api_success(response1, 201)
-        
+
         # Add second storefront for same platform
         platform_data_2 = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront_2.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront_2.name,
             "store_game_id": "epic_456",
             "is_available": True
         }
         response2 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_2, headers=auth_headers)
         assert_api_success(response2, 201)
-        
+
         # Verify both associations exist
         response = client.get(f"/api/user-games/{test_user_game.id}/platforms", headers=auth_headers)
         assert_api_success(response, 200)
         platforms = response.json()
         assert len(platforms) == 2
-        
+
         # Check that we have both storefronts for the same platform
         storefront_ids = {p["storefront_id"] for p in platforms}
-        assert str(test_storefront.id) in storefront_ids
-        assert str(test_storefront_2.id) in storefront_ids
-        
+        assert test_storefront.name in storefront_ids
+        assert test_storefront_2.name in storefront_ids
+
         # Both should be for the same platform
         platform_ids = {p["platform_id"] for p in platforms}
         assert len(platform_ids) == 1
-        assert str(test_platform.id) in platform_ids
+        assert test_platform.name in platform_ids
     
     def test_platform_with_null_and_specific_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str]):
         """Test platform with NULL storefront and specific storefront."""
         # Add platform without storefront (NULL)
         platform_data_1 = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": True
         }
         response1 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_1, headers=auth_headers)
         assert_api_success(response1, 201)
-        
+
         # Add same platform with specific storefront
         platform_data_2 = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "is_available": True
         }
         response2 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_2, headers=auth_headers)
         assert_api_success(response2, 201)
-        
+
         # Verify both associations exist
         response = client.get(f"/api/user-games/{test_user_game.id}/platforms", headers=auth_headers)
         assert_api_success(response, 200)
         platforms = response.json()
         assert len(platforms) == 2
-        
+
         # One should have null storefront, one should have specific storefront
         storefront_ids = [p["storefront_id"] for p in platforms]
         assert None in storefront_ids
-        assert str(test_storefront.id) in storefront_ids
+        assert test_storefront.name in storefront_ids
     
     def test_duplicate_null_storefront_prevented(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str], session: Session):
         """Test that duplicate NULL storefront combinations are prevented."""
         # Create existing association with NULL storefront
         platform_association = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
+            platform_id=test_platform.name,
             storefront_id=None,
             is_available=True
         )
         session.add(platform_association)
         session.commit()
-        
+
         # Try to create another association with same platform and NULL storefront
         platform_data = {
-            "platform_id": str(test_platform.id),
+            "platform_id": test_platform.name,
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        
+
         assert_api_error(response, 409, "already exists")
 
 
@@ -1103,12 +1103,12 @@ class TestAutomaticOwnershipStatusManagement:
         test_user_game.ownership_status = "owned"  # type: ignore[assignment]
         session.add(test_user_game)
         session.commit()
-        
+
         # Add a platform association
         platform_assoc = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront.id
+            platform_id=test_platform.name,
+            storefront_id=test_storefront.name
         )
         session.add(platform_assoc)
         session.commit()
@@ -1125,64 +1125,64 @@ class TestAutomaticOwnershipStatusManagement:
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "no_longer_owned"
     
-    def test_no_longer_owned_to_owned_when_platform_added(self, 
-                                                          client: TestClient, 
-                                                          test_user_game: UserGame, 
-                                                          test_platform: Platform, 
+    def test_no_longer_owned_to_owned_when_platform_added(self,
+                                                          client: TestClient,
+                                                          test_user_game: UserGame,
+                                                          test_platform: Platform,
                                                           test_storefront: Storefront,
-                                                          auth_headers: Dict[str, str], 
+                                                          auth_headers: Dict[str, str],
                                                           session: Session):
         """Test that adding a platform changes ownership status from NO_LONGER_OWNED to OWNED."""
         # Set the user game as NO_LONGER_OWNED with no platforms
         test_user_game.ownership_status = "no_longer_owned"  # type: ignore[assignment]
         session.add(test_user_game)
         session.commit()
-        
+
         # Verify no platforms exist
         existing_platforms = session.exec(
             select(UserGamePlatform).where(UserGamePlatform.user_game_id == test_user_game.id)
         ).all()
         assert len(existing_platforms) == 0
-        
+
         # Add a platform association
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "test-store-id",
             "is_available": True
         }
-        
+
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
         assert_api_success(response, 201)
-        
+
         # Verify ownership status changed to OWNED
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "owned"
     
-    def test_owned_to_no_longer_owned_multiple_platforms_removed(self, 
-                                                                client: TestClient, 
-                                                                test_user_game: UserGame, 
-                                                                test_platform: Platform, 
+    def test_owned_to_no_longer_owned_multiple_platforms_removed(self,
+                                                                client: TestClient,
+                                                                test_user_game: UserGame,
+                                                                test_platform: Platform,
                                                                 test_storefront: Storefront,
                                                                 test_storefront_2: Storefront,
-                                                                auth_headers: Dict[str, str], 
+                                                                auth_headers: Dict[str, str],
                                                                 session: Session):
         """Test that only removing the LAST platform triggers ownership status change."""
         # Ensure the user game starts as OWNED
         test_user_game.ownership_status = "owned"  # type: ignore[assignment]
         session.add(test_user_game)
         session.commit()
-        
+
         # Add two platform associations (same platform, different storefronts)
         platform_assoc_1 = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront.id
+            platform_id=test_platform.name,
+            storefront_id=test_storefront.name
         )
         platform_assoc_2 = UserGamePlatform(
             user_game_id=test_user_game.id,
-            platform_id=test_platform.id,
-            storefront_id=test_storefront_2.id
+            platform_id=test_platform.name,
+            storefront_id=test_storefront_2.name
         )
         session.add(platform_assoc_1)
         session.add(platform_assoc_2)
@@ -1204,12 +1204,12 @@ class TestAutomaticOwnershipStatusManagement:
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "no_longer_owned"
     
-    def test_borrowed_status_unchanged_when_platforms_modified(self, 
-                                                             client: TestClient, 
-                                                             test_user_game: UserGame, 
-                                                             test_platform: Platform, 
+    def test_borrowed_status_unchanged_when_platforms_modified(self,
+                                                             client: TestClient,
+                                                             test_user_game: UserGame,
+                                                             test_platform: Platform,
                                                              test_storefront: Storefront,
-                                                             auth_headers: Dict[str, str], 
+                                                             auth_headers: Dict[str, str],
                                                              session: Session):
         """Test that non-OWNED/NO_LONGER_OWNED statuses are not affected by platform changes."""
         # Set the user game as BORROWED
@@ -1219,8 +1219,8 @@ class TestAutomaticOwnershipStatusManagement:
 
         # Add a platform association
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "test-store-id",
             "is_available": True
         }
@@ -1246,12 +1246,12 @@ class TestAutomaticOwnershipStatusManagement:
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "borrowed"
     
-    def test_subscription_status_unchanged_when_platforms_modified(self, 
-                                                                 client: TestClient, 
-                                                                 test_user_game: UserGame, 
-                                                                 test_platform: Platform, 
+    def test_subscription_status_unchanged_when_platforms_modified(self,
+                                                                 client: TestClient,
+                                                                 test_user_game: UserGame,
+                                                                 test_platform: Platform,
                                                                  test_storefront: Storefront,
-                                                                 auth_headers: Dict[str, str], 
+                                                                 auth_headers: Dict[str, str],
                                                                  session: Session):
         """Test that SUBSCRIPTION status is not affected by platform changes."""
         # Set the user game as SUBSCRIPTION
@@ -1261,12 +1261,12 @@ class TestAutomaticOwnershipStatusManagement:
 
         # Add a platform association
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "test-store-id",
             "is_available": True
         }
-        
+
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
         assert_api_success(response, 201)
         
@@ -1288,12 +1288,12 @@ class TestAutomaticOwnershipStatusManagement:
         session.refresh(test_user_game)
         assert test_user_game.ownership_status == "subscription"
     
-    def test_rented_status_unchanged_when_platforms_modified(self, 
-                                                           client: TestClient, 
-                                                           test_user_game: UserGame, 
-                                                           test_platform: Platform, 
+    def test_rented_status_unchanged_when_platforms_modified(self,
+                                                           client: TestClient,
+                                                           test_user_game: UserGame,
+                                                           test_platform: Platform,
                                                            test_storefront: Storefront,
-                                                           auth_headers: Dict[str, str], 
+                                                           auth_headers: Dict[str, str],
                                                            session: Session):
         """Test that RENTED status is not affected by platform changes."""
         # Set the user game as RENTED
@@ -1303,8 +1303,8 @@ class TestAutomaticOwnershipStatusManagement:
 
         # Add a platform association
         platform_data = {
-            "platform_id": str(test_platform.id),
-            "storefront_id": str(test_storefront.id),
+            "platform_id": test_platform.name,
+            "storefront_id": test_storefront.name,
             "store_game_id": "test-store-id",
             "is_available": True
         }

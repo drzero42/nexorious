@@ -804,19 +804,23 @@ async def add_game_to_collection(
     if user_game_data.platforms:
         logger.info(f"Adding {len(user_game_data.platforms)} platforms to user game")
         for platform_data in user_game_data.platforms:
-            # Validate platform exists
-            platform = session.get(Platform, platform_data.platform_id)
+            # Validate platform exists (lookup by name since FK references name)
+            platform = session.exec(
+                select(Platform).where(Platform.name == platform_data.platform_id)
+            ).first()
             if not platform:
                 logger.warning(f"Platform not found: {platform_data.platform_id}")
                 continue
-            
-            # Validate storefront exists if provided
+
+            # Validate storefront exists if provided (lookup by name since FK references name)
             if platform_data.storefront_id:
-                storefront = session.get(Storefront, platform_data.storefront_id)
+                storefront = session.exec(
+                    select(Storefront).where(Storefront.name == platform_data.storefront_id)
+                ).first()
                 if not storefront:
                     logger.warning(f"Storefront not found: {platform_data.storefront_id}")
                     continue
-            
+
             # Create complete platform association
             platform_assoc = UserGamePlatform(
                 user_game_id=new_user_game.id,
@@ -993,13 +997,17 @@ async def get_user_game_platforms(
         .where(UserGamePlatform.user_game_id == user_game_id)
     ).all()
     
-    # Manually load relationships for proper serialization
+    # Manually load relationships for proper serialization (lookup by name since FK references name)
     for platform in platforms:
         if platform.platform_id:
-            platform.platform = session.get(Platform, platform.platform_id)
+            platform.platform = session.exec(
+                select(Platform).where(Platform.name == platform.platform_id)
+            ).first()
         if platform.storefront_id:
-            platform.storefront = session.get(Storefront, platform.storefront_id)
-    
+            platform.storefront = session.exec(
+                select(Storefront).where(Storefront.name == platform.storefront_id)
+            ).first()
+
     return platforms
 
 
@@ -1028,18 +1036,22 @@ async def add_platform_to_user_game(
             detail="User game not found"
         )
     
-    # Check if platform exists
-    platform = session.get(Platform, platform_data.platform_id)
+    # Check if platform exists (lookup by name since FK references name)
+    platform = session.exec(
+        select(Platform).where(Platform.name == platform_data.platform_id)
+    ).first()
     if not platform:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Check if storefront exists (if provided)
+
+    # Check if storefront exists (if provided) - lookup by name since FK references name
     storefront: Optional[Storefront] = None
     if platform_data.storefront_id:
-        storefront = session.get(Storefront, platform_data.storefront_id)
+        storefront = session.exec(
+            select(Storefront).where(Storefront.name == platform_data.storefront_id)
+        ).first()
         if not storefront:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1077,7 +1089,7 @@ async def add_platform_to_user_game(
             status_code=status.HTTP_409_CONFLICT,
             detail="Platform and storefront association already exists"
         )
-    
+
     new_platform = UserGamePlatform(
         user_game_id=user_game_id,
         platform_id=platform_data.platform_id,
@@ -1135,19 +1147,23 @@ async def update_platform_association(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform association not found"
         )
-    
-    # Check if platform exists
-    platform = session.get(Platform, platform_data.platform_id)
+
+    # Check if platform exists (lookup by name since FK references name)
+    platform = session.exec(
+        select(Platform).where(Platform.name == platform_data.platform_id)
+    ).first()
     if not platform:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Check if storefront exists (if provided)
+
+    # Check if storefront exists (if provided) - lookup by name since FK references name
     storefront: Optional[Storefront] = None
     if platform_data.storefront_id:
-        storefront = session.get(Storefront, platform_data.storefront_id)
+        storefront = session.exec(
+            select(Storefront).where(Storefront.name == platform_data.storefront_id)
+        ).first()
         if not storefront:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1169,9 +1185,13 @@ async def update_platform_association(
         ).first()
 
         if existing_platform:
-            storefront_name = storefront.name if storefront else "None" 
-            old_platform = session.get(Platform, platform_assoc.platform_id)
-            old_storefront = session.get(Storefront, platform_assoc.storefront_id) if platform_assoc.storefront_id else None
+            storefront_name = storefront.name if storefront else "None"
+            old_platform = session.exec(
+                select(Platform).where(Platform.name == platform_assoc.platform_id)
+            ).first()
+            old_storefront = session.exec(
+                select(Storefront).where(Storefront.name == platform_assoc.storefront_id)
+            ).first() if platform_assoc.storefront_id else None
             logger.error(
                 f"409 CONFLICT - Platform association update failed due to existing combination. "
                 f"User: {current_user.username} ({current_user.id}) | "
@@ -1200,12 +1220,16 @@ async def update_platform_association(
     
     session.commit()
     session.refresh(platform_assoc)
-    
-    # Load relationships for proper serialization
-    platform_assoc.platform = session.get(Platform, platform_assoc.platform_id)
+
+    # Load relationships for proper serialization (lookup by name since FK references name)
+    platform_assoc.platform = session.exec(
+        select(Platform).where(Platform.name == platform_assoc.platform_id)
+    ).first()
     if platform_assoc.storefront_id:
-        platform_assoc.storefront = session.get(Storefront, platform_assoc.storefront_id)
-    
+        platform_assoc.storefront = session.exec(
+            select(Storefront).where(Storefront.name == platform_assoc.storefront_id)
+        ).first()
+
     return platform_assoc
 
 

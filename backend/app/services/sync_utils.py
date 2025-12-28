@@ -99,8 +99,7 @@ def is_steam_game_synced(session: Session, user_id: str, igdb_id: int) -> bool:
     """
     Check if a Steam game is synced using the generic sync function.
 
-    This is a convenience wrapper around is_game_synced() that dynamically
-    looks up the Steam platform and storefront IDs.
+    This is a convenience wrapper around is_game_synced() for Steam games.
 
     Args:
         session: Database session
@@ -110,19 +109,8 @@ def is_steam_game_synced(session: Session, user_id: str, igdb_id: int) -> bool:
     Returns:
         True if the Steam game is synced, False otherwise
     """
-    try:
-        # Dynamically look up platform and storefront IDs
-        platform_id = get_platform_id("pc-windows", session)
-        storefront_id = get_storefront_id("steam", session)
-
-        if not platform_id or not storefront_id:
-            logger.warning("Could not find platform or storefront IDs for Steam sync check")
-            return False
-
-        return is_game_synced(session, user_id, igdb_id, platform_id, storefront_id)
-    except Exception as e:
-        logger.error(f"Error in Steam game sync check: {e}")
-        return False
+    # Use slugs directly - FK now references name columns
+    return is_game_synced(session, user_id, igdb_id, "pc-windows", "steam")
 
 
 def get_platform_id(platform_name: str, session: Session) -> Optional[str]:
