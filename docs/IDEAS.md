@@ -34,6 +34,3 @@ We have support for websocket, but actually use polling. Should we remove websoc
 ## Remove dependent relationships from docker-compose
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
-
-## Sync does not need an enabled/disabled state
-Sync frequency is set to manual is fine for "disabled".
