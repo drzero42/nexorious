@@ -23,7 +23,6 @@ export interface SyncConfig {
   platform: SyncPlatform;
   frequency: SyncFrequency;
   autoAdd: boolean;
-  enabled: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -33,7 +32,6 @@ export interface SyncConfig {
 export interface SyncConfigUpdateData {
   frequency?: SyncFrequency;
   autoAdd?: boolean;
-  enabled?: boolean;
 }
 
 export interface SyncStatus {
