@@ -123,7 +123,6 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error processing JobItem {job_item_id}: {e}", exc_info=True)
-        session.close()
         return await _update_job_item_error(job_item_id, str(e)[:500])
     finally:
         session.close()
