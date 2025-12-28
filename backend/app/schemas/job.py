@@ -164,3 +164,40 @@ class RetryFailedResponse(BaseModel):
     success: bool
     message: str
     retried_count: int
+
+
+class JobItemSummary(BaseModel):
+    """Summary of a job item for recent activity display."""
+
+    source_title: str
+    result_game_title: Optional[str] = None
+    result_igdb_id: Optional[int] = None
+    error_message: Optional[str] = None
+    is_new_addition: bool = False  # True if game was newly added, False if already in library
+
+
+class RecentJobDetail(BaseModel):
+    """Detailed job info for recent activity."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    completed_at: Optional[datetime]
+    total_items: int
+
+    # Item counts
+    completed_count: int
+    skipped_count: int
+    failed_count: int
+
+    # Item details by status
+    completed_items: List[JobItemSummary]
+    skipped_items: List[JobItemSummary]
+    failed_items: List[JobItemSummary]
+
+
+class RecentJobsResponse(BaseModel):
+    """Response for recent completed jobs."""
+
+    jobs: List[RecentJobDetail]
