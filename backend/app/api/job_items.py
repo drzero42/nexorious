@@ -15,6 +15,8 @@ from ..schemas.job_item import (
     SkipJobItemRequest,
 )
 from ..worker.tasks.import_export.process_import_item import enqueue_import_task
+from ..worker.queues import enqueue_task
+from ..worker.tasks.sync.process_item import process_sync_item
 
 router = APIRouter(prefix="/job-items", tags=["job-items"])
 
@@ -39,7 +41,11 @@ async def resolve_job_item(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Resolve a job item to an IGDB game."""
+    """Resolve a job item to an IGDB game.
+
+    Sets the resolved_igdb_id and re-queues the worker task to import the game.
+    The worker's Flow B will use the resolved_igdb_id for direct import.
+    """
     item = session.get(JobItem, item_id)
     if not item or item.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Job item not found")
@@ -47,11 +53,19 @@ async def resolve_job_item(
     if item.status != JobItemStatus.PENDING_REVIEW:
         raise HTTPException(status_code=400, detail="Item is not pending review")
 
+    # Get parent job for priority
+    job = session.get(Job, item.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Parent job not found")
+
+    # Set resolved IGDB ID and reset to PENDING for worker processing
     item.resolved_igdb_id = request.igdb_id
-    item.status = JobItemStatus.COMPLETED
-    item.resolved_at = datetime.now(timezone.utc)
+    item.status = JobItemStatus.PENDING
     session.commit()
     session.refresh(item)
+
+    # Re-queue worker task - it will use Flow B with resolved_igdb_id
+    await enqueue_task(process_sync_item, str(item.id), priority=job.priority)
 
     return JobItemDetailResponse.model_validate(item)
 
