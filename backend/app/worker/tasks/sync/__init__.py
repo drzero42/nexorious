@@ -1,9 +1,15 @@
-"""Sync tasks for platform library synchronization."""
+"""Sync tasks for external game library synchronization."""
 
-from app.worker.tasks.sync.steam import sync_steam_library
-from app.worker.tasks.sync.check_pending import check_pending_syncs
+from .dispatch import dispatch_sync_items
+from .process_item import process_sync_item
+from .check_pending import check_pending_syncs
+from .adapters import ExternalGame, SyncSourceAdapter, get_sync_adapter
 
 __all__ = [
-    "sync_steam_library",
+    "dispatch_sync_items",
+    "process_sync_item",
     "check_pending_syncs",
+    "ExternalGame",
+    "SyncSourceAdapter",
+    "get_sync_adapter",
 ]
