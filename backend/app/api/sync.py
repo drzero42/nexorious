@@ -20,7 +20,7 @@ from ..core.database import get_session
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.user_sync_config import UserSyncConfig, SyncFrequency as ModelSyncFrequency
-from ..models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus
+from ..models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus, BackgroundJobPriority
 from ..models.ignored_external_game import IgnoredExternalGame
 from ..schemas.sync import (
     SyncConfigResponse,
@@ -39,7 +39,7 @@ from ..schemas.ignored_game import (
     IgnoredGameListResponse,
 )
 from ..schemas.common import SuccessResponse
-from ..worker.queues import QUEUE_HIGH
+from ..worker.queues import enqueue_task
 
 router = APIRouter(prefix="/sync", tags=["Sync"])
 logger = logging.getLogger(__name__)
@@ -259,7 +259,7 @@ async def trigger_manual_sync(
         job_type=BackgroundJobType.SYNC,
         source=_platform_to_job_source(platform),
         status=BackgroundJobStatus.PENDING,
-        priority=QUEUE_HIGH,
+        priority=BackgroundJobPriority.HIGH,
     )
     session.add(job)
     session.commit()
@@ -269,9 +269,16 @@ async def trigger_manual_sync(
         f"Created sync job {job.id} for user {current_user.id}, platform {platform}"
     )
 
-    # TODO: In the future, dispatch the actual taskiq task here
-    # For now, we just create the job record
-    # await sync_task.kicker().with_labels(queue=QUEUE_HIGH).kiq(job_id=job.id)
+    # Dispatch the sync dispatch task
+    from ..worker.tasks.sync.dispatch import dispatch_sync_items
+
+    await enqueue_task(
+        dispatch_sync_items,
+        job.id,
+        current_user.id,
+        platform.value,
+        priority=BackgroundJobPriority.HIGH,
+    )
 
     return ManualSyncTriggerResponse(
         message=f"Sync job created for {platform.value}",
