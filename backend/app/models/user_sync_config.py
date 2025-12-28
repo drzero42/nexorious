@@ -50,7 +50,6 @@ class UserSyncConfig(SQLModel, table=True):
         default=False,
         description="If True, matched games are added automatically. If False, queued for review.",
     )
-    enabled: bool = Field(default=False, description="Whether sync is enabled for this platform")
 
     # Tracking
     last_synced_at: Optional[datetime] = Field(
@@ -72,11 +71,10 @@ class UserSyncConfig(SQLModel, table=True):
         Check if this config needs syncing based on frequency and last sync time.
 
         Returns True if:
-        - enabled is True AND
         - frequency is not MANUAL AND
         - (last_synced_at is None OR enough time has passed based on frequency)
         """
-        if not self.enabled or self.frequency == SyncFrequency.MANUAL:
+        if self.frequency == SyncFrequency.MANUAL:
             return False
 
         if self.last_synced_at is None:
