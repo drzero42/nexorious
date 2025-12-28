@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useCallback } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
@@ -13,10 +13,6 @@ import {
   useTriggerSync,
   useJob,
   useCancelJob,
-  useJobItems,
-  useResolveJobItem,
-  useSkipJobItem,
-  useSearchIGDB,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import { SteamConnectionCard } from '@/components/sync/steam-connection-card';
@@ -26,10 +22,9 @@ import {
   SUPPORTED_SYNC_PLATFORMS,
   getPlatformDisplayInfo,
   getSyncFrequencyLabel,
-  JobItemStatus,
 } from '@/types';
-import type { SyncConfigUpdateData, JobItem, IGDBGameCandidate } from '@/types';
-import { JobItemCard, JobProgressCard, JobItemsDetails } from '@/components/jobs';
+import type { SyncConfigUpdateData } from '@/types';
+import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -40,18 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { RefreshCw, Loader2, AlertCircle, Settings, Clock, ArrowLeft, ClipboardCheck, Check, ImageOff } from 'lucide-react';
+import { RefreshCw, Loader2, AlertCircle, Settings, Clock, ArrowLeft } from 'lucide-react';
 
 // Platform icons as SVG paths (matching sync-service-card)
 const PLATFORM_ICONS: Record<SyncPlatform, string> = {
@@ -139,11 +126,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);
   const [localAutoAdd, setLocalAutoAdd] = useState<boolean | null>(null);
 
-  // State for review functionality
-  const [selectedItem, setSelectedItem] = useState<JobItem | null>(null);
-  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-
   // Validate platform - only allow supported platforms
   if (!SUPPORTED_SYNC_PLATFORMS.includes(platform)) {
     notFound();
@@ -167,25 +149,10 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
     enabled: !!status?.activeJobId,
   });
 
-  // Fetch items needing review for the active job
-  const { data: reviewData, isLoading: reviewLoading } = useJobItems(
-    activeJob?.id ?? '',
-    JobItemStatus.PENDING_REVIEW,
-    1,
-    20,
-    { enabled: !!activeJob?.id }
-  );
-  const pendingReviewCount = reviewData?.total ?? 0;
-
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync, isPending: isTriggeringSyncPending } = useTriggerSync();
   const { mutateAsync: cancelJob, isPending: isCancelling } = useCancelJob();
-
-  // Job item mutations
-  const resolveMutation = useResolveJobItem();
-  const skipMutation = useSkipJobItem();
-  const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchIGDB(searchQuery);
 
   const platformInfo = getPlatformDisplayInfo(platform);
   const isLoading = configLoading || statusLoading;
@@ -245,73 +212,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       toast.error(message);
     }
   };
-
-  // Review handlers
-  const handleMatch = useCallback(
-    async (item: JobItem, igdbId: number) => {
-      setProcessingItemId(item.id);
-      try {
-        await resolveMutation.mutateAsync({ itemId: item.id, igdbId });
-        toast.success(`Matched "${item.sourceTitle}" to IGDB`);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to match item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [resolveMutation]
-  );
-
-  const handleSkip = useCallback(
-    async (item: JobItem) => {
-      setProcessingItemId(item.id);
-      try {
-        await skipMutation.mutateAsync({ itemId: item.id });
-        toast.success(`Skipped "${item.sourceTitle}"`);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to skip item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [skipMutation]
-  );
-
-  const handleView = useCallback((item: JobItem) => {
-    setSelectedItem(item);
-  }, []);
-
-  const handleModalSkip = useCallback(async () => {
-    if (!selectedItem) return;
-    setProcessingItemId(selectedItem.id);
-    try {
-      await skipMutation.mutateAsync({ itemId: selectedItem.id });
-      toast.success(`Skipped "${selectedItem.sourceTitle}"`);
-      setSelectedItem(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to skip item');
-    } finally {
-      setProcessingItemId(null);
-    }
-  }, [selectedItem, skipMutation]);
-
-  const handleSearchResultMatch = useCallback(
-    async (igdbId: number) => {
-      if (!selectedItem) return;
-      setProcessingItemId(selectedItem.id);
-      try {
-        await resolveMutation.mutateAsync({ itemId: selectedItem.id, igdbId });
-        toast.success(`Matched "${selectedItem.sourceTitle}" to IGDB`);
-        setSelectedItem(null);
-        setSearchQuery('');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to match item');
-      } finally {
-        setProcessingItemId(null);
-      }
-    },
-    [selectedItem, resolveMutation]
-  );
 
   if (isLoading) {
     return <SyncDetailPageSkeleton />;
@@ -504,124 +404,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
         </CardContent>
       </Card>
 
-      {/* Review Items Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <ClipboardCheck className="h-5 w-5" />
-                Items Needing Review
-              </CardTitle>
-              <CardDescription>
-                Games from this platform that need your review before being added
-              </CardDescription>
-            </div>
-            {pendingReviewCount > 0 && (
-              <Badge variant="secondary">{pendingReviewCount} pending</Badge>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {reviewLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-32" />
-              <Skeleton className="h-32" />
-            </div>
-          ) : pendingReviewCount === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-              <Check className="h-12 w-12 mb-4 text-green-500" />
-              <p>All caught up!</p>
-              <p className="text-sm">No items need review right now.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {reviewData?.items.map((item) => (
-                <JobItemCard
-                  key={item.id}
-                  item={item}
-                  onMatch={handleMatch}
-                  onSkip={handleSkip}
-                  onView={handleView}
-                  isProcessing={processingItemId === item.id}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* IGDB Candidates Modal */}
-      <Dialog open={!!selectedItem} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedItem(null);
-          setSearchQuery('');
-        }
-      }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Match: {selectedItem?.sourceTitle}</DialogTitle>
-            <DialogDescription>Select the correct IGDB match for this game</DialogDescription>
-          </DialogHeader>
-
-          {/* IGDB Search Section */}
-          <div className="pt-2">
-            <p className="mb-2 text-sm text-muted-foreground">
-              Search for the correct game on IGDB:
-            </p>
-            <div className="relative">
-              <Input
-                placeholder="Search IGDB..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery.length >= 3 && (
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-lg">
-                  {isSearching ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
-                    </div>
-                  ) : searchError ? (
-                    <div className="p-4 text-center text-sm text-destructive">
-                      Search failed. Please try again.
-                    </div>
-                  ) : searchResults && searchResults.length > 0 ? (
-                    <div className="p-1">
-                      {searchResults.map((result) => (
-                        <SearchResultItem
-                          key={result.igdb_id}
-                          result={result}
-                          isProcessing={processingItemId === selectedItem?.id}
-                          onSelect={() => handleSearchResultMatch(result.igdb_id)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 text-center text-sm text-muted-foreground">
-                      No games found for &ldquo;{searchQuery}&rdquo;
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={handleModalSkip}
-              disabled={processingItemId === selectedItem?.id}
-            >
-              Skip
-            </Button>
-            <Button variant="ghost" onClick={() => setSelectedItem(null)}>
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Recent Sync Activity */}
       <Card>
         <CardHeader>
@@ -655,52 +437,5 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// Helper component for IGDB search results
-interface SearchResultItemProps {
-  result: IGDBGameCandidate;
-  isProcessing: boolean;
-  onSelect: () => void;
-}
-
-function SearchResultItem({ result, isProcessing, onSelect }: SearchResultItemProps) {
-  const releaseYear = result.release_date
-    ? new Date(result.release_date).getFullYear()
-    : null;
-
-  return (
-    <button
-      className="flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors hover:bg-muted disabled:opacity-50"
-      onClick={onSelect}
-      disabled={isProcessing}
-    >
-      {result.cover_art_url ? (
-        <img
-          src={result.cover_art_url}
-          alt={result.title}
-          className="h-12 w-9 rounded object-cover"
-        />
-      ) : (
-        <div className="flex h-12 w-9 items-center justify-center rounded bg-muted">
-          <ImageOff className="h-4 w-4 text-muted-foreground" />
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">
-          {result.title}
-          {releaseYear && (
-            <span className="ml-1 text-muted-foreground">({releaseYear})</span>
-          )}
-        </p>
-        {result.platforms.length > 0 && (
-          <p className="truncate text-xs text-muted-foreground">
-            {result.platforms.slice(0, 3).join(', ')}
-            {result.platforms.length > 3 && ` +${result.platforms.length - 3}`}
-          </p>
-        )}
-      </div>
-    </button>
   );
 }
