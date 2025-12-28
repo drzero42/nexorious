@@ -48,7 +48,6 @@ type SteamCredentialsForm = z.infer<typeof steamCredentialsSchema>;
 
 interface SteamConnectionCardProps {
   isConfigured: boolean;
-  enabled: boolean;
   steamId?: string;
   steamUsername?: string;
   onConnectionChange: () => void;
@@ -56,7 +55,6 @@ interface SteamConnectionCardProps {
 
 export function SteamConnectionCard({
   isConfigured,
-  enabled,
   steamId,
   steamUsername,
   onConnectionChange,
@@ -135,8 +133,7 @@ export function SteamConnectionCard({
 
   const getBadgeState = () => {
     if (!isConfigured) return { label: 'Not Configured', className: 'bg-muted text-muted-foreground' };
-    if (enabled) return { label: 'Enabled', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' };
-    return { label: 'Disabled', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' };
+    return { label: 'Connected', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' };
   };
 
   const badgeState = getBadgeState();
