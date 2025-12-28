@@ -112,9 +112,9 @@ class TestRateLimitedIGDBService:
         assert len(results) == 1
         assert results[0].title == "Test Game"
         assert results[0].hastily is None  # Time-to-beat not fetched during search for performance
-        
-        # Should have made 1 API call (games only, no time-to-beat)
-        assert mock_wrapper.api_request.call_count == 1
+
+        # Should have made 2 API calls (fuzzy search + exact-name search, no time-to-beat)
+        assert mock_wrapper.api_request.call_count == 2
     
     @pytest.mark.asyncio
     async def test_get_game_by_id_with_rate_limiting(self, igdb_service, mock_wrapper):
