@@ -163,8 +163,33 @@ class IGDBService:
         detected_keywords = detect_keywords(query)
 
         try:
-            # Always perform original search
-            original_results = await self._perform_single_search(query.strip(), limit * 2)
+            # Run fuzzy search and exact-name search in parallel
+            # Exact-name search ensures we catch exact matches that IGDB's fuzzy search might rank lower
+            fuzzy_task = self._perform_single_search(query.strip(), limit * 2)
+            exact_task = self._search_by_exact_name(query.strip(), limit)
+
+            original_results, exact_results = await asyncio.gather(fuzzy_task, exact_task)
+
+            # Merge exact-name results into original results (exact matches first, deduplicated)
+            if exact_results:
+                logger.debug(f"Exact-name search found {len(exact_results)} results for '{query}'")
+                seen_ids = set()
+                merged_with_exact = []
+
+                # Add exact matches first
+                for game in exact_results:
+                    if game.igdb_id not in seen_ids:
+                        merged_with_exact.append(game)
+                        seen_ids.add(game.igdb_id)
+
+                # Add remaining fuzzy results
+                for game in original_results:
+                    if game.igdb_id not in seen_ids:
+                        merged_with_exact.append(game)
+                        seen_ids.add(game.igdb_id)
+
+                original_results = merged_with_exact
+                logger.debug(f"After merging exact-name results: {len(original_results)} unique games")
 
             # If keywords detected, perform expanded searches
             expanded_results = []
@@ -258,6 +283,56 @@ class IGDBService:
 
         logger.debug(f"Successfully parsed {len(games)} valid games")
         return games
+
+    async def _search_by_exact_name(self, query: str, limit: int) -> List[GameMetadata]:
+        """Search IGDB for games with exact name match (case-insensitive prefix).
+
+        Uses IGDB's where clause with ~ operator for case-insensitive prefix matching.
+        This finds games that start with the exact query, helping catch exact matches
+        that IGDB's fuzzy search might rank lower.
+
+        Args:
+            query: The exact game title to search for
+            limit: Maximum number of results to return
+
+        Returns:
+            List of GameMetadata objects for games matching the exact name
+        """
+        # Escape double quotes in query to prevent IGDB query injection
+        escaped_query = query.replace('"', '\\"')
+
+        # Use ~ operator for case-insensitive match, * for prefix matching
+        # This finds "The Dig" and "The Digital Asset Inquisition" for query "The Dig"
+        igdb_query = f'''
+            fields id, name, slug, summary, genres.name, involved_companies.company.name,
+                   involved_companies.developer, involved_companies.publisher,
+                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
+            where name ~ "{escaped_query}"*;
+            limit {limit};
+        '''
+
+        logger.debug(f"IGDB exact-name query: {igdb_query.strip()}")
+
+        try:
+            response = await self._rate_limited_api_request('games', igdb_query)
+            games_data = json.loads(response.decode('utf-8'))
+            logger.debug(f"Exact-name search returned {len(games_data)} results for '{query}'")
+
+            games = []
+            for game_data in games_data:
+                metadata = parse_game_data(game_data)
+                if metadata:
+                    games.append(metadata)
+
+            return games
+
+        except IGDBError as e:
+            # Log but don't fail - exact-name search is supplementary
+            logger.warning(f"Exact-name search failed for '{query}': {e}")
+            return []
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse exact-name search response: {e}")
+            return []
 
     async def get_game_by_id(self, igdb_id: int) -> Optional[GameMetadata]:
         """Get game metadata by IGDB ID."""

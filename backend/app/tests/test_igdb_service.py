@@ -702,74 +702,133 @@ class TestKeywordExpansion:
     async def test_search_games_with_keyword_expansion(self):
         """Test end-to-end search with keyword expansion."""
         service = create_test_igdb_service()
-        
+
         # Mock the single search method to return different results
         original_game = GameMetadata(igdb_id=1, title="GOTY Award Winner")
         expanded_game = GameMetadata(igdb_id=2, title="Game of the Year 2023")
-        
+
         async def mock_single_search(query, limit):
             if "GOTY" in query:
                 return [original_game]
             elif "Game of the Year" in query:
                 return [expanded_game]
             return []
-        
+
         # Mock fuzzy matching to return all games as-is
         def mock_fuzzy_match(games, query, threshold):
             return games
-        
+
         with patch.object(service, '_perform_single_search', side_effect=mock_single_search):
-            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
-                result = await service.search_games("GOTY 2023", limit=10)
-                
-                # Should get both results merged
-                assert len(result) == 2
-                
-                # Original result should appear first
-                assert result[0].igdb_id == 1
-                assert result[1].igdb_id == 2
+            with patch.object(service, '_search_by_exact_name', return_value=[]):
+                with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                    result = await service.search_games("GOTY 2023", limit=10)
+
+                    # Should get both results merged
+                    assert len(result) == 2
+
+                    # Original result should appear first
+                    assert result[0].igdb_id == 1
+                    assert result[1].igdb_id == 2
     
     @pytest.mark.asyncio
     async def test_search_games_without_keywords(self):
         """Test search without keywords works normally."""
         service = create_test_igdb_service()
-        
+
         game = GameMetadata(igdb_id=1, title="Regular Game")
-        
+
         # Mock fuzzy matching to return all games as-is
         def mock_fuzzy_match(games, query, threshold):
             return games
-        
+
         with patch.object(service, '_perform_single_search', return_value=[game]):
-            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
-                result = await service.search_games("Regular Game", limit=10)
-                
-                # Should get only the original search result
-                assert len(result) == 1
-                assert result[0].igdb_id == 1
+            with patch.object(service, '_search_by_exact_name', return_value=[]):
+                with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                    result = await service.search_games("Regular Game", limit=10)
+
+                    # Should get only the original search result
+                    assert len(result) == 1
+                    assert result[0].igdb_id == 1
     
     @pytest.mark.asyncio
     async def test_search_games_expansion_failure_fallback(self):
         """Test that expansion failures don't break the search."""
         service = create_test_igdb_service()
-        
+
         original_game = GameMetadata(igdb_id=1, title="GOTY Winner")
-        
+
         async def mock_single_search(query, limit):
             if "GOTY" in query:
                 return [original_game]
             elif "Game of the Year" in query:
                 raise IGDBError("Expanded search failed")
             return []
-        
+
         # Mock fuzzy matching to return all games as-is
         def mock_fuzzy_match(games, query, threshold):
             return games
-        
+
         with patch.object(service, '_perform_single_search', side_effect=mock_single_search):
-            with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
-                # Should not raise exception, should return original results
-                result = await service.search_games("GOTY 2023", limit=10)
-                
-                assert len(result) == 1
-                assert result[0].igdb_id == 1
+            with patch.object(service, '_search_by_exact_name', return_value=[]):
+                with patch.object(service, '_rank_games_by_fuzzy_match', side_effect=mock_fuzzy_match):
+                    # Should not raise exception, should return original results
+                    result = await service.search_games("GOTY 2023", limit=10)
+
+                    assert len(result) == 1
+                    assert result[0].igdb_id == 1
+
+    @pytest.mark.asyncio
+    async def test_search_games_exact_name_boost(self):
+        """Test that exact-name search boosts exact matches that fuzzy search misses.
+
+        This tests the fix for games like "The Dig" where IGDB's fuzzy search
+        ranks the exact match lower than partial matches like "Dig! Dig! Dino!".
+        """
+        service = create_test_igdb_service()
+
+        # Fuzzy search returns partial matches but NOT the exact match
+        fuzzy_results = [
+            GameMetadata(igdb_id=340847, title="Dig! Dig! Dino!"),
+            GameMetadata(igdb_id=304283, title="Dig"),
+        ]
+
+        # Exact-name search finds the exact match
+        exact_results = [
+            GameMetadata(igdb_id=207, title="The Dig"),
+            GameMetadata(igdb_id=311007, title="The Digital Asset Inquisition"),
+        ]
+
+        with patch.object(service, '_perform_single_search', return_value=fuzzy_results):
+            with patch.object(service, '_search_by_exact_name', return_value=exact_results):
+                result = await service.search_games("The Dig", limit=5)
+
+                # Exact match "The Dig" should be included due to exact-name boost
+                titles = [g.title for g in result]
+                assert "The Dig" in titles, "Exact match should be included via exact-name boost"
+
+                # "The Dig" should be ranked first (1.0 confidence from fuzzy scoring)
+                assert result[0].title == "The Dig", "Exact match should be ranked first"
+
+    @pytest.mark.asyncio
+    async def test_search_games_exact_name_deduplication(self):
+        """Test that exact-name results are deduplicated with fuzzy results."""
+        service = create_test_igdb_service()
+
+        # Same game appears in both searches
+        common_game = GameMetadata(igdb_id=207, title="The Dig")
+        fuzzy_only = GameMetadata(igdb_id=304283, title="Dig")
+
+        fuzzy_results = [common_game, fuzzy_only]
+        exact_results = [common_game]  # Same game from exact search
+
+        with patch.object(service, '_perform_single_search', return_value=fuzzy_results):
+            with patch.object(service, '_search_by_exact_name', return_value=exact_results):
+                result = await service.search_games("The Dig", limit=5)
+
+                # Should not have duplicates
+                igdb_ids = [g.igdb_id for g in result]
+                assert len(igdb_ids) == len(set(igdb_ids)), "Results should be deduplicated"
+
+                # Both games should be present
+                assert 207 in igdb_ids
+                assert 304283 in igdb_ids
