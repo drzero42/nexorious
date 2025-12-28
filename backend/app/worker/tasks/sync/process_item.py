@@ -497,22 +497,33 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> Dict[s
 def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
     """Check if all job items are processed and update job status.
 
+    A job is considered complete only when ALL items are in terminal states:
+    - COMPLETED
+    - SKIPPED
+    - FAILED
+
+    PENDING_REVIEW items block completion - user must resolve them first.
+
     Also updates last_synced_at for SYNC jobs when complete.
 
     Returns:
         True if job was marked complete, False otherwise
     """
-    # Count items still pending or processing
-    pending_count = session.exec(
+    # Count items that are NOT in terminal state (still need work)
+    non_terminal_count = session.exec(
         select(func.count())
         .select_from(JobItem)
         .where(
             JobItem.job_id == job_id,
-            col(JobItem.status).in_([JobItemStatus.PENDING, JobItemStatus.PROCESSING])
+            col(JobItem.status).in_([
+                JobItemStatus.PENDING,
+                JobItemStatus.PROCESSING,
+                JobItemStatus.PENDING_REVIEW,  # PENDING_REVIEW blocks completion
+            ])
         )
     ).one()
 
-    if pending_count > 0:
+    if non_terminal_count > 0:
         return False
 
     # All items processed - update job
