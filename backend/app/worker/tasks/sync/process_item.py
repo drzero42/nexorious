@@ -7,7 +7,7 @@ Handles matching, linking, and review workflow.
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from sqlmodel import Session, select, func, col
 
@@ -26,7 +26,7 @@ from app.models.user_sync_config import UserSyncConfig
 from app.models.ignored_external_game import IgnoredExternalGame
 from app.services.igdb.service import IGDBService
 from app.services.matching.service import MatchingService
-from app.services.matching.models import MatchRequest, MatchStatus
+from app.services.matching.models import MatchRequest, MatchStatus, MatchResult
 from app.services.game_service import GameService
 
 logger = logging.getLogger(__name__)
@@ -314,7 +314,7 @@ async def _auto_import_game(
     platform_id: str,
     storefront_id: str,
     external_id: str,
-    match_result,
+    match_result: MatchResult,
     confidence: float,
 ) -> Dict[str, Any]:
     """Auto-import a high-confidence match."""
@@ -411,7 +411,7 @@ async def _set_pending_review(
     session: Session,
     job_item_id: str,
     job_id: str,
-    candidates: list,
+    candidates: List[Any],
     confidence: float,
     igdb_id: Optional[int] = None,
     igdb_title: Optional[str] = None,
@@ -428,7 +428,7 @@ async def _set_pending_review(
             try:
                 serializable_candidates.append(candidate.__dict__)
             except AttributeError:
-                pass
+                logger.warning(f"Failed to serialize candidate: {candidate}")
 
     # Add matched game to candidates if not present
     if igdb_id and igdb_title:
