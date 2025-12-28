@@ -40,7 +40,6 @@ class SyncConfigResponse(BaseModel):
     auto_add: bool = Field(
         description="If True, matched games are added automatically. If False, queued for review."
     )
-    enabled: bool = Field(description="Whether sync is enabled for this platform")
     last_synced_at: Optional[datetime] = Field(
         default=None, description="Timestamp of last successful sync"
     )
@@ -69,9 +68,6 @@ class SyncConfigUpdateRequest(BaseModel):
         default=None,
         description="If True, matched games are added automatically. If False, queued for review.",
     )
-    enabled: Optional[bool] = Field(
-        default=None, description="Whether sync is enabled for this platform"
-    )
 
 
 class SyncConfigCreateRequest(BaseModel):
@@ -85,7 +81,6 @@ class SyncConfigCreateRequest(BaseModel):
         default=False,
         description="If True, matched games are added automatically. If False, queued for review.",
     )
-    enabled: bool = Field(default=False, description="Whether sync is enabled")
 
 
 class ManualSyncTriggerResponse(BaseModel):
