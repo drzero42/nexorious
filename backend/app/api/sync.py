@@ -77,7 +77,6 @@ def _config_to_response(config: UserSyncConfig, user: User) -> SyncConfigRespons
         platform=config.platform,
         frequency=FREQUENCY_MODEL_TO_SCHEMA[config.frequency],
         auto_add=config.auto_add,
-        enabled=config.enabled,
         last_synced_at=config.last_synced_at,
         created_at=config.created_at,
         updated_at=config.updated_at,
@@ -118,7 +117,6 @@ async def get_sync_configs(
                 platform=platform.value,
                 frequency=ModelSyncFrequency.MANUAL,
                 auto_add=False,
-                enabled=False,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
@@ -157,7 +155,6 @@ async def get_sync_config(
         platform=platform.value,
         frequency=ModelSyncFrequency.MANUAL,
         auto_add=False,
-        enabled=False,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
@@ -202,8 +199,6 @@ async def update_sync_config(
         config.frequency = FREQUENCY_SCHEMA_TO_MODEL[request.frequency]
     if request.auto_add is not None:
         config.auto_add = request.auto_add
-    if request.enabled is not None:
-        config.enabled = request.enabled
 
     config.updated_at = datetime.now(timezone.utc)
 
@@ -212,7 +207,7 @@ async def update_sync_config(
 
     logger.info(
         f"Updated sync config for user {current_user.id}, platform {platform}: "
-        f"frequency={config.frequency}, auto_add={config.auto_add}, enabled={config.enabled}"
+        f"frequency={config.frequency}, auto_add={config.auto_add}"
     )
 
     return _config_to_response(config, current_user)
@@ -443,17 +438,6 @@ async def disconnect_steam(
     if "steam" in preferences:
         del preferences["steam"]
         current_user.preferences_json = json.dumps(preferences)
-
-    # Disable Steam sync config if it exists
-    stmt = select(UserSyncConfig).where(
-        UserSyncConfig.user_id == current_user.id,
-        UserSyncConfig.platform == "steam",
-    )
-    config = session.exec(stmt).first()
-
-    if config:
-        config.enabled = False
-        config.updated_at = datetime.now(timezone.utc)
 
     current_user.updated_at = datetime.now(timezone.utc)
     session.commit()

@@ -47,8 +47,8 @@ async def check_pending_syncs() -> Dict[str, Any]:
 
     async with get_session_context() as session:
         # Get all sync configs that might need syncing
+        # Non-manual frequency implies automatic sync is desired
         stmt = select(UserSyncConfig).where(
-            UserSyncConfig.enabled,  # noqa: E712 - SQLAlchemy boolean column
             UserSyncConfig.frequency != SyncFrequency.MANUAL,
         )
         configs = list(session.exec(stmt).all())
