@@ -59,8 +59,8 @@ vi.mock('@/components/sync', () => ({
   }) => (
     <div data-testid={`sync-card-${config.platform}`}>
       <div data-testid={`platform-name-${config.platform}`}>{config.platform}</div>
-      <div data-testid={`platform-enabled-${config.platform}`}>
-        {config.enabled ? 'Connected' : 'Disconnected'}
+      <div data-testid={`platform-configured-${config.platform}`}>
+        {config.isConfigured ? 'Configured' : 'Not Configured'}
       </div>
       {status && (
         <div data-testid={`platform-syncing-${config.platform}`}>
@@ -78,7 +78,6 @@ const mockSteamConfig: SyncConfig = {
   platform: 'steam' as SyncPlatform,
   frequency: 'daily' as SyncFrequency,
   autoAdd: true,
-  enabled: true,
   lastSyncedAt: null,
   createdAt: '2025-01-01T00:00:00Z',
   updatedAt: '2025-01-01T00:00:00Z',
@@ -257,10 +256,10 @@ describe('SyncPage', () => {
       expect(screen.getByTestId('platform-name-steam')).toHaveTextContent('steam');
     });
 
-    it('displays Connected badge for enabled platform', () => {
+    it('displays Configured badge for configured platform', () => {
       render(<SyncPage />);
 
-      expect(screen.getByTestId('platform-enabled-steam')).toHaveTextContent('Connected');
+      expect(screen.getByTestId('platform-configured-steam')).toHaveTextContent('Configured');
     });
 
     it('displays sync status for platform', () => {

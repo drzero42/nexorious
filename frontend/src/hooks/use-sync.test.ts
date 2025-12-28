@@ -25,10 +25,10 @@ const mockSyncConfigApi = {
   platform: 'steam',
   frequency: 'daily',
   auto_add: true,
-  enabled: true,
   last_synced_at: null,
   created_at: '2025-01-01T00:00:00Z',
   updated_at: '2025-01-01T00:00:00Z',
+  is_configured: true,
 };
 
 const mockSyncStatusApi = {
@@ -171,7 +171,7 @@ describe('use-sync hooks', () => {
 
       expect(result.current.data?.platform).toBe(SyncPlatform.STEAM);
       expect(result.current.data?.frequency).toBe(SyncFrequency.DAILY);
-      expect(result.current.data?.enabled).toBe(true);
+      expect(result.current.data?.isConfigured).toBe(true);
     });
 
     it('handles 404 error', async () => {
@@ -313,7 +313,6 @@ describe('use-sync hooks', () => {
           const body = (await request.json()) as {
             frequency?: string;
             auto_add?: boolean;
-            enabled?: boolean;
           };
           expect(body.frequency).toBe('weekly');
           expect(body.auto_add).toBe(false);
@@ -358,7 +357,7 @@ describe('use-sync hooks', () => {
         try {
           await result.current.mutateAsync({
             platform: SyncPlatform.STEAM,
-            data: { enabled: false },
+            data: { autoAdd: false },
           });
         } catch {
           // Expected error

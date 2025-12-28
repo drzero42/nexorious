@@ -28,10 +28,10 @@ describe('syncApi', () => {
             platform: 'steam',
             frequency: 'daily',
             auto_add: true,
-            enabled: true,
             last_synced_at: '2025-01-01T00:00:00Z',
             created_at: '2025-01-01T00:00:00Z',
             updated_at: '2025-01-01T00:00:00Z',
+            is_configured: true,
           },
         ],
         total: 1,
@@ -57,10 +57,10 @@ describe('syncApi', () => {
         platform: 'steam',
         frequency: 'daily',
         auto_add: true,
-        enabled: true,
         last_synced_at: '2025-01-01T00:00:00Z',
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
+        is_configured: true,
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
@@ -83,10 +83,10 @@ describe('syncApi', () => {
         platform: 'steam',
         frequency: 'weekly',
         auto_add: false,
-        enabled: true,
         last_synced_at: null,
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
+        is_configured: true,
       };
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
