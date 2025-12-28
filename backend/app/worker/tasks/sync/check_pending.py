@@ -10,7 +10,7 @@ from typing import Dict, Any
 from sqlmodel import select, col
 
 from app.worker.broker import broker
-from app.worker.queues import QUEUE_LOW
+from app.worker.queues import enqueue_task
 from app.core.database import get_session_context
 from app.models.user_sync_config import UserSyncConfig, SyncFrequency
 from app.models.job import (
@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 @broker.task(
     task_name="sync.check_pending_syncs",
     schedule=[{"cron": "*/15 * * * *"}],  # Every 15 minutes
-    queue=QUEUE_LOW,
 )
 async def check_pending_syncs() -> Dict[str, Any]:
     """
@@ -89,7 +88,7 @@ async def _dispatch_sync_for_config(session, config: UserSyncConfig) -> bool:
     """
     Dispatch a sync task for a given config.
 
-    Creates a Job record and kicks off the appropriate sync task.
+    Creates a Job record and kicks off the dispatch_sync_items task.
 
     Returns:
         True if sync was dispatched, False otherwise.
@@ -137,24 +136,15 @@ async def _dispatch_sync_for_config(session, config: UserSyncConfig) -> bool:
     session.commit()
     session.refresh(job)
 
-    # Dispatch the appropriate sync task
-    if config.platform == "steam":
-        from app.worker.tasks.sync.steam import sync_steam_library
+    # Dispatch the generic sync dispatch task
+    from app.worker.tasks.sync.dispatch import dispatch_sync_items
 
-        # Kick with low priority for scheduled syncs
-        await sync_steam_library.kicker().with_labels(
-            queue=QUEUE_LOW
-        ).kiq(
-            job_id=job.id,
-            user_id=config.user_id,
-            is_scheduled=True,
-        )
+    await enqueue_task(
+        dispatch_sync_items,
+        job.id,
+        config.user_id,
+        config.platform,
+        priority=BackgroundJobPriority.LOW,
+    )
 
-        return True
-
-    # Add other platforms here as they're implemented
-    # elif config.platform == "epic":
-    #     ...
-
-    logger.warning(f"No sync task implemented for platform: {config.platform}")
-    return False
+    return True
