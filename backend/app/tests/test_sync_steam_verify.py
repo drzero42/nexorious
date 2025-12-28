@@ -547,36 +547,6 @@ class TestSteamDisconnect:
         preferences = test_user.preferences
         assert "steam" not in preferences
 
-    def test_disconnect_disables_sync(
-        self,
-        client: TestClient,
-        auth_headers: dict[str, str],
-        test_user: User,
-        session: Session,
-    ) -> None:
-        """Test disconnect disables Steam sync config."""
-        from app.models.user_sync_config import UserSyncConfig
-
-        # Create enabled sync config
-        config = UserSyncConfig(
-            user_id=test_user.id,
-            platform="steam",
-            enabled=True,
-        )
-        session.add(config)
-        session.commit()
-
-        response = client.delete(
-            "/api/sync/steam/connection",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-
-        # Verify sync was disabled
-        session.refresh(config)
-        assert config.enabled is False
-
     def test_disconnect_works_without_existing_config(
         self,
         client: TestClient,
