@@ -11,12 +11,7 @@ SUBJECT_LOW = "tasks.low"
 QUEUE_HIGH = "high"
 QUEUE_LOW = "low"
 
-# Keep old subjects as aliases during migration
-SUBJECT_HIGH_IMPORT = SUBJECT_HIGH
-SUBJECT_HIGH_SYNC = SUBJECT_HIGH
-SUBJECT_HIGH_EXPORT = SUBJECT_HIGH
-SUBJECT_LOW_IMPORT = SUBJECT_LOW
-SUBJECT_LOW_SYNC = SUBJECT_LOW
+# Alias for maintenance tasks (scheduled via cron)
 SUBJECT_LOW_MAINTENANCE = SUBJECT_LOW
 
 

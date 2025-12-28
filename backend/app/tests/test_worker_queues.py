@@ -6,11 +6,6 @@ from app.worker.queues import (
     QUEUE_LOW,
     SUBJECT_HIGH,
     SUBJECT_LOW,
-    SUBJECT_HIGH_IMPORT,
-    SUBJECT_HIGH_SYNC,
-    SUBJECT_HIGH_EXPORT,
-    SUBJECT_LOW_IMPORT,
-    SUBJECT_LOW_SYNC,
     SUBJECT_LOW_MAINTENANCE,
 )
 
@@ -46,16 +41,8 @@ class TestSubjectConstants:
         """High and low subjects must have different values."""
         assert SUBJECT_HIGH != SUBJECT_LOW
 
-    def test_high_priority_aliases_point_to_subject_high(self):
-        """All high priority subject aliases should point to SUBJECT_HIGH."""
-        assert SUBJECT_HIGH_IMPORT == SUBJECT_HIGH
-        assert SUBJECT_HIGH_SYNC == SUBJECT_HIGH
-        assert SUBJECT_HIGH_EXPORT == SUBJECT_HIGH
-
-    def test_low_priority_aliases_point_to_subject_low(self):
-        """All low priority subject aliases should point to SUBJECT_LOW."""
-        assert SUBJECT_LOW_IMPORT == SUBJECT_LOW
-        assert SUBJECT_LOW_SYNC == SUBJECT_LOW
+    def test_maintenance_alias_points_to_subject_low(self):
+        """Maintenance subject alias should point to SUBJECT_LOW."""
         assert SUBJECT_LOW_MAINTENANCE == SUBJECT_LOW
 
 
@@ -69,18 +56,13 @@ class TestWorkerModuleExports:
             QUEUE_LOW,
             SUBJECT_HIGH,
             SUBJECT_LOW,
-            SUBJECT_HIGH_IMPORT,
-            SUBJECT_HIGH_SYNC,
-            SUBJECT_HIGH_EXPORT,
-            SUBJECT_LOW_IMPORT,
-            SUBJECT_LOW_SYNC,
             SUBJECT_LOW_MAINTENANCE,
+            enqueue_task,
         )
 
         assert QUEUE_HIGH == "high"
         assert QUEUE_LOW == "low"
         assert SUBJECT_HIGH == "tasks.high"
         assert SUBJECT_LOW == "tasks.low"
-        # Aliases now point to simplified subjects
-        assert SUBJECT_HIGH_IMPORT == SUBJECT_HIGH
         assert SUBJECT_LOW_MAINTENANCE == SUBJECT_LOW
+        assert enqueue_task is not None
