@@ -22,6 +22,9 @@ It should be transparent that data is pulled in from IGDB. Instead of having a w
 ## Use knip to keep frontend lean
 We should use knip.dev to identify dead code in the frontend and help keep the frontend code lean and fresh.
 
+## Use vulture to keep backend lean
+We should use vulture to find dead code in the backend.
+
 ## Make sure platform/storefront seed data can be loaded
 In the new frontend we don't have a button to load seed data.
 
@@ -34,4 +37,3 @@ Both API backend and workers/scheduler must gracefully handle when database and/
 
 ## Sync does not need an enabled/disabled state
 Sync frequency is set to manual is fine for "disabled".
- 
