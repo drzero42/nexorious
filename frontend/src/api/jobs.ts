@@ -88,6 +88,7 @@ interface JobItemApiResponse {
   result_igdb_id: number | null;
   created_at: string;
   processed_at: string | null;
+  igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
 }
 
 interface JobItemListApiResponse {
@@ -165,6 +166,7 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     resultIgdbId: apiItem.result_igdb_id,
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
+    igdbCandidatesJson: apiItem.igdb_candidates_json,
   };
 }
 
