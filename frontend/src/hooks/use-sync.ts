@@ -55,9 +55,10 @@ export function useSyncStatus(platform: SyncPlatform) {
     queryKey: syncKeys.status(platform),
     queryFn: () => syncApi.getSyncStatus(platform),
     refetchInterval: (query) => {
-      // Poll every 5 seconds if syncing is in progress
+      // Poll every 5 seconds if syncing is in progress, otherwise every 30 seconds
+      // The baseline 30s polling catches automatic syncs that start in the background
       const data = query.state.data as SyncStatus | undefined;
-      return data?.isSyncing ? 5000 : false;
+      return data?.isSyncing ? 5000 : 30000;
     },
   });
 }
@@ -120,7 +121,15 @@ export function useTriggerSync() {
   return useMutation<ManualSyncResponse, Error, SyncPlatform>({
     mutationFn: (platform) => syncApi.triggerSync(platform),
     onSuccess: (_result, platform) => {
-      // Invalidate status to show syncing state
+      // Optimistically set isSyncing to true to immediately start polling
+      // This prevents a race condition where the status query refetches
+      // before the backend has started the sync job
+      queryClient.setQueryData(
+        syncKeys.status(platform),
+        (old: SyncStatus | undefined) =>
+          old ? { ...old, isSyncing: true } : { isSyncing: true, lastSyncAt: null }
+      );
+      // Also invalidate to get fresh data from server
       queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
     },
   });
