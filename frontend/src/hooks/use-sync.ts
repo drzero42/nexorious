@@ -120,14 +120,18 @@ export function useTriggerSync() {
 
   return useMutation<ManualSyncResponse, Error, SyncPlatform>({
     mutationFn: (platform) => syncApi.triggerSync(platform),
-    onSuccess: (_result, platform) => {
-      // Optimistically set isSyncing to true to immediately start polling
-      // This prevents a race condition where the status query refetches
-      // before the backend has started the sync job
+    onSuccess: (result, platform) => {
+      // Optimistically set isSyncing to true and include the jobId from the response
+      // This ensures the job progress card can immediately fetch job details
+      // without waiting for the next status poll
       queryClient.setQueryData(
         syncKeys.status(platform),
-        (old: SyncStatus | undefined) =>
-          old ? { ...old, isSyncing: true } : { isSyncing: true, lastSyncAt: null }
+        (old: SyncStatus | undefined) => ({
+          platform: old?.platform ?? platform,
+          isSyncing: true,
+          lastSyncedAt: old?.lastSyncedAt ?? null,
+          activeJobId: result.jobId,
+        })
       );
       // Also invalidate to get fresh data from server
       queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
