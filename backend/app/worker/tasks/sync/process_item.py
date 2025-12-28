@@ -399,11 +399,12 @@ def _add_platform_association(
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
+    # Note: unique constraint is on (user_game_id, platform_id, storefront_id)
     existing = session.exec(
         select(UserGamePlatform).where(
             UserGamePlatform.user_game_id == user_game_id,
+            UserGamePlatform.platform_id == platform_id,
             UserGamePlatform.storefront_id == storefront_id,
-            UserGamePlatform.store_game_id == external_id,
         )
     ).first()
 
