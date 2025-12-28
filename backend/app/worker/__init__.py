@@ -4,6 +4,8 @@ from app.worker.broker import broker
 from app.worker.queues import (
     QUEUE_HIGH,
     QUEUE_LOW,
+    SUBJECT_HIGH,
+    SUBJECT_LOW,
     SUBJECT_HIGH_IMPORT,
     SUBJECT_HIGH_SYNC,
     SUBJECT_HIGH_EXPORT,
@@ -18,6 +20,8 @@ __all__ = [
     "scheduler",
     "QUEUE_HIGH",
     "QUEUE_LOW",
+    "SUBJECT_HIGH",
+    "SUBJECT_LOW",
     "SUBJECT_HIGH_IMPORT",
     "SUBJECT_HIGH_SYNC",
     "SUBJECT_HIGH_EXPORT",
