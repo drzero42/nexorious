@@ -45,7 +45,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -53,32 +52,17 @@ describe('SteamConnectionCard', () => {
       expect(screen.getByText('Not Configured')).toBeInTheDocument();
     });
 
-    it('renders "Enabled" badge when configured and enabled', () => {
+    it('renders "Connected" badge when configured', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />
       );
 
-      expect(screen.getByText('Enabled')).toBeInTheDocument();
-    });
-
-    it('renders "Disabled" badge when configured but not enabled', () => {
-      render(
-        <SteamConnectionCard
-          isConfigured={true}
-          enabled={false}
-          steamId="76561198012345678"
-          steamUsername="TestUser"
-          onConnectionChange={mockOnConnectionChange}
-        />
-      );
-
-      expect(screen.getByText('Disabled')).toBeInTheDocument();
+      expect(screen.getByText('Connected')).toBeInTheDocument();
     });
   });
 
@@ -87,7 +71,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -100,7 +83,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -112,7 +94,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -125,7 +106,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -141,7 +121,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -155,7 +134,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -169,7 +147,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -183,7 +160,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -197,7 +173,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -216,7 +191,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -238,7 +212,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -264,7 +237,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -289,7 +261,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -320,7 +291,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -353,7 +323,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -389,7 +358,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -429,7 +397,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -459,7 +426,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -487,7 +453,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -512,7 +477,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -545,7 +509,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          enabled={true}
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
@@ -571,7 +534,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -592,7 +554,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={false}
-          enabled={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
