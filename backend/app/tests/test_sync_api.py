@@ -186,10 +186,13 @@ class TestManualSyncTrigger:
         self, client: TestClient, auth_headers: dict, session: Session, test_user
     ):
         """POST /sync/{platform} creates a new sync job."""
-        response = client.post(
-            "/api/sync/steam",
-            headers=auth_headers,
-        )
+        from unittest.mock import patch, AsyncMock
+
+        with patch("app.api.sync.enqueue_task", new_callable=AsyncMock):
+            response = client.post(
+                "/api/sync/steam",
+                headers=auth_headers,
+            )
 
         assert response.status_code == 200
         data = response.json()
