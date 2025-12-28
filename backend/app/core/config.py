@@ -76,6 +76,16 @@ class Settings(BaseSettings):
         description="Maximum number of retries for IGDB API calls (default: 3)"
     )
 
+    # Steam Rate Limiting
+    steam_requests_per_second: float = Field(
+        default=4.0,
+        description="Steam API rate limit in requests per second (default: 4.0)"
+    )
+    steam_burst_capacity: int = Field(
+        default=10,
+        description="Steam API burst capacity - maximum tokens in bucket (default: 10)"
+    )
+
     # Distributed Rate Limiting
     rate_limiter_nats_bucket: str = Field(
         default="rate-limiters",

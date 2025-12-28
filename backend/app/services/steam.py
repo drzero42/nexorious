@@ -9,11 +9,12 @@ from dataclasses import dataclass
 import httpx
 
 from app.utils.rate_limiter import (
-    RateLimitConfig, 
-    RateLimitedClient, 
+    RateLimitConfig,
+    RateLimitedClient,
     TokenBucketRateLimiter,
     RateLimitExceeded
 )
+from app.core.config import settings
 
 
 logger = logging.getLogger(__name__)
@@ -22,21 +23,21 @@ logger = logging.getLogger(__name__)
 def create_steam_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimitedClient:
     """
     Create a rate limiter configured for Steam Web API calls.
-    
+
     Args:
-        config: Optional custom configuration, uses Steam defaults if None
-        
+        config: Optional custom configuration, uses settings defaults if None
+
     Returns:
         RateLimitedClient configured for Steam Web API
     """
     if config is None:
         config = RateLimitConfig(
-            requests_per_second=1.0,  # Conservative rate limiting
-            burst_capacity=5,         # Allow small bursts
+            requests_per_second=settings.steam_requests_per_second,
+            burst_capacity=settings.steam_burst_capacity,
             backoff_factor=1.0,       # 1 second backoff
             max_retries=3             # Up to 3 retries
         )
-    
+
     rate_limiter = TokenBucketRateLimiter(config)
     return RateLimitedClient(rate_limiter)
 
@@ -84,9 +85,11 @@ class SteamService:
         
         # Create rate limiter for Steam Web API
         # Steam Web API has a rate limit of 100,000 calls per day per API key
-        # That's roughly 1.15 calls per second, but we'll be conservative
         self._rate_limiter = create_steam_rate_limiter()
-        logger.info("Steam service initialized with rate limiting (1.0 req/s, burst: 5)")
+        logger.info(
+            f"Steam service initialized with rate limiting "
+            f"({settings.steam_requests_per_second} req/s, burst: {settings.steam_burst_capacity})"
+        )
     
     async def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a rate-limited request to Steam Web API."""
