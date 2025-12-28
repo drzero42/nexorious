@@ -21,6 +21,7 @@ from app.models.job import (
     BackgroundJobType,
     BackgroundJobSource,
 )
+from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform
 from app.models.user_sync_config import UserSyncConfig
 from app.models.ignored_external_game import IgnoredExternalGame
@@ -202,10 +203,7 @@ async def _process_with_resolved_id(
             session, existing_user_game.id,
             platform_id, storefront_id, external_id
         )
-        return await _complete_job_item(
-            session, job_item_id, job_id,
-            JobItemStatus.COMPLETED, "linked_existing"
-        )
+        result = "linked_existing"
     else:
         # Create new UserGame and add platform association
         igdb_service = IGDBService()
@@ -227,10 +225,27 @@ async def _process_with_resolved_id(
             session, user_game.id,
             platform_id, storefront_id, external_id
         )
-        return await _complete_job_item(
-            session, job_item_id, job_id,
-            JobItemStatus.COMPLETED, "imported_new"
-        )
+        result = "imported_new"
+
+    # Fetch the game title for result_json
+    game = session.get(Game, igdb_id)
+    igdb_title = game.title if game else source_title
+
+    # Update JobItem with result data for recent activity display
+    job_item = session.get(JobItem, job_item_id)
+    if job_item:
+        job_item.resolved_igdb_id = igdb_id
+        job_item.result_json = json.dumps({
+            "igdb_title": igdb_title,
+            "igdb_id": igdb_id,
+            "result_type": result,
+        })
+        session.add(job_item)
+
+    return await _complete_job_item(
+        session, job_item_id, job_id,
+        JobItemStatus.COMPLETED, result
+    )
 
 
 async def _process_with_matching(
@@ -357,11 +372,16 @@ async def _auto_import_game(
         )
         result = "auto_imported"
 
-    # Update JobItem with match info
+    # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
     if job_item:
         job_item.resolved_igdb_id = igdb_id
         job_item.match_confidence = confidence
+        job_item.result_json = json.dumps({
+            "igdb_title": match_result.igdb_title,
+            "igdb_id": igdb_id,
+            "result_type": result,
+        })
         session.add(job_item)
 
     return await _complete_job_item(
