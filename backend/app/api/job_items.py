@@ -16,7 +16,7 @@ from ..schemas.job_item import (
 )
 from ..worker.tasks.import_export.process_import_item import enqueue_import_task
 from ..worker.queues import enqueue_task
-from ..worker.tasks.sync.process_item import process_sync_item
+from ..worker.tasks.sync.process_item import process_sync_item, _check_and_update_job_completion
 
 router = APIRouter(prefix="/job-items", tags=["job-items"])
 
@@ -77,7 +77,10 @@ async def skip_job_item(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Skip a job item."""
+    """Skip a job item.
+
+    Marks the item as SKIPPED and checks if the job should complete.
+    """
     item = session.get(JobItem, item_id)
     if not item or item.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Job item not found")
@@ -91,6 +94,9 @@ async def skip_job_item(
         item.result_json = f'{{"skip_reason": "{request.reason}"}}'
     session.commit()
     session.refresh(item)
+
+    # Check if job should complete now that this item is terminal
+    _check_and_update_job_completion(session, item.job_id)
 
     return JobItemDetailResponse.model_validate(item)
 

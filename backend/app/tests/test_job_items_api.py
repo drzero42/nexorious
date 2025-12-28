@@ -253,3 +253,93 @@ class TestResolveJobItem:
             json={"igdb_id": 999},
         )
         assert response.status_code == 404
+
+
+class TestSkipJobItem:
+    """Tests for POST /api/job-items/{item_id}/skip endpoint."""
+
+    def test_skip_job_item_triggers_job_completion(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that skipping the last PENDING_REVIEW item completes the job."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+
+        # One completed item, one pending review
+        completed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="steam_11111",
+            source_title="Already Done",
+            status=JobItemStatus.COMPLETED,
+        )
+        pending_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="steam_12345",
+            source_title="Test Game",
+            status=JobItemStatus.PENDING_REVIEW,
+        )
+        session.add(completed_item)
+        session.add(pending_item)
+        session.commit()
+
+        response = client.post(
+            f"/api/job-items/{pending_item.id}/skip",
+            headers=auth_headers,
+            json={},
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "skipped"
+
+        # Refresh job from database and check it's completed
+        session.refresh(job)
+        assert job.status == BackgroundJobStatus.COMPLETED
+        assert job.completed_at is not None
+
+    def test_skip_job_item_not_pending_review(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that skip fails if item is not in PENDING_REVIEW status."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.PROCESSING,
+        )
+        session.add(job)
+        session.commit()
+
+        completed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="steam_12345",
+            source_title="Test Game",
+            status=JobItemStatus.COMPLETED,
+        )
+        session.add(completed_item)
+        session.commit()
+
+        response = client.post(
+            f"/api/job-items/{completed_item.id}/skip",
+            headers=auth_headers,
+            json={},
+        )
+        assert response.status_code == 400
+
+    def test_skip_job_item_not_found(self, client, auth_headers):
+        """Test skip returns 404 for non-existent item."""
+        response = client.post(
+            "/api/job-items/nonexistent-id/skip",
+            headers=auth_headers,
+            json={},
+        )
+        assert response.status_code == 404
