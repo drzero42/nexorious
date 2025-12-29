@@ -208,7 +208,7 @@ async def download_backup(
 
     return FileResponse(
         path=backup_path,
-        filename=f"{backup_id}.tar.gz",
+        filename=f"nexorious-{backup_id}.tar.gz",
         media_type="application/gzip",
     )
 
