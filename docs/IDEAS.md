@@ -48,3 +48,6 @@ This is an admin-only feature.
 Sync and Tags should be part of the root menu again.
 We don't need the Setting section - it only has profile under it, which is also available when clicking the username at the bottom.
 Import/export should be moved under the username at the bottom - same place as Profile.
+
+## Fix import/export format
+We have inconsistencies in naming. We recently refactored from using a UUID for platform_id to using the slug name. There are still references to platform_id. We should clean up and make things consistent. We don't need a UUID for platforms as there are only a limited number of them and we want a stable and predictable name for each of them across all instances.
