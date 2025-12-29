@@ -20,6 +20,7 @@ from .api.job_items import router as job_items_router
 from .api.sync import router as sync_router
 from .api.import_endpoints import router as import_jobs_router
 from .api.export_endpoints import router as export_router
+from .middleware.maintenance import MaintenanceModeMiddleware
 from .worker.broker import broker
 
 
@@ -97,6 +98,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add maintenance mode middleware
+app.add_middleware(MaintenanceModeMiddleware)
 
 
 # Add global validation error handler
