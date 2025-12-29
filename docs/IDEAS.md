@@ -45,5 +45,6 @@ Restore will be a full reset to the backed up state and must properly warn the u
 This is an admin-only feature.
 
 ## Menu refactoring
-Import/export, sync and Tags should be part of the root menu again.
+Sync and Tags should be part of the root menu again.
 We don't need the Setting section - it only has profile under it, which is also available when clicking the username at the bottom.
+Import/export should be moved under the username at the bottom - same place as Profile.
