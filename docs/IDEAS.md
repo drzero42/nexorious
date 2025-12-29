@@ -34,3 +34,12 @@ We have support for websocket, but actually use polling. Should we remove websoc
 ## Remove dependent relationships from docker-compose
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
+
+## Import/export is for the current user
+Our export format does not contain all information from the database and also does not contain image-files. We should refactor the import/export to make it a user-scoped thing, meaning that only the current users items are exported and imports add the games to the current user.
+This is a user-feature - this is not an admin-only feature.
+
+## Backup/restore
+Since exports are not usable as full backups, we need to add proper backup/restore functionality. That means dumping all data from the database to a suitable format and creating a compressed archive with that dump along with all relevant static files (probably only cover art). The backups should be stored in a dedicated dir, should be downloadable by the user and we want it to be scheduleable with configuration for retention time.
+Restore will be a full reset to the backed up state and must properly warn the user before performing it. Restores can be done from backups the server has available or from a backup uploaded by the user.
+This is an admin-only feature.
