@@ -20,6 +20,7 @@ from .api.job_items import router as job_items_router
 from .api.sync import router as sync_router
 from .api.import_endpoints import router as import_jobs_router
 from .api.export_endpoints import router as export_router
+from .api.backup_endpoints import router as backup_router
 from .middleware.maintenance import MaintenanceModeMiddleware
 from .worker.broker import broker
 
@@ -143,6 +144,7 @@ app.include_router(job_items_router, prefix="/api")
 app.include_router(sync_router, prefix="/api")
 app.include_router(import_jobs_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
+app.include_router(backup_router, prefix="/api")
 
 # Mount static files for cover art
 if settings.storage_path:
