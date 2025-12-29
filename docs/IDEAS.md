@@ -56,3 +56,6 @@ Same goes for storefronts.
 ## Experiment with slumber
 https://github.com/LucasPickering/slumber
 Might be better than claude failing to use curl
+
+## Filename for exports
+Our exports end up being named download.json and download.csv. These should be named nexorious-DATE.[json|csv]
