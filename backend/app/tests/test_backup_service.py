@@ -217,3 +217,122 @@ class TestRetentionLogic:
 
         assert len(to_delete) == 1
         assert "backup-scheduled" in to_delete
+
+
+import tarfile
+import json
+
+
+class TestRestoreValidation:
+    """Tests for restore validation."""
+
+    def test_validate_backup_archive_missing_manifest(self):
+        """Test validation fails for archive without manifest."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create archive without manifest
+            archive_path = Path(tmpdir) / "test.tar.gz"
+            staging = Path(tmpdir) / "staging"
+            staging.mkdir()
+            (staging / "somefile.txt").write_text("data")
+
+            with tarfile.open(archive_path, "w:gz") as tar:
+                tar.add(staging, arcname="backup")
+
+            service = BackupService(backup_path=tmpdir)
+
+            with pytest.raises(ValueError, match="No manifest found"):
+                service.validate_backup_archive(archive_path)
+
+    def test_validate_backup_archive_missing_database(self):
+        """Test validation fails for archive without database dump."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create archive with manifest but no database
+            archive_path = Path(tmpdir) / "test.tar.gz"
+            staging = Path(tmpdir) / "staging"
+            staging.mkdir()
+
+            manifest = {
+                "version": 1,
+                "created_at": "2025-01-15T02:00:00+00:00",
+                "app_version": "0.1.0",
+                "alembic_revision": "abc123",
+                "backup_type": "manual",
+                "database": {
+                    "file": "database.sql",
+                    "size_bytes": 100,
+                    "checksum": "sha256:abc",
+                },
+                "files": {
+                    "cover_art": {"count": 0, "total_size_bytes": 0, "checksum": "sha256:empty"},
+                    "logos": {"count": 0, "total_size_bytes": 0, "checksum": "sha256:empty"},
+                },
+                "stats": {"users": 1, "games": 10, "tags": 5},
+            }
+
+            (staging / "manifest.json").write_text(json.dumps(manifest))
+
+            with tarfile.open(archive_path, "w:gz") as tar:
+                tar.add(staging, arcname="backup")
+
+            service = BackupService(backup_path=tmpdir)
+
+            with pytest.raises(ValueError, match="No database dump found"):
+                service.validate_backup_archive(archive_path)
+
+    def test_validate_backup_archive_valid(self):
+        """Test validation passes for valid archive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create valid archive
+            archive_path = Path(tmpdir) / "test.tar.gz"
+            staging = Path(tmpdir) / "staging"
+            staging.mkdir()
+
+            manifest = {
+                "version": 1,
+                "created_at": "2025-01-15T02:00:00+00:00",
+                "app_version": "0.1.0",
+                "alembic_revision": "abc123",
+                "backup_type": "manual",
+                "database": {
+                    "file": "database.sql",
+                    "size_bytes": 100,
+                    "checksum": "sha256:abc",
+                },
+                "files": {
+                    "cover_art": {"count": 0, "total_size_bytes": 0, "checksum": "sha256:empty"},
+                    "logos": {"count": 0, "total_size_bytes": 0, "checksum": "sha256:empty"},
+                },
+                "stats": {"users": 1, "games": 10, "tags": 5},
+            }
+
+            (staging / "manifest.json").write_text(json.dumps(manifest))
+            (staging / "database.sql").write_text("-- SQL dump")
+
+            with tarfile.open(archive_path, "w:gz") as tar:
+                tar.add(staging, arcname="backup")
+
+            service = BackupService(backup_path=tmpdir)
+            result = service.validate_backup_archive(archive_path)
+
+            assert result.alembic_revision == "abc123"
+
+    def test_validate_backup_archive_not_found(self):
+        """Test validation fails for non-existent archive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = BackupService(backup_path=tmpdir)
+            archive_path = Path(tmpdir) / "nonexistent.tar.gz"
+
+            with pytest.raises(ValueError, match="Backup archive not found"):
+                service.validate_backup_archive(archive_path)
+
+    def test_validate_backup_archive_invalid_tarfile(self):
+        """Test validation fails for invalid tar file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create invalid tar file
+            archive_path = Path(tmpdir) / "test.tar.gz"
+            archive_path.write_text("not a valid tar file")
+
+            service = BackupService(backup_path=tmpdir)
+
+            with pytest.raises(ValueError, match="Invalid backup archive"):
+                service.validate_backup_archive(archive_path)
