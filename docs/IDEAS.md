@@ -59,3 +59,6 @@ Might be better than claude failing to use curl
 
 ## Filename for exports
 Our exports end up being named download.json and download.csv. These should be named nexorious-DATE.[json|csv]
+
+## Backup creation endpoint must be protected
+The worker calls an endpoint on the backend to create a backup. This endpoint must not be callable by users and must only allow calls from the workers.
