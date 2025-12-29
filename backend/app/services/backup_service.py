@@ -205,8 +205,10 @@ class BackupService:
                 manifest_data = json.load(manifest_file)
                 manifest = BackupManifest.from_dict(manifest_data)
 
-                # Get backup ID from filename
-                backup_id = archive_path.stem  # Remove .tar.gz
+                # Get backup ID from filename (remove both .tar and .gz extensions)
+                backup_id = archive_path.stem
+                if backup_id.endswith(".tar"):
+                    backup_id = backup_id[:-4]
 
                 return BackupInfo(
                     id=backup_id,

@@ -95,3 +95,16 @@ class RestoreResponse(BaseModel):
     success: bool
     message: str
     session_invalidated: bool = False
+
+
+# Internal API schemas (worker-to-API communication)
+class InternalBackupRequest(BaseModel):
+    """Request for internal backup creation."""
+    backup_type: BackupType = BackupType.MANUAL
+
+
+class InternalBackupResponse(BaseModel):
+    """Response from internal backup creation."""
+    success: bool
+    backup_id: Optional[str] = None
+    error: Optional[str] = None

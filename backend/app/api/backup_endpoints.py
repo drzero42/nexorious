@@ -2,15 +2,16 @@
 Backup and restore API endpoints (admin-only).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Header
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
-from typing import Annotated
+from typing import Annotated, Optional
 import logging
 import tempfile
 from pathlib import Path
 
 from ..core.database import get_session
+from ..core.config import settings
 from ..core.security import get_current_admin_user
 from ..models.user import User, UserSession
 from ..models.backup_config import BackupConfig, BackupSchedule, RetentionMode
@@ -25,12 +26,17 @@ from ..schemas.backup import (
     RestoreRequest,
     RestoreResponse,
     BackupType as SchemaBackupType,
+    InternalBackupRequest,
+    InternalBackupResponse,
 )
 from ..services.backup_service import backup_service, BackupType
 from ..worker.tasks.maintenance.backup_create import create_backup_task
 
 router = APIRouter(prefix="/admin/backups", tags=["Backup & Restore (Admin)"])
 logger = logging.getLogger(__name__)
+
+# Internal API key for worker-to-API communication
+INTERNAL_API_KEY = settings.internal_api_key
 
 
 def _get_or_create_config(session: Session) -> BackupConfig:
@@ -42,6 +48,43 @@ def _get_or_create_config(session: Session) -> BackupConfig:
         session.commit()
         session.refresh(config)
     return config
+
+
+# Internal endpoint for worker-to-API communication
+def verify_internal_api_key(x_internal_api_key: Annotated[Optional[str], Header()] = None):
+    """Verify the internal API key for worker requests."""
+    if not INTERNAL_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal API key not configured",
+        )
+    if x_internal_api_key != INTERNAL_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+    return True
+
+
+@router.post("/internal/create", response_model=InternalBackupResponse, include_in_schema=False)
+async def create_backup_internal(
+    request: InternalBackupRequest,
+    _: Annotated[bool, Depends(verify_internal_api_key)],
+):
+    """Internal endpoint for worker to create backups.
+
+    This endpoint is called by the worker task to create backups.
+    It runs the backup synchronously since the worker handles the async dispatch.
+    """
+    logger.info(f"Internal backup request received (type: {request.backup_type})")
+
+    try:
+        backup_id = backup_service.create_backup(backup_type=BackupType(request.backup_type.value))
+        logger.info(f"Backup created successfully: {backup_id}")
+        return InternalBackupResponse(success=True, backup_id=backup_id)
+    except Exception as e:
+        logger.error(f"Backup creation failed: {e}")
+        return InternalBackupResponse(success=False, error=str(e))
 
 
 # Configuration endpoints
