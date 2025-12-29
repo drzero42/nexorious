@@ -62,3 +62,27 @@ Our exports end up being named download.json and download.csv. These should be n
 
 ## Backup creation endpoint must be protected
 The worker calls an endpoint on the backend to create a backup. This endpoint must not be callable by users and must only allow calls from the workers.
+
+## Games in progress on dashboard
+We should prominently show the games in progress on the dashboard. Cover art with just the bare minimum details about the games. These should link to the details page for each game.
+
+## Store playtime per copy
+Currently we only store "number of played hours" for a game. We can extract playtime from at least steam, so we should make it possible to set playtime per platform/storefront and then find a good way to show playtime per game as an aggregate with a breakdown of how much time per platforms/storefronts.
+Question: Should this be per platform or per storefront?
+
+## Achievements / Trophies
+From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
+We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
+
+## Epic Games Store
+Use https://github.com/derrod/legendary as a CLI tool to pull information about the user's library
+
+## GOG
+Use https://github.com/Sude-/lgogdownloader as a CLI tool to pull informatiot about the user's library
+
+## Playstation
+https://psnawp.readthedocs.io
+
+## Xbox
+https://github.com/OpenXbox/xbox-webapi-python
+
