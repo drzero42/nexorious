@@ -6,6 +6,7 @@ The taskiq worker discovers tasks by importing these modules.
 
 # Maintenance tasks (scheduled cleanup operations)
 from app.worker.tasks.maintenance import (
+    create_backup_task,
     cleanup_task_results,
     cleanup_expired_exports,
     cleanup_expired_sessions,
@@ -27,6 +28,7 @@ from app.worker.tasks.import_export import (
 
 __all__ = [
     # Maintenance
+    "create_backup_task",
     "cleanup_task_results",
     "cleanup_expired_exports",
     "cleanup_expired_sessions",

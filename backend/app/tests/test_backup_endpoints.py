@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone
 
 from app.services.backup_service import BackupInfo, BackupType
@@ -233,33 +233,40 @@ class TestBackupCreateEndpoint:
     def test_create_backup_success(
         self, client: TestClient, admin_headers: dict, session: Session
     ):
-        """Test creating a backup successfully."""
-        with patch("app.api.backup_endpoints.backup_service") as mock_service:
-            mock_service.create_backup.return_value = "backup-2024-01-15T120000Z"
+        """Test creating a backup successfully dispatches task."""
+        mock_result = MagicMock()
+        mock_result.task_id = "test-backup-task-id"
 
+        with patch(
+            "app.api.backup_endpoints.create_backup_task.kiq",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             response = client.post("/api/admin/backups", headers=admin_headers)
 
             assert response.status_code == 202
             data = response.json()
-            assert data["job_id"] == "backup-2024-01-15T120000Z"
+            assert data["job_id"] == "pending"
             assert "message" in data
+            assert "dispatched" in data["message"].lower()
 
-            # Verify backup service was called with manual type
-            mock_service.create_backup.assert_called_once()
-            call_kwargs = mock_service.create_backup.call_args.kwargs
-            assert call_kwargs.get("backup_type") == BackupType.MANUAL
-
-    def test_create_backup_failure(
+    def test_create_backup_dispatches_manual_type(
         self, client: TestClient, admin_headers: dict, session: Session
     ):
-        """Test creating a backup that fails."""
-        with patch("app.api.backup_endpoints.backup_service") as mock_service:
-            mock_service.create_backup.side_effect = RuntimeError("Backup failed")
+        """Test that backup task is dispatched with manual type."""
+        mock_result = MagicMock()
+        mock_result.task_id = "test-backup-task-id"
 
+        with patch(
+            "app.api.backup_endpoints.create_backup_task.kiq",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_kiq:
             response = client.post("/api/admin/backups", headers=admin_headers)
 
-            # Verify error response
-            assert response.status_code == 500
+            assert response.status_code == 202
+            # Verify kiq was called with manual backup type
+            mock_kiq.assert_called_once_with(backup_type="manual")
 
 
 class TestBackupDeleteEndpoint:

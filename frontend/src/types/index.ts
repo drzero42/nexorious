@@ -1,5 +1,6 @@
 export * from './admin';
 export * from './auth';
+export * from './backup';
 export * from './game';
 export * from './import-export';
 export * from './import-mapping';

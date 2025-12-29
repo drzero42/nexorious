@@ -15,6 +15,7 @@ import {
   Shield,
   Boxes,
   Wrench,
+  DatabaseBackup,
 } from 'lucide-react';
 import { usePendingReviewCount, useJobsSummary } from '@/hooks';
 import type { NavItem, NavSection } from './types';
@@ -107,6 +108,11 @@ export function useNavItems() {
         href: '/admin/maintenance',
         label: 'Maintenance',
         icon: <Wrench className="h-4 w-4" />,
+      },
+      {
+        href: '/admin/backups',
+        label: 'Backup / Restore',
+        icon: <DatabaseBackup className="h-4 w-4" />,
       },
     ],
     defaultOpen: false,

@@ -27,6 +27,7 @@ from ..schemas.backup import (
     BackupType as SchemaBackupType,
 )
 from ..services.backup_service import backup_service, BackupType
+from ..worker.tasks.maintenance.backup_create import create_backup_task
 
 router = APIRouter(prefix="/admin/backups", tags=["Backup & Restore (Admin)"])
 logger = logging.getLogger(__name__)
@@ -102,19 +103,20 @@ async def create_backup(
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
 ):
-    """Create a new backup (manual trigger)."""
-    try:
-        backup_id = backup_service.create_backup(backup_type=BackupType.MANUAL)
-        return BackupCreateResponse(
-            job_id=backup_id,
-            message=f"Backup created: {backup_id}",
-        )
-    except Exception as e:
-        logger.error(f"Backup creation failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Backup creation failed: {str(e)}",
-        )
+    """Create a new backup (manual trigger).
+
+    This dispatches a background task to the worker to create the backup.
+    The backup will be available in the list once completed.
+    """
+    logger.info(f"User {current_user.id} requesting manual backup")
+
+    # Dispatch backup task to worker
+    await create_backup_task.kiq(backup_type=BackupType.MANUAL.value)
+
+    return BackupCreateResponse(
+        job_id="pending",
+        message="Backup job dispatched. Check the backup list for status.",
+    )
 
 
 @router.get("", response_model=BackupListResponse)
