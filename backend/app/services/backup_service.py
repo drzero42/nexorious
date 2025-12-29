@@ -652,9 +652,10 @@ class BackupService:
                 # Restore static files
                 cover_art_src = extracted / "cover_art"
                 if cover_art_src.exists():
+                    storage_path = settings.storage_path or "storage"
                     self._restore_directory(
                         cover_art_src,
-                        Path(settings.storage_path) / "cover_art"
+                        Path(storage_path) / "cover_art"
                     )
 
                 logos_src = extracted / "logos"
