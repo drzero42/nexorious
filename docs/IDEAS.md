@@ -51,3 +51,4 @@ Import/export should be moved under the username at the bottom - same place as P
 
 ## Fix import/export format
 We have inconsistencies in naming. We recently refactored from using a UUID for platform_id to using the slug name. There are still references to platform_id. We should clean up and make things consistent. We don't need a UUID for platforms as there are only a limited number of them and we want a stable and predictable name for each of them across all instances.
+Same goes for storefronts.
