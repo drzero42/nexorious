@@ -2,12 +2,13 @@
 
 import pytest
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from app.services.backup_service import (
     BackupService,
     BackupManifest,
+    BackupInfo,
     BackupType,
 )
 
@@ -112,3 +113,107 @@ class TestBackupCreation:
             assert checksum.startswith("sha256:")
             assert count == 2
             assert size > 0
+
+
+class TestRetentionLogic:
+    """Tests for backup retention logic."""
+
+    def test_get_backups_to_delete_by_count(self):
+        """Test retention by count."""
+        service = BackupService(backup_path="/tmp")
+
+        # Create mock backups
+        now = datetime.now(timezone.utc)
+        backups = [
+            BackupInfo(
+                id=f"backup-{i}",
+                created_at=now - timedelta(days=i),
+                backup_type=BackupType.SCHEDULED,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            )
+            for i in range(5)
+        ]
+
+        # Keep 3, should delete 2 oldest
+        to_delete = service._get_backups_to_delete_by_count(backups, 3)
+
+        assert len(to_delete) == 2
+        # Should delete oldest (backup-3 and backup-4)
+        assert "backup-3" in to_delete
+        assert "backup-4" in to_delete
+
+    def test_get_backups_to_delete_by_days(self):
+        """Test retention by days."""
+        service = BackupService(backup_path="/tmp")
+
+        now = datetime.now(timezone.utc)
+        backups = [
+            BackupInfo(
+                id="backup-new",
+                created_at=now - timedelta(days=1),
+                backup_type=BackupType.SCHEDULED,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            ),
+            BackupInfo(
+                id="backup-old",
+                created_at=now - timedelta(days=10),
+                backup_type=BackupType.SCHEDULED,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            ),
+        ]
+
+        # Keep backups from last 7 days
+        to_delete = service._get_backups_to_delete_by_days(backups, 7)
+
+        assert len(to_delete) == 1
+        assert "backup-old" in to_delete
+
+    def test_retention_excludes_manual_and_prerestore(self):
+        """Test that manual and pre-restore backups are excluded from regular retention."""
+        service = BackupService(backup_path="/tmp")
+
+        now = datetime.now(timezone.utc)
+        backups = [
+            BackupInfo(
+                id="backup-scheduled",
+                created_at=now - timedelta(days=10),
+                backup_type=BackupType.SCHEDULED,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            ),
+            BackupInfo(
+                id="backup-manual",
+                created_at=now - timedelta(days=10),
+                backup_type=BackupType.MANUAL,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            ),
+            BackupInfo(
+                id="backup-prerestore",
+                created_at=now - timedelta(days=10),
+                backup_type=BackupType.PRE_RESTORE,
+                size_bytes=1000,
+                stats_users=1,
+                stats_games=10,
+                stats_tags=5,
+            ),
+        ]
+
+        # Only scheduled backups should be considered
+        to_delete = service._get_backups_to_delete_by_days(backups, 7)
+
+        assert len(to_delete) == 1
+        assert "backup-scheduled" in to_delete

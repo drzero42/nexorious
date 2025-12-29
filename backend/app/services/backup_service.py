@@ -241,6 +241,88 @@ class BackupService:
         """Check if a backup exists."""
         return self.get_backup_path(backup_id).exists()
 
+    def _get_backups_to_delete_by_count(
+        self,
+        backups: list[BackupInfo],
+        keep_count: int
+    ) -> list[str]:
+        """Get backup IDs that exceed the count limit.
+
+        Only considers SCHEDULED backups. Manual and pre-restore are excluded.
+        """
+        # Filter to only scheduled backups
+        scheduled = [b for b in backups if b.backup_type == BackupType.SCHEDULED]
+
+        # Sort by creation date (newest first)
+        scheduled.sort(key=lambda b: b.created_at, reverse=True)
+
+        # Return IDs of backups beyond the keep count
+        return [b.id for b in scheduled[keep_count:]]
+
+    def _get_backups_to_delete_by_days(
+        self,
+        backups: list[BackupInfo],
+        keep_days: int
+    ) -> list[str]:
+        """Get backup IDs that are older than the retention period.
+
+        Only considers SCHEDULED backups. Manual and pre-restore are excluded.
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+
+        # Filter to only scheduled backups older than cutoff
+        to_delete = [
+            b.id for b in backups
+            if b.backup_type == BackupType.SCHEDULED and b.created_at < cutoff
+        ]
+
+        return to_delete
+
+    def _get_prerestore_backups_to_delete(
+        self,
+        backups: list[BackupInfo]
+    ) -> list[str]:
+        """Get pre-restore backup IDs older than 7 days."""
+        from datetime import timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        return [
+            b.id for b in backups
+            if b.backup_type == BackupType.PRE_RESTORE and b.created_at < cutoff
+        ]
+
+    def run_retention_cleanup(
+        self,
+        retention_mode: str,
+        retention_value: int
+    ) -> list[str]:
+        """Run retention cleanup based on configuration."""
+        backups = self.list_backups()
+        deleted = []
+
+        # Get scheduled backups to delete based on retention policy
+        if retention_mode == "days":
+            to_delete = self._get_backups_to_delete_by_days(backups, retention_value)
+        else:  # count
+            to_delete = self._get_backups_to_delete_by_count(backups, retention_value)
+
+        # Also clean up old pre-restore backups (7 day retention)
+        prerestore_to_delete = self._get_prerestore_backups_to_delete(backups)
+        to_delete.extend(prerestore_to_delete)
+
+        # Delete the backups
+        for backup_id in to_delete:
+            if self.delete_backup(backup_id):
+                deleted.append(backup_id)
+
+        if deleted:
+            logger.info(f"Retention cleanup deleted {len(deleted)} backups: {deleted}")
+
+        return deleted
+
     def _calculate_file_checksum(self, file_path: Path) -> str:
         """Calculate SHA256 checksum of a file."""
         sha256 = hashlib.sha256()
