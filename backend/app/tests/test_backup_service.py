@@ -1,7 +1,9 @@
 """Tests for backup service."""
 
+import pytest
 import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.services.backup_service import (
     BackupService,
@@ -71,3 +73,42 @@ class TestBackupService:
             service = BackupService(backup_path=tmpdir)
             backups = service.list_backups()
             assert backups == []
+
+
+class TestBackupCreation:
+    """Tests for backup creation functionality."""
+
+    @pytest.fixture
+    def mock_db_url(self):
+        """Mock database URL for testing."""
+        return "postgresql://test:test@localhost:5432/testdb"
+
+    def test_calculate_checksum(self):
+        """Test checksum calculation for a file."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"test content")
+            f.flush()
+
+            service = BackupService(backup_path="/tmp")
+            checksum = service._calculate_file_checksum(Path(f.name))
+
+            assert checksum.startswith("sha256:")
+            # Verify it's deterministic
+            checksum2 = service._calculate_file_checksum(Path(f.name))
+            assert checksum == checksum2
+
+            Path(f.name).unlink()
+
+    def test_calculate_directory_checksum(self):
+        """Test checksum calculation for a directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create some test files
+            (Path(tmpdir) / "file1.txt").write_text("content1")
+            (Path(tmpdir) / "file2.txt").write_text("content2")
+
+            service = BackupService(backup_path="/tmp")
+            checksum, count, size = service._calculate_directory_stats(Path(tmpdir))
+
+            assert checksum.startswith("sha256:")
+            assert count == 2
+            assert size > 0

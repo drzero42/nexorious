@@ -11,6 +11,9 @@ Handles:
 import logging
 import tarfile
 import json
+import hashlib
+import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -237,6 +240,193 @@ class BackupService:
     def backup_exists(self, backup_id: str) -> bool:
         """Check if a backup exists."""
         return self.get_backup_path(backup_id).exists()
+
+    def _calculate_file_checksum(self, file_path: Path) -> str:
+        """Calculate SHA256 checksum of a file."""
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return f"sha256:{sha256.hexdigest()}"
+
+    def _calculate_directory_stats(self, dir_path: Path) -> tuple[str, int, int]:
+        """Calculate combined checksum, file count, and total size for a directory."""
+        if not dir_path.exists():
+            return "sha256:empty", 0, 0
+
+        sha256 = hashlib.sha256()
+        file_count = 0
+        total_size = 0
+
+        for file_path in sorted(dir_path.rglob("*")):
+            if file_path.is_file():
+                file_count += 1
+                total_size += file_path.stat().st_size
+                sha256.update(str(file_path.relative_to(dir_path)).encode())
+                with open(file_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        sha256.update(chunk)
+
+        return f"sha256:{sha256.hexdigest()}", file_count, total_size
+
+    def _get_alembic_revision(self) -> str:
+        """Get current Alembic revision from database."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_engine
+
+            engine = get_engine()
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT version_num FROM alembic_version"))
+                row = result.fetchone()
+                if row:
+                    return row[0]
+        except Exception as e:
+            logger.warning(f"Failed to get Alembic revision: {e}")
+        return "unknown"
+
+    def _get_database_stats(self) -> tuple[int, int, int]:
+        """Get counts of users, games, and tags from database."""
+        try:
+            from sqlmodel import Session, select, func
+            from app.core.database import get_engine
+            from app.models.user import User
+            from app.models.game import Game
+            from app.models.tag import Tag
+
+            engine = get_engine()
+            with Session(engine) as session:
+                users = session.exec(select(func.count()).select_from(User)).one()
+                games = session.exec(select(func.count()).select_from(Game)).one()
+                tags = session.exec(select(func.count()).select_from(Tag)).one()
+                return users, games, tags
+        except Exception as e:
+            logger.warning(f"Failed to get database stats: {e}")
+            return 0, 0, 0
+
+    def _run_pg_dump(self, output_path: Path, timeout: int = 300) -> None:
+        """Run pg_dump to create database dump."""
+        from urllib.parse import urlparse
+
+        parsed = urlparse(settings.database_url)
+
+        env = {
+            "PGPASSWORD": parsed.password or "",
+        }
+
+        cmd = [
+            "pg_dump",
+            "--format=plain",
+            "--no-owner",
+            "--no-acl",
+            f"--host={parsed.hostname}",
+            f"--port={parsed.port or 5432}",
+            f"--username={parsed.username}",
+            f"--dbname={parsed.path.lstrip('/')}",
+            f"--file={output_path}",
+        ]
+
+        try:
+            import os
+            result = subprocess.run(
+                cmd,
+                env={**os.environ, **env},
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(f"pg_dump failed: {result.stderr}")
+
+            logger.info(f"Database dump created: {output_path}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"pg_dump timed out after {timeout} seconds")
+
+    def create_backup(
+        self,
+        backup_type: BackupType = BackupType.MANUAL,
+        backup_id: Optional[str] = None,
+    ) -> str:
+        """Create a full system backup."""
+        import tempfile
+
+        backup_id = backup_id or self.generate_backup_id()
+        logger.info(f"Creating backup: {backup_id} (type: {backup_type.value})")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            staging_dir = Path(tmpdir) / backup_id
+            staging_dir.mkdir()
+
+            try:
+                # 1. Database dump
+                db_path = staging_dir / "database.sql"
+                self._run_pg_dump(db_path)
+                db_checksum = self._calculate_file_checksum(db_path)
+                db_size = db_path.stat().st_size
+
+                # 2. Copy cover art
+                storage_path = settings.storage_path or "storage"
+                cover_art_src = Path(storage_path) / "cover_art"
+                cover_art_dst = staging_dir / "cover_art"
+                if cover_art_src.exists():
+                    shutil.copytree(cover_art_src, cover_art_dst)
+                else:
+                    cover_art_dst.mkdir()
+                cover_art_checksum, cover_art_count, cover_art_size = \
+                    self._calculate_directory_stats(cover_art_dst)
+
+                # 3. Copy logos
+                logos_src = Path("static/logos")
+                logos_dst = staging_dir / "logos"
+                if logos_src.exists():
+                    shutil.copytree(logos_src, logos_dst)
+                else:
+                    logos_dst.mkdir()
+                logos_checksum, logos_count, logos_size = \
+                    self._calculate_directory_stats(logos_dst)
+
+                # 4. Get stats
+                users, games, tags = self._get_database_stats()
+
+                # 5. Create manifest
+                manifest = BackupManifest(
+                    version=1,
+                    created_at=datetime.now(timezone.utc),
+                    app_version=settings.app_version,
+                    alembic_revision=self._get_alembic_revision(),
+                    backup_type=backup_type,
+                    database_file="database.sql",
+                    database_size_bytes=db_size,
+                    database_checksum=db_checksum,
+                    cover_art_count=cover_art_count,
+                    cover_art_size_bytes=cover_art_size,
+                    cover_art_checksum=cover_art_checksum,
+                    logos_count=logos_count,
+                    logos_size_bytes=logos_size,
+                    logos_checksum=logos_checksum,
+                    stats_users=users,
+                    stats_games=games,
+                    stats_tags=tags,
+                )
+
+                manifest_path = staging_dir / "manifest.json"
+                manifest_path.write_text(json.dumps(manifest.to_dict(), indent=2))
+
+                # 6. Create tar.gz archive
+                archive_path = self.get_backup_path(backup_id)
+                with tarfile.open(archive_path, "w:gz") as tar:
+                    tar.add(staging_dir, arcname=backup_id)
+
+                logger.info(f"Backup created successfully: {archive_path}")
+                return backup_id
+
+            except Exception as e:
+                logger.error(f"Backup creation failed: {e}")
+                archive_path = self.get_backup_path(backup_id)
+                if archive_path.exists():
+                    archive_path.unlink()
+                raise RuntimeError(f"Backup creation failed: {e}")
 
 
 # Global instance
