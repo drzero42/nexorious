@@ -127,6 +127,10 @@ class Settings(BaseSettings):
         default="/tmp/nexorious_uploads",
         description="Directory for temporary file uploads and processing"
     )
+    backup_path: str = Field(
+        default="storage/backups",
+        description="Path for backup file storage"
+    )
 
     # NATS JetStream
     NATS_URL: str = "nats://localhost:4222"
