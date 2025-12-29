@@ -285,3 +285,50 @@ Backups from older schema versions are supported:
 - All non-admin API calls return 503 Service Unavailable with message "System restore in progress"
 - Frontend shows maintenance banner if it receives this response
 - Mode automatically clears on restore success or stays active on failure (admin must resolve)
+
+## Implementation Notes
+
+### Files Created/Modified
+
+**Backend:**
+- `app/core/config.py` - Added `backup_path` setting
+- `app/models/backup_config.py` - BackupConfig model with schedule and retention enums
+- `app/schemas/backup.py` - API request/response schemas
+- `app/services/backup_service.py` - Core backup/restore logic with pg_dump/psql integration
+- `app/middleware/maintenance.py` - Maintenance mode middleware for blocking requests during restore
+- `app/api/backup_endpoints.py` - Admin-only API endpoints (8 endpoints total)
+- `app/worker/tasks/maintenance/backup_scheduled.py` - Scheduled backup task (hourly cron check)
+- `app/alembic/versions/f40c6a59ff67_add_backup_config_table.py` - Database migration
+
+**Tests:**
+- `app/tests/test_backup_config_model.py` - Model unit tests
+- `app/tests/test_backup_service.py` - Service unit tests (validation, retention, checksums)
+- `app/tests/test_backup_endpoints.py` - API integration tests (27 tests)
+
+### Dependencies
+
+No new dependencies required - uses stdlib `tarfile`, `hashlib`, `subprocess`, and existing PostgreSQL tools (`pg_dump`, `psql`).
+
+### Database Migration
+
+Migration creates `backup_config` table for storing schedule/retention settings:
+- `id` - Always 1 (singleton)
+- `schedule` - ENUM: manual, daily, weekly
+- `schedule_time` - HH:MM format (default: 02:00)
+- `schedule_day` - 0-6 for weekly schedule
+- `retention_mode` - ENUM: days, count
+- `retention_value` - Number of days or count
+- `updated_at` - Timestamp
+
+### API Endpoints Implemented
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/backups/config` | Get backup configuration |
+| `PUT` | `/api/admin/backups/config` | Update backup configuration |
+| `POST` | `/api/admin/backups` | Create manual backup |
+| `GET` | `/api/admin/backups` | List available backups |
+| `GET` | `/api/admin/backups/{id}/download` | Download backup file |
+| `DELETE` | `/api/admin/backups/{id}` | Delete a backup |
+| `POST` | `/api/admin/backups/{id}/restore` | Restore from server backup |
+| `POST` | `/api/admin/backups/restore/upload` | Restore from uploaded file |
