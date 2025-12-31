@@ -637,7 +637,8 @@ async def bulk_add_platforms_to_user_games(
                     storefront=platform_assoc.storefront,
                     store_game_id=platform_assoc.store_game_id,
                     store_url=str(platform_assoc.store_url) if platform_assoc.store_url else None,
-                    is_available=platform_assoc.is_available
+                    is_available=platform_assoc.is_available,
+                    hours_played=platform_assoc.hours_played,
                 )
                 session.add(platform_obj)
                 add_count += 1
