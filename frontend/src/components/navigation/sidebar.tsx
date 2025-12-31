@@ -17,7 +17,7 @@ export function Sidebar() {
   const { mainItems, adminSection } = useNavItems();
 
   return (
-    <aside className="hidden md:flex w-64 bg-card border-r flex-col h-screen">
+    <aside className="hidden md:flex md:fixed md:left-0 md:top-0 w-64 bg-card border-r flex-col h-screen">
       {/* Logo */}
       <div className="p-4 border-b">
         <Link href="/games" className="block">

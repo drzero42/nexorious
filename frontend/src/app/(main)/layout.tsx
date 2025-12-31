@@ -19,7 +19,7 @@ export default function MainLayout({
         <Sidebar />
 
         {/* Main content */}
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-6 overflow-auto md:ml-64">{children}</main>
       </div>
     </RouteGuard>
   );
