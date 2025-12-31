@@ -31,5 +31,8 @@ COPY . .
 # Install the project
 RUN uv sync --frozen
 
+# Install legendary-gl for Epic Games Store sync
+RUN uv pip install legendary-gl>=0.20.34
+
 # Run with uvicorn (--reload enabled via compose command override)
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

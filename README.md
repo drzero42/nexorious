@@ -22,6 +22,14 @@ A self-hostable web application for managing personal video game collections wit
 - **Nix** (optional, recommended for reproducible development environment)
 - **IGDB API Credentials** (required) - See [IGDB Setup Guide](docs/igdb-setup.md)
 
+### System Dependencies
+
+- **PostgreSQL 16+** - Database server
+- **legendary-gl** (for Epic Games Store sync)
+  - Install: `pip install legendary-gl`
+  - Required for Epic Games Store library sync
+  - GPL3 licensed, used as external tool only
+
 ### Development Setup
 
 #### Option 1: Using Nix (Recommended)

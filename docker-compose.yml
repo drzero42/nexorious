@@ -61,6 +61,7 @@ services:
     volumes:
       - ./backend:/app:Z
       - /app/.venv
+      - legendary-configs:/var/lib/nexorious/legendary-configs
     depends_on:
       nats:
         condition: service_healthy
@@ -137,3 +138,4 @@ services:
 volumes:
   postgres_data:
   nats_data:
+  legendary-configs:
