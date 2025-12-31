@@ -42,6 +42,9 @@
             # Playwright
             playwright-test
             playwright-mcp
+
+            # Epic Games Store sync
+            python313Packages.legendary-gl
           ];
 
           shellHook = ''

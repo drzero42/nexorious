@@ -719,13 +719,23 @@ To create the definitive self-hosted solution for personal game collection manag
 ### Phase 6: Advanced Features
 
 #### 6.1 Enhanced Storefront Integration
-**Priority**: P2 (Medium)
+**Priority**: P2 (Medium) - **PARTIALLY IMPLEMENTED**
 - **User Story**: As a user, I want integration with more storefronts so I can import all my games automatically
-- **Requirements**:
-  - Epic Games Store integration
-  - GOG integration
-  - PlayStation Store integration
-  - Xbox Marketplace integration
+
+**Implemented:**
+- ✅ Epic Games Store integration
+  - Server-side sync using legendary CLI (GPL3 licensed, external tool)
+  - Device code OAuth authentication flow
+  - Library import with automatic IGDB matching
+  - Multi-user config isolation via XDG_CONFIG_HOME
+  - Auth expiration handling and re-authentication support
+  - Platform/storefront mapping: pc-windows/epic
+
+**Pending:**
+- GOG integration
+- PlayStation Store integration
+- Xbox Marketplace integration
+
 - **Acceptance Criteria**:
   - Each storefront integration imports library correctly
   - Authentication flows work smoothly
