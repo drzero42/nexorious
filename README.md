@@ -28,7 +28,6 @@ A self-hostable web application for managing personal video game collections wit
 - **legendary-gl** (for Epic Games Store sync)
   - Install: `pip install legendary-gl`
   - Required for Epic Games Store library sync
-  - GPL3 licensed, used as external tool only
 
 ### Development Setup
 
