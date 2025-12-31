@@ -10,6 +10,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class LegendaryNotFoundError(Exception):
+    """legendary CLI not found on system."""
+    pass
+
+
+class EpicAuthenticationError(Exception):
+    """Epic authentication failed or invalid."""
+    pass
+
+
+class EpicAuthExpiredError(Exception):
+    """Epic authentication token expired."""
+    pass
+
+
+class EpicAPIError(Exception):
+    """Epic API error or legendary command failed."""
+    pass
+
+
 class EpicService:
     """Service for interacting with Epic Games Store via legendary CLI.
 
