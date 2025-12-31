@@ -695,6 +695,33 @@ class BackupService:
 
         dbname = parsed.path.lstrip('/')
 
+        # First, dispose of our own connection pool to release locks
+        from app.core.database import get_engine
+        engine = get_engine()
+        engine.dispose()
+        logger.info("Connection pool disposed")
+
+        # Terminate all other connections to the database
+        logger.info("Terminating other database connections...")
+        terminate_cmd = [
+            "psql",
+            f"--host={parsed.hostname}",
+            f"--port={parsed.port or 5432}",
+            f"--username={parsed.username}",
+            f"--dbname={dbname}",
+            f"--command=SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{dbname}' AND pid <> pg_backend_pid();",
+        ]
+
+        result = subprocess.run(
+            terminate_cmd,
+            env={**os.environ, **env},
+            capture_output=True,
+            text=True,
+        )
+        # Don't fail if this fails - just log it
+        if result.returncode != 0:
+            logger.warning(f"Could not terminate connections: {result.stderr}")
+
         # Drop all tables by dropping and recreating schema
         logger.info("Dropping existing tables...")
         drop_cmd = [
@@ -773,19 +800,27 @@ class BackupService:
                 user = session.get(User, admin_user_id)
 
                 if user:
-                    # User exists, restore session
-                    new_session = UserSession(
-                        id=session_data.get("id"),
-                        user_id=admin_user_id,
-                        token_hash=session_data.get("token_hash"),
-                        refresh_token_hash=session_data.get("refresh_token_hash"),
-                        expires_at=session_data.get("expires_at"),
-                        ip_address=session_data.get("ip_address"),
-                        user_agent=session_data.get("user_agent"),
-                    )
-                    session.add(new_session)
-                    session.commit()
-                    logger.info(f"Admin session restored for user {admin_user_id}")
+                    # Check if session already exists in restored data
+                    session_id = session_data.get("id")
+                    existing_session = session.get(UserSession, session_id)
+
+                    if existing_session:
+                        # Session already exists in backup - just verify it's valid
+                        logger.info(f"Admin session already exists in restored data for user {admin_user_id}")
+                    else:
+                        # Session doesn't exist, create it
+                        new_session = UserSession(
+                            id=session_id,
+                            user_id=admin_user_id,
+                            token_hash=session_data.get("token_hash"),
+                            refresh_token_hash=session_data.get("refresh_token_hash"),
+                            expires_at=session_data.get("expires_at"),
+                            ip_address=session_data.get("ip_address"),
+                            user_agent=session_data.get("user_agent"),
+                        )
+                        session.add(new_session)
+                        session.commit()
+                        logger.info(f"Admin session restored for user {admin_user_id}")
                 else:
                     logger.warning(f"Admin user {admin_user_id} not found in restored data")
         except Exception as e:

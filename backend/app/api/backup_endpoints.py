@@ -263,6 +263,10 @@ async def restore_backup(
             "user_agent": admin_session.user_agent,
         }
 
+    # Close the session before restore - restore will terminate all DB connections
+    # which would cause errors when FastAPI tries to cleanup this session later
+    session.close()
+
     try:
         backup_service.restore_backup(
             backup_id=backup_id,
@@ -332,6 +336,10 @@ async def restore_from_upload(
                 "ip_address": admin_session.ip_address,
                 "user_agent": admin_session.user_agent,
             }
+
+        # Close the session before restore - restore will terminate all DB connections
+        # which would cause errors when FastAPI tries to cleanup this session later
+        session.close()
 
         # Move to backups dir with generated ID
         backup_id = backup_service.generate_backup_id()
