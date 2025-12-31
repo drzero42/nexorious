@@ -5,7 +5,8 @@ This model stores per-user, per-platform synchronization preferences
 including frequency, auto-add behavior, and last sync timestamp.
 """
 
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship, Column
+from sqlalchemy import Text
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
@@ -54,6 +55,16 @@ class UserSyncConfig(SQLModel, table=True):
     # Tracking
     last_synced_at: Optional[datetime] = Field(
         default=None, description="Timestamp of last successful sync"
+    )
+
+    # Platform credentials (stored as JSON)
+    # For Epic: stores the user.json content from legendary
+    # For Steam: stores API key or session tokens
+    # Stored as JSON TEXT to avoid size limitations
+    platform_credentials: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="Platform-specific authentication credentials stored as JSON",
     )
 
     # Timestamps
