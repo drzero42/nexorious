@@ -242,7 +242,7 @@ class TestSeedAllOfficialData:
         assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
         
         # Verify default storefronts were set for platforms that have them defined
-        platforms_with_defaults = [p for p in platforms if p.default_storefront_id is not None]
+        platforms_with_defaults = [p for p in platforms if p.default_storefront is not None]
         platforms_with_default_names = [p for p in OFFICIAL_PLATFORMS if "default_storefront_name" in p]
         assert len(platforms_with_defaults) == len(platforms_with_default_names)
     
@@ -468,7 +468,7 @@ class TestSeedDataAPI:
         assert len(storefronts) == len(OFFICIAL_STOREFRONTS)
         
         # Verify default storefronts were set for platforms that have them defined
-        platforms_with_defaults = [p for p in platforms if p.default_storefront_id is not None]
+        platforms_with_defaults = [p for p in platforms if p.default_storefront is not None]
         platforms_with_default_names = [p for p in OFFICIAL_PLATFORMS if "default_storefront_name" in p]
         assert len(platforms_with_defaults) == len(platforms_with_default_names)
     

@@ -173,10 +173,9 @@ class TestUserGameToExportData:
         session.commit()
         session.refresh(user_game)
 
-        # Add platform association
         platform_assoc = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=test_platform.name,
+            platform=test_platform.name,
             store_game_id="12345",
             store_url="https://store.example.com/game",
             is_available=True,
@@ -265,9 +264,8 @@ class TestUserGameToCsvRow:
         self, session: Session, test_user, test_game
     ):
         """CSV row contains comma-separated platform names."""
-        # Create two platforms
-        platform1 = Platform(id="test-pc", name="PC", display_name="PC", is_active=True)
-        platform2 = Platform(id="test-ps5", name="PlayStation 5", display_name="PlayStation 5", is_active=True)
+        platform1 = Platform(name="test-pc", display_name="PC", is_active=True)
+        platform2 = Platform(name="test-ps5", display_name="PlayStation 5", is_active=True)
         session.add(platform1)
         session.add(platform2)
         session.commit()
@@ -282,11 +280,10 @@ class TestUserGameToCsvRow:
         session.commit()
         session.refresh(user_game)
 
-        # Add platform associations
         for platform in [platform1, platform2]:
             assoc = UserGamePlatform(
                 user_game_id=user_game.id,
-                platform_id=platform.name,
+                platform=platform.name,
             )
             session.add(assoc)
         session.commit()
@@ -294,9 +291,8 @@ class TestUserGameToCsvRow:
 
         csv_row = _user_game_to_csv_row(session, user_game)
 
-        # Platform names should be comma-separated and sorted
-        assert "PC" in csv_row.platforms
-        assert "PlayStation 5" in csv_row.platforms
+        assert "test-pc" in csv_row.platforms
+        assert "test-ps5" in csv_row.platforms
 
 
 class TestWriteExports:

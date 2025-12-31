@@ -22,16 +22,14 @@ class TestPlatformsListEndpoint:
     def test_list_platforms_success(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test successful platforms list retrieval."""
         response = client.get("/api/platforms/", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert "platforms" in data
         assert "total" in data
         assert len(data["platforms"]) == 1
-        assert data["platforms"][0]["id"] == str(test_platform.id)
         assert data["platforms"][0]["name"] == test_platform.name
         assert data["platforms"][0]["display_name"] == test_platform.display_name
-        # Verify storefronts field is present (should be empty for test_platform with no associations)
         assert "storefronts" in data["platforms"][0]
         assert data["platforms"][0]["storefronts"] == []
     
@@ -132,14 +130,10 @@ class TestPlatformsListEndpoint:
         session.add(inactive_storefront)
         session.commit()
         
-        # Create platform-storefront associations
-        # Platform 1 has storefront 1 and 2
-        assoc1 = PlatformStorefront(platform_id=platform1.id, storefront_id=storefront1.id)
-        assoc2 = PlatformStorefront(platform_id=platform1.id, storefront_id=storefront2.id)
-        # Platform 1 also has inactive storefront (should be filtered out)
-        assoc_inactive = PlatformStorefront(platform_id=platform1.id, storefront_id=inactive_storefront.id)
-        # Platform 2 has storefront 3
-        assoc3 = PlatformStorefront(platform_id=platform2.id, storefront_id=storefront3.id)
+        assoc1 = PlatformStorefront(platform=platform1.name, storefront=storefront1.name)
+        assoc2 = PlatformStorefront(platform=platform1.name, storefront=storefront2.name)
+        assoc_inactive = PlatformStorefront(platform=platform1.name, storefront=inactive_storefront.name)
+        assoc3 = PlatformStorefront(platform=platform2.name, storefront=storefront3.name)
         
         session.add(assoc1)
         session.add(assoc2)
@@ -170,9 +164,7 @@ class TestPlatformsListEndpoint:
         assert len(platform2_data["storefronts"]) == 1
         assert platform2_data["storefronts"][0]["name"] == "storefront-3"
         
-        # Verify storefront objects have all expected fields
         storefront = platform1_data["storefronts"][0]
-        assert "id" in storefront
         assert "name" in storefront
         assert "display_name" in storefront
         assert "is_active" in storefront
@@ -202,26 +194,25 @@ class TestPlatformsListEndpoint:
 
 
 class TestPlatformsDetailEndpoint:
-    """Test GET /api/platforms/{platform_id} endpoint."""
-    
+    """Test GET /api/platforms/{platform_name} endpoint."""
+
     def test_get_platform_success(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test successful platform retrieval."""
-        response = client.get(f"/api/platforms/{test_platform.id}", headers=auth_headers)
-        
+        response = client.get(f"/api/platforms/{test_platform.name}", headers=auth_headers)
+
         assert_api_success(response, 200)
         data = response.json()
-        assert data["id"] == str(test_platform.id)
         assert data["name"] == test_platform.name
         assert data["display_name"] == test_platform.display_name
         assert data["icon_url"] == test_platform.icon_url
         assert data["is_active"] == test_platform.is_active
-    
+
     def test_get_platform_not_found(self, client: TestClient, auth_headers):
-        """Test platform retrieval with non-existent ID."""
-        response = client.get("/api/platforms/non-existent-id", headers=auth_headers)
-        
+        """Test platform retrieval with non-existent name."""
+        response = client.get("/api/platforms/non-existent-platform", headers=auth_headers)
+
         assert_api_error(response, 404, "Platform not found")
-    
+
     def test_get_inactive_platform(self, client: TestClient, session: Session, auth_headers):
         """Test retrieval of inactive platform."""
         inactive_platform = Platform(
@@ -232,9 +223,9 @@ class TestPlatformsDetailEndpoint:
         session.add(inactive_platform)
         session.commit()
         session.refresh(inactive_platform)
-        
-        response = client.get(f"/api/platforms/{inactive_platform.id}", headers=auth_headers)
-        
+
+        response = client.get(f"/api/platforms/{inactive_platform.name}", headers=auth_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["is_active"] is False
@@ -292,8 +283,8 @@ class TestPlatformsCreateEndpoint:
 
 
 class TestPlatformsUpdateEndpoint:
-    """Test PUT /api/platforms/{platform_id} endpoint."""
-    
+    """Test PUT /api/platforms/{platform_name} endpoint."""
+
     def test_update_platform_success(self, client: TestClient, test_platform: Platform, admin_headers: Dict[str, str]):
         """Test successful platform update by admin."""
         update_data = {
@@ -301,49 +292,48 @@ class TestPlatformsUpdateEndpoint:
             "icon_url": "https://example.com/updated.png",
             "is_active": False
         }
-        response = client.put(f"/api/platforms/{test_platform.id}", json=update_data, headers=admin_headers)
-        
+        response = client.put(f"/api/platforms/{test_platform.name}", json=update_data, headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["display_name"] == "Updated Platform Name"
         assert data["icon_url"] == "https://example.com/updated.png"
         assert data["is_active"] is False
-        assert data["name"] == test_platform.name  # Should not change
-    
+        assert data["name"] == test_platform.name
+
     def test_update_platform_not_admin(self, client: TestClient, test_platform: Platform, auth_headers: Dict[str, str]):
         """Test platform update by non-admin user."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/{test_platform.id}", json=update_data, headers=auth_headers)
-        
+        response = client.put(f"/api/platforms/{test_platform.name}", json=update_data, headers=auth_headers)
+
         assert_api_error(response, 403, "Administrative privileges required")
-    
+
     def test_update_platform_without_auth(self, client: TestClient, test_platform: Platform):
         """Test platform update without authentication."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/{test_platform.id}", json=update_data)
-        
+        response = client.put(f"/api/platforms/{test_platform.name}", json=update_data)
+
         assert_api_error(response, 403, "Not authenticated")
-    
+
     def test_update_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test platform update with non-existent ID."""
+        """Test platform update with non-existent name."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put("/api/platforms/non-existent-id", json=update_data, headers=admin_headers)
-        
+        response = client.put("/api/platforms/non-existent-platform", json=update_data, headers=admin_headers)
+
         assert_api_error(response, 404, "Platform not found")
-    
+
     def test_update_platform_partial(self, client: TestClient, test_platform: Platform, admin_headers: Dict[str, str]):
         """Test partial platform update."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/{test_platform.id}", json=update_data, headers=admin_headers)
-        
+        response = client.put(f"/api/platforms/{test_platform.name}", json=update_data, headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["display_name"] == "Updated Name"
-        assert data["icon_url"] == test_platform.icon_url  # Should remain unchanged
-    
+        assert data["icon_url"] == test_platform.icon_url
+
     def test_update_official_platform_changes_source_to_custom(self, client: TestClient, session: Session, admin_headers: Dict[str, str]):
         """Test that updating an official platform changes its source to custom."""
-        # Create an official platform
         official_platform = Platform(
             name="test-official-platform",
             display_name="Test Official Platform",
@@ -353,70 +343,66 @@ class TestPlatformsUpdateEndpoint:
         session.add(official_platform)
         session.commit()
         session.refresh(official_platform)
-        
-        # Verify it's official
+
         assert official_platform.source == "official"
-        
-        # Update the platform
+
         update_data = {
             "display_name": "Updated Test Official Platform"
         }
-        
-        response = client.put(f"/api/platforms/{official_platform.id}", json=update_data, headers=admin_headers)
+
+        response = client.put(f"/api/platforms/{official_platform.name}", json=update_data, headers=admin_headers)
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["display_name"] == "Updated Test Official Platform"
-        assert data["source"] == "custom"  # Should have changed to custom
-        
-        # Verify in database
+        assert data["source"] == "custom"
+
         session.refresh(official_platform)
         assert official_platform.source == "custom"
 
 
 class TestPlatformsDeleteEndpoint:
-    """Test DELETE /api/platforms/{platform_id} endpoint."""
-    
+    """Test DELETE /api/platforms/{platform_name} endpoint."""
+
     def test_delete_platform_success(self, client: TestClient, test_platform: Platform, admin_headers: Dict[str, str]):
         """Test successful platform deletion by admin."""
-        response = client.delete(f"/api/platforms/{test_platform.id}", headers=admin_headers)
-        
+        response = client.delete(f"/api/platforms/{test_platform.name}", headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Platform deleted successfully"
-    
+
     def test_delete_platform_not_admin(self, client: TestClient, test_platform: Platform, auth_headers: Dict[str, str]):
         """Test platform deletion by non-admin user."""
-        response = client.delete(f"/api/platforms/{test_platform.id}", headers=auth_headers)
-        
+        response = client.delete(f"/api/platforms/{test_platform.name}", headers=auth_headers)
+
         assert_api_error(response, 403, "Administrative privileges required")
-    
+
     def test_delete_platform_without_auth(self, client: TestClient, test_platform: Platform):
         """Test platform deletion without authentication."""
-        response = client.delete(f"/api/platforms/{test_platform.id}")
-        
+        response = client.delete(f"/api/platforms/{test_platform.name}")
+
         assert_api_error(response, 403, "Not authenticated")
-    
+
     def test_delete_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test platform deletion with non-existent ID."""
-        response = client.delete("/api/platforms/non-existent-id", headers=admin_headers)
-        
+        """Test platform deletion with non-existent name."""
+        response = client.delete("/api/platforms/non-existent-platform", headers=admin_headers)
+
         assert_api_error(response, 404, "Platform not found")
 
 
 class TestStorefrontsListEndpoint:
     """Test GET /api/platforms/storefronts/ endpoint."""
-    
+
     def test_list_storefronts_success(self, client: TestClient, test_storefront: Storefront, auth_headers):
         """Test successful storefronts list retrieval."""
         response = client.get("/api/platforms/storefronts/", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert "storefronts" in data
         assert "total" in data
         assert len(data["storefronts"]) == 1
-        assert data["storefronts"][0]["id"] == str(test_storefront.id)
         assert data["storefronts"][0]["name"] == test_storefront.name
         assert data["storefronts"][0]["display_name"] == test_storefront.display_name
     
@@ -479,27 +465,26 @@ class TestStorefrontsListEndpoint:
 
 
 class TestStorefrontsDetailEndpoint:
-    """Test GET /api/platforms/storefronts/{storefront_id} endpoint."""
-    
+    """Test GET /api/platforms/storefronts/{storefront_name} endpoint."""
+
     def test_get_storefront_success(self, client: TestClient, test_storefront: Storefront, auth_headers):
         """Test successful storefront retrieval."""
-        response = client.get(f"/api/platforms/storefronts/{test_storefront.id}", headers=auth_headers)
-        
+        response = client.get(f"/api/platforms/storefronts/{test_storefront.name}", headers=auth_headers)
+
         assert_api_success(response, 200)
         data = response.json()
-        assert data["id"] == str(test_storefront.id)
         assert data["name"] == test_storefront.name
         assert data["display_name"] == test_storefront.display_name
         assert data["icon_url"] == test_storefront.icon_url
         assert data["base_url"] == test_storefront.base_url
         assert data["is_active"] == test_storefront.is_active
-    
+
     def test_get_storefront_not_found(self, client: TestClient, auth_headers):
-        """Test storefront retrieval with non-existent ID."""
-        response = client.get("/api/platforms/storefronts/non-existent-id", headers=auth_headers)
-        
+        """Test storefront retrieval with non-existent name."""
+        response = client.get("/api/platforms/storefronts/non-existent-storefront", headers=auth_headers)
+
         assert_api_error(response, 404, "Storefront not found")
-    
+
     def test_get_inactive_storefront(self, client: TestClient, session: Session, auth_headers):
         """Test retrieval of inactive storefront."""
         inactive_storefront = Storefront(
@@ -511,9 +496,9 @@ class TestStorefrontsDetailEndpoint:
         session.add(inactive_storefront)
         session.commit()
         session.refresh(inactive_storefront)
-        
-        response = client.get(f"/api/platforms/storefronts/{inactive_storefront.id}", headers=auth_headers)
-        
+
+        response = client.get(f"/api/platforms/storefronts/{inactive_storefront.name}", headers=auth_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["is_active"] is False
@@ -572,8 +557,8 @@ class TestStorefrontsCreateEndpoint:
 
 
 class TestStorefrontsUpdateEndpoint:
-    """Test PUT /api/platforms/storefronts/{storefront_id} endpoint."""
-    
+    """Test PUT /api/platforms/storefronts/{storefront_name} endpoint."""
+
     def test_update_storefront_success(self, client: TestClient, test_storefront: Storefront, admin_headers: Dict[str, str]):
         """Test successful storefront update by admin."""
         update_data = {
@@ -582,50 +567,49 @@ class TestStorefrontsUpdateEndpoint:
             "base_url": "https://updated.example.com",
             "is_active": False
         }
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json=update_data, headers=admin_headers)
-        
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json=update_data, headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["display_name"] == "Updated Storefront Name"
         assert data["icon_url"] == "https://example.com/updated.png"
         assert data["base_url"] == "https://updated.example.com/"
         assert data["is_active"] is False
-        assert data["name"] == test_storefront.name  # Should not change
-    
+        assert data["name"] == test_storefront.name
+
     def test_update_storefront_not_admin(self, client: TestClient, test_storefront: Storefront, auth_headers: Dict[str, str]):
         """Test storefront update by non-admin user."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json=update_data, headers=auth_headers)
-        
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json=update_data, headers=auth_headers)
+
         assert_api_error(response, 403, "Administrative privileges required")
-    
+
     def test_update_storefront_without_auth(self, client: TestClient, test_storefront: Storefront):
         """Test storefront update without authentication."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json=update_data)
-        
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json=update_data)
+
         assert_api_error(response, 403, "Not authenticated")
-    
+
     def test_update_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test storefront update with non-existent ID."""
+        """Test storefront update with non-existent name."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put("/api/platforms/storefronts/non-existent-id", json=update_data, headers=admin_headers)
-        
+        response = client.put("/api/platforms/storefronts/non-existent-storefront", json=update_data, headers=admin_headers)
+
         assert_api_error(response, 404, "Storefront not found")
-    
+
     def test_update_storefront_partial(self, client: TestClient, test_storefront: Storefront, admin_headers: Dict[str, str]):
         """Test partial storefront update."""
         update_data = {"display_name": "Updated Name"}
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json=update_data, headers=admin_headers)
-        
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json=update_data, headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["display_name"] == "Updated Name"
-        assert data["base_url"] == test_storefront.base_url  # Should remain unchanged
-    
+        assert data["base_url"] == test_storefront.base_url
+
     def test_update_official_storefront_changes_source_to_custom(self, client: TestClient, session: Session, admin_headers: Dict[str, str]):
         """Test that updating an official storefront changes its source to custom."""
-        # Create an official storefront
         official_storefront = Storefront(
             name="test-official-storefront",
             display_name="Test Official Storefront",
@@ -636,114 +620,99 @@ class TestStorefrontsUpdateEndpoint:
         session.add(official_storefront)
         session.commit()
         session.refresh(official_storefront)
-        
-        # Verify it's official
+
         assert official_storefront.source == "official"
-        
-        # Update the storefront
+
         update_data = {
             "display_name": "Updated Test Official Storefront"
         }
-        
-        response = client.put(f"/api/platforms/storefronts/{official_storefront.id}", json=update_data, headers=admin_headers)
+
+        response = client.put(f"/api/platforms/storefronts/{official_storefront.name}", json=update_data, headers=admin_headers)
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["display_name"] == "Updated Test Official Storefront"
-        assert data["source"] == "custom"  # Should have changed to custom
-        
-        # Verify in database
+        assert data["source"] == "custom"
+
         session.refresh(official_storefront)
         assert official_storefront.source == "custom"
 
 
 class TestStorefrontsDeleteEndpoint:
-    """Test DELETE /api/platforms/storefronts/{storefront_id} endpoint."""
-    
+    """Test DELETE /api/platforms/storefronts/{storefront_name} endpoint."""
+
     def test_delete_storefront_success(self, client: TestClient, test_storefront: Storefront, admin_headers: Dict[str, str]):
         """Test successful storefront deletion by admin."""
-        response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}", headers=admin_headers)
-        
+        response = client.delete(f"/api/platforms/storefronts/{test_storefront.name}", headers=admin_headers)
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["message"] == "Storefront deleted successfully"
-    
+
     def test_delete_storefront_not_admin(self, client: TestClient, test_storefront: Storefront, auth_headers: Dict[str, str]):
         """Test storefront deletion by non-admin user."""
-        response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}", headers=auth_headers)
-        
+        response = client.delete(f"/api/platforms/storefronts/{test_storefront.name}", headers=auth_headers)
+
         assert_api_error(response, 403, "Administrative privileges required")
-    
+
     def test_delete_storefront_without_auth(self, client: TestClient, test_storefront: Storefront):
         """Test storefront deletion without authentication."""
-        response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}")
-        
+        response = client.delete(f"/api/platforms/storefronts/{test_storefront.name}")
+
         assert_api_error(response, 403, "Not authenticated")
-    
+
     def test_delete_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str]):
-        """Test storefront deletion with non-existent ID."""
-        response = client.delete("/api/platforms/storefronts/non-existent-id", headers=admin_headers)
-        
+        """Test storefront deletion with non-existent name."""
+        response = client.delete("/api/platforms/storefronts/non-existent-storefront", headers=admin_headers)
+
         assert_api_error(response, 404, "Storefront not found")
 
 
 class TestPlatformsEndpointsSecurity:
     """Test security aspects of platforms endpoints."""
-    
+
     def test_admin_only_endpoints_require_admin(self, client: TestClient, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str]):
         """Test that admin-only endpoints require admin access."""
-        # Test platform creation
         platform_data = create_test_platform_data()
         response = client.post("/api/platforms/", json=platform_data, headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-        
-        # Test platform update
-        response = client.put(f"/api/platforms/{test_platform.id}", json={"display_name": "Updated"}, headers=auth_headers)
+
+        response = client.put(f"/api/platforms/{test_platform.name}", json={"display_name": "Updated"}, headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-        
-        # Test platform deletion
-        response = client.delete(f"/api/platforms/{test_platform.id}", headers=auth_headers)
+
+        response = client.delete(f"/api/platforms/{test_platform.name}", headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-        
-        # Test storefront creation
+
         storefront_data = create_test_storefront_data()
         response = client.post("/api/platforms/storefronts/", json=storefront_data, headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-        
-        # Test storefront update
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json={"display_name": "Updated"}, headers=auth_headers)
+
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json={"display_name": "Updated"}, headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-        
-        # Test storefront deletion
-        response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}", headers=auth_headers)
+
+        response = client.delete(f"/api/platforms/storefronts/{test_storefront.name}", headers=auth_headers)
         assert_api_error(response, 403, "Administrative privileges required")
-    
+
     def test_authenticated_endpoints_require_auth(self, client: TestClient, test_platform: Platform, test_storefront: Storefront):
         """Test that authenticated endpoints require authentication."""
-        # Test platform creation
         platform_data = create_test_platform_data()
         response = client.post("/api/platforms/", json=platform_data)
         assert_api_error(response, 403, "Not authenticated")
-        
-        # Test platform update
-        response = client.put(f"/api/platforms/{test_platform.id}", json={"display_name": "Updated"})
+
+        response = client.put(f"/api/platforms/{test_platform.name}", json={"display_name": "Updated"})
         assert_api_error(response, 403, "Not authenticated")
-        
-        # Test platform deletion
-        response = client.delete(f"/api/platforms/{test_platform.id}")
+
+        response = client.delete(f"/api/platforms/{test_platform.name}")
         assert_api_error(response, 403, "Not authenticated")
-        
-        # Test storefront creation
+
         storefront_data = create_test_storefront_data()
         response = client.post("/api/platforms/storefronts/", json=storefront_data)
         assert_api_error(response, 403, "Not authenticated")
-        
-        # Test storefront update
-        response = client.put(f"/api/platforms/storefronts/{test_storefront.id}", json={"display_name": "Updated"})
+
+        response = client.put(f"/api/platforms/storefronts/{test_storefront.name}", json={"display_name": "Updated"})
         assert_api_error(response, 403, "Not authenticated")
-        
-        # Test storefront deletion
-        response = client.delete(f"/api/platforms/storefronts/{test_storefront.id}")
+
+        response = client.delete(f"/api/platforms/storefronts/{test_storefront.name}")
         assert_api_error(response, 403, "Not authenticated")
     
 
@@ -806,29 +775,29 @@ class TestPlatformDefaultStorefrontGetEndpoint:
     def test_get_platform_default_storefront_with_default(self, client: TestClient, session: Session, test_platform: Platform, test_storefront: Storefront, auth_headers):
         """Test getting platform default storefront when one is set."""
         # Set the storefront as default for the platform
-        test_platform.default_storefront_id = test_storefront.id
+        test_platform.default_storefront = test_storefront.name
         session.commit()
         session.refresh(test_platform)
         
-        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront", headers=auth_headers)
+        response = client.get(f"/api/platforms/{test_platform.name}/default-storefront", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["platform_name"] == test_platform.name
+        assert data["platform"] == test_platform.name
+        assert data["platform_display_name"] == test_platform.display_name
         assert data["platform_display_name"] == test_platform.display_name
         assert data["default_storefront"] is not None
-        assert data["default_storefront"]["id"] == str(test_storefront.id)
+        assert data["default_storefront"]["name"] == test_storefront.name
         assert data["default_storefront"]["name"] == test_storefront.name
     
     def test_get_platform_default_storefront_without_default(self, client: TestClient, test_platform: Platform, auth_headers):
         """Test getting platform default storefront when none is set."""
-        response = client.get(f"/api/platforms/{test_platform.id}/default-storefront", headers=auth_headers)
+        response = client.get(f"/api/platforms/{test_platform.name}/default-storefront", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["platform_name"] == test_platform.name
+        assert data["platform"] == test_platform.name
+        assert data["platform_display_name"] == test_platform.display_name
         assert data["platform_display_name"] == test_platform.display_name
         assert data["default_storefront"] is None
     
@@ -844,48 +813,48 @@ class TestPlatformDefaultStorefrontUpdateEndpoint:
     
     def test_update_platform_default_storefront_success(self, client: TestClient, session: Session, admin_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
         """Test successfully updating platform default storefront."""
-        update_data = {"storefront_id": str(test_storefront.id)}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        update_data = {"storefront": test_storefront.name}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data, headers=admin_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
-        assert data["default_storefront"]["id"] == str(test_storefront.id)
+        assert data["platform"] == test_platform.name
+        assert data["default_storefront"]["name"] == test_storefront.name
         
         # Verify in database
         session.refresh(test_platform)
-        assert test_platform.default_storefront_id == str(test_storefront.id)
+        assert test_platform.default_storefront == test_storefront.name
     
     def test_update_platform_default_storefront_remove_default(self, client: TestClient, session: Session, admin_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
         """Test removing platform default storefront by setting to null."""
         # First set a default
-        test_platform.default_storefront_id = test_storefront.id
+        test_platform.default_storefront = test_storefront.name
         session.commit()
         
         # Then remove it
-        update_data = {"storefront_id": None}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        update_data = {"storefront": None}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data, headers=admin_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(test_platform.id)
+        assert data["platform"] == test_platform.name
         assert data["default_storefront"] is None
         
         # Verify in database
         session.refresh(test_platform)
-        assert test_platform.default_storefront_id is None
+        assert test_platform.default_storefront is None
     
     def test_update_platform_default_storefront_platform_not_found(self, client: TestClient, admin_headers: Dict[str, str], test_storefront: Storefront):
         """Test updating default storefront for non-existent platform."""
-        update_data = {"storefront_id": str(test_storefront.id)}
+        update_data = {"storefront": test_storefront.name}
         response = client.put("/api/platforms/nonexistent-id/default-storefront", json=update_data, headers=admin_headers)
         
         assert_api_error(response, 404, "Platform not found")
     
     def test_update_platform_default_storefront_storefront_not_found(self, client: TestClient, admin_headers: Dict[str, str], test_platform: Platform):
         """Test updating default storefront with non-existent storefront."""
-        update_data = {"storefront_id": "nonexistent-id"}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        update_data = {"storefront": "nonexistent-id"}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data, headers=admin_headers)
         
         assert_api_error(response, 404, "Storefront not found")
     
@@ -895,22 +864,22 @@ class TestPlatformDefaultStorefrontUpdateEndpoint:
         test_storefront.is_active = False
         session.commit()
         
-        update_data = {"storefront_id": str(test_storefront.id)}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=admin_headers)
+        update_data = {"storefront": test_storefront.name}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data, headers=admin_headers)
         
         assert_api_error(response, 400, "Cannot set inactive storefront as default")
     
     def test_update_platform_default_storefront_admin_required(self, client: TestClient, auth_headers: Dict[str, str], test_platform: Platform, test_storefront: Storefront):
         """Test that admin access is required for updating default storefront."""
-        update_data = {"storefront_id": str(test_storefront.id)}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data, headers=auth_headers)
+        update_data = {"storefront": test_storefront.name}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data, headers=auth_headers)
         
         assert_api_error(response, 403, "Administrative privileges required")
     
     def test_update_platform_default_storefront_unauthenticated(self, client: TestClient, test_platform: Platform, test_storefront: Storefront):
         """Test that authentication is required for updating default storefront."""
-        update_data = {"storefront_id": str(test_storefront.id)}
-        response = client.put(f"/api/platforms/{test_platform.id}/default-storefront", json=update_data)
+        update_data = {"storefront": test_storefront.name}
+        response = client.put(f"/api/platforms/{test_platform.name}/default-storefront", json=update_data)
         
         assert_api_error(response, 403, "Not authenticated")
 
@@ -943,18 +912,18 @@ class TestPlatformStorefrontsEndpoint:
         session.commit()
         
         # Create platform-storefront associations
-        assoc1 = PlatformStorefront(platform_id=platform.id, storefront_id=storefront1.id)
-        assoc2 = PlatformStorefront(platform_id=platform.id, storefront_id=storefront2.id)
+        assoc1 = PlatformStorefront(platform=platform.name, storefront=storefront1.name)
+        assoc2 = PlatformStorefront(platform=platform.name, storefront=storefront2.name)
         session.add(assoc1)
         session.add(assoc2)
         session.commit()
         
-        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
+        response = client.get(f"/api/platforms/{platform.name}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(platform.id)
-        assert data["platform_name"] == platform.name
+        assert data["platform"] == platform.name
+        assert data["platform_display_name"] == platform.display_name
         assert data["platform_display_name"] == platform.display_name
         assert data["total_storefronts"] == 2
         assert len(data["storefronts"]) == 2
@@ -973,11 +942,11 @@ class TestPlatformStorefrontsEndpoint:
         session.add(platform)
         session.commit()
         
-        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
+        response = client.get(f"/api/platforms/{platform.name}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(platform.id)
+        assert data["platform"] == platform.name
         assert data["total_storefronts"] == 0
         assert len(data["storefronts"]) == 0
     
@@ -1005,14 +974,14 @@ class TestPlatformStorefrontsEndpoint:
         session.commit()
         
         # Create associations for both storefronts
-        assoc1 = PlatformStorefront(platform_id=platform.id, storefront_id=active_storefront.id)
-        assoc2 = PlatformStorefront(platform_id=platform.id, storefront_id=inactive_storefront.id)
+        assoc1 = PlatformStorefront(platform=platform.name, storefront=active_storefront.name)
+        assoc2 = PlatformStorefront(platform=platform.name, storefront=inactive_storefront.name)
         session.add(assoc1)
         session.add(assoc2)
         session.commit()
         
         # Test with active_only=true (default)
-        response = client.get(f"/api/platforms/{platform.id}/storefronts", headers=auth_headers)
+        response = client.get(f"/api/platforms/{platform.name}/storefronts", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -1021,7 +990,7 @@ class TestPlatformStorefrontsEndpoint:
         assert data["storefronts"][0]["name"] == "active-storefront"
         
         # Test with active_only=false
-        response = client.get(f"/api/platforms/{platform.id}/storefronts?active_only=false", headers=auth_headers)
+        response = client.get(f"/api/platforms/{platform.name}/storefronts?active_only=false", headers=auth_headers)
         
         assert_api_success(response, 200)
         data = response.json()
@@ -1036,7 +1005,7 @@ class TestPlatformStorefrontsEndpoint:
 
 
 class TestPlatformStorefrontAssociationEndpoints:
-    """Test POST/DELETE /api/platforms/{platform_id}/storefronts/{storefront_id} endpoints."""
+    """Test POST/DELETE /api/platforms/{platform_id}/storefronts/{storefront} endpoints."""
     
     def test_create_platform_storefront_association_success(self, client: TestClient, admin_headers: Dict[str, str], session: Session):
         """Test successful platform-storefront association creation."""
@@ -1056,25 +1025,25 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
         assert_api_success(response, 201)
         data = response.json()
-        assert data["platform_id"] == str(platform.id)
-        assert data["platform_name"] == platform.name
+        assert data["platform"] == platform.name
         assert data["platform_display_name"] == platform.display_name
-        assert data["storefront_id"] == str(storefront.id)
-        assert data["storefront_name"] == storefront.name
+        assert data["platform_display_name"] == platform.display_name
+        assert data["storefront"] == storefront.name
+        assert data["storefront_display_name"] == storefront.display_name
         assert data["storefront_display_name"] == storefront.display_name
         assert data["message"] == "Association created successfully"
         
         # Verify association was created in database
         association = session.exec(
             select(PlatformStorefront).where(
-                PlatformStorefront.platform_id == platform.id,
-                PlatformStorefront.storefront_id == storefront.id
+                PlatformStorefront.platform == platform.name,
+                PlatformStorefront.storefront == storefront.name
             )
         ).first()
         assert association is not None
@@ -1098,14 +1067,14 @@ class TestPlatformStorefrontAssociationEndpoints:
         
         # Create existing association
         association = PlatformStorefront(
-            platform_id=platform.id,
-            storefront_id=storefront.id
+            platform=platform.name,
+            storefront=storefront.name
         )
         session.add(association)
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1124,7 +1093,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/nonexistent-id/storefronts/{storefront.id}",
+            f"/api/platforms/nonexistent-id/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1141,7 +1110,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/nonexistent-id",
+            f"/api/platforms/{platform.name}/storefronts/nonexistent-id",
             headers=admin_headers
         )
         
@@ -1164,7 +1133,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1187,7 +1156,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1210,7 +1179,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.post(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=auth_headers
         )
         
@@ -1232,7 +1201,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.add(storefront)
         session.commit()
         
-        response = client.post(f"/api/platforms/{platform.id}/storefronts/{storefront.id}")
+        response = client.post(f"/api/platforms/{platform.name}/storefronts/{storefront.name}")
         
         assert_api_error(response, 403, "Not authenticated")
     
@@ -1255,28 +1224,28 @@ class TestPlatformStorefrontAssociationEndpoints:
         
         # Create association
         association = PlatformStorefront(
-            platform_id=platform.id,
-            storefront_id=storefront.id
+            platform=platform.name,
+            storefront=storefront.name
         )
         session.add(association)
         session.commit()
         
         response = client.delete(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
         assert_api_success(response, 200)
         data = response.json()
-        assert data["platform_id"] == str(platform.id)
-        assert data["storefront_id"] == str(storefront.id)
+        assert data["platform"] == platform.name
+        assert data["storefront"] == storefront.name
         assert data["message"] == "Association removed successfully"
         
         # Verify association was removed from database
         association = session.exec(
             select(PlatformStorefront).where(
-                PlatformStorefront.platform_id == platform.id,
-                PlatformStorefront.storefront_id == storefront.id
+                PlatformStorefront.platform == platform.name,
+                PlatformStorefront.storefront == storefront.name
             )
         ).first()
         assert association is None
@@ -1298,7 +1267,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.delete(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1317,7 +1286,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.delete(
-            f"/api/platforms/nonexistent-id/storefronts/{storefront.id}",
+            f"/api/platforms/nonexistent-id/storefronts/{storefront.name}",
             headers=admin_headers
         )
         
@@ -1334,7 +1303,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.delete(
-            f"/api/platforms/{platform.id}/storefronts/nonexistent-id",
+            f"/api/platforms/{platform.name}/storefronts/nonexistent-id",
             headers=admin_headers
         )
         
@@ -1357,7 +1326,7 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.commit()
         
         response = client.delete(
-            f"/api/platforms/{platform.id}/storefronts/{storefront.id}",
+            f"/api/platforms/{platform.name}/storefronts/{storefront.name}",
             headers=auth_headers
         )
         
@@ -1379,6 +1348,6 @@ class TestPlatformStorefrontAssociationEndpoints:
         session.add(storefront)
         session.commit()
         
-        response = client.delete(f"/api/platforms/{platform.id}/storefronts/{storefront.id}")
+        response = client.delete(f"/api/platforms/{platform.name}/storefronts/{storefront.name}")
         
         assert_api_error(response, 403, "Not authenticated")

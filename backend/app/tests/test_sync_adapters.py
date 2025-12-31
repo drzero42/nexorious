@@ -16,15 +16,15 @@ class TestExternalGame:
         game = ExternalGame(
             external_id="12345",
             title="Test Game",
-            platform_id="pc-windows",
-            storefront_id="steam",
+            platform="pc-windows",
+            storefront="steam",
             metadata={"appid": 12345},
         )
 
         assert game.external_id == "12345"
         assert game.title == "Test Game"
-        assert game.platform_id == "pc-windows"
-        assert game.storefront_id == "steam"
+        assert game.platform == "pc-windows"
+        assert game.storefront == "steam"
         assert game.metadata == {"appid": 12345}
 
 
@@ -188,8 +188,8 @@ class TestSteamSyncAdapter:
         assert len(games) == 1
         assert games[0].external_id == "12345"
         assert games[0].title == "Test Game"
-        assert games[0].platform_id == "pc-windows"
-        assert games[0].storefront_id == "steam"
+        assert games[0].platform == "pc-windows"
+        assert games[0].storefront == "steam"
         assert games[0].metadata["appid"] == 12345
 
     @pytest.mark.asyncio

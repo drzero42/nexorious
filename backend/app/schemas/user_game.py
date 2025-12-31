@@ -77,8 +77,8 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     id: str
     platform: Optional[str]
     storefront: Optional[str]
-    platform_details: Optional[PlatformResponse]
-    storefront_details: Optional[StorefrontResponse]
+    platform_details: Optional[PlatformResponse] = Field(default=None, validation_alias="platform_rel")
+    storefront_details: Optional[StorefrontResponse] = Field(default=None, validation_alias="storefront_rel")
     store_game_id: Optional[str]
     store_url: Optional[str]
     is_available: bool
