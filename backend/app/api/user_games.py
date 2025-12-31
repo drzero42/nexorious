@@ -412,11 +412,18 @@ async def get_collection_stats(
     else:
         avg_rating_result = None
     
-    # Total hours played
-    total_hours = session.exec(
-        select(func.sum(UserGame.hours_played)).
-        where(UserGame.user_id == current_user.id)
-    ).one() or 0
+    # Total hours played - sum from platforms with legacy fallback
+    user_games_for_hours = session.exec(
+        select(UserGame).where(UserGame.user_id == current_user.id)
+    ).all()
+
+    total_hours = 0
+    for ug in user_games_for_hours:
+        platform_hours = sum(p.hours_played for p in ug.platforms)
+        if platform_hours > 0:
+            total_hours += platform_hours
+        else:
+            total_hours += ug.hours_played  # Legacy fallback
     
     # Ownership stats
     ownership_stats = {}
@@ -637,7 +644,8 @@ async def bulk_add_platforms_to_user_games(
                     storefront=platform_assoc.storefront,
                     store_game_id=platform_assoc.store_game_id,
                     store_url=str(platform_assoc.store_url) if platform_assoc.store_url else None,
-                    is_available=platform_assoc.is_available
+                    is_available=platform_assoc.is_available,
+                    hours_played=platform_assoc.hours_played,
                 )
                 session.add(platform_obj)
                 add_count += 1
@@ -1096,7 +1104,8 @@ async def add_platform_to_user_game(
         storefront=platform_data.storefront,
         store_game_id=platform_data.store_game_id,
         store_url=str(platform_data.store_url) if platform_data.store_url else None,
-        is_available=platform_data.is_available
+        is_available=platform_data.is_available,
+        hours_played=platform_data.hours_played,
     )
     
     session.add(new_platform)
@@ -1216,6 +1225,7 @@ async def update_platform_association(
     platform_assoc.store_game_id = platform_data.store_game_id
     platform_assoc.store_url = str(platform_data.store_url) if platform_data.store_url else None
     platform_assoc.is_available = platform_data.is_available
+    platform_assoc.hours_played = platform_data.hours_played
     platform_assoc.updated_at = datetime.now(timezone.utc)
 
     session.commit()

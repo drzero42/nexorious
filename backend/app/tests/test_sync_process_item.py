@@ -73,14 +73,31 @@ class TestAddPlatformAssociation:
         session.add.assert_called_once()
         session.commit.assert_called_once()
 
-    def test_skips_when_association_exists(self):
-        """Test skips if association already exists."""
+    def test_creates_association_with_playtime(self):
+        """Test creates new association with playtime."""
         session = MagicMock()
-        session.exec.return_value.first.return_value = MagicMock()  # Found
+        session.exec.return_value.first.return_value = None  # Not found
 
-        _add_platform_association(session, "ug123", "pc-windows", "steam", "12345")
+        _add_platform_association(session, "ug123", "pc-windows", "steam", "12345", 50)
 
-        session.add.assert_not_called()
+        # Check the added platform has correct playtime
+        call_args = session.add.call_args
+        platform = call_args[0][0]
+        assert platform.hours_played == 50
+
+    def test_updates_playtime_when_association_exists(self):
+        """Test updates playtime if association already exists."""
+        session = MagicMock()
+        existing_platform = MagicMock()
+        existing_platform.hours_played = 10
+        session.exec.return_value.first.return_value = existing_platform
+
+        _add_platform_association(session, "ug123", "pc-windows", "steam", "12345", 25)
+
+        # Should update playtime on existing platform
+        assert existing_platform.hours_played == 25
+        session.add.assert_called_once_with(existing_platform)
+        session.commit.assert_called_once()
 
     def test_sets_steam_store_url(self):
         """Test sets correct store URL for Steam."""

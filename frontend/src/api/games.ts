@@ -70,6 +70,7 @@ interface UserGamePlatformApiResponse {
   store_game_id?: string;
   store_url?: string;
   is_available: boolean;
+  hours_played: number;
   original_platform_name?: string;
   created_at: string;
 }
@@ -183,6 +184,7 @@ export interface UserGamePlatformData {
   storeGameId?: string;
   storeUrl?: string;
   isAvailable?: boolean;
+  hoursPlayed?: number;
 }
 
 export interface BulkUpdateData {
@@ -251,6 +253,7 @@ function transformUserGamePlatform(
     store_game_id: apiPlatform.store_game_id,
     store_url: apiPlatform.store_url,
     is_available: apiPlatform.is_available,
+    hours_played: apiPlatform.hours_played,
     original_platform_name: apiPlatform.original_platform_name,
     created_at: apiPlatform.created_at,
   };
@@ -607,6 +610,7 @@ export async function addPlatformToUserGame(
     store_game_id: data.storeGameId,
     store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
+    hours_played: data.hoursPlayed ?? 0,
   };
 
   const response = await api.post<UserGamePlatformApiResponse>(
@@ -630,6 +634,7 @@ export async function updatePlatformAssociation(
     store_game_id: data.storeGameId,
     store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
+    hours_played: data.hoursPlayed ?? 0,
   };
 
   const response = await api.put<UserGamePlatformApiResponse>(

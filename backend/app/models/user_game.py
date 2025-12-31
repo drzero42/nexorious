@@ -84,6 +84,7 @@ class UserGamePlatform(SQLModel, table=True):
     store_game_id: Optional[str] = Field(default=None, max_length=200)
     store_url: Optional[str] = Field(default=None, max_length=500)
     is_available: bool = Field(default=True)
+    hours_played: int = Field(default=0, ge=0, description="Hours played on this storefront")
     original_platform_name: Optional[str] = Field(default=None, max_length=200, description="Original platform name for unresolved platforms")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

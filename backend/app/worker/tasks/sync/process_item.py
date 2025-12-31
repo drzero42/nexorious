@@ -88,6 +88,7 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
     external_id = metadata.get("external_id")
     platform = metadata.get("platform")
     storefront = metadata.get("storefront")
+    playtime_hours = metadata.get("playtime_hours", 0)
 
     if not external_id or not storefront:
         return await _update_job_item_error(job_item_id, "Missing external_id or storefront")
@@ -113,13 +114,15 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         if resolved_igdb_id:
             return await _process_with_resolved_id(
                 session, job_item_id, job_id, user_id,
-                resolved_igdb_id, platform, storefront, external_id, source_title
+                resolved_igdb_id, platform, storefront, external_id, source_title,
+                playtime_hours
             )
 
         # Step 4: Flow A - Match via IGDB
         return await _process_with_matching(
             session, job_item_id, job_id, user_id,
-            source_title, platform, storefront, external_id, metadata
+            source_title, platform, storefront, external_id, metadata,
+            playtime_hours
         )
 
     except Exception as e:
@@ -185,6 +188,7 @@ async def _process_with_resolved_id(
     storefront: str,
     external_id: str,
     source_title: str,
+    playtime_hours: int = 0,
 ) -> Dict[str, Any]:
     """Process item with user-provided IGDB ID (Flow B)."""
     logger.info(f"Processing {source_title} with resolved IGDB ID {igdb_id}")
@@ -201,7 +205,7 @@ async def _process_with_resolved_id(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id
+            platform, storefront, external_id, playtime_hours
         )
         result = "linked_existing"
     else:
@@ -223,7 +227,7 @@ async def _process_with_resolved_id(
 
         _add_platform_association(
             session, user_game.id,
-            platform, storefront, external_id
+            platform, storefront, external_id, playtime_hours
         )
         result = "imported_new"
 
@@ -258,6 +262,7 @@ async def _process_with_matching(
     storefront: str,
     external_id: str,
     metadata: Dict[str, Any],
+    playtime_hours: int = 0,
 ) -> Dict[str, Any]:
     """Process item with IGDB matching (Flow A)."""
     logger.debug(f"Matching {source_title} via IGDB")
@@ -290,7 +295,7 @@ async def _process_with_matching(
             return await _auto_import_game(
                 session, job_item_id, job_id, user_id,
                 igdb_id, platform, storefront, external_id,
-                match_result, confidence
+                match_result, confidence, playtime_hours
             )
         else:
             # Low confidence - needs review
@@ -330,6 +335,7 @@ async def _auto_import_game(
     external_id: str,
     match_result: MatchResult,
     confidence: float,
+    playtime_hours: int = 0,
 ) -> Dict[str, Any]:
     """Auto-import a high-confidence match."""
     logger.info(f"Auto-importing {match_result.igdb_title} (confidence: {confidence:.2f})")
@@ -346,7 +352,7 @@ async def _auto_import_game(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id
+            platform, storefront, external_id, playtime_hours
         )
         result = "auto_linked"
     else:
@@ -368,7 +374,7 @@ async def _auto_import_game(
 
         _add_platform_association(
             session, user_game.id,
-            platform, storefront, external_id
+            platform, storefront, external_id, playtime_hours
         )
         result = "auto_imported"
 
@@ -396,6 +402,7 @@ def _add_platform_association(
     platform: str,
     storefront: str,
     external_id: str,
+    playtime_hours: int = 0,
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
@@ -408,7 +415,13 @@ def _add_platform_association(
         )
     ).first()
 
-    if not existing:
+    if existing:
+        # Update playtime if already exists (sync updates)
+        existing.hours_played = playtime_hours
+        session.add(existing)
+        session.commit()
+        logger.debug(f"Updated playtime for existing platform association on UserGame {user_game_id}")
+    else:
         # Build store URL based on storefront
         store_url = None
         if storefront == "steam":
@@ -421,10 +434,11 @@ def _add_platform_association(
             store_game_id=external_id,
             store_url=store_url,
             is_available=True,
+            hours_played=playtime_hours,
         )
         session.add(platform_assoc)
         session.commit()
-        logger.debug(f"Added platform association for UserGame {user_game_id}")
+        logger.debug(f"Added platform association for UserGame {user_game_id} with {playtime_hours}h playtime")
 
 
 async def _set_pending_review(

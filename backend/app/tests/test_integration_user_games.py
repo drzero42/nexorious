@@ -1360,3 +1360,76 @@ class TestUserGameIdsEndpoint:
         assert_api_success(response, 200)
         data = response.json()
         assert str(test_user_game.id) in data["ids"]
+
+
+class TestUserGamePlatformPlaytime:
+    """Test platform-specific playtime functionality."""
+
+    def test_add_platform_with_hours_played(
+        self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test adding a platform with hours_played."""
+        import pytest
+
+        platform = session.exec(select(Platform).limit(1)).first()
+        storefront = session.exec(select(Storefront).limit(1)).first()
+
+        if not platform:
+            pytest.skip("No platform available for test")
+
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            headers=auth_headers,
+            json={
+                "platform": platform.name,
+                "storefront": storefront.name if storefront else None,
+                "hours_played": 25
+            }
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        platform_entry = next(
+            (p for p in data["platforms"] if p["platform"] == platform.name), None
+        )
+        assert platform_entry is not None
+        assert platform_entry["hours_played"] == 25
+
+    def test_aggregate_hours_from_platforms(
+        self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test that aggregate hours_played is sum of platform hours."""
+        import pytest
+
+        platforms = session.exec(select(Platform).limit(1)).all()
+        storefronts = session.exec(select(Storefront).limit(2)).all()
+
+        if len(storefronts) < 2 or len(platforms) < 1:
+            pytest.skip("Need at least 1 platform and 2 storefronts")
+
+        # Add first platform with 10 hours
+        client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            headers=auth_headers,
+            json={
+                "platform": platforms[0].name,
+                "storefront": storefronts[0].name,
+                "hours_played": 10
+            }
+        )
+
+        # Add second platform with 20 hours
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            headers=auth_headers,
+            json={
+                "platform": platforms[0].name,
+                "storefront": storefronts[1].name,
+                "hours_played": 20
+            }
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        # Aggregate should be 10 + 20 = 30
+        assert data["hours_played"] == 30

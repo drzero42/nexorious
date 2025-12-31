@@ -114,6 +114,7 @@ export interface UserGamePlatform {
   store_game_id?: string;
   store_url?: string;
   is_available: boolean;
+  hours_played: number;
   original_platform_name?: string;
   created_at: string;
 }

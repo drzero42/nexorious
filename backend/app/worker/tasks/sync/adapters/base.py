@@ -21,12 +21,14 @@ class ExternalGame:
         platform: Platform identifier (e.g., "pc-windows")
         storefront: Storefront identifier (e.g., "steam")
         metadata: Source-specific data (playtime, achievements, etc.)
+        playtime_hours: Total playtime in hours from the source
     """
     external_id: str
     title: str
     platform: str
     storefront: str
     metadata: Dict[str, Any]
+    playtime_hours: int = 0
 
 
 class SyncSourceAdapter(Protocol):

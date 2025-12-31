@@ -71,6 +71,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         updated_at: '2024-01-01T00:00:00Z',
       },
       is_available: true,
+      hours_played: 0,
       created_at: '2024-01-01T00:00:00Z',
     },
   ],
@@ -190,6 +191,7 @@ describe('CurrentlyPlayingSection', () => {
               updated_at: '2024-01-01T00:00:00Z',
             },
             is_available: true,
+            hours_played: 0,
             created_at: '2024-01-01T00:00:00Z',
           },
           {
@@ -207,6 +209,7 @@ describe('CurrentlyPlayingSection', () => {
               updated_at: '2024-01-01T00:00:00Z',
             },
             is_available: true,
+            hours_played: 0,
             created_at: '2024-01-01T00:00:00Z',
           },
           {
@@ -224,6 +227,7 @@ describe('CurrentlyPlayingSection', () => {
               updated_at: '2024-01-01T00:00:00Z',
             },
             is_available: true,
+            hours_played: 0,
             created_at: '2024-01-01T00:00:00Z',
           },
         ],
