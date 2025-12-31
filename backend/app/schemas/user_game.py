@@ -39,6 +39,7 @@ class UserGamePlatformCreateRequest(BaseModel):
     store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
     store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
     is_available: bool = Field(default=True, description="Whether the game is available on this platform")
+    hours_played: int = Field(default=0, ge=0, description="Hours played on this storefront")
 
 
 class UserGameCreateRequest(BaseModel):
@@ -82,6 +83,7 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     store_game_id: Optional[str]
     store_url: Optional[str]
     is_available: bool
+    hours_played: int
     original_platform_name: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
