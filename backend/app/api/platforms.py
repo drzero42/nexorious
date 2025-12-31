@@ -118,8 +118,8 @@ async def list_platforms(
         storefront_query = (
             select(Storefront)
             .join(PlatformStorefront)
-            .where(PlatformStorefront.platform_id == platform.id)
-            .where(Storefront.is_active)  # Only include active storefronts
+            .where(PlatformStorefront.platform == platform.name)
+            .where(Storefront.is_active)
             .order_by(Storefront.display_name)
         )
         
@@ -142,194 +142,172 @@ async def list_platforms(
     )
 
 
-@router.get("/{platform_id}", response_model=PlatformResponse)
+@router.get("/{platform}", response_model=PlatformResponse)
 async def get_platform(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)]
 ):
-    """Get a specific platform by ID."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+    """Get a specific platform by slug."""
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    return platform
+
+    return platform_obj
 
 
-@router.get("/{platform_id}/storefronts", response_model=PlatformStorefrontsResponse)
+@router.get("/{platform}/storefronts", response_model=PlatformStorefrontsResponse)
 async def get_platform_storefronts(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
     active_only: bool = Query(default=True, description="Show only active storefronts")
 ):
     """Get all storefronts associated with a specific platform."""
-    
-    # First, verify the platform exists
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Query for associated storefronts via the junction table
+
     query = (
         select(Storefront)
         .join(PlatformStorefront)
-        .where(PlatformStorefront.platform_id == platform_id)
+        .where(PlatformStorefront.platform == platform)
     )
-    
-    # Filter by active status if requested
+
     if active_only:
         query = query.where(Storefront.is_active)
-    
-    # Order by storefront display name
+
     query = query.order_by(Storefront.display_name)
-    
+
     storefronts = session.exec(query).all()
-    
+
     return PlatformStorefrontsResponse(
-        platform_id=platform.id,
-        platform_name=platform.name,
-        platform_display_name=platform.display_name,
+        platform=platform_obj.name,
+        platform_display_name=platform_obj.display_name,
         storefronts=[StorefrontResponse.model_validate(sf) for sf in storefronts],
         total_storefronts=len(storefronts)
     )
 
 
-@router.post("/{platform_id}/storefronts/{storefront_id}", response_model=PlatformStorefrontAssociationResponse)
+@router.post("/{platform}/storefronts/{storefront}", response_model=PlatformStorefrontAssociationResponse)
 async def create_platform_storefront_association(
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     response: Response,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Create a platform-storefront association (admin only)."""
-    
-    # Verify platform exists and is active
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    if not platform.is_active:
+    if not platform_obj.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot create association with inactive platform"
         )
-    
-    # Verify storefront exists and is active
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    if not storefront.is_active:
+    if not storefront_obj.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot create association with inactive storefront"
         )
-    
-    # Check if association already exists
+
     existing_association = session.exec(
         select(PlatformStorefront).where(
-            PlatformStorefront.platform_id == platform_id,
-            PlatformStorefront.storefront_id == storefront_id
+            PlatformStorefront.platform == platform,
+            PlatformStorefront.storefront == storefront
         )
     ).first()
-    
+
     if existing_association:
-        # Association already exists, return 200 with appropriate message
         response.status_code = status.HTTP_200_OK
         return PlatformStorefrontAssociationResponse(
-            platform_id=platform.id,
-            platform_name=platform.name,
-            platform_display_name=platform.display_name,
-            storefront_id=storefront.id,
-            storefront_name=storefront.name,
-            storefront_display_name=storefront.display_name,
+            platform=platform_obj.name,
+            platform_display_name=platform_obj.display_name,
+            storefront=storefront_obj.name,
+            storefront_display_name=storefront_obj.display_name,
             message="Association already exists"
         )
-    
-    # Create new association
+
     new_association = PlatformStorefront(
-        platform_id=platform_id,
-        storefront_id=storefront_id
+        platform=platform,
+        storefront=storefront
     )
-    
+
     session.add(new_association)
     session.commit()
-    
-    # Set 201 status code for successful creation
+
     response.status_code = status.HTTP_201_CREATED
     return PlatformStorefrontAssociationResponse(
-        platform_id=platform.id,
-        platform_name=platform.name,
-        platform_display_name=platform.display_name,
-        storefront_id=storefront.id,
-        storefront_name=storefront.name,
-        storefront_display_name=storefront.display_name,
+        platform=platform_obj.name,
+        platform_display_name=platform_obj.display_name,
+        storefront=storefront_obj.name,
+        storefront_display_name=storefront_obj.display_name,
         message="Association created successfully"
     )
 
 
-@router.delete("/{platform_id}/storefronts/{storefront_id}", response_model=PlatformStorefrontAssociationResponse)
+@router.delete("/{platform}/storefronts/{storefront}", response_model=PlatformStorefrontAssociationResponse)
 async def delete_platform_storefront_association(
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Remove a platform-storefront association (admin only)."""
-    
-    # Verify platform exists
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Verify storefront exists
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    # Find the association
+
     association = session.exec(
         select(PlatformStorefront).where(
-            PlatformStorefront.platform_id == platform_id,
-            PlatformStorefront.storefront_id == storefront_id
+            PlatformStorefront.platform == platform,
+            PlatformStorefront.storefront == storefront
         )
     ).first()
-    
+
     message = "Association removed successfully"
     if association:
-        # Remove the association
         session.delete(association)
         session.commit()
     else:
-        # Association doesn't exist, but return success anyway (idempotent operation)
         message = "Association does not exist"
-    
+
     return PlatformStorefrontAssociationResponse(
-        platform_id=platform.id,
-        platform_name=platform.name,
-        platform_display_name=platform.display_name,
-        storefront_id=storefront.id,
-        storefront_name=storefront.name,
-        storefront_display_name=storefront.display_name,
+        platform=platform_obj.name,
+        platform_display_name=platform_obj.display_name,
+        storefront=storefront_obj.name,
+        storefront_display_name=storefront_obj.display_name,
         message=message
     )
 
@@ -353,9 +331,8 @@ async def create_platform(
             detail="Platform name already exists"
         )
     
-    # Validate default_storefront_id if provided
-    if platform_data.default_storefront_id:
-        storefront = session.get(Storefront, platform_data.default_storefront_id)
+    if platform_data.default_storefront:
+        storefront = session.get(Storefront, platform_data.default_storefront)
         if not storefront:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -366,13 +343,13 @@ async def create_platform(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot set inactive storefront as default"
             )
-    
+
     new_platform = Platform(
         name=platform_data.name,
         display_name=platform_data.display_name,
         icon_url=platform_data.icon_url,
         is_active=platform_data.is_active if platform_data.is_active is not None else True,
-        default_storefront_id=platform_data.default_storefront_id
+        default_storefront=platform_data.default_storefront
     )
     
     session.add(new_platform)
@@ -382,29 +359,27 @@ async def create_platform(
     return new_platform
 
 
-@router.put("/{platform_id}", response_model=PlatformResponse)
+@router.put("/{platform}", response_model=PlatformResponse)
 async def update_platform(
-    platform_id: str,
+    platform: str,
     platform_data: PlatformUpdateRequest,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Update an existing platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Update fields
+
     update_data = platform_data.model_dump(exclude_unset=True)
-    
-    # Validate default_storefront_id if provided
-    if "default_storefront_id" in update_data and update_data["default_storefront_id"] is not None:
-        storefront_id = update_data["default_storefront_id"]
-        storefront = session.get(Storefront, storefront_id)
+
+    if "default_storefront" in update_data and update_data["default_storefront"] is not None:
+        storefront_slug = update_data["default_storefront"]
+        storefront = session.get(Storefront, storefront_slug)
         if not storefront:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -415,59 +390,56 @@ async def update_platform(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot set inactive storefront as default"
             )
-    
-    # Change source to "custom" when admin edits official platform
-    if platform.source == "official":
-        platform.source = "custom"
-    
+
+    if platform_obj.source == "official":
+        platform_obj.source = "custom"
+
     for field, value in update_data.items():
-        setattr(platform, field, value)
-    
-    platform.updated_at = datetime.now(timezone.utc)
+        setattr(platform_obj, field, value)
+
+    platform_obj.updated_at = datetime.now(timezone.utc)
     session.commit()
-    session.refresh(platform)
-    
-    return platform
+    session.refresh(platform_obj)
+
+    return platform_obj
 
 
-@router.delete("/{platform_id}", response_model=SuccessResponse)
+@router.delete("/{platform}", response_model=SuccessResponse)
 async def delete_platform(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Delete a platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Check if platform is in use
+
     from ..models.user_game import UserGamePlatform
-    
+
     usage_count = session.exec(
-        select(func.count()).where(UserGamePlatform.platform_id == platform_id)
+        select(func.count()).where(UserGamePlatform.platform == platform)
     ).one()
-    
+
     if usage_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete platform. It is referenced by {usage_count} user game entries."
         )
-    
-    session.delete(platform)
+
+    session.delete(platform_obj)
     session.commit()
-    
+
     return SuccessResponse(message="Platform deleted successfully")
 
 
-# Platform logo management endpoints
-@router.post("/{platform_id}/logo")
+@router.post("/{platform}/logo")
 async def upload_platform_logo(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)],
@@ -475,166 +447,154 @@ async def upload_platform_logo(
     file: UploadFile = File(...)
 ):
     """Upload a logo for a platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Upload the logo file
-    icon_url = await logo_service.upload_logo("platforms", platform.name, theme, file)
-    
-    # Update platform's icon_url to point to the new logo
-    # We'll use the light theme as the default icon_url
+
+    icon_url = await logo_service.upload_logo("platforms", platform_obj.name, theme, file)
+
     if theme == "light":
-        platform.icon_url = icon_url
-        platform.updated_at = datetime.now(timezone.utc)
+        platform_obj.icon_url = icon_url
+        platform_obj.updated_at = datetime.now(timezone.utc)
         session.commit()
-        session.refresh(platform)
-    
+        session.refresh(platform_obj)
+
     return {
-        "message": f"Logo uploaded successfully for {platform.display_name}",
+        "message": f"Logo uploaded successfully for {platform_obj.display_name}",
         "theme": theme,
         "icon_url": icon_url,
-        "platform": platform
+        "platform": platform_obj
     }
 
 
-@router.delete("/{platform_id}/logo")
+@router.delete("/{platform}/logo")
 async def delete_platform_logo(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)],
     theme: Optional[str] = Query(default=None, description="Logo theme to delete (light/dark), or all if not specified")
 ):
     """Delete logo(s) for a platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Delete logo file(s)
-    deleted_files = logo_service.delete_logo("platforms", platform.name, theme)
-    
-    # If we deleted the light theme (which is the default), clear the icon_url
+
+    deleted_files = logo_service.delete_logo("platforms", platform_obj.name, theme)
+
     if theme == "light" or theme is None:
-        platform.icon_url = None
-        platform.updated_at = datetime.now(timezone.utc)
+        platform_obj.icon_url = None
+        platform_obj.updated_at = datetime.now(timezone.utc)
         session.commit()
-        session.refresh(platform)
-    
+        session.refresh(platform_obj)
+
     return {
-        "message": f"Logo(s) deleted successfully for {platform.display_name}",
+        "message": f"Logo(s) deleted successfully for {platform_obj.display_name}",
         "deleted_files": len(deleted_files),
-        "platform": platform
+        "platform": platform_obj
     }
 
 
-@router.get("/{platform_id}/logos")
+@router.get("/{platform}/logos")
 async def list_platform_logos(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)]
 ):
     """List available logos for a platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    logos = logo_service.list_logos("platforms", platform.name)
-    
+
+    logos = logo_service.list_logos("platforms", platform_obj.name)
+
     return {
-        "platform": platform,
+        "platform": platform_obj,
         "logos": logos
     }
 
 
-@router.get("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
+@router.get("/{platform}/default-storefront", response_model=PlatformDefaultMapping)
 async def get_platform_default_storefront(
-    platform_id: str,
+    platform: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)]
 ):
     """Get the default storefront for a specific platform."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # Get the default storefront if it exists
+
     default_storefront = None
-    if platform.default_storefront_id:
-        default_storefront = session.get(Storefront, platform.default_storefront_id)
-    
+    if platform_obj.default_storefront:
+        default_storefront = session.get(Storefront, platform_obj.default_storefront)
+
     return PlatformDefaultMapping(
-        platform_id=platform.id,
-        platform_name=platform.name,
-        platform_display_name=platform.display_name,
+        platform=platform_obj.name,
+        platform_display_name=platform_obj.display_name,
         default_storefront=StorefrontResponse.model_validate(default_storefront) if default_storefront is not None else None
     )
 
 
-@router.put("/{platform_id}/default-storefront", response_model=PlatformDefaultMapping)
+@router.put("/{platform}/default-storefront", response_model=PlatformDefaultMapping)
 async def update_platform_default_storefront(
-    platform_id: str,
+    platform: str,
     update_data: UpdatePlatformDefaultRequest,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Update the default storefront for a specific platform (admin only)."""
-    
-    platform = session.get(Platform, platform_id)
-    if not platform:
+
+    platform_obj = session.get(Platform, platform)
+    if not platform_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform not found"
         )
-    
-    # If storefront_id is provided, validate that it exists
-    if update_data.storefront_id is not None:
-        storefront = session.get(Storefront, update_data.storefront_id)
+
+    if update_data.storefront is not None:
+        storefront = session.get(Storefront, update_data.storefront)
         if not storefront:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Storefront not found"
             )
-        
-        # Ensure storefront is active
+
         if not storefront.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot set inactive storefront as default"
             )
-    
-    # Update the platform's default storefront
-    platform.default_storefront_id = update_data.storefront_id
-    platform.updated_at = datetime.now(timezone.utc)
+
+    platform_obj.default_storefront = update_data.storefront
+    platform_obj.updated_at = datetime.now(timezone.utc)
     session.commit()
-    session.refresh(platform)
-    
-    # Get the updated default storefront for response
+    session.refresh(platform_obj)
+
     default_storefront = None
-    if platform.default_storefront_id:
-        default_storefront = session.get(Storefront, platform.default_storefront_id) 
-    
+    if platform_obj.default_storefront:
+        default_storefront = session.get(Storefront, platform_obj.default_storefront)
+
     return PlatformDefaultMapping(
-        platform_id=platform.id,
-        platform_name=platform.name,
-        platform_display_name=platform.display_name,
+        platform=platform_obj.name,
+        platform_display_name=platform_obj.display_name,
         default_storefront=StorefrontResponse.model_validate(default_storefront) if default_storefront is not None else None
     )
 
@@ -680,22 +640,22 @@ async def list_storefronts(
     )
 
 
-@router.get("/storefronts/{storefront_id}", response_model=StorefrontResponse)
+@router.get("/storefronts/{storefront}", response_model=StorefrontResponse)
 async def get_storefront(
-    storefront_id: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)]
 ):
-    """Get a specific storefront by ID."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+    """Get a specific storefront by slug."""
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    return storefront
+
+    return storefront_obj
 
 
 @router.post("/storefronts/", response_model=StorefrontResponse, status_code=status.HTTP_201_CREATED)
@@ -732,80 +692,76 @@ async def create_storefront(
     return new_storefront
 
 
-@router.put("/storefronts/{storefront_id}", response_model=StorefrontResponse)
+@router.put("/storefronts/{storefront}", response_model=StorefrontResponse)
 async def update_storefront(
-    storefront_id: str,
+    storefront: str,
     storefront_data: StorefrontUpdateRequest,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Update an existing storefront (admin only)."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    # Update fields
+
     update_data = storefront_data.model_dump(exclude_unset=True)
-    
-    # Change source to "custom" when admin edits official storefront
-    if storefront.source == "official":
-        storefront.source = "custom"
-    
+
+    if storefront_obj.source == "official":
+        storefront_obj.source = "custom"
+
     for field, value in update_data.items():
         if field == "base_url" and value:
-            setattr(storefront, field, str(value))
+            setattr(storefront_obj, field, str(value))
         else:
-            setattr(storefront, field, value)
-    
-    storefront.updated_at = datetime.now(timezone.utc)
+            setattr(storefront_obj, field, value)
+
+    storefront_obj.updated_at = datetime.now(timezone.utc)
     session.commit()
-    session.refresh(storefront)
-    
-    return storefront
+    session.refresh(storefront_obj)
+
+    return storefront_obj
 
 
-@router.delete("/storefronts/{storefront_id}", response_model=SuccessResponse)
+@router.delete("/storefronts/{storefront}", response_model=SuccessResponse)
 async def delete_storefront(
-    storefront_id: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Delete a storefront (admin only)."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    # Check if storefront is in use
+
     from ..models.user_game import UserGamePlatform
-    
+
     usage_count = session.exec(
-        select(func.count()).where(UserGamePlatform.storefront_id == storefront_id)
+        select(func.count()).where(UserGamePlatform.storefront == storefront)
     ).one()
-    
+
     if usage_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete storefront. It is referenced by {usage_count} user game entries."
         )
-    
-    session.delete(storefront)
+
+    session.delete(storefront_obj)
     session.commit()
-    
+
     return SuccessResponse(message="Storefront deleted successfully")
 
 
-# Storefront logo management endpoints
-@router.post("/storefronts/{storefront_id}/logo")
+@router.post("/storefronts/{storefront}/logo")
 async def upload_storefront_logo(
-    storefront_id: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)],
@@ -813,87 +769,82 @@ async def upload_storefront_logo(
     file: UploadFile = File(...)
 ):
     """Upload a logo for a storefront (admin only)."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    # Upload the logo file
-    icon_url = await logo_service.upload_logo("storefronts", storefront.name, theme, file)
-    
-    # Update storefront's icon_url to point to the new logo
-    # We'll use the light theme as the default icon_url
+
+    icon_url = await logo_service.upload_logo("storefronts", storefront_obj.name, theme, file)
+
     if theme == "light":
-        storefront.icon_url = icon_url
-        storefront.updated_at = datetime.now(timezone.utc)
+        storefront_obj.icon_url = icon_url
+        storefront_obj.updated_at = datetime.now(timezone.utc)
         session.commit()
-        session.refresh(storefront)
-    
+        session.refresh(storefront_obj)
+
     return {
-        "message": f"Logo uploaded successfully for {storefront.display_name}",
+        "message": f"Logo uploaded successfully for {storefront_obj.display_name}",
         "theme": theme,
         "icon_url": icon_url,
-        "storefront": storefront
+        "storefront": storefront_obj
     }
 
 
-@router.delete("/storefronts/{storefront_id}/logo")
+@router.delete("/storefronts/{storefront}/logo")
 async def delete_storefront_logo(
-    storefront_id: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)],
     theme: Optional[str] = Query(default=None, description="Logo theme to delete (light/dark), or all if not specified")
 ):
     """Delete logo(s) for a storefront (admin only)."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    # Delete logo file(s)
-    deleted_files = logo_service.delete_logo("storefronts", storefront.name, theme)
-    
-    # If we deleted the light theme (which is the default), clear the icon_url
+
+    deleted_files = logo_service.delete_logo("storefronts", storefront_obj.name, theme)
+
     if theme == "light" or theme is None:
-        storefront.icon_url = None
-        storefront.updated_at = datetime.now(timezone.utc)
+        storefront_obj.icon_url = None
+        storefront_obj.updated_at = datetime.now(timezone.utc)
         session.commit()
-        session.refresh(storefront)
-    
+        session.refresh(storefront_obj)
+
     return {
-        "message": f"Logo(s) deleted successfully for {storefront.display_name}",
+        "message": f"Logo(s) deleted successfully for {storefront_obj.display_name}",
         "deleted_files": len(deleted_files),
-        "storefront": storefront
+        "storefront": storefront_obj
     }
 
 
-@router.get("/storefronts/{storefront_id}/logos")
+@router.get("/storefronts/{storefront}/logos")
 async def list_storefront_logos(
-    storefront_id: str,
+    storefront: str,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_admin_user)],
     logo_service: Annotated[LogoService, Depends(get_logo_service)]
 ):
     """List available logos for a storefront (admin only)."""
-    
-    storefront = session.get(Storefront, storefront_id)
-    if not storefront:
+
+    storefront_obj = session.get(Storefront, storefront)
+    if not storefront_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Storefront not found"
         )
-    
-    logos = logo_service.list_logos("storefronts", storefront.name)
-    
+
+    logos = logo_service.list_logos("storefronts", storefront_obj.name)
+
     return {
-        "storefront": storefront,
+        "storefront": storefront_obj,
         "logos": logos
     }
 
@@ -905,38 +856,35 @@ async def get_platform_usage_stats(
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Get platform usage statistics (admin only)."""
-    
+
     from ..models.user_game import UserGamePlatform
-    
-    # Query platform usage statistics
+
     query = (
         select(
-            col(Platform.id).label("platform_id"),
-            col(Platform.name).label("platform_name"),
+            col(Platform.name).label("platform"),
             col(Platform.display_name).label("platform_display_name"),
             func.count(col(UserGamePlatform.id)).label("usage_count")
         )
         .select_from(Platform)
         .outerjoin(UserGamePlatform)
-        .group_by(Platform.id, Platform.name, Platform.display_name)
+        .group_by(Platform.name, Platform.display_name)
         .order_by(func.count(col(UserGamePlatform.id)).desc(), Platform.display_name)
     )
-    
+
     results = session.execute(query).mappings().all()
 
     platform_stats = [
         PlatformUsageStats(
-            platform_id=row["platform_id"],
-            platform_name=row["platform_name"],
+            platform=row["platform"],
             platform_display_name=row["platform_display_name"],
             usage_count=row["usage_count"]
         )
         for row in results
     ]
-    
+
     total_platforms = len(platform_stats)
     total_usage = sum(stat.usage_count for stat in platform_stats)
-    
+
     return PlatformStatsResponse(
         platforms=platform_stats,
         total_platforms=total_platforms,
@@ -950,38 +898,35 @@ async def get_storefront_usage_stats(
     current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """Get storefront usage statistics (admin only)."""
-    
+
     from ..models.user_game import UserGamePlatform
-    
-    # Query storefront usage statistics
+
     query = (
         select(
-            col(Storefront.id).label("storefront_id"),
-            col(Storefront.name).label("storefront_name"),
+            col(Storefront.name).label("storefront"),
             col(Storefront.display_name).label("storefront_display_name"),
             func.count(col(UserGamePlatform.id)).label("usage_count")
         )
         .select_from(Storefront)
         .outerjoin(UserGamePlatform)
-        .group_by(Storefront.id, Storefront.name, Storefront.display_name)
+        .group_by(Storefront.name, Storefront.display_name)
         .order_by(func.count(col(UserGamePlatform.id)).desc(), Storefront.display_name)
     )
-    
+
     results = session.execute(query).mappings().all()
 
     storefront_stats = [
         StorefrontUsageStats(
-            storefront_id=row["storefront_id"],
-            storefront_name=row["storefront_name"],
+            storefront=row["storefront"],
             storefront_display_name=row["storefront_display_name"],
             usage_count=row["usage_count"]
         )
         for row in results
     ]
-    
+
     total_storefronts = len(storefront_stats)
     total_usage = sum(stat.usage_count for stat in storefront_stats)
-    
+
     return StorefrontStatsResponse(
         storefronts=storefront_stats,
         total_storefronts=total_storefronts,
@@ -1029,7 +974,6 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
     Get the default platform for a given storefront name.
     Returns the first associated platform or a sensible default.
     """
-    # Try to find the storefront by name (case-insensitive)
     storefront = session.exec(
         select(Storefront).where(
             or_(
@@ -1038,18 +982,16 @@ def get_default_platform_for_storefront(session: Session, storefront_name: str) 
             )
         )
     ).first()
-    
+
     if storefront:
-        # Get platforms associated with this storefront
         platform_storefronts = session.exec(
             select(PlatformStorefront)
-            .where(PlatformStorefront.storefront_id == storefront.id)
-            .order_by(asc(PlatformStorefront.created_at))  # Oldest association first
+            .where(PlatformStorefront.storefront == storefront.name)
+            .order_by(asc(PlatformStorefront.created_at))
         ).all()
-        
+
         if platform_storefronts:
-            # Get the first associated platform
-            platform = session.get(Platform, platform_storefronts[0].platform_id)
+            platform = session.get(Platform, platform_storefronts[0].platform)
             if platform:
                 logger.debug(f"Found platform '{platform.name}' for storefront '{storefront_name}'")
                 return platform.name
