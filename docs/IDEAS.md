@@ -41,9 +41,6 @@ Import/export should be moved under the username at the bottom - same place as P
 https://github.com/LucasPickering/slumber
 Might be better than claude failing to use curl
 
-## Backup creation endpoint must be protected
-The worker calls an endpoint on the backend to create a backup. This endpoint must not be callable by users and must only allow calls from the workers.
-
 ## Games in progress on dashboard
 We should prominently show the games in progress on the dashboard. Cover art with just the bare minimum details about the games. These should link to the details page for each game.
 
