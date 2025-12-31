@@ -67,6 +67,10 @@ class EpicService:
             logger.error(f"Failed to initialize LegendaryCore: {e}")
             raise EpicAPIError(f"Failed to initialize Epic service: {e}")
 
+    def _get_user_json_path(self) -> str:
+        """Get path to legendary's user.json file."""
+        return os.path.join(self.config_path, "legendary", "user.json")
+
     def get_auth_url(self) -> str:
         """Get Epic authentication URL for user to visit.
 

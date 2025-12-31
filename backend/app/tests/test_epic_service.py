@@ -35,6 +35,14 @@ class TestEpicService:
         with pytest.raises(EpicAPIError, match="Failed to initialize Epic service"):
             EpicService("test-user")
 
+    @patch('app.services.epic.LegendaryCore')
+    def test_get_user_json_path(self, mock_legendary_core):
+        """Test _get_user_json_path returns correct path."""
+        service = EpicService("test-user-123")
+
+        expected_path = "/var/lib/nexorious/legendary-configs/test-user-123/legendary/user.json"
+        assert service._get_user_json_path() == expected_path
+
 
 class TestEpicAuthentication:
     """Test Epic authentication flow."""
