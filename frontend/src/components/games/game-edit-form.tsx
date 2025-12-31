@@ -204,7 +204,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
             data: {
               platform: originalPlatform.platform || '',
               storefront: originalPlatform.storefront,
-              hours_played: hours,
+              hoursPlayed: hours,
             },
           });
         }

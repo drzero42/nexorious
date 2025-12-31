@@ -70,6 +70,7 @@ const mockGame: UserGame = {
         updated_at: '2024-01-01T00:00:00Z',
       },
       is_available: true,
+      hours_played: 0,
       created_at: '2024-01-01T00:00:00Z',
     },
   ],
@@ -109,11 +110,12 @@ describe('GameEditForm', () => {
     expect(screen.getByText('Owned')).toBeInTheDocument();
   });
 
-  it('renders hours played input with current value', () => {
+  it('renders hours played summary', () => {
     render(<GameEditForm game={mockGame} />);
 
-    const hoursInput = screen.getByLabelText('Hours Played');
-    expect(hoursInput).toHaveValue(10);
+    // Hours played is now shown as aggregate total, not as an editable input
+    // The per-platform playtime inputs are in the Platforms section
+    expect(screen.getByText('10 hours total')).toBeInTheDocument();
   });
 
   it('renders acquired date input with current value', () => {
@@ -138,17 +140,6 @@ describe('GameEditForm', () => {
 
     const saveButtons = screen.getAllByRole('button', { name: /save changes/i });
     expect(saveButtons.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('updates hours played when input changes', async () => {
-    const user = userEvent.setup();
-    render(<GameEditForm game={mockGame} />);
-
-    const hoursInput = screen.getByLabelText('Hours Played');
-    await user.clear(hoursInput);
-    await user.type(hoursInput, '25');
-
-    expect(hoursInput).toHaveValue(25);
   });
 
   it('renders is loved checkbox', () => {

@@ -54,6 +54,8 @@ class SteamSyncAdapter:
                 metadata={
                     "appid": game.appid,
                 },
+                # Convert playtime from minutes to hours (Steam API returns minutes)
+                playtime_hours=game.playtime_forever // 60,
             )
             for game in steam_games
         ]

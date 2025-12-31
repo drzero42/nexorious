@@ -63,6 +63,7 @@ class SteamGame:
     """Steam game information from Steam Web API."""
     appid: int
     name: str
+    playtime_forever: int = 0  # Total playtime in minutes
 
 
 class SteamAPIError(Exception):
@@ -191,14 +192,15 @@ class SteamService:
             
             games_data = result.get("response", {}).get("games", [])
             games = []
-            
+
             for game_data in games_data:
                 game = SteamGame(
                     appid=game_data["appid"],
-                    name=game_data.get("name", "")
+                    name=game_data.get("name", ""),
+                    playtime_forever=game_data.get("playtime_forever", 0)
                 )
                 games.append(game)
-            
+
             logger.info(f"Retrieved {len(games)} games for Steam user {steam_id}")
             return games
             

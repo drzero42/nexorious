@@ -151,6 +151,7 @@ def _create_job_item(
         "platform": game.platform,
         "storefront": game.storefront,
         "metadata": game.metadata,
+        "playtime_hours": game.playtime_hours,
     }
 
     job_item = JobItem(
