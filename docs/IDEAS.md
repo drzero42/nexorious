@@ -33,10 +33,6 @@ Both API backend and workers/scheduler must gracefully handle when database and/
 https://github.com/LucasPickering/slumber
 Might be better than claude failing to use curl
 
-## Store playtime per copy
-Currently we only store "number of played hours" for a game. We can extract playtime from at least steam, so we should make it possible to set playtime per platform/storefront and then find a good way to show playtime per game as an aggregate with a breakdown of how much time per platforms/storefronts.
-Question: Should this be per platform or per storefront?
-
 ## Achievements / Trophies
 From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
 We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
