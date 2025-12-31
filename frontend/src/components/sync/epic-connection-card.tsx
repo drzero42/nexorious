@@ -111,7 +111,6 @@ export function EpicConnectionCard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   <strong>Note:</strong> Epic Games Store does not provide playtime data.
-                  Games imported from Epic will not include playtime information.
                 </AlertDescription>
               </Alert>
               <Button onClick={() => setShowAuthDialog(true)}>
@@ -138,7 +137,6 @@ export function EpicConnectionCard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   <strong>Note:</strong> Epic Games Store does not provide playtime data.
-                  Games imported from Epic will not include playtime information.
                 </AlertDescription>
               </Alert>
               <Button
