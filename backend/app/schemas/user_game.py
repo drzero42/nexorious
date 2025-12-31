@@ -2,8 +2,8 @@
 User game collection-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_validator
+from typing import Optional, List, Self
 from datetime import date
 from enum import Enum
 from .common import TimestampMixin
@@ -103,6 +103,16 @@ class UserGameResponse(BaseModel, TimestampMixin):
     platforms: List[UserGamePlatformResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode='after')
+    def compute_hours_played(self) -> Self:
+        """Compute aggregate hours_played from platforms with legacy fallback."""
+        platform_hours = sum(p.hours_played for p in self.platforms)
+        # If platforms have playtime, use that; otherwise keep legacy value
+        if platform_hours > 0:
+            self.hours_played = platform_hours
+        # else: keep the original hours_played value (legacy fallback)
+        return self
 
 
 class UserGameListRequest(BaseModel):
