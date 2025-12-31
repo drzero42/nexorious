@@ -32,8 +32,13 @@ from ..schemas.sync import (
     SyncPlatform,
     SteamVerifyRequest,
     SteamVerifyResponse,
+    EpicAuthStartResponse,
+    EpicAuthCompleteRequest,
+    EpicAuthCompleteResponse,
+    EpicAuthCheckResponse,
 )
 from ..services.steam import SteamService, SteamAPIError, SteamAuthenticationError
+from ..services.epic import EpicService, EpicAuthenticationError, EpicAPIError
 from ..schemas.ignored_game import (
     IgnoredGameResponse,
     IgnoredGameListResponse,
@@ -57,13 +62,20 @@ FREQUENCY_MODEL_TO_SCHEMA = {v: k for k, v in FREQUENCY_SCHEMA_TO_MODEL.items()}
 
 def _is_platform_configured(user: User, platform: str) -> bool:
     """Check if a platform has verified credentials configured."""
+    preferences = user.preferences or {}
+
     if platform == "steam":
-        preferences = user.preferences or {}
         steam_config = preferences.get("steam", {})
         return bool(
             steam_config.get("web_api_key")
             and steam_config.get("steam_id")
             and steam_config.get("is_verified", False)
+        )
+    elif platform == "epic":
+        epic_config = preferences.get("epic", {})
+        return bool(
+            epic_config.get("is_verified", False)
+            and epic_config.get("account_id")
         )
     # Other platforms not yet supported
     return False
@@ -447,6 +459,159 @@ async def disconnect_steam(
     return SuccessResponse(
         success=True,
         message="Steam disconnected successfully"
+    )
+
+
+@router.post("/epic/auth/start", response_model=EpicAuthStartResponse)
+async def start_epic_auth(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> EpicAuthStartResponse:
+    """
+    Start Epic Games authentication flow.
+
+    Returns a URL that the user should visit to authenticate with Epic Games.
+    """
+    logger.info(f"Starting Epic authentication for user {current_user.id}")
+
+    try:
+        epic_service = EpicService(current_user.id)
+        auth_url = await epic_service.start_device_auth()
+
+        return EpicAuthStartResponse(
+            auth_url=auth_url,
+            instructions="Visit the URL above and enter the authorization code to link your Epic Games account.",
+        )
+    except EpicAPIError as e:
+        logger.error(f"Failed to start Epic authentication: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start Epic authentication: {str(e)}",
+        )
+
+
+@router.post("/epic/auth/complete", response_model=EpicAuthCompleteResponse)
+async def complete_epic_auth(
+    request: EpicAuthCompleteRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> EpicAuthCompleteResponse:
+    """
+    Complete Epic Games authentication with authorization code.
+
+    Validates the code with Epic Games and stores the authentication credentials.
+    """
+    logger.info(f"Completing Epic authentication for user {current_user.id}")
+
+    try:
+        epic_service = EpicService(current_user.id)
+
+        # Complete authentication with the code
+        await epic_service.complete_auth(request.code)
+
+        # Get account information
+        account_info = await epic_service.get_account_info()
+
+        # Update user preferences with Epic credentials
+        preferences = current_user.preferences or {}
+        preferences["epic"] = {
+            "is_verified": True,
+            "display_name": account_info.display_name,
+            "account_id": account_info.account_id,
+        }
+        current_user.preferences_json = json.dumps(preferences)
+        current_user.updated_at = datetime.now(timezone.utc)
+
+        session.commit()
+
+        logger.info(
+            f"Epic authentication completed for user {current_user.id}: "
+            f"Epic username '{account_info.display_name}'"
+        )
+
+        return EpicAuthCompleteResponse(
+            valid=True,
+            display_name=account_info.display_name,
+        )
+
+    except EpicAuthenticationError as e:
+        logger.warning(f"Epic authentication failed for user {current_user.id}: {e}")
+        return EpicAuthCompleteResponse(
+            valid=False,
+            error="invalid_code",
+        )
+    except EpicAPIError as e:
+        logger.error(f"Epic API error during authentication: {e}")
+        return EpicAuthCompleteResponse(
+            valid=False,
+            error="network_error",
+        )
+
+
+@router.get("/epic/auth/check", response_model=EpicAuthCheckResponse)
+async def check_epic_auth(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> EpicAuthCheckResponse:
+    """
+    Check Epic Games authentication status.
+
+    Returns whether the user is currently authenticated with Epic Games.
+    """
+    logger.debug(f"Checking Epic authentication for user {current_user.id}")
+
+    try:
+        epic_service = EpicService(current_user.id)
+        is_authenticated = await epic_service.verify_auth()
+
+        if is_authenticated:
+            account_info = await epic_service.get_account_info()
+            return EpicAuthCheckResponse(
+                is_authenticated=True,
+                display_name=account_info.display_name,
+            )
+        else:
+            return EpicAuthCheckResponse(
+                is_authenticated=False,
+            )
+
+    except Exception as e:
+        logger.warning(f"Error checking Epic authentication: {e}")
+        return EpicAuthCheckResponse(
+            is_authenticated=False,
+        )
+
+
+@router.delete("/epic/connection", response_model=SuccessResponse)
+async def disconnect_epic(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SuccessResponse:
+    """
+    Disconnect Epic Games integration.
+
+    Clears Epic Games credentials from user preferences and disables sync.
+    """
+    logger.info(f"Disconnecting Epic for user {current_user.id}")
+
+    try:
+        epic_service = EpicService(current_user.id)
+        await epic_service.disconnect()
+    except EpicAPIError as e:
+        logger.warning(f"Error disconnecting Epic service: {e}")
+
+    # Clear Epic credentials from preferences
+    preferences = current_user.preferences or {}
+    if "epic" in preferences:
+        del preferences["epic"]
+        current_user.preferences_json = json.dumps(preferences)
+
+    current_user.updated_at = datetime.now(timezone.utc)
+    session.commit()
+
+    logger.info(f"Epic disconnected for user {current_user.id}")
+
+    return SuccessResponse(
+        success=True,
+        message="Epic Games disconnected successfully",
     )
 
 
