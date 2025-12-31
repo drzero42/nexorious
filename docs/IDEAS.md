@@ -41,9 +41,6 @@ Import/export should be moved under the username at the bottom - same place as P
 https://github.com/LucasPickering/slumber
 Might be better than claude failing to use curl
 
-## ✅ Games in progress on dashboard
-We should prominently show the games in progress on the dashboard. Cover art with just the bare minimum details about the games. These should link to the details page for each game.
-
 ## Store playtime per copy
 Currently we only store "number of played hours" for a game. We can extract playtime from at least steam, so we should make it possible to set playtime per platform/storefront and then find a good way to show playtime per game as an aggregate with a breakdown of how much time per platforms/storefronts.
 Question: Should this be per platform or per storefront?
@@ -66,6 +63,3 @@ https://github.com/OpenXbox/xbox-webapi-python
 
 ## Remove unneeded CSV code
 We recently removed support for importing CSV, but we still have mentions of CSV as source for importing in the code. This should be removed.
-
-## The navigation menu should not scroll
-When scrolling a page, the menu scrolls up and away as well.
