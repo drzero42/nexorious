@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, ChevronDown } from 'lucide-react';
+import { LogOut, User, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,7 +14,7 @@ import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 
 export function Sidebar() {
   const { user, logout } = useAuth();
-  const { mainItems, manageSection, settingsSection, adminSection } = useNavItems();
+  const { mainItems, adminSection } = useNavItems();
 
   return (
     <aside className="hidden md:flex w-64 bg-card border-r flex-col h-screen">
@@ -36,19 +36,9 @@ export function Sidebar() {
           ))}
         </ul>
 
-        {/* Manage section */}
-        <div className="mt-6">
-          <NavSectionCollapsible {...manageSection} />
-        </div>
-
-        {/* Settings section */}
-        <div className="mt-4">
-          <NavSectionCollapsible {...settingsSection} />
-        </div>
-
         {/* Admin section (admin only) */}
         {user?.isAdmin && (
-          <div className="mt-4">
+          <div className="mt-6">
             <NavSectionCollapsible {...adminSection} />
           </div>
         )}
@@ -71,6 +61,12 @@ export function Sidebar() {
               <Link href="/profile">
                 <User className="mr-2 h-4 w-4" />
                 <span>Profile</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link href="/import-export">
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+                <span>Import / Export</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} className="cursor-pointer">

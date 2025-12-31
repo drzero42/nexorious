@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Menu, LogOut } from 'lucide-react';
+import { Menu, LogOut, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -19,7 +19,7 @@ import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const { user, logout } = useAuth();
-  const { mainItems, manageSection, settingsSection, adminSection } = useNavItems();
+  const { mainItems, adminSection } = useNavItems();
 
   const handleNavigate = () => {
     setOpen(false);
@@ -60,25 +60,9 @@ export function MobileNav() {
                 ))}
               </ul>
 
-              {/* Manage section */}
-              <div className="mt-6">
-                <NavSectionCollapsible
-                  {...manageSection}
-                  onNavigate={handleNavigate}
-                />
-              </div>
-
-              {/* Settings section */}
-              <div className="mt-4">
-                <NavSectionCollapsible
-                  {...settingsSection}
-                  onNavigate={handleNavigate}
-                />
-              </div>
-
               {/* Admin section (admin only) */}
               {user?.isAdmin && (
-                <div className="mt-4">
+                <div className="mt-6">
                   <NavSectionCollapsible
                     {...adminSection}
                     onNavigate={handleNavigate}
@@ -104,6 +88,16 @@ export function MobileNav() {
                         </AvatarFallback>
                       </Avatar>
                       <span>{user?.username}</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/import-export"
+                      onClick={handleNavigate}
+                      className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                      <span>Import / Export</span>
                     </Link>
                   </li>
                   <li>
