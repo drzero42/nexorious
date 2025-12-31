@@ -6,11 +6,21 @@ All legendary commands run with isolated XDG_CONFIG_HOME per user.
 """
 
 import asyncio
+import json
 import logging
 import os
+import re
 from typing import Any, Dict, List
 
+from pydantic import BaseModel
+
 logger = logging.getLogger(__name__)
+
+
+class EpicAccountInfo(BaseModel):
+    """Epic account information."""
+    display_name: str
+    account_id: str
 
 
 class LegendaryNotFoundError(Exception):
@@ -113,3 +123,124 @@ class EpicService:
         except asyncio.TimeoutError:
             logger.error(f"legendary command timed out after {timeout}s")
             raise EpicAPIError(f"legendary command timed out after {timeout}s")
+
+    async def start_device_auth(self) -> str:
+        """Start Epic device authentication flow.
+
+        Returns:
+            Device authorization URL for user to visit
+
+        Raises:
+            EpicAPIError: If legendary command fails
+        """
+        logger.info(f"Starting Epic device auth for user {self.user_id}")
+        result = await self._run_legendary_command(["auth", "--json"])
+
+        # Extract URL from legendary output (format: "Please visit: <URL>")
+        match = re.search(r'https://[^\s]+', result["stdout"])
+        if not match:
+            logger.error("Failed to extract auth URL from legendary output")
+            raise EpicAPIError("Failed to extract authentication URL")
+
+        url = match.group(0)
+        logger.debug(f"Device auth URL: {url}")
+        return url
+
+    async def complete_auth(self, code: str) -> bool:
+        """Complete Epic authentication with device code.
+
+        Args:
+            code: Device authorization code from Epic
+
+        Returns:
+            True if authentication succeeded
+
+        Raises:
+            EpicAuthenticationError: If authentication fails
+        """
+        logger.info(f"Completing Epic auth for user {self.user_id}")
+        try:
+            result = await self._run_legendary_command(
+                ["auth", "--code", code, "--json"]
+            )
+
+            # Check if response indicates success
+            stdout_lower = result["stdout"].lower()
+            if "logged in" in stdout_lower:
+                logger.info(f"Epic authentication successful for user {self.user_id}")
+                return True
+
+            logger.error("Epic authentication failed: unexpected response")
+            raise EpicAuthenticationError("Epic authentication failed")
+
+        except EpicAPIError as e:
+            logger.error(f"Epic authentication failed: {e}")
+            raise EpicAuthenticationError(f"Epic authentication failed: {e}")
+
+    async def verify_auth(self) -> bool:
+        """Verify Epic authentication status.
+
+        Returns:
+            True if authenticated, False otherwise
+        """
+        logger.debug(f"Verifying Epic auth for user {self.user_id}")
+        try:
+            result = await self._run_legendary_command(["status", "--json"])
+
+            # Parse JSON response to check authentication
+            try:
+                data = json.loads(result["stdout"])
+                is_authenticated = "account" in data
+                logger.debug(f"Auth status for user {self.user_id}: {is_authenticated}")
+                return is_authenticated
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse status JSON, assuming not authenticated")
+                return False
+
+        except EpicAuthExpiredError:
+            logger.debug(f"User {self.user_id} not authenticated")
+            return False
+
+    async def get_account_info(self) -> EpicAccountInfo:
+        """Get Epic account information.
+
+        Returns:
+            Epic account information
+
+        Raises:
+            EpicAuthExpiredError: If not authenticated
+            EpicAPIError: If account info cannot be retrieved
+        """
+        logger.info(f"Fetching Epic account info for user {self.user_id}")
+        result = await self._run_legendary_command(["status", "--json"])
+
+        try:
+            data = json.loads(result["stdout"])
+            account = data.get("account", {})
+
+            display_name = account.get("displayName", "")
+            account_id = account.get("id", "")
+
+            if not display_name or not account_id:
+                logger.error("Missing account information in legendary response")
+                raise EpicAPIError("Failed to retrieve account information")
+
+            logger.debug(f"Retrieved account info for {display_name} ({account_id})")
+            return EpicAccountInfo(
+                display_name=display_name,
+                account_id=account_id
+            )
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse account info JSON: {e}")
+            raise EpicAPIError(f"Failed to parse account information: {e}")
+
+    async def disconnect(self) -> None:
+        """Disconnect Epic account by removing credentials.
+
+        Raises:
+            EpicAPIError: If disconnect fails
+        """
+        logger.info(f"Disconnecting Epic account for user {self.user_id}")
+        await self._run_legendary_command(["auth", "--delete"])
+        logger.info(f"Epic account disconnected for user {self.user_id}")

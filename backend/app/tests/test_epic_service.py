@@ -7,6 +7,7 @@ import pytest
 
 from app.services.epic import (
     EpicService,
+    EpicAccountInfo,
     LegendaryNotFoundError,
     EpicAuthenticationError,
     EpicAuthExpiredError,
@@ -147,3 +148,137 @@ class TestLegendarySubprocess:
                 await service._run_legendary_command(["list"], timeout=1)
 
             assert "timed out" in str(exc_info.value)
+
+
+class TestEpicAuthentication:
+    """Test Epic authentication methods using device code flow."""
+
+    @pytest.mark.asyncio
+    async def test_start_device_auth_success(self):
+        """Test starting device authentication flow."""
+        service = EpicService("test-user")
+
+        # Mock legendary output with device code URL
+        mock_result = {
+            "stdout": "Please visit: https://www.epicgames.com/activate?code=ABCD-1234\n",
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            url = await service.start_device_auth()
+
+            assert url == "https://www.epicgames.com/activate?code=ABCD-1234"
+            mock_cmd.assert_called_once_with(["auth", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_complete_auth_success(self):
+        """Test completing authentication with valid code."""
+        service = EpicService("test-user")
+
+        # Mock successful auth completion
+        mock_result = {
+            "stdout": '{"status": "Logged in as TestUser"}',
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            success = await service.complete_auth("ABCD-1234")
+
+            assert success is True
+            mock_cmd.assert_called_once_with(["auth", "--code", "ABCD-1234", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_complete_auth_invalid_code(self):
+        """Test authentication fails with invalid code."""
+        service = EpicService("test-user")
+
+        # Mock legendary command error
+        with patch.object(
+            service, '_run_legendary_command',
+            side_effect=EpicAPIError("Invalid authorization code")
+        ):
+            with pytest.raises(EpicAuthenticationError) as exc_info:
+                await service.complete_auth("INVALID")
+
+            assert "authentication failed" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_auth_authenticated(self):
+        """Test verify_auth returns True when authenticated."""
+        service = EpicService("test-user")
+
+        # Mock legendary status showing authenticated state
+        mock_result = {
+            "stdout": '{"account": "test@example.com", "status": "authenticated"}',
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            is_authenticated = await service.verify_auth()
+
+            assert is_authenticated is True
+            mock_cmd.assert_called_once_with(["status", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_verify_auth_not_authenticated(self):
+        """Test verify_auth returns False when not authenticated."""
+        service = EpicService("test-user")
+
+        # Mock legendary command raising auth expired error
+        with patch.object(
+            service, '_run_legendary_command',
+            side_effect=EpicAuthExpiredError("Not authenticated")
+        ):
+            is_authenticated = await service.verify_auth()
+
+            assert is_authenticated is False
+
+    @pytest.mark.asyncio
+    async def test_get_account_info_success(self):
+        """Test getting Epic account information."""
+        service = EpicService("test-user")
+
+        # Mock legendary status output with account info
+        mock_result = {
+            "stdout": '{"account": {"displayName": "TestPlayer", "id": "abc123xyz"}}',
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            account = await service.get_account_info()
+
+            assert isinstance(account, EpicAccountInfo)
+            assert account.display_name == "TestPlayer"
+            assert account.account_id == "abc123xyz"
+            mock_cmd.assert_called_once_with(["status", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_disconnect_success(self):
+        """Test disconnecting Epic account."""
+        service = EpicService("test-user")
+
+        # Mock successful logout
+        mock_result = {
+            "stdout": "Logged out successfully",
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            await service.disconnect()
+
+            mock_cmd.assert_called_once_with(["auth", "--delete"])
