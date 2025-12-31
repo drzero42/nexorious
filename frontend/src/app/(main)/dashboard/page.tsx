@@ -1,7 +1,7 @@
 'use client';
 
 import { useCollectionStats } from '@/hooks';
-import { ProgressStatistics } from '@/components/dashboard';
+import { ProgressStatistics, CurrentlyPlayingSection } from '@/components/dashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -203,6 +203,8 @@ export default function DashboardPage() {
 
       {stats && stats.totalGames > 0 && (
         <>
+          <CurrentlyPlayingSection />
+
           <ProgressStatistics stats={stats} className="mb-6" />
           <TopGenres genreStats={stats.genreStats} />
           <div className="mt-6">
