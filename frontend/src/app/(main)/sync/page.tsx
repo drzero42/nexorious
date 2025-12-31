@@ -9,8 +9,8 @@ import { AlertCircle, Info, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { SUPPORTED_SYNC_PLATFORMS } from '@/types';
-import type { SyncConfig, SyncConfigUpdateData, SyncPlatform } from '@/types';
+import { SUPPORTED_SYNC_PLATFORMS, SyncPlatform } from '@/types';
+import type { SyncConfig, SyncConfigUpdateData } from '@/types';
 
 function SyncPageSkeleton() {
   return (

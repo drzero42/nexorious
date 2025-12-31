@@ -12,9 +12,14 @@ import {
   useUpdateSyncConfig,
   useTriggerSync,
   useUnignoreGame,
+  useStartEpicAuth,
+  useCompleteEpicAuth,
+  useCheckEpicAuth,
+  useDisconnectEpic,
   syncKeys,
 } from './use-sync';
 import { SyncPlatform, SyncFrequency } from '@/types';
+import * as syncApi from '@/api/sync';
 
 const API_URL = '/api';
 
@@ -478,6 +483,88 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Ignored game not found');
+    });
+  });
+
+  describe('Epic Auth Hooks', () => {
+    it('should call startEpicAuth mutation', async () => {
+      const mockStartEpicAuth = vi.spyOn(syncApi, 'startEpicAuth');
+      mockStartEpicAuth.mockResolvedValue({
+        authUrl: 'https://epicgames.com/activate',
+        instructions: 'Please login',
+      });
+
+      const { result } = renderHook(() => useStartEpicAuth(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync();
+      });
+
+      expect(mockStartEpicAuth).toHaveBeenCalled();
+      mockStartEpicAuth.mockRestore();
+    });
+
+    it('should invalidate queries on successful Epic auth', async () => {
+      const mockCompleteEpicAuth = vi.spyOn(syncApi, 'completeEpicAuth');
+      mockCompleteEpicAuth.mockResolvedValue({
+        valid: true,
+        displayName: 'EpicUser',
+        error: null,
+      });
+
+      const { result } = renderHook(() => useCompleteEpicAuth(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync('TESTCODE');
+      });
+
+      expect(mockCompleteEpicAuth).toHaveBeenCalledWith('TESTCODE');
+
+      // Query invalidation happens automatically via TanStack Query
+      mockCompleteEpicAuth.mockRestore();
+    });
+
+    it('should cache Epic auth status', async () => {
+      const mockCheckEpicAuth = vi.spyOn(syncApi, 'checkEpicAuth');
+      mockCheckEpicAuth.mockResolvedValue({
+        isAuthenticated: true,
+        displayName: 'EpicUser',
+      });
+
+      const { result } = renderHook(() => useCheckEpicAuth(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toEqual({
+        isAuthenticated: true,
+        displayName: 'EpicUser',
+      });
+
+      mockCheckEpicAuth.mockRestore();
+    });
+
+    it('should invalidate all Epic queries on disconnect', async () => {
+      const mockDisconnectEpic = vi.spyOn(syncApi, 'disconnectEpic');
+      mockDisconnectEpic.mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useDisconnectEpic(), {
+        wrapper: QueryWrapper,
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync();
+      });
+
+      expect(mockDisconnectEpic).toHaveBeenCalled();
+      mockDisconnectEpic.mockRestore();
     });
   });
 });

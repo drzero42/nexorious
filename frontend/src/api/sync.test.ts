@@ -1,6 +1,21 @@
 // frontend-next/src/api/sync.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
+import {
+  getSyncConfigs,
+  getSyncConfig,
+  updateSyncConfig,
+  triggerSync,
+  getSyncStatus,
+  getIgnoredGames,
+  unignoreGame,
+  verifySteamCredentials,
+  disconnectSteam,
+  startEpicAuth,
+  completeEpicAuth,
+  checkEpicAuth,
+  disconnectEpic,
+} from './sync';
 import { api } from './client';
 import { SyncPlatform, SyncFrequency } from '@/types';
 
@@ -177,6 +192,105 @@ describe('syncApi', () => {
       await syncApi.unignoreGame('ignored-1');
 
       expect(api.delete).toHaveBeenCalledWith('/sync/ignored/ignored-1');
+    });
+  });
+
+  describe('Epic Auth API', () => {
+    it('should start Epic auth and return URL', async () => {
+      const mockResponse = {
+        auth_url: 'https://www.epicgames.com/id/api/redirect',
+        instructions: 'Please visit the URL and login',
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await startEpicAuth();
+
+      expect(api.post).toHaveBeenCalledWith('/sync/epic/auth/start');
+      expect(result).toEqual({
+        authUrl: 'https://www.epicgames.com/id/api/redirect',
+        instructions: 'Please visit the URL and login',
+      });
+    });
+
+    it('should complete Epic auth with valid code', async () => {
+      const mockResponse = {
+        valid: true,
+        display_name: 'EpicUser123',
+        error: null,
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await completeEpicAuth('TESTCODE123');
+
+      expect(api.post).toHaveBeenCalledWith('/sync/epic/auth/complete', {
+        code: 'TESTCODE123',
+      });
+      expect(result).toEqual({
+        valid: true,
+        displayName: 'EpicUser123',
+        error: null,
+      });
+    });
+
+    it('should handle invalid auth code', async () => {
+      const mockResponse = {
+        valid: false,
+        display_name: null,
+        error: 'invalid_code',
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await completeEpicAuth('BADCODE');
+
+      expect(result).toEqual({
+        valid: false,
+        displayName: null,
+        error: 'invalid_code',
+      });
+    });
+
+    it('should check Epic auth status', async () => {
+      const mockResponse = {
+        is_authenticated: true,
+        display_name: 'EpicUser123',
+      };
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      const result = await checkEpicAuth();
+
+      expect(api.get).toHaveBeenCalledWith('/sync/epic/auth/check');
+      expect(result).toEqual({
+        isAuthenticated: true,
+        displayName: 'EpicUser123',
+      });
+    });
+
+    it('should disconnect Epic', async () => {
+      vi.mocked(api.delete).mockResolvedValueOnce(undefined);
+
+      await disconnectEpic();
+
+      expect(api.delete).toHaveBeenCalledWith('/sync/epic/connection');
+    });
+
+    it('should transform snake_case to camelCase correctly', async () => {
+      const mockResponse = {
+        auth_url: 'https://example.com',
+        instructions: 'test',
+      };
+
+      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+
+      const result = await startEpicAuth();
+
+      // Verify transformed keys
+      expect(result).toHaveProperty('authUrl');
+      expect(result).toHaveProperty('instructions');
+      expect(result).not.toHaveProperty('auth_url');
     });
   });
 });

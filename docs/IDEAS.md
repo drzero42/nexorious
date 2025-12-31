@@ -61,3 +61,7 @@ When a game is removed from from a platform/storefront (best example is a PS Plu
 
 ## Allow restore during initial setup
 On the initial setup screen, instead of creating an admin user, it should be possible to restore the DB to a backup file that can be uploaded.
+
+## Notifications
+Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
+Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.

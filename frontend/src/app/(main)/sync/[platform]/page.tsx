@@ -15,7 +15,7 @@ import {
   useCancelJob,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard, RecentActivity } from '@/components/sync';
+import { SteamConnectionCard, EpicConnectionCard, RecentActivity } from '@/components/sync';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -138,6 +138,14 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
     steam_id?: string;
     username?: string;
   } | undefined;
+
+  // Extract Epic credentials from user preferences
+  const epicPrefs = currentUser?.preferences?.epic as
+    | {
+        display_name?: string;
+        account_id?: string;
+      }
+    | undefined;
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(platform);
@@ -306,6 +314,19 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           steamUsername={steamPrefs?.username}
           onConnectionChange={() => {
             // Invalidate queries to refresh data
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: authKeys.me() });
+          }}
+        />
+      )}
+
+      {/* Epic Connection Card - only show for Epic platform */}
+      {platform === SyncPlatform.EPIC && (
+        <EpicConnectionCard
+          isConfigured={config.isConfigured}
+          displayName={epicPrefs?.display_name}
+          accountId={epicPrefs?.account_id}
+          onConnectionChange={() => {
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
