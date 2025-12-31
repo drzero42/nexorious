@@ -8,7 +8,10 @@ export enum SyncPlatform {
   GOG = 'gog',
 }
 
-export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [SyncPlatform.STEAM];
+export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [
+  SyncPlatform.STEAM,
+  SyncPlatform.EPIC,
+];
 
 export enum SyncFrequency {
   MANUAL = 'manual',
@@ -39,6 +42,8 @@ export interface SyncStatus {
   isSyncing: boolean;
   lastSyncedAt: string | null;
   activeJobId: string | null;
+  requiresReauth?: boolean;
+  authExpired?: boolean;
 }
 
 export interface ManualSyncResponse {
@@ -117,4 +122,38 @@ export const STEAM_VERIFY_ERROR_MESSAGES: Record<string, string> = {
   private_profile: 'Your Steam profile or game details are set to private. Please make them public and try again.',
   rate_limited: 'Steam API rate limit reached. Please try again in a few minutes.',
   network_error: 'Could not connect to Steam. Please try again.',
+};
+
+// Epic Auth Types
+export interface EpicAuthStartResponse {
+  authUrl: string;
+  instructions: string;
+}
+
+export interface EpicAuthCompleteRequest {
+  code: string;
+}
+
+export interface EpicAuthCompleteResponse {
+  valid: boolean;
+  displayName: string | null;
+  error: string | null;
+}
+
+export interface EpicAuthCheckResponse {
+  isAuthenticated: boolean;
+  displayName: string | null;
+}
+
+export interface EpicConnectionInfo {
+  configured: boolean;
+  displayName: string | null;
+  accountId: string | null;
+}
+
+// Error message mapping for Epic auth
+export const EPIC_AUTH_ERROR_MESSAGES: Record<string, string> = {
+  invalid_code: 'Invalid authorization code. Please try again.',
+  network_error: 'Could not connect to Epic Games. Please try again.',
+  expired_code: 'Authorization code expired. Please request a new one.',
 };
