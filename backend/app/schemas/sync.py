@@ -128,3 +128,40 @@ class SteamVerifyResponse(BaseModel):
         default=None,
         description="Error code if verification failed"
     )
+
+
+class EpicAuthStartResponse(BaseModel):
+    """Response when starting Epic authentication."""
+
+    auth_url: str = Field(description="URL for user to visit and authenticate")
+    instructions: str = Field(description="Instructions for completing authentication")
+
+
+class EpicAuthCompleteRequest(BaseModel):
+    """Request to complete Epic authentication with code."""
+
+    code: str = Field(description="Authorization code from Epic")
+
+
+class EpicAuthCompleteResponse(BaseModel):
+    """Response after completing Epic authentication."""
+
+    valid: bool = Field(description="Whether authentication succeeded")
+    display_name: Optional[str] = Field(
+        default=None,
+        description="Epic display name if authentication succeeded"
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error code if authentication failed"
+    )
+
+
+class EpicAuthCheckResponse(BaseModel):
+    """Response for Epic authentication status check."""
+
+    is_authenticated: bool = Field(description="Whether user is authenticated")
+    display_name: Optional[str] = Field(
+        default=None,
+        description="Epic display name if authenticated"
+    )
