@@ -412,11 +412,18 @@ async def get_collection_stats(
     else:
         avg_rating_result = None
     
-    # Total hours played
-    total_hours = session.exec(
-        select(func.sum(UserGame.hours_played)).
-        where(UserGame.user_id == current_user.id)
-    ).one() or 0
+    # Total hours played - sum from platforms with legacy fallback
+    user_games_for_hours = session.exec(
+        select(UserGame).where(UserGame.user_id == current_user.id)
+    ).all()
+
+    total_hours = 0
+    for ug in user_games_for_hours:
+        platform_hours = sum(p.hours_played for p in ug.platforms)
+        if platform_hours > 0:
+            total_hours += platform_hours
+        else:
+            total_hours += ug.hours_played  # Legacy fallback
     
     # Ownership stats
     ownership_stats = {}
