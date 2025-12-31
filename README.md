@@ -240,6 +240,7 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:4173
 
 # Storage
 STORAGE_PATH=/path/to/storage  # For cover art and uploads
+BACKUP_PATH=/path/to/backups   # For backup files (default: storage/backups)
 ```
 
 #### Frontend Configuration
