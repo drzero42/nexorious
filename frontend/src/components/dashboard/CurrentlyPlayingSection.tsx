@@ -45,10 +45,10 @@ export function CurrentlyPlayingSection() {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Currently Playing</h2>
+      <h2 className="text-2xl font-semibold">Currently Playing</h2>
 
       {/* Horizontal scroll container */}
-      <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4">
+      <div className="flex gap-4 overflow-x-auto scroll-smooth pb-4 -mx-4 px-4 scrollbar-hide">
         {data.items.map((game) => {
           const coverUrl = getCoverUrl(game);
           const { firstPlatform, additionalCount } = getPlatformDisplay(game);
@@ -57,7 +57,7 @@ export function CurrentlyPlayingSection() {
             <Link
               key={game.id}
               href={`/games/${game.id}`}
-              className="flex-shrink-0 w-40 group"
+              className="flex-shrink-0 w-[140px] sm:w-40 group shadow-md hover:shadow-lg transition-shadow rounded-lg"
             >
               {/* Cover art with 3:4 aspect ratio */}
               <div className="aspect-[3/4] relative bg-muted rounded-lg overflow-hidden mb-2">
@@ -94,7 +94,7 @@ export function CurrentlyPlayingSection() {
 
               {/* Game title */}
               <h3
-                className="font-medium text-sm truncate mb-1"
+                className="text-sm font-medium line-clamp-2 mb-1"
                 title={game.game?.title ?? 'Unknown Game'}
               >
                 {game.game?.title ?? 'Unknown Game'}
