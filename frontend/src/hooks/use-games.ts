@@ -147,6 +147,7 @@ export function useUpdateUserGame() {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
       // Optionally set the updated data directly in the cache
       queryClient.setQueryData(gameKeys.detail(id), updatedGame);
     },
@@ -165,6 +166,7 @@ export function useDeleteUserGame() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
       // Remove the specific game from cache
       queryClient.removeQueries({ queryKey: gameKeys.detail(id) });
     },
@@ -197,6 +199,7 @@ export function useBulkUpdateUserGames() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
     },
   });
 }
@@ -217,6 +220,7 @@ export function useBulkDeleteUserGames() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
     },
   });
 }
