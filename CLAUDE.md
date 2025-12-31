@@ -154,7 +154,6 @@ uv run pytest scripts/tests/ -v
 
 #### Rules
 - ✅ Always create a branch before starting task work
-- ✅ Name branches with the beads issue ID
 - ✅ Keep branches focused on a single task/issue
 - ✅ Create PRs for code review before merging to main
 - ✅ Review PR diff before merging; ask user only if issues found
