@@ -235,8 +235,8 @@ export default function ImportExportPage() {
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
   // Check if the currently displayed job is a completed export (for download button)
   const isActiveJobCompletedExport = activeJob?.isTerminal &&
-                                      activeJob?.status === JobStatus.COMPLETED &&
-                                      activeJob?.jobType === JobType.EXPORT;
+    activeJob?.status === JobStatus.COMPLETED &&
+    activeJob?.jobType === JobType.EXPORT;
 
   const handleImportFile = async (file: File) => {
     setIsUploading(true);
@@ -421,7 +421,7 @@ export default function ImportExportPage() {
         <AlertTitle>About Import / Export</AlertTitle>
         <AlertDescription>
           <p className="mb-2">
-            <strong>Nexorious JSON</strong> is the recommended format for backups. It preserves all
+            <strong>Nexorious JSON</strong> is the recommended format for importing on other Nexorious instances. It preserves all
             metadata including IGDB IDs, ratings, notes, and platform associations.
           </p>
           <p>

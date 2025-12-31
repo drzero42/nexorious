@@ -35,5 +35,54 @@ We have support for websocket, but actually use polling. Should we remove websoc
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
 
-## Sync does not need an enabled/disabled state
-Sync frequency is set to manual is fine for "disabled".
+## Import/export is for the current user
+Our export format does not contain all information from the database and also does not contain image-files. We should refactor the import/export to make it a user-scoped thing, meaning that only the current users items are exported and imports add the games to the current user.
+This is a user-feature - this is not an admin-only feature.
+
+## Backup/restore
+Since exports are not usable as full backups, we need to add proper backup/restore functionality. That means dumping all data from the database to a suitable format and creating a compressed archive with that dump along with all relevant static files (probably only cover art). The backups should be stored in a dedicated dir, should be downloadable by the user and we want it to be scheduleable with configuration for retention time.
+Restore will be a full reset to the backed up state and must properly warn the user before performing it. Restores can be done from backups the server has available or from a backup uploaded by the user.
+This is an admin-only feature.
+
+## Menu refactoring
+Sync and Tags should be part of the root menu again.
+We don't need the Setting section - it only has profile under it, which is also available when clicking the username at the bottom.
+Import/export should be moved under the username at the bottom - same place as Profile.
+
+## Fix import/export format
+We have inconsistencies in naming. We recently refactored from using a UUID for platform_id to using the slug name. There are still references to platform_id. We should clean up and make things consistent. We don't need a UUID for platforms as there are only a limited number of them and we want a stable and predictable name for each of them across all instances.
+Same goes for storefronts.
+
+## Experiment with slumber
+https://github.com/LucasPickering/slumber
+Might be better than claude failing to use curl
+
+## Filename for exports
+Our exports end up being named download.json and download.csv. These should be named nexorious-DATE.[json|csv]
+
+## Backup creation endpoint must be protected
+The worker calls an endpoint on the backend to create a backup. This endpoint must not be callable by users and must only allow calls from the workers.
+
+## Games in progress on dashboard
+We should prominently show the games in progress on the dashboard. Cover art with just the bare minimum details about the games. These should link to the details page for each game.
+
+## Store playtime per copy
+Currently we only store "number of played hours" for a game. We can extract playtime from at least steam, so we should make it possible to set playtime per platform/storefront and then find a good way to show playtime per game as an aggregate with a breakdown of how much time per platforms/storefronts.
+Question: Should this be per platform or per storefront?
+
+## Achievements / Trophies
+From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
+We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
+
+## Epic Games Store
+Use https://github.com/derrod/legendary as a CLI tool to pull information about the user's library
+
+## GOG
+Use https://github.com/Sude-/lgogdownloader as a CLI tool to pull informatiot about the user's library
+
+## Playstation
+https://psnawp.readthedocs.io
+
+## Xbox
+https://github.com/OpenXbox/xbox-webapi-python
+

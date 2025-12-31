@@ -107,12 +107,6 @@ from .common import (
     SearchParams,
     TimestampMixin,
 )
-from .websocket import (
-    WebSocketEventType,
-    WebSocketMessage,
-    ConnectionMessage,
-    JobWebSocketMessage,
-)
 from .ignored_game import (
     IgnoredGameResponse,
     IgnoredGameListResponse,
@@ -225,11 +219,6 @@ __all__ = [
     "SortParams",
     "SearchParams",
     "TimestampMixin",
-    # WebSocket schemas
-    "WebSocketEventType",
-    "WebSocketMessage",
-    "ConnectionMessage",
-    "JobWebSocketMessage",
     # Ignored game schemas
     "IgnoredGameResponse",
     "IgnoredGameListResponse",
