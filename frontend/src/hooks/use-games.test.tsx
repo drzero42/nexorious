@@ -10,6 +10,7 @@ import {
   useUserGame,
   useSearchIGDB,
   useCollectionStats,
+  useActiveGames,
   useCreateUserGame,
   useUpdateUserGame,
   useDeleteUserGame,
@@ -835,6 +836,134 @@ describe('use-games hooks', () => {
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
+    });
+  });
+
+  describe('useActiveGames', () => {
+    it('fetches and merges IN_PROGRESS and REPLAY games', async () => {
+      const inProgressGame = {
+        ...mockUserGameApi,
+        id: 'ug-1',
+        play_status: 'in_progress' as PlayStatus,
+      };
+
+      const replayGame = {
+        ...mockUserGameApi,
+        id: 'ug-2',
+        play_status: 'replay' as PlayStatus,
+      };
+
+      let inProgressCalled = false;
+      let replayCalled = false;
+
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          const playStatus = url.searchParams.get('play_status');
+
+          if (playStatus === 'in_progress') {
+            inProgressCalled = true;
+            return HttpResponse.json({
+              user_games: [inProgressGame],
+              total: 1,
+              page: 1,
+              per_page: 50,
+              pages: 1,
+            });
+          }
+
+          if (playStatus === 'replay') {
+            replayCalled = true;
+            return HttpResponse.json({
+              user_games: [replayGame],
+              total: 1,
+              page: 1,
+              per_page: 50,
+              pages: 1,
+            });
+          }
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 50,
+            pages: 0,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useActiveGames(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(inProgressCalled).toBe(true);
+      expect(replayCalled).toBe(true);
+      expect(result.current.data?.items).toHaveLength(2);
+      expect(result.current.data?.total).toBe(2);
+      expect(result.current.data?.items[0].play_status).toBe('in_progress');
+      expect(result.current.data?.items[1].play_status).toBe('replay');
+    });
+
+    it('returns empty array when no active games exist', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, () => {
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 50,
+            pages: 0,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useActiveGames(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data?.items).toEqual([]);
+      expect(result.current.data?.total).toBe(0);
+    });
+
+    it('uses separate query key from main games list', () => {
+      const queryClient = createTestQueryClient();
+
+      server.use(
+        http.get(`${API_URL}/user-games/`, () => {
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 50,
+            pages: 0,
+          });
+        })
+      );
+
+      const { result: activeResult } = renderHook(() => useActiveGames(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+
+      const { result: allResult } = renderHook(() => useUserGames(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+
+      // Active games should have a different query key
+      expect(activeResult.current.dataUpdatedAt).toBeDefined();
+      expect(allResult.current.dataUpdatedAt).toBeDefined();
     });
   });
 

@@ -7,7 +7,7 @@ import type {
   UserGamesListResponse,
   BulkUpdateData,
 } from '@/api/games';
-import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform } from '@/types';
+import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform, PlayStatus } from '@/types';
 
 // ============================================================================
 // Query Keys
@@ -67,6 +67,34 @@ export function useCollectionStats() {
   return useQuery({
     queryKey: gameKeys.stats(),
     queryFn: () => gamesApi.getCollectionStats(),
+  });
+}
+
+/**
+ * Hook to fetch active games (IN_PROGRESS and REPLAY statuses).
+ * Used for the "Currently Playing" dashboard section.
+ * Makes two parallel API calls since backend only supports single status filter.
+ */
+export function useActiveGames() {
+  return useQuery<UserGamesListResponse, Error>({
+    queryKey: ['user-games', 'active'],
+    queryFn: async () => {
+      // Fetch both statuses in parallel
+      const [inProgressData, replayData] = await Promise.all([
+        gamesApi.getUserGames({ status: 'in_progress' as PlayStatus, perPage: 50 }),
+        gamesApi.getUserGames({ status: 'replay' as PlayStatus, perPage: 50 }),
+      ]);
+
+      // Merge results
+      return {
+        items: [...inProgressData.items, ...replayData.items],
+        total: inProgressData.total + replayData.total,
+        page: 1,
+        perPage: 50,
+        pages: 1,
+      };
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
