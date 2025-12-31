@@ -62,6 +62,10 @@ export {
   useUnignoreGame,
   useVerifySteamCredentials,
   useDisconnectSteam,
+  useStartEpicAuth,
+  useCompleteEpicAuth,
+  useCheckEpicAuth,
+  useDisconnectEpic,
 } from './use-sync';
 
 // Import/Export hooks
