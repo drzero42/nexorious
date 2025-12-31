@@ -31,7 +31,9 @@ import {
   useAllPlatforms,
   useAllTags,
   useCreateOrGetTag,
+  useSyncConfig,
 } from '@/hooks';
+import { SyncPlatform, SyncFrequency } from '@/types/sync';
 import { config } from '@/lib/env';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
@@ -98,6 +100,11 @@ export function GameEditForm({ game }: GameEditFormProps) {
   // Data fetching
   const { data: platforms = [], isLoading: platformsLoading } = useAllPlatforms();
   const { data: tags = [], isLoading: tagsLoading } = useAllTags();
+  const { data: steamSyncConfig } = useSyncConfig(SyncPlatform.STEAM);
+
+  // Check if Steam sync is enabled (non-manual frequency when configured)
+  const isSteamSyncEnabled =
+    steamSyncConfig?.isConfigured && steamSyncConfig?.frequency !== SyncFrequency.MANUAL;
 
   // Mutations
   const updateGame = useUpdateUserGame();
@@ -426,30 +433,38 @@ export function GameEditForm({ game }: GameEditFormProps) {
               {game.platforms.length > 0 && (
                 <div className="space-y-3 pt-4 border-t">
                   <Label>Playtime by Platform</Label>
-                  {game.platforms.map((p) => (
-                    <div key={p.id} className="flex items-center gap-4">
-                      <span className="min-w-[150px] text-sm">
-                        {p.storefront_details?.display_name ||
-                          p.storefront ||
-                          p.platform_details?.display_name ||
-                          p.platform ||
-                          'Unknown'}
-                      </span>
-                      <Input
-                        type="number"
-                        min="0"
-                        className="w-24"
-                        value={platformPlaytimes[p.id] ?? p.hours_played}
-                        onChange={(e) =>
-                          setPlatformPlaytimes((prev) => ({
-                            ...prev,
-                            [p.id]: parseInt(e.target.value) || 0,
-                          }))
-                        }
-                      />
-                      <span className="text-sm text-muted-foreground">hours</span>
-                    </div>
-                  ))}
+                  {game.platforms.map((p) => {
+                    const isSteamPlatform = p.storefront === 'steam';
+                    const isDisabled = isSteamSyncEnabled && isSteamPlatform;
+                    return (
+                      <div key={p.id} className="flex items-center gap-4">
+                        <span className="min-w-[150px] text-sm">
+                          {p.storefront_details?.display_name ||
+                            p.storefront ||
+                            p.platform_details?.display_name ||
+                            p.platform ||
+                            'Unknown'}
+                        </span>
+                        <Input
+                          type="number"
+                          min="0"
+                          className="w-24"
+                          value={platformPlaytimes[p.id] ?? p.hours_played}
+                          onChange={(e) =>
+                            setPlatformPlaytimes((prev) => ({
+                              ...prev,
+                              [p.id]: parseInt(e.target.value) || 0,
+                            }))
+                          }
+                          disabled={isDisabled}
+                        />
+                        <span className="text-sm text-muted-foreground">hours</span>
+                        {isDisabled && (
+                          <span className="text-xs text-muted-foreground">(Synced from Steam)</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>
