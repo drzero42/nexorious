@@ -25,9 +25,6 @@ We should use knip.dev to identify dead code in the frontend and help keep the f
 ## Use vulture to keep backend lean
 We should use vulture to find dead code in the backend.
 
-## Make sure platform/storefront seed data can be loaded
-In the new frontend we don't have a button to load seed data.
-
 ## Remove dependent relationships from docker-compose
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
