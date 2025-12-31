@@ -1096,7 +1096,8 @@ async def add_platform_to_user_game(
         storefront=platform_data.storefront,
         store_game_id=platform_data.store_game_id,
         store_url=str(platform_data.store_url) if platform_data.store_url else None,
-        is_available=platform_data.is_available
+        is_available=platform_data.is_available,
+        hours_played=platform_data.hours_played,
     )
     
     session.add(new_platform)
@@ -1216,6 +1217,7 @@ async def update_platform_association(
     platform_assoc.store_game_id = platform_data.store_game_id
     platform_assoc.store_url = str(platform_data.store_url) if platform_data.store_url else None
     platform_assoc.is_available = platform_data.is_available
+    platform_assoc.hours_played = platform_data.hours_played
     platform_assoc.updated_at = datetime.now(timezone.utc)
 
     session.commit()
