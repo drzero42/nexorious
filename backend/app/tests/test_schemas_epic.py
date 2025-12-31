@@ -4,7 +4,6 @@ Tests for Epic authentication API schemas.
 Validates Epic-specific Pydantic schemas for authentication flow endpoints.
 """
 
-import pytest
 from app.schemas.sync import (
     EpicAuthStartResponse,
     EpicAuthCompleteRequest,
