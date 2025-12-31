@@ -37,6 +37,10 @@ Might be better than claude failing to use curl
 From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
 We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
 
+## Steamctl
+Refactor to use https://github.com/ValvePython/steamctl
+This will allow auth with Steam Authenticator and will not require public Steam profile. It makes it easier for the user as it should potentially be just a QR code that can be scanned from the Steam mobile app to gain access.
+
 ## Epic Games Store
 Use https://github.com/derrod/legendary as a CLI tool to pull information about the user's library
 
