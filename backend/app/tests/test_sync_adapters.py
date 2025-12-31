@@ -42,6 +42,19 @@ class TestGetSyncAdapter:
         adapter = get_sync_adapter("STEAM")
         assert isinstance(adapter, SteamSyncAdapter)
 
+    def test_get_epic_adapter(self):
+        """Test getting Epic adapter."""
+        from app.worker.tasks.sync.adapters.epic import EpicSyncAdapter
+        adapter = get_sync_adapter("epic")
+        assert isinstance(adapter, EpicSyncAdapter)
+        assert adapter.source == BackgroundJobSource.EPIC
+
+    def test_get_epic_adapter_case_insensitive(self):
+        """Test Epic adapter lookup is case insensitive."""
+        from app.worker.tasks.sync.adapters.epic import EpicSyncAdapter
+        adapter = get_sync_adapter("EPIC")
+        assert isinstance(adapter, EpicSyncAdapter)
+
     def test_get_unsupported_adapter_raises(self):
         """Test that unsupported source raises ValueError."""
         with pytest.raises(ValueError, match="Unsupported sync source"):

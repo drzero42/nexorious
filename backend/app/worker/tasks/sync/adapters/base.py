@@ -91,9 +91,11 @@ def get_sync_adapter(source: str) -> SyncSourceAdapter:
         ValueError: If source is not supported
     """
     from .steam import SteamSyncAdapter
+    from .epic import EpicSyncAdapter
 
     adapters = {
         "steam": SteamSyncAdapter,
+        "epic": EpicSyncAdapter,
     }
 
     adapter_class = adapters.get(source.lower())
