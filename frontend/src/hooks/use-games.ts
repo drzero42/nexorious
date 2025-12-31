@@ -7,7 +7,7 @@ import type {
   UserGamesListResponse,
   BulkUpdateData,
 } from '@/api/games';
-import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform } from '@/types';
+import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform, PlayStatus } from '@/types';
 
 // ============================================================================
 // Query Keys
@@ -71,6 +71,34 @@ export function useCollectionStats() {
 }
 
 /**
+ * Hook to fetch active games (IN_PROGRESS and REPLAY statuses).
+ * Used for the "Currently Playing" dashboard section.
+ * Makes two parallel API calls since backend only supports single status filter.
+ */
+export function useActiveGames() {
+  return useQuery<UserGamesListResponse, Error>({
+    queryKey: ['user-games', 'active'],
+    queryFn: async () => {
+      // Fetch both statuses in parallel
+      const [inProgressData, replayData] = await Promise.all([
+        gamesApi.getUserGames({ status: 'in_progress' as PlayStatus, perPage: 50 }),
+        gamesApi.getUserGames({ status: 'replay' as PlayStatus, perPage: 50 }),
+      ]);
+
+      // Merge results
+      return {
+        items: [...inProgressData.items, ...replayData.items],
+        total: inProgressData.total + replayData.total,
+        page: 1,
+        perPage: 50,
+        pages: 1,
+      };
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
  * Hook to fetch all user game IDs matching filters.
  * Disabled by default - call refetch() to trigger.
  */
@@ -119,6 +147,7 @@ export function useUpdateUserGame() {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
       // Optionally set the updated data directly in the cache
       queryClient.setQueryData(gameKeys.detail(id), updatedGame);
     },
@@ -137,6 +166,7 @@ export function useDeleteUserGame() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
       // Remove the specific game from cache
       queryClient.removeQueries({ queryKey: gameKeys.detail(id) });
     },
@@ -169,6 +199,7 @@ export function useBulkUpdateUserGames() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
     },
   });
 }
@@ -189,6 +220,7 @@ export function useBulkDeleteUserGames() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
     },
   });
 }
