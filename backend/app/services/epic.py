@@ -12,7 +12,7 @@ import os
 import re
 from typing import Any, Dict, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,13 @@ class EpicAccountInfo(BaseModel):
     """Epic account information."""
     display_name: str
     account_id: str
+
+
+class EpicGame(BaseModel):
+    """Epic game information from library."""
+    app_name: str
+    title: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class LegendaryNotFoundError(Exception):
@@ -244,3 +251,38 @@ class EpicService:
         logger.info(f"Disconnecting Epic account for user {self.user_id}")
         await self._run_legendary_command(["auth", "--delete"])
         logger.info(f"Epic account disconnected for user {self.user_id}")
+
+    async def get_library(self) -> List[EpicGame]:
+        """Get Epic Games library.
+
+        Returns:
+            List of games owned by the authenticated user
+
+        Raises:
+            EpicAuthExpiredError: If not authenticated
+            EpicAPIError: If library cannot be retrieved
+        """
+        logger.info(f"Fetching Epic library for user {self.user_id}")
+        result = await self._run_legendary_command(["list", "--json"])
+
+        try:
+            games_data = json.loads(result["stdout"])
+
+            games = []
+            for game_data in games_data:
+                game = EpicGame(
+                    app_name=game_data["app_name"],
+                    title=game_data["app_title"],
+                    metadata=game_data.get("metadata", {})
+                )
+                games.append(game)
+
+            logger.info(f"Retrieved {len(games)} games for user {self.user_id}")
+            return games
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse library JSON: {e}")
+            raise EpicAPIError(f"Failed to parse library information: {e}")
+        except KeyError as e:
+            logger.error(f"Missing required field in game data: {e}")
+            raise EpicAPIError(f"Invalid game data format: {e}")

@@ -282,3 +282,81 @@ class TestEpicAuthentication:
             await service.disconnect()
 
             mock_cmd.assert_called_once_with(["auth", "--delete"])
+
+
+class TestEpicLibrary:
+    """Test Epic Games library fetching."""
+
+    @pytest.mark.asyncio
+    async def test_get_library_success(self):
+        """Test fetching Epic library with games."""
+        service = EpicService("test-user")
+
+        # Mock legendary list output
+        mock_result = {
+            "stdout": '''[
+                {
+                    "app_name": "Fortnite",
+                    "app_title": "Fortnite",
+                    "app_version": "1.0",
+                    "metadata": {"genre": "Battle Royale"}
+                },
+                {
+                    "app_name": "RocketLeague",
+                    "app_title": "Rocket League",
+                    "app_version": "2.0",
+                    "metadata": {"genre": "Sports"}
+                }
+            ]''',
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            games = await service.get_library()
+
+            assert len(games) == 2
+            assert games[0].app_name == "Fortnite"
+            assert games[0].title == "Fortnite"
+            assert games[0].metadata == {"genre": "Battle Royale"}
+            assert games[1].app_name == "RocketLeague"
+            assert games[1].title == "Rocket League"
+            assert games[1].metadata == {"genre": "Sports"}
+            mock_cmd.assert_called_once_with(["list", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_get_library_empty(self):
+        """Test fetching Epic library when no games owned."""
+        service = EpicService("test-user")
+
+        # Mock legendary list returning empty array
+        mock_result = {
+            "stdout": "[]",
+            "stderr": "",
+            "returncode": 0
+        }
+
+        with patch.object(service, '_run_legendary_command', new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = mock_result
+
+            games = await service.get_library()
+
+            assert games == []
+            mock_cmd.assert_called_once_with(["list", "--json"])
+
+    @pytest.mark.asyncio
+    async def test_get_library_auth_expired(self):
+        """Test get_library raises EpicAuthExpiredError when auth expired."""
+        service = EpicService("test-user")
+
+        # Mock legendary command raising auth expired error
+        with patch.object(
+            service, '_run_legendary_command',
+            side_effect=EpicAuthExpiredError("Authentication expired")
+        ):
+            with pytest.raises(EpicAuthExpiredError) as exc_info:
+                await service.get_library()
+
+            assert "authentication expired" in str(exc_info.value).lower()
