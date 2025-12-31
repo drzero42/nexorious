@@ -86,24 +86,24 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         return await _update_job_item_error(job_item_id, f"Invalid metadata: {e}")
 
     external_id = metadata.get("external_id")
-    platform_id = metadata.get("platform_id")
-    storefront_id = metadata.get("storefront_id")
+    platform = metadata.get("platform")
+    storefront = metadata.get("storefront")
 
-    if not external_id or not storefront_id:
-        return await _update_job_item_error(job_item_id, "Missing external_id or storefront_id")
+    if not external_id or not storefront:
+        return await _update_job_item_error(job_item_id, "Missing external_id or storefront")
 
     # Phase 3: Process with fresh session
     session = get_sync_session()
     try:
         # Step 1: Check if already synced
-        if _is_already_synced(session, user_id, storefront_id, external_id):
+        if _is_already_synced(session, user_id, storefront, external_id):
             return await _complete_job_item(
                 session, job_item_id, job_id,
                 JobItemStatus.COMPLETED, "already_synced"
             )
 
         # Step 2: Check if ignored
-        if _is_ignored(session, user_id, storefront_id, external_id):
+        if _is_ignored(session, user_id, storefront, external_id):
             return await _complete_job_item(
                 session, job_item_id, job_id,
                 JobItemStatus.SKIPPED, "ignored"
@@ -113,13 +113,13 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         if resolved_igdb_id:
             return await _process_with_resolved_id(
                 session, job_item_id, job_id, user_id,
-                resolved_igdb_id, platform_id, storefront_id, external_id, source_title
+                resolved_igdb_id, platform, storefront, external_id, source_title
             )
 
         # Step 4: Flow A - Match via IGDB
         return await _process_with_matching(
             session, job_item_id, job_id, user_id,
-            source_title, platform_id, storefront_id, external_id, metadata
+            source_title, platform, storefront, external_id, metadata
         )
 
     except Exception as e:
@@ -132,7 +132,7 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
 def _is_already_synced(
     session: Session,
     user_id: str,
-    storefront_id: str,
+    storefront: str,
     external_id: str
 ) -> bool:
     """Check if game is already synced (exists in UserGamePlatform)."""
@@ -141,7 +141,7 @@ def _is_already_synced(
         .join(UserGame)
         .where(
             UserGame.user_id == user_id,
-            UserGamePlatform.storefront_id == storefront_id,
+            UserGamePlatform.storefront == storefront,
             UserGamePlatform.store_game_id == external_id,
         )
     ).first()
@@ -151,17 +151,17 @@ def _is_already_synced(
 def _is_ignored(
     session: Session,
     user_id: str,
-    storefront_id: str,
+    storefront: str,
     external_id: str
 ) -> bool:
     """Check if game is in the ignored list."""
-    # Map storefront_id to BackgroundJobSource
+    # Map storefront to BackgroundJobSource
     source_map = {
         "steam": BackgroundJobSource.STEAM,
         "epic": BackgroundJobSource.EPIC,
         "gog": BackgroundJobSource.GOG,
     }
-    source = source_map.get(storefront_id)
+    source = source_map.get(storefront)
     if not source:
         return False
 
@@ -181,8 +181,8 @@ async def _process_with_resolved_id(
     job_id: str,
     user_id: str,
     igdb_id: int,
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     external_id: str,
     source_title: str,
 ) -> Dict[str, Any]:
@@ -201,7 +201,7 @@ async def _process_with_resolved_id(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform_id, storefront_id, external_id
+            platform, storefront, external_id
         )
         result = "linked_existing"
     else:
@@ -223,7 +223,7 @@ async def _process_with_resolved_id(
 
         _add_platform_association(
             session, user_game.id,
-            platform_id, storefront_id, external_id
+            platform, storefront, external_id
         )
         result = "imported_new"
 
@@ -254,8 +254,8 @@ async def _process_with_matching(
     job_id: str,
     user_id: str,
     source_title: str,
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     external_id: str,
     metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -267,7 +267,7 @@ async def _process_with_matching(
 
     match_request = MatchRequest(
         source_title=source_title,
-        source_platform=storefront_id,
+        source_platform=storefront,
         platform_id=external_id,
         source_metadata=metadata.get("metadata", {}),
     )
@@ -289,7 +289,7 @@ async def _process_with_matching(
             # High confidence - auto-import
             return await _auto_import_game(
                 session, job_item_id, job_id, user_id,
-                igdb_id, platform_id, storefront_id, external_id,
+                igdb_id, platform, storefront, external_id,
                 match_result, confidence
             )
         else:
@@ -325,8 +325,8 @@ async def _auto_import_game(
     job_id: str,
     user_id: str,
     igdb_id: int,
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     external_id: str,
     match_result: MatchResult,
     confidence: float,
@@ -346,7 +346,7 @@ async def _auto_import_game(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform_id, storefront_id, external_id
+            platform, storefront, external_id
         )
         result = "auto_linked"
     else:
@@ -368,7 +368,7 @@ async def _auto_import_game(
 
         _add_platform_association(
             session, user_game.id,
-            platform_id, storefront_id, external_id
+            platform, storefront, external_id
         )
         result = "auto_imported"
 
@@ -393,36 +393,36 @@ async def _auto_import_game(
 def _add_platform_association(
     session: Session,
     user_game_id: str,
-    platform_id: str,
-    storefront_id: str,
+    platform: str,
+    storefront: str,
     external_id: str,
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
-    # Note: unique constraint is on (user_game_id, platform_id, storefront_id)
+    # Note: unique constraint is on (user_game_id, platform, storefront)
     existing = session.exec(
         select(UserGamePlatform).where(
             UserGamePlatform.user_game_id == user_game_id,
-            UserGamePlatform.platform_id == platform_id,
-            UserGamePlatform.storefront_id == storefront_id,
+            UserGamePlatform.platform == platform,
+            UserGamePlatform.storefront == storefront,
         )
     ).first()
 
     if not existing:
         # Build store URL based on storefront
         store_url = None
-        if storefront_id == "steam":
+        if storefront == "steam":
             store_url = f"https://store.steampowered.com/app/{external_id}"
 
-        platform = UserGamePlatform(
+        platform_assoc = UserGamePlatform(
             user_game_id=user_game_id,
-            platform_id=platform_id,
-            storefront_id=storefront_id,
+            platform=platform,
+            storefront=storefront,
             store_game_id=external_id,
             store_url=store_url,
             is_available=True,
         )
-        session.add(platform)
+        session.add(platform_assoc)
         session.commit()
         logger.debug(f"Added platform association for UserGame {user_game_id}")
 

@@ -94,10 +94,10 @@ def _user_game_to_export_data(
     platforms_data: List[ExportPlatformData] = []
     for ugp in user_game.platforms:
         platform_data = ExportPlatformData(
-            platform_id=ugp.platform_id,
-            platform_name=ugp.platform.name if ugp.platform else ugp.original_platform_name,
-            storefront_id=ugp.storefront_id,
-            storefront_name=ugp.storefront.name if ugp.storefront else None,
+            platform_id=ugp.platform,
+            platform_name=ugp.platform_rel.name if ugp.platform_rel else ugp.original_platform_name,
+            storefront_id=ugp.storefront,
+            storefront_name=ugp.storefront_rel.name if ugp.storefront_rel else None,
             store_game_id=ugp.store_game_id,
             store_url=ugp.store_url,
             is_available=ugp.is_available,
@@ -146,12 +146,12 @@ def _user_game_to_csv_row(
     platform_names: List[str] = []
     storefront_names: List[str] = []
     for ugp in user_game.platforms:
-        if ugp.platform:
-            platform_names.append(ugp.platform.name)
+        if ugp.platform_rel:
+            platform_names.append(ugp.platform_rel.name)
         elif ugp.original_platform_name:
             platform_names.append(ugp.original_platform_name)
-        if ugp.storefront:
-            storefront_names.append(ugp.storefront.name)
+        if ugp.storefront_rel:
+            storefront_names.append(ugp.storefront_rel.name)
 
     # Collect tag names
     tag_names: List[str] = []

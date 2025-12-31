@@ -195,27 +195,27 @@ async def _import_platforms(
         )
 
         # Try to resolve platform by name
-        # Note: platform_id FK now references platforms.name, not platforms.id
-        platform_id = None
+        # Note: platform FK now references platforms.name
+        platform_slug = None
         if platform_name:
-            platform = session.exec(
+            platform_record = session.exec(
                 select(Platform).where(Platform.name == platform_name)
             ).first()
-            if platform:
-                platform_id = platform.name
+            if platform_record:
+                platform_slug = platform_record.name
 
         # Try to resolve storefront by name
-        # Note: storefront_id FK now references storefronts.name, not storefronts.id
-        storefront_id = None
+        # Note: storefront FK now references storefronts.name
+        storefront_slug = None
         if storefront_name:
-            storefront = session.exec(
+            storefront_record = session.exec(
                 select(Storefront).where(Storefront.name == storefront_name)
             ).first()
-            if storefront:
-                storefront_id = storefront.name
+            if storefront_record:
+                storefront_slug = storefront_record.name
 
         # Skip duplicate platform/storefront combinations
-        combination_key = (platform_id, storefront_id)
+        combination_key = (platform_slug, storefront_slug)
         if combination_key in seen_combinations:
             logger.debug(
                 f"Skipping duplicate platform/storefront: {platform_name}/{storefront_name}"
@@ -226,12 +226,12 @@ async def _import_platforms(
         # Create platform association
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=platform_id,
-            storefront_id=storefront_id,
+            platform=platform_slug,
+            storefront=storefront_slug,
             store_game_id=platform_data.get("store_game_id"),
             store_url=platform_data.get("store_url"),
             is_available=platform_data.get("is_available", True),
-            original_platform_name=platform_name if not platform_id else None,
+            original_platform_name=platform_name if not platform_slug else None,
         )
         session.add(user_game_platform)
 

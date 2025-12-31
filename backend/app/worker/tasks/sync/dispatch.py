@@ -148,15 +148,15 @@ def _create_job_item(
     """
     source_metadata = {
         "external_id": game.external_id,
-        "platform_id": game.platform_id,
-        "storefront_id": game.storefront_id,
+        "platform": game.platform,
+        "storefront": game.storefront,
         "metadata": game.metadata,
     }
 
     job_item = JobItem(
         job_id=job.id,
         user_id=user_id,
-        item_key=f"{game.storefront_id}_{game.external_id}",
+        item_key=f"{game.storefront}_{game.external_id}",
         source_title=game.title,
         source_metadata_json=json.dumps(source_metadata),
         status=JobItemStatus.PENDING,

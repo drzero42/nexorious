@@ -20,8 +20,8 @@ def is_game_synced(
     session: Session,
     user_id: str,
     igdb_id: int,
-    platform_id: str,
-    storefront_id: str
+    platform: str,
+    storefront: str
 ) -> bool:
     """
     Generic function to check if a game is synced for a specific platform/storefront combination.
@@ -33,8 +33,8 @@ def is_game_synced(
         session: Database session
         user_id: User's unique identifier
         igdb_id: Game's IGDB ID (primary key in games table)
-        platform_id: Platform identifier (e.g., 'pc-windows', 'playstation-5')
-        storefront_id: Storefront identifier (e.g., 'steam', 'epic', 'gog')
+        platform: Platform identifier (e.g., 'pc-windows', 'playstation-5')
+        storefront: Storefront identifier (e.g., 'steam', 'epic', 'gog')
 
     Returns:
         True if user_game_platforms association exists, False otherwise
@@ -52,12 +52,12 @@ def is_game_synced(
         logger.error("IGDB ID is None")
         return False
 
-    if not platform_id:
-        logger.error("Platform ID is empty or None")
+    if not platform:
+        logger.error("Platform is empty or None")
         return False
 
-    if not storefront_id:
-        logger.error("Storefront ID is empty or None")
+    if not storefront:
+        logger.error("Storefront is empty or None")
         return False
 
     try:
@@ -71,8 +71,8 @@ def is_game_synced(
                     UserGame.user_id == user_id,  # type: ignore[arg-type]
                     UserGame.game_id == igdb_id,  # type: ignore[arg-type]
                     UserGamePlatform.user_game_id == UserGame.id,  # type: ignore[arg-type]
-                    UserGamePlatform.platform_id == platform_id,  # type: ignore[arg-type]
-                    UserGamePlatform.storefront_id == storefront_id  # type: ignore[arg-type]
+                    UserGamePlatform.platform == platform,  # type: ignore[arg-type]
+                    UserGamePlatform.storefront == storefront  # type: ignore[arg-type]
                 )
             )
         )
@@ -81,7 +81,7 @@ def is_game_synced(
 
         logger.debug(
             f"Sync check for user {user_id}, IGDB ID {igdb_id}, "
-            f"platform {platform_id}, storefront {storefront_id}: {is_synced}"
+            f"platform {platform}, storefront {storefront}: {is_synced}"
         )
 
         return bool(is_synced)
@@ -89,7 +89,7 @@ def is_game_synced(
     except Exception as e:
         logger.error(
             f"Database error checking sync status for user {user_id}, IGDB ID {igdb_id}, "
-            f"platform {platform_id}, storefront {storefront_id}: {e}",
+            f"platform {platform}, storefront {storefront}: {e}",
             exc_info=True
         )
         return False
@@ -113,16 +113,16 @@ def is_steam_game_synced(session: Session, user_id: str, igdb_id: int) -> bool:
     return is_game_synced(session, user_id, igdb_id, "pc-windows", "steam")
 
 
-def get_platform_id(platform_name: str, session: Session) -> Optional[str]:
+def get_platform(platform_name: str, session: Session) -> Optional[str]:
     """
-    Get platform ID by name.
+    Get platform slug by name.
 
     Args:
-        platform_name: Platform name (e.g., 'pc-windows')
+        platform_name: Platform name/slug (e.g., 'pc-windows')
         session: Database session
 
     Returns:
-        Platform ID if found, None otherwise
+        Platform name/slug if found, None otherwise
     """
     if session is None:
         logger.error("Database session is None")
@@ -138,27 +138,27 @@ def get_platform_id(platform_name: str, session: Session) -> Optional[str]:
         ).first()
 
         if platform:
-            logger.debug(f"Found platform '{platform_name}' with ID: {platform.id}")
-            return platform.id
+            logger.debug(f"Found platform '{platform_name}'")
+            return platform.name
         else:
             logger.warning(f"Platform '{platform_name}' not found")
             return None
 
     except Exception as e:
-        logger.error(f"Database error getting platform ID for '{platform_name}': {e}", exc_info=True)
+        logger.error(f"Database error getting platform for '{platform_name}': {e}", exc_info=True)
         return None
 
 
-def get_storefront_id(storefront_name: str, session: Session) -> Optional[str]:
+def get_storefront(storefront_name: str, session: Session) -> Optional[str]:
     """
-    Get storefront ID by name.
+    Get storefront slug by name.
 
     Args:
-        storefront_name: Storefront name (e.g., 'steam')
+        storefront_name: Storefront name/slug (e.g., 'steam')
         session: Database session
 
     Returns:
-        Storefront ID if found, None otherwise
+        Storefront name/slug if found, None otherwise
     """
     if session is None:
         logger.error("Database session is None")
@@ -174,12 +174,12 @@ def get_storefront_id(storefront_name: str, session: Session) -> Optional[str]:
         ).first()
 
         if storefront:
-            logger.debug(f"Found storefront '{storefront_name}' with ID: {storefront.id}")
-            return storefront.id
+            logger.debug(f"Found storefront '{storefront_name}'")
+            return storefront.name
         else:
             logger.warning(f"Storefront '{storefront_name}' not found")
             return None
 
     except Exception as e:
-        logger.error(f"Database error getting storefront ID for '{storefront_name}': {e}", exc_info=True)
+        logger.error(f"Database error getting storefront for '{storefront_name}': {e}", exc_info=True)
         return None
