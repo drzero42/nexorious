@@ -7,6 +7,9 @@ import type {
   SyncStatus,
   ManualSyncResponse,
   SteamVerifyResponse,
+  EpicAuthStartResponse,
+  EpicAuthCompleteResponse,
+  EpicAuthCheckResponse,
 } from '@/types';
 
 // ============================================================================
@@ -21,6 +24,7 @@ export const syncKeys = {
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
   ignoredGames: (params?: { source?: string; limit?: number; offset?: number }) =>
     [...syncKeys.all, 'ignored', params] as const,
+  epicAuth: () => [...syncKeys.all, 'epicAuth'] as const,
 };
 
 // ============================================================================
@@ -179,6 +183,74 @@ export function useDisconnectSteam() {
     onSuccess: () => {
       // Invalidate all sync-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
+    },
+  });
+}
+
+// ============================================================================
+// Epic Auth Hooks
+// ============================================================================
+
+/**
+ * Hook to start Epic authentication flow.
+ * Returns auth URL for user to visit.
+ */
+export function useStartEpicAuth() {
+  return useMutation<EpicAuthStartResponse, Error>({
+    mutationFn: syncApi.startEpicAuth,
+    onError: (error) => {
+      console.error('Failed to start Epic auth:', error);
+    },
+  });
+}
+
+/**
+ * Hook to complete Epic authentication with code.
+ * Invalidates sync configs on success.
+ */
+export function useCompleteEpicAuth() {
+  const queryClient = useQueryClient();
+
+  return useMutation<EpicAuthCompleteResponse, Error, string>({
+    mutationFn: (code: string) => syncApi.completeEpicAuth(code),
+    onSuccess: () => {
+      // Invalidate sync configs to refresh connection status
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
+    },
+  });
+}
+
+/**
+ * Hook to check current Epic authentication status.
+ * Cached for 5 minutes.
+ */
+export function useCheckEpicAuth() {
+  return useQuery<EpicAuthCheckResponse, Error>({
+    queryKey: syncKeys.epicAuth(),
+    queryFn: syncApi.checkEpicAuth,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Hook to disconnect Epic integration.
+ * Invalidates all Epic-related queries on success.
+ */
+export function useDisconnectEpic() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectEpic,
+    onSuccess: () => {
+      // Invalidate all Epic-related queries
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.epicAuth() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect Epic:', error);
     },
   });
 }
