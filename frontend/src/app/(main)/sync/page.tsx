@@ -1,8 +1,7 @@
 'use client';
 
 import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus } from '@/hooks';
-import { useCurrentUser } from '@/hooks/use-auth';
-import { SyncServiceCard, SteamConnectionCard, EpicConnectionCard } from '@/components/sync';
+import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -73,18 +72,9 @@ function SyncServiceCardWithStatus({
 
 export default function SyncPage() {
   const router = useRouter();
-  const { data: configs, isLoading, error, refetch } = useSyncConfigs();
-  const { data: user } = useCurrentUser();
+  const { data: configs, isLoading, error } = useSyncConfigs();
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
-
-  // Extract platform configs
-  const steamConfig = configs?.configs.find((c) => c.platform === SyncPlatform.STEAM);
-  const epicConfig = configs?.configs.find((c) => c.platform === SyncPlatform.EPIC);
-
-  // Extract platform preferences
-  const steamPrefs = user?.preferences?.steam as { steam_id?: string; username?: string } | undefined;
-  const epicPrefs = user?.preferences?.epic as { display_name?: string; account_id?: string } | undefined;
 
   const handleUpdateConfig = async (platform: SyncPlatform, data: SyncConfigUpdateData) => {
     try {
@@ -140,22 +130,6 @@ export default function SyncPage() {
 
       {configs && configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).length > 0 && (
         <>
-          {/* Platform Connection Cards */}
-          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SteamConnectionCard
-              isConfigured={steamConfig?.isConfigured ?? false}
-              steamId={steamPrefs?.steam_id}
-              steamUsername={steamPrefs?.username}
-              onConnectionChange={refetch}
-            />
-            <EpicConnectionCard
-              isConfigured={epicConfig?.isConfigured ?? false}
-              displayName={epicPrefs?.display_name}
-              accountId={epicPrefs?.account_id}
-              onConnectionChange={refetch}
-            />
-          </div>
-
           {/* Connected Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig) => (
