@@ -8,6 +8,9 @@ import type {
   SyncPlatform,
   SyncFrequency,
   SteamVerifyResponse,
+  EpicAuthStartResponse,
+  EpicAuthCompleteResponse,
+  EpicAuthCheckResponse,
 } from '@/types';
 
 // ============================================================================
@@ -226,6 +229,26 @@ interface SteamVerifyApiResponse {
 }
 
 // ============================================================================
+// Epic Auth API Types
+// ============================================================================
+
+interface EpicAuthStartApiResponse {
+  auth_url: string;
+  instructions: string;
+}
+
+interface EpicAuthCompleteApiResponse {
+  valid: boolean;
+  display_name: string | null;
+  error: string | null;
+}
+
+interface EpicAuthCheckApiResponse {
+  is_authenticated: boolean;
+  display_name: string | null;
+}
+
+// ============================================================================
 // Steam Verification Functions
 // ============================================================================
 
@@ -253,4 +276,52 @@ export async function verifySteamCredentials(
  */
 export async function disconnectSteam(): Promise<void> {
   await api.delete('/sync/steam/connection');
+}
+
+// ============================================================================
+// Epic Auth Functions
+// ============================================================================
+
+/**
+ * Start Epic authentication flow.
+ * Returns auth URL for user to visit.
+ */
+export async function startEpicAuth(): Promise<EpicAuthStartResponse> {
+  const response = await api.post<EpicAuthStartApiResponse>('/sync/epic/auth/start');
+  return {
+    authUrl: response.auth_url,
+    instructions: response.instructions,
+  };
+}
+
+/**
+ * Complete Epic authentication with authorization code.
+ */
+export async function completeEpicAuth(code: string): Promise<EpicAuthCompleteResponse> {
+  const response = await api.post<EpicAuthCompleteApiResponse>('/sync/epic/auth/complete', {
+    code,
+  });
+  return {
+    valid: response.valid,
+    displayName: response.display_name,
+    error: response.error,
+  };
+}
+
+/**
+ * Check current Epic authentication status.
+ */
+export async function checkEpicAuth(): Promise<EpicAuthCheckResponse> {
+  const response = await api.get<EpicAuthCheckApiResponse>('/sync/epic/auth/check');
+  return {
+    isAuthenticated: response.is_authenticated,
+    displayName: response.display_name,
+  };
+}
+
+/**
+ * Disconnect Epic integration.
+ */
+export async function disconnectEpic(): Promise<void> {
+  await api.delete('/sync/epic/connection');
 }
