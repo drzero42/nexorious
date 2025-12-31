@@ -58,3 +58,6 @@ We recently removed support for importing CSV, but we still have mentions of CSV
 
 ## Keep previous platforms/storefronts association and data
 When a game is removed from from a platform/storefront (best example is a PS Plus Extra game) we might have playtime recorded, so instead of deleting the association, it should change status to something like No Longer Owned.
+
+## Allow restore during initial setup
+On the initial setup screen, instead of creating an admin user, it should be possible to restore the DB to a backup file that can be uploaded.
