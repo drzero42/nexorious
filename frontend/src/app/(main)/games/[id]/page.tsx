@@ -333,6 +333,25 @@ export default function GameDetailPage() {
                 <Clock className="h-4 w-4" /> Hours Played
               </dt>
               <dd className="mt-1 font-medium">{game.hours_played || 0}h</dd>
+              {/* Playtime breakdown by storefront */}
+              {game.platforms.some((p) => p.hours_played > 0) && (
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {game.platforms
+                    .filter((p) => p.hours_played > 0)
+                    .map((p) => (
+                      <div key={p.id} className="flex justify-between">
+                        <span>
+                          {p.storefront_details?.display_name ||
+                            p.storefront ||
+                            p.platform_details?.display_name ||
+                            p.platform ||
+                            'Unknown'}
+                        </span>
+                        <span>{p.hours_played}h</span>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
 
