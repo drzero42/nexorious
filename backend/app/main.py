@@ -108,12 +108,20 @@ app.add_middleware(MaintenanceModeMiddleware)
 # Add global validation error handler
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    body = await request.body()
+    # Try to get request body for logging, but handle cases where stream is already consumed
+    # (e.g., multipart/form-data file uploads)
+    try:
+        body = await request.body()
+        body_preview = body.decode() if body else "No body"
+    except RuntimeError:
+        # Stream already consumed (file uploads, etc.)
+        body_preview = "<stream consumed - likely file upload>"
+
     logger.error("=== Validation Error ===")
     logger.error(f"URL: {request.url}")
     logger.error(f"Method: {request.method}")
     logger.error(f"Errors: {exc.errors()}")
-    logger.error(f"Body received: {body.decode() if body else 'No body'}")
+    logger.error(f"Body received: {body_preview}")
 
     # Safely convert body to string, handling bytes
     body_content = None

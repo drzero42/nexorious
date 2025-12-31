@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from typing import Annotated, Optional
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -293,17 +294,14 @@ async def restore_backup(
 
 @router.post("/restore/upload", response_model=RestoreResponse)
 async def restore_from_upload(
-    restore_request: RestoreRequest,
-    file: UploadFile = File(...),
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_admin_user),
+    file: Annotated[UploadFile, File(description="Backup archive file (.tar.gz)")],
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
 ):
-    """Restore from an uploaded backup file."""
-    if not restore_request.confirm:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Restore must be confirmed by setting confirm=true",
-        )
+    """Restore from an uploaded backup file.
+
+    Note: Confirmation is handled by the frontend UI before calling this endpoint.
+    """
 
     if not file.filename or not file.filename.endswith(".tar.gz"):
         raise HTTPException(
@@ -342,9 +340,10 @@ async def restore_from_upload(
         session.close()
 
         # Move to backups dir with generated ID
+        # Use shutil.move instead of rename to handle cross-device moves (e.g., /tmp to mounted volume)
         backup_id = backup_service.generate_backup_id()
         dest_path = backup_service.get_backup_path(backup_id)
-        tmp_path.rename(dest_path)
+        shutil.move(str(tmp_path), str(dest_path))
 
         # Restore
         backup_service.restore_backup(

@@ -379,7 +379,6 @@ class TestRestoreFromUploadEndpoint:
         response = client.post(
             "/api/admin/backups/restore/upload",
             headers=admin_headers,
-            json={"confirm": True}
         )
 
         # Should reject due to missing file - 422 for validation error
