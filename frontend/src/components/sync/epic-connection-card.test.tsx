@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EpicConnectionCard } from './epic-connection-card';
-import * as syncApi from '@/api/sync';
 import * as hooks from '@/hooks';
 
 // Mock toast
@@ -41,12 +40,12 @@ describe('EpicConnectionCard', () => {
         lastSyncedAt: null,
         activeJobId: null,
       },
-    } as any);
+    } as ReturnType<typeof hooks.useSyncStatus>);
     // Mock useDisconnectEpic to return a mutation object
     vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
       isPending: false,
-    } as any);
+    } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<typeof hooks.useDisconnectEpic>);
   });
 
   it('should render not configured state', () => {
@@ -106,7 +105,7 @@ describe('EpicConnectionCard', () => {
     vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
       mutateAsync: mockMutateAsync,
       isPending: false,
-    } as any);
+    } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<typeof hooks.useDisconnectEpic>);
 
     render(
       <EpicConnectionCard
@@ -142,7 +141,7 @@ describe('EpicConnectionCard', () => {
         activeJobId: null,
         authExpired: true,
       },
-    } as any);
+    } as ReturnType<typeof hooks.useSyncStatus>);
 
     render(
       <EpicConnectionCard
