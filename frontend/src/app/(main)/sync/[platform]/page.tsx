@@ -122,7 +122,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const queryClient = useQueryClient();
 
   // Local state for optimistic updates
-  const [localEnabled, setLocalEnabled] = useState<boolean | null>(null);
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);
   const [localAutoAdd, setLocalAutoAdd] = useState<boolean | null>(null);
 
@@ -159,7 +158,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
   const isSyncing = isTriggeringSyncPending || status?.isSyncing;
 
   // Use local state if set, otherwise use config values
-  const effectiveEnabled = localEnabled ?? config?.enabled ?? false;
   const effectiveFrequency = localFrequency ?? config?.frequency ?? SyncFrequency.DAILY;
   const effectiveAutoAdd = localAutoAdd ?? config?.autoAdd ?? false;
 
@@ -171,15 +169,9 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       const message = err instanceof Error ? err.message : 'Failed to update settings';
       toast.error(message);
       // Reset local state on error
-      if (data.enabled !== undefined) setLocalEnabled(null);
       if (data.frequency !== undefined) setLocalFrequency(null);
       if (data.autoAdd !== undefined) setLocalAutoAdd(null);
     }
-  };
-
-  const handleEnabledChange = async (enabled: boolean) => {
-    setLocalEnabled(enabled);
-    await handleUpdateConfig({ enabled });
   };
 
   const handleFrequencyChange = async (frequency: SyncFrequency) => {
@@ -257,7 +249,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           <span className="text-foreground">{platformInfo.name}</span>
         </nav>
 
-        <Button onClick={handleTriggerSync} disabled={!effectiveEnabled || isSyncing || !config.isConfigured}>
+        <Button onClick={handleTriggerSync} disabled={isSyncing || !config.isConfigured}>
           {isSyncing ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -294,14 +286,12 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
               <Badge
                 variant="outline"
                 className={
-                  !config.isConfigured
-                    ? 'bg-muted text-muted-foreground'
-                    : effectiveEnabled
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                  config.isConfigured
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-muted text-muted-foreground'
                 }
               >
-                {!config.isConfigured ? 'Not Configured' : effectiveEnabled ? 'Enabled' : 'Disabled'}
+                {config.isConfigured ? 'Configured' : 'Not Configured'}
               </Badge>
             </div>
           </div>
@@ -312,7 +302,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       {platform === SyncPlatform.STEAM && (
         <SteamConnectionCard
           isConfigured={config.isConfigured}
-          enabled={effectiveEnabled}
           steamId={steamPrefs?.steam_id}
           steamUsername={steamPrefs?.username}
           onConnectionChange={() => {
@@ -346,21 +335,6 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Enable Toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">Enable Sync</div>
-              <div className="text-sm text-muted-foreground">
-                Allow automatic syncing of your {platformInfo.name} library
-              </div>
-            </div>
-            <Switch
-              checked={effectiveEnabled}
-              onCheckedChange={handleEnabledChange}
-              disabled={isUpdating || !config.isConfigured}
-            />
-          </div>
-
           {/* Frequency Select */}
           <div className="flex items-center justify-between">
             <div>
@@ -372,7 +346,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <Select
               value={effectiveFrequency}
               onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-              disabled={!effectiveEnabled || isUpdating || !config.isConfigured}
+              disabled={isUpdating || !config.isConfigured}
             >
               <SelectTrigger className="w-[160px]">
                 <SelectValue />
@@ -398,7 +372,7 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <Switch
               checked={effectiveAutoAdd}
               onCheckedChange={handleAutoAddChange}
-              disabled={!effectiveEnabled || isUpdating || !config.isConfigured}
+              disabled={isUpdating || !config.isConfigured}
             />
           </div>
         </CardContent>

@@ -190,7 +190,6 @@ def upgrade() -> None:
     sa.Column('platform', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('frequency', sa.Enum('MANUAL', 'HOURLY', 'DAILY', 'WEEKLY', name='syncfrequency'), nullable=False),
     sa.Column('auto_add', sa.Boolean(), nullable=False),
-    sa.Column('enabled', sa.Boolean(), nullable=False),
     sa.Column('last_synced_at', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),

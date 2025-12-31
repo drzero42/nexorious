@@ -35,7 +35,6 @@ class TestSyncConfigEndpoints:
         for config in data["configs"]:
             assert config["frequency"] == "manual"
             assert config["auto_add"] is False
-            assert config["enabled"] is False
 
     def test_get_sync_configs_returns_existing_configs(
         self, client: TestClient, auth_headers: dict, session: Session, test_user
@@ -47,7 +46,6 @@ class TestSyncConfigEndpoints:
             platform="steam",
             frequency=SyncFrequency.DAILY,
             auto_add=True,
-            enabled=True,
         )
         session.add(config)
         session.commit()
@@ -79,7 +77,6 @@ class TestSyncConfigEndpoints:
         assert data["platform"] == "steam"
         assert data["frequency"] == "manual"  # Default
         assert data["auto_add"] is False
-        assert data["enabled"] is False
 
     def test_get_sync_config_invalid_platform(
         self, client: TestClient, auth_headers: dict
@@ -131,14 +128,13 @@ class TestSyncConfigEndpoints:
             platform="steam",
             frequency=SyncFrequency.MANUAL,
             auto_add=False,
-            enabled=True,
         )
         session.add(config)
         session.commit()
 
         response = client.put(
             "/api/sync/config/steam",
-            json={"frequency": "hourly", "auto_add": True, "enabled": False},
+            json={"frequency": "hourly", "auto_add": True},
             headers=auth_headers,
         )
 
@@ -147,7 +143,6 @@ class TestSyncConfigEndpoints:
 
         assert data["frequency"] == "hourly"
         assert data["auto_add"] is True
-        assert data["enabled"] is False
 
     def test_update_sync_config_partial_update(
         self, client: TestClient, auth_headers: dict, session: Session, test_user
@@ -159,7 +154,6 @@ class TestSyncConfigEndpoints:
             platform="steam",
             frequency=SyncFrequency.DAILY,
             auto_add=True,
-            enabled=True,
         )
         session.add(config)
         session.commit()
@@ -176,7 +170,6 @@ class TestSyncConfigEndpoints:
 
         assert data["frequency"] == "weekly"
         assert data["auto_add"] is True  # Unchanged
-        assert data["enabled"] is True  # Unchanged
 
 
 class TestManualSyncTrigger:

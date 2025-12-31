@@ -54,17 +54,11 @@ export function SyncServiceCard({
   isUpdating = false,
   isSyncing = false,
 }: SyncServiceCardProps) {
-  const [localEnabled, setLocalEnabled] = useState(config.enabled);
   const [localFrequency, setLocalFrequency] = useState(config.frequency);
   const [localAutoAdd, setLocalAutoAdd] = useState(config.autoAdd);
 
   const platformInfo = getPlatformDisplayInfo(config.platform);
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
-
-  const handleEnabledChange = async (enabled: boolean) => {
-    setLocalEnabled(enabled);
-    await onUpdate({ enabled });
-  };
 
   const handleFrequencyChange = async (frequency: SyncFrequency) => {
     setLocalFrequency(frequency);
@@ -100,44 +94,26 @@ export function SyncServiceCard({
             </div>
           </div>
           <Badge
-            variant={
-              !config.isConfigured
-                ? 'outline'
-                : localEnabled
-                  ? 'default'
-                  : 'secondary'
-            }
+            variant={!config.isConfigured ? 'outline' : 'default'}
             className={
               !config.isConfigured
                 ? 'bg-muted text-muted-foreground'
-                : localEnabled
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
             }
           >
-            {!config.isConfigured ? 'Not Configured' : localEnabled ? 'Enabled' : 'Disabled'}
+            {!config.isConfigured ? 'Not Configured' : 'Connected'}
           </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Enable Toggle */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Enable sync</span>
-          <Switch
-            checked={localEnabled}
-            onCheckedChange={handleEnabledChange}
-            disabled={isUpdating || !config.isConfigured}
-          />
-        </div>
-
         {/* Frequency Select */}
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Sync frequency</span>
           <Select
             value={localFrequency}
             onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-            disabled={!localEnabled || isUpdating || !config.isConfigured}
+            disabled={isUpdating || !config.isConfigured}
           >
             <SelectTrigger className="w-[140px]">
               <SelectValue />
@@ -158,7 +134,7 @@ export function SyncServiceCard({
           <Switch
             checked={localAutoAdd}
             onCheckedChange={handleAutoAddChange}
-            disabled={!localEnabled || isUpdating || !config.isConfigured}
+            disabled={isUpdating || !config.isConfigured}
           />
         </div>
       </CardContent>
@@ -173,7 +149,7 @@ export function SyncServiceCard({
         </Link>
         <Button
           onClick={onTriggerSync}
-          disabled={!localEnabled || isCurrentlySyncing || !config.isConfigured}
+          disabled={isCurrentlySyncing || !config.isConfigured}
           size="sm"
         >
           {isCurrentlySyncing ? (

@@ -20,7 +20,6 @@ interface SyncConfigApiResponse {
   platform: string;
   frequency: string;
   auto_add: boolean;
-  enabled: boolean;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -84,7 +83,6 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
     platform: apiConfig.platform as SyncPlatform,
     frequency: apiConfig.frequency as SyncFrequency,
     autoAdd: apiConfig.auto_add,
-    enabled: apiConfig.enabled,
     lastSyncedAt: apiConfig.last_synced_at,
     createdAt: apiConfig.created_at,
     updatedAt: apiConfig.updated_at,
@@ -157,9 +155,6 @@ export async function updateSyncConfig(
   }
   if (data.autoAdd !== undefined) {
     requestBody.auto_add = data.autoAdd;
-  }
-  if (data.enabled !== undefined) {
-    requestBody.enabled = data.enabled;
   }
 
   const response = await api.put<SyncConfigApiResponse>(
