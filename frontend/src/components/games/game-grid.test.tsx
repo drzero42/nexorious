@@ -61,10 +61,9 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   platforms: [
     {
       id: 'ugp-1',
-      platform_id: 'platform-1',
-      storefront_id: 'storefront-1',
-      platform: {
-        id: 'platform-1',
+      platform: 'pc',
+      storefront: 'steam',
+      platform_details: {
         name: 'pc',
         display_name: 'PC',
         is_active: true,
@@ -72,8 +71,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
-      storefront: {
-        id: 'storefront-1',
+      storefront_details: {
         name: 'steam',
         display_name: 'Steam',
         is_active: true,

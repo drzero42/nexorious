@@ -28,16 +28,14 @@ export const mockTokens = {
 
 export const mockPlatforms = [
   {
-    id: 'platform-1',
     name: 'pc',
     display_name: 'PC',
     icon_url: null,
     is_active: true,
     source: 'system',
-    default_storefront_id: 'storefront-1',
+    default_storefront: 'steam',
     storefronts: [
       {
-        id: 'storefront-1',
         name: 'steam',
         display_name: 'Steam',
         icon_url: null,
@@ -52,13 +50,12 @@ export const mockPlatforms = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'platform-2',
     name: 'playstation-5',
     display_name: 'PlayStation 5',
     icon_url: null,
     is_active: true,
     source: 'system',
-    default_storefront_id: null,
+    default_storefront: null,
     storefronts: [],
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -170,19 +167,19 @@ export const handlers = [
   // Add platform to user game
   http.post(`${API_URL}/user-games/:userGameId/platforms`, async ({ request }) => {
     const body = (await request.json()) as {
-      platform_id: string;
-      storefront_id?: string;
+      platform: string;
+      storefront?: string;
     };
 
-    const platform = mockPlatforms.find((p) => p.id === body.platform_id);
+    const platform = mockPlatforms.find((p) => p.name === body.platform);
 
     return HttpResponse.json(
       {
         id: `ugp-${Date.now()}`,
-        platform_id: body.platform_id,
-        storefront_id: body.storefront_id ?? null,
-        platform: platform ?? null,
-        storefront: null,
+        platform: body.platform,
+        storefront: body.storefront ?? null,
+        platform_details: platform ?? null,
+        storefront_details: null,
         store_game_id: null,
         store_url: null,
         is_available: true,
@@ -198,18 +195,18 @@ export const handlers = [
     `${API_URL}/user-games/:userGameId/platforms/:associationId`,
     async ({ params, request }) => {
       const body = (await request.json()) as {
-        platform_id: string;
-        storefront_id?: string;
+        platform: string;
+        storefront?: string;
       };
 
-      const platform = mockPlatforms.find((p) => p.id === body.platform_id);
+      const platform = mockPlatforms.find((p) => p.name === body.platform);
 
       return HttpResponse.json({
         id: params.associationId,
-        platform_id: body.platform_id,
-        storefront_id: body.storefront_id ?? null,
-        platform: platform ?? null,
-        storefront: null,
+        platform: body.platform,
+        storefront: body.storefront ?? null,
+        platform_details: platform ?? null,
+        storefront_details: null,
         store_game_id: null,
         store_url: null,
         is_available: true,

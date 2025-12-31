@@ -18,16 +18,14 @@ const API_URL = '/api';
 
 // Mock platform data
 const mockPlatformApi = {
-  id: 'platform-1',
   name: 'pc',
   display_name: 'PC',
   icon_url: 'https://example.com/pc.png',
   is_active: true,
   source: 'official',
-  default_storefront_id: 'storefront-1',
+  default_storefront: 'steam',
   storefronts: [
     {
-      id: 'storefront-1',
       name: 'steam',
       display_name: 'Steam',
       icon_url: 'https://example.com/steam.png',
@@ -43,20 +41,18 @@ const mockPlatformApi = {
 };
 
 const mockPlatform2Api = {
-  id: 'platform-2',
   name: 'playstation-5',
   display_name: 'PlayStation 5',
   icon_url: null,
   is_active: true,
   source: 'official',
-  default_storefront_id: null,
+  default_storefront: null,
   storefronts: [],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };
 
 const mockStorefrontApi = {
-  id: 'storefront-2',
   name: 'epic',
   display_name: 'Epic Games Store',
   icon_url: 'https://example.com/epic.png',
@@ -115,16 +111,14 @@ describe('platforms.ts', () => {
 
       // Verify platform transformation
       expect(result.platforms[0]).toEqual({
-        id: 'platform-1',
         name: 'pc',
         display_name: 'PC',
         icon_url: 'https://example.com/pc.png',
         is_active: true,
         source: 'official',
-        default_storefront_id: 'storefront-1',
+        default_storefront: 'steam',
         storefronts: [
           {
-            id: 'storefront-1',
             name: 'steam',
             display_name: 'Steam',
             icon_url: 'https://example.com/steam.png',
@@ -198,8 +192,8 @@ describe('platforms.ts', () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('platform-1');
-      expect(result[1].id).toBe('platform-2');
+      expect(result[0].name).toBe('pc');
+      expect(result[1].name).toBe('playstation-5');
     });
 
     it('passes optional parameters', async () => {
@@ -224,16 +218,15 @@ describe('platforms.ts', () => {
   });
 
   describe('getPlatform', () => {
-    it('returns single platform by ID', async () => {
+    it('returns single platform by name', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/platform-1`, () => {
+        http.get(`${API_URL}/platforms/pc`, () => {
           return HttpResponse.json(mockPlatformApi);
         })
       );
 
-      const result = await getPlatform('platform-1');
+      const result = await getPlatform('pc');
 
-      expect(result.id).toBe('platform-1');
       expect(result.name).toBe('pc');
       expect(result.display_name).toBe('PC');
       expect(result.storefronts).toHaveLength(1);
@@ -256,13 +249,12 @@ describe('platforms.ts', () => {
   describe('getPlatformStorefronts', () => {
     it('returns storefronts for a platform', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/platform-1/storefronts`, ({ request }) => {
+        http.get(`${API_URL}/platforms/pc/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('true');
 
           return HttpResponse.json({
-            platform_id: 'platform-1',
-            platform_name: 'pc',
+            platform: 'pc',
             platform_display_name: 'PC',
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total_storefronts: 2,
@@ -270,22 +262,21 @@ describe('platforms.ts', () => {
         })
       );
 
-      const result = await getPlatformStorefronts('platform-1');
+      const result = await getPlatformStorefronts('pc');
 
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('storefront-1');
-      expect(result[1].id).toBe('storefront-2');
+      expect(result[0].name).toBe('steam');
+      expect(result[1].name).toBe('epic');
     });
 
     it('passes activeOnly parameter', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/platform-1/storefronts`, ({ request }) => {
+        http.get(`${API_URL}/platforms/pc/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
 
           return HttpResponse.json({
-            platform_id: 'platform-1',
-            platform_name: 'pc',
+            platform: 'pc',
             platform_display_name: 'PC',
             storefronts: [],
             total_storefronts: 0,
@@ -293,15 +284,14 @@ describe('platforms.ts', () => {
         })
       );
 
-      await getPlatformStorefronts('platform-1', false);
+      await getPlatformStorefronts('pc', false);
     });
 
     it('returns empty array for platform without storefronts', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/platform-2/storefronts`, () => {
+        http.get(`${API_URL}/platforms/playstation-5/storefronts`, () => {
           return HttpResponse.json({
-            platform_id: 'platform-2',
-            platform_name: 'playstation-5',
+            platform: 'playstation-5',
             platform_display_name: 'PlayStation 5',
             storefronts: [],
             total_storefronts: 0,
@@ -309,7 +299,7 @@ describe('platforms.ts', () => {
         })
       );
 
-      const result = await getPlatformStorefronts('platform-2');
+      const result = await getPlatformStorefronts('playstation-5');
 
       expect(result).toHaveLength(0);
     });
@@ -411,16 +401,15 @@ describe('platforms.ts', () => {
   });
 
   describe('getStorefront', () => {
-    it('returns single storefront by ID', async () => {
+    it('returns single storefront by name', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/storefront-2`, () => {
+        http.get(`${API_URL}/platforms/storefronts/epic`, () => {
           return HttpResponse.json(mockStorefrontApi);
         })
       );
 
-      const result = await getStorefront('storefront-2');
+      const result = await getStorefront('epic');
 
-      expect(result.id).toBe('storefront-2');
       expect(result.name).toBe('epic');
       expect(result.display_name).toBe('Epic Games Store');
       expect(result.base_url).toBe('https://store.epicgames.com');

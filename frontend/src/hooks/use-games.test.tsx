@@ -49,20 +49,18 @@ const mockGameApi = {
 };
 
 const mockPlatformApi = {
-  id: 'platform-1',
   name: 'pc',
   display_name: 'PC',
   icon_url: 'https://example.com/pc.png',
   is_active: true,
   source: 'official',
-  default_storefront_id: 'storefront-1',
+  default_storefront: 'steam',
   storefronts: [],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };
 
 const mockStorefrontApi = {
-  id: 'storefront-1',
   name: 'steam',
   display_name: 'Steam',
   icon_url: 'https://example.com/steam.png',
@@ -75,10 +73,10 @@ const mockStorefrontApi = {
 
 const mockUserGamePlatformApi = {
   id: 'ugp-1',
-  platform_id: 'platform-1',
-  storefront_id: 'storefront-1',
-  platform: mockPlatformApi,
-  storefront: mockStorefrontApi,
+  platform: 'pc',
+  storefront: 'steam',
+  platform_details: mockPlatformApi,
+  storefront_details: mockStorefrontApi,
   store_game_id: '123456',
   store_url: 'https://store.steampowered.com/app/123456',
   is_available: true,
@@ -728,17 +726,17 @@ describe('use-games hooks', () => {
       server.use(
         http.post(`${API_URL}/user-games/${userGameId}/platforms`, async ({ request }) => {
           const body = (await request.json()) as {
-            platform_id: string;
-            storefront_id?: string;
+            platform: string;
+            storefront?: string;
           };
-          expect(body.platform_id).toBe('platform-2');
-          expect(body.storefront_id).toBe('storefront-2');
+          expect(body.platform).toBe('ps5');
+          expect(body.storefront).toBe('psn');
 
           return HttpResponse.json({
             ...mockUserGamePlatformApi,
             id: 'ugp-2',
-            platform_id: 'platform-2',
-            storefront_id: 'storefront-2',
+            platform: 'ps5',
+            storefront: 'psn',
           });
         })
       );
@@ -751,8 +749,8 @@ describe('use-games hooks', () => {
         await result.current.mutateAsync({
           userGameId,
           data: {
-            platformId: 'platform-2',
-            storefrontId: 'storefront-2',
+            platform: 'ps5',
+            storefront: 'psn',
           },
         });
       });
@@ -761,8 +759,8 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.platform_id).toBe('platform-2');
-      expect(result.current.data?.storefront_id).toBe('storefront-2');
+      expect(result.current.data?.platform).toBe('ps5');
+      expect(result.current.data?.storefront).toBe('psn');
     });
   });
 
@@ -795,7 +793,7 @@ describe('use-games hooks', () => {
           userGameId,
           platformAssociationId,
           data: {
-            platformId: 'platform-1',
+            platform: 'platform-1',
             isAvailable: false,
           },
         });

@@ -6,20 +6,18 @@ import type { Platform, Storefront } from '@/types/platform';
 // ============================================================================
 
 interface PlatformApiResponse {
-  id: string;
   name: string;
   display_name: string;
   icon_url?: string;
   is_active: boolean;
   source: string;
-  default_storefront_id?: string;
+  default_storefront?: string;
   storefronts?: StorefrontApiResponse[];
   created_at: string;
   updated_at: string;
 }
 
 interface StorefrontApiResponse {
-  id: string;
   name: string;
   display_name: string;
   icon_url?: string;
@@ -90,7 +88,6 @@ export interface StorefrontsListResponse {
 
 function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
   return {
-    id: apiStorefront.id,
     name: apiStorefront.name,
     display_name: apiStorefront.display_name,
     icon_url: apiStorefront.icon_url,
@@ -104,13 +101,12 @@ function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
 
 function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
   return {
-    id: apiPlatform.id,
     name: apiPlatform.name,
     display_name: apiPlatform.display_name,
     icon_url: apiPlatform.icon_url,
     is_active: apiPlatform.is_active,
     source: apiPlatform.source,
-    default_storefront_id: apiPlatform.default_storefront_id,
+    default_storefront: apiPlatform.default_storefront,
     storefronts: apiPlatform.storefronts?.map(transformStorefront),
     created_at: apiPlatform.created_at,
     updated_at: apiPlatform.updated_at,
@@ -162,10 +158,10 @@ export async function getAllPlatforms(
 }
 
 /**
- * Get a single platform by ID.
+ * Get a single platform by name (slug).
  */
-export async function getPlatform(id: string): Promise<Platform> {
-  const response = await api.get<PlatformApiResponse>(`/platforms/${id}`);
+export async function getPlatform(name: string): Promise<Platform> {
+  const response = await api.get<PlatformApiResponse>(`/platforms/${name}`);
   return transformPlatform(response);
 }
 
@@ -173,16 +169,15 @@ export async function getPlatform(id: string): Promise<Platform> {
  * Get storefronts associated with a specific platform.
  */
 export async function getPlatformStorefronts(
-  platformId: string,
+  platform: string,
   activeOnly?: boolean
 ): Promise<Storefront[]> {
   const response = await api.get<{
-    platform_id: string;
-    platform_name: string;
+    platform: string;
     platform_display_name: string;
     storefronts: StorefrontApiResponse[];
     total_storefronts: number;
-  }>(`/platforms/${platformId}/storefronts`, {
+  }>(`/platforms/${platform}/storefronts`, {
     params: { active_only: activeOnly ?? true },
   });
 
@@ -233,11 +228,11 @@ export async function getAllStorefronts(
 }
 
 /**
- * Get a single storefront by ID.
+ * Get a single storefront by name (slug).
  */
-export async function getStorefront(id: string): Promise<Storefront> {
+export async function getStorefront(name: string): Promise<Storefront> {
   const response = await api.get<StorefrontApiResponse>(
-    `/platforms/storefronts/${id}`
+    `/platforms/storefronts/${name}`
   );
   return transformStorefront(response);
 }
@@ -269,14 +264,14 @@ export interface PlatformCreateData {
   display_name: string;
   icon_url?: string;
   is_active?: boolean;
-  default_storefront_id?: string;
+  default_storefront?: string;
 }
 
 export interface PlatformUpdateData {
   display_name?: string;
   icon_url?: string | null;
   is_active?: boolean;
-  default_storefront_id?: string | null;
+  default_storefront?: string | null;
 }
 
 export interface StorefrontCreateData {
@@ -310,18 +305,18 @@ export async function createPlatform(data: PlatformCreateData): Promise<Platform
  * Update an existing platform (admin only).
  */
 export async function updatePlatform(
-  id: string,
+  name: string,
   data: PlatformUpdateData
 ): Promise<Platform> {
-  const response = await api.put<PlatformApiResponse>(`/platforms/${id}`, data);
+  const response = await api.put<PlatformApiResponse>(`/platforms/${name}`, data);
   return transformPlatform(response);
 }
 
 /**
  * Delete a platform (admin only).
  */
-export async function deletePlatform(id: string): Promise<void> {
-  await api.delete(`/platforms/${id}`);
+export async function deletePlatform(name: string): Promise<void> {
+  await api.delete(`/platforms/${name}`);
 }
 
 // ============================================================================
@@ -340,11 +335,11 @@ export async function createStorefront(data: StorefrontCreateData): Promise<Stor
  * Update an existing storefront (admin only).
  */
 export async function updateStorefront(
-  id: string,
+  name: string,
   data: StorefrontUpdateData
 ): Promise<Storefront> {
   const response = await api.put<StorefrontApiResponse>(
-    `/platforms/storefronts/${id}`,
+    `/platforms/storefronts/${name}`,
     data
   );
   return transformStorefront(response);
@@ -353,8 +348,8 @@ export async function updateStorefront(
 /**
  * Delete a storefront (admin only).
  */
-export async function deleteStorefront(id: string): Promise<void> {
-  await api.delete(`/platforms/storefronts/${id}`);
+export async function deleteStorefront(name: string): Promise<void> {
+  await api.delete(`/platforms/storefronts/${name}`);
 }
 
 // ============================================================================
@@ -365,18 +360,18 @@ export async function deleteStorefront(id: string): Promise<void> {
  * Create a platform-storefront association (admin only).
  */
 export async function createPlatformStorefrontAssociation(
-  platformId: string,
-  storefrontId: string
+  platform: string,
+  storefront: string
 ): Promise<void> {
-  await api.post(`/platforms/${platformId}/storefronts/${storefrontId}`);
+  await api.post(`/platforms/${platform}/storefronts/${storefront}`);
 }
 
 /**
  * Delete a platform-storefront association (admin only).
  */
 export async function deletePlatformStorefrontAssociation(
-  platformId: string,
-  storefrontId: string
+  platform: string,
+  storefront: string
 ): Promise<void> {
-  await api.delete(`/platforms/${platformId}/storefronts/${storefrontId}`);
+  await api.delete(`/platforms/${platform}/storefronts/${storefront}`);
 }

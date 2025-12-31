@@ -45,13 +45,12 @@ const mockGameApi = {
 };
 
 const mockPlatformApi = {
-  id: 'platform-1',
   name: 'pc',
   display_name: 'PC',
   icon_url: null,
   is_active: true,
   source: 'official',
-  default_storefront_id: 'storefront-1',
+  default_storefront: 'steam',
   storefronts: [],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -59,10 +58,10 @@ const mockPlatformApi = {
 
 const mockUserGamePlatformApi = {
   id: 'ugp-1',
-  platform_id: 'platform-1',
-  storefront_id: 'storefront-1',
-  platform: mockPlatformApi,
-  storefront: null,
+  platform: 'pc',
+  storefront: 'steam',
+  platform_details: mockPlatformApi,
+  storefront_details: null,
   store_game_id: 'steam-12345',
   store_url: 'https://store.steampowered.com/app/12345',
   is_available: true,
@@ -155,7 +154,7 @@ describe('games.ts', () => {
           const url = new URL(request.url);
           expect(url.searchParams.get('play_status')).toBe(PlayStatus.IN_PROGRESS);
           expect(url.searchParams.get('ownership_status')).toBe(OwnershipStatus.OWNED);
-          expect(url.searchParams.get('platform_id')).toBe('platform-1');
+          expect(url.searchParams.get('platform')).toBe('pc');
           expect(url.searchParams.get('q')).toBe('test');
           expect(url.searchParams.get('sort_by')).toBe('title');
           expect(url.searchParams.get('sort_order')).toBe('asc');
@@ -178,7 +177,7 @@ describe('games.ts', () => {
       await getUserGames({
         status: PlayStatus.IN_PROGRESS,
         ownershipStatus: OwnershipStatus.OWNED,
-        platformId: 'platform-1',
+        platform: 'pc',
         search: 'test',
         sortBy: 'title',
         sortOrder: 'asc',
@@ -257,15 +256,15 @@ describe('games.ts', () => {
         http.post(`${API_URL}/user-games/`, async ({ request }) => {
           const body = (await request.json()) as {
             platforms?: Array<{
-              platform_id: string;
-              storefront_id?: string;
+              platform: string;
+              storefront?: string;
               store_game_id?: string;
               is_available?: boolean;
             }>;
           };
           expect(body.platforms).toHaveLength(1);
-          expect(body.platforms?.[0].platform_id).toBe('platform-1');
-          expect(body.platforms?.[0].storefront_id).toBe('storefront-1');
+          expect(body.platforms?.[0].platform).toBe('pc');
+          expect(body.platforms?.[0].storefront).toBe('steam');
           expect(body.platforms?.[0].is_available).toBe(true);
 
           return HttpResponse.json(mockUserGameApi);
@@ -276,8 +275,8 @@ describe('games.ts', () => {
         gameId: 12345 as GameId,
         platforms: [
           {
-            platformId: 'platform-1',
-            storefrontId: 'storefront-1',
+            platform: 'pc',
+            storefront: 'steam',
             isAvailable: true,
           },
         ],
@@ -583,12 +582,12 @@ describe('games.ts', () => {
       server.use(
         http.post(`${API_URL}/user-games/user-game-123/platforms`, async ({ request }) => {
           const body = (await request.json()) as {
-            platform_id: string;
-            storefront_id?: string;
+            platform: string;
+            storefront?: string;
             is_available: boolean;
           };
-          expect(body.platform_id).toBe('platform-1');
-          expect(body.storefront_id).toBe('storefront-1');
+          expect(body.platform).toBe('pc');
+          expect(body.storefront).toBe('steam');
           expect(body.is_available).toBe(true);
 
           return HttpResponse.json(mockUserGamePlatformApi);
@@ -596,13 +595,13 @@ describe('games.ts', () => {
       );
 
       const result = await addPlatformToUserGame('user-game-123', {
-        platformId: 'platform-1',
-        storefrontId: 'storefront-1',
+        platform: 'pc',
+        storefront: 'steam',
         isAvailable: true,
       });
 
       expect(result.id).toBe('ugp-1');
-      expect(result.platform_id).toBe('platform-1');
+      expect(result.platform).toBe('pc');
     });
   });
 
@@ -611,23 +610,23 @@ describe('games.ts', () => {
       server.use(
         http.put(`${API_URL}/user-games/user-game-123/platforms/ugp-1`, async ({ request }) => {
           const body = (await request.json()) as {
-            platform_id: string;
-            storefront_id?: string;
+            platform: string;
+            storefront?: string;
           };
-          expect(body.platform_id).toBe('platform-2');
+          expect(body.platform).toBe('playstation-5');
 
           return HttpResponse.json({
             ...mockUserGamePlatformApi,
-            platform_id: 'platform-2',
+            platform: 'playstation-5',
           });
         })
       );
 
       const result = await updatePlatformAssociation('user-game-123', 'ugp-1', {
-        platformId: 'platform-2',
+        platform: 'playstation-5',
       });
 
-      expect(result.platform_id).toBe('platform-2');
+      expect(result.platform).toBe('playstation-5');
     });
   });
 

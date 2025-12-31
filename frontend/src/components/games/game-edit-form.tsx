@@ -85,10 +85,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
   );
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformSelection[]>(
     game.platforms
-      .filter((p) => p.platform_id)
+      .filter((p) => p.platform)
       .map((p) => ({
-        platform_id: p.platform_id!,
-        storefront_id: p.storefront_id,
+        platform: p.platform!,
+        storefront: p.storefront,
       }))
   );
 
@@ -116,15 +116,15 @@ export function GameEditForm({ game }: GameEditFormProps) {
     () => game.tags?.map((t) => t.id) ?? [],
     [game.tags]
   );
-  const originalPlatformIds = useMemo(
-    () => game.platforms.map((p) => p.platform_id).filter(Boolean) as string[],
+  const originalPlatformNames = useMemo(
+    () => game.platforms.map((p) => p.platform).filter(Boolean) as string[],
     [game.platforms]
   );
 
-  // Get platform association ID by platform_id
+  // Get platform association ID by platform name
   const getPlatformAssociationId = useCallback(
-    (platformId: string): string | undefined => {
-      const assoc = game.platforms.find((p) => p.platform_id === platformId);
+    (platformName: string): string | undefined => {
+      const assoc = game.platforms.find((p) => p.platform === platformName);
       return assoc?.id;
     },
     [game.platforms]
@@ -147,12 +147,12 @@ export function GameEditForm({ game }: GameEditFormProps) {
       });
 
       // 2. Handle platform changes
-      const currentPlatformIds = selectedPlatforms.map((p) => p.platform_id);
+      const currentPlatformNames = selectedPlatforms.map((p) => p.platform);
       const platformsToAdd = selectedPlatforms.filter(
-        (p) => !originalPlatformIds.includes(p.platform_id)
+        (p) => !originalPlatformNames.includes(p.platform)
       );
-      const platformsToRemove = originalPlatformIds.filter(
-        (id) => !currentPlatformIds.includes(id)
+      const platformsToRemove = originalPlatformNames.filter(
+        (name) => !currentPlatformNames.includes(name)
       );
 
       // Add new platforms
@@ -160,15 +160,15 @@ export function GameEditForm({ game }: GameEditFormProps) {
         await addPlatform.mutateAsync({
           userGameId: game.id,
           data: {
-            platformId: platform.platform_id,
-            storefrontId: platform.storefront_id,
+            platform: platform.platform,
+            storefront: platform.storefront,
           },
         });
       }
 
       // Remove platforms
-      for (const platformId of platformsToRemove) {
-        const associationId = getPlatformAssociationId(platformId);
+      for (const platformName of platformsToRemove) {
+        const associationId = getPlatformAssociationId(platformName);
         if (associationId) {
           await removePlatform.mutateAsync({
             userGameId: game.id,

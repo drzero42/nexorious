@@ -34,8 +34,8 @@ import type { Platform, Storefront } from '@/types';
 // ============================================================================
 
 export interface PlatformSelection {
-  platform_id: string;
-  storefront_id?: string;
+  platform: string;
+  storefront?: string;
 }
 
 // ============================================================================
@@ -96,14 +96,14 @@ function PlatformBadge({
 
 interface StorefrontSelectorProps {
   storefronts: Storefront[];
-  selectedStorefrontId?: string;
-  onStorefrontChange: (storefrontId: string | undefined) => void;
+  selectedStorefront?: string;
+  onStorefrontChange: (storefront: string | undefined) => void;
   disabled?: boolean;
 }
 
 function StorefrontSelector({
   storefronts,
-  selectedStorefrontId,
+  selectedStorefront,
   onStorefrontChange,
   disabled = false,
 }: StorefrontSelectorProps) {
@@ -113,7 +113,7 @@ function StorefrontSelector({
 
   return (
     <Select
-      value={selectedStorefrontId ?? 'none'}
+      value={selectedStorefront ?? 'none'}
       onValueChange={(value) =>
         onStorefrontChange(value === 'none' ? undefined : value)
       }
@@ -125,7 +125,7 @@ function StorefrontSelector({
       <SelectContent>
         <SelectItem value="none">No storefront</SelectItem>
         {storefronts.map((storefront) => (
-          <SelectItem key={storefront.id} value={storefront.id}>
+          <SelectItem key={storefront.name} value={storefront.name}>
             {storefront.display_name}
           </SelectItem>
         ))}
@@ -174,10 +174,10 @@ export function PlatformSelector({
   const selectedPlatformObjects = React.useMemo(() => {
     return selectedPlatforms.map((selection) => {
       const platform = availablePlatforms.find(
-        (p) => p.id === selection.platform_id
+        (p) => p.name === selection.platform
       );
       const storefront = platform?.storefronts?.find(
-        (s) => s.id === selection.storefront_id
+        (s) => s.name === selection.storefront
       );
       return { selection, platform, storefront };
     });
@@ -199,46 +199,46 @@ export function PlatformSelector({
   const isMaxReached =
     maxSelection !== undefined && selectedPlatforms.length >= maxSelection;
 
-  const handlePlatformToggle = (platformId: string) => {
+  const handlePlatformToggle = (platformName: string) => {
     if (disabled) return;
 
     const existingIndex = selectedPlatforms.findIndex(
-      (s) => s.platform_id === platformId
+      (s) => s.platform === platformName
     );
 
     if (existingIndex !== -1) {
       // Remove platform
-      onChange(selectedPlatforms.filter((s) => s.platform_id !== platformId));
+      onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
     } else if (!isMaxReached) {
       // Add platform with default storefront if available
-      const platform = availablePlatforms.find((p) => p.id === platformId);
-      const defaultStorefrontId = platform?.default_storefront_id;
+      const platform = availablePlatforms.find((p) => p.name === platformName);
+      const defaultStorefront = platform?.default_storefront;
       onChange([
         ...selectedPlatforms,
         {
-          platform_id: platformId,
-          storefront_id: defaultStorefrontId,
+          platform: platformName,
+          storefront: defaultStorefront,
         },
       ]);
     }
   };
 
   const handleStorefrontChange = (
-    platformId: string,
-    storefrontId: string | undefined
+    platformName: string,
+    storefront: string | undefined
   ) => {
     if (disabled) return;
 
     onChange(
       selectedPlatforms.map((s) =>
-        s.platform_id === platformId ? { ...s, storefront_id: storefrontId } : s
+        s.platform === platformName ? { ...s, storefront } : s
       )
     );
   };
 
-  const handleRemovePlatform = (platformId: string) => {
+  const handleRemovePlatform = (platformName: string) => {
     if (disabled) return;
-    onChange(selectedPlatforms.filter((s) => s.platform_id !== platformId));
+    onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
   };
 
   const handleClearAll = () => {
@@ -268,7 +268,7 @@ export function PlatformSelector({
                     ({ selection, platform, storefront }) =>
                       platform && (
                         <PlatformBadge
-                          key={selection.platform_id}
+                          key={selection.platform}
                           platform={platform}
                           storefront={storefront}
                         />
@@ -280,7 +280,7 @@ export function PlatformSelector({
                       ({ selection, platform, storefront }) =>
                         platform && (
                           <PlatformBadge
-                            key={selection.platform_id}
+                            key={selection.platform}
                             platform={platform}
                             storefront={storefront}
                           />
@@ -351,15 +351,15 @@ export function PlatformSelector({
                   <CommandGroup heading="Platforms">
                     {filteredPlatforms.map((platform) => {
                       const isSelected = selectedPlatforms.some(
-                        (s) => s.platform_id === platform.id
+                        (s) => s.platform === platform.name
                       );
                       const isDisabledItem = !isSelected && isMaxReached;
 
                       return (
                         <CommandItem
-                          key={platform.id}
-                          value={platform.id}
-                          onSelect={() => handlePlatformToggle(platform.id)}
+                          key={platform.name}
+                          value={platform.name}
+                          onSelect={() => handlePlatformToggle(platform.name)}
                           disabled={isDisabledItem}
                           className={cn(
                             'cursor-pointer',
@@ -409,7 +409,7 @@ export function PlatformSelector({
 
             return (
               <div
-                key={selection.platform_id}
+                key={selection.platform}
                 className="flex items-center gap-3 p-3 rounded-lg border bg-card"
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -422,11 +422,11 @@ export function PlatformSelector({
                   <div className="flex-shrink-0 w-36">
                     <StorefrontSelector
                       storefronts={storefronts}
-                      selectedStorefrontId={selection.storefront_id}
-                      onStorefrontChange={(storefrontId) =>
+                      selectedStorefront={selection.storefront}
+                      onStorefrontChange={(storefront) =>
                         handleStorefrontChange(
-                          selection.platform_id,
-                          storefrontId
+                          selection.platform,
+                          storefront
                         )
                       }
                       disabled={disabled}
@@ -436,7 +436,7 @@ export function PlatformSelector({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleRemovePlatform(selection.platform_id)}
+                  onClick={() => handleRemovePlatform(selection.platform)}
                   disabled={disabled}
                   className="flex-shrink-0 h-8 w-8 p-0"
                 >
@@ -478,37 +478,37 @@ export function PlatformSelectorCompact({
   disabled = false,
   className,
 }: PlatformSelectorCompactProps) {
-  const handleToggle = (platformId: string) => {
+  const handleToggle = (platformName: string) => {
     if (disabled) return;
 
     const existingIndex = selectedPlatforms.findIndex(
-      (s) => s.platform_id === platformId
+      (s) => s.platform === platformName
     );
 
     if (existingIndex !== -1) {
-      onChange(selectedPlatforms.filter((s) => s.platform_id !== platformId));
+      onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
     } else {
-      const platform = availablePlatforms.find((p) => p.id === platformId);
-      const defaultStorefrontId = platform?.default_storefront_id;
+      const platform = availablePlatforms.find((p) => p.name === platformName);
+      const defaultStorefront = platform?.default_storefront;
       onChange([
         ...selectedPlatforms,
         {
-          platform_id: platformId,
-          storefront_id: defaultStorefrontId,
+          platform: platformName,
+          storefront: defaultStorefront,
         },
       ]);
     }
   };
 
   const handleStorefrontChange = (
-    platformId: string,
-    storefrontId: string | undefined
+    platformName: string,
+    storefront: string | undefined
   ) => {
     if (disabled) return;
 
     onChange(
       selectedPlatforms.map((s) =>
-        s.platform_id === platformId ? { ...s, storefront_id: storefrontId } : s
+        s.platform === platformName ? { ...s, storefront } : s
       )
     );
   };
@@ -526,14 +526,14 @@ export function PlatformSelectorCompact({
     <div className={cn('space-y-2', className)}>
       {availablePlatforms.map((platform) => {
         const selection = selectedPlatforms.find(
-          (s) => s.platform_id === platform.id
+          (s) => s.platform === platform.name
         );
         const isSelected = !!selection;
         const storefronts = platform.storefronts ?? [];
 
         return (
           <div
-            key={platform.id}
+            key={platform.name}
             className={cn(
               'rounded-lg border p-3 transition-colors',
               isSelected
@@ -547,7 +547,7 @@ export function PlatformSelectorCompact({
                 type="checkbox"
                 className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
                 checked={isSelected}
-                onChange={() => handleToggle(platform.id)}
+                onChange={() => handleToggle(platform.name)}
                 disabled={disabled}
               />
               <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -560,9 +560,9 @@ export function PlatformSelectorCompact({
                 </Label>
                 <StorefrontSelector
                   storefronts={storefronts}
-                  selectedStorefrontId={selection?.storefront_id}
-                  onStorefrontChange={(storefrontId) =>
-                    handleStorefrontChange(platform.id, storefrontId)
+                  selectedStorefront={selection?.storefront}
+                  onStorefrontChange={(storefront) =>
+                    handleStorefrontChange(platform.name, storefront)
                   }
                   disabled={disabled}
                 />

@@ -14,7 +14,6 @@ import type { Platform, Storefront } from '@/types';
 
 const mockStorefronts: Storefront[] = [
   {
-    id: 'steam',
     name: 'steam',
     display_name: 'Steam',
     is_active: true,
@@ -23,7 +22,6 @@ const mockStorefronts: Storefront[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'epic',
     name: 'epic',
     display_name: 'Epic Games Store',
     is_active: true,
@@ -32,7 +30,6 @@ const mockStorefronts: Storefront[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'gog',
     name: 'gog',
     display_name: 'GOG',
     is_active: true,
@@ -44,25 +41,22 @@ const mockStorefronts: Storefront[] = [
 
 const mockPlatforms: Platform[] = [
   {
-    id: 'pc',
     name: 'pc',
     display_name: 'PC',
     is_active: true,
     source: 'official',
-    default_storefront_id: 'steam',
+    default_storefront: 'steam',
     storefronts: mockStorefronts,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'ps5',
     name: 'ps5',
     display_name: 'PlayStation 5',
     is_active: true,
     source: 'official',
     storefronts: [
       {
-        id: 'psn',
         name: 'psn',
         display_name: 'PlayStation Store',
         is_active: true,
@@ -75,7 +69,6 @@ const mockPlatforms: Platform[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'xbox',
     name: 'xbox',
     display_name: 'Xbox Series X|S',
     is_active: true,
@@ -85,7 +78,6 @@ const mockPlatforms: Platform[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'switch',
     name: 'switch',
     display_name: 'Nintendo Switch',
     is_active: true,
@@ -127,7 +119,7 @@ describe('PlatformSelector', () => {
   });
 
   it('shows selected platform badge', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelector
@@ -145,9 +137,9 @@ describe('PlatformSelector', () => {
 
   it('shows "+N more" badge when many platforms are selected', () => {
     const selected: PlatformSelection[] = [
-      { platform_id: 'pc' },
-      { platform_id: 'ps5' },
-      { platform_id: 'xbox' },
+      { platform: 'pc' },
+      { platform: 'ps5' },
+      { platform: 'xbox' },
     ];
 
     render(
@@ -196,14 +188,14 @@ describe('PlatformSelector', () => {
     await user.click(screen.getByText('PC'));
 
     expect(handleChange).toHaveBeenCalledWith([
-      { platform_id: 'pc', storefront_id: 'steam' }, // default storefront
+      { platform: 'pc', storefront: 'steam' }, // default storefront
     ]);
   });
 
   it('calls onChange when platform is deselected', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelector
@@ -258,7 +250,7 @@ describe('PlatformSelector', () => {
   });
 
   it('displays storefront selector for selected platforms', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelector
@@ -274,7 +266,7 @@ describe('PlatformSelector', () => {
   });
 
   it('shows storefront selector for platforms with storefronts', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelector
@@ -293,8 +285,8 @@ describe('PlatformSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
     const selected: PlatformSelection[] = [
-      { platform_id: 'pc', storefront_id: 'steam' },
-      { platform_id: 'ps5' },
+      { platform: 'pc', storefront: 'steam' },
+      { platform: 'ps5' },
     ];
 
     render(
@@ -315,8 +307,8 @@ describe('PlatformSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
     const selected: PlatformSelection[] = [
-      { platform_id: 'pc' },
-      { platform_id: 'ps5' },
+      { platform: 'pc' },
+      { platform: 'ps5' },
     ];
 
     render(
@@ -337,7 +329,7 @@ describe('PlatformSelector', () => {
 
   it('shows max selection info', async () => {
     const user = userEvent.setup();
-    const selected: PlatformSelection[] = [{ platform_id: 'pc' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc' }];
 
     render(
       <PlatformSelector
@@ -376,7 +368,7 @@ describe('PlatformSelector', () => {
   it('removes platform when X button is clicked in platform card', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelector
@@ -451,7 +443,7 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('shows selected platforms as checked', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc' }];
 
     render(
       <PlatformSelectorCompact
@@ -483,14 +475,14 @@ describe('PlatformSelectorCompact', () => {
     await user.click(checkboxes[0]); // Click PC
 
     expect(handleChange).toHaveBeenCalledWith([
-      { platform_id: 'pc', storefront_id: 'steam' }, // default storefront
+      { platform: 'pc', storefront: 'steam' }, // default storefront
     ]);
   });
 
   it('removes platform when unchecked', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelectorCompact
@@ -507,7 +499,7 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('shows storefront selector for selected platforms with storefronts', async () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelectorCompact
@@ -522,7 +514,7 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('shows storefront selector when platform with storefronts is selected', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc', storefront_id: 'steam' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc', storefront: 'steam' }];
 
     render(
       <PlatformSelectorCompact
@@ -537,7 +529,7 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('does not show storefront selector for platforms without storefronts', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'xbox' }];
+    const selected: PlatformSelection[] = [{ platform: 'xbox' }];
 
     render(
       <PlatformSelectorCompact
@@ -584,7 +576,7 @@ describe('PlatformSelectorCompact', () => {
   });
 
   it('highlights selected platforms visually', () => {
-    const selected: PlatformSelection[] = [{ platform_id: 'pc' }];
+    const selected: PlatformSelection[] = [{ platform: 'pc' }];
 
     render(
       <PlatformSelectorCompact

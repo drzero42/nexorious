@@ -476,8 +476,8 @@ export default function GameConfirmPage() {
       const userGame = await createUserGame.mutateAsync({
         gameId: importedGame.id,
         platforms: selectedPlatforms.map((p) => ({
-          platformId: p.platform_id,
-          storefrontId: p.storefront_id,
+          platform: p.platform,
+          storefront: p.storefront,
         })),
       });
 

@@ -137,7 +137,7 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
         {game.platforms && game.platforms.length > 0 && (
           <p className="text-sm text-muted-foreground truncate mt-1">
             {game.platforms
-              .map((p) => p.platform?.display_name ?? p.platform?.name)
+              .map((p) => p.platform_details?.display_name ?? p.platform)
               .filter(Boolean)
               .join(', ')}
           </p>
