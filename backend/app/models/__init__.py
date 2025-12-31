@@ -22,6 +22,7 @@ from .job import (
 )
 from .user_sync_config import UserSyncConfig, SyncFrequency
 from .ignored_external_game import IgnoredExternalGame
+from .backup_config import BackupConfig, BackupSchedule, RetentionMode
 
 __all__ = [
     "User",
@@ -46,4 +47,7 @@ __all__ = [
     "UserSyncConfig",
     "SyncFrequency",
     "IgnoredExternalGame",
+    "BackupConfig",
+    "BackupSchedule",
+    "RetentionMode",
 ]

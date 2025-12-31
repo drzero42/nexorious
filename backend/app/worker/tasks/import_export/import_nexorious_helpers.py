@@ -194,23 +194,25 @@ async def _import_platforms(
             "storefront"
         )
 
-        # Try to resolve platform
+        # Try to resolve platform by name
+        # Note: platform_id FK now references platforms.name, not platforms.id
         platform_id = None
         if platform_name:
             platform = session.exec(
                 select(Platform).where(Platform.name == platform_name)
             ).first()
             if platform:
-                platform_id = platform.id
+                platform_id = platform.name
 
-        # Try to resolve storefront
+        # Try to resolve storefront by name
+        # Note: storefront_id FK now references storefronts.name, not storefronts.id
         storefront_id = None
         if storefront_name:
             storefront = session.exec(
                 select(Storefront).where(Storefront.name == storefront_name)
             ).first()
             if storefront:
-                storefront_id = storefront.id
+                storefront_id = storefront.name
 
         # Skip duplicate platform/storefront combinations
         combination_key = (platform_id, storefront_id)

@@ -127,6 +127,20 @@ class Settings(BaseSettings):
         default="/tmp/nexorious_uploads",
         description="Directory for temporary file uploads and processing"
     )
+    backup_path: str = Field(
+        default="storage/backups",
+        description="Path for backup file storage"
+    )
+
+    # Internal API (worker-to-API communication)
+    internal_api_key: str = Field(
+        default="nexorious-internal-api-key-change-in-production",
+        description="Secret key for internal worker-to-API communication"
+    )
+    internal_api_url: str = Field(
+        default="http://api:8000",
+        description="Internal URL for API (used by worker for callbacks)"
+    )
 
     # NATS JetStream
     NATS_URL: str = "nats://localhost:4222"

@@ -129,5 +129,17 @@ export {
   batchImportMappings,
 } from './import-mappings';
 
+// Re-export backup API functions
+export {
+  getBackupConfig,
+  updateBackupConfig,
+  listBackups,
+  createBackup,
+  deleteBackup,
+  downloadBackup,
+  restoreBackup,
+  uploadAndRestoreBackup,
+} from './backup';
+
 // Re-export client utilities
 export { ApiErrorException, setAuthHandlers } from './client';
