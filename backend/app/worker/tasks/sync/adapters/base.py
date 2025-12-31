@@ -18,14 +18,14 @@ class ExternalGame:
     Attributes:
         external_id: Unique identifier from the source (e.g., Steam AppID)
         title: Game name from the source
-        platform_id: Platform identifier (e.g., "pc-windows")
-        storefront_id: Storefront identifier (e.g., "steam")
+        platform: Platform identifier (e.g., "pc-windows")
+        storefront: Storefront identifier (e.g., "steam")
         metadata: Source-specific data (playtime, achievements, etc.)
     """
     external_id: str
     title: str
-    platform_id: str
-    storefront_id: str
+    platform: str
+    storefront: str
     metadata: Dict[str, Any]
 
 

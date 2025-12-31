@@ -49,8 +49,8 @@ class SteamSyncAdapter:
             ExternalGame(
                 external_id=str(game.appid),
                 title=game.name,
-                platform_id="pc-windows",
-                storefront_id="steam",
+                platform="pc-windows",
+                storefront="steam",
                 metadata={
                     "appid": game.appid,
                 },

@@ -11,7 +11,7 @@ Usage:
     results: Sequence[RowMapping] = session.exec(query).mappings().all()
     for row in results:
         # Type-safe access via dictionary keys
-        platform_id: str = row["platform_id"]
+        platform: str = row["platform"]
         usage_count: int = row["usage_count"]
 """
 
@@ -21,7 +21,7 @@ from typing import Optional, TypedDict
 class PlatformUsageRow(TypedDict):
     """Row type for platform usage statistics query in platforms.py."""
 
-    platform_id: str
+    platform: str
     platform_name: str
     platform_display_name: str
     usage_count: int
@@ -30,7 +30,7 @@ class PlatformUsageRow(TypedDict):
 class StorefrontUsageRow(TypedDict):
     """Row type for storefront usage statistics query in platforms.py."""
 
-    storefront_id: str
+    storefront: str
     storefront_name: str
     storefront_display_name: str
     usage_count: int

@@ -76,18 +76,16 @@ const mockNonAdminUser = {
 
 const mockPlatforms = [
   {
-    id: 'platform-1',
     name: 'pc',
     display_name: 'PC',
     icon_url: '/icons/pc.svg',
     is_active: true,
     source: 'official',
-    default_storefront_id: 'storefront-1',
+    default_storefront: 'steam',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'platform-2',
     name: 'playstation',
     display_name: 'PlayStation',
     icon_url: '/icons/ps.svg',
@@ -100,7 +98,6 @@ const mockPlatforms = [
 
 const mockStorefronts = [
   {
-    id: 'storefront-1',
     name: 'steam',
     display_name: 'Steam',
     icon_url: '/icons/steam.svg',
@@ -111,7 +108,6 @@ const mockStorefronts = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'storefront-2',
     name: 'epic',
     display_name: 'Epic Games Store',
     icon_url: '/icons/epic.svg',
@@ -122,7 +118,6 @@ const mockStorefronts = [
     updated_at: '2024-01-02T00:00:00Z',
   },
   {
-    id: 'storefront-3',
     name: 'gog',
     display_name: 'GOG',
     is_active: false,
@@ -656,7 +651,6 @@ describe('AdminPlatformsPage', () => {
 
     it('creates a new platform successfully', async () => {
       const newPlatform = {
-        id: 'platform-new',
         name: 'new_platform',
         display_name: 'New Platform',
         is_active: true,
@@ -870,7 +864,7 @@ describe('AdminPlatformsPage', () => {
       await userEvent.click(confirmDeleteBtn);
 
       await waitFor(() => {
-        expect(mockedDeletePlatform).toHaveBeenCalledWith('platform-1');
+        expect(mockedDeletePlatform).toHaveBeenCalledWith('pc');
       });
 
       expect(toast.success).toHaveBeenCalledWith('Platform deleted');
@@ -923,7 +917,7 @@ describe('AdminPlatformsPage', () => {
       await userEvent.click(activeButtons[0]);
 
       await waitFor(() => {
-        expect(mockedUpdatePlatform).toHaveBeenCalledWith('platform-1', {
+        expect(mockedUpdatePlatform).toHaveBeenCalledWith('pc', {
           is_active: false,
         });
       });

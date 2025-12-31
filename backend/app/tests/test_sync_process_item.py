@@ -155,8 +155,8 @@ class TestProcessSyncItem:
             mock_item.resolved_igdb_id = None
             mock_item.source_metadata_json = json.dumps({
                 "external_id": "12345",
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 
@@ -188,8 +188,8 @@ class TestProcessSyncItem:
             mock_item.resolved_igdb_id = None
             mock_item.source_metadata_json = json.dumps({
                 "external_id": "12345",
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 
@@ -245,8 +245,8 @@ class TestProcessSyncItem:
             mock_item.job_id = "job123"
             mock_item.resolved_igdb_id = None
             mock_item.source_metadata_json = json.dumps({
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 
@@ -277,8 +277,8 @@ class TestProcessSyncItem:
             mock_item.resolved_igdb_id = 12345
             mock_item.source_metadata_json = json.dumps({
                 "external_id": "steam123",
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 
@@ -311,8 +311,8 @@ class TestProcessSyncItem:
             mock_item.resolved_igdb_id = None
             mock_item.source_metadata_json = json.dumps({
                 "external_id": "steam123",
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 
@@ -344,8 +344,8 @@ class TestProcessSyncItem:
             mock_item.resolved_igdb_id = None
             mock_item.source_metadata_json = json.dumps({
                 "external_id": "12345",
-                "storefront_id": "steam",
-                "platform_id": "pc-windows",
+                "storefront": "steam",
+                "platform": "pc-windows",
             })
             mock_item.source_title = "Test Game"
 

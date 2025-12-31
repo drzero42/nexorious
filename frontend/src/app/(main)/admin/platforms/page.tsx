@@ -69,7 +69,7 @@ interface PlatformFormData {
   display_name: string;
   icon_url: string;
   is_active: boolean;
-  default_storefront_id: string;
+  default_storefront: string;
 }
 
 interface StorefrontFormData {
@@ -137,7 +137,7 @@ export default function AdminPlatformsPage() {
     display_name: '',
     icon_url: '',
     is_active: true,
-    default_storefront_id: '',
+    default_storefront: '',
   });
   const [isPlatformSaving, setIsPlatformSaving] = useState(false);
 
@@ -209,10 +209,10 @@ export default function AdminPlatformsPage() {
         const newAssociations = new Map<string, Set<string>>();
         for (const platform of platforms) {
           const storefrontsList = await platformsApi.getPlatformStorefronts(
-            platform.id,
+            platform.name,
             false
           );
-          newAssociations.set(platform.id, new Set(storefrontsList.map((s) => s.id)));
+          newAssociations.set(platform.name, new Set(storefrontsList.map((s) => s.name)));
         }
         setAssociations(newAssociations);
       } catch (err) {
@@ -255,7 +255,7 @@ export default function AdminPlatformsPage() {
       display_name: '',
       icon_url: '',
       is_active: true,
-      default_storefront_id: '',
+      default_storefront: '',
     });
     setEditingPlatform(null);
     setShowPlatformDialog(true);
@@ -267,7 +267,7 @@ export default function AdminPlatformsPage() {
       display_name: platform.display_name,
       icon_url: platform.icon_url ?? '',
       is_active: platform.is_active,
-      default_storefront_id: platform.default_storefront_id ?? '',
+      default_storefront: platform.default_storefront ?? '',
     });
     setEditingPlatform(platform);
     setShowPlatformDialog(true);
@@ -280,19 +280,19 @@ export default function AdminPlatformsPage() {
     }
 
     // Convert "none" to empty string for API
-    const defaultStorefrontId =
-      platformForm.default_storefront_id === 'none' ? '' : platformForm.default_storefront_id;
+    const defaultStorefront =
+      platformForm.default_storefront === 'none' ? '' : platformForm.default_storefront;
 
     setIsPlatformSaving(true);
     try {
       if (editingPlatform) {
-        const updated = await platformsApi.updatePlatform(editingPlatform.id, {
+        const updated = await platformsApi.updatePlatform(editingPlatform.name, {
           display_name: platformForm.display_name,
           icon_url: platformForm.icon_url || null,
           is_active: platformForm.is_active,
-          default_storefront_id: defaultStorefrontId || null,
+          default_storefront: defaultStorefront || null,
         });
-        setPlatforms((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        setPlatforms((prev) => prev.map((p) => (p.name === updated.name ? updated : p)));
         toast.success('Platform updated successfully');
       } else {
         const created = await platformsApi.createPlatform({
@@ -300,7 +300,7 @@ export default function AdminPlatformsPage() {
           display_name: platformForm.display_name,
           icon_url: platformForm.icon_url || undefined,
           is_active: platformForm.is_active,
-          default_storefront_id: defaultStorefrontId || undefined,
+          default_storefront: defaultStorefront || undefined,
         });
         setPlatforms((prev) => [...prev, created]);
         toast.success('Platform created successfully');
@@ -348,13 +348,13 @@ export default function AdminPlatformsPage() {
     setIsStorefrontSaving(true);
     try {
       if (editingStorefront) {
-        const updated = await platformsApi.updateStorefront(editingStorefront.id, {
+        const updated = await platformsApi.updateStorefront(editingStorefront.name, {
           display_name: storefrontForm.display_name,
           icon_url: storefrontForm.icon_url || null,
           base_url: storefrontForm.base_url || null,
           is_active: storefrontForm.is_active,
         });
-        setStorefronts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+        setStorefronts((prev) => prev.map((s) => (s.name === updated.name ? updated : s)));
         toast.success('Storefront updated successfully');
       } else {
         const created = await platformsApi.createStorefront({
@@ -377,8 +377,8 @@ export default function AdminPlatformsPage() {
   };
 
   // Delete handlers
-  const handleOpenDelete = (type: 'platform' | 'storefront', id: string, name: string) => {
-    setDeleteTarget({ type, id, name });
+  const handleOpenDelete = (type: 'platform' | 'storefront', name: string, displayName: string) => {
+    setDeleteTarget({ type, id: name, name: displayName });
     setShowDeleteDialog(true);
   };
 
@@ -389,10 +389,10 @@ export default function AdminPlatformsPage() {
     try {
       if (deleteTarget.type === 'platform') {
         await platformsApi.deletePlatform(deleteTarget.id);
-        setPlatforms((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+        setPlatforms((prev) => prev.filter((p) => p.name !== deleteTarget.id));
       } else {
         await platformsApi.deleteStorefront(deleteTarget.id);
-        setStorefronts((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+        setStorefronts((prev) => prev.filter((s) => s.name !== deleteTarget.id));
       }
       toast.success(`${deleteTarget.type === 'platform' ? 'Platform' : 'Storefront'} deleted`);
       setShowDeleteDialog(false);
@@ -407,13 +407,13 @@ export default function AdminPlatformsPage() {
 
   // Toggle status handlers
   const handleTogglePlatformStatus = async (platform: Platform) => {
-    const key = `platform-${platform.id}`;
+    const key = `platform-${platform.name}`;
     setTogglingStatus((prev) => new Set(prev).add(key));
     try {
-      const updated = await platformsApi.updatePlatform(platform.id, {
+      const updated = await platformsApi.updatePlatform(platform.name, {
         is_active: !platform.is_active,
       });
-      setPlatforms((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setPlatforms((prev) => prev.map((p) => (p.name === updated.name ? updated : p)));
     } catch (err) {
       toast.error('Failed to toggle status');
     } finally {
@@ -426,13 +426,13 @@ export default function AdminPlatformsPage() {
   };
 
   const handleToggleStorefrontStatus = async (storefront: Storefront) => {
-    const key = `storefront-${storefront.id}`;
+    const key = `storefront-${storefront.name}`;
     setTogglingStatus((prev) => new Set(prev).add(key));
     try {
-      const updated = await platformsApi.updateStorefront(storefront.id, {
+      const updated = await platformsApi.updateStorefront(storefront.name, {
         is_active: !storefront.is_active,
       });
-      setStorefronts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      setStorefronts((prev) => prev.map((s) => (s.name === updated.name ? updated : s)));
     } catch (err) {
       toast.error('Failed to toggle status');
     } finally {
@@ -610,7 +610,7 @@ export default function AdminPlatformsPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredPlatforms.map((platform) => (
-                      <TableRow key={platform.id}>
+                      <TableRow key={platform.name}>
                         <TableCell className="font-medium">{platform.name}</TableCell>
                         <TableCell>{platform.display_name}</TableCell>
                         <TableCell>
@@ -619,9 +619,9 @@ export default function AdminPlatformsPage() {
                             size="sm"
                             className="h-auto p-0"
                             onClick={() => handleTogglePlatformStatus(platform)}
-                            disabled={togglingStatus.has(`platform-${platform.id}`)}
+                            disabled={togglingStatus.has(`platform-${platform.name}`)}
                           >
-                            {togglingStatus.has(`platform-${platform.id}`) ? (
+                            {togglingStatus.has(`platform-${platform.name}`) ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : platform.is_active ? (
                               <Badge className="bg-green-100 text-green-800 hover:bg-green-200">
@@ -655,7 +655,7 @@ export default function AdminPlatformsPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() =>
-                                handleOpenDelete('platform', platform.id, platform.display_name)
+                                handleOpenDelete('platform', platform.name, platform.display_name)
                               }
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
@@ -700,7 +700,7 @@ export default function AdminPlatformsPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredStorefronts.map((storefront) => (
-                      <TableRow key={storefront.id}>
+                      <TableRow key={storefront.name}>
                         <TableCell className="font-medium">{storefront.name}</TableCell>
                         <TableCell>{storefront.display_name}</TableCell>
                         <TableCell>
@@ -723,9 +723,9 @@ export default function AdminPlatformsPage() {
                             size="sm"
                             className="h-auto p-0"
                             onClick={() => handleToggleStorefrontStatus(storefront)}
-                            disabled={togglingStatus.has(`storefront-${storefront.id}`)}
+                            disabled={togglingStatus.has(`storefront-${storefront.name}`)}
                           >
-                            {togglingStatus.has(`storefront-${storefront.id}`) ? (
+                            {togglingStatus.has(`storefront-${storefront.name}`) ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : storefront.is_active ? (
                               <Badge className="bg-green-100 text-green-800 hover:bg-green-200">
@@ -761,7 +761,7 @@ export default function AdminPlatformsPage() {
                               onClick={() =>
                                 handleOpenDelete(
                                   'storefront',
-                                  storefront.id,
+                                  storefront.name,
                                   storefront.display_name
                                 )
                               }
@@ -820,7 +820,7 @@ export default function AdminPlatformsPage() {
                         <TableRow>
                           <TableHead className="sticky left-0 bg-background">Platform</TableHead>
                           {filteredStorefronts.map((storefront) => (
-                            <TableHead key={storefront.id} className="min-w-[120px] text-center">
+                            <TableHead key={storefront.name} className="min-w-[120px] text-center">
                               <div className="flex flex-col items-center gap-1">
                                 <span>{storefront.display_name}</span>
                                 <Badge
@@ -836,7 +836,7 @@ export default function AdminPlatformsPage() {
                       </TableHeader>
                       <TableBody>
                         {filteredPlatforms.map((platform) => (
-                          <TableRow key={platform.id}>
+                          <TableRow key={platform.name}>
                             <TableCell className="sticky left-0 bg-background font-medium">
                               <div className="flex flex-col gap-1">
                                 <span>{platform.display_name}</span>
@@ -849,13 +849,13 @@ export default function AdminPlatformsPage() {
                               </div>
                             </TableCell>
                             {filteredStorefronts.map((storefront) => (
-                              <TableCell key={storefront.id} className="text-center">
+                              <TableCell key={storefront.name} className="text-center">
                                 <Checkbox
-                                  checked={hasAssociation(platform.id, storefront.id)}
+                                  checked={hasAssociation(platform.name, storefront.name)}
                                   onCheckedChange={(checked) =>
                                     handleAssociationChange(
-                                      platform.id,
-                                      storefront.id,
+                                      platform.name,
+                                      storefront.name,
                                       checked === true
                                     )
                                   }
@@ -930,9 +930,9 @@ export default function AdminPlatformsPage() {
             <div className="space-y-2">
               <Label htmlFor="platform-default-storefront">Default Storefront (Optional)</Label>
               <Select
-                value={platformForm.default_storefront_id}
+                value={platformForm.default_storefront}
                 onValueChange={(v) =>
-                  setPlatformForm((prev) => ({ ...prev, default_storefront_id: v }))
+                  setPlatformForm((prev) => ({ ...prev, default_storefront: v }))
                 }
               >
                 <SelectTrigger>
@@ -943,7 +943,7 @@ export default function AdminPlatformsPage() {
                   {storefronts
                     .filter((s) => s.is_active)
                     .map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
+                      <SelectItem key={s.name} value={s.name}>
                         {s.display_name}
                       </SelectItem>
                     ))}

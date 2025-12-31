@@ -104,8 +104,8 @@ class AuditLogger:
         user_id: str,
         import_id: str,
         original_platform_name: str,
-        resolved_platform_id: Optional[str],
-        resolved_storefront_id: Optional[str],
+        resolved_platform: Optional[str],
+        resolved_storefront: Optional[str],
         success: bool,
         error_message: Optional[str] = None,
         request_ip: Optional[str] = None
@@ -114,12 +114,12 @@ class AuditLogger:
         description = f"User resolved platform '{original_platform_name}'"
         if not success:
             description = f"Failed to resolve platform '{original_platform_name}'"
-        
+
         details = {
             "import_id": import_id,
             "original_platform_name": original_platform_name,
-            "resolved_platform_id": resolved_platform_id,
-            "resolved_storefront_id": resolved_storefront_id
+            "resolved_platform": resolved_platform,
+            "resolved_storefront": resolved_storefront
         }
         
         if error_message:

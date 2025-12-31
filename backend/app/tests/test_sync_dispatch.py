@@ -25,8 +25,8 @@ class TestCreateJobItem:
         game = ExternalGame(
             external_id="12345",
             title="Test Game",
-            platform_id="pc-windows",
-            storefront_id="steam",
+            platform="pc-windows",
+            storefront="steam",
             metadata={"playtime_minutes": 100},
         )
 
@@ -45,8 +45,8 @@ class TestCreateJobItem:
 
         metadata = json.loads(job_item.source_metadata_json)
         assert metadata["external_id"] == "12345"
-        assert metadata["platform_id"] == "pc-windows"
-        assert metadata["storefront_id"] == "steam"
+        assert metadata["platform"] == "pc-windows"
+        assert metadata["storefront"] == "steam"
         assert metadata["metadata"]["playtime_minutes"] == 100
 
     def test_creates_job_item_with_empty_metadata(self):
@@ -58,8 +58,8 @@ class TestCreateJobItem:
         game = ExternalGame(
             external_id="99999",
             title="Another Game",
-            platform_id="pc-windows",
-            storefront_id="gog",
+            platform="pc-windows",
+            storefront="gog",
             metadata={},
         )
 
@@ -87,8 +87,8 @@ class TestCreateJobItem:
         game = ExternalGame(
             external_id="11111",
             title="Game Name",
-            platform_id="pc-windows",
-            storefront_id="steam",
+            platform="pc-windows",
+            storefront="steam",
             metadata={},
         )
 

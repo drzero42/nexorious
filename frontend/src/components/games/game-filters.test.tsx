@@ -47,7 +47,6 @@ vi.mock('lucide-react', () => ({
 
 const mockPlatforms: Platform[] = [
   {
-    id: 'platform-1',
     name: 'pc',
     display_name: 'PC',
     is_active: true,
@@ -56,7 +55,6 @@ const mockPlatforms: Platform[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'platform-2',
     name: 'ps5',
     display_name: 'PlayStation 5',
     is_active: true,
@@ -65,7 +63,6 @@ const mockPlatforms: Platform[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'platform-3',
     name: 'xbox-series-x',
     display_name: 'Xbox Series X',
     is_active: true,
@@ -367,7 +364,7 @@ describe('GameFilters', () => {
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        platformId: 'platform-2',
+        platformId: 'ps5',
       });
     });
 
@@ -422,7 +419,7 @@ describe('GameFilters', () => {
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'Test',
         status: PlayStatus.IN_PROGRESS,
-        platformId: 'platform-1',
+        platformId: 'pc',
       });
     });
   });
@@ -634,7 +631,7 @@ describe('GameFilters', () => {
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'T',
         status: PlayStatus.COMPLETED,
-        platformId: 'platform-1',
+        platformId: 'pc',
       });
     });
 

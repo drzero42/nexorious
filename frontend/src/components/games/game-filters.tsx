@@ -99,7 +99,7 @@ export function GameFilters({
         <SelectContent>
           <SelectItem value="all">All Platforms</SelectItem>
           {platforms?.map((platform) => (
-            <SelectItem key={platform.id} value={platform.id}>
+            <SelectItem key={platform.name} value={platform.name}>
               {platform.display_name}
             </SelectItem>
           ))}

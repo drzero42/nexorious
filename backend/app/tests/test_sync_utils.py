@@ -12,7 +12,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.user_game import UserGame, UserGamePlatform
 from ..models.platform import Platform, Storefront
-from ..services.sync_utils import is_game_synced, is_steam_game_synced, get_platform_id, get_storefront_id
+from ..services.sync_utils import is_game_synced, is_steam_game_synced, get_platform, get_storefront
 
 
 class TestGenericSyncFunction:
@@ -44,8 +44,8 @@ class TestGenericSyncFunction:
         # Create platform association (use name slugs, not UUIDs)
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
@@ -130,8 +130,8 @@ class TestGenericSyncFunction:
 
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
@@ -190,8 +190,8 @@ class TestGenericSyncFunction:
         # Create Steam platform association only (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
@@ -238,8 +238,8 @@ class TestSteamSpecificFunction:
         # Create Steam association (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
@@ -285,8 +285,8 @@ class TestSteamSpecificFunction:
         # Create Epic association (not Steam) - use name slugs
         epic_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=epic_storefront.name
+            platform=pc_platform.name,
+            storefront=epic_storefront.name
         )
         session.add(epic_association)
         session.commit()
@@ -298,8 +298,8 @@ class TestSteamSpecificFunction:
         # Create Steam association (use name slugs)
         steam_association = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(steam_association)
         session.commit()
@@ -312,31 +312,27 @@ class TestSteamSpecificFunction:
 class TestUtilityFunctions:
     """Test utility functions for platform/storefront lookups."""
 
-    def test_get_platform_id(self, session: Session, steam_dependencies):
-        """Test get_platform_id function."""
+    def test_get_platform(self, session: Session, steam_dependencies):
+        """Test get_platform function."""
         pc_platform = steam_dependencies["platform"]
 
-        # Test existing platform
-        platform_id = get_platform_id("pc-windows", session)
-        assert platform_id is not None
-        assert platform_id == pc_platform.id
+        platform_name = get_platform("pc-windows", session)
+        assert platform_name is not None
+        assert platform_name == pc_platform.name
 
-        # Test non-existing platform
-        platform_id = get_platform_id("nonexistent-platform", session)
-        assert platform_id is None
+        platform_name = get_platform("nonexistent-platform", session)
+        assert platform_name is None
 
-    def test_get_storefront_id(self, session: Session, steam_dependencies):
-        """Test get_storefront_id function."""
+    def test_get_storefront(self, session: Session, steam_dependencies):
+        """Test get_storefront function."""
         steam_storefront = steam_dependencies["storefront"]
 
-        # Test existing storefront
-        storefront_id = get_storefront_id("steam", session)
-        assert storefront_id is not None
-        assert storefront_id == steam_storefront.id
+        storefront_name = get_storefront("steam", session)
+        assert storefront_name is not None
+        assert storefront_name == steam_storefront.name
 
-        # Test non-existing storefront
-        storefront_id = get_storefront_id("nonexistent-storefront", session)
-        assert storefront_id is None
+        storefront_name = get_storefront("nonexistent-storefront", session)
+        assert storefront_name is None
 
 
 class TestErrorHandling:
@@ -410,8 +406,8 @@ class TestPerformance:
 
             user_game_platform = UserGamePlatform(
                 user_game_id=user_game.id,
-                platform_id=pc_platform.name,
-                storefront_id=steam_storefront.name
+                platform=pc_platform.name,
+                storefront=steam_storefront.name
             )
             session.add(user_game_platform)
         session.commit()
@@ -463,8 +459,8 @@ class TestPerformance:
 
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(user_game_platform)
         session.commit()
@@ -519,8 +515,8 @@ class TestPerformance:
             if i % 10 == 0:
                 platform_assoc = UserGamePlatform(
                     user_game_id=user_game.id if hasattr(user_game, 'id') else f"temp_{i}",
-                    platform_id=pc_platform.name,
-                    storefront_id=steam_storefront.name
+                    platform=pc_platform.name,
+                    storefront=steam_storefront.name
                 )
                 platform_associations.append((platform_assoc, user_game))
 
@@ -586,8 +582,8 @@ class TestPerformance:
 
         platform_assoc = UserGamePlatform(
             user_game_id=user_game.id,
-            platform_id=pc_platform.name,
-            storefront_id=steam_storefront.name
+            platform=pc_platform.name,
+            storefront=steam_storefront.name
         )
         session.add(platform_assoc)
         session.commit()

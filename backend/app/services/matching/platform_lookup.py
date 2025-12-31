@@ -26,7 +26,7 @@ async def lookup_by_steam_appid(
     """
     Look up a game by Steam AppID in the existing database.
 
-    Checks UserGamePlatform records for this AppID where storefront_id='steam'
+    Checks UserGamePlatform records for this AppID where storefront='steam'
     and store_game_id matches the Steam AppID. First checks user-specific
     matches, then any user's matches.
 
@@ -63,14 +63,14 @@ def _lookup_user_platform_game(
     # Convert Steam AppID to string for comparison with store_game_id
     steam_appid_str = str(steam_appid)
 
-    # Query UserGamePlatform where storefront_id='steam' and store_game_id matches
+    # Query UserGamePlatform where storefront='steam' and store_game_id matches
     # Join with UserGame to get the game_id (IGDB ID)
     stmt = (
         select(UserGamePlatform, UserGame, Game)
         .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
         .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
-            UserGamePlatform.storefront_id == "steam",
+            UserGamePlatform.storefront == "steam",
             UserGamePlatform.store_game_id == steam_appid_str,
             UserGame.user_id == user_id,
         )
@@ -102,14 +102,14 @@ def _lookup_any_user_platform_game(
     # Convert Steam AppID to string for comparison with store_game_id
     steam_appid_str = str(steam_appid)
 
-    # Query UserGamePlatform where storefront_id='steam' and store_game_id matches
+    # Query UserGamePlatform where storefront='steam' and store_game_id matches
     # Join with UserGame to get the game_id (IGDB ID)
     stmt = (
         select(UserGamePlatform, UserGame, Game)
         .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
         .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
-            UserGamePlatform.storefront_id == "steam",
+            UserGamePlatform.storefront == "steam",
             UserGamePlatform.store_game_id == steam_appid_str,
         )
     )

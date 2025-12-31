@@ -34,8 +34,8 @@ class PlayStatus(str, Enum):
 
 class UserGamePlatformCreateRequest(BaseModel):
     """Request schema for adding platform association to user game."""
-    platform_id: str = Field(..., description="Platform ID")
-    storefront_id: Optional[str] = Field(None, description="Storefront ID")
+    platform: str = Field(..., description="Platform slug")
+    storefront: Optional[str] = Field(None, description="Storefront slug")
     store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
     store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
     is_available: bool = Field(default=True, description="Whether the game is available on this platform")
@@ -75,10 +75,10 @@ class ProgressUpdateRequest(BaseModel):
 class UserGamePlatformResponse(BaseModel, TimestampMixin):
     """Response schema for user game platform association."""
     id: str
-    platform_id: Optional[str]
-    storefront_id: Optional[str]
-    platform: Optional[PlatformResponse]
-    storefront: Optional[StorefrontResponse]
+    platform: Optional[str]
+    storefront: Optional[str]
+    platform_details: Optional[PlatformResponse] = Field(default=None, validation_alias="platform_rel")
+    storefront_details: Optional[StorefrontResponse] = Field(default=None, validation_alias="storefront_rel")
     store_game_id: Optional[str]
     store_url: Optional[str]
     is_available: bool
@@ -108,8 +108,8 @@ class UserGameListRequest(BaseModel):
     play_status: Optional[PlayStatus] = Field(None, description="Filter by play status")
     ownership_status: Optional[OwnershipStatus] = Field(None, description="Filter by ownership status")
     is_loved: Optional[bool] = Field(None, description="Filter by loved status")
-    platform_id: Optional[str] = Field(None, description="Filter by platform")
-    storefront_id: Optional[str] = Field(None, description="Filter by storefront")
+    platform: Optional[str] = Field(None, description="Filter by platform slug")
+    storefront: Optional[str] = Field(None, description="Filter by storefront slug")
     rating_min: Optional[float] = Field(None, ge=1, le=5, description="Minimum rating filter")
     rating_max: Optional[float] = Field(None, ge=1, le=5, description="Maximum rating filter")
     has_notes: Optional[bool] = Field(None, description="Filter by presence of notes")

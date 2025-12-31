@@ -15,7 +15,7 @@ class PlatformCreateRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100, description="Display name for platform")
     icon_url: Optional[str] = Field(None, description="Platform icon URL (full URL or relative path starting with /static/)")
     is_active: Optional[bool] = Field(True, description="Whether platform is active")
-    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
+    default_storefront: Optional[str] = Field(None, description="Default storefront slug for this platform")
     
     @field_validator('icon_url')
     @classmethod
@@ -46,7 +46,7 @@ class PlatformUpdateRequest(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100, description="Display name for platform")
     icon_url: Optional[str] = Field(None, description="Platform icon URL (full URL or relative path starting with /static/)")
     is_active: Optional[bool] = Field(None, description="Whether platform is active")
-    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
+    default_storefront: Optional[str] = Field(None, description="Default storefront slug for this platform")
     
     @field_validator('icon_url')
     @classmethod
@@ -74,14 +74,13 @@ class PlatformUpdateRequest(BaseModel):
 
 class PlatformResponse(BaseModel, TimestampMixin):
     """Response schema for platform data."""
-    id: str
     name: str
     display_name: str
     icon_url: Optional[str]
     is_active: bool
     source: str = Field(description="Source of the platform: 'official' or 'custom'")
     version_added: Optional[str] = Field(None, description="Version when this official platform was added")
-    default_storefront_id: Optional[str] = Field(None, description="Default storefront ID for this platform")
+    default_storefront: Optional[str] = Field(None, description="Default storefront slug for this platform")
     storefronts: List['StorefrontResponse'] = Field(default_factory=list, description="Associated storefronts for this platform")
 
     model_config = ConfigDict(from_attributes=True)
@@ -152,7 +151,6 @@ class StorefrontUpdateRequest(BaseModel):
 
 class StorefrontResponse(BaseModel, TimestampMixin):
     """Response schema for storefront data."""
-    id: str
     name: str
     display_name: str
     icon_url: Optional[str]
@@ -184,16 +182,14 @@ class StorefrontListResponse(BaseModel):
 
 class PlatformUsageStats(BaseModel):
     """Usage statistics for a platform."""
-    platform_id: str
-    platform_name: str
+    platform: str
     platform_display_name: str
     usage_count: int = Field(description="Number of users using this platform")
 
 
 class StorefrontUsageStats(BaseModel):
     """Usage statistics for a storefront."""
-    storefront_id: str
-    storefront_name: str
+    storefront: str
     storefront_display_name: str
     usage_count: int = Field(description="Number of users using this storefront")
 
@@ -223,8 +219,7 @@ class SeedDataResponse(BaseModel):
 
 class PlatformDefaultMapping(BaseModel):
     """Response schema for platform default storefront mapping."""
-    platform_id: str
-    platform_name: str
+    platform: str
     platform_display_name: str
     default_storefront: Optional['StorefrontResponse'] = Field(None, description="Default storefront for this platform")
 
@@ -233,13 +228,12 @@ class PlatformDefaultMapping(BaseModel):
 
 class UpdatePlatformDefaultRequest(BaseModel):
     """Request schema for updating platform default storefront."""
-    storefront_id: Optional[str] = Field(None, description="Storefront ID to set as default, or null to remove default")
+    storefront: Optional[str] = Field(None, description="Storefront slug to set as default, or null to remove default")
 
 
 class PlatformStorefrontsResponse(BaseModel):
     """Response schema for platform storefronts list."""
-    platform_id: str
-    platform_name: str
+    platform: str
     platform_display_name: str
     storefronts: List[StorefrontResponse]
     total_storefronts: int = Field(description="Total number of associated storefronts")
@@ -249,11 +243,9 @@ class PlatformStorefrontsResponse(BaseModel):
 
 class PlatformStorefrontAssociationResponse(BaseModel):
     """Response schema for platform-storefront association operations."""
-    platform_id: str
-    platform_name: str
+    platform: str
     platform_display_name: str
-    storefront_id: str
-    storefront_name: str
+    storefront: str
     storefront_display_name: str
     message: str = Field(description="Operation result message")
 
@@ -264,8 +256,7 @@ class PlatformStorefrontAssociationResponse(BaseModel):
 
 class PlatformSuggestion(BaseModel):
     """A suggested platform match for an unknown platform name."""
-    platform_id: str = Field(description="ID of the suggested platform")
-    platform_name: str = Field(description="Name of the suggested platform")
+    platform: str = Field(description="Slug of the suggested platform")
     platform_display_name: str = Field(description="Display name of the suggested platform")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score (0.0 to 1.0)")
     match_type: Literal["exact", "fuzzy", "partial"] = Field(description="Type of match")
@@ -274,8 +265,7 @@ class PlatformSuggestion(BaseModel):
 
 class StorefrontSuggestion(BaseModel):
     """A suggested storefront match for an unknown storefront name."""
-    storefront_id: str = Field(description="ID of the suggested storefront")
-    storefront_name: str = Field(description="Name of the suggested storefront")
+    storefront: str = Field(description="Slug of the suggested storefront")
     storefront_display_name: str = Field(description="Display name of the suggested storefront")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score (0.0 to 1.0)")
     match_type: Literal["exact", "fuzzy", "partial"] = Field(description="Type of match")
@@ -288,8 +278,8 @@ class PlatformResolutionData(BaseModel):
     original_name: str = Field(description="Original platform name from CSV")
     suggestions: List[PlatformSuggestion] = Field(default_factory=list, description="Platform suggestions")
     storefront_suggestions: List[StorefrontSuggestion] = Field(default_factory=list, description="Storefront suggestions")
-    resolved_platform_id: Optional[str] = Field(None, description="ID of resolved platform")
-    resolved_storefront_id: Optional[str] = Field(None, description="ID of resolved storefront")
+    resolved_platform: Optional[str] = Field(None, description="Slug of resolved platform")
+    resolved_storefront: Optional[str] = Field(None, description="Slug of resolved storefront")
     resolution_timestamp: Optional[datetime] = Field(None, description="When resolution was completed")
     resolution_method: Optional[Literal["auto", "manual", "admin_created"]] = Field(None, description="How resolution was completed")
     user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
@@ -300,7 +290,7 @@ class StorefrontResolutionData(BaseModel):
     status: Literal["pending", "suggested", "resolved", "failed"] = Field(description="Resolution status")
     original_name: str = Field(description="Original storefront name from CSV")
     suggestions: List[StorefrontSuggestion] = Field(default_factory=list, description="Storefront suggestions")
-    resolved_storefront_id: Optional[str] = Field(None, description="ID of resolved storefront")
+    resolved_storefront: Optional[str] = Field(None, description="Slug of resolved storefront")
     resolution_timestamp: Optional[datetime] = Field(None, description="When resolution was completed")
     resolution_method: Optional[Literal["auto", "manual", "admin_created"]] = Field(None, description="How resolution was completed")
     user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
@@ -342,8 +332,8 @@ class PlatformSuggestionsResponse(BaseModel):
 class PlatformResolutionRequest(BaseModel):
     """Request schema for resolving a platform."""
     import_id: str = Field(description="DarkadiaImport record ID to resolve")
-    resolved_platform_id: Optional[str] = Field(None, description="ID of platform to resolve to")
-    resolved_storefront_id: Optional[str] = Field(None, description="ID of storefront to resolve to")
+    resolved_platform: Optional[str] = Field(None, description="Slug of platform to resolve to")
+    resolved_storefront: Optional[str] = Field(None, description="Slug of storefront to resolve to")
     user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
 
 
@@ -384,7 +374,7 @@ class PendingResolutionsListResponse(BaseModel):
 class StorefrontSuggestionsRequest(BaseModel):
     """Request schema for getting platform-contextual storefront suggestions."""
     unknown_storefront_name: str = Field(..., min_length=1, max_length=200, description="Unknown storefront name to find suggestions for")
-    platform_id: Optional[str] = Field(None, description="Platform context for suggestions")
+    platform: Optional[str] = Field(None, description="Platform context for suggestions")
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0, description="Minimum confidence threshold for suggestions")
     max_suggestions: int = Field(default=5, ge=1, le=20, description="Maximum number of suggestions to return")
 
@@ -392,8 +382,7 @@ class StorefrontSuggestionsRequest(BaseModel):
 class StorefrontSuggestionsResponse(BaseModel):
     """Response schema for platform-contextual storefront suggestions."""
     unknown_storefront_name: str = Field(description="Original unknown storefront name")
-    platform_id: Optional[str] = Field(None, description="Platform context used for suggestions")
-    platform_name: Optional[str] = Field(None, description="Platform name for context")
+    platform: Optional[str] = Field(None, description="Platform context used for suggestions")
     storefront_suggestions: List[StorefrontSuggestion] = Field(description="Storefront suggestions")
     total_suggestions: int = Field(description="Total number of suggestions")
     is_platform_contextual: bool = Field(description="Whether suggestions are filtered by platform compatibility")
@@ -417,7 +406,7 @@ class PendingStorefrontResolution(BaseModel):
 class StorefrontResolutionRequest(BaseModel):
     """Request schema for resolving a storefront."""
     import_id: str = Field(description="DarkadiaImport record ID to resolve")
-    resolved_storefront_id: str = Field(description="ID of storefront to resolve to")
+    resolved_storefront: str = Field(description="Slug of storefront to resolve to")
     user_notes: Optional[str] = Field(None, max_length=500, description="User notes about the resolution")
 
 
@@ -454,15 +443,15 @@ class PendingStorefrontsListResponse(BaseModel):
 
 class StorefrontCompatibilityRequest(BaseModel):
     """Request schema for checking platform-storefront compatibility."""
-    platform_id: str = Field(description="ID of the platform")
-    storefront_id: str = Field(description="ID of the storefront")
+    platform: str = Field(description="Slug of the platform")
+    storefront: str = Field(description="Slug of the storefront")
 
 
 class StorefrontCompatibilityResponse(BaseModel):
     """Response schema for platform-storefront compatibility check."""
-    platform_id: str = Field(description="ID of the platform")
-    platform_name: str = Field(description="Name of the platform")
-    storefront_id: str = Field(description="ID of the storefront")
-    storefront_name: str = Field(description="Name of the storefront")
+    platform: str = Field(description="Slug of the platform")
+    platform_display_name: str = Field(description="Display name of the platform")
+    storefront: str = Field(description="Slug of the storefront")
+    storefront_display_name: str = Field(description="Display name of the storefront")
     is_compatible: bool = Field(description="Whether the platform-storefront combination is valid")
     message: str = Field(description="Explanation of compatibility status")

@@ -108,7 +108,7 @@ class TestLogoEndpoints:
     
     def test_upload_platform_logo_success(self, client: TestClient, test_platform: Platform, admin_headers):
         """Test successful platform logo upload."""
-        platform_id = test_platform.id
+        platform_id = test_platform.name
         
         files = {"file": self.create_test_svg_file()}
         params = {"theme": "light"}
@@ -129,7 +129,7 @@ class TestLogoEndpoints:
     
     def test_upload_storefront_logo_success(self, client: TestClient, test_storefront: Storefront, admin_headers):
         """Test successful storefront logo upload."""
-        storefront_id = test_storefront.id
+        storefront_id = test_storefront.name
         
         files = {"file": self.create_test_svg_file()}
         params = {"theme": "light"}
@@ -150,7 +150,7 @@ class TestLogoEndpoints:
     
     def test_upload_logo_invalid_theme(self, client: TestClient, test_platform: Platform, admin_headers):
         """Test logo upload with invalid theme."""
-        platform_id = test_platform.id
+        platform_id = test_platform.name
         
         files = {"file": self.create_test_svg_file()}
         params = {"theme": "invalid"}
@@ -184,7 +184,7 @@ class TestLogoEndpoints:
     
     def test_list_platform_logos(self, client: TestClient, test_platform: Platform, admin_headers):
         """Test listing platform logos."""
-        platform_id = test_platform.id
+        platform_id = test_platform.name
         
         # First upload a logo
         files = {"file": self.create_test_svg_file()}
@@ -213,7 +213,7 @@ class TestLogoEndpoints:
     
     def test_delete_platform_logo(self, client: TestClient, test_platform: Platform, admin_headers):
         """Test deleting platform logo."""
-        platform_id = test_platform.id
+        platform_id = test_platform.name
         
         # First upload a logo
         files = {"file": self.create_test_svg_file()}
@@ -241,7 +241,7 @@ class TestLogoEndpoints:
     
     def test_logo_endpoints_require_admin(self, client: TestClient, test_platform: Platform):
         """Test that logo endpoints require admin privileges."""
-        platform_id = test_platform.id
+        platform_id = test_platform.name
         
         # Try without authentication
         files = {"file": self.create_test_svg_file()}

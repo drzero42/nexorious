@@ -244,8 +244,8 @@ export default function GameDetailPage() {
                   <div className="flex flex-wrap gap-2">
                     {game.platforms.map((p) => (
                       <Badge key={p.id} variant="outline">
-                        {p.platform?.display_name || 'Unknown'}
-                        {p.storefront && ` (${p.storefront.display_name})`}
+                        {p.platform_details?.display_name || p.platform || 'Unknown'}
+                        {p.storefront_details && ` (${p.storefront_details.display_name})`}
                       </Badge>
                     ))}
                   </div>

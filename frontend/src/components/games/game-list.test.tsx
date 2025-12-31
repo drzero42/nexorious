@@ -46,10 +46,9 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   platforms: [
     {
       id: 'ugp-1',
-      platform_id: 'platform-1',
-      storefront_id: 'storefront-1',
-      platform: {
-        id: 'platform-1',
+      platform: 'pc',
+      storefront: 'steam',
+      platform_details: {
         name: 'pc',
         display_name: 'PC',
         is_active: true,
@@ -57,8 +56,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
-      storefront: {
-        id: 'storefront-1',
+      storefront_details: {
         name: 'steam',
         display_name: 'Steam',
         is_active: true,
@@ -348,8 +346,8 @@ describe('GameList', () => {
           platforms: [
             {
               id: 'ugp-1',
-              platform: {
-                id: 'platform-1',
+              platform: 'pc',
+              platform_details: {
                 name: 'pc',
                 display_name: 'PC',
                 is_active: true,
@@ -362,8 +360,8 @@ describe('GameList', () => {
             },
             {
               id: 'ugp-2',
-              platform: {
-                id: 'platform-2',
+              platform: 'ps5',
+              platform_details: {
                 name: 'ps5',
                 display_name: 'PlayStation 5',
                 is_active: true,
@@ -382,14 +380,14 @@ describe('GameList', () => {
       expect(screen.getByText('PC, PlayStation 5')).toBeInTheDocument();
     });
 
-    it('uses platform name when display_name is not available', () => {
+    it('uses platform slug when display_name is not available', () => {
       const games = [
         createMockGame({
           platforms: [
             {
               id: 'ugp-1',
-              platform: {
-                id: 'platform-1',
+              platform: 'xbox',
+              platform_details: {
                 name: 'xbox',
                 display_name: undefined as unknown as string,
                 is_active: true,
@@ -418,14 +416,14 @@ describe('GameList', () => {
       expect(platformCell).toBeInTheDocument();
     });
 
-    it('filters out platforms with no name or display_name', () => {
+    it('filters out platforms with no platform_details', () => {
       const games = [
         createMockGame({
           platforms: [
             {
               id: 'ugp-1',
-              platform: {
-                id: 'platform-1',
+              platform: 'pc',
+              platform_details: {
                 name: 'pc',
                 display_name: 'PC',
                 is_active: true,
@@ -439,6 +437,7 @@ describe('GameList', () => {
             {
               id: 'ugp-2',
               platform: undefined,
+              platform_details: undefined,
               is_available: true,
               created_at: '2024-01-01T00:00:00Z',
             },
@@ -837,8 +836,8 @@ describe('GameList', () => {
           platforms: [
             {
               id: 'ugp-1',
-              platform: {
-                id: 'platform-1',
+              platform: 'pc',
+              platform_details: {
                 name: 'pc',
                 display_name: 'PC',
                 is_active: true,

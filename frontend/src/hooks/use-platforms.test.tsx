@@ -153,7 +153,7 @@ describe('use-platforms hooks', () => {
 
       expect(result.current.data?.platforms).toHaveLength(2);
       expect(result.current.data?.total).toBe(2);
-      expect(result.current.data?.platforms[0].id).toBe('platform-1');
+      expect(result.current.data?.platforms[0].name).toBe('pc');
       expect(result.current.data?.platforms[0].name).toBe('pc');
     });
 
@@ -226,7 +226,7 @@ describe('use-platforms hooks', () => {
       });
 
       expect(result.current.data).toHaveLength(2);
-      expect(result.current.data?.[0].id).toBe('platform-1');
+      expect(result.current.data?.[0].name).toBe('pc');
     });
 
     it('passes optional parameters', async () => {
@@ -271,7 +271,7 @@ describe('use-platforms hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.id).toBe('platform-1');
+      expect(result.current.data?.name).toBe('pc');
       expect(result.current.data?.name).toBe('pc');
       expect(result.current.data?.storefronts).toHaveLength(1);
     });
@@ -321,7 +321,7 @@ describe('use-platforms hooks', () => {
       });
 
       expect(result.current.data).toHaveLength(2);
-      expect(result.current.data?.[0].id).toBe('storefront-1');
+      expect(result.current.data?.[0].name).toBe('steam');
     });
 
     it('does not fetch when platformId is undefined', async () => {
@@ -466,7 +466,7 @@ describe('use-platforms hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.id).toBe('storefront-2');
+      expect(result.current.data?.name).toBe('epic');
       expect(result.current.data?.name).toBe('epic');
     });
 

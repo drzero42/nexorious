@@ -185,7 +185,7 @@ export function GameList({
                   <span className="text-sm text-muted-foreground truncate block max-w-32">
                     {game.platforms && game.platforms.length > 0
                       ? game.platforms
-                          .map((p) => p.platform?.display_name ?? p.platform?.name)
+                          .map((p) => p.platform_details?.display_name ?? p.platform)
                           .filter(Boolean)
                           .join(', ')
                       : '-'}

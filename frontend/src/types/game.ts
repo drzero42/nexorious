@@ -107,10 +107,10 @@ export interface Game {
 
 export interface UserGamePlatform {
   id: string;
-  platform_id?: string;
-  storefront_id?: string;
-  platform?: Platform;
-  storefront?: Storefront;
+  platform?: string;
+  storefront?: string;
+  platform_details?: Platform;
+  storefront_details?: Storefront;
   store_game_id?: string;
   store_url?: string;
   is_available: boolean;
@@ -149,7 +149,7 @@ export interface UserGameFilters {
   q?: string;
   play_status?: PlayStatus;
   ownership_status?: OwnershipStatus;
-  platform_id?: string;
+  platform?: string;
   tag_id?: string;
   is_loved?: boolean;
   sort_by?: string;
@@ -184,8 +184,8 @@ export interface UserGameCreateRequest {
   ownership_status?: OwnershipStatus;
   play_status?: PlayStatus;
   platforms?: Array<{
-    platform_id: string;
-    storefront_id?: string;
+    platform: string;
+    storefront?: string;
   }>;
 }
 

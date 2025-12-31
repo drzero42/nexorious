@@ -2,7 +2,6 @@
 Seeding functions for platforms and storefronts with conflict resolution.
 """
 
-import uuid
 from datetime import datetime, timezone
 from typing import List, Dict
 from sqlmodel import Session, select
@@ -36,19 +35,18 @@ def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool 
             select(Platform).where(Platform.name == platform_data["name"])
         ).first()
         
-        # Look up default storefront ID if specified and defaults should be set
-        default_storefront_id = None
+        default_storefront_name = None
         if set_defaults and platform_data.get("default_storefront_name"):
-            default_storefront = session.exec(
+            storefront = session.exec(
                 select(Storefront).where(Storefront.name == platform_data["default_storefront_name"])
             ).first()
-            
-            if default_storefront:
-                default_storefront_id = default_storefront.id
+
+            if storefront:
+                default_storefront_name = storefront.name
                 logger.debug(f"Found default storefront '{platform_data['default_storefront_name']}' for platform '{platform_data['name']}'")
             else:
                 logger.warning(f"Default storefront '{platform_data['default_storefront_name']}' not found for platform '{platform_data['name']}'")
-        
+
         if existing_platform:
             # Only update if it's an official platform; preserve custom platforms
             if existing_platform.source == "official":
@@ -60,11 +58,11 @@ def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool 
                 if existing_platform.icon_url != platform_data.get("icon_url"):
                     existing_platform.icon_url = platform_data.get("icon_url")
                     needs_update = True
-                if default_storefront_id and existing_platform.default_storefront_id != default_storefront_id:
-                    existing_platform.default_storefront_id = default_storefront_id
+                if default_storefront_name and existing_platform.default_storefront != default_storefront_name:
+                    existing_platform.default_storefront = default_storefront_name
                     needs_update = True
                     logger.info(f"Updated default storefront for official platform '{platform_data['name']}'")
-                
+
                 if needs_update:
                     logger.info(f"Updating official platform '{platform_data['name']}' with seed data")
                     existing_platform.version_added = version  # Update version only when other changes are made
@@ -76,14 +74,12 @@ def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool 
             else:
                 logger.debug(f"Custom platform '{platform_data['name']}' exists, preserving it and skipping seed data")
         else:
-            # Create new official platform
             logger.info(f"Creating new official platform '{platform_data['name']}'")
             new_platform = Platform(
-                id=str(uuid.uuid4()),
                 name=platform_data["name"],
                 display_name=platform_data["display_name"],
                 icon_url=platform_data.get("icon_url"),
-                default_storefront_id=default_storefront_id,
+                default_storefront=default_storefront_name,
                 is_active=platform_data.get("is_active", True),
                 source="official",
                 version_added=version,
@@ -92,7 +88,7 @@ def seed_platforms(session: Session, version: str = "1.0.0", set_defaults: bool 
             )
             session.add(new_platform)
             seeded_count += 1
-    
+
     session.commit()
     logger.info(f"Seeded {seeded_count} platforms")
     return seeded_count
@@ -143,10 +139,8 @@ def seed_storefronts(session: Session, version: str = "1.0.0") -> int:
             else:
                 logger.debug(f"Custom storefront '{storefront_data['name']}' exists, preserving it and skipping seed data")
         else:
-            # Create new official storefront
             logger.info(f"Creating new official storefront '{storefront_data['name']}'")
             new_storefront = Storefront(
-                id=str(uuid.uuid4()),
                 name=storefront_data["name"],
                 display_name=storefront_data["display_name"],
                 icon_url=storefront_data.get("icon_url"),
@@ -159,7 +153,7 @@ def seed_storefronts(session: Session, version: str = "1.0.0") -> int:
             )
             session.add(new_storefront)
             seeded_count += 1
-    
+
     session.commit()
     logger.info(f"Seeded {seeded_count} storefronts")
     return seeded_count
@@ -201,28 +195,26 @@ def seed_platform_storefront_associations(session: Session) -> int:
             logger.warning(f"Storefront '{storefront_name}' not found for association")
             continue
             
-        # Check if association already exists
         existing_association = session.exec(
             select(PlatformStorefront).where(
-                PlatformStorefront.platform_id == platform.id,
-                PlatformStorefront.storefront_id == storefront.id
+                PlatformStorefront.platform == platform.name,
+                PlatformStorefront.storefront == storefront.name
             )
         ).first()
-        
+
         if existing_association:
             logger.debug(f"Association '{platform_name}' → '{storefront_name}' already exists, skipping")
             continue
-            
-        # Create new association
+
         logger.info(f"Creating platform-storefront association '{platform_name}' → '{storefront_name}'")
         new_association = PlatformStorefront(
-            platform_id=platform.id,
-            storefront_id=storefront.id,
+            platform=platform.name,
+            storefront=storefront.name,
             created_at=datetime.now(timezone.utc)
         )
         session.add(new_association)
         association_count += 1
-    
+
     session.commit()
     logger.info(f"Created {association_count} platform-storefront associations")
     return association_count

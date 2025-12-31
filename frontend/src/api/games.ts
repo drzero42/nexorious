@@ -39,20 +39,18 @@ interface GameApiResponse {
 }
 
 interface PlatformApiResponse {
-  id: string;
   name: string;
   display_name: string;
   icon_url?: string;
   is_active: boolean;
   source: string;
-  default_storefront_id?: string;
+  default_storefront?: string;
   storefronts?: StorefrontApiResponse[];
   created_at: string;
   updated_at: string;
 }
 
 interface StorefrontApiResponse {
-  id: string;
   name: string;
   display_name: string;
   icon_url?: string;
@@ -65,10 +63,10 @@ interface StorefrontApiResponse {
 
 interface UserGamePlatformApiResponse {
   id: string;
-  platform_id?: string;
-  storefront_id?: string;
-  platform?: PlatformApiResponse;
-  storefront?: StorefrontApiResponse;
+  platform?: string;
+  storefront?: string;
+  platform_details?: PlatformApiResponse;
+  storefront_details?: StorefrontApiResponse;
   store_game_id?: string;
   store_url?: string;
   is_available: boolean;
@@ -136,8 +134,8 @@ interface IGDBSearchApiResponse {
 export interface GetUserGamesParams {
   status?: PlayStatus;
   ownershipStatus?: OwnershipStatus;
-  platformId?: string;
-  storefrontId?: string;
+  platform?: string;
+  storefront?: string;
   search?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
@@ -161,8 +159,8 @@ export interface UserGameCreateData {
   personalNotes?: string;
   acquiredDate?: string;
   platforms?: Array<{
-    platformId: string;
-    storefrontId?: string;
+    platform: string;
+    storefront?: string;
     storeGameId?: string;
     storeUrl?: string;
     isAvailable?: boolean;
@@ -180,8 +178,8 @@ export interface UserGameUpdateData {
 }
 
 export interface UserGamePlatformData {
-  platformId: string;
-  storefrontId?: string;
+  platform: string;
+  storefront?: string;
   storeGameId?: string;
   storeUrl?: string;
   isAvailable?: boolean;
@@ -212,13 +210,12 @@ export interface UserGamesListResponse {
 
 function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
   return {
-    id: apiPlatform.id,
     name: apiPlatform.name,
     display_name: apiPlatform.display_name,
     icon_url: apiPlatform.icon_url,
     is_active: apiPlatform.is_active,
     source: apiPlatform.source,
-    default_storefront_id: apiPlatform.default_storefront_id,
+    default_storefront: apiPlatform.default_storefront,
     storefronts: apiPlatform.storefronts?.map(transformStorefront),
     created_at: apiPlatform.created_at,
     updated_at: apiPlatform.updated_at,
@@ -227,7 +224,6 @@ function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
 
 function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
   return {
-    id: apiStorefront.id,
     name: apiStorefront.name,
     display_name: apiStorefront.display_name,
     icon_url: apiStorefront.icon_url,
@@ -244,13 +240,13 @@ function transformUserGamePlatform(
 ): UserGamePlatform {
   return {
     id: apiPlatform.id,
-    platform_id: apiPlatform.platform_id,
-    storefront_id: apiPlatform.storefront_id,
-    platform: apiPlatform.platform
-      ? transformPlatform(apiPlatform.platform)
+    platform: apiPlatform.platform,
+    storefront: apiPlatform.storefront,
+    platform_details: apiPlatform.platform_details
+      ? transformPlatform(apiPlatform.platform_details)
       : undefined,
-    storefront: apiPlatform.storefront
-      ? transformStorefront(apiPlatform.storefront)
+    storefront_details: apiPlatform.storefront_details
+      ? transformStorefront(apiPlatform.storefront_details)
       : undefined,
     store_game_id: apiPlatform.store_game_id,
     store_url: apiPlatform.store_url,
@@ -344,8 +340,8 @@ function buildUserGamesQueryParams(
   return {
     play_status: params.status,
     ownership_status: params.ownershipStatus,
-    platform_id: params.platformId,
-    storefront_id: params.storefrontId,
+    platform: params.platform,
+    storefront: params.storefront,
     q: params.search,
     sort_by: params.sortBy,
     sort_order: params.sortOrder,
@@ -406,8 +402,8 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
     personal_notes: data.personalNotes,
     acquired_date: data.acquiredDate,
     platforms: data.platforms?.map((p) => ({
-      platform_id: p.platformId,
-      storefront_id: p.storefrontId,
+      platform: p.platform,
+      storefront: p.storefront,
       store_game_id: p.storeGameId,
       store_url: p.storeUrl,
       is_available: p.isAvailable ?? true,
@@ -606,8 +602,8 @@ export async function addPlatformToUserGame(
   data: UserGamePlatformData
 ): Promise<UserGamePlatform> {
   const requestBody = {
-    platform_id: data.platformId,
-    storefront_id: data.storefrontId,
+    platform: data.platform,
+    storefront: data.storefront,
     store_game_id: data.storeGameId,
     store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
@@ -629,8 +625,8 @@ export async function updatePlatformAssociation(
   data: UserGamePlatformData
 ): Promise<UserGamePlatform> {
   const requestBody = {
-    platform_id: data.platformId,
-    storefront_id: data.storefrontId,
+    platform: data.platform,
+    storefront: data.storefront,
     store_game_id: data.storeGameId,
     store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,

@@ -79,25 +79,22 @@ class UserGamePlatform(SQLModel, table=True):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_game_id: str = Field(foreign_key="user_games.id", index=True)
-    platform_id: Optional[str] = Field(default=None, foreign_key="platforms.name", index=True)
-    storefront_id: Optional[str] = Field(default=None, foreign_key="storefronts.name")
+    platform: Optional[str] = Field(default=None, foreign_key="platforms.name", index=True)
+    storefront: Optional[str] = Field(default=None, foreign_key="storefronts.name")
     store_game_id: Optional[str] = Field(default=None, max_length=200)
     store_url: Optional[str] = Field(default=None, max_length=500)
     is_available: bool = Field(default=True)
     original_platform_name: Optional[str] = Field(default=None, max_length=200, description="Original platform name for unresolved platforms")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     # Relationships
     user_game: UserGame = Relationship(back_populates="platforms")
-    platform: Optional["Platform"] = Relationship(back_populates="user_game_platforms")
-    storefront: Optional["Storefront"] = Relationship(back_populates="user_game_platforms")
+    platform_rel: Optional["Platform"] = Relationship(back_populates="user_game_platforms")
+    storefront_rel: Optional["Storefront"] = Relationship(back_populates="user_game_platforms")
     
-    # Unique constraint to support multiple storefronts per platform
-    # Each user_game + platform + storefront combination should be unique
     __table_args__ = (
-        UniqueConstraint("user_game_id", "platform_id", "storefront_id", 
-                        name="uq_user_game_platform_storefront"),
+        UniqueConstraint("user_game_id", "platform", "storefront", name="uq_user_game_platform_storefront"),
         {"extend_existing": True},
     )
 
