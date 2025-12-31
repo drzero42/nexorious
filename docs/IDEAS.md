@@ -83,3 +83,5 @@ https://psnawp.readthedocs.io
 ## Xbox
 https://github.com/OpenXbox/xbox-webapi-python
 
+## Remove unneeded CSV code
+We recently removed support for importing CSV, but we still have mentions of CSV as source for importing in the code. This should be removed.
