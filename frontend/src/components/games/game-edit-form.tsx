@@ -25,6 +25,7 @@ import {
   useUpdateUserGame,
   useAddPlatformToUserGame,
   useRemovePlatformFromUserGame,
+  useUpdatePlatformAssociation,
   useAssignTagsToGame,
   useRemoveTagsFromGame,
   useAllPlatforms,
@@ -77,8 +78,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const [ownershipStatus, setOwnershipStatus] = useState<OwnershipStatus>(game.ownership_status);
   const [personalRating, setPersonalRating] = useState<number | null>(game.personal_rating ?? null);
   const [isLoved, setIsLoved] = useState(game.is_loved);
-  const [hoursPlayed, setHoursPlayed] = useState(game.hours_played);
   const [acquiredDate, setAcquiredDate] = useState(game.acquired_date ?? '');
+  const [platformPlaytimes, setPlatformPlaytimes] = useState<Record<string, number>>(
+    Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played]))
+  );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
     game.tags?.map((t) => t.id) ?? []
@@ -100,6 +103,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const updateGame = useUpdateUserGame();
   const addPlatform = useAddPlatformToUserGame();
   const removePlatform = useRemovePlatformFromUserGame();
+  const updatePlatformAssoc = useUpdatePlatformAssociation();
   const assignTags = useAssignTagsToGame();
   const removeTags = useRemoveTagsFromGame();
   const createOrGetTag = useCreateOrGetTag();
@@ -108,8 +112,15 @@ export function GameEditForm({ game }: GameEditFormProps) {
     updateGame.isPending ||
     addPlatform.isPending ||
     removePlatform.isPending ||
+    updatePlatformAssoc.isPending ||
     assignTags.isPending ||
     removeTags.isPending;
+
+  // Compute total hours from platform playtimes
+  const totalHoursPlayed = useMemo(() => {
+    const platformHours = Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0);
+    return platformHours > 0 ? platformHours : game.hours_played;
+  }, [platformPlaytimes, game.hours_played]);
 
   // Track original values for comparison
   const originalTagIds = useMemo(
@@ -132,7 +143,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
 
   const handleSave = async () => {
     try {
-      // 1. Update basic game properties
+      // 1. Update basic game properties (no longer updating hours_played - it's per platform now)
       await updateGame.mutateAsync({
         id: game.id,
         data: {
@@ -140,7 +151,6 @@ export function GameEditForm({ game }: GameEditFormProps) {
           ownershipStatus,
           personalRating,
           isLoved,
-          hoursPlayed,
           acquiredDate: acquiredDate || undefined,
           personalNotes: personalNotes || undefined,
         },
@@ -177,7 +187,23 @@ export function GameEditForm({ game }: GameEditFormProps) {
         }
       }
 
-      // 3. Handle tag changes
+      // 3. Update platform playtimes
+      for (const [platformId, hours] of Object.entries(platformPlaytimes)) {
+        const originalPlatform = game.platforms.find((p) => p.id === platformId);
+        if (originalPlatform && originalPlatform.hours_played !== hours) {
+          await updatePlatformAssoc.mutateAsync({
+            userGameId: game.id,
+            platformAssociationId: platformId,
+            data: {
+              platform: originalPlatform.platform || '',
+              storefront: originalPlatform.storefront,
+              hours_played: hours,
+            },
+          });
+        }
+      }
+
+      // 4. Handle tag changes
       const tagsToAdd = selectedTagIds.filter((id) => !originalTagIds.includes(id));
       const tagsToRemove = originalTagIds.filter((id) => !selectedTagIds.includes(id));
 
@@ -356,17 +382,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Hours Played */}
+            {/* Hours Played - now per-platform */}
             <div className="space-y-2">
-              <Label htmlFor="hours-played">Hours Played</Label>
-              <Input
-                id="hours-played"
-                type="number"
-                min="0"
-                step="0.5"
-                value={hoursPlayed}
-                onChange={(e) => setHoursPlayed(parseFloat(e.target.value) || 0)}
-              />
+              <Label>Hours Played</Label>
+              <p className="text-sm text-muted-foreground">
+                Playtime is tracked per platform below.
+              </p>
+              <p className="text-lg font-medium">{totalHoursPlayed} hours total</p>
             </div>
 
             {/* Acquired Date */}
@@ -383,21 +405,54 @@ export function GameEditForm({ game }: GameEditFormProps) {
         </CardContent>
       </Card>
 
-      {/* Platforms */}
+      {/* Platforms & Playtime */}
       <Card>
         <CardHeader>
-          <CardTitle>Platforms</CardTitle>
+          <CardTitle>Platforms & Playtime</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {platformsLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
-            <PlatformSelector
-              selectedPlatforms={selectedPlatforms}
-              availablePlatforms={platforms}
-              onChange={setSelectedPlatforms}
-              placeholder="Select platforms..."
-            />
+            <>
+              <PlatformSelector
+                selectedPlatforms={selectedPlatforms}
+                availablePlatforms={platforms}
+                onChange={setSelectedPlatforms}
+                placeholder="Select platforms..."
+              />
+
+              {/* Playtime per platform */}
+              {game.platforms.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <Label>Playtime by Platform</Label>
+                  {game.platforms.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4">
+                      <span className="min-w-[150px] text-sm">
+                        {p.storefront_details?.display_name ||
+                          p.storefront ||
+                          p.platform_details?.display_name ||
+                          p.platform ||
+                          'Unknown'}
+                      </span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="w-24"
+                        value={platformPlaytimes[p.id] ?? p.hours_played}
+                        onChange={(e) =>
+                          setPlatformPlaytimes((prev) => ({
+                            ...prev,
+                            [p.id]: parseInt(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                      <span className="text-sm text-muted-foreground">hours</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
