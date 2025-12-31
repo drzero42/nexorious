@@ -830,10 +830,8 @@ def generate_nexorious_json(
 
             platforms.append(
                 {
-                    "platform_id": None,  # Will be resolved on import
-                    "platform_name": platform_name,
-                    "storefront_id": None,  # Will be resolved on import
-                    "storefront_name": storefront_name,
+                    "platform": platform_name,
+                    "storefront": storefront_name,
                     "store_game_id": None,
                     "store_url": None,
                     "is_available": True,
