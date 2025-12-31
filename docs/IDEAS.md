@@ -32,11 +32,6 @@ In the new frontend we don't have a button to load seed data.
 We don't have dependent relationships in Kubernetes, so our software must handle when something is unavailable.
 Both API backend and workers/scheduler must gracefully handle when database and/or NATS is unavailable.
 
-## Menu refactoring
-Sync and Tags should be part of the root menu again.
-We don't need the Setting section - it only has profile under it, which is also available when clicking the username at the bottom.
-Import/export should be moved under the username at the bottom - same place as Profile.
-
 ## Experiment with slumber
 https://github.com/LucasPickering/slumber
 Might be better than claude failing to use curl
