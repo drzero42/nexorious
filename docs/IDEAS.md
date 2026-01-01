@@ -56,9 +56,6 @@ We recently removed support for importing CSV, but we still have mentions of CSV
 ## Keep previous platforms/storefronts association and data
 When a game is removed from from a platform/storefront (best example is a PS Plus Extra game) we might have playtime recorded, so instead of deleting the association, it should change status to something like No Longer Owned.
 
-## Allow restore during initial setup
-On the initial setup screen, instead of creating an admin user, it should be possible to restore the DB to a backup file that can be uploaded.
-
 ## Notifications
 Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
@@ -67,7 +64,7 @@ Notifications should be configurable so the user can choose what to receive noti
 We should be able to do better auto-matching. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
 
 ## Unknown platforms for sync
-Games sync'ed from Steam and Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
+Games sync'ed from Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
 
 ## Sync completed games should have links
 In the progress box for a sync job there is an expandable section that shows completed games. These games should have links to the game details page for them.
