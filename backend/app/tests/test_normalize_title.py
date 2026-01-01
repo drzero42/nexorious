@@ -66,3 +66,38 @@ class TestNormalizeTitle:
 
     def test_year_in_middle(self):
         assert normalize_title("NBA 2K (2023) Edition") == "nba 2k edition"
+
+
+class TestFuzzyMatchIntegration:
+    """Test that normalization improves fuzzy matching."""
+
+    def test_witcher_goty_matches_with_normalization(self):
+        """Steam's GOTY should match IGDB's Game of the Year."""
+        from app.utils.fuzzy_match import calculate_fuzzy_confidence
+
+        steam_title = "The Witcher® 3: Wild Hunt - GOTY Edition"
+        igdb_title = "The Witcher 3: Wild Hunt Game of the Year Edition"
+
+        confidence = calculate_fuzzy_confidence(steam_title, igdb_title)
+        # Should be high enough for auto-match (>= 0.85)
+        assert confidence >= 0.85, f"Expected >= 0.85, got {confidence}"
+
+    def test_resident_evil_year_suffix_matches(self):
+        """Year suffix should not prevent matching."""
+        from app.utils.fuzzy_match import calculate_fuzzy_confidence
+
+        steam_title = "Resident Evil 4 (2023)"
+        igdb_title = "Resident Evil 4"
+
+        confidence = calculate_fuzzy_confidence(steam_title, igdb_title)
+        assert confidence >= 0.85, f"Expected >= 0.85, got {confidence}"
+
+    def test_assassins_creed_apostrophe_matches(self):
+        """Different apostrophe styles should match."""
+        from app.utils.fuzzy_match import calculate_fuzzy_confidence
+
+        steam_title = "Assassin's Creed"
+        igdb_title = "Assassin's Creed"
+
+        confidence = calculate_fuzzy_confidence(steam_title, igdb_title)
+        assert confidence >= 0.85, f"Expected >= 0.85, got {confidence}"

@@ -18,15 +18,17 @@ def calculate_fuzzy_confidence(query: str, title: str) -> float:
     Returns:
         Float confidence score between 0.0 and 1.0
     """
-    query_lower = query.lower().strip()
-    title_lower = title.lower().strip()
-    
+    from app.utils.normalize_title import normalize_title
+
+    query_normalized = normalize_title(query)
+    title_normalized = normalize_title(title)
+
     # Different matching strategies
-    exact_score = 1.0 if query_lower == title_lower else 0.0
-    ratio_score = fuzz.ratio(query_lower, title_lower) / 100.0
-    partial_score = fuzz.partial_ratio(query_lower, title_lower) / 100.0
-    token_sort_score = fuzz.token_sort_ratio(query_lower, title_lower) / 100.0
-    token_set_score = fuzz.token_set_ratio(query_lower, title_lower) / 100.0
+    exact_score = 1.0 if query_normalized == title_normalized else 0.0
+    ratio_score = fuzz.ratio(query_normalized, title_normalized) / 100.0
+    partial_score = fuzz.partial_ratio(query_normalized, title_normalized) / 100.0
+    token_sort_score = fuzz.token_sort_ratio(query_normalized, title_normalized) / 100.0
+    token_set_score = fuzz.token_set_ratio(query_normalized, title_normalized) / 100.0
     
     # Calculate weighted final score - take the maximum of all weighted algorithms
     final_score = max(
