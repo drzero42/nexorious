@@ -54,7 +54,7 @@ class EpicSyncAdapter:
                 external_id=game.app_name,
                 title=game.title,
                 platform="pc-windows",
-                storefront="epic",
+                storefront="epic-games-store",
                 metadata={
                     "app_name": game.app_name,
                 },

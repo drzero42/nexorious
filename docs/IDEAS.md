@@ -41,15 +41,6 @@ We should store at least some information about this. Maybe just a percentage of
 Refactor to use https://github.com/ValvePython/steamctl
 This will allow auth with Steam Authenticator and will not require public Steam profile. It makes it easier for the user as it should potentially be just a QR code that can be scanned from the Steam mobile app to gain access.
 
-## Epic Games Store Authentication Improvements
-Currently implemented using legendary-gl Python library. Two key improvements needed:
-
-1. **Database-backed credential storage**: Epic credentials are currently stored per-container in legendary's filesystem config. This prevents the worker container from accessing credentials saved by the API container. Solution: Store legendary's `user.json` credentials in the `user_sync_configs.platform_credentials` database field (already has the field added). This allows both API and worker containers to share credentials via the database.
-
-2. **OAuth redirect flow**: Current flow requires users to visit Epic's OAuth URL, log in, and manually copy the authorization code from the final redirect URL. This is cumbersome. Solution: Implement a proper OAuth redirect handler at `/api/auth/epic/callback` that captures the `code` parameter automatically and completes authentication, eliminating the need for manual copy-paste.
-
-Reference: https://github.com/derrod/legendary
-
 ## GOG
 Use https://github.com/Sude-/lgogdownloader as a CLI tool to pull informatiot about the user's library
 
@@ -71,3 +62,9 @@ On the initial setup screen, instead of creating an admin user, it should be pos
 ## Notifications
 Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
+
+## Improve auto-matching
+We should be able to do better auto-matching. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
+
+## Unknown platforms for sync
+Games sync'ed from Steam and Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.

@@ -74,14 +74,13 @@ class EpicService:
 
         # Load credentials from database if session provided
         if session:
-            import asyncio
-            asyncio.run(self._load_credentials_from_db(session))
+            self._load_credentials_from_db(session)
 
     def _get_user_json_path(self) -> str:
         """Get path to legendary's user.json file."""
         return os.path.join(self.config_path, "legendary", "user.json")
 
-    async def _load_credentials_from_db(self, session: Session) -> None:
+    def _load_credentials_from_db(self, session: Session) -> None:
         """Load Epic credentials from database and write to filesystem.
 
         Args:
@@ -90,7 +89,6 @@ class EpicService:
         This method queries the UserSyncConfig table for Epic credentials
         and writes them to the legendary user.json file if found.
         """
-
         logger.debug(f"Loading Epic credentials from database for user {self.user_id}")
 
         # Query for Epic sync config

@@ -49,7 +49,7 @@ class TestEpicSyncAdapter:
         assert games[0].external_id == "CypressGame"
         assert games[0].title == "Cypress Test Game"
         assert games[0].platform == "pc-windows"
-        assert games[0].storefront == "epic"
+        assert games[0].storefront == "epic-games-store"
         assert games[0].metadata["app_name"] == "CypressGame"
         assert games[0].playtime_hours == 0
 
