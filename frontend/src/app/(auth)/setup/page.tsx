@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { Upload, X, Loader2 } from 'lucide-react';
 import * as authApi from '@/api/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +26,10 @@ export default function SetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const usernameInputRef = useRef<HTMLInputElement>(null);
+  const [showRestore, setShowRestore] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check if setup is needed on mount
   useEffect(() => {
@@ -86,6 +91,49 @@ export default function SetupPage() {
     }
   };
 
+  const handleRestore = async () => {
+    if (!restoreFile) return;
+
+    setError(null);
+    setIsRestoring(true);
+
+    try {
+      await authApi.setupRestore(restoreFile);
+      router.push('/login');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore from backup');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.tar.gz')) {
+        setError('Please select a .tar.gz backup file');
+        return;
+      }
+      setRestoreFile(file);
+      setError(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const cancelRestore = () => {
+    setShowRestore(false);
+    setRestoreFile(null);
+    setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   // Show loading state while checking setup status
   if (isCheckingSetup) {
     return (
@@ -105,82 +153,176 @@ export default function SetupPage() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="space-y-1 text-center">
-        <CardTitle className="text-2xl font-bold">Create Admin Account</CardTitle>
+        <CardTitle className="text-2xl font-bold">
+          {showRestore ? 'Restore from Backup' : 'Create Admin Account'}
+        </CardTitle>
         <CardDescription>
-          Set up your administrator account to get started
+          {showRestore
+            ? 'Upload a backup file to restore your data'
+            : 'Set up your administrator account to get started'}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-          <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input
-              ref={usernameInputRef}
-              id="username"
-              type="text"
-              placeholder="Choose a username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-              minLength={3}
-              autoComplete="username"
-              disabled={isSubmitting}
+        {!showRestore ? (
+          <>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  ref={usernameInputRef}
+                  id="username"
+                  type="text"
+                  placeholder="Choose a username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  minLength={3}
+                  autoComplete="username"
+                  disabled={isSubmitting}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Must be at least 3 characters
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter a secure password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  disabled={isSubmitting}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Must be at least 8 characters
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSubmitting || !username || !password || !confirmPassword}
+              >
+                {isSubmitting ? 'Creating Account...' : 'Create Admin Account'}
+              </Button>
+
+              <p className="text-center text-sm text-muted-foreground">
+                This account will have full administrative privileges
+              </p>
+            </form>
+
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => setShowRestore(true)}
+                className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Restore from backup
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".tar.gz"
+              onChange={handleFileSelect}
+              className="hidden"
             />
-            <p className="text-sm text-muted-foreground">
-              Must be at least 3 characters
-            </p>
+
+            {!restoreFile ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 text-center hover:border-muted-foreground/50 transition-colors"
+                disabled={isRestoring}
+              >
+                <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Click to select a backup file
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  .tar.gz files only
+                </p>
+              </button>
+            ) : (
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Upload className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{restoreFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(restoreFile.size)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRestoreFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                    disabled={isRestoring}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={handleRestore}
+              className="w-full"
+              disabled={!restoreFile || isRestoring}
+            >
+              {isRestoring ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Restoring...
+                </>
+              ) : (
+                'Restore'
+              )}
+            </Button>
+
+            <button
+              type="button"
+              onClick={cancelRestore}
+              className="w-full text-sm text-muted-foreground hover:text-foreground hover:underline"
+              disabled={isRestoring}
+            >
+              Cancel
+            </button>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter a secure password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-              disabled={isSubmitting}
-            />
-            <p className="text-sm text-muted-foreground">
-              Must be at least 8 characters
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              placeholder="Confirm your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isSubmitting || !username || !password || !confirmPassword}
-          >
-            {isSubmitting ? 'Creating Account...' : 'Create Admin Account'}
-          </Button>
-
-          <p className="text-center text-sm text-muted-foreground">
-            This account will have full administrative privileges
-          </p>
-        </form>
+        )}
       </CardContent>
     </Card>
   );
