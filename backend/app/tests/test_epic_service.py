@@ -213,6 +213,131 @@ class TestEpicCredentialStorage:
             with pytest.raises(EpicAPIError, match="Failed to store Epic credentials"):
                 await service._load_credentials_from_db(mock_session)
 
+    @patch('app.services.epic.LegendaryCore')
+    def test_save_credentials_to_db_success(self, mock_legendary_core, tmp_path):
+        """Test saving credentials from filesystem to database."""
+        import json
+        from unittest.mock import MagicMock
+        from app.models.user_sync_config import UserSyncConfig
+        from datetime import datetime, timezone
+
+        # Create mock user.json file
+        user_json_dir = tmp_path / "legendary"
+        user_json_dir.mkdir(parents=True)
+        user_json_path = user_json_dir / "user.json"
+
+        credentials = {
+            "access_token": "saved-token",
+            "account_id": "saved-account"
+        }
+        with open(user_json_path, 'w') as f:
+            json.dump(credentials, f)
+
+        # Mock session and existing config
+        mock_session = MagicMock()
+        mock_config = UserSyncConfig(
+            user_id="test-user",
+            platform="epic",
+            platform_credentials=None
+        )
+        mock_session.exec.return_value.first.return_value = mock_config
+
+        with patch.object(EpicService, '__init__', lambda self, user_id, session=None: None):
+            service = EpicService.__new__(EpicService)
+            service.user_id = "test-user"
+            service.config_path = str(tmp_path)
+
+            service._save_credentials_to_db(mock_session)
+
+            # Verify credentials were saved
+            assert mock_config.platform_credentials is not None
+            saved_creds = json.loads(mock_config.platform_credentials)
+            assert saved_creds["access_token"] == "saved-token"
+            assert saved_creds["account_id"] == "saved-account"
+
+            # Verify commit was called
+            mock_session.commit.assert_called_once()
+
+    @patch('app.services.epic.LegendaryCore')
+    def test_save_credentials_to_db_creates_config(self, mock_legendary_core, tmp_path):
+        """Test saving credentials creates UserSyncConfig if none exists."""
+        import json
+        from unittest.mock import MagicMock
+        from app.models.user_sync_config import UserSyncConfig
+
+        # Create mock user.json file
+        user_json_dir = tmp_path / "legendary"
+        user_json_dir.mkdir(parents=True)
+        user_json_path = user_json_dir / "user.json"
+
+        credentials = {"access_token": "new-token"}
+        with open(user_json_path, 'w') as f:
+            json.dump(credentials, f)
+
+        # Mock session with no existing config
+        mock_session = MagicMock()
+        mock_session.exec.return_value.first.return_value = None
+
+        with patch.object(EpicService, '__init__', lambda self, user_id, session=None: None):
+            service = EpicService.__new__(EpicService)
+            service.user_id = "test-user"
+            service.config_path = str(tmp_path)
+
+            service._save_credentials_to_db(mock_session)
+
+            # Verify new config was added
+            mock_session.add.assert_called_once()
+            added_config = mock_session.add.call_args[0][0]
+            assert isinstance(added_config, UserSyncConfig)
+            assert added_config.user_id == "test-user"
+            assert added_config.platform == "epic"
+            assert added_config.platform_credentials is not None
+
+    @patch('app.services.epic.LegendaryCore')
+    def test_save_credentials_to_db_no_file(self, mock_legendary_core, tmp_path):
+        """Test saving credentials when user.json doesn't exist logs warning."""
+        from unittest.mock import MagicMock
+
+        mock_session = MagicMock()
+
+        with patch.object(EpicService, '__init__', lambda self, user_id, session=None: None):
+            service = EpicService.__new__(EpicService)
+            service.user_id = "test-user"
+            service.config_path = str(tmp_path)
+
+            # Should not raise, just log warning
+            service._save_credentials_to_db(mock_session)
+
+            # Verify no database operations occurred
+            mock_session.exec.assert_not_called()
+            mock_session.add.assert_not_called()
+            mock_session.commit.assert_not_called()
+
+    @patch('app.services.epic.LegendaryCore')
+    def test_save_credentials_to_db_malformed_json(self, mock_legendary_core, tmp_path):
+        """Test saving credentials with malformed JSON in user.json raises EpicAPIError."""
+        from unittest.mock import MagicMock
+
+        # Create mock user.json file with invalid JSON
+        user_json_dir = tmp_path / "legendary"
+        user_json_dir.mkdir(parents=True)
+        user_json_path = user_json_dir / "user.json"
+
+        # Write malformed JSON
+        with open(user_json_path, 'w') as f:
+            f.write("{invalid json here")
+
+        mock_session = MagicMock()
+
+        with patch.object(EpicService, '__init__', lambda self, user_id, session=None: None):
+            service = EpicService.__new__(EpicService)
+            service.user_id = "test-user"
+            service.config_path = str(tmp_path)
+
+            # Should raise EpicAPIError due to malformed JSON
+            with pytest.raises(EpicAPIError, match="Failed to read Epic credentials"):
+                service._save_credentials_to_db(mock_session)
+
 
 class TestEpicAuthentication:
     """Test Epic authentication flow."""

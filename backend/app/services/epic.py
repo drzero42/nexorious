@@ -124,6 +124,53 @@ class EpicService:
             logger.error(f"Failed to write Epic credentials for user {self.user_id}: {e}")
             raise EpicAPIError(f"Failed to store Epic credentials: {e}")
 
+    def _save_credentials_to_db(self, session: Session) -> None:
+        """Read credentials from filesystem and save to database.
+
+        Args:
+            session: SQLModel database session
+
+        This method reads the legendary user.json file from the filesystem
+        and persists it to the database for cross-container sharing.
+        """
+        from datetime import datetime, timezone
+
+        user_json_path = self._get_user_json_path()
+
+        # Check if user.json exists
+        if not os.path.exists(user_json_path):
+            logger.warning(f"No user.json found at {user_json_path}")
+            return
+
+        # Read credentials from filesystem
+        try:
+            with open(user_json_path, 'r') as f:
+                credentials = json.load(f)
+        except (OSError, IOError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to read Epic credentials from {user_json_path}: {e}")
+            raise EpicAPIError(f"Failed to read Epic credentials: {e}")
+
+        # Find or create UserSyncConfig
+        stmt = select(UserSyncConfig).where(
+            UserSyncConfig.user_id == self.user_id,
+            UserSyncConfig.platform == "epic"
+        )
+        config = session.exec(stmt).first()
+
+        if not config:
+            config = UserSyncConfig(
+                user_id=self.user_id,
+                platform="epic"
+            )
+            session.add(config)
+
+        # Store credentials as JSON string
+        config.platform_credentials = json.dumps(credentials)
+        config.updated_at = datetime.now(timezone.utc)
+
+        session.commit()
+        logger.info(f"Saved Epic credentials to database for user {self.user_id}")
+
     def get_auth_url(self) -> str:
         """Get Epic authentication URL for user to visit.
 
