@@ -30,6 +30,9 @@ class TestEpicSyncAdapter:
             }
         }
 
+        # Mock session
+        mock_session = MagicMock()
+
         # Mock Epic game response
         mock_epic_game = MagicMock()
         mock_epic_game.app_name = "CypressGame"
@@ -40,7 +43,7 @@ class TestEpicSyncAdapter:
             mock_instance.get_library = AsyncMock(return_value=[mock_epic_game])
             mock_service.return_value = mock_instance
 
-            games = await adapter.fetch_games(user)
+            games = await adapter.fetch_games(user, mock_session)
 
         assert len(games) == 1
         assert games[0].external_id == "CypressGame"
@@ -64,13 +67,16 @@ class TestEpicSyncAdapter:
             }
         }
 
+        # Mock session
+        mock_session = MagicMock()
+
         with patch("app.worker.tasks.sync.adapters.epic.EpicService") as mock_service:
             mock_instance = AsyncMock()
             mock_instance.get_library = AsyncMock(side_effect=EpicAuthExpiredError("Token expired"))
             mock_service.return_value = mock_instance
 
             with pytest.raises(EpicAuthExpiredError, match="Token expired"):
-                await adapter.fetch_games(user)
+                await adapter.fetch_games(user, mock_session)
 
     @pytest.mark.asyncio
     async def test_fetch_games_not_configured(self):
@@ -80,8 +86,11 @@ class TestEpicSyncAdapter:
         user.id = "user123"
         user.preferences = {}
 
+        # Mock session
+        mock_session = MagicMock()
+
         with pytest.raises(ValueError, match="Epic credentials not configured"):
-            await adapter.fetch_games(user)
+            await adapter.fetch_games(user, mock_session)
 
     def test_get_credentials_configured(self):
         """Test get_credentials returns epic config when is_verified=True."""

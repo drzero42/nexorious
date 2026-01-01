@@ -169,8 +169,11 @@ class TestSteamSyncAdapter:
         user = MagicMock()
         user.preferences = {}
 
+        # Mock session
+        mock_session = MagicMock()
+
         with pytest.raises(ValueError, match="Steam credentials not configured"):
-            await adapter.fetch_games(user)
+            await adapter.fetch_games(user, mock_session)
 
     @pytest.mark.asyncio
     async def test_fetch_games_returns_external_games(self):
@@ -186,6 +189,9 @@ class TestSteamSyncAdapter:
             }
         }
 
+        # Mock session
+        mock_session = MagicMock()
+
         # Mock Steam game response
         mock_steam_game = MagicMock()
         mock_steam_game.appid = 12345
@@ -196,7 +202,7 @@ class TestSteamSyncAdapter:
             mock_instance.get_owned_games = AsyncMock(return_value=[mock_steam_game])
             mock_service.return_value = mock_instance
 
-            games = await adapter.fetch_games(user)
+            games = await adapter.fetch_games(user, mock_session)
 
         assert len(games) == 1
         assert games[0].external_id == "12345"
@@ -219,12 +225,15 @@ class TestSteamSyncAdapter:
             }
         }
 
+        # Mock session
+        mock_session = MagicMock()
+
         with patch("app.worker.tasks.sync.adapters.steam.SteamService") as mock_service:
             mock_instance = AsyncMock()
             mock_instance.get_owned_games = AsyncMock(return_value=[])
             mock_service.return_value = mock_instance
 
-            games = await adapter.fetch_games(user)
+            games = await adapter.fetch_games(user, mock_session)
 
         assert games == []
 
@@ -241,6 +250,9 @@ class TestSteamSyncAdapter:
                 "is_verified": True,
             }
         }
+
+        # Mock session
+        mock_session = MagicMock()
 
         # Mock multiple Steam games
         mock_game1 = MagicMock()
@@ -262,7 +274,7 @@ class TestSteamSyncAdapter:
             )
             mock_service.return_value = mock_instance
 
-            games = await adapter.fetch_games(user)
+            games = await adapter.fetch_games(user, mock_session)
 
         assert len(games) == 3
         assert games[0].external_id == "111"
