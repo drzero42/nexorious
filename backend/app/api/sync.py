@@ -596,10 +596,20 @@ async def disconnect_epic(
     logger.info(f"Disconnecting Epic for user {current_user.id}")
 
     try:
-        epic_service = EpicService(current_user.id)
+        epic_service = EpicService(current_user.id, session=session)
         await epic_service.disconnect()
     except EpicAPIError as e:
         logger.warning(f"Error disconnecting Epic service: {e}")
+
+    # Clear credentials from database
+    stmt = select(UserSyncConfig).where(
+        UserSyncConfig.user_id == current_user.id,
+        UserSyncConfig.platform == "epic"
+    )
+    config = session.exec(stmt).first()
+    if config:
+        config.platform_credentials = None
+        config.updated_at = datetime.now(timezone.utc)
 
     # Clear Epic credentials from preferences
     preferences = current_user.preferences or {}
