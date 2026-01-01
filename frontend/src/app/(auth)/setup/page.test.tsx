@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SetupPage from "./page";
 
 // Mock auth API
 const mockCheckSetupStatus = vi.fn();
 const mockCreateInitialAdmin = vi.fn();
+const mockSetupRestore = vi.fn();
 
 vi.mock("@/api/auth", () => ({
   checkSetupStatus: () => mockCheckSetupStatus(),
   createInitialAdmin: (username: string, password: string) =>
     mockCreateInitialAdmin(username, password),
+  setupRestore: (file: File) => mockSetupRestore(file),
 }));
 
 // Mock next/navigation
@@ -732,6 +734,337 @@ describe("SetupPage", () => {
       await waitFor(() => {
         expect(mockReplace).toHaveBeenCalledWith("/login");
       });
+    });
+  });
+
+  describe("restore from backup", () => {
+    beforeEach(() => {
+      mockCheckSetupStatus.mockResolvedValue({ needs_setup: true });
+    });
+
+    it("shows restore link in admin creation form", async () => {
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+    });
+
+    it("shows restore UI when clicking restore link", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      expect(screen.getByText("Restore from Backup")).toBeInTheDocument();
+      expect(screen.getByText(/Upload a backup file to restore your data/i)).toBeInTheDocument();
+      expect(screen.getByText(/click to select a backup file/i)).toBeInTheDocument();
+    });
+
+    it("shows cancel button in restore mode", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      expect(screen.getByText("Cancel")).toBeInTheDocument();
+    });
+
+    it("returns to admin creation when clicking cancel", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+      await user.click(screen.getByText("Cancel"));
+
+      // Title and button both say "Create Admin Account"
+      expect(screen.getAllByText("Create Admin Account")).toHaveLength(2);
+      expect(screen.getByLabelText("Username")).toBeInTheDocument();
+    });
+
+    it("shows file type restriction hint in restore mode", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      expect(screen.getByText(".tar.gz files only")).toBeInTheDocument();
+    });
+
+    it("disables restore button when no file is selected", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const restoreButton = screen.getByRole("button", { name: "Restore" });
+      expect(restoreButton).toBeDisabled();
+    });
+
+    it("shows error when invalid file type is selected", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      // Create a non-.tar.gz file
+      const invalidFile = new File(["test content"], "backup.zip", { type: "application/zip" });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      // Use fireEvent for more reliable file input handling
+      fireEvent.change(fileInput, { target: { files: [invalidFile] } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Please select a .tar.gz backup file")).toBeInTheDocument();
+      });
+    });
+
+    it("displays selected file name and size", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      // Create a valid .tar.gz file
+      const validFile = new File(["test content".repeat(100)], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+
+      expect(screen.getByText("backup.tar.gz")).toBeInTheDocument();
+    });
+
+    it("enables restore button when valid file is selected", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+
+      const restoreButton = screen.getByRole("button", { name: "Restore" });
+      expect(restoreButton).toBeEnabled();
+    });
+
+    it("calls setupRestore with file when clicking restore button", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockResolvedValue({ success: true, message: "Restored successfully" });
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(mockSetupRestore).toHaveBeenCalledWith(validFile);
+      });
+    });
+
+    it("shows restoring state while restore is in progress", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockImplementation(() => new Promise(() => {}));
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      expect(screen.getByText("Restoring...")).toBeInTheDocument();
+    });
+
+    it("navigates to /login on successful restore", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockResolvedValue({ success: true, message: "Restored successfully" });
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(mockPush).toHaveBeenCalledWith("/login");
+      });
+    });
+
+    it("shows error message when restore fails", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockRejectedValue(new Error("Invalid backup file format"));
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Invalid backup file format")).toBeInTheDocument();
+      });
+    });
+
+    it("shows generic error when restore fails with non-Error", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockRejectedValue("Some string error");
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to restore from backup")).toBeInTheDocument();
+      });
+    });
+
+    it("allows removing selected file", async () => {
+      const user = userEvent.setup();
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+
+      // File should be displayed
+      expect(screen.getByText("backup.tar.gz")).toBeInTheDocument();
+
+      // Find and click the X button to remove the file
+      const removeButton = screen.getByRole("button", { name: "" }); // X icon button has no text
+      await user.click(removeButton);
+
+      // File should be removed, showing upload area again
+      expect(screen.queryByText("backup.tar.gz")).not.toBeInTheDocument();
+      expect(screen.getByText(/click to select a backup file/i)).toBeInTheDocument();
+    });
+
+    it("clears error when switching back to admin creation", async () => {
+      const user = userEvent.setup();
+      mockSetupRestore.mockRejectedValue(new Error("Restore failed"));
+
+      render(<SetupPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore from backup")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Restore from backup"));
+
+      const validFile = new File(["test content"], "backup.tar.gz", {
+        type: "application/gzip",
+      });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await user.upload(fileInput, validFile);
+      await user.click(screen.getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Restore failed")).toBeInTheDocument();
+      });
+
+      // Cancel should clear the error
+      await user.click(screen.getByText("Cancel"));
+
+      expect(screen.queryByText("Restore failed")).not.toBeInTheDocument();
     });
   });
 });
