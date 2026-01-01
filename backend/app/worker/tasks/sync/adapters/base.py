@@ -7,6 +7,8 @@ external services (Steam, Epic, GOG, etc.) in a uniform format.
 from dataclasses import dataclass
 from typing import Protocol, Optional, List, Dict, Any
 
+from sqlmodel import Session
+
 from app.models.user import User
 from app.models.job import BackgroundJobSource
 
@@ -40,11 +42,12 @@ class SyncSourceAdapter(Protocol):
 
     source: BackgroundJobSource
 
-    async def fetch_games(self, user: User) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
         """Fetch all games from external source for user.
 
         Args:
             user: The user whose games to fetch
+            session: SQLModel database session
 
         Returns:
             List of ExternalGame objects

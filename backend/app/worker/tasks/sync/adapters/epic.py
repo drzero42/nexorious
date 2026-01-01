@@ -7,6 +7,8 @@ and convert them to the standardized ExternalGame format.
 import logging
 from typing import Optional, List, Dict, Any
 
+from sqlmodel import Session
+
 from app.models.user import User
 from app.models.job import BackgroundJobSource
 from app.services.epic import EpicService
@@ -24,11 +26,12 @@ class EpicSyncAdapter:
 
     source = BackgroundJobSource.EPIC
 
-    async def fetch_games(self, user: User) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
         """Fetch all games from user's Epic library.
 
         Args:
             user: The user whose Epic library to fetch
+            session: SQLModel database session
 
         Returns:
             List of ExternalGame objects
@@ -41,7 +44,7 @@ class EpicSyncAdapter:
         if not credentials:
             raise ValueError("Epic credentials not configured for this user")
 
-        epic_service = EpicService(user_id=user.id)
+        epic_service = EpicService(user_id=user.id, session=session)
         epic_games = await epic_service.get_library()
 
         logger.info(f"Fetched {len(epic_games)} games from Epic for user {user.id}")

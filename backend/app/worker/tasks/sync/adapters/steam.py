@@ -7,6 +7,8 @@ and convert them to the standardized ExternalGame format.
 import logging
 from typing import Optional, List, Dict
 
+from sqlmodel import Session
+
 from app.models.user import User
 from app.models.job import BackgroundJobSource
 from app.services.steam import SteamService
@@ -24,11 +26,12 @@ class SteamSyncAdapter:
 
     source = BackgroundJobSource.STEAM
 
-    async def fetch_games(self, user: User) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
         """Fetch all games from user's Steam library.
 
         Args:
             user: The user whose Steam library to fetch
+            session: SQLModel database session
 
         Returns:
             List of ExternalGame objects

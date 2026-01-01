@@ -78,7 +78,7 @@ async def dispatch_sync_items(
 
             # Get adapter and fetch games
             adapter = get_sync_adapter(source)
-            games = await adapter.fetch_games(user)
+            games = await adapter.fetch_games(user, session)
             stats["total_games"] = len(games)
 
             # Update job total_items
