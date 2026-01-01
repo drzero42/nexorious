@@ -61,7 +61,7 @@ Allow notifications to be sent to some external service like Telegram. A helper 
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
 
 ## Improve auto-matching
-We should be able to do better auto-matching. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
+We should be able to do better auto-matching during sync. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
 
 ## Unknown platforms for sync
 Games sync'ed from Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
