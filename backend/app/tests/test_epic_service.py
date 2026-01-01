@@ -43,6 +43,48 @@ class TestEpicService:
         expected_path = "/var/lib/nexorious/legendary-configs/test-user-123/legendary/user.json"
         assert service._get_user_json_path() == expected_path
 
+    @patch('app.services.epic.LegendaryCore')
+    def test_service_initialization_with_session(self, mock_legendary_core, tmp_path):
+        """Test EpicService loads credentials from database when session provided."""
+        import json
+        from unittest.mock import MagicMock, patch
+        from app.models.user_sync_config import UserSyncConfig
+
+        # Mock session with credentials
+        mock_session = MagicMock()
+        mock_config = UserSyncConfig(
+            user_id="test-user",
+            platform="epic",
+            platform_credentials=json.dumps({"access_token": "db-token"})
+        )
+        mock_session.exec.return_value.first.return_value = mock_config
+
+        # Patch the config path directory to use tmp_path
+        config_base = f"/var/lib/nexorious/legendary-configs/test-user"
+
+        # Mock os.environ and filesystem operations
+        with patch('os.environ', {}), \
+             patch('os.makedirs') as mock_makedirs, \
+             patch('builtins.open', create=True) as mock_open_file, \
+             patch('json.dump') as mock_json_dump:
+
+            # Create service with session
+            service = EpicService("test-user", session=mock_session)
+
+            # Verify session was queried for credentials
+            mock_session.exec.assert_called_once()
+
+            # Verify directory creation was attempted
+            mock_makedirs.assert_called_once()
+
+            # Verify file was opened for writing
+            mock_open_file.assert_called_once()
+
+            # Verify credentials were written as JSON
+            mock_json_dump.assert_called_once()
+            written_creds = mock_json_dump.call_args[0][0]
+            assert written_creds["access_token"] == "db-token"
+
 
 class TestEpicCredentialStorage:
     """Test Epic credential storage and loading from database."""

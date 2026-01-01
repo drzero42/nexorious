@@ -8,7 +8,7 @@ All legendary configs are isolated per user via custom config directories.
 import json
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from legendary.core import LegendaryCore
 from pydantic import BaseModel, Field
@@ -52,9 +52,10 @@ class EpicService:
 
     Args:
         user_id: User's unique identifier for config isolation
+        session: Optional SQLModel session for loading credentials from database
     """
 
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, session: Optional[Session] = None):
         """Initialize Epic service with user-specific config path."""
         self.user_id = user_id
         self.config_path = f"/var/lib/nexorious/legendary-configs/{user_id}"
@@ -70,6 +71,11 @@ class EpicService:
         except Exception as e:
             logger.error(f"Failed to initialize LegendaryCore: {e}")
             raise EpicAPIError(f"Failed to initialize Epic service: {e}")
+
+        # Load credentials from database if session provided
+        if session:
+            import asyncio
+            asyncio.run(self._load_credentials_from_db(session))
 
     def _get_user_json_path(self) -> str:
         """Get path to legendary's user.json file."""
