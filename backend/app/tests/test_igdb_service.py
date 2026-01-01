@@ -704,14 +704,21 @@ class TestKeywordExpansion:
         service = create_test_igdb_service()
 
         # Mock the single search method to return different results
+        # Note: The query is normalized before search, so "GOTY 2023" becomes "game of the year 2023"
+        # Keyword expansion still operates on the original query, so it detects "goty"
         original_game = GameMetadata(igdb_id=1, title="GOTY Award Winner")
         expanded_game = GameMetadata(igdb_id=2, title="Game of the Year 2023")
 
         async def mock_single_search(query, limit):
-            if "GOTY" in query:
-                return [original_game]
-            elif "Game of the Year" in query:
-                return [expanded_game]
+            # Normalized query: "game of the year 2023" (from "GOTY 2023" normalization)
+            # Expanded query: "Game of the Year 2023" (from keyword expansion)
+            if "game of the year" in query.lower():
+                # Return different results based on whether it's the original or expanded search
+                # We can differentiate by capitalization - normalized is lowercase, expanded has capital G
+                if query.startswith("game"):  # normalized (lowercase)
+                    return [original_game]
+                else:  # expanded (starts with capital G)
+                    return [expanded_game]
             return []
 
         # Mock fuzzy matching to return all games as-is
@@ -758,10 +765,13 @@ class TestKeywordExpansion:
         original_game = GameMetadata(igdb_id=1, title="GOTY Winner")
 
         async def mock_single_search(query, limit):
-            if "GOTY" in query:
-                return [original_game]
-            elif "Game of the Year" in query:
-                raise IGDBError("Expanded search failed")
+            # Normalized query: "game of the year 2023" (lowercase)
+            # Expanded query: "Game of the Year 2023" (from keyword expansion, with capital G)
+            if "game of the year" in query.lower():
+                if query.startswith("game"):  # normalized (lowercase)
+                    return [original_game]
+                else:  # expanded (starts with capital G)
+                    raise IGDBError("Expanded search failed")
             return []
 
         # Mock fuzzy matching to return all games as-is

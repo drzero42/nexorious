@@ -45,12 +45,13 @@ class TestFuzzyMatchUtility:
         """Test the specific GOTY case that was failing."""
         query = "Batman: Arkham City GOTY"
         title = "Batman: Arkham City - Game of the Year Edition"
-        
+
         confidence = calculate_fuzzy_confidence(query, title)
         # Should pass the 60% threshold used by manual search
         assert confidence >= 0.6
-        # Should be around 72.7% based on our earlier testing
-        assert 0.70 <= confidence <= 0.75
+        # With title normalization, GOTY expands to "Game of the Year"
+        # which significantly improves the match score to ~0.81
+        assert 0.78 <= confidence <= 0.85
     
     def test_completely_different_titles_get_low_score(self):
         """Test that unrelated titles get low scores."""
