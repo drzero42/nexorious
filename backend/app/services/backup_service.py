@@ -764,10 +764,10 @@ class BackupService:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to restore database: {result.stderr}")
 
-        # Run migrations if needed
+        # Always run migrations to bring restored DB up to current schema
         current_revision = self._get_alembic_revision()
-        if current_revision != "unknown" and current_revision != expected_revision:
-            logger.info(f"Running migrations from {expected_revision} to head...")
+        if current_revision != "unknown":
+            logger.info(f"Running migrations from {current_revision} to head...")
 
             current_dir = os.path.dirname(os.path.abspath(__file__))
             backend_dir = os.path.dirname(os.path.dirname(current_dir))

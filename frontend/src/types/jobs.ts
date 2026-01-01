@@ -107,6 +107,7 @@ export interface JobItem {
   errorMessage: string | null;
   resultGameTitle: string | null;
   resultIgdbId: number | null;
+  resultUserGameId: string | null;
   createdAt: string;
   processedAt: string | null;
   igdbCandidatesJson?: string;  // Optional - present for PENDING_REVIEW items
@@ -159,6 +160,7 @@ export interface JobItemSummary {
   sourceTitle: string;
   resultGameTitle: string | null;
   resultIgdbId: number | null;
+  resultUserGameId: string | null;
   errorMessage: string | null;
   isNewAddition: boolean;
 }

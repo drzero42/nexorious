@@ -18,6 +18,7 @@ import {
   SkipForward,
   AlertCircle,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useRecentJobs } from '@/hooks';
 import type { RecentJobDetail, JobItemSummary } from '@/types';
 
@@ -73,15 +74,15 @@ function ItemsList({
               {type === 'completed' && (
                 <div>
                   <span className="text-muted-foreground">{item.sourceTitle}</span>
-                  {item.resultGameTitle && (
+                  {item.resultGameTitle && item.resultUserGameId && (
                     <>
                       <span className="mx-1">&rarr;</span>
-                      <span className="font-medium">{item.resultGameTitle}</span>
-                      {item.resultIgdbId && (
-                        <span className="text-muted-foreground ml-1">
-                          (IGDB: {item.resultIgdbId})
-                        </span>
-                      )}
+                      <Link
+                        href={`/games/${item.resultUserGameId}`}
+                        className="font-medium hover:underline"
+                      >
+                        {item.resultGameTitle}
+                      </Link>
                       <span className="ml-2 text-xs">
                         {item.isNewAddition ? (
                           <Badge variant="outline" className="h-4 text-[10px]">Added</Badge>

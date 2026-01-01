@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { User, LoginResponse, SetupStatusResponse } from '@/types';
+import { config } from '@/lib/env';
 
 interface UserApiResponse {
   id: string;
@@ -82,4 +83,27 @@ export async function updatePreferences(
 ): Promise<User> {
   const response = await api.put<UserApiResponse>('/auth/me', { preferences });
   return transformUser(response);
+}
+
+interface SetupRestoreResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function setupRestore(file: File): Promise<SetupRestoreResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${config.apiUrl}/auth/setup/restore`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || `HTTP ${response.status}: ${response.statusText}`;
+    throw new Error(message);
+  }
+
+  return response.json();
 }

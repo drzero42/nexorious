@@ -97,7 +97,20 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
     session = get_sync_session()
     try:
         # Step 1: Check if already synced
-        if _is_already_synced(session, user_id, storefront, external_id):
+        existing_sync = _get_existing_sync(session, user_id, storefront, external_id)
+        if existing_sync:
+            user_game_id, game_id, game_title = existing_sync
+            # Update JobItem with result data for recent activity display
+            job_item = session.get(JobItem, job_item_id)
+            if job_item:
+                job_item.resolved_igdb_id = game_id
+                job_item.result_json = json.dumps({
+                    "igdb_title": game_title,
+                    "igdb_id": game_id,
+                    "user_game_id": user_game_id,
+                    "result_type": "already_synced",
+                })
+                session.add(job_item)
             return await _complete_job_item(
                 session, job_item_id, job_id,
                 JobItemStatus.COMPLETED, "already_synced"
@@ -132,23 +145,27 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         session.close()
 
 
-def _is_already_synced(
+def _get_existing_sync(
     session: Session,
     user_id: str,
     storefront: str,
     external_id: str
-) -> bool:
-    """Check if game is already synced (exists in UserGamePlatform)."""
+) -> tuple[str, int, str] | None:
+    """Check if game is already synced and return (user_game_id, game_id, game_title) if so."""
     result = session.exec(
-        select(UserGamePlatform)
-        .join(UserGame)
+        select(UserGamePlatform, UserGame, Game)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
+        .join(Game, UserGame.game_id == Game.id)
         .where(
             UserGame.user_id == user_id,
             UserGamePlatform.storefront == storefront,
             UserGamePlatform.store_game_id == external_id,
         )
     ).first()
-    return result is not None
+    if result:
+        _, user_game, game = result
+        return (user_game.id, game.id, game.title)
+    return None
 
 
 def _is_ignored(
@@ -208,6 +225,7 @@ async def _process_with_resolved_id(
             platform, storefront, external_id, playtime_hours
         )
         result = "linked_existing"
+        user_game_id = existing_user_game.id
     else:
         # Create new UserGame and add platform association
         igdb_service = IGDBService()
@@ -230,6 +248,7 @@ async def _process_with_resolved_id(
             platform, storefront, external_id, playtime_hours
         )
         result = "imported_new"
+        user_game_id = user_game.id
 
     # Fetch the game title for result_json
     game = session.get(Game, igdb_id)
@@ -242,6 +261,7 @@ async def _process_with_resolved_id(
         job_item.result_json = json.dumps({
             "igdb_title": igdb_title,
             "igdb_id": igdb_id,
+            "user_game_id": user_game_id,
             "result_type": result,
         })
         session.add(job_item)
@@ -355,6 +375,7 @@ async def _auto_import_game(
             platform, storefront, external_id, playtime_hours
         )
         result = "auto_linked"
+        user_game_id = existing_user_game.id
     else:
         # Create new UserGame
         igdb_service = IGDBService()
@@ -377,6 +398,7 @@ async def _auto_import_game(
             platform, storefront, external_id, playtime_hours
         )
         result = "auto_imported"
+        user_game_id = user_game.id
 
     # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
@@ -386,6 +408,7 @@ async def _auto_import_game(
         job_item.result_json = json.dumps({
             "igdb_title": match_result.igdb_title,
             "igdb_id": igdb_id,
+            "user_game_id": user_game_id,
             "result_type": result,
         })
         session.add(job_item)

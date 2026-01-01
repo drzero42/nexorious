@@ -2,13 +2,16 @@
 Authentication endpoints for user registration, login, and session management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from sqlmodel import Session, select
 from datetime import timedelta, datetime, timezone
 import json
 import uuid
 from typing import Annotated
 import logging
+import tempfile
+import shutil
+from pathlib import Path
 
 from ..core.database import get_session
 from ..core.security import (
@@ -39,6 +42,7 @@ from ..schemas.auth import (
     UsernameAvailabilityResponse,
     LogoutResponse,
     SetupStatusResponse,
+    SetupRestoreResponse,
     InitialAdminSetupRequest,
     AdminUserCreateRequest,
     AdminUserUpdateRequest,
@@ -111,6 +115,76 @@ async def create_initial_admin(
         # Admin can manually load seed data later
     
     return admin_user
+
+
+@router.post("/setup/restore", response_model=SetupRestoreResponse)
+async def restore_from_backup_setup(
+    file: Annotated[UploadFile, File(description="Backup archive file (.tar.gz)")],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Restore from backup during initial setup. Only works when no users exist."""
+    from ..services.backup_service import backup_service
+
+    # Check if any users already exist
+    existing_user = session.exec(select(User)).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setup has already been completed. Users already exist."
+        )
+
+    # Validate file format
+    if not file.filename or not file.filename.endswith(".tar.gz"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file format. Expected .tar.gz"
+        )
+
+    # Save uploaded file to temp location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Validate backup archive with checksum verification
+        backup_service.validate_backup_archive(tmp_path, verify_checksums=True)
+
+        # Close the session before restore - restore will terminate all DB connections
+        session.close()
+
+        # Move to backups dir with generated ID
+        backup_id = backup_service.generate_backup_id()
+        dest_path = backup_service.get_backup_path(backup_id)
+        shutil.move(str(tmp_path), str(dest_path))
+
+        # Restore without pre-restore backup (database is empty)
+        # Use a placeholder admin_user_id since we don't have one yet
+        backup_service.restore_backup(
+            backup_id=backup_id,
+            admin_user_id="setup-restore",
+            admin_session_data=None,
+            skip_prerestore=True,
+        )
+
+        return SetupRestoreResponse(
+            success=True,
+            message="Backup restored successfully. Please log in with your restored credentials."
+        )
+
+    except ValueError as e:
+        # Clean up temp file if it still exists
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @router.post("/register", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)

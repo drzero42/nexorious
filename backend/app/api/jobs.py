@@ -326,6 +326,7 @@ async def get_recent_jobs(
                     source_title=item.source_title,
                     result_game_title=_get_result_game_title(item),
                     result_igdb_id=item.resolved_igdb_id,
+                    result_user_game_id=_get_result_user_game_id(item),
                     is_new_addition=_check_is_new_addition(item),
                 )
                 for item in completed_items
@@ -364,6 +365,15 @@ def _check_is_new_addition(item: JobItem) -> bool:
         return result_type in ("auto_imported", "imported_new", "linked_new")
     except json.JSONDecodeError:
         return False
+
+
+def _get_result_user_game_id(item: JobItem) -> Optional[str]:
+    """Extract user_game_id from result JSON."""
+    try:
+        result = json.loads(item.result_json) if item.result_json else {}
+        return result.get("user_game_id")
+    except json.JSONDecodeError:
+        return None
 
 
 @router.get("/{job_id}", response_model=JobResponse)

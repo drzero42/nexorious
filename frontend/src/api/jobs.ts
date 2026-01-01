@@ -89,6 +89,7 @@ interface JobItemApiResponse {
   error_message: string | null;
   result_game_title: string | null;
   result_igdb_id: number | null;
+  result_user_game_id: string | null;
   created_at: string;
   processed_at: string | null;
   igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
@@ -124,6 +125,7 @@ interface JobItemSummaryApiResponse {
   source_title: string;
   result_game_title: string | null;
   result_igdb_id: number | null;
+  result_user_game_id: string | null;
   error_message: string | null;
   is_new_addition: boolean;
 }
@@ -192,6 +194,7 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     errorMessage: apiItem.error_message,
     resultGameTitle: apiItem.result_game_title,
     resultIgdbId: apiItem.result_igdb_id,
+    resultUserGameId: apiItem.result_user_game_id,
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
     igdbCandidatesJson: apiItem.igdb_candidates_json,
@@ -214,6 +217,7 @@ function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary
     sourceTitle: api.source_title,
     resultGameTitle: api.result_game_title,
     resultIgdbId: api.result_igdb_id,
+    resultUserGameId: api.result_user_game_id,
     errorMessage: api.error_message,
     isNewAddition: api.is_new_addition,
   };
