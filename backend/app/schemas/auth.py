@@ -125,3 +125,9 @@ class UserDeletionImpactResponse(BaseModel):
     total_import_jobs: int = Field(..., description="Number of import jobs")
     total_sessions: int = Field(..., description="Number of active sessions")
     warning: str = Field(default="All user data will be permanently deleted and cannot be recovered", description="Warning message")
+
+
+class SetupRestoreResponse(BaseModel):
+    """Response schema for setup restore."""
+    success: bool = Field(..., description="Whether restore was successful")
+    message: str = Field(..., description="Status message")
