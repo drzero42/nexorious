@@ -5,12 +5,16 @@ Provides Epic authentication and library fetching via legendary.core.LegendaryCo
 All legendary configs are isolated per user via custom config directories.
 """
 
+import json
 import logging
 import os
 from typing import Any, Dict, List
 
 from legendary.core import LegendaryCore
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
+
+from app.models.user_sync_config import UserSyncConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,55 @@ class EpicService:
     def _get_user_json_path(self) -> str:
         """Get path to legendary's user.json file."""
         return os.path.join(self.config_path, "legendary", "user.json")
+
+    async def _load_credentials_from_db(self, session: Session) -> None:
+        """Load Epic credentials from database and write to filesystem.
+
+        Args:
+            session: SQLModel database session
+
+        This method queries the UserSyncConfig table for Epic credentials
+        and writes them to the legendary user.json file if found.
+        """
+
+        logger.debug(f"Loading Epic credentials from database for user {self.user_id}")
+
+        # Query for Epic sync config
+        statement = select(UserSyncConfig).where(
+            UserSyncConfig.user_id == self.user_id,
+            UserSyncConfig.platform == "epic"
+        )
+        result = session.exec(statement)
+        config = result.first()
+
+        # Handle no config or empty credentials
+        if not config or not config.platform_credentials:
+            logger.debug(f"No Epic credentials found in database for user {self.user_id}")
+            return
+
+        # Parse JSON credentials from database
+        try:
+            credentials = json.loads(config.platform_credentials)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in Epic credentials for user {self.user_id}: {e}")
+            raise EpicAPIError(f"Stored Epic credentials are corrupted for user {self.user_id}")
+
+        # Write credentials to filesystem
+        try:
+            user_json_path = self._get_user_json_path()
+            legendary_dir = os.path.dirname(user_json_path)
+
+            # Create legendary directory if it doesn't exist
+            os.makedirs(legendary_dir, exist_ok=True)
+
+            # Write credentials to user.json
+            with open(user_json_path, 'w') as f:
+                json.dump(credentials, f)
+
+            logger.debug(f"Loaded Epic credentials from database to {user_json_path}")
+        except (OSError, IOError) as e:
+            logger.error(f"Failed to write Epic credentials for user {self.user_id}: {e}")
+            raise EpicAPIError(f"Failed to store Epic credentials: {e}")
 
     def get_auth_url(self) -> str:
         """Get Epic authentication URL for user to visit.
