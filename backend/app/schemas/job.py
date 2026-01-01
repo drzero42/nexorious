@@ -172,6 +172,7 @@ class JobItemSummary(BaseModel):
     source_title: str
     result_game_title: Optional[str] = None
     result_igdb_id: Optional[int] = None
+    result_user_game_id: Optional[str] = None
     error_message: Optional[str] = None
     is_new_addition: bool = False  # True if game was newly added, False if already in library
 

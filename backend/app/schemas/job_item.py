@@ -25,6 +25,7 @@ class JobItemResponse(BaseModel):
     # For completed items - the matched game info
     result_game_title: str | None = None
     result_igdb_id: int | None = None
+    result_user_game_id: str | None = None
 
     created_at: datetime
     processed_at: datetime | None = None
@@ -32,7 +33,7 @@ class JobItemResponse(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def extract_result_fields(cls, data: Any) -> Any:
-        """Extract result_game_title and result_igdb_id from result_json."""
+        """Extract result_game_title, result_igdb_id, and result_user_game_id from result_json."""
         # Get result_json from the input data
         result_json_str: str | None = None
         if isinstance(data, dict):
@@ -49,7 +50,7 @@ class JobItemResponse(BaseModel):
                 return data
 
             # Extract title - check multiple possible keys
-            game_title = result.get("game_title") or result.get("title")
+            game_title = result.get("game_title") or result.get("title") or result.get("igdb_title")
 
             # Extract igdb_id if present
             igdb_id = result.get("igdb_id")
@@ -59,12 +60,17 @@ class JobItemResponse(BaseModel):
                 except (ValueError, TypeError):
                     igdb_id = None
 
+            # Extract user_game_id if present
+            user_game_id = result.get("user_game_id")
+
             # Handle both dict and ORM object input
             if isinstance(data, dict):
                 if game_title:
                     data["result_game_title"] = game_title
                 if igdb_id is not None:
                     data["result_igdb_id"] = igdb_id
+                if user_game_id:
+                    data["result_user_game_id"] = user_game_id
             else:
                 # For ORM objects, create a dict with all fields
                 data_dict: dict[str, Any] = {}
@@ -75,6 +81,8 @@ class JobItemResponse(BaseModel):
                     data_dict["result_game_title"] = game_title
                 if igdb_id is not None:
                     data_dict["result_igdb_id"] = igdb_id
+                if user_game_id:
+                    data_dict["result_user_game_id"] = user_game_id
                 return data_dict
 
         except (json.JSONDecodeError, TypeError):

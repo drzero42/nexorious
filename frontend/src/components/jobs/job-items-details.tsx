@@ -30,6 +30,7 @@ import {
   SkipForward,
   ImageOff,
 } from 'lucide-react';
+import Link from 'next/link';
 import {
   useJobItems,
   useRetryFailedItems,
@@ -433,11 +434,15 @@ function StatusSection({
                     className="flex items-start justify-between rounded-md border p-3 text-sm"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{item.sourceTitle}</div>
-                      {item.resultGameTitle && (
-                        <div className="text-muted-foreground truncate">
-                          &rarr; {item.resultGameTitle}
-                        </div>
+                      {item.resultUserGameId ? (
+                        <Link
+                          href={`/games/${item.resultUserGameId}`}
+                          className="font-medium truncate hover:underline text-primary block"
+                        >
+                          {item.resultGameTitle || item.sourceTitle}
+                        </Link>
+                      ) : (
+                        <div className="font-medium truncate">{item.resultGameTitle || item.sourceTitle}</div>
                       )}
                       {item.errorMessage && (
                         <div className="text-red-600 text-xs mt-1">
