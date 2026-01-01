@@ -68,3 +68,6 @@ We should be able to do better auto-matching. If we strip away colons, TMs and d
 
 ## Unknown platforms for sync
 Games sync'ed from Steam and Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
+
+## Sync completed games should have links
+In the progress box for a sync job there is an expandable section that shows completed games. These games should have links to the game details page for them.
