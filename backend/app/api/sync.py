@@ -503,13 +503,16 @@ async def complete_epic_auth(
     logger.info(f"Completing Epic authentication for user {current_user.id}")
 
     try:
-        epic_service = EpicService(current_user.id)
+        epic_service = EpicService(current_user.id, session=session)
 
         # Complete authentication with the code
         await epic_service.complete_auth(request.code)
 
         # Get account information
         account_info = await epic_service.get_account_info()
+
+        # Save credentials to database
+        epic_service._save_credentials_to_db(session)
 
         # Update user preferences with Epic credentials
         preferences = current_user.preferences or {}
