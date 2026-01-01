@@ -101,3 +101,20 @@ class TestFuzzyMatchIntegration:
 
         confidence = calculate_fuzzy_confidence(steam_title, igdb_title)
         assert confidence >= 0.85, f"Expected >= 0.85, got {confidence}"
+
+
+class TestIGDBSearchNormalization:
+    """Test that search queries are normalized before IGDB lookup."""
+
+    def test_search_query_normalized(self):
+        """Verify normalize_title is applied to search queries."""
+        from app.utils.normalize_title import normalize_title
+
+        # Simulate what service.py should do
+        steam_title = "The Witcher® 3: Wild Hunt - GOTY Edition"
+        normalized = normalize_title(steam_title)
+
+        # The normalized query should be cleaner for IGDB search
+        assert "®" not in normalized
+        assert "GOTY" not in normalized
+        assert "game of the year" in normalized

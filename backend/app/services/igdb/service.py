@@ -163,10 +163,15 @@ class IGDBService:
         detected_keywords = detect_keywords(query)
 
         try:
+            # Normalize the query before IGDB lookup to improve matching
+            # e.g., "The Witcher® 3: Wild Hunt - GOTY Edition" -> "the witcher 3 wild hunt game of the year edition"
+            from app.utils.normalize_title import normalize_title
+            normalized_query = normalize_title(query)
+
             # Run fuzzy search and exact-name search in parallel
             # Exact-name search ensures we catch exact matches that IGDB's fuzzy search might rank lower
-            fuzzy_task = self._perform_single_search(query.strip(), limit * 2)
-            exact_task = self._search_by_exact_name(query.strip(), limit)
+            fuzzy_task = self._perform_single_search(normalized_query, limit * 2)
+            exact_task = self._search_by_exact_name(normalized_query, limit)
 
             original_results, exact_results = await asyncio.gather(fuzzy_task, exact_task)
 
