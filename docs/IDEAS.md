@@ -55,6 +55,3 @@ Notifications should be configurable so the user can choose what to receive noti
 
 ## Improve auto-matching
 We should be able to do better auto-matching during sync. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
-
-## Unknown platforms for sync
-Games sync'ed from Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
