@@ -43,6 +43,26 @@ vi.mock('lucide-react', () => ({
       ✓
     </div>
   ),
+  ArrowDownAZ: ({ className }: { className?: string }) => (
+    <div data-testid="arrow-down-az-icon" className={className}>
+      AZ↓
+    </div>
+  ),
+  ArrowUpAZ: ({ className }: { className?: string }) => (
+    <div data-testid="arrow-up-az-icon" className={className}>
+      AZ↑
+    </div>
+  ),
+  ArrowDown: ({ className }: { className?: string }) => (
+    <div data-testid="arrow-down-icon" className={className}>
+      ↓
+    </div>
+  ),
+  ArrowUp: ({ className }: { className?: string }) => (
+    <div data-testid="arrow-up-icon" className={className}>
+      ↑
+    </div>
+  ),
 }));
 
 const mockPlatforms: Platform[] = [
@@ -79,6 +99,10 @@ const defaultProps: GameFiltersProps = {
   onFiltersChange: vi.fn(),
   viewMode: 'grid',
   onViewModeChange: vi.fn(),
+  sortBy: 'title',
+  sortOrder: 'asc',
+  onSortByChange: vi.fn(),
+  onSortOrderToggle: vi.fn(),
 };
 
 describe('GameFilters', () => {
@@ -659,6 +683,68 @@ describe('GameFilters', () => {
       await user.click(listButton);
       expect(onViewModeChange).toHaveBeenCalledWith('list');
       expect(onFiltersChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sort controls', () => {
+    it('renders sort dropdown', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      const comboboxes = screen.getAllByRole('combobox');
+      // Sort dropdown is the 3rd combobox (after status and platform)
+      expect(comboboxes[2]).toBeInTheDocument();
+    });
+
+    it('renders sort direction toggle button', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByTitle('Ascending')).toBeInTheDocument();
+    });
+
+    it('shows descending title when sortOrder is desc', () => {
+      render(<GameFilters {...defaultProps} sortOrder="desc" />);
+
+      expect(screen.getByTitle('Descending')).toBeInTheDocument();
+    });
+
+    it('calls onSortByChange when sort option is selected', async () => {
+      const user = userEvent.setup();
+      const onSortByChange = vi.fn();
+      render(
+        <GameFilters {...defaultProps} onSortByChange={onSortByChange} />
+      );
+
+      const comboboxes = screen.getAllByRole('combobox');
+      const sortSelect = comboboxes[2]; // 3rd combobox is sort
+      await user.click(sortSelect);
+
+      const dateAddedOption = screen.getByRole('option', { name: 'Date Added' });
+      await user.click(dateAddedOption);
+
+      expect(onSortByChange).toHaveBeenCalledWith('created_at');
+    });
+
+    it('calls onSortOrderToggle when direction button is clicked', async () => {
+      const user = userEvent.setup();
+      const onSortOrderToggle = vi.fn();
+      render(
+        <GameFilters {...defaultProps} onSortOrderToggle={onSortOrderToggle} />
+      );
+
+      await user.click(screen.getByTitle('Ascending'));
+      expect(onSortOrderToggle).toHaveBeenCalled();
+    });
+
+    it('shows alphabetical icon for title sort', () => {
+      render(<GameFilters {...defaultProps} sortBy="title" sortOrder="asc" />);
+
+      expect(screen.getByTestId('arrow-down-az-icon')).toBeInTheDocument();
+    });
+
+    it('shows arrow icon for non-title sort', () => {
+      render(<GameFilters {...defaultProps} sortBy="created_at" sortOrder="asc" />);
+
+      expect(screen.getByTestId('arrow-up-icon')).toBeInTheDocument();
     });
   });
 });
