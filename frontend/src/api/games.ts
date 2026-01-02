@@ -478,6 +478,15 @@ export async function searchIGDB(
 }
 
 /**
+ * Get a game from IGDB by its ID.
+ * Returns the same format as searchIGDB for consistency.
+ */
+export async function getGameByIGDBId(igdbId: number): Promise<IGDBGameCandidate[]> {
+  const response = await api.get<IGDBSearchApiResponse>(`/games/igdb/${igdbId}`);
+  return response.games.map(transformIGDBGameCandidate);
+}
+
+/**
  * Import a game from IGDB to the database.
  */
 export async function importFromIGDB(
