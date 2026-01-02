@@ -53,12 +53,6 @@ We recently removed support for importing CSV, but we still have mentions of CSV
 Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
 
-## Improve auto-matching
-We should be able to do better auto-matching during sync. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
-
-## Add storefront, genre and tag filtering
-The Library overview should also allow storefront, genre and tags filtering.
-
 ## Number badge when there are items needing review
 We recently implemented badges to draw attention to when there were games needing review during sync. Refactoring work seems to have killed this feature again. We need to revive this feature. Next to the Sync menu item should be a badge showing the number of items in "Needs Review" across the sync sources.
 
