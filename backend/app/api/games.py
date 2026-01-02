@@ -330,6 +330,78 @@ async def search_igdb(
         )
 
 
+@router.get("/igdb/{igdb_id}", response_model=IGDBSearchResponse)
+async def get_igdb_game_by_id(
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    igdb_service: IGDBService = Depends(get_igdb_service_dependency),
+):
+    """Get a single game from IGDB by its ID.
+
+    Returns the same response format as search for consistency.
+    If the game is not found, returns an empty games list (not 404).
+    """
+    logger.info(
+        f"IGDB lookup by ID from user {current_user.username}: igdb_id={igdb_id}"
+    )
+
+    try:
+        game_metadata = await igdb_service.get_game_by_id(igdb_id)
+
+        if game_metadata is None:
+            logger.info(f"No game found in IGDB for ID {igdb_id}")
+            return IGDBSearchResponse(games=[], total=0)
+
+        # Use IGDB platform data if available, otherwise empty list
+        platforms = game_metadata.platform_names if game_metadata.platform_names else []
+
+        candidate = IGDBGameCandidate(
+            igdb_id=game_metadata.igdb_id,
+            igdb_slug=game_metadata.igdb_slug,
+            title=game_metadata.title,
+            release_date=parse_date_string(game_metadata.release_date),
+            cover_art_url=game_metadata.cover_art_url,
+            description=game_metadata.description,
+            platforms=platforms,
+            howlongtobeat_main=game_metadata.hastily,
+            howlongtobeat_extra=game_metadata.normally,
+            howlongtobeat_completionist=game_metadata.completely,
+        )
+
+        logger.info(f"Successfully fetched IGDB game {igdb_id}: {game_metadata.title}")
+        return IGDBSearchResponse(games=[candidate], total=1)
+
+    except IGDBNotConfiguredError as e:
+        logger.warning(f"IGDB not configured during lookup for ID {igdb_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+    except TwitchAuthError as e:
+        logger.error(
+            f"Twitch authentication failed for IGDB lookup {igdb_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"IGDB authentication failed: {str(e)}",
+        )
+    except IGDBError as e:
+        logger.error(f"IGDB API error during lookup for ID {igdb_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"IGDB API error: {str(e)}",
+        )
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during IGDB lookup for ID {igdb_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        )
+
+
 @router.post(
     "/igdb-import", response_model=GameResponse, status_code=status.HTTP_201_CREATED
 )
