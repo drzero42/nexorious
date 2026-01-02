@@ -55,3 +55,6 @@ Notifications should be configurable so the user can choose what to receive noti
 
 ## Improve auto-matching
 We should be able to do better auto-matching during sync. If we strip away colons, TMs and dashes as well as parentheses with year numbers before doing the 1:1 comparison, a lot of games should auto-match better.
+
+## Add storefront, genre and tag filtering
+The Library overview should also allow storefront, genre and tags filtering.
