@@ -49,14 +49,44 @@ export function useUserGame(id: string | undefined) {
 }
 
 /**
+ * Regex to detect IGDB ID lookup format: igdb:12345 (case-insensitive)
+ */
+const IGDB_ID_PATTERN = /^igdb:(\d+)$/i;
+
+/**
+ * Parse IGDB ID from query if it matches the igdb:12345 format.
+ * Returns the numeric ID or null if not a match.
+ */
+function parseIGDBIdFromQuery(query: string): number | null {
+  const match = query.match(IGDB_ID_PATTERN);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+/**
  * Hook to search IGDB for games.
- * Only enabled when query has at least 3 characters.
+ *
+ * Supports two modes:
+ * 1. Direct ID lookup: Use "igdb:12345" format (case-insensitive)
+ * 2. Name search: Any other query (requires 3+ characters)
  */
 export function useSearchIGDB(query: string, limit?: number) {
+  const igdbId = parseIGDBIdFromQuery(query);
+  const isIdLookup = igdbId !== null;
+
   return useQuery<IGDBGameCandidate[], Error>({
     queryKey: gameKeys.igdbSearch(query),
-    queryFn: () => gamesApi.searchIGDB(query, limit),
-    enabled: query.length >= 3,
+    queryFn: () => {
+      if (isIdLookup) {
+        return gamesApi.getGameByIGDBId(igdbId);
+      }
+      return gamesApi.searchIGDB(query, limit);
+    },
+    // ID lookup: always enabled (no min chars)
+    // Name search: require 3+ characters
+    enabled: isIdLookup || query.length >= 3,
   });
 }
 
