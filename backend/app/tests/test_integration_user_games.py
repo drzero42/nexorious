@@ -1411,6 +1411,252 @@ class TestUserGameIdsEndpoint:
         assert str(test_user_game.id) in data["ids"]
 
 
+class TestUserGameIdsMultiValueFilters:
+    """Test multi-value filter support for /ids endpoint."""
+
+    def test_ids_filter_multiple_genres(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test filtering IDs by multiple genres using repeated query params."""
+        from .integration_test_utils import create_test_game
+
+        # Create games with different genres
+        game1 = create_test_game(title="RPG Game IDs", genre="RPG")
+        game2 = create_test_game(title="Action Game IDs", genre="Action")
+        game3 = create_test_game(title="Puzzle Game IDs", genre="Puzzle")
+        game4 = create_test_game(title="Action RPG Game IDs", genre="Action, RPG")  # Has both
+        session.add_all([game1, game2, game3, game4])
+        session.commit()
+        session.refresh(game1)
+        session.refresh(game2)
+        session.refresh(game3)
+        session.refresh(game4)
+
+        # Create user games
+        user_games = []
+        for game in [game1, game2, game3, game4]:
+            ug = UserGame(
+                user_id=test_user.id, game_id=game.id,
+                ownership_status="owned", play_status="not_started"
+            )
+            session.add(ug)
+            user_games.append(ug)
+        session.commit()
+        for ug in user_games:
+            session.refresh(ug)
+
+        # Test filtering by multiple genres (RPG OR Action)
+        response = client.get(
+            "/api/user-games/ids?genre=RPG&genre=Action",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should return IDs for games with RPG OR Action genre
+        assert len(data["ids"]) == 3  # RPG Game, Action Game, Action RPG Game
+        # Verify expected IDs are present
+        expected_ids = {str(user_games[0].id), str(user_games[1].id), str(user_games[3].id)}
+        assert set(data["ids"]) == expected_ids
+
+    def test_ids_filter_multiple_tags(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test filtering IDs by multiple tag IDs using repeated query params."""
+        from .integration_test_utils import create_test_game
+        from ..models.tag import Tag, UserGameTag
+
+        # Create tags for the user
+        tag_favorite = Tag(user_id=test_user.id, name="IDs Favorite", color="#FF0000")
+        tag_backlog = Tag(user_id=test_user.id, name="IDs Backlog", color="#00FF00")
+        tag_completed = Tag(user_id=test_user.id, name="IDs Completed", color="#0000FF")
+        session.add_all([tag_favorite, tag_backlog, tag_completed])
+        session.commit()
+        session.refresh(tag_favorite)
+        session.refresh(tag_backlog)
+        session.refresh(tag_completed)
+
+        # Create games
+        game1 = create_test_game(title="Favorite Game IDs")
+        game2 = create_test_game(title="Backlog Game IDs")
+        game3 = create_test_game(title="Completed Game IDs")
+        game4 = create_test_game(title="Untagged Game IDs")
+        session.add_all([game1, game2, game3, game4])
+        session.commit()
+        session.refresh(game1)
+        session.refresh(game2)
+        session.refresh(game3)
+        session.refresh(game4)
+
+        # Create user games
+        ug1 = UserGame(
+            user_id=test_user.id, game_id=game1.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        ug2 = UserGame(
+            user_id=test_user.id, game_id=game2.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        ug3 = UserGame(
+            user_id=test_user.id, game_id=game3.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        ug4 = UserGame(
+            user_id=test_user.id, game_id=game4.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        session.add_all([ug1, ug2, ug3, ug4])
+        session.commit()
+        session.refresh(ug1)
+        session.refresh(ug2)
+        session.refresh(ug3)
+        session.refresh(ug4)
+
+        # Add tag associations
+        session.add(UserGameTag(user_game_id=ug1.id, tag_id=tag_favorite.id))
+        session.add(UserGameTag(user_game_id=ug2.id, tag_id=tag_backlog.id))
+        session.add(UserGameTag(user_game_id=ug3.id, tag_id=tag_completed.id))
+        session.commit()
+
+        # Test filtering by multiple tags (Favorite OR Backlog)
+        response = client.get(
+            f"/api/user-games/ids?tag={tag_favorite.id}&tag={tag_backlog.id}",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should return IDs for games with Favorite OR Backlog tag
+        assert len(data["ids"]) == 2
+        expected_ids = {str(ug1.id), str(ug2.id)}
+        assert set(data["ids"]) == expected_ids
+
+    def test_ids_filter_multiple_platforms(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test filtering IDs by multiple platforms using repeated query params."""
+        from .integration_test_utils import create_test_game
+
+        # Create platforms
+        platform_windows = Platform(
+            name="ids_windows",
+            display_name="IDs Windows",
+            is_active=True
+        )
+        platform_ps5 = Platform(
+            name="ids_ps5",
+            display_name="IDs PlayStation 5",
+            is_active=True
+        )
+        platform_switch = Platform(
+            name="ids_switch",
+            display_name="IDs Nintendo Switch",
+            is_active=True
+        )
+        session.add_all([platform_windows, platform_ps5, platform_switch])
+        session.commit()
+
+        # Create games
+        game1 = create_test_game(title="Windows Game IDs")
+        game2 = create_test_game(title="PS5 Game IDs")
+        game3 = create_test_game(title="Switch Game IDs")
+        session.add_all([game1, game2, game3])
+        session.commit()
+        session.refresh(game1)
+        session.refresh(game2)
+        session.refresh(game3)
+
+        # Create user games with different platforms
+        ug1 = UserGame(
+            user_id=test_user.id, game_id=game1.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        ug2 = UserGame(
+            user_id=test_user.id, game_id=game2.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        ug3 = UserGame(
+            user_id=test_user.id, game_id=game3.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        session.add_all([ug1, ug2, ug3])
+        session.commit()
+        session.refresh(ug1)
+        session.refresh(ug2)
+        session.refresh(ug3)
+
+        # Add platform associations
+        session.add(UserGamePlatform(user_game_id=ug1.id, platform="ids_windows"))
+        session.add(UserGamePlatform(user_game_id=ug2.id, platform="ids_ps5"))
+        session.add(UserGamePlatform(user_game_id=ug3.id, platform="ids_switch"))
+        session.commit()
+
+        # Test filtering by multiple platforms (Windows OR PS5)
+        response = client.get(
+            "/api/user-games/ids?platform=ids_windows&platform=ids_ps5",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should return IDs for games on Windows OR PS5
+        assert len(data["ids"]) == 2
+        expected_ids = {str(ug1.id), str(ug2.id)}
+        assert set(data["ids"]) == expected_ids
+
+    def test_ids_no_duplicates_with_multiple_matching_platforms(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test that games with multiple platforms matching filter don't appear twice in IDs."""
+        from .integration_test_utils import create_test_game
+
+        # Create platforms
+        platform_win = Platform(
+            name="ids_dup_windows",
+            display_name="IDs Dup Windows",
+            is_active=True
+        )
+        platform_ps = Platform(
+            name="ids_dup_ps5",
+            display_name="IDs Dup PlayStation 5",
+            is_active=True
+        )
+        session.add_all([platform_win, platform_ps])
+        session.commit()
+
+        # Create a game owned on BOTH Windows and PS5
+        game = create_test_game(title="Multi-Platform Game IDs")
+        session.add(game)
+        session.commit()
+        session.refresh(game)
+
+        # Create user game
+        user_game = UserGame(
+            user_id=test_user.id, game_id=game.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        session.add(user_game)
+        session.commit()
+        session.refresh(user_game)
+
+        # Add BOTH platform associations to the same game
+        session.add(UserGamePlatform(user_game_id=user_game.id, platform="ids_dup_windows"))
+        session.add(UserGamePlatform(user_game_id=user_game.id, platform="ids_dup_ps5"))
+        session.commit()
+
+        # Filter by both platforms - the game matches BOTH filters
+        response = client.get(
+            "/api/user-games/ids?platform=ids_dup_windows&platform=ids_dup_ps5",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should return 1 ID, NOT 2 (no duplicates)
+        assert len(data["ids"]) == 1, f"Expected 1 ID but got {len(data['ids'])} - duplicate detection failed"
+        assert data["ids"][0] == str(user_game.id)
+
+
 class TestUserGamePlatformPlaytime:
     """Test platform-specific playtime functionality."""
 

@@ -321,8 +321,10 @@ async def get_user_game_ids(
     play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
     ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
     is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
-    platform: Optional[str] = Query(default=None, description="Filter by platform"),
-    storefront: Optional[str] = Query(default=None, description="Filter by storefront"),
+    platform: Optional[List[str]] = Query(default=None, description="Filter by platform(s)"),
+    storefront: Optional[List[str]] = Query(default=None, description="Filter by storefront(s)"),
+    genre: Optional[List[str]] = Query(default=None, description="Filter by genre(s)"),
+    tag: Optional[List[str]] = Query(default=None, description="Filter by tag ID(s)"),
     rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
     has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
@@ -335,6 +337,10 @@ async def get_user_game_ids(
 
     # Apply filters
     filters: List[Any] = []
+
+    # Track which tables have been joined to avoid duplicate joins
+    joined_user_game_platform = False
+    joined_game = False
 
     if play_status is not None:
         filters.append(UserGame.play_status == play_status)
@@ -361,17 +367,63 @@ async def get_user_game_ids(
                 UserGame.personal_notes == ""
             ))
 
+    # Platform filter (multi-value support with IN clause)
     if platform:
-        query = query.join(UserGamePlatform).where(UserGamePlatform.platform == platform)
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.platform), platform))
 
+    # Storefront filter (multi-value support with IN clause)
     if storefront:
-        query = query.join(UserGamePlatform).where(UserGamePlatform.storefront == storefront)
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.storefront), storefront))
 
+    # Genre filter (multi-value support with OR ILIKE logic)
+    if genre:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        # Build OR conditions for genre ILIKE matching
+        genre_conditions = [col(Game.genre).icontains(g) for g in genre]
+        filters.append(or_(*genre_conditions))
+
+    # Tag filter (multi-value support using subquery)
+    if tag:
+        # Use subquery to find user_game_ids that have any of the specified tags
+        tag_subquery = (
+            select(UserGameTag.user_game_id)
+            .where(in_(col(UserGameTag.tag_id), tag))
+            .distinct()
+        )
+        filters.append(in_(col(UserGame.id), tag_subquery))
+
+    # Apply filters
     if filters:
         query = query.where(and_(*filters))
 
+    # Prevent duplicate results when JOIN produces multiple rows for the same UserGame
+    # (e.g., a game owned on both Windows and PS5 when filtering by platform=windows&platform=ps5)
+    # Use subquery approach to avoid PostgreSQL DISTINCT/ORDER BY conflicts
+    if joined_user_game_platform:
+        # Create a subquery with distinct UserGame IDs
+        distinct_ids_subquery = (
+            select(UserGame.id)
+            .join(UserGamePlatform)
+            .where(UserGame.user_id == current_user.id)
+        )
+        if filters:
+            distinct_ids_subquery = distinct_ids_subquery.where(and_(*filters))
+        distinct_ids_subquery = distinct_ids_subquery.distinct()
+
+        # Rebuild main query to select from distinct IDs only
+        query = select(UserGame.id).where(in_(col(UserGame.id), distinct_ids_subquery))
+
     if q:
-        query = query.join(Game)
+        if not joined_game:
+            query = query.join(Game)
         query = query.where(or_(
             col(Game.title).icontains(q),
             and_(is_not(col(UserGame.personal_notes), None), col(UserGame.personal_notes).icontains(q))
