@@ -14,7 +14,7 @@ When removing the last platform/storefront, change ownership to No Longer Owned.
 Only actually delete a UserGame if the user deletes it.
 
 ## Use IGDB ID as Game ID
-After refactoring to use IGDB ID as the primary key for games, there are schemas and models that feature both igdb_id and game_id. Those are now the same, so we need to refactor to only use one of them. No need to have both. This requires rethinking how steam and darkadia imports work. Maybe igdb_id should just stay in these models or maybe they should also be refactored a bit. It does however not make sense to use the game_id field as an indicator of whether a game has been synced or not, when that field is the same as igdb_id.
+After refactoring to use IGDB ID as the primary key for games, there are schemas and models that feature both igdb_id and game_id. Those are now the same, so we need to refactor to only use one of them. No need to have both. This maybe requires rethinking how sync and imports work. Maybe igdb_id should just stay in these models or maybe they should also be refactored a bit. It does however not make sense to use the game_id field as an indicator of whether a game has been synced or not, when that field is the same as igdb_id.
 
 ## No need to import from IGDB
 It should be transparent that data is pulled in from IGDB. Instead of having a workflow of import-igdb and then adding a user-games entry, the user-games add endpoint should just accept an IGDB ID. If no game with that ID exists in our database it should be imported from IGDB. If one already exists, just use that.
@@ -37,10 +37,6 @@ Might be better than claude failing to use curl
 From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
 We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
 
-## Steamctl
-Refactor to use https://github.com/ValvePython/steamctl
-This will allow auth with Steam Authenticator and will not require public Steam profile. It makes it easier for the user as it should potentially be just a QR code that can be scanned from the Steam mobile app to gain access.
-
 ## GOG
 Use https://github.com/Sude-/lgogdownloader as a CLI tool to pull informatiot about the user's library
 
@@ -62,6 +58,3 @@ We should be able to do better auto-matching during sync. If we strip away colon
 
 ## Unknown platforms for sync
 Games sync'ed from Epic do not seem to have their platform set correctly. These should have pc-windows as their platform.
-
-## Sync completed games should have links
-In the progress box for a sync job there is an expandable section that shows completed games. These games should have links to the game details page for them.
