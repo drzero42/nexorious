@@ -15,6 +15,49 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { PlayStatus, UserGame, SelectionMode } from '@/types';
 
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date';
+type SortOrder = 'asc' | 'desc';
+
+interface SortOption {
+  value: SortField;
+  label: string;
+  defaultOrder: SortOrder;
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { value: 'title', label: 'Title', defaultOrder: 'asc' },
+  { value: 'created_at', label: 'Date Added', defaultOrder: 'desc' },
+  { value: 'howlongtobeat_main', label: 'Time to Beat', defaultOrder: 'asc' },
+  { value: 'personal_rating', label: 'My Rating', defaultOrder: 'desc' },
+  { value: 'release_date', label: 'Release Date', defaultOrder: 'desc' },
+];
+
+const SORT_STORAGE_KEY = 'games-sort-preference';
+
+function loadSortPreference(): { sortBy: SortField; sortOrder: SortOrder } {
+  if (typeof window === 'undefined') {
+    return { sortBy: 'title', sortOrder: 'asc' };
+  }
+  try {
+    const stored = sessionStorage.getItem(SORT_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        sortBy: parsed.sortBy ?? 'title',
+        sortOrder: parsed.sortOrder ?? 'asc',
+      };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { sortBy: 'title', sortOrder: 'asc' };
+}
+
+function saveSortPreference(sortBy: SortField, sortOrder: SortOrder): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ sortBy, sortOrder }));
+}
+
 export default function GamesPage() {
   const router = useRouter();
   const [filters, setFilters] = useState<{
