@@ -4,6 +4,7 @@ export {
   useUserGames,
   useUserGame,
   useUserGameIds,
+  useUserGameGenres,
   useSearchIGDB,
   useCollectionStats,
   useCreateUserGame,

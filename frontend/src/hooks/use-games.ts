@@ -101,6 +101,17 @@ export function useCollectionStats() {
 }
 
 /**
+ * Hook to fetch unique genres from the user's game collection.
+ */
+export function useUserGameGenres() {
+  return useQuery<string[], Error>({
+    queryKey: [...gameKeys.all, 'genres'] as const,
+    queryFn: () => gamesApi.getUserGameGenres(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
  * Hook to fetch active games (IN_PROGRESS and REPLAY statuses).
  * Used for the "Currently Playing" dashboard section.
  * Makes two parallel API calls since backend only supports single status filter.

@@ -593,6 +593,14 @@ export async function getCollectionStats(): Promise<{
 }
 
 /**
+ * Get unique genres from the user's game collection.
+ */
+export async function getUserGameGenres(): Promise<string[]> {
+  const response = await api.get<{ genres: string[] }>('/user-games/genres');
+  return response.genres;
+}
+
+/**
  * Get all user game IDs matching filters (for bulk selection).
  */
 export async function getUserGameIds(

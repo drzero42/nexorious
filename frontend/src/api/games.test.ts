@@ -15,6 +15,7 @@ import {
   bulkUpdateUserGames,
   bulkDeleteUserGames,
   getCollectionStats,
+  getUserGameGenres,
   addPlatformToUserGame,
   updatePlatformAssociation,
   removePlatformFromUserGame,
@@ -689,6 +690,33 @@ describe('games.ts', () => {
       await expect(
         removePlatformFromUserGame('user-game-123', 'ugp-1')
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getUserGameGenres', () => {
+    it('fetches unique genres from user collection', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
+        })
+      );
+
+      const genres = await getUserGameGenres();
+
+      expect(Array.isArray(genres)).toBe(true);
+      expect(genres).toEqual(['Action', 'Adventure', 'RPG']);
+    });
+
+    it('returns empty array when no genres exist', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: [] });
+        })
+      );
+
+      const genres = await getUserGameGenres();
+
+      expect(genres).toEqual([]);
     });
   });
 });
