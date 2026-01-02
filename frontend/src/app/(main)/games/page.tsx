@@ -69,6 +69,10 @@ export default function GamesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('manual');
 
+  // Sort state - initialize from sessionStorage
+  const [sortBy, setSortBy] = useState<SortField>(() => loadSortPreference().sortBy);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => loadSortPreference().sortOrder);
+
   // Build query params
   const queryParams = useMemo(
     () => ({
@@ -76,8 +80,10 @@ export default function GamesPage() {
       status: filters.status,
       platformId: filters.platformId,
       perPage: 50,
+      sortBy,
+      sortOrder,
     }),
-    [filters]
+    [filters, sortBy, sortOrder]
   );
 
   const { data, isLoading, refetch } = useUserGames(queryParams);
@@ -94,6 +100,20 @@ export default function GamesPage() {
     setSelectedIds(new Set());
     setSelectionMode('manual');
   }, []);
+
+  const handleSortByChange = useCallback((newSortBy: SortField) => {
+    const option = SORT_OPTIONS.find((o) => o.value === newSortBy);
+    const newOrder = option?.defaultOrder ?? 'asc';
+    setSortBy(newSortBy);
+    setSortOrder(newOrder);
+    saveSortPreference(newSortBy, newOrder);
+  }, []);
+
+  const handleSortOrderToggle = useCallback(() => {
+    const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortOrder(newOrder);
+    saveSortPreference(sortBy, newOrder);
+  }, [sortBy, sortOrder]);
 
   const handleSelectGame = useCallback((id: string) => {
     setSelectionMode('manual');
