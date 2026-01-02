@@ -11,7 +11,23 @@ import {
 } from '@/components/ui/select';
 import { useAllPlatforms } from '@/hooks';
 import { PlayStatus } from '@/types';
-import { Grid, List, X } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X } from 'lucide-react';
+
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date';
+type SortOrder = 'asc' | 'desc';
+
+interface SortOption {
+  value: SortField;
+  label: string;
+}
+
+const sortOptions: SortOption[] = [
+  { value: 'title', label: 'Title' },
+  { value: 'created_at', label: 'Date Added' },
+  { value: 'howlongtobeat_main', label: 'Time to Beat' },
+  { value: 'personal_rating', label: 'My Rating' },
+  { value: 'release_date', label: 'Release Date' },
+];
 
 export interface GameFiltersProps {
   filters: {
@@ -22,6 +38,10 @@ export interface GameFiltersProps {
   onFiltersChange: (filters: GameFiltersProps['filters']) => void;
   viewMode: 'grid' | 'list';
   onViewModeChange: (mode: 'grid' | 'list') => void;
+  sortBy: SortField;
+  sortOrder: SortOrder;
+  onSortByChange: (sortBy: SortField) => void;
+  onSortOrderToggle: () => void;
 }
 
 const statusOptions: { value: PlayStatus; label: string }[] = [
@@ -40,6 +60,10 @@ export function GameFilters({
   onFiltersChange,
   viewMode,
   onViewModeChange,
+  sortBy,
+  sortOrder,
+  onSortByChange,
+  onSortOrderToggle,
 }: GameFiltersProps) {
   const { data: platforms } = useAllPlatforms();
 
@@ -105,6 +129,43 @@ export function GameFilters({
           ))}
         </SelectContent>
       </Select>
+
+      {/* Sort dropdown */}
+      <Select
+        value={sortBy}
+        onValueChange={(value) => onSortByChange(value as SortField)}
+      >
+        <SelectTrigger className="w-40">
+          <SelectValue placeholder="Sort by" />
+        </SelectTrigger>
+        <SelectContent>
+          {sortOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Sort direction toggle */}
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onSortOrderToggle}
+        title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+      >
+        {sortBy === 'title' ? (
+          sortOrder === 'asc' ? (
+            <ArrowDownAZ className="h-4 w-4" />
+          ) : (
+            <ArrowUpAZ className="h-4 w-4" />
+          )
+        ) : sortOrder === 'asc' ? (
+          <ArrowUp className="h-4 w-4" />
+        ) : (
+          <ArrowDown className="h-4 w-4" />
+        )}
+      </Button>
 
       {/* Clear filters */}
       {hasActiveFilters && (
