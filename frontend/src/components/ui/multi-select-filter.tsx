@@ -48,12 +48,13 @@ export function MultiSelectFilter({
         <PopoverTrigger asChild>
           <Button
             variant="outline"
-            role="button"
+            role="combobox"
+            aria-expanded={open}
             disabled={disabled}
             className="justify-between"
           >
             {displayText}
-            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform", open && "rotate-180")} />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-56 p-2" align="start">

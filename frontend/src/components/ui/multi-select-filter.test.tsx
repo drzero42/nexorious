@@ -36,7 +36,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    expect(screen.getByRole("button")).toHaveTextContent("Genres");
+    expect(screen.getByRole("combobox")).toHaveTextContent("Genres");
   });
 
   it("shows count badge when items are selected", () => {
@@ -49,7 +49,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    expect(screen.getByRole("button")).toHaveTextContent("Genres (2)");
+    expect(screen.getByRole("combobox")).toHaveTextContent("Genres (2)");
   });
 
   it("does not show count badge when no items are selected", () => {
@@ -62,8 +62,8 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    expect(screen.getByRole("button")).toHaveTextContent("Genres");
-    expect(screen.getByRole("button")).not.toHaveTextContent("(");
+    expect(screen.getByRole("combobox")).toHaveTextContent("Genres");
+    expect(screen.getByRole("combobox")).not.toHaveTextContent("(");
   });
 
   it("opens dropdown on click", async () => {
@@ -78,7 +78,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     // Should see all options
     expect(screen.getByText("Action")).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     const checkboxes = screen.getAllByRole("checkbox");
     expect(checkboxes).toHaveLength(4);
@@ -117,7 +117,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     const checkboxes = screen.getAllByRole("checkbox");
     // Action and RPG should be checked
@@ -141,7 +141,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     // Click on RPG label to toggle it
     const rpgLabel = screen.getByText("RPG");
@@ -163,7 +163,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     // Click on Action label to toggle it off
     const actionLabel = screen.getByText("Action");
@@ -183,7 +183,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByRole("combobox")).toBeDisabled();
   });
 
   it("does not open dropdown when disabled", async () => {
@@ -199,7 +199,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     // Options should not be visible
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
@@ -221,7 +221,7 @@ describe("MultiSelectFilter", () => {
     );
 
     // Open dropdown
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
     expect(screen.getByText("Action")).toBeInTheDocument();
 
     // Click outside
@@ -244,7 +244,7 @@ describe("MultiSelectFilter", () => {
     );
 
     // Open dropdown
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
     expect(screen.getByText("Action")).toBeInTheDocument();
 
     // Press Escape
@@ -280,7 +280,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     expect(screen.getByText("No options available")).toBeInTheDocument();
   });
@@ -298,7 +298,7 @@ describe("MultiSelectFilter", () => {
       />
     );
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("combobox"));
 
     // Select Strategy first
     await user.click(screen.getByText("Strategy"));
