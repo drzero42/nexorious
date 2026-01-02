@@ -195,6 +195,10 @@ export default function GamesPage() {
         onFiltersChange={handleFiltersChange}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onSortByChange={handleSortByChange}
+        onSortOrderToggle={handleSortOrderToggle}
       />
 
       {/* Bulk actions */}
