@@ -130,6 +130,43 @@ export function GameFilters({
         </SelectContent>
       </Select>
 
+      {/* Sort dropdown */}
+      <Select
+        value={sortBy}
+        onValueChange={(value) => onSortByChange(value as SortField)}
+      >
+        <SelectTrigger className="w-40">
+          <SelectValue placeholder="Sort by" />
+        </SelectTrigger>
+        <SelectContent>
+          {sortOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Sort direction toggle */}
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onSortOrderToggle}
+        title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+      >
+        {sortBy === 'title' ? (
+          sortOrder === 'asc' ? (
+            <ArrowDownAZ className="h-4 w-4" />
+          ) : (
+            <ArrowUpAZ className="h-4 w-4" />
+          )
+        ) : sortOrder === 'asc' ? (
+          <ArrowUp className="h-4 w-4" />
+        ) : (
+          <ArrowDown className="h-4 w-4" />
+        )}
+      </Button>
+
       {/* Clear filters */}
       {hasActiveFilters && (
         <Button variant="ghost" size="sm" onClick={clearFilters}>
