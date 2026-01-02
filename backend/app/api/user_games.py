@@ -234,11 +234,11 @@ async def list_user_games(
         # Sort by UserGame model fields (default behavior)
         sort_field = getattr(UserGame, sort_by, UserGame.created_at)
     
-    # Apply sort order
+    # Apply sort order (nulls always at end for consistent UX)
     if sort_order == "desc":
-        query = query.order_by(desc(col(sort_field)))
+        query = query.order_by(desc(col(sort_field)).nulls_last())
     else:
-        query = query.order_by(asc(col(sort_field)))
+        query = query.order_by(asc(col(sort_field)).nulls_last())
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
