@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Collapsible,
@@ -321,9 +321,19 @@ function StatusSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [page, setPage] = useState(1);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const prevCountRef = useRef(count);
   const { data, isLoading, refetch } = useJobItems(jobId, status, page, 20, {
     enabled: isOpen && count > 0,
   });
+
+  // Refetch items when count changes (triggered by parent job polling)
+  // This avoids duplicate polling - parent polls job, we react to count changes
+  useEffect(() => {
+    if (isOpen && count !== prevCountRef.current) {
+      refetch();
+    }
+    prevCountRef.current = count;
+  }, [count, isOpen, refetch]);
 
   // Retry mutations
   const retryAllMutation = useRetryFailedItems();
@@ -353,7 +363,11 @@ function StatusSection({
     }
   };
 
-  if (count === 0) return null;
+  // Use the items query total when section is open and data is loaded,
+  // ensuring the count badge stays in sync with the displayed items
+  const displayCount = isOpen && data ? data.total : count;
+
+  if (count === 0 && !isOpen) return null;
 
   const iconMap: Record<JobItemStatus, React.ReactNode> = {
     [JobItemStatus.PENDING]: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -404,7 +418,7 @@ function StatusSection({
                 Retry All
               </Button>
             )}
-            <Badge variant={getJobItemStatusVariant(status)}>{count}</Badge>
+            <Badge variant={getJobItemStatusVariant(status)}>{displayCount}</Badge>
           </div>
         </Button>
       </CollapsibleTrigger>

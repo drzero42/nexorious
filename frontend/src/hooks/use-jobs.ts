@@ -92,18 +92,20 @@ export function useJobsSummary() {
 /**
  * Hook to fetch paginated list of items for a specific job.
  * Useful for viewing details of what a job processed.
+ * Supports polling via refetchInterval option.
  */
 export function useJobItems(
   jobId: string,
   status?: JobItemStatus,
   page: number = 1,
   pageSize: number = 50,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; refetchInterval?: number | false }
 ) {
   return useQuery({
     queryKey: jobsKeys.items(jobId, status, page),
     queryFn: () => jobsApi.getJobItems(jobId, status, page, pageSize),
     enabled: options?.enabled !== false && !!jobId,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
