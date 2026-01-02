@@ -59,11 +59,8 @@ We should be able to do better auto-matching during sync. If we strip away colon
 ## Add storefront, genre and tag filtering
 The Library overview should also allow storefront, genre and tags filtering.
 
-## Sorting games
-Games on /games should be sorted alphabetically by default and allow reversing the sort.
-
-## Time-to-beat
-Show time-to-beat in game cards on /games and allow sorting by time-to-beat.
-
 ## Number badge when there are items needing review
 We recently implemented badges to draw attention to when there were games needing review during sync. Refactoring work seems to have killed this feature again. We need to revive this feature. Next to the Sync menu item should be a badge showing the number of items in "Needs Review" across the sync sources.
+
+## Import tags from sync sources
+Steam should expose tags that we can ensure are added to games when we sync from there. Epic may also have tags.
