@@ -1483,3 +1483,89 @@ class TestUserGamePlatformPlaytime:
         data = response.json()
         # Aggregate should be 10 + 20 = 30
         assert data["hours_played"] == 30
+
+
+class TestUserGameGenres:
+    """Test GET /api/user-games/genres endpoint."""
+
+    def test_get_genres_returns_unique_parsed_genres(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test that endpoint returns sorted unique genres from user's collection."""
+        from .integration_test_utils import create_test_game
+
+        # Create games with different genres
+        game1 = create_test_game(title="Game 1", genre="Action")
+        game2 = create_test_game(title="Game 2", genre="RPG")
+        game3 = create_test_game(title="Game 3", genre="Action")  # Duplicate genre
+
+        session.add_all([game1, game2, game3])
+        session.commit()
+        session.refresh(game1)
+        session.refresh(game2)
+        session.refresh(game3)
+
+        # Add games to user's collection
+        for game in [game1, game2, game3]:
+            user_game = UserGame(
+                user_id=test_user.id,
+                game_id=game.id,
+                ownership_status="owned",
+                play_status="not_started"
+            )
+            session.add(user_game)
+        session.commit()
+
+        response = client.get("/api/user-games/genres", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "genres" in data
+        # Should be sorted and unique
+        assert data["genres"] == ["Action", "RPG"]
+
+    def test_get_genres_empty_collection(
+        self, client: TestClient, auth_headers: Dict[str, str]
+    ):
+        """Test that endpoint returns empty list for user with no games."""
+        response = client.get("/api/user-games/genres", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "genres" in data
+        assert data["genres"] == []
+
+    def test_get_genres_parses_comma_separated(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test that comma-separated genres are split into individual genres."""
+        from .integration_test_utils import create_test_game
+
+        # Create game with comma-separated genres
+        game = create_test_game(title="Multi-Genre Game", genre="Action, RPG, Adventure")
+        session.add(game)
+        session.commit()
+        session.refresh(game)
+
+        # Add to user's collection
+        user_game = UserGame(
+            user_id=test_user.id,
+            game_id=game.id,
+            ownership_status="owned",
+            play_status="not_started"
+        )
+        session.add(user_game)
+        session.commit()
+
+        response = client.get("/api/user-games/genres", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should be split and sorted alphabetically
+        assert data["genres"] == ["Action", "Adventure", "RPG"]
+
+    def test_get_genres_requires_auth(self, client: TestClient):
+        """Test that endpoint requires authentication."""
+        response = client.get("/api/user-games/genres")
+
+        assert_api_error(response, 403, "Not authenticated")

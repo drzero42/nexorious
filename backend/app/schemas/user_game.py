@@ -181,3 +181,8 @@ class CollectionStatsResponse(BaseModel):
 class UserGameIdsResponse(BaseModel):
     """Response schema for user game IDs list."""
     ids: List[str] = Field(..., description="List of user game IDs")
+
+
+class UserGameGenresResponse(BaseModel):
+    """Response schema for unique genres in user's collection."""
+    genres: List[str] = Field(..., description="List of unique genres sorted alphabetically")

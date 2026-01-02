@@ -29,7 +29,8 @@ from ..schemas.user_game import (
     BulkAddPlatformRequest,
     BulkRemovePlatformRequest,
     CollectionStatsResponse,
-    UserGameIdsResponse
+    UserGameIdsResponse,
+    UserGameGenresResponse
 )
 from ..schemas.common import SuccessResponse
 from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
@@ -327,6 +328,38 @@ async def get_user_game_ids(
     ids = session.exec(query).all()
 
     return UserGameIdsResponse(ids=[str(id) for id in ids])
+
+
+@router.get("/genres", response_model=UserGameGenresResponse)
+async def get_user_game_genres(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get unique genres from user's game collection, sorted alphabetically."""
+
+    # Query all genres from games in user's collection
+    genre_query = (
+        select(Game.genre)
+        .join(UserGame)
+        .where(UserGame.user_id == current_user.id)
+        .where(Game.genre.isnot(None))  # type: ignore[union-attr]
+        .distinct()
+    )
+
+    genre_values = session.exec(genre_query).all()
+
+    # Parse comma-separated genres and deduplicate
+    unique_genres: set[str] = set()
+    for genre_string in genre_values:
+        if genre_string:
+            # Split by comma and strip whitespace
+            for genre in genre_string.split(","):
+                stripped = genre.strip()
+                if stripped:
+                    unique_genres.add(stripped)
+
+    # Sort alphabetically and return
+    return UserGameGenresResponse(genres=sorted(unique_genres))
 
 
 @router.get("/stats", response_model=CollectionStatsResponse)
