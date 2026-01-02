@@ -6,7 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
+import { Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+function formatTtb(hours: number | null | undefined): string {
+  return hours != null ? `${hours}h` : '—';
+}
 
 export interface GameCardProps {
   game: UserGame;
@@ -158,6 +163,18 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
             {game.hours_played || 0}h
           </span>
         </div>
+        {(game.game?.howlongtobeat_main != null ||
+          game.game?.howlongtobeat_extra != null ||
+          game.game?.howlongtobeat_completionist != null) && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+            <Timer className="h-3 w-3" />
+            <span>
+              {formatTtb(game.game?.howlongtobeat_main)} /{' '}
+              {formatTtb(game.game?.howlongtobeat_extra)} /{' '}
+              {formatTtb(game.game?.howlongtobeat_completionist)}
+            </span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
