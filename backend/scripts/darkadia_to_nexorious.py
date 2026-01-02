@@ -153,7 +153,9 @@ STOREFRONT_MAP: dict[str, str] = {
     # Crowdfunding / backer keys (typically Steam keys)
     "Kickstarter": "steam",
     "Backer": "steam",
-    # Defunct storefronts (map to empty, will be filtered out)
+    # Unknown/missing storefront (empty string in CSV -> empty string output -> None in JSON)
+    "": "",
+    # Defunct storefronts (also map to empty)
     "Telltale.com": "",
     "telltale.com": "",
     # Physical retail stores (Danish/Nordic)
@@ -370,7 +372,7 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
             if copy_platform.lower() == "other":
                 # "Other" means PC platform, and copy_media has the storefront
                 platform = "PC"
-                storefront = copy_media if copy_media else "Physical"
+                storefront = copy_media if copy_media else ""
             else:
                 # Normal case: copy_platform is the storefront, need to derive platform
                 platform = copy_platform
@@ -394,9 +396,7 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
             if platform:
                 copy = CopyData(
                     platform=platform,
-                    storefront=storefront
-                    if storefront
-                    else "Physical",  # Default to Physical
+                    storefront=storefront,  # Empty string = unknown storefront
                     media_type=media_type if media_type else "Digital",
                     purchase_date=parse_date(copy_purchase_date),
                     copy_label=copy_label,
@@ -810,31 +810,27 @@ def generate_nexorious_json(
         if game.loved:
             stats["loved_games"] += 1
 
-        # Build platform entries (skip copies with empty/defunct storefronts)
+        # Build platform entries
         # Use a set to deduplicate platform/storefront combinations
         platforms = []
-        seen_platform_storefronts: set[tuple[str, str]] = set()
+        seen_platform_storefronts: set[tuple[str, Optional[str]]] = set()
         for copy in game.copies:
             platform_name = PLATFORM_MAP[copy.platform]
-            storefront_name = STOREFRONT_MAP[copy.storefront]
+            storefront_name = STOREFRONT_MAP.get(copy.storefront, "")
 
-            # Skip copies with empty storefront (defunct storefronts like Telltale.com)
-            if not storefront_name:
-                continue
+            # Convert empty string to None (unknown storefront)
+            storefront_name_out: Optional[str] = storefront_name if storefront_name else None
 
             # Skip duplicate platform/storefront combinations
-            key = (platform_name, storefront_name)
+            key = (platform_name, storefront_name_out)
             if key in seen_platform_storefronts:
                 continue
             seen_platform_storefronts.add(key)
 
             platforms.append(
                 {
-                    "platform": platform_name,
-                    "storefront": storefront_name,
-                    "store_game_id": None,
-                    "store_url": None,
-                    "is_available": True,
+                    "platform_name": platform_name,
+                    "storefront_name": storefront_name_out,
                 }
             )
 
