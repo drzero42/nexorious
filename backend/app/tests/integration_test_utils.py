@@ -450,12 +450,15 @@ def mock_igdb_service_fixture():
     mock_service.search_games.side_effect = mock_search_games
     
     # Improved get_game_by_id with better data coverage
-    def mock_get_game_by_id(igdb_id: int) -> GameMetadata:
+    def mock_get_game_by_id(igdb_id: int) -> Optional[GameMetadata]:
+        # Return None for very large IDs (simulating game not found)
+        if igdb_id >= 99999999:
+            return None
         data = game_data.get(igdb_id, game_data[12345]).copy()
         title = data.pop("title")
         genre = data.pop("genre")
         return _create_game_metadata(igdb_id, title, genre, **data)
-    
+
     mock_service.get_game_by_id.side_effect = mock_get_game_by_id
     
     # Smart refresh_game_metadata that uses existing game data

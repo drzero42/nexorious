@@ -393,6 +393,113 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
     });
+
+    it('detects igdb: prefix and calls lookup endpoint (lowercase)', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/12345`, () => {
+          return HttpResponse.json({
+            games: [mockIGDBGameApi],
+            total: 1,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useSearchIGDB('igdb:12345'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toHaveLength(1);
+      expect(result.current.data?.[0].title).toBe('IGDB Game');
+    });
+
+    it('detects IGDB: prefix and calls lookup endpoint (uppercase)', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/99999`, () => {
+          return HttpResponse.json({
+            games: [mockIGDBGameApi],
+            total: 1,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useSearchIGDB('IGDB:99999'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toHaveLength(1);
+    });
+
+    it('does not apply 3-char minimum for IGDB ID lookup', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/1`, () => {
+          return HttpResponse.json({
+            games: [mockIGDBGameApi],
+            total: 1,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useSearchIGDB('igdb:1'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toHaveLength(1);
+    });
+
+    it('returns empty array when IGDB ID not found', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/99999999`, () => {
+          return HttpResponse.json({
+            games: [],
+            total: 0,
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useSearchIGDB('igdb:99999999'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toHaveLength(0);
+    });
+
+    it('treats invalid igdb: format as regular search', async () => {
+      const fetchSpy = vi.fn();
+
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, () => {
+          fetchSpy();
+          return HttpResponse.json({ games: [], total: 0 });
+        })
+      );
+
+      // "igdb:abc" is not a valid ID format, should fall through to search
+      const { result } = renderHook(() => useSearchIGDB('igdb:abc'), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(fetchSpy).toHaveBeenCalled();
+    });
   });
 
   describe('useCollectionStats', () => {

@@ -10,6 +10,7 @@ import {
   updateUserGame,
   deleteUserGame,
   searchIGDB,
+  getGameByIGDBId,
   importFromIGDB,
   bulkUpdateUserGames,
   bulkDeleteUserGames,
@@ -94,6 +95,19 @@ const mockUserGameApi = {
   tags: [mockTagApi],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
+};
+
+const mockIGDBGameApi = {
+  igdb_id: 99999,
+  igdb_slug: 'igdb-game',
+  title: 'IGDB Game',
+  release_date: '2024-06-15',
+  cover_art_url: 'https://example.com/igdb-cover.jpg',
+  description: 'A game from IGDB',
+  platforms: ['PC', 'PlayStation 5'],
+  howlongtobeat_main: 25,
+  howlongtobeat_extra: 40,
+  howlongtobeat_completionist: 60,
 };
 
 describe('games.ts', () => {
@@ -440,6 +454,40 @@ describe('games.ts', () => {
       );
 
       await searchIGDB('test', 5);
+    });
+  });
+
+  describe('getGameByIGDBId', () => {
+    it('fetches game by IGDB ID successfully', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/12345`, () => {
+          return HttpResponse.json({
+            games: [mockIGDBGameApi],
+            total: 1,
+          });
+        })
+      );
+
+      const result = await getGameByIGDBId(12345);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].igdb_id).toBe(99999);
+      expect(result[0].title).toBe('IGDB Game');
+    });
+
+    it('returns empty array when game not found', async () => {
+      server.use(
+        http.get(`${API_URL}/games/igdb/99999999`, () => {
+          return HttpResponse.json({
+            games: [],
+            total: 0,
+          });
+        })
+      );
+
+      const result = await getGameByIGDBId(99999999);
+
+      expect(result).toHaveLength(0);
     });
   });
 

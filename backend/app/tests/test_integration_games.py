@@ -187,9 +187,35 @@ class TestIGDBIntegrationEndpoints:
             "title": "Test Game"
         }
         response = client_with_mock_igdb.post("/api/games/igdb-import", json=import_data)
-        
+
         assert_api_error(response, 403, "Not authenticated")
 
+    def test_igdb_lookup_by_id_success(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
+        """Test successful IGDB lookup by ID."""
+        response = client_with_mock_igdb.get("/api/games/igdb/12345", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert "games" in data
+        assert len(data["games"]) == 1
+        assert data["games"][0]["igdb_id"] == 12345
+        assert data["games"][0]["title"] == "Test Game"
+        assert data["total"] == 1
+
+    def test_igdb_lookup_by_id_not_found(self, client_with_mock_igdb: TestClient, auth_headers: Dict[str, str]):
+        """Test IGDB lookup by ID when game not found."""
+        response = client_with_mock_igdb.get("/api/games/igdb/99999999", headers=auth_headers)
+
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["games"] == []
+        assert data["total"] == 0
+
+    def test_igdb_lookup_by_id_without_auth(self, client_with_mock_igdb: TestClient):
+        """Test IGDB lookup by ID without authentication."""
+        response = client_with_mock_igdb.get("/api/games/igdb/12345")
+
+        assert_api_error(response, 403, "Not authenticated")
 
 
 
