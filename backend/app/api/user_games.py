@@ -117,8 +117,8 @@ async def list_user_games(
     has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
     q: Optional[str] = Query(default=None, description="Search in game titles and notes"),
     fuzzy_threshold: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Fuzzy matching threshold for title search (0.0-1.0)"),
-    sort_by: Optional[str] = Query(default="created_at", description="Sort field"),
-    sort_order: Optional[str] = Query(default="desc", pattern="^(asc|desc)$", description="Sort order")
+    sort_by: Optional[str] = Query(default="title", description="Sort field"),
+    sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order")
 ):
     """List user's game collection with filtering and sorting."""
     
@@ -224,7 +224,7 @@ async def list_user_games(
         query = query.join(Game)
     
     # Ensure sort_by has a value
-    sort_by = sort_by or "created_at"
+    sort_by = sort_by or "title"
     
     # Determine the sort field
     if sort_by in game_sort_fields:
