@@ -202,6 +202,26 @@ async def list_user_games(
     if filters:
         query = query.where(and_(*filters))
 
+    # Prevent duplicate results when JOIN produces multiple rows for the same UserGame
+    # (e.g., a game owned on both Windows and PS5 when filtering by platform=windows&platform=ps5)
+    # Use subquery approach to avoid PostgreSQL DISTINCT/ORDER BY conflicts
+    if joined_user_game_platform:
+        # Create a subquery with distinct UserGame IDs
+        distinct_ids_subquery = (
+            select(UserGame.id)
+            .join(UserGamePlatform)
+            .where(UserGame.user_id == current_user.id)
+        )
+        if filters:
+            distinct_ids_subquery = distinct_ids_subquery.where(and_(*filters))
+        distinct_ids_subquery = distinct_ids_subquery.distinct()
+
+        # Rebuild main query to select from distinct IDs only
+        query = select(UserGame).where(in_(col(UserGame.id), distinct_ids_subquery))
+        # Reset join tracking since we're using a fresh query
+        joined_user_game_platform = False
+        joined_game = False
+
     # Check if we're in fuzzy search mode
     fuzzy_search_mode = q and fuzzy_threshold is not None
 

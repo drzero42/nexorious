@@ -1634,7 +1634,7 @@ class TestMultiValueFilters:
         session.add(UserGamePlatform(user_game_id=ug3.id, platform="nintendo_switch"))
         session.commit()
 
-        # Test filtering by multiple platforms (Windows AND PS5)
+        # Test filtering by multiple platforms (Windows OR PS5 - IN clause is OR logic)
         response = client.get(
             "/api/user-games/?platform=windows&platform=playstation_5",
             headers=auth_headers
@@ -1704,7 +1704,7 @@ class TestMultiValueFilters:
         session.add(UserGamePlatform(user_game_id=ug3.id, platform="pc", storefront="gog"))
         session.commit()
 
-        # Test filtering by multiple storefronts (Steam AND Epic)
+        # Test filtering by multiple storefronts (Steam OR Epic - IN clause is OR logic)
         response = client.get(
             "/api/user-games/?storefront=steam&storefront=epic",
             headers=auth_headers
@@ -1718,6 +1718,59 @@ class TestMultiValueFilters:
         assert "Steam Game" in titles
         assert "Epic Game" in titles
         assert "GOG Game" not in titles
+
+    def test_no_duplicates_with_multiple_matching_platforms(
+        self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
+    ):
+        """Test that games with multiple platforms matching filter don't appear twice."""
+        from .integration_test_utils import create_test_game
+
+        # Create platforms
+        platform_windows = Platform(
+            name="test_windows",
+            display_name="Test Windows",
+            is_active=True
+        )
+        platform_ps5 = Platform(
+            name="test_ps5",
+            display_name="Test PlayStation 5",
+            is_active=True
+        )
+        session.add_all([platform_windows, platform_ps5])
+        session.commit()
+
+        # Create a game owned on BOTH Windows and PS5
+        game = create_test_game(title="Multi-Platform Game")
+        session.add(game)
+        session.commit()
+        session.refresh(game)
+
+        # Create user game
+        user_game = UserGame(
+            user_id=test_user.id, game_id=game.id,
+            ownership_status="owned", play_status="not_started"
+        )
+        session.add(user_game)
+        session.commit()
+        session.refresh(user_game)
+
+        # Add BOTH platform associations to the same game
+        session.add(UserGamePlatform(user_game_id=user_game.id, platform="test_windows"))
+        session.add(UserGamePlatform(user_game_id=user_game.id, platform="test_ps5"))
+        session.commit()
+
+        # Filter by both platforms - the game matches BOTH filters
+        response = client.get(
+            "/api/user-games/?platform=test_windows&platform=test_ps5",
+            headers=auth_headers
+        )
+
+        assert_api_success(response, 200)
+        data = response.json()
+        # Should return 1 game, NOT 2 (no duplicates)
+        assert data["total"] == 1, f"Expected 1 game but got {data['total']} - duplicate detection failed"
+        assert len(data["user_games"]) == 1
+        assert data["user_games"][0]["game"]["title"] == "Multi-Platform Game"
 
     def test_filter_multiple_genres(
         self, client: TestClient, test_user: User, auth_headers: Dict[str, str], session: Session
