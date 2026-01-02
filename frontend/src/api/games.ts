@@ -135,8 +135,10 @@ interface IGDBSearchApiResponse {
 export interface GetUserGamesParams {
   status?: PlayStatus;
   ownershipStatus?: OwnershipStatus;
-  platform?: string;
-  storefront?: string;
+  platform?: string | string[];
+  storefront?: string | string[];
+  genre?: string[];
+  tags?: string[];
   search?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
@@ -335,28 +337,54 @@ function transformIGDBGameCandidate(
 // Helper: Convert camelCase params to snake_case for API
 // ============================================================================
 
-function buildUserGamesQueryParams(
-  params?: GetUserGamesParams
-): Record<string, string | number | boolean | undefined> {
-  if (!params) return {};
+/**
+ * Helper function to append a value or array of values to URLSearchParams.
+ * For arrays, appends each value with the same key (e.g., ?platform=windows&platform=ps5)
+ */
+function appendParam(
+  searchParams: URLSearchParams,
+  key: string,
+  value: string | string[] | number | boolean | undefined
+): void {
+  if (value === undefined) return;
 
-  return {
-    play_status: params.status,
-    ownership_status: params.ownershipStatus,
-    platform: params.platform,
-    storefront: params.storefront,
-    q: params.search,
-    sort_by: params.sortBy,
-    sort_order: params.sortOrder,
-    page: params.page,
-    per_page: params.perPage,
-    limit: params.limit,
-    is_loved: params.isLoved,
-    rating_min: params.ratingMin,
-    rating_max: params.ratingMax,
-    has_notes: params.hasNotes,
-    fuzzy_threshold: params.fuzzyThreshold,
-  };
+  if (Array.isArray(value)) {
+    value.forEach((v) => searchParams.append(key, String(v)));
+  } else {
+    searchParams.append(key, String(value));
+  }
+}
+
+/**
+ * Build query string for user games API requests.
+ * Supports multi-value params by appending the same key multiple times.
+ * Returns undefined if no params provided or all params are undefined.
+ */
+function buildUserGamesQueryParams(params?: GetUserGamesParams): string | undefined {
+  if (!params) return undefined;
+
+  const searchParams = new URLSearchParams();
+
+  appendParam(searchParams, 'play_status', params.status);
+  appendParam(searchParams, 'ownership_status', params.ownershipStatus);
+  appendParam(searchParams, 'platform', params.platform);
+  appendParam(searchParams, 'storefront', params.storefront);
+  appendParam(searchParams, 'genre', params.genre);
+  appendParam(searchParams, 'tags', params.tags);
+  appendParam(searchParams, 'q', params.search);
+  appendParam(searchParams, 'sort_by', params.sortBy);
+  appendParam(searchParams, 'sort_order', params.sortOrder);
+  appendParam(searchParams, 'page', params.page);
+  appendParam(searchParams, 'per_page', params.perPage);
+  appendParam(searchParams, 'limit', params.limit);
+  appendParam(searchParams, 'is_loved', params.isLoved);
+  appendParam(searchParams, 'rating_min', params.ratingMin);
+  appendParam(searchParams, 'rating_max', params.ratingMax);
+  appendParam(searchParams, 'has_notes', params.hasNotes);
+  appendParam(searchParams, 'fuzzy_threshold', params.fuzzyThreshold);
+
+  const queryString = searchParams.toString();
+  return queryString || undefined;
 }
 
 // ============================================================================
@@ -369,10 +397,9 @@ function buildUserGamesQueryParams(
 export async function getUserGames(
   params?: GetUserGamesParams
 ): Promise<UserGamesListResponse> {
-  const queryParams = buildUserGamesQueryParams(params);
-  const response = await api.get<UserGameListApiResponse>('/user-games/', {
-    params: queryParams,
-  });
+  const queryString = buildUserGamesQueryParams(params);
+  const path = queryString ? `/user-games/?${queryString}` : '/user-games/';
+  const response = await api.get<UserGameListApiResponse>(path);
 
   return {
     items: response.user_games.map(transformUserGame),
@@ -606,10 +633,9 @@ export async function getUserGameGenres(): Promise<string[]> {
 export async function getUserGameIds(
   params?: GetUserGamesParams
 ): Promise<string[]> {
-  const queryParams = buildUserGamesQueryParams(params);
-  const response = await api.get<{ ids: string[] }>('/user-games/ids', {
-    params: queryParams,
-  });
+  const queryString = buildUserGamesQueryParams(params);
+  const path = queryString ? `/user-games/ids?${queryString}` : '/user-games/ids';
+  const response = await api.get<{ ids: string[] }>(path);
 
   return response.ids;
 }
