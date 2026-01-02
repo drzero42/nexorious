@@ -11,7 +11,23 @@ import {
 } from '@/components/ui/select';
 import { useAllPlatforms } from '@/hooks';
 import { PlayStatus } from '@/types';
-import { Grid, List, X } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X } from 'lucide-react';
+
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date';
+type SortOrder = 'asc' | 'desc';
+
+interface SortOption {
+  value: SortField;
+  label: string;
+}
+
+const sortOptions: SortOption[] = [
+  { value: 'title', label: 'Title' },
+  { value: 'created_at', label: 'Date Added' },
+  { value: 'howlongtobeat_main', label: 'Time to Beat' },
+  { value: 'personal_rating', label: 'My Rating' },
+  { value: 'release_date', label: 'Release Date' },
+];
 
 export interface GameFiltersProps {
   filters: {
@@ -22,6 +38,10 @@ export interface GameFiltersProps {
   onFiltersChange: (filters: GameFiltersProps['filters']) => void;
   viewMode: 'grid' | 'list';
   onViewModeChange: (mode: 'grid' | 'list') => void;
+  sortBy: SortField;
+  sortOrder: SortOrder;
+  onSortByChange: (sortBy: SortField) => void;
+  onSortOrderToggle: () => void;
 }
 
 const statusOptions: { value: PlayStatus; label: string }[] = [
@@ -40,6 +60,10 @@ export function GameFilters({
   onFiltersChange,
   viewMode,
   onViewModeChange,
+  sortBy,
+  sortOrder,
+  onSortByChange,
+  onSortOrderToggle,
 }: GameFiltersProps) {
   const { data: platforms } = useAllPlatforms();
 
