@@ -116,7 +116,7 @@ class TestEpicCredentialStorage:
              patch('os.makedirs') as mock_makedirs, \
              patch('json.dump') as mock_json_dump:
 
-            await service._load_credentials_from_db(mock_session)
+            service._load_credentials_from_db(mock_session)
 
             # Verify database query was made
             mock_session.exec.assert_called_once()
@@ -154,7 +154,7 @@ class TestEpicCredentialStorage:
         with patch('builtins.open') as mock_file, \
              patch('os.makedirs') as mock_makedirs:
 
-            await service._load_credentials_from_db(mock_session)
+            service._load_credentials_from_db(mock_session)
 
             # Verify database query was made
             mock_session.exec.assert_called_once()
@@ -189,7 +189,7 @@ class TestEpicCredentialStorage:
         with patch('builtins.open') as mock_file, \
              patch('os.makedirs') as mock_makedirs:
 
-            await service._load_credentials_from_db(mock_session)
+            service._load_credentials_from_db(mock_session)
 
             # Verify database query was made
             mock_session.exec.assert_called_once()
@@ -222,7 +222,7 @@ class TestEpicCredentialStorage:
 
         # Verify that malformed JSON raises EpicAPIError with "corrupted" in message
         with pytest.raises(EpicAPIError, match="corrupted"):
-            await service._load_credentials_from_db(mock_session)
+            service._load_credentials_from_db(mock_session)
 
         # Verify database query was made
         mock_session.exec.assert_called_once()
@@ -253,7 +253,7 @@ class TestEpicCredentialStorage:
         with patch('os.makedirs', side_effect=OSError("Permission denied")):
             # Verify that filesystem error raises EpicAPIError
             with pytest.raises(EpicAPIError, match="Failed to store Epic credentials"):
-                await service._load_credentials_from_db(mock_session)
+                service._load_credentials_from_db(mock_session)
 
     @patch('app.services.epic.LegendaryCore')
     def test_save_credentials_to_db_success(self, mock_legendary_core, tmp_path):

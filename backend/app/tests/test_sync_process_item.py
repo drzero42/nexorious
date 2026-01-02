@@ -6,31 +6,36 @@ from unittest.mock import MagicMock, patch
 
 from app.worker.tasks.sync.process_item import (
     process_sync_item,
-    _is_already_synced,
+    _get_existing_sync,
     _is_ignored,
     _add_platform_association,
 )
 from app.models.job import JobItemStatus
 
 
-class TestIsAlreadySynced:
-    """Tests for _is_already_synced helper."""
+class TestGetExistingSync:
+    """Tests for _get_existing_sync helper."""
 
-    def test_returns_true_when_synced(self):
-        """Test returns True when platform association exists."""
+    def test_returns_tuple_when_synced(self):
+        """Test returns (user_game_id, game_id, game_title) when platform association exists."""
         session = MagicMock()
-        session.exec.return_value.first.return_value = MagicMock()  # Found
+        mock_user_game = MagicMock()
+        mock_user_game.id = "ug123"
+        mock_game = MagicMock()
+        mock_game.id = 456
+        mock_game.title = "Test Game"
+        session.exec.return_value.first.return_value = (MagicMock(), mock_user_game, mock_game)
 
-        result = _is_already_synced(session, "user123", "steam", "12345")
-        assert result is True
+        result = _get_existing_sync(session, "user123", "steam", "12345")
+        assert result == ("ug123", 456, "Test Game")
 
-    def test_returns_false_when_not_synced(self):
-        """Test returns False when no platform association."""
+    def test_returns_none_when_not_synced(self):
+        """Test returns None when no platform association."""
         session = MagicMock()
         session.exec.return_value.first.return_value = None
 
-        result = _is_already_synced(session, "user123", "steam", "12345")
-        assert result is False
+        result = _get_existing_sync(session, "user123", "steam", "12345")
+        assert result is None
 
 
 class TestIsIgnored:
@@ -159,7 +164,7 @@ class TestProcessSyncItem:
         """Test marks already synced items as COMPLETED."""
         with (
             patch("app.worker.tasks.sync.process_item.get_sync_session") as mock_get_session,
-            patch("app.worker.tasks.sync.process_item._is_already_synced") as mock_synced,
+            patch("app.worker.tasks.sync.process_item._get_existing_sync") as mock_synced,
             patch("app.worker.tasks.sync.process_item._complete_job_item") as mock_complete,
         ):
             mock_session = MagicMock()
@@ -178,7 +183,7 @@ class TestProcessSyncItem:
             mock_item.source_title = "Test Game"
 
             mock_session.get.return_value = mock_item
-            mock_synced.return_value = True
+            mock_synced.return_value = ("ug123", 456, "Test Game")
             mock_complete.return_value = {"status": "success", "result": "already_synced"}
 
             result = await process_sync_item("item123")
@@ -191,7 +196,7 @@ class TestProcessSyncItem:
         """Test marks ignored items as SKIPPED."""
         with (
             patch("app.worker.tasks.sync.process_item.get_sync_session") as mock_get_session,
-            patch("app.worker.tasks.sync.process_item._is_already_synced") as mock_synced,
+            patch("app.worker.tasks.sync.process_item._get_existing_sync") as mock_synced,
             patch("app.worker.tasks.sync.process_item._is_ignored") as mock_ignored,
             patch("app.worker.tasks.sync.process_item._complete_job_item") as mock_complete,
         ):
@@ -211,7 +216,7 @@ class TestProcessSyncItem:
             mock_item.source_title = "Test Game"
 
             mock_session.get.return_value = mock_item
-            mock_synced.return_value = False
+            mock_synced.return_value = None
             mock_ignored.return_value = True
             mock_complete.return_value = {"status": "success", "result": "ignored"}
 
@@ -280,7 +285,7 @@ class TestProcessSyncItem:
         """Test processes items with user-provided IGDB ID."""
         with (
             patch("app.worker.tasks.sync.process_item.get_sync_session") as mock_get_session,
-            patch("app.worker.tasks.sync.process_item._is_already_synced") as mock_synced,
+            patch("app.worker.tasks.sync.process_item._get_existing_sync") as mock_synced,
             patch("app.worker.tasks.sync.process_item._is_ignored") as mock_ignored,
             patch("app.worker.tasks.sync.process_item._process_with_resolved_id") as mock_process,
         ):
@@ -300,7 +305,7 @@ class TestProcessSyncItem:
             mock_item.source_title = "Test Game"
 
             mock_session.get.return_value = mock_item
-            mock_synced.return_value = False
+            mock_synced.return_value = None
             mock_ignored.return_value = False
             mock_process.return_value = {"status": "success", "result": "imported_new"}
 
@@ -314,7 +319,7 @@ class TestProcessSyncItem:
         """Test falls back to IGDB matching when no resolved_igdb_id."""
         with (
             patch("app.worker.tasks.sync.process_item.get_sync_session") as mock_get_session,
-            patch("app.worker.tasks.sync.process_item._is_already_synced") as mock_synced,
+            patch("app.worker.tasks.sync.process_item._get_existing_sync") as mock_synced,
             patch("app.worker.tasks.sync.process_item._is_ignored") as mock_ignored,
             patch("app.worker.tasks.sync.process_item._process_with_matching") as mock_match,
         ):
@@ -334,7 +339,7 @@ class TestProcessSyncItem:
             mock_item.source_title = "Test Game"
 
             mock_session.get.return_value = mock_item
-            mock_synced.return_value = False
+            mock_synced.return_value = None
             mock_ignored.return_value = False
             mock_match.return_value = {"status": "success", "result": "auto_imported"}
 
@@ -348,7 +353,7 @@ class TestProcessSyncItem:
         """Test job item status is updated to PROCESSING."""
         with (
             patch("app.worker.tasks.sync.process_item.get_sync_session") as mock_get_session,
-            patch("app.worker.tasks.sync.process_item._is_already_synced") as mock_synced,
+            patch("app.worker.tasks.sync.process_item._get_existing_sync") as mock_synced,
             patch("app.worker.tasks.sync.process_item._complete_job_item") as mock_complete,
         ):
             mock_session = MagicMock()
@@ -367,7 +372,7 @@ class TestProcessSyncItem:
             mock_item.source_title = "Test Game"
 
             mock_session.get.return_value = mock_item
-            mock_synced.return_value = True
+            mock_synced.return_value = ("ug123", 456, "Test Game")
             mock_complete.return_value = {"status": "success", "result": "already_synced"}
 
             await process_sync_item("item123")
