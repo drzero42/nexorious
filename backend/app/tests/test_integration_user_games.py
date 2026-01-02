@@ -192,6 +192,55 @@ class TestUserGamesListEndpoint:
         hours = [game["hours_played"] for game in games]
         assert hours == [100, 75, 50]
 
+    def test_list_user_games_sorting_nulls_last(self, client: TestClient, session: Session):
+        """Test that NULL values sort to the end regardless of sort direction."""
+        from .integration_test_utils import create_test_game, register_and_login_user
+
+        # Create a test user
+        user_data = {"username": "nullsortuser", "password": "password123"}
+        auth_headers = register_and_login_user(client, user_data)
+
+        # Get the user from the database
+        from ..models.user import User
+        user = session.exec(select(User).where(User.username == "nullsortuser")).first()
+        assert user is not None
+
+        # Create games with varying howlongtobeat_main values (including NULL)
+        game_short = create_test_game(title="Short Game", howlongtobeat_main=10)
+        game_long = create_test_game(title="Long Game", howlongtobeat_main=100)
+        game_null = create_test_game(title="Unknown Game", howlongtobeat_main=None)
+
+        session.add_all([game_short, game_long, game_null])
+        session.commit()
+        session.refresh(game_short)
+        session.refresh(game_long)
+        session.refresh(game_null)
+
+        # Create user games for each
+        for game in [game_short, game_long, game_null]:
+            user_game = UserGame(
+                user_id=user.id,
+                game_id=game.id,
+                ownership_status="owned",
+                play_status="not_started"
+            )
+            session.add(user_game)
+        session.commit()
+
+        # Test ascending sort: should be 10h, 100h, NULL
+        response = client.get("/api/user-games/?sort_by=howlongtobeat_main&sort_order=asc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        ttb_values = [game["game"]["howlongtobeat_main"] for game in games]
+        assert ttb_values == [10, 100, None], f"ASC sort failed: expected [10, 100, None], got {ttb_values}"
+
+        # Test descending sort: should be 100h, 10h, NULL (NULLs at end, not beginning)
+        response = client.get("/api/user-games/?sort_by=howlongtobeat_main&sort_order=desc", headers=auth_headers)
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        ttb_values = [game["game"]["howlongtobeat_main"] for game in games]
+        assert ttb_values == [100, 10, None], f"DESC sort failed: expected [100, 10, None], got {ttb_values}"
+
 
 class TestUserGamesDetailEndpoint:
     """Test GET /api/user-games/{user_game_id} endpoint."""
@@ -1376,6 +1425,7 @@ class TestUserGamePlatformPlaytime:
 
         if not platform:
             pytest.skip("No platform available for test")
+        assert platform is not None  # Type narrowing for pyrefly
 
         response = client.post(
             f"/api/user-games/{test_user_game.id}/platforms",
