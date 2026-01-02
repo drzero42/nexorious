@@ -59,5 +59,8 @@ We should be able to do better auto-matching during sync. If we strip away colon
 ## Add storefront, genre and tag filtering
 The Library overview should also allow storefront, genre and tags filtering.
 
+## Sorting games
+Games on /games should be sorted alphabetically by default and allow reversing the sort.
+
 ## Time-to-beat
 Show time-to-beat in game cards on /games and allow sorting by time-to-beat.
