@@ -29,6 +29,7 @@ vi.mock('@/providers', () => ({
 // Mock the admin API
 vi.mock('@/api/admin', () => ({
   loadSeedData: vi.fn(),
+  startMetadataRefreshJob: vi.fn(),
 }));
 
 import { useAuth } from '@/providers';
@@ -37,6 +38,7 @@ import { toast } from 'sonner';
 
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedLoadSeedData = vi.mocked(adminApi.loadSeedData);
+const mockedStartMetadataRefreshJob = vi.mocked(adminApi.startMetadataRefreshJob);
 
 const mockAdminUser = {
   id: 'user-1',
@@ -448,7 +450,7 @@ describe('MaintenancePage', () => {
       ).toBeInTheDocument();
     });
 
-    it('shows coming soon alert for IGDB refresh', async () => {
+    it('renders refresh button', async () => {
       mockedUseAuth.mockReturnValue({
         user: mockAdminUser,
         isLoading: false,
@@ -465,13 +467,131 @@ describe('MaintenancePage', () => {
         expect(screen.getByText('IGDB Data Refresh')).toBeInTheDocument();
       });
 
-      // Check for the alert title (h5 element) - use getAllByText since "Coming Soon" appears multiple times
-      const comingSoonElements = screen.getAllByText('Coming Soon');
-      // There should be at least 3: 2 buttons + 1 alert title
-      expect(comingSoonElements.length).toBeGreaterThanOrEqual(3);
-      expect(
-        screen.getByText(/igdb data refresh functionality will be available in a future update/i)
-      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /refresh all game metadata/i })).toBeInTheDocument();
+    });
+
+    it('starts metadata refresh job when button is clicked', async () => {
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      mockedStartMetadataRefreshJob.mockResolvedValue({
+        success: true,
+        message: 'Metadata refresh job started successfully',
+        jobId: 'job-123',
+      });
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('IGDB Data Refresh')).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByRole('button', { name: /refresh all game metadata/i });
+      await userEvent.click(refreshButton);
+
+      await waitFor(() => {
+        expect(mockedStartMetadataRefreshJob).toHaveBeenCalled();
+      });
+
+      expect(toast.success).toHaveBeenCalledWith('Metadata refresh job started');
+    });
+
+    it('displays job started result with link to job', async () => {
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      mockedStartMetadataRefreshJob.mockResolvedValue({
+        success: true,
+        message: 'Metadata refresh job started successfully',
+        jobId: 'job-123',
+      });
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('IGDB Data Refresh')).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByRole('button', { name: /refresh all game metadata/i });
+      await userEvent.click(refreshButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Job Started')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Metadata refresh job started successfully')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /view job progress/i })).toHaveAttribute(
+        'href',
+        '/jobs/job-123'
+      );
+    });
+
+    it('shows error toast when metadata refresh fails', async () => {
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      mockedStartMetadataRefreshJob.mockRejectedValue(new Error('Failed to start metadata refresh'));
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('IGDB Data Refresh')).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByRole('button', { name: /refresh all game metadata/i });
+      await userEvent.click(refreshButton);
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith('Failed to start metadata refresh');
+      });
+    });
+
+    it('shows loading state while job is starting', async () => {
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      mockedStartMetadataRefreshJob.mockImplementation(() => new Promise(() => {})); // Never resolves
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('IGDB Data Refresh')).toBeInTheDocument();
+      });
+
+      const refreshButton = screen.getByRole('button', { name: /refresh all game metadata/i });
+      await userEvent.click(refreshButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Starting...')).toBeInTheDocument();
+      });
     });
   });
 

@@ -16,10 +16,11 @@ import {
   History,
   Loader2,
   CheckCircle,
-  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { SeedDataResult } from '@/types';
+import type { MetadataRefreshJobResult } from '@/api/admin';
 
 function MaintenancePageSkeleton() {
   return (
@@ -43,6 +44,8 @@ export default function MaintenancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSeedLoading, setIsSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState<SeedDataResult | null>(null);
+  const [isRefreshLoading, setIsRefreshLoading] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<MetadataRefreshJobResult | null>(null);
 
   // Check admin access
   useEffect(() => {
@@ -64,6 +67,21 @@ export default function MaintenancePage() {
       toast.error(message);
     } finally {
       setIsSeedLoading(false);
+    }
+  };
+
+  const handleStartMetadataRefresh = async () => {
+    try {
+      setIsRefreshLoading(true);
+      setRefreshResult(null);
+      const result = await adminApi.startMetadataRefreshJob();
+      setRefreshResult(result);
+      toast.success('Metadata refresh job started');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start metadata refresh';
+      toast.error(message);
+    } finally {
+      setIsRefreshLoading(false);
     }
   };
 
@@ -196,16 +214,41 @@ export default function MaintenancePage() {
           </CardTitle>
           <CardDescription>Update game metadata from IGDB across your collection</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Coming Soon</AlertTitle>
-            <AlertDescription>
-              IGDB data refresh functionality will be available in a future update. This will allow
-              you to refresh cover art, time to beat data, and other metadata for games in your
-              collection.
-            </AlertDescription>
-          </Alert>
+        <CardContent className="space-y-4">
+          {refreshResult && (
+            <Alert className="border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <AlertTitle>Job Started</AlertTitle>
+              <AlertDescription className="space-y-2">
+                <p>{refreshResult.message}</p>
+                <Link
+                  href={`/jobs/${refreshResult.jobId}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium underline hover:no-underline"
+                >
+                  View job progress
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </AlertDescription>
+            </Alert>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Start a background job to refresh game modes, themes, player perspectives, and other
+            metadata from IGDB for all games in your collection. This operation runs asynchronously
+            and respects IGDB rate limits.
+          </p>
+          <Button onClick={handleStartMetadataRefresh} disabled={isRefreshLoading} className="w-full">
+            {isRefreshLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh All Game Metadata
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
 

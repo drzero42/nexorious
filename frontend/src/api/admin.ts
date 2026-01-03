@@ -118,3 +118,30 @@ export async function loadSeedData(version?: string): Promise<SeedDataResult> {
     message: response.message,
   };
 }
+
+/**
+ * Response from starting a metadata refresh job
+ */
+export interface MetadataRefreshJobResult {
+  success: boolean;
+  message: string;
+  jobId: string;
+}
+
+/**
+ * Start a metadata refresh job to update game metadata from IGDB (admin only)
+ * Uses fan-out pattern to process games in parallel via background workers.
+ */
+export async function startMetadataRefreshJob(gameIds?: string[]): Promise<MetadataRefreshJobResult> {
+  const response = await api.post<{
+    success: boolean;
+    message: string;
+    job_id: string;
+  }>('/games/metadata/refresh-job', { game_ids: gameIds ?? null });
+
+  return {
+    success: response.success,
+    message: response.message,
+    jobId: response.job_id,
+  };
+}
