@@ -77,6 +77,18 @@ def parse_game_data(game_data: Dict[str, Any]) -> Optional[GameMetadata]:
         igdb_platform_ids = igdb_platform_ids if igdb_platform_ids else None
         platform_names = platform_names if platform_names else None
 
+        # Extract game modes
+        game_modes_data = game_data.get('game_modes', [])
+        game_modes = [gm.get('name') for gm in game_modes_data if gm.get('name')]
+
+        # Extract themes
+        themes_data = game_data.get('themes', [])
+        themes = [t.get('name') for t in themes_data if t.get('name')]
+
+        # Extract player perspectives
+        perspectives_data = game_data.get('player_perspectives', [])
+        player_perspectives = [p.get('name') for p in perspectives_data if p.get('name')]
+
         logger.debug(f"Successfully parsed {game_name}: genres={genre}, platforms={len(platform_names) if platform_names else 0}")
 
         return GameMetadata(
@@ -98,7 +110,11 @@ def parse_game_data(game_data: Dict[str, Any]) -> Optional[GameMetadata]:
             completely=None,
             # Platform data from IGDB
             igdb_platform_ids=igdb_platform_ids,
-            platform_names=platform_names
+            platform_names=platform_names,
+            # Additional IGDB metadata
+            game_modes=game_modes if game_modes else None,
+            themes=themes if themes else None,
+            player_perspectives=player_perspectives if player_perspectives else None,
         )
 
     except KeyError as e:
