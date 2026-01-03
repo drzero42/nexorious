@@ -746,7 +746,7 @@ async def unignore_game(
 
 # ===== PSN Sync Endpoints =====
 
-@router.post("/sync/psn/configure", response_model=PSNConfigureResponse)
+@router.post("/psn/configure", response_model=PSNConfigureResponse)
 async def configure_psn(
     request: PSNConfigureRequest,
     current_user: User = Depends(get_current_user),
@@ -795,7 +795,7 @@ async def configure_psn(
         )
 
 
-@router.get("/sync/psn/status", response_model=PSNStatusResponse)
+@router.get("/psn/status", response_model=PSNStatusResponse)
 async def get_psn_status(
     current_user: User = Depends(get_current_user)
 ):
@@ -814,7 +814,7 @@ async def get_psn_status(
     )
 
 
-@router.delete("/sync/psn/disconnect")
+@router.delete("/psn/disconnect")
 async def disconnect_psn(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
