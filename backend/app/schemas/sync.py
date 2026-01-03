@@ -26,6 +26,7 @@ class SyncPlatform(str, Enum):
     STEAM = "steam"
     EPIC = "epic"
     GOG = "gog"
+    PSN = "psn"
 
 
 class SyncConfigResponse(BaseModel):
