@@ -82,8 +82,8 @@ async def dispatch_sync_items(
             stats["total_games"] = len(games)
 
             # Update job total_items
-            # Refresh job from database in case it was modified
-            session.refresh(job)
+            # Expire and re-query to get fresh state from database
+            session.expire(job)
             job.total_items = len(games)
             session.add(job)
             session.commit()
@@ -125,15 +125,11 @@ async def dispatch_sync_items(
 
         except Exception as e:
             logger.error(f"Sync dispatch failed for job {job_id}: {e}")
-            # Refresh job from database in case it was modified
-            try:
-                session.refresh(job)
-            except Exception:
-                # If refresh fails, fetch a fresh copy
-                job = session.get(Job, job_id)
-                if not job:
-                    logger.error(f"Cannot update job {job_id} status - job not found")
-                    return {"status": "error", "error": f"Job not found: {str(e)}", **stats}
+            # Re-fetch job from database to ensure we have a fresh copy
+            job = session.get(Job, job_id)
+            if not job:
+                logger.error(f"Cannot update job {job_id} status - job not found")
+                return {"status": "error", "error": f"Job not found: {str(e)}", **stats}
 
             job.status = BackgroundJobStatus.FAILED
             job.error_message = str(e)[:2000]
