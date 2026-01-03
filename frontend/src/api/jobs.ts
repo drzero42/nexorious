@@ -105,6 +105,7 @@ interface JobItemListApiResponse {
 
 interface PendingReviewCountApiResponse {
   pending_review_count: number;
+  counts_by_source: Record<string, number>;
 }
 
 interface JobItemDetailApiResponse extends JobItemApiResponse {
@@ -357,7 +358,10 @@ export async function getActiveJob(jobType: JobType): Promise<Job | null> {
  */
 export async function getPendingReviewCount(): Promise<PendingReviewCountResponse> {
   const response = await api.get<PendingReviewCountApiResponse>('/jobs/pending-review-count');
-  return { pendingReviewCount: response.pending_review_count };
+  return {
+    pendingReviewCount: response.pending_review_count,
+    countsBySource: response.counts_by_source,
+  };
 }
 
 /**
