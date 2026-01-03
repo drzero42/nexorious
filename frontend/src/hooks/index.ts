@@ -68,6 +68,9 @@ export {
   useCompleteEpicAuth,
   useCheckEpicAuth,
   useDisconnectEpic,
+  useConfigurePSN,
+  usePSNStatus,
+  useDisconnectPSN,
 } from './use-sync';
 
 // Import/Export hooks
