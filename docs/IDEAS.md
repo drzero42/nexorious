@@ -68,3 +68,6 @@ When clicking Connect we have a box pop-up with a button that says Start Authent
 ## Darkadia unknown platform and/or storefront
 When we convert and import Darkadia CSV as nexorious JSON we should make sure missing platforms and storefronts end up as unknown associations in our database. This way the user can go through and handle it after importing. Some games may need to be hunted down.
 A function to sort out missing platform/storefronts for games may be a good idea to add.
+
+## Apostrophe titles
+When searching IGDB for titles with apostrophes in the name, it can not find any results.
