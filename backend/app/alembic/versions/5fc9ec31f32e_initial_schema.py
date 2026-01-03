@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 0c6606d41dc1
+Revision ID: 5fc9ec31f32e
 Revises: 
-Create Date: 2026-01-03 13:23:49.655163
+Create Date: 2026-01-03 20:50:50.912945
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0c6606d41dc1'
+revision: str = '5fc9ec31f32e'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -88,7 +88,7 @@ def upgrade() -> None:
     op.create_table('ignored_external_games',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
+    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'PSN', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
     sa.Column('external_id', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -103,7 +103,7 @@ def upgrade() -> None:
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('job_type', sa.Enum('SYNC', 'IMPORT', 'EXPORT', 'MAINTENANCE', name='backgroundjobtype'), nullable=False),
-    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
+    sa.Column('source', sa.Enum('STEAM', 'EPIC', 'PSN', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
     sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', name='backgroundjobstatus'), nullable=False),
     sa.Column('priority', sa.Enum('HIGH', 'LOW', name='backgroundjobpriority'), nullable=False),
     sa.Column('file_path', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),

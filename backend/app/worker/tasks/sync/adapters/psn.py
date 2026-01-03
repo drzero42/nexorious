@@ -65,12 +65,15 @@ class PSNSyncAdapter:
             user: The user whose token expired
             session: SQLModel database session
         """
+        import json
         preferences = user.preferences or {}
         if "psn" in preferences:
             preferences["psn"]["is_verified"] = False
             preferences["psn"]["token_expired_at"] = datetime.now(timezone.utc).isoformat()
-            user.preferences = preferences
-            session.commit()
+            user.preferences_json = json.dumps(preferences)
+            user.updated_at = datetime.now(timezone.utc)
+            session.add(user)
+            # Don't commit here - let the caller handle transaction boundaries
             logger.warning(f"Marked PSN token as expired for user {user.id}")
 
     async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
@@ -106,10 +109,14 @@ class PSNSyncAdapter:
         # Create one ExternalGame per platform entitlement
         external_games = []
         for game in psn_games:
+            # Use title_id from metadata as the unique identifier
+            # product_id is the full SKU which can have variants, title_id is the game identifier
+            title_id = game.metadata.get("title_id", game.product_id)
+
             for platform in game.platforms:
                 external_games.append(
                     ExternalGame(
-                        external_id=game.product_id,
+                        external_id=title_id,  # Use title_id, not product_id
                         title=game.name,
                         platform=platform,  # "playstation-4" or "playstation-5"
                         storefront="playstation-store",

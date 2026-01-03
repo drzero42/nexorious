@@ -350,6 +350,7 @@ def _platform_to_job_source(platform: SyncPlatform) -> BackgroundJobSource:
         SyncPlatform.STEAM: BackgroundJobSource.STEAM,
         SyncPlatform.EPIC: BackgroundJobSource.EPIC,
         SyncPlatform.GOG: BackgroundJobSource.GOG,
+        SyncPlatform.PSN: BackgroundJobSource.PSN,
     }
     return mapping[platform]
 
@@ -745,7 +746,7 @@ async def unignore_game(
 
 # ===== PSN Sync Endpoints =====
 
-@router.post("/sync/psn/configure", response_model=PSNConfigureResponse)
+@router.post("/psn/configure", response_model=PSNConfigureResponse)
 async def configure_psn(
     request: PSNConfigureRequest,
     current_user: User = Depends(get_current_user),
@@ -767,7 +768,8 @@ async def configure_psn(
             "region": account_info.region,
             "is_verified": True
         }
-        current_user.preferences = preferences
+        current_user.preferences_json = json.dumps(preferences)
+        current_user.updated_at = datetime.now(timezone.utc)
         session.commit()
 
         logger.info(f"PSN configured successfully for user {current_user.id}")
@@ -794,7 +796,7 @@ async def configure_psn(
         )
 
 
-@router.get("/sync/psn/status", response_model=PSNStatusResponse)
+@router.get("/psn/status", response_model=PSNStatusResponse)
 async def get_psn_status(
     current_user: User = Depends(get_current_user)
 ):
@@ -813,7 +815,7 @@ async def get_psn_status(
     )
 
 
-@router.delete("/sync/psn/disconnect")
+@router.delete("/psn/disconnect")
 async def disconnect_psn(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -822,7 +824,8 @@ async def disconnect_psn(
     preferences = current_user.preferences or {}
     if "psn" in preferences:
         del preferences["psn"]
-        current_user.preferences = preferences
+        current_user.preferences_json = json.dumps(preferences)
+        current_user.updated_at = datetime.now(timezone.utc)
         session.commit()
         logger.info(f"PSN disconnected for user {current_user.id}")
 

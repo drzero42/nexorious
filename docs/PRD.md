@@ -730,10 +730,16 @@ To create the definitive self-hosted solution for personal game collection manag
   - Multi-user config isolation via XDG_CONFIG_HOME
   - Auth expiration handling and re-authentication support
   - Platform/storefront mapping: pc-windows/epic
+- ✅ PlayStation Network (PSN) integration
+  - Backend implementation complete with PSNAWP library
+  - Frontend implementation complete
+  - NPSSO token authentication
+  - PS4/PS5 game sync with multi-platform support
+  - Token expiration handling
+  - Platform/storefront mapping: playstation-4/psn, playstation-5/psn
 
 **Pending:**
 - GOG integration
-- PlayStation Store integration
 - Xbox Marketplace integration
 
 - **Acceptance Criteria**:

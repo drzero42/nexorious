@@ -644,6 +644,11 @@ async def retry_failed_job_items(
     for item in failed_items:
         if job.job_type == BackgroundJobType.MAINTENANCE:
             await enqueue_metadata_refresh_task(str(item.id), job.priority)
+        elif job.job_type == BackgroundJobType.SYNC:
+            # Use the generic sync item processor for SYNC jobs
+            from ..worker.tasks.sync.process_item import process_sync_item
+            from ..worker.queues import enqueue_task
+            await enqueue_task(process_sync_item, str(item.id), priority=job.priority)
         else:
             # Default to import task for IMPORT and other job types
             await enqueue_import_task(str(item.id), job.priority)

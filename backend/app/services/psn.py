@@ -87,10 +87,14 @@ class PSNService:
         try:
             client = self.psnawp.me()
 
+            # Get region as Country object and convert to alpha_2 code (e.g., "US")
+            region_country = client.get_region()
+            region_code = region_country.alpha_2 if region_country else "US"
+
             return PSNAccountInfo(
                 online_id=client.online_id,
                 account_id=client.account_id,
-                region=client.get_region()
+                region=region_code
             )
         except Exception as e:
             # Check if error indicates expired token
@@ -111,27 +115,36 @@ class PSNService:
         """
         try:
             client = self.psnawp.me()
-            purchased_games = client.purchased_games()
+            game_entitlements = client.game_entitlements(limit=None)
 
             games = []
-            for game in purchased_games:
-                # Detect which platforms user has entitlement for
+            for entitlement in game_entitlements:
+                # Get game name and title ID
+                title_meta = entitlement.get("titleMeta", {})
+                game_name = title_meta.get("name", "Unknown Game")
+                title_id = title_meta.get("titleId", entitlement.get("productId", ""))
+
+                # Detect which platforms user has entitlement for based on entitlementAttributes
                 platforms = []
-                if hasattr(game, 'has_ps5_entitlement') and game.has_ps5_entitlement:
-                    platforms.append("playstation-5")
-                if hasattr(game, 'has_ps4_entitlement') and game.has_ps4_entitlement:
-                    platforms.append("playstation-4")
+                entitlement_attrs = entitlement.get("entitlementAttributes", [])
+                for attr in entitlement_attrs:
+                    platform_id = attr.get("platformId", "")
+                    if platform_id == "ps5":
+                        platforms.append("playstation-5")
+                    elif platform_id == "ps4":
+                        platforms.append("playstation-4")
 
                 # Fallback to PS5 if no platform info
                 if not platforms:
                     platforms = ["playstation-5"]
 
                 psn_game = PSNGame(
-                    product_id=game.product_id,
-                    name=game.name,
+                    product_id=title_id,
+                    name=game_name,
                     platforms=platforms,
                     metadata={
-                        "product_id": game.product_id,
+                        "product_id": entitlement.get("productId", ""),
+                        "title_id": title_id,
                     }
                 )
                 games.append(psn_game)

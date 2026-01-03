@@ -6,11 +6,13 @@ export enum SyncPlatform {
   STEAM = 'steam',
   EPIC = 'epic',
   GOG = 'gog',
+  PSN = 'psn',
 }
 
 export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [
   SyncPlatform.STEAM,
   SyncPlatform.EPIC,
+  SyncPlatform.PSN,
 ];
 
 export enum SyncFrequency {
@@ -94,6 +96,11 @@ export function getPlatformDisplayInfo(platform: SyncPlatform): {
       color: 'text-purple-700 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30',
     },
+    [SyncPlatform.PSN]: {
+      name: 'PlayStation Network',
+      color: 'text-[#003087]',
+      bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
+    },
   };
   return info[platform];
 }
@@ -156,4 +163,38 @@ export const EPIC_AUTH_ERROR_MESSAGES: Record<string, string> = {
   invalid_code: 'Invalid authorization code. Please try again.',
   network_error: 'Could not connect to Epic Games. Please try again.',
   expired_code: 'Authorization code expired. Please request a new one.',
+};
+
+// PSN Auth Types
+export interface PSNConfigureRequest {
+  npssoToken: string;
+}
+
+export interface PSNConfigureResponse {
+  valid: boolean;
+  accountId: string | null;
+  onlineId: string | null;
+  error: string | null;
+}
+
+export interface PSNStatusResponse {
+  configured: boolean;
+  accountId: string | null;
+  onlineId: string | null;
+  tokenExpired: boolean;
+}
+
+export interface PSNConnectionInfo {
+  configured: boolean;
+  accountId: string | null;
+  onlineId: string | null;
+  tokenExpired: boolean;
+}
+
+// Error message mapping for PSN configuration
+export const PSN_CONFIG_ERROR_MESSAGES: Record<string, string> = {
+  invalid_token: 'Invalid NPSSO token. Please check and try again.',
+  expired_token: 'NPSSO token has expired. Please obtain a new one.',
+  network_error: 'Could not connect to PlayStation Network. Please try again.',
+  rate_limited: 'PSN API rate limit reached. Please try again in a few minutes.',
 };
