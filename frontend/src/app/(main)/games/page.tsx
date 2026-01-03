@@ -42,14 +42,19 @@ function GamesPageContent() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('manual');
 
   // Read filters from URL params
-  const filters = useMemo(() => ({
-    search: searchParams.get('q') ?? '',
-    status: searchParams.get('status') as PlayStatus | undefined,
-    platforms: searchParams.getAll('platform'),
-    storefronts: searchParams.getAll('storefront'),
-    genres: searchParams.getAll('genre'),
-    tags: searchParams.getAll('tag'),
-  }), [searchParams]);
+  const filters = useMemo(() => {
+    const statusParam = searchParams.get('status');
+    // Handle "null" string or empty string as undefined
+    const status = statusParam && statusParam !== 'null' ? statusParam as PlayStatus : undefined;
+    return {
+      search: searchParams.get('q') ?? '',
+      status,
+      platforms: searchParams.getAll('platform'),
+      storefronts: searchParams.getAll('storefront'),
+      genres: searchParams.getAll('genre'),
+      tags: searchParams.getAll('tag'),
+    };
+  }, [searchParams]);
 
   const sortBy = (searchParams.get('sort') as SortField) ?? 'title';
   const sortOrder = (searchParams.get('order') as SortOrder) ?? 'asc';
