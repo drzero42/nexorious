@@ -81,7 +81,10 @@ async def test_get_account_info_success():
         mock_client = Mock()
         mock_client.online_id = "test_user"
         mock_client.account_id = "account123"
-        mock_client.get_region.return_value = "us"
+        # get_region returns a Country object with alpha_2 attribute
+        mock_region = Mock()
+        mock_region.alpha_2 = "US"
+        mock_client.get_region.return_value = mock_region
         mock_psnawp.return_value.me.return_value = mock_client
 
         from app.services.psn import PSNService
@@ -91,7 +94,7 @@ async def test_get_account_info_success():
 
         assert result.online_id == "test_user"
         assert result.account_id == "account123"
-        assert result.region == "us"
+        assert result.region == "US"
 
 
 @pytest.mark.asyncio
@@ -128,20 +131,20 @@ async def test_get_account_info_auth_error():
 async def test_get_library_success():
     """Test getting library returns PSN games with platform detection."""
     with patch('psnawp_api.PSNAWP') as mock_psnawp:
-        mock_game1 = Mock()
-        mock_game1.product_id = "GAME001"
-        mock_game1.name = "Test Game 1"
-        mock_game1.has_ps5_entitlement = True
-        mock_game1.has_ps4_entitlement = False
-
-        mock_game2 = Mock()
-        mock_game2.product_id = "GAME002"
-        mock_game2.name = "Test Game 2 (PS4+PS5)"
-        mock_game2.has_ps5_entitlement = True
-        mock_game2.has_ps4_entitlement = True
+        # game_entitlements returns a list of dicts
+        entitlement1 = {
+            "productId": "PROD001",
+            "titleMeta": {"titleId": "GAME001", "name": "Test Game 1"},
+            "entitlementAttributes": [{"platformId": "ps5"}]
+        }
+        entitlement2 = {
+            "productId": "PROD002",
+            "titleMeta": {"titleId": "GAME002", "name": "Test Game 2 (PS4+PS5)"},
+            "entitlementAttributes": [{"platformId": "ps5"}, {"platformId": "ps4"}]
+        }
 
         mock_client = Mock()
-        mock_client.purchased_games.return_value = [mock_game1, mock_game2]
+        mock_client.game_entitlements.return_value = [entitlement1, entitlement2]
         mock_psnawp.return_value.me.return_value = mock_client
 
         from app.services.psn import PSNService
@@ -161,13 +164,15 @@ async def test_get_library_success():
 async def test_get_library_fallback_platform():
     """Test library falls back to PS5 when no platform info."""
     with patch('psnawp_api.PSNAWP') as mock_psnawp:
-        mock_game = Mock(spec=['product_id', 'name'])
-        mock_game.product_id = "GAME003"
-        mock_game.name = "Test Game 3"
-        # No platform attributes
+        # Entitlement with no entitlementAttributes (should fallback to PS5)
+        entitlement = {
+            "productId": "PROD003",
+            "titleMeta": {"titleId": "GAME003", "name": "Test Game 3"},
+            "entitlementAttributes": []  # Empty - no platform info
+        }
 
         mock_client = Mock()
-        mock_client.purchased_games.return_value = [mock_game]
+        mock_client.game_entitlements.return_value = [entitlement]
         mock_psnawp.return_value.me.return_value = mock_client
 
         from app.services.psn import PSNService
@@ -183,7 +188,7 @@ async def test_get_library_fallback_platform():
 async def test_get_library_expired_token():
     """Test library fetch fails with expired token."""
     with patch('psnawp_api.PSNAWP') as mock_psnawp:
-        mock_psnawp.return_value.me.return_value.purchased_games.side_effect = Exception("Token expired")
+        mock_psnawp.return_value.me.return_value.game_entitlements.side_effect = Exception("Token expired")
 
         from app.services.psn import PSNService, PSNTokenExpiredError
         service = PSNService("a" * 64)
