@@ -32,13 +32,43 @@ vi.mock('@/api/admin', () => ({
   startMetadataRefreshJob: vi.fn(),
 }));
 
+// Mock the hooks
+vi.mock('@/hooks', () => ({
+  useActiveJob: vi.fn(),
+  useCancelJob: vi.fn(),
+  useJobItems: vi.fn(() => ({
+    data: null,
+    isLoading: false,
+    refetch: vi.fn(),
+  })),
+  useRetryFailedItems: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useRetryJobItem: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useResolveJobItem: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useSkipJobItem: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+}));
+
 import { useAuth } from '@/providers';
 import * as adminApi from '@/api/admin';
+import { useActiveJob, useCancelJob } from '@/hooks';
 import { toast } from 'sonner';
 
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedLoadSeedData = vi.mocked(adminApi.loadSeedData);
 const mockedStartMetadataRefreshJob = vi.mocked(adminApi.startMetadataRefreshJob);
+const mockedUseActiveJob = vi.mocked(useActiveJob);
+const mockedUseCancelJob = vi.mocked(useCancelJob);
 
 const mockAdminUser = {
   id: 'user-1',
@@ -63,6 +93,19 @@ describe('MaintenancePage', () => {
     vi.clearAllMocks();
     mockPush.mockClear();
     mockReplace.mockClear();
+
+    // Default mock implementations for hooks
+    mockedUseActiveJob.mockReturnValue({
+      data: null,
+      refetch: vi.fn(),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useActiveJob>);
+
+    mockedUseCancelJob.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useCancelJob>);
   });
 
   describe('Access Control', () => {
@@ -503,7 +546,15 @@ describe('MaintenancePage', () => {
       expect(toast.success).toHaveBeenCalledWith('Metadata refresh job started');
     });
 
-    it('displays job started result with link to job', async () => {
+    it('refetches job status after starting metadata refresh', async () => {
+      const mockRefetch = vi.fn();
+      mockedUseActiveJob.mockReturnValue({
+        data: null,
+        refetch: mockRefetch,
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useActiveJob>);
+
       mockedUseAuth.mockReturnValue({
         user: mockAdminUser,
         isLoading: false,
@@ -530,14 +581,8 @@ describe('MaintenancePage', () => {
       await userEvent.click(refreshButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Job Started')).toBeInTheDocument();
+        expect(mockRefetch).toHaveBeenCalled();
       });
-
-      expect(screen.getByText('Metadata refresh job started successfully')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /view job progress/i })).toHaveAttribute(
-        'href',
-        '/jobs/job-123'
-      );
     });
 
     it('shows error toast when metadata refresh fails', async () => {
@@ -591,6 +636,110 @@ describe('MaintenancePage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Starting...')).toBeInTheDocument();
+      });
+    });
+
+    it('displays job progress card when there is an active job', async () => {
+      mockedUseActiveJob.mockReturnValue({
+        data: {
+          id: 'job-123',
+          jobType: 'maintenance',
+          source: 'system',
+          status: 'processing',
+          progress: {
+            total: 100,
+            completed: 25,
+            failed: 0,
+            pending: 75,
+            processing: 0,
+            skipped: 0,
+            pendingReview: 0,
+            percent: 25,
+          },
+          isTerminal: false,
+          totalItems: 100,
+          errorMessage: null,
+          filePath: null,
+          createdAt: '2024-01-01T00:00:00Z',
+          startedAt: '2024-01-01T00:00:00Z',
+          completedAt: null,
+          durationSeconds: null,
+          userId: 'user-1',
+          priority: 'high',
+        },
+        refetch: vi.fn(),
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useActiveJob>);
+
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        // Should show Cancel button for in-progress job
+        expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+      });
+
+      // IGDB Data Refresh card should be hidden when job is in progress
+      expect(screen.queryByRole('button', { name: /refresh all game metadata/i })).not.toBeInTheDocument();
+    });
+
+    it('shows Start New button when job is completed', async () => {
+      mockedUseActiveJob.mockReturnValue({
+        data: {
+          id: 'job-123',
+          jobType: 'maintenance',
+          source: 'system',
+          status: 'completed',
+          progress: {
+            total: 100,
+            completed: 100,
+            failed: 0,
+            pending: 0,
+            processing: 0,
+            skipped: 0,
+            pendingReview: 0,
+            percent: 100,
+          },
+          isTerminal: true,
+          totalItems: 100,
+          errorMessage: null,
+          filePath: null,
+          createdAt: '2024-01-01T00:00:00Z',
+          startedAt: '2024-01-01T00:00:00Z',
+          completedAt: '2024-01-01T00:01:00Z',
+          durationSeconds: 60,
+          userId: 'user-1',
+          priority: 'high',
+        },
+        refetch: vi.fn(),
+        isLoading: false,
+        error: null,
+      } as unknown as ReturnType<typeof useActiveJob>);
+
+      mockedUseAuth.mockReturnValue({
+        user: mockAdminUser,
+        isLoading: false,
+        isAuthenticated: true,
+        login: vi.fn(),
+        logout: vi.fn(),
+        error: null,
+        clearError: vi.fn(),
+      });
+
+      render(<MaintenancePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /start new/i })).toBeInTheDocument();
       });
     });
   });

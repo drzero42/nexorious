@@ -11,6 +11,7 @@ export enum JobType {
   SYNC = 'sync',
   IMPORT = 'import',
   EXPORT = 'export',
+  MAINTENANCE = 'maintenance',
 }
 
 export enum JobSource {
@@ -202,6 +203,7 @@ export function getJobTypeLabel(type: JobType): string {
     [JobType.SYNC]: 'Sync',
     [JobType.IMPORT]: 'Import',
     [JobType.EXPORT]: 'Export',
+    [JobType.MAINTENANCE]: 'Maintenance',
   };
   return labels[type] || type;
 }
