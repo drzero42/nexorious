@@ -103,135 +103,145 @@ export function GameFilters({
   };
 
   return (
-    <div className="flex flex-wrap gap-4 items-center">
-      {/* Search */}
-      <Input
-        type="search"
-        placeholder="Search games..."
-        value={filters.search}
-        onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
-        className="w-64"
-      />
+    <div className="flex flex-col gap-3">
+      {/* Sort row */}
+      <div className="flex flex-wrap gap-4 items-center">
+        <span className="text-sm text-muted-foreground w-14">Sort by:</span>
 
-      {/* Status filter */}
-      <Select
-        value={filters.status ?? 'all'}
-        onValueChange={(value) =>
-          onFiltersChange({
-            ...filters,
-            status: value === 'all' ? undefined : (value as PlayStatus),
-          })
-        }
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Statuses</SelectItem>
-          {statusOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        {/* Sort dropdown */}
+        <Select
+          value={sortBy}
+          onValueChange={(value) => onSortByChange(value as SortField)}
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            {sortOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      {/* Platform filter (multi-select) */}
-      <MultiSelectFilter
-        label="Platforms"
-        options={platformOptions}
-        selected={filters.platforms ?? []}
-        onChange={(selected) => onFiltersChange({ ...filters, platforms: selected })}
-      />
-
-      {/* Storefront filter (multi-select) */}
-      <MultiSelectFilter
-        label="Storefronts"
-        options={storefrontOptions}
-        selected={filters.storefronts ?? []}
-        onChange={(selected) => onFiltersChange({ ...filters, storefronts: selected })}
-      />
-
-      {/* Genre filter (multi-select) */}
-      <MultiSelectFilter
-        label="Genres"
-        options={genreOptions}
-        selected={filters.genres ?? []}
-        onChange={(selected) => onFiltersChange({ ...filters, genres: selected })}
-      />
-
-      {/* Tags filter (multi-select) */}
-      <MultiSelectFilter
-        label="Tags"
-        options={tagOptions}
-        selected={filters.tags ?? []}
-        onChange={(selected) => onFiltersChange({ ...filters, tags: selected })}
-      />
-
-      {/* Sort dropdown */}
-      <Select
-        value={sortBy}
-        onValueChange={(value) => onSortByChange(value as SortField)}
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Sort by" />
-        </SelectTrigger>
-        <SelectContent>
-          {sortOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* Sort direction toggle */}
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={onSortOrderToggle}
-        title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-      >
-        {sortBy === 'title' ? (
-          sortOrder === 'asc' ? (
-            <ArrowDownAZ className="h-4 w-4" />
+        {/* Sort direction toggle */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onSortOrderToggle}
+          title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+        >
+          {sortBy === 'title' ? (
+            sortOrder === 'asc' ? (
+              <ArrowDownAZ className="h-4 w-4" />
+            ) : (
+              <ArrowUpAZ className="h-4 w-4" />
+            )
+          ) : sortOrder === 'asc' ? (
+            <ArrowUp className="h-4 w-4" />
           ) : (
-            <ArrowUpAZ className="h-4 w-4" />
-          )
-        ) : sortOrder === 'asc' ? (
-          <ArrowUp className="h-4 w-4" />
-        ) : (
-          <ArrowDown className="h-4 w-4" />
+            <ArrowDown className="h-4 w-4" />
+          )}
+        </Button>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* View toggle */}
+        <div className="flex border rounded-md">
+          <Button
+            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onViewModeChange('grid')}
+          >
+            <Grid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onViewModeChange('list')}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters row */}
+      <div className="flex flex-wrap gap-4 items-center">
+        <span className="text-sm text-muted-foreground w-14">Filters:</span>
+
+        {/* Search */}
+        <Input
+          type="search"
+          placeholder="Search games..."
+          value={filters.search}
+          onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+          className="w-full sm:w-64"
+        />
+
+        {/* Status filter */}
+        <Select
+          value={filters.status ?? 'all'}
+          onValueChange={(value) =>
+            onFiltersChange({
+              ...filters,
+              status: value === 'all' ? undefined : (value as PlayStatus),
+            })
+          }
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {statusOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Platform filter (multi-select) */}
+        <MultiSelectFilter
+          label="Platforms"
+          options={platformOptions}
+          selected={filters.platforms ?? []}
+          onChange={(selected) => onFiltersChange({ ...filters, platforms: selected })}
+        />
+
+        {/* Storefront filter (multi-select) */}
+        <MultiSelectFilter
+          label="Storefronts"
+          options={storefrontOptions}
+          selected={filters.storefronts ?? []}
+          onChange={(selected) => onFiltersChange({ ...filters, storefronts: selected })}
+        />
+
+        {/* Genre filter (multi-select) */}
+        <MultiSelectFilter
+          label="Genres"
+          options={genreOptions}
+          selected={filters.genres ?? []}
+          onChange={(selected) => onFiltersChange({ ...filters, genres: selected })}
+        />
+
+        {/* Tags filter (multi-select) */}
+        <MultiSelectFilter
+          label="Tags"
+          options={tagOptions}
+          selected={filters.tags ?? []}
+          onChange={(selected) => onFiltersChange({ ...filters, tags: selected })}
+        />
+
+        {/* Clear filters */}
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <X className="h-4 w-4 mr-1" />
+            Clear
+          </Button>
         )}
-      </Button>
-
-      {/* Clear filters */}
-      {hasActiveFilters && (
-        <Button variant="ghost" size="sm" onClick={clearFilters}>
-          <X className="h-4 w-4 mr-1" />
-          Clear
-        </Button>
-      )}
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* View toggle */}
-      <div className="flex border rounded-md">
-        <Button
-          variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => onViewModeChange('grid')}
-        >
-          <Grid className="h-4 w-4" />
-        </Button>
-        <Button
-          variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => onViewModeChange('list')}
-        >
-          <List className="h-4 w-4" />
-        </Button>
       </div>
     </div>
   );

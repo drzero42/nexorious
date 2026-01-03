@@ -305,7 +305,7 @@ describe('GameFilters', () => {
       );
 
       const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[0]; // First combobox is status
+      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
       await user.click(statusSelect);
 
       // Select "Completed"
@@ -333,7 +333,7 @@ describe('GameFilters', () => {
       );
 
       const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[0];
+      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
       await user.click(statusSelect);
 
       const allStatusesOption = screen.getByRole('option', { name: 'All Statuses' });
@@ -350,7 +350,7 @@ describe('GameFilters', () => {
       render(<GameFilters {...defaultProps} />);
 
       const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[0];
+      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
       await user.click(statusSelect);
 
       // Check all status options are present
@@ -380,7 +380,7 @@ describe('GameFilters', () => {
       );
 
       const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[0];
+      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
       await user.click(statusSelect);
 
       const completedOption = screen.getByRole('option', { name: 'Completed' });
