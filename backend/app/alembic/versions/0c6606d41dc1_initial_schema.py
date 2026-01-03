@@ -1,8 +1,8 @@
-"""initial_schema
+"""initial schema
 
-Revision ID: fca95df40fe1
+Revision ID: 0c6606d41dc1
 Revises: 
-Create Date: 2025-12-31 14:26:41.200712
+Create Date: 2026-01-03 13:23:49.655163
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'fca95df40fe1'
+revision: str = '0c6606d41dc1'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -51,6 +51,9 @@ def upgrade() -> None:
     sa.Column('igdb_slug', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('igdb_platform_ids', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('igdb_platform_names', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('game_modes', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('themes', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('player_perspectives', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.Column('last_updated', sa.DateTime(), nullable=True),
@@ -99,7 +102,7 @@ def upgrade() -> None:
     op.create_table('jobs',
     sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('job_type', sa.Enum('SYNC', 'IMPORT', 'EXPORT', name='backgroundjobtype'), nullable=False),
+    sa.Column('job_type', sa.Enum('SYNC', 'IMPORT', 'EXPORT', 'MAINTENANCE', name='backgroundjobtype'), nullable=False),
     sa.Column('source', sa.Enum('STEAM', 'EPIC', 'GOG', 'XBOX', 'PLAYSTATION', 'CSV', 'NEXORIOUS', 'SYSTEM', name='backgroundjobsource'), nullable=False),
     sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', name='backgroundjobstatus'), nullable=False),
     sa.Column('priority', sa.Enum('HIGH', 'LOW', name='backgroundjobpriority'), nullable=False),
@@ -187,6 +190,7 @@ def upgrade() -> None:
     sa.Column('frequency', sa.Enum('MANUAL', 'HOURLY', 'DAILY', 'WEEKLY', name='syncfrequency'), nullable=False),
     sa.Column('auto_add', sa.Boolean(), nullable=False),
     sa.Column('last_synced_at', sa.DateTime(), nullable=True),
+    sa.Column('platform_credentials', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
@@ -246,6 +250,7 @@ def upgrade() -> None:
     sa.Column('store_game_id', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('store_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('is_available', sa.Boolean(), nullable=False),
+    sa.Column('hours_played', sa.Integer(), nullable=False),
     sa.Column('original_platform_name', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
