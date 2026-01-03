@@ -385,20 +385,44 @@ async def _auto_import_game(
         await game_service.create_or_update_game_from_igdb(igdb_id)
 
         # Then create the UserGame association
-        user_game = UserGame(
-            user_id=user_id,
-            game_id=igdb_id,
-        )
-        session.add(user_game)
-        session.commit()
-        session.refresh(user_game)
+        try:
+            user_game = UserGame(
+                user_id=user_id,
+                game_id=igdb_id,
+            )
+            session.add(user_game)
+            session.commit()
+            session.refresh(user_game)
 
-        _add_platform_association(
-            session, user_game.id,
-            platform, storefront, external_id, playtime_hours
-        )
-        result = "auto_imported"
-        user_game_id = user_game.id
+            _add_platform_association(
+                session, user_game.id,
+                platform, storefront, external_id, playtime_hours
+            )
+            result = "auto_imported"
+            user_game_id = user_game.id
+        except Exception as e:
+            # Handle race condition - another worker may have created UserGame
+            if "uq_user_games_user_game" in str(e) or "duplicate key" in str(e).lower():
+                session.rollback()
+                # Re-query for the UserGame that was created by another worker
+                existing_user_game = session.exec(
+                    select(UserGame).where(
+                        UserGame.user_id == user_id,
+                        UserGame.game_id == igdb_id,
+                    )
+                ).first()
+                if existing_user_game:
+                    _add_platform_association(
+                        session, existing_user_game.id,
+                        platform, storefront, external_id, playtime_hours
+                    )
+                    result = "auto_linked"
+                    user_game_id = existing_user_game.id
+                    logger.info(f"Handled race condition: UserGame already existed, added platform association")
+                else:
+                    raise  # Re-raise if we still can't find it
+            else:
+                raise  # Re-raise if it's a different error
 
     # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
