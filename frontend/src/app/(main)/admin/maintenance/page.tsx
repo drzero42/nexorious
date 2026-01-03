@@ -304,9 +304,10 @@ export default function MaintenancePage() {
       )}
 
       {/* Recent Maintenance Jobs - shows completed jobs from last 7 days */}
-      {!showJobProgress && (
+      {!hasActiveJob && (
         <RecentActivity
           jobTypes={[JobType.MAINTENANCE]}
+          excludeJobIds={activeJob ? [activeJob.id] : []}
         />
       )}
     </div>
