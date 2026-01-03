@@ -10,7 +10,7 @@ import type { Tag } from '@/types';
 vi.mock('@/hooks', () => ({
   useAllPlatforms: vi.fn(),
   useAllStorefronts: vi.fn(),
-  useUserGameGenres: vi.fn(),
+  useFilterOptions: vi.fn(),
   useAllTags: vi.fn(),
 }));
 
@@ -151,11 +151,19 @@ const defaultProps: GameFiltersProps = {
   onSortOrderToggle: vi.fn(),
 };
 
+// Mock filter options data
+const mockFilterOptions = {
+  genres: ['Action', 'RPG', 'Adventure'],
+  gameModes: ['Single player', 'Multiplayer', 'Co-op'],
+  themes: ['Horror', 'Sci-fi', 'Fantasy'],
+  playerPerspectives: ['First person', 'Third person', 'Isometric'],
+};
+
 describe('GameFilters', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Default mock implementation
-    const { useAllPlatforms, useAllStorefronts, useUserGameGenres, useAllTags } = vi.mocked(await import('@/hooks'));
+    const { useAllPlatforms, useAllStorefronts, useFilterOptions, useAllTags } = vi.mocked(await import('@/hooks'));
     useAllPlatforms.mockReturnValue({
       data: mockPlatforms,
       isLoading: false,
@@ -166,11 +174,11 @@ describe('GameFilters', () => {
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useAllStorefronts>);
-    useUserGameGenres.mockReturnValue({
-      data: mockGenres,
+    useFilterOptions.mockReturnValue({
+      data: mockFilterOptions,
       isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useUserGameGenres>);
+    } as unknown as ReturnType<typeof useFilterOptions>);
     useAllTags.mockReturnValue({
       data: mockTags,
       isLoading: false,
@@ -545,8 +553,13 @@ describe('GameFilters', () => {
   });
 
   describe('storefront filter (multi-select)', () => {
-    it('renders storefronts multi-select button', () => {
+    it('renders storefronts multi-select button in expanded section', async () => {
+      const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       expect(screen.getByText('Storefronts')).toBeInTheDocument();
     });
@@ -554,6 +567,10 @@ describe('GameFilters', () => {
     it('displays storefronts from useAllStorefronts hook', async () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
       await user.click(storefrontsButton);
@@ -572,6 +589,10 @@ describe('GameFilters', () => {
         />
       );
 
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
       const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
       await user.click(storefrontsButton);
 
@@ -586,15 +607,24 @@ describe('GameFilters', () => {
   });
 
   describe('genre filter (multi-select)', () => {
-    it('renders genres multi-select button', () => {
+    it('renders genres multi-select button in expanded section', async () => {
+      const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       expect(screen.getByText('Genres')).toBeInTheDocument();
     });
 
-    it('displays genres from useUserGameGenres hook', async () => {
+    it('displays genres from useFilterOptions hook', async () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       const genresButton = screen.getByText('Genres').closest('button')!;
       await user.click(genresButton);
@@ -614,6 +644,10 @@ describe('GameFilters', () => {
         />
       );
 
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
       const genresButton = screen.getByText('Genres').closest('button')!;
       await user.click(genresButton);
 
@@ -628,8 +662,13 @@ describe('GameFilters', () => {
   });
 
   describe('tags filter (multi-select)', () => {
-    it('renders tags multi-select button', () => {
+    it('renders tags multi-select button in expanded section', async () => {
+      const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       expect(screen.getByText('Tags')).toBeInTheDocument();
     });
@@ -637,6 +676,10 @@ describe('GameFilters', () => {
     it('displays tags from useAllTags hook', async () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
 
       const tagsButton = screen.getByText('Tags').closest('button')!;
       await user.click(tagsButton);
@@ -655,6 +698,10 @@ describe('GameFilters', () => {
         />
       );
 
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
       const tagsButton = screen.getByText('Tags').closest('button')!;
       await user.click(tagsButton);
 
@@ -665,6 +712,56 @@ describe('GameFilters', () => {
         search: '',
         tags: ['Favorite'],
       });
+    });
+  });
+
+  describe('more filters disclosure', () => {
+    it('renders "More filters" button', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByRole('button', { name: /more filters/i })).toBeInTheDocument();
+    });
+
+    it('shows count badge when secondary filters are active', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            storefronts: ['steam'],
+            genres: ['RPG'],
+          }}
+        />
+      );
+
+      // Should show badge with count of 2 (storefronts + genres)
+      expect(screen.getByText('2')).toBeInTheDocument();
+    });
+
+    it('toggles expanded section when clicked', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      // Initially, secondary filters should not be visible
+      expect(screen.queryByText('Storefronts')).not.toBeInTheDocument();
+
+      // Click to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
+      // Now secondary filters should be visible
+      expect(screen.getByText('Storefronts')).toBeInTheDocument();
+      expect(screen.getByText('Genres')).toBeInTheDocument();
+      expect(screen.getByText('Game Modes')).toBeInTheDocument();
+      expect(screen.getByText('Themes')).toBeInTheDocument();
+      expect(screen.getByText('Perspectives')).toBeInTheDocument();
+      expect(screen.getByText('Tags')).toBeInTheDocument();
+
+      // Click again to collapse
+      await user.click(moreFiltersButton);
+
+      // Secondary filters should be hidden again
+      expect(screen.queryByText('Storefronts')).not.toBeInTheDocument();
     });
   });
 
@@ -803,6 +900,9 @@ describe('GameFilters', () => {
             platforms: ['pc'],
             storefronts: ['steam'],
             genres: ['RPG'],
+            gameModes: ['Single player'],
+            themes: ['Horror'],
+            playerPerspectives: ['First person'],
             tags: ['Favorite'],
           }}
           onFiltersChange={onFiltersChange}
@@ -819,6 +919,9 @@ describe('GameFilters', () => {
         platforms: [],
         storefronts: [],
         genres: [],
+        gameModes: [],
+        themes: [],
+        playerPerspectives: [],
         tags: [],
       });
     });

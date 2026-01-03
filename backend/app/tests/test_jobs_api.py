@@ -82,7 +82,7 @@ class TestListJobs:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["total"] == 3  # sync, import, export
+        assert data["total"] == len(BackgroundJobType)  # All job types
 
     def test_list_jobs_filter_by_type(
         self, client, auth_headers, test_user: User, session: Session

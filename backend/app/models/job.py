@@ -23,6 +23,7 @@ class BackgroundJobType(str, Enum):
     SYNC = "sync"
     IMPORT = "import"
     EXPORT = "export"
+    MAINTENANCE = "maintenance"
 
 
 class BackgroundJobSource(str, Enum):

@@ -101,6 +101,9 @@ export interface Game {
   howlongtobeat_completionist?: number;
   igdb_slug?: string;
   igdb_platform_names?: string;
+  game_modes?: string;
+  themes?: string;
+  player_perspectives?: string;
   created_at: string;
   updated_at: string;
 }
@@ -151,12 +154,23 @@ export interface UserGameFilters {
   play_status?: PlayStatus;
   ownership_status?: OwnershipStatus;
   platform?: string;
+  genre?: string[];
+  game_mode?: string[];
+  theme?: string[];
+  player_perspective?: string[];
   tag_id?: string;
   is_loved?: boolean;
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
   page?: number;
   per_page?: number;
+}
+
+export interface FilterOptionsResponse {
+  genres: string[];
+  game_modes: string[];
+  themes: string[];
+  player_perspectives: string[];
 }
 
 export interface PaginatedResponse<T> {

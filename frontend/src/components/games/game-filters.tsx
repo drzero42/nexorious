@@ -10,9 +10,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
-import { useAllPlatforms, useAllStorefronts, useUserGameGenres, useAllTags } from '@/hooks';
+import { useAllPlatforms, useAllStorefronts, useAllTags, useFilterOptions } from '@/hooks';
 import { PlayStatus } from '@/types';
-import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState } from 'react';
 
 type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date';
 type SortOrder = 'asc' | 'desc';
@@ -38,6 +39,9 @@ export interface GameFiltersProps {
     platforms?: string[];          // New: multi-select
     storefronts?: string[];        // New
     genres?: string[];             // New
+    gameModes?: string[];          // New: game modes from IGDB
+    themes?: string[];             // New: themes from IGDB
+    playerPerspectives?: string[]; // New: player perspectives from IGDB
     tags?: string[];               // New
   };
   onFiltersChange: (filters: GameFiltersProps['filters']) => void;
@@ -70,16 +74,31 @@ export function GameFilters({
   onSortByChange,
   onSortOrderToggle,
 }: GameFiltersProps) {
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
   const { data: platforms } = useAllPlatforms();
   const { data: storefronts } = useAllStorefronts();
-  const { data: genres } = useUserGameGenres();
+  const { data: filterOptions } = useFilterOptions();
   const { data: tags } = useAllTags();
 
   // Convert data to MultiSelectFilter options
   const platformOptions = platforms?.map((p) => ({ value: p.name, label: p.display_name })) ?? [];
   const storefrontOptions = storefronts?.map((s) => ({ value: s.name, label: s.display_name })) ?? [];
-  const genreOptions = genres?.map((g) => ({ value: g, label: g })) ?? [];
+  const genreOptions = filterOptions?.genres?.map((g) => ({ value: g, label: g })) ?? [];
+  const gameModeOptions = filterOptions?.gameModes?.map((gm) => ({ value: gm, label: gm })) ?? [];
+  const themeOptions = filterOptions?.themes?.map((t) => ({ value: t, label: t })) ?? [];
+  const playerPerspectiveOptions = filterOptions?.playerPerspectives?.map((pp) => ({ value: pp, label: pp })) ?? [];
   const tagOptions = tags?.map((t) => ({ value: t.name, label: t.name })) ?? [];
+
+  // Count active filters in the "more filters" section
+  const moreFiltersActiveCount = [
+    filters.storefronts?.length ?? 0,
+    filters.genres?.length ?? 0,
+    filters.gameModes?.length ?? 0,
+    filters.themes?.length ?? 0,
+    filters.playerPerspectives?.length ?? 0,
+    filters.tags?.length ?? 0,
+  ].reduce((sum, count) => sum + (count > 0 ? 1 : 0), 0);
 
   const hasActiveFilters =
     filters.search ||
@@ -88,6 +107,9 @@ export function GameFilters({
     (filters.platforms && filters.platforms.length > 0) ||
     (filters.storefronts && filters.storefronts.length > 0) ||
     (filters.genres && filters.genres.length > 0) ||
+    (filters.gameModes && filters.gameModes.length > 0) ||
+    (filters.themes && filters.themes.length > 0) ||
+    (filters.playerPerspectives && filters.playerPerspectives.length > 0) ||
     (filters.tags && filters.tags.length > 0);
 
   const clearFilters = () => {
@@ -98,6 +120,9 @@ export function GameFilters({
       platforms: [],
       storefronts: [],
       genres: [],
+      gameModes: [],
+      themes: [],
+      playerPerspectives: [],
       tags: [],
     });
   };
@@ -167,7 +192,7 @@ export function GameFilters({
         </div>
       </div>
 
-      {/* Filters row */}
+      {/* Primary Filters row - always visible */}
       <div className="flex flex-wrap gap-4 items-center">
         <span className="text-sm text-muted-foreground w-14">Filters:</span>
 
@@ -211,29 +236,25 @@ export function GameFilters({
           onChange={(selected) => onFiltersChange({ ...filters, platforms: selected })}
         />
 
-        {/* Storefront filter (multi-select) */}
-        <MultiSelectFilter
-          label="Storefronts"
-          options={storefrontOptions}
-          selected={filters.storefronts ?? []}
-          onChange={(selected) => onFiltersChange({ ...filters, storefronts: selected })}
-        />
-
-        {/* Genre filter (multi-select) */}
-        <MultiSelectFilter
-          label="Genres"
-          options={genreOptions}
-          selected={filters.genres ?? []}
-          onChange={(selected) => onFiltersChange({ ...filters, genres: selected })}
-        />
-
-        {/* Tags filter (multi-select) */}
-        <MultiSelectFilter
-          label="Tags"
-          options={tagOptions}
-          selected={filters.tags ?? []}
-          onChange={(selected) => onFiltersChange({ ...filters, tags: selected })}
-        />
+        {/* More filters disclosure button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowMoreFilters(!showMoreFilters)}
+          className="gap-1"
+        >
+          {showMoreFilters ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+          More filters
+          {moreFiltersActiveCount > 0 && (
+            <span className="ml-1 rounded-full bg-primary text-primary-foreground px-1.5 py-0.5 text-xs font-medium">
+              {moreFiltersActiveCount}
+            </span>
+          )}
+        </Button>
 
         {/* Clear filters */}
         {hasActiveFilters && (
@@ -243,6 +264,59 @@ export function GameFilters({
           </Button>
         )}
       </div>
+
+      {/* Secondary Filters row - expandable */}
+      {showMoreFilters && (
+        <div className="flex flex-wrap gap-4 items-center pl-[4.5rem] border-l-2 border-muted ml-[1.75rem]">
+          {/* Storefront filter (multi-select) */}
+          <MultiSelectFilter
+            label="Storefronts"
+            options={storefrontOptions}
+            selected={filters.storefronts ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, storefronts: selected })}
+          />
+
+          {/* Genre filter (multi-select) */}
+          <MultiSelectFilter
+            label="Genres"
+            options={genreOptions}
+            selected={filters.genres ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, genres: selected })}
+          />
+
+          {/* Game Mode filter (multi-select) */}
+          <MultiSelectFilter
+            label="Game Modes"
+            options={gameModeOptions}
+            selected={filters.gameModes ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, gameModes: selected })}
+          />
+
+          {/* Theme filter (multi-select) */}
+          <MultiSelectFilter
+            label="Themes"
+            options={themeOptions}
+            selected={filters.themes ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, themes: selected })}
+          />
+
+          {/* Player Perspective filter (multi-select) */}
+          <MultiSelectFilter
+            label="Perspectives"
+            options={playerPerspectiveOptions}
+            selected={filters.playerPerspectives ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, playerPerspectives: selected })}
+          />
+
+          {/* Tags filter (multi-select) */}
+          <MultiSelectFilter
+            label="Tags"
+            options={tagOptions}
+            selected={filters.tags ?? []}
+            onChange={(selected) => onFiltersChange({ ...filters, tags: selected })}
+          />
+        </div>
+      )}
     </div>
   );
 }
