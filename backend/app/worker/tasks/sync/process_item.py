@@ -234,45 +234,45 @@ async def _process_with_resolved_id(
         # First ensure the Game record exists in the database
         await game_service.create_or_update_game_from_igdb(igdb_id)
 
-        # Then create the UserGame association
-        try:
-            user_game = UserGame(
-                user_id=user_id,
-                game_id=igdb_id,
-            )
-            session.add(user_game)
-            session.commit()
-            session.refresh(user_game)
+        # Use raw SQL with ON CONFLICT to avoid race conditions at the database level
+        from sqlalchemy import text
 
-            _add_platform_association(
-                session, user_game.id,
-                platform, storefront, external_id, playtime_hours
-            )
+        # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
+        insert_sql = text("""
+            INSERT INTO user_games (id, user_id, game_id, ownership_status, personal_rating, is_loved, play_status, hours_played, personal_notes, acquired_date, created_at, updated_at)
+            VALUES (gen_random_uuid(), :user_id, :game_id, 'OWNED', NULL, false, 'NOT_STARTED', 0, NULL, NULL, NOW(), NOW())
+            ON CONFLICT (user_id, game_id) DO NOTHING
+            RETURNING id
+        """)
+
+        insert_result = session.exec(insert_sql, {"user_id": user_id, "game_id": igdb_id})
+        inserted_row = insert_result.first()
+
+        if inserted_row:
+            # New UserGame was created
+            user_game_id = inserted_row[0]
             result = "imported_new"
-            user_game_id = user_game.id
-        except Exception as e:
-            # Handle race condition - another worker may have created UserGame
-            if "uq_user_games_user_game" in str(e) or "duplicate key" in str(e).lower():
-                session.rollback()
-                # Re-query for the UserGame that was created by another worker
-                existing_user_game = session.exec(
-                    select(UserGame).where(
-                        UserGame.user_id == user_id,
-                        UserGame.game_id == igdb_id,
-                    )
-                ).first()
-                if existing_user_game:
-                    _add_platform_association(
-                        session, existing_user_game.id,
-                        platform, storefront, external_id, playtime_hours
-                    )
-                    result = "linked_existing"
-                    user_game_id = existing_user_game.id
-                else:
-                    # This shouldn't happen, but handle it
-                    raise
-            else:
-                raise
+            logger.debug(f"Created new UserGame {user_game_id} for user {user_id}, game {igdb_id}")
+        else:
+            # UserGame already existed (conflict occurred)
+            # Re-query to get the existing UserGame ID
+            existing_user_game = session.exec(
+                select(UserGame).where(
+                    UserGame.user_id == user_id,
+                    UserGame.game_id == igdb_id,
+                )
+            ).first()
+            user_game_id = existing_user_game.id
+            result = "linked_existing"
+            logger.debug(f"UserGame already existed (ID: {user_game_id}), adding platform association")
+
+        session.commit()
+
+        # Add platform association
+        _add_platform_association(
+            session, user_game_id,
+            platform, storefront, external_id, playtime_hours
+        )
 
     # Fetch the game title for result_json
     game = session.get(Game, igdb_id)
@@ -408,45 +408,45 @@ async def _auto_import_game(
         # First ensure the Game record exists in the database
         await game_service.create_or_update_game_from_igdb(igdb_id)
 
-        # Then create the UserGame association
-        try:
-            user_game = UserGame(
-                user_id=user_id,
-                game_id=igdb_id,
-            )
-            session.add(user_game)
-            session.commit()
-            session.refresh(user_game)
+        # Use raw SQL with ON CONFLICT to avoid race conditions at the database level
+        from sqlalchemy import text
 
-            _add_platform_association(
-                session, user_game.id,
-                platform, storefront, external_id, playtime_hours
-            )
+        # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
+        insert_sql = text("""
+            INSERT INTO user_games (id, user_id, game_id, ownership_status, personal_rating, is_loved, play_status, hours_played, personal_notes, acquired_date, created_at, updated_at)
+            VALUES (gen_random_uuid(), :user_id, :game_id, 'OWNED', NULL, false, 'NOT_STARTED', 0, NULL, NULL, NOW(), NOW())
+            ON CONFLICT (user_id, game_id) DO NOTHING
+            RETURNING id
+        """)
+
+        insert_result = session.exec(insert_sql, {"user_id": user_id, "game_id": igdb_id})
+        inserted_row = insert_result.first()
+
+        if inserted_row:
+            # New UserGame was created
+            user_game_id = inserted_row[0]
             result = "auto_imported"
-            user_game_id = user_game.id
-        except Exception as e:
-            # Handle race condition - another worker may have created UserGame
-            if "uq_user_games_user_game" in str(e) or "duplicate key" in str(e).lower():
-                session.rollback()
-                # Re-query for the UserGame that was created by another worker
-                existing_user_game = session.exec(
-                    select(UserGame).where(
-                        UserGame.user_id == user_id,
-                        UserGame.game_id == igdb_id,
-                    )
-                ).first()
-                if existing_user_game:
-                    _add_platform_association(
-                        session, existing_user_game.id,
-                        platform, storefront, external_id, playtime_hours
-                    )
-                    result = "auto_linked"
-                    user_game_id = existing_user_game.id
-                    logger.info(f"Handled race condition: UserGame already existed, added platform association")
-                else:
-                    raise  # Re-raise if we still can't find it
-            else:
-                raise  # Re-raise if it's a different error
+            logger.debug(f"Created new UserGame {user_game_id} for user {user_id}, game {igdb_id}")
+        else:
+            # UserGame already existed (conflict occurred)
+            # Re-query to get the existing UserGame ID
+            existing_user_game = session.exec(
+                select(UserGame).where(
+                    UserGame.user_id == user_id,
+                    UserGame.game_id == igdb_id,
+                )
+            ).first()
+            user_game_id = existing_user_game.id
+            result = "auto_linked"
+            logger.debug(f"UserGame already existed (ID: {user_game_id}), adding platform association")
+
+        session.commit()
+
+        # Add platform association
+        _add_platform_association(
+            session, user_game_id,
+            platform, storefront, external_id, playtime_hours
+        )
 
     # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
