@@ -24,6 +24,7 @@ class PSNGame:
     name: str             # Game title
     platforms: List[str]  # ["playstation-4", "playstation-5"]
     metadata: Dict[str, Any]  # Additional game metadata
+    playtime_hours: int = 0   # Total playtime in hours
 
 
 class PSNAPIError(Exception):
