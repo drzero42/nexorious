@@ -26,6 +26,7 @@ class JobSource(str, Enum):
     STEAM = "steam"
     EPIC = "epic"
     GOG = "gog"
+    PSN = "psn"
     DARKADIA = "darkadia"
     NEXORIOUS = "nexorious"
     SYSTEM = "system"
