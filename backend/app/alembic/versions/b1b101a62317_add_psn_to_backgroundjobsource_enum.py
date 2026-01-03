@@ -21,9 +21,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Add psn to the backgroundjobsource enum type (lowercase to match other values)
+    # Add PSN to the backgroundjobsource enum type (uppercase to match STEAM, EPIC, GOG)
     # PostgreSQL requires special handling for enum type alterations
-    op.execute("ALTER TYPE backgroundjobsource ADD VALUE IF NOT EXISTS 'psn'")
+    op.execute("ALTER TYPE backgroundjobsource ADD VALUE IF NOT EXISTS 'PSN'")
 
 
 def downgrade() -> None:
