@@ -13,9 +13,10 @@ import {
   useTriggerSync,
   useJob,
   useCancelJob,
+  usePSNStatus,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard, EpicConnectionCard, RecentActivity } from '@/components/sync';
+import { SteamConnectionCard, EpicConnectionCard, PSNConnectionCard, RecentActivity } from '@/components/sync';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -149,9 +150,21 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
       }
     | undefined;
 
+  // Extract PSN credentials from user preferences
+  const psnPrefs = currentUser?.preferences?.psn as
+    | {
+        online_id?: string;
+        account_id?: string;
+        region?: string;
+      }
+    | undefined;
+
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(platform);
   const { data: status, isLoading: statusLoading } = useSyncStatus(platform);
+
+  // Fetch PSN-specific status
+  const { data: psnStatus } = usePSNStatus();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -330,6 +343,21 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
           accountId={epicPrefs?.account_id}
           onConnectionChange={() => {
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: authKeys.me() });
+          }}
+        />
+      )}
+
+      {/* PSN Connection Card - only show for PSN platform */}
+      {platform === SyncPlatform.PSN && (
+        <PSNConnectionCard
+          isConfigured={config.isConfigured}
+          tokenExpired={psnStatus?.tokenExpired ?? false}
+          onlineId={psnPrefs?.online_id}
+          accountId={psnPrefs?.account_id}
+          onConnectionChange={() => {
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
         />
