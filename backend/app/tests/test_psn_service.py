@@ -72,3 +72,53 @@ async def test_verify_token_failure():
         result = await service.verify_token()
 
         assert result is False
+
+
+@pytest.mark.asyncio
+async def test_get_account_info_success():
+    """Test getting account info succeeds."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_client = Mock()
+        mock_client.online_id = "test_user"
+        mock_client.account_id = "account123"
+        mock_client.get_region.return_value = "us"
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.get_account_info()
+
+        assert result.online_id == "test_user"
+        assert result.account_id == "account123"
+        assert result.region == "us"
+
+
+@pytest.mark.asyncio
+async def test_get_account_info_expired_token():
+    """Test getting account info fails with expired token."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_psnawp.return_value.me.side_effect = Exception("Token expired")
+
+        from app.services.psn import PSNService, PSNTokenExpiredError
+        service = PSNService("a" * 64)
+
+        with pytest.raises(PSNTokenExpiredError) as exc_info:
+            await service.get_account_info()
+
+        assert "NPSSO token has expired" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_get_account_info_auth_error():
+    """Test getting account info fails with auth error."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_psnawp.return_value.me.side_effect = Exception("Invalid credentials")
+
+        from app.services.psn import PSNService, PSNAuthenticationError
+        service = PSNService("a" * 64)
+
+        with pytest.raises(PSNAuthenticationError) as exc_info:
+            await service.get_account_info()
+
+        assert "Failed to get account info" in str(exc_info.value)

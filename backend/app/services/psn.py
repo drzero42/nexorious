@@ -74,6 +74,31 @@ class PSNService:
             logger.warning(f"Token verification failed: {e}")
             return False
 
+    async def get_account_info(self) -> PSNAccountInfo:
+        """Get PSN account information.
+
+        Returns:
+            PSN account information
+
+        Raises:
+            PSNAuthenticationError: If token is invalid
+            PSNTokenExpiredError: If token has expired
+        """
+        try:
+            client = self.psnawp.me()
+
+            return PSNAccountInfo(
+                online_id=client.online_id,
+                account_id=client.account_id,
+                region=client.get_region()
+            )
+        except Exception as e:
+            # Check if error indicates expired token
+            error_str = str(e).lower()
+            if "expired" in error_str or "unauthorized" in error_str:
+                raise PSNTokenExpiredError("NPSSO token has expired")
+            raise PSNAuthenticationError(f"Failed to get account info: {e}")
+
 
 def create_psn_service(npsso_token: str) -> PSNService:
     """Factory function to create a PSN service instance."""
