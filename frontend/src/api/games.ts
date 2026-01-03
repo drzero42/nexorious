@@ -344,9 +344,9 @@ function transformIGDBGameCandidate(
 function appendParam(
   searchParams: URLSearchParams,
   key: string,
-  value: string | string[] | number | boolean | undefined
+  value: string | string[] | number | boolean | undefined | null
 ): void {
-  if (value === undefined) return;
+  if (value === undefined || value === null) return;
 
   if (Array.isArray(value)) {
     value.forEach((v) => searchParams.append(key, String(v)));
