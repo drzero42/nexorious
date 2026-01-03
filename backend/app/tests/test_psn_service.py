@@ -190,3 +190,14 @@ async def test_get_library_expired_token():
 
         with pytest.raises(PSNTokenExpiredError):
             await service.get_library()
+
+
+@pytest.mark.asyncio
+async def test_disconnect():
+    """Test disconnect is a no-op for stateless PSNAWP."""
+    with patch('psnawp_api.PSNAWP'):
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        # Should not raise
+        await service.disconnect()

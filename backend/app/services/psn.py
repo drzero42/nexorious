@@ -145,6 +145,15 @@ class PSNService:
                 raise PSNTokenExpiredError("NPSSO token has expired")
             raise PSNAPIError(f"Failed to retrieve PSN library: {e}")
 
+    async def disconnect(self) -> None:
+        """Disconnect PSN account.
+
+        Note: PSNAWP is stateless, so this is a no-op.
+        Actual credential cleanup happens in preferences.
+        """
+        # No-op for PSNAWP (stateless library)
+        pass
+
 
 def create_psn_service(npsso_token: str) -> PSNService:
     """Factory function to create a PSN service instance."""
