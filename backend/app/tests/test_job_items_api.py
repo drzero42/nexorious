@@ -26,7 +26,12 @@ class TestRetryJobItem:
         with patch(
             "app.api.job_items.enqueue_import_task",
             new_callable=AsyncMock,
-        ):
+        ) as mock_import, patch(
+            "app.api.job_items.enqueue_metadata_refresh_task",
+            new_callable=AsyncMock,
+        ) as mock_maintenance:
+            self.mock_import_task = mock_import
+            self.mock_maintenance_task = mock_maintenance
             yield
 
     def test_retry_job_item_success(
@@ -162,6 +167,74 @@ class TestRetryJobItem:
             f"/api/job-items/{failed_item.id}/retry", headers=auth_headers
         )
         assert response.status_code == 404
+
+    def test_retry_import_job_uses_import_task(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retrying an import job item uses the import task."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        failed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_1",
+            source_title="Test Game",
+            status=JobItemStatus.FAILED,
+            error_message="IGDB timeout",
+            processed_at=datetime.now(timezone.utc),
+        )
+        session.add(failed_item)
+        session.commit()
+
+        response = client.post(
+            f"/api/job-items/{failed_item.id}/retry", headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify import task was called, not maintenance task
+        self.mock_import_task.assert_called_once()
+        self.mock_maintenance_task.assert_not_called()
+
+    def test_retry_maintenance_job_uses_maintenance_task(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retrying a maintenance job item uses the maintenance task."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.MAINTENANCE,
+            source=BackgroundJobSource.SYSTEM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        failed_item = JobItem(
+            job_id=job.id,
+            user_id=test_user.id,
+            item_key="game_123",
+            source_title="Car Mechanic Simulator 2018",
+            status=JobItemStatus.FAILED,
+            error_message="IGDB timeout",
+            processed_at=datetime.now(timezone.utc),
+        )
+        session.add(failed_item)
+        session.commit()
+
+        response = client.post(
+            f"/api/job-items/{failed_item.id}/retry", headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify maintenance task was called, not import task
+        self.mock_maintenance_task.assert_called_once()
+        self.mock_import_task.assert_not_called()
 
 
 class TestResolveJobItem:

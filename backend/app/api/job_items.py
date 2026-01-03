@@ -14,7 +14,9 @@ from ..schemas.job_item import (
     ResolveJobItemRequest,
     SkipJobItemRequest,
 )
+from ..models.job import BackgroundJobType
 from ..worker.tasks.import_export.process_import_item import enqueue_import_task
+from ..worker.tasks.maintenance.metadata_refresh_process import enqueue_metadata_refresh_task
 from ..worker.queues import enqueue_task
 from ..worker.tasks.sync.process_item import process_sync_item, _check_and_update_job_completion
 
@@ -137,7 +139,11 @@ async def retry_job_item(
     session.commit()
     session.refresh(item)
 
-    # Re-enqueue item for processing
-    await enqueue_import_task(str(item.id), job.priority)
+    # Re-enqueue item for processing based on job type
+    if job.job_type == BackgroundJobType.MAINTENANCE:
+        await enqueue_metadata_refresh_task(str(item.id), job.priority)
+    else:
+        # Default to import task for IMPORT and other job types
+        await enqueue_import_task(str(item.id), job.priority)
 
     return JobItemDetailResponse.model_validate(item)

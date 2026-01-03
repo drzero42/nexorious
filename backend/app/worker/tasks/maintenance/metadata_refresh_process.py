@@ -186,6 +186,19 @@ async def _update_job_item_error(job_item_id: str, error_message: str) -> Dict[s
     return {"status": "error", "error": error_message}
 
 
+async def enqueue_metadata_refresh_task(job_item_id: str, priority) -> None:
+    """Enqueue metadata refresh task with appropriate priority.
+
+    Routes the task to the appropriate priority queue based on the priority parameter.
+
+    Args:
+        job_item_id: The JobItem ID to process
+        priority: Priority level (HIGH or LOW)
+    """
+    from app.worker.queues import enqueue_task
+    await enqueue_task(process_metadata_refresh, job_item_id, priority=priority)
+
+
 def _check_and_update_job_completion(session, job_id: str) -> bool:
     """Check if all job items are processed and update job status.
 
