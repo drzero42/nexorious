@@ -50,8 +50,14 @@ class PSNService:
 
     def __init__(self, npsso_token: str):
         """Initialize PSN service with user's NPSSO token."""
+        from psnawp_api import PSNAWP
+
         self.npsso_token = npsso_token
-        # PSNAWP initialization will be implemented in next step
+        try:
+            self.psnawp = PSNAWP(npsso_token)
+        except Exception as e:
+            logger.error(f"Failed to initialize PSNAWP: {e}")
+            raise PSNAuthenticationError(f"Failed to initialize PSN service: {e}")
 
 
 def create_psn_service(npsso_token: str) -> PSNService:
