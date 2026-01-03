@@ -251,7 +251,8 @@ class IGDBService:
         igdb_query = f'''
             fields id, name, slug, summary, genres.name, involved_companies.company.name,
                    involved_companies.developer, involved_companies.publisher,
-                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
+                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name,
+                   game_modes.name, themes.name, player_perspectives.name;
             search "{query}";
             limit {limit};
         '''
@@ -311,7 +312,8 @@ class IGDBService:
         igdb_query = f'''
             fields id, name, slug, summary, genres.name, involved_companies.company.name,
                    involved_companies.developer, involved_companies.publisher,
-                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
+                   first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name,
+                   game_modes.name, themes.name, player_perspectives.name;
             where name ~ "{escaped_query}"*;
             limit {limit};
         '''
@@ -347,7 +349,8 @@ class IGDBService:
             igdb_query = f'''
                 fields id, name, slug, summary, genres.name, involved_companies.company.name,
                        involved_companies.developer, involved_companies.publisher,
-                       first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name;
+                       first_release_date, cover.image_id, rating, rating_count, platforms.id, platforms.name,
+                       game_modes.name, themes.name, player_perspectives.name;
                 where id = {igdb_id};
             '''
 
