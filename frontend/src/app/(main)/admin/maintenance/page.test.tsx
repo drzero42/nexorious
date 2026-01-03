@@ -36,6 +36,10 @@ vi.mock('@/api/admin', () => ({
 vi.mock('@/hooks', () => ({
   useActiveJob: vi.fn(),
   useCancelJob: vi.fn(),
+  useJobs: vi.fn(() => ({
+    data: { jobs: [], total: 0, page: 1, perPage: 50, pages: 0 },
+    isLoading: false,
+  })),
   useJobItems: vi.fn(() => ({
     data: null,
     isLoading: false,
@@ -745,7 +749,7 @@ describe('MaintenancePage', () => {
   });
 
   describe('Recent Maintenance Jobs Section', () => {
-    it('renders recent maintenance jobs card', async () => {
+    it('renders recent activity card', async () => {
       mockedUseAuth.mockReturnValue({
         user: mockAdminUser,
         isLoading: false,
@@ -759,13 +763,11 @@ describe('MaintenancePage', () => {
       render(<MaintenancePage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Recent Maintenance Jobs')).toBeInTheDocument();
+        expect(screen.getByText('Recent Activity')).toBeInTheDocument();
       });
-
-      expect(screen.getByText(/maintenance operations from the last 7 days/i)).toBeInTheDocument();
     });
 
-    it('shows empty state for maintenance jobs', async () => {
+    it('shows empty state when no recent jobs', async () => {
       mockedUseAuth.mockReturnValue({
         user: mockAdminUser,
         isLoading: false,
@@ -779,13 +781,10 @@ describe('MaintenancePage', () => {
       render(<MaintenancePage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Recent Maintenance Jobs')).toBeInTheDocument();
+        expect(screen.getByText('Recent Activity')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('No recent maintenance jobs')).toBeInTheDocument();
-      expect(
-        screen.getByText(/jobs will appear here after running maintenance tasks/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText('No recent activity')).toBeInTheDocument();
     });
   });
 });

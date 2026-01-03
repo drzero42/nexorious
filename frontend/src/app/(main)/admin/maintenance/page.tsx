@@ -10,13 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
+import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import { toast } from 'sonner';
 import {
   Package,
   Trash2,
   RefreshCw,
-  History,
   Loader2,
   CheckCircle,
   RotateCcw,
@@ -304,23 +303,12 @@ export default function MaintenancePage() {
         </Card>
       )}
 
-      {/* Recent Maintenance Jobs */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Recent Maintenance Jobs
-          </CardTitle>
-          <CardDescription>Maintenance operations from the last 7 days</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <History className="mb-4 h-12 w-12 opacity-50" />
-            <p>No recent maintenance jobs</p>
-            <p className="text-sm">Jobs will appear here after running maintenance tasks</p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Recent Maintenance Jobs - shows completed jobs from last 7 days */}
+      {!showJobProgress && (
+        <RecentActivity
+          jobTypes={[JobType.MAINTENANCE]}
+        />
+      )}
     </div>
   );
 }
