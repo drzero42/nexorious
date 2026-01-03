@@ -101,9 +101,10 @@ async def dispatch_sync_items(
                         game=game,
                     )
 
-                    # Dispatch worker task
-                    await _dispatch_process_task(job_item.id, priority)
-                    stats["dispatched"] += 1
+                    # Only dispatch if we created a new item (not a duplicate)
+                    if job_item:
+                        await _dispatch_process_task(job_item.id, priority)
+                        stats["dispatched"] += 1
 
                 except Exception as e:
                     logger.error(f"Error creating/dispatching item for {game.title}: {e}")
@@ -136,8 +137,11 @@ def _create_job_item(
     job: Job,
     user_id: str,
     game: ExternalGame,
-) -> JobItem:
-    """Create a JobItem for a game.
+) -> JobItem | None:
+    """Create a JobItem for a game, or return None if it already exists.
+
+    This function is idempotent - if a JobItem with the same job_id and item_key
+    already exists, it returns None to signal the duplicate should be skipped.
 
     Args:
         session: Database session
@@ -146,8 +150,23 @@ def _create_job_item(
         game: ExternalGame from adapter
 
     Returns:
-        Created JobItem
+        Created JobItem, or None if item already exists
     """
+    from sqlmodel import select
+
+    item_key = f"{game.storefront}_{game.external_id}"
+
+    # Check if item already exists (for idempotency in case of task retry)
+    existing_item_stmt = select(JobItem).where(
+        JobItem.job_id == job.id,
+        JobItem.item_key == item_key
+    )
+    existing_item = session.exec(existing_item_stmt).first()
+
+    if existing_item:
+        logger.debug(f"JobItem already exists for {game.title}, skipping")
+        return None
+
     source_metadata = {
         "external_id": game.external_id,
         "platform": game.platform,
@@ -159,7 +178,7 @@ def _create_job_item(
     job_item = JobItem(
         job_id=job.id,
         user_id=user_id,
-        item_key=f"{game.storefront}_{game.external_id}",
+        item_key=item_key,
         source_title=game.title,
         source_metadata_json=json.dumps(source_metadata),
         status=JobItemStatus.PENDING,
