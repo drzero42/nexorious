@@ -67,3 +67,6 @@ On the games detail page we should have a "refresh metadata" button that will up
 
 ## Maintenance jobs
 We need scheduled jobs that take care of cleaning up expired jobs and orphaned files.
+
+## Epic Games Store sync configuration
+When clicking Connect we have a box pop-up with a button that says Start Authentication, after which another box pops up with the link to authenticate and an input for the code. We don't need the first box - instead incorporate the information in a single box to handle the full process.
