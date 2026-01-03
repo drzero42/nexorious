@@ -16,6 +16,7 @@ import logging
 
 from ..core.database import get_session
 from ..worker.tasks.import_export.process_import_item import enqueue_import_task
+from ..worker.tasks.maintenance.metadata_refresh_process import enqueue_metadata_refresh_task
 from ..core.security import get_current_user
 from ..models.user import User
 from ..models.job import (
@@ -639,9 +640,13 @@ async def retry_failed_job_items(
 
     logger.info(f"Retrying {retried_count} failed items for job {job_id}")
 
-    # Re-enqueue items for processing
+    # Re-enqueue items for processing based on job type
     for item in failed_items:
-        await enqueue_import_task(str(item.id), job.priority)
+        if job.job_type == BackgroundJobType.MAINTENANCE:
+            await enqueue_metadata_refresh_task(str(item.id), job.priority)
+        else:
+            # Default to import task for IMPORT and other job types
+            await enqueue_import_task(str(item.id), job.priority)
 
     return RetryFailedResponse(
         success=True,
