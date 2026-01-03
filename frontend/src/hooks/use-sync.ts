@@ -10,6 +10,8 @@ import type {
   EpicAuthStartResponse,
   EpicAuthCompleteResponse,
   EpicAuthCheckResponse,
+  PSNConfigureResponse,
+  PSNStatusResponse,
 } from '@/types';
 
 // ============================================================================
@@ -25,6 +27,7 @@ export const syncKeys = {
   ignoredGames: (params?: { source?: string; limit?: number; offset?: number }) =>
     [...syncKeys.all, 'ignored', params] as const,
   epicAuth: () => [...syncKeys.all, 'epicAuth'] as const,
+  psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
 };
 
 // ============================================================================
@@ -251,6 +254,65 @@ export function useDisconnectEpic() {
     },
     onError: (error) => {
       console.error('Failed to disconnect Epic:', error);
+    },
+  });
+}
+
+// ============================================================================
+// PSN Auth Hooks
+// ============================================================================
+
+/**
+ * Hook to configure PSN with NPSSO token.
+ * Invalidates sync configs and PSN status on success.
+ */
+export function useConfigurePSN() {
+  const queryClient = useQueryClient();
+
+  return useMutation<PSNConfigureResponse, Error, string>({
+    mutationFn: (npssoToken: string) => syncApi.configurePSN(npssoToken),
+    onSuccess: () => {
+      // Invalidate sync configs to refresh connection status
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.PSN) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to configure PSN:', error);
+    },
+  });
+}
+
+/**
+ * Hook to check current PSN connection status.
+ * Cached for 5 minutes.
+ */
+export function usePSNStatus() {
+  return useQuery<PSNStatusResponse, Error>({
+    queryKey: syncKeys.psnStatus(),
+    queryFn: syncApi.getPSNStatus,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Hook to disconnect PSN integration.
+ * Invalidates all PSN-related queries on success.
+ */
+export function useDisconnectPSN() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectPSN,
+    onSuccess: () => {
+      // Invalidate all PSN-related queries
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.PSN) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect PSN:', error);
     },
   });
 }
