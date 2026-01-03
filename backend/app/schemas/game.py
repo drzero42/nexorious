@@ -31,7 +31,10 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_completionist: Optional[int]
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
-    igdb_platform_names: Optional[str]
+    igdb_platform_names: Optional[str] = None
+    game_modes: Optional[str] = None
+    themes: Optional[str] = None
+    player_perspectives: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
