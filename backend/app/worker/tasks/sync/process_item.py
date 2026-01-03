@@ -639,6 +639,7 @@ def _update_sync_config_timestamp(session: Session, user_id: str, source: Backgr
         BackgroundJobSource.STEAM: "steam",
         BackgroundJobSource.EPIC: "epic",
         BackgroundJobSource.GOG: "gog",
+        BackgroundJobSource.PSN: "psn",
     }
     platform = platform_map.get(source)
     if not platform:
