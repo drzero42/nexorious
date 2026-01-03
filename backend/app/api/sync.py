@@ -350,6 +350,7 @@ def _platform_to_job_source(platform: SyncPlatform) -> BackgroundJobSource:
         SyncPlatform.STEAM: BackgroundJobSource.STEAM,
         SyncPlatform.EPIC: BackgroundJobSource.EPIC,
         SyncPlatform.GOG: BackgroundJobSource.GOG,
+        SyncPlatform.PSN: BackgroundJobSource.PSN,
     }
     return mapping[platform]
 
