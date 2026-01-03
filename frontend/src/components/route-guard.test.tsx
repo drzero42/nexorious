@@ -73,7 +73,9 @@ describe("RouteGuard", () => {
       expect(screen.queryByTestId("children")).not.toBeInTheDocument();
     });
 
-    it("does not redirect while loading", () => {
+    it("does not redirect while loading", async () => {
+      // Keep setup check pending to simulate loading
+      mockCheckSetupStatus.mockImplementation(() => new Promise(() => {}));
       mockUseAuth.mockReturnValue({
         isLoading: true,
         isAuthenticated: false,
@@ -85,7 +87,10 @@ describe("RouteGuard", () => {
         </RouteGuard>
       );
 
-      expect(mockReplace).not.toHaveBeenCalled();
+      // Wait a tick to let any potential redirects happen
+      await waitFor(() => {
+        expect(mockReplace).not.toHaveBeenCalled();
+      });
     });
   });
 

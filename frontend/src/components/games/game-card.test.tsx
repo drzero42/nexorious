@@ -5,11 +5,27 @@ import { GameCard } from './game-card';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame, GameId, UserGameId } from '@/types';
 
-// Mock next/image
+// Mock next/image - filter out Next.js specific props that aren't valid HTML attributes
 vi.mock('next/image', () => ({
-  default: ({ src, alt, ...props }: { src: string; alt: string; [key: string]: unknown }) => (
+  default: ({ src, alt, fill, unoptimized, priority, sizes, ...props }: {
+    src: string;
+    alt: string;
+    fill?: boolean;
+    unoptimized?: boolean;
+    priority?: boolean;
+    sizes?: string;
+    [key: string]: unknown
+  }) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} {...props} />
+    <img
+      src={src}
+      alt={alt}
+      data-fill={fill ? "true" : undefined}
+      data-unoptimized={unoptimized ? "true" : undefined}
+      data-priority={priority ? "true" : undefined}
+      data-sizes={sizes}
+      {...props}
+    />
   ),
 }));
 

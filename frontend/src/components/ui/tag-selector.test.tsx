@@ -410,7 +410,7 @@ describe('TagSelector', () => {
     expect(handleChange).not.toHaveBeenCalled();
   });
 
-  it('removes tag when X button is clicked in badge', async () => {
+  it('deselects tag when clicking it in dropdown (trigger badges have no remove button)', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
@@ -422,8 +422,12 @@ describe('TagSelector', () => {
       />
     );
 
-    const removeButton = screen.getByRole('button', { name: 'Remove tag Action' });
-    await user.click(removeButton);
+    // Open the dropdown
+    await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
+
+    // Click on the selected tag in the list to deselect it
+    const actionOption = await screen.findByRole('option', { name: /Action/ });
+    await user.click(actionOption);
 
     expect(handleChange).toHaveBeenCalledWith([]);
   });

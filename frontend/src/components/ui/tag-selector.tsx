@@ -223,7 +223,6 @@ export function TagSelector({
                       key={tag.id}
                       tag={tag}
                       size="sm"
-                      onRemove={() => handleRemoveTag(tag.id)}
                     />
                   ))
                 ) : (
@@ -233,7 +232,6 @@ export function TagSelector({
                         key={tag.id}
                         tag={tag}
                         size="sm"
-                        onRemove={() => handleRemoveTag(tag.id)}
                       />
                     ))}
                     <Badge variant="secondary" className="text-xs">
