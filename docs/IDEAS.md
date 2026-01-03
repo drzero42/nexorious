@@ -64,3 +64,7 @@ We need scheduled jobs that take care of cleaning up expired jobs and orphaned f
 
 ## Epic Games Store sync configuration
 When clicking Connect we have a box pop-up with a button that says Start Authentication, after which another box pops up with the link to authenticate and an input for the code. We don't need the first box - instead incorporate the information in a single box to handle the full process.
+
+## Darkadia unknown platform and/or storefront
+When we convert and import Darkadia CSV as nexorious JSON we should make sure missing platforms and storefronts end up as unknown associations in our database. This way the user can go through and handle it after importing. Some games may need to be hunted down.
+A function to sort out missing platform/storefronts for games may be a good idea to add.
