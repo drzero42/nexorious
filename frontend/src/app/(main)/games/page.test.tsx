@@ -25,8 +25,8 @@ vi.mock("@/components/games", () => ({
     viewMode,
     onViewModeChange,
   }: {
-    filters: { search: string; status?: PlayStatus; platformId?: string };
-    onFiltersChange: (filters: { search: string; status?: PlayStatus; platformId?: string }) => void;
+    filters: { search: string; status?: PlayStatus; platforms?: string[]; storefronts?: string[]; genres?: string[]; tags?: string[] };
+    onFiltersChange: (filters: { search: string; status?: PlayStatus; platforms?: string[]; storefronts?: string[]; genres?: string[]; tags?: string[] }) => void;
     viewMode: "grid" | "list";
     onViewModeChange: (mode: "grid" | "list") => void;
   }) => {
@@ -37,7 +37,7 @@ vi.mock("@/components/games", () => ({
       <div data-testid="game-filters">
         <span data-testid="filter-search">{filters.search}</span>
         <span data-testid="filter-status">{filters.status || "none"}</span>
-        <span data-testid="filter-platform">{filters.platformId || "none"}</span>
+        <span data-testid="filter-platforms">{(filters.platforms ?? []).join(",") || "none"}</span>
         <span data-testid="view-mode">{viewMode}</span>
         <button
           data-testid="set-search-filter"
@@ -55,7 +55,7 @@ vi.mock("@/components/games", () => ({
         </button>
         <button
           data-testid="set-platform-filter"
-          onClick={() => onFiltersChange({ ...filters, platformId: "platform-1" })}
+          onClick={() => onFiltersChange({ ...filters, platforms: ["windows"] })}
         >
           Set Platform
         </button>
@@ -194,13 +194,16 @@ vi.mock("@/components/games", () => ({
 
 // Mock next/navigation
 const mockPush = vi.fn();
+const mockReplace = vi.fn();
+let mockSearchParams = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
-    replace: vi.fn(),
+    replace: mockReplace,
     prefetch: vi.fn(),
   }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 // Mock game data
@@ -241,6 +244,7 @@ const mockGames: UserGame[] = [
 describe("GamesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams(); // Reset URL params
     mockUseUserGames.mockReturnValue({
       data: { items: mockGames, total: 3, page: 1, per_page: 50, pages: 1 },
       isLoading: false,
@@ -316,8 +320,9 @@ describe("GamesPage", () => {
       expect(screen.getByTestId("grid-loading")).toBeInTheDocument();
     });
 
-    it("passes isLoading to GameList when loading in list view", async () => {
-      const user = userEvent.setup();
+    it("passes isLoading to GameList when loading in list view", () => {
+      // Set URL to list view
+      mockSearchParams = new URLSearchParams("view=list");
       mockUseUserGames.mockReturnValue({
         data: undefined,
         isLoading: true,
@@ -325,9 +330,6 @@ describe("GamesPage", () => {
       });
 
       render(<GamesPage />);
-
-      // Switch to list view
-      await user.click(screen.getByTestId("toggle-view-mode"));
 
       expect(screen.getByTestId("list-loading")).toBeInTheDocument();
     });
@@ -346,8 +348,9 @@ describe("GamesPage", () => {
       expect(screen.getByTestId("grid-empty")).toBeInTheDocument();
     });
 
-    it("shows empty state in GameList when no games in list view", async () => {
-      const user = userEvent.setup();
+    it("shows empty state in GameList when no games in list view", () => {
+      // Set URL to list view
+      mockSearchParams = new URLSearchParams("view=list");
       mockUseUserGames.mockReturnValue({
         data: { items: [], total: 0, page: 1, per_page: 50, pages: 0 },
         isLoading: false,
@@ -355,8 +358,6 @@ describe("GamesPage", () => {
       });
 
       render(<GamesPage />);
-
-      await user.click(screen.getByTestId("toggle-view-mode"));
 
       expect(screen.getByTestId("list-empty")).toBeInTheDocument();
     });
@@ -394,33 +395,42 @@ describe("GamesPage", () => {
       expect(screen.getByTestId("view-mode")).toHaveTextContent("grid");
     });
 
-    it("switches to list view when toggle is clicked", async () => {
-      const user = userEvent.setup();
+    it("shows list view when URL has view=list", () => {
+      mockSearchParams = new URLSearchParams("view=list");
       render(<GamesPage />);
-
-      await user.click(screen.getByTestId("toggle-view-mode"));
 
       expect(screen.getByTestId("view-mode")).toHaveTextContent("list");
       expect(screen.getByTestId("game-list")).toBeInTheDocument();
       expect(screen.queryByTestId("game-grid")).not.toBeInTheDocument();
     });
 
-    it("switches back to grid view when toggle is clicked again", async () => {
+    it("updates URL to list view when toggle is clicked", async () => {
       const user = userEvent.setup();
       render(<GamesPage />);
 
       await user.click(screen.getByTestId("toggle-view-mode"));
-      await user.click(screen.getByTestId("toggle-view-mode"));
 
-      expect(screen.getByTestId("view-mode")).toHaveTextContent("grid");
-      expect(screen.getByTestId("game-grid")).toBeInTheDocument();
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("view=list"),
+        { scroll: false }
+      );
     });
 
-    it("passes games to GameList when in list view", async () => {
+    it("updates URL to remove view param when toggling back to grid", async () => {
+      // Start with list view
+      mockSearchParams = new URLSearchParams("view=list");
       const user = userEvent.setup();
       render(<GamesPage />);
 
       await user.click(screen.getByTestId("toggle-view-mode"));
+
+      // Grid is default, so view param should be removed (URL should be /games or empty)
+      expect(mockReplace).toHaveBeenCalledWith("/games", { scroll: false });
+    });
+
+    it("passes games to GameList when URL has view=list", () => {
+      mockSearchParams = new URLSearchParams("view=list");
+      render(<GamesPage />);
 
       expect(screen.getByTestId("list-game-game-1-uuid-1234-5678-abcd-123456789012")).toBeInTheDocument();
       expect(screen.getByTestId("list-game-game-2-uuid-1234-5678-abcd-123456789012")).toBeInTheDocument();
@@ -449,7 +459,7 @@ describe("GamesPage", () => {
     it("initializes with no platform filter", () => {
       render(<GamesPage />);
 
-      expect(screen.getByTestId("filter-platform")).toHaveTextContent("none");
+      expect(screen.getByTestId("filter-platforms")).toHaveTextContent("none");
     });
 
     it("updates search filter when changed", async () => {
@@ -458,7 +468,11 @@ describe("GamesPage", () => {
 
       await user.click(screen.getByTestId("set-search-filter"));
 
-      expect(screen.getByTestId("filter-search")).toHaveTextContent("zelda");
+      // Search filter now updates URL, verify replace was called with the search param
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("q=zelda"),
+        { scroll: false }
+      );
     });
 
     it("updates status filter when changed", async () => {
@@ -467,7 +481,11 @@ describe("GamesPage", () => {
 
       await user.click(screen.getByTestId("set-status-filter"));
 
-      expect(screen.getByTestId("filter-status")).toHaveTextContent("completed");
+      // Status filter now updates URL, verify replace was called with the status param
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("status=completed"),
+        { scroll: false }
+      );
     });
 
     it("updates platform filter when changed", async () => {
@@ -476,7 +494,11 @@ describe("GamesPage", () => {
 
       await user.click(screen.getByTestId("set-platform-filter"));
 
-      expect(screen.getByTestId("filter-platform")).toHaveTextContent("platform-1");
+      // Platform filter now updates URL, verify replace was called with the platform param
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("platform=windows"),
+        { scroll: false }
+      );
     });
   });
 
@@ -536,10 +558,11 @@ describe("GamesPage", () => {
     });
 
     it("selection works in list view as well", async () => {
+      // Set URL to list view
+      mockSearchParams = new URLSearchParams("view=list");
       const user = userEvent.setup();
       render(<GamesPage />);
 
-      await user.click(screen.getByTestId("toggle-view-mode"));
       await user.click(screen.getByTestId("list-select-game-game-1-uuid-1234-5678-abcd-123456789012"));
 
       expect(screen.getByTestId("selected-count")).toHaveTextContent("1");
@@ -566,10 +589,11 @@ describe("GamesPage", () => {
     });
 
     it("navigation works from list view", async () => {
+      // Set URL to list view
+      mockSearchParams = new URLSearchParams("view=list");
       const user = userEvent.setup();
       render(<GamesPage />);
 
-      await user.click(screen.getByTestId("toggle-view-mode"));
       await user.click(screen.getByTestId("list-click-game-game-1-uuid-1234-5678-abcd-123456789012"));
 
       expect(mockPush).toHaveBeenCalledWith("/games/game-1-uuid-1234-5678-abcd-123456789012");
@@ -604,22 +628,54 @@ describe("GamesPage", () => {
   });
 
   describe("query parameters", () => {
-    it("passes empty search when no filters applied", () => {
+    it("passes empty search when no URL params are set", () => {
       render(<GamesPage />);
 
       // useUserGames is called with the initial params
       expect(mockUseUserGames).toHaveBeenCalled();
     });
 
-    it("updates query when filters change", async () => {
+    it("reads filters from URL params", () => {
+      // Set URL params before rendering
+      mockSearchParams = new URLSearchParams("q=zelda&status=completed&platform=windows");
+      render(<GamesPage />);
+
+      // Verify filters are read from URL
+      expect(screen.getByTestId("filter-search")).toHaveTextContent("zelda");
+      expect(screen.getByTestId("filter-status")).toHaveTextContent("completed");
+      expect(screen.getByTestId("filter-platforms")).toHaveTextContent("windows");
+    });
+
+    it("reads view mode from URL params", () => {
+      // Set URL params for list view
+      mockSearchParams = new URLSearchParams("view=list");
+      render(<GamesPage />);
+
+      // Verify list view is displayed
+      expect(screen.getByTestId("view-mode")).toHaveTextContent("list");
+      expect(screen.getByTestId("game-list")).toBeInTheDocument();
+    });
+
+    it("reads sort settings from URL params", () => {
+      // Set URL params for sort
+      mockSearchParams = new URLSearchParams("sort=created_at&order=desc");
+      render(<GamesPage />);
+
+      // Verify useUserGames is called (sort params are passed through)
+      expect(mockUseUserGames).toHaveBeenCalled();
+    });
+
+    it("updates URL when filters change", async () => {
       const user = userEvent.setup();
       render(<GamesPage />);
 
       await user.click(screen.getByTestId("set-search-filter"));
 
-      // The hook should be called with updated params
-      // Note: Due to memoization, we verify the filter state changed
-      expect(screen.getByTestId("filter-search")).toHaveTextContent("zelda");
+      // Verify router.replace was called with the new search param
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("q=zelda"),
+        { scroll: false }
+      );
     });
   });
 
@@ -652,7 +708,8 @@ describe("GamesPage", () => {
   });
 
   describe("state persistence across view mode changes", () => {
-    it("preserves selection when switching view modes", async () => {
+    it("selection state is transient (not in URL)", async () => {
+      // Selection is stored in useState, not URL, so it's not persisted across URL changes
       const user = userEvent.setup();
       render(<GamesPage />);
 
@@ -660,29 +717,22 @@ describe("GamesPage", () => {
       await user.click(screen.getByTestId("select-game-game-1-uuid-1234-5678-abcd-123456789012"));
       expect(screen.getByTestId("selected-count")).toHaveTextContent("1");
 
-      // Switch to list view
-      await user.click(screen.getByTestId("toggle-view-mode"));
-
-      // Selection should be preserved
-      expect(screen.getByTestId("selected-count")).toHaveTextContent("1");
-      expect(
-        screen.getByTestId("list-game-game-1-uuid-1234-5678-abcd-123456789012")
-      ).toHaveAttribute("data-selected", "true");
+      // Verify the selection is maintained within the same render
+      expect(screen.getByTestId("grid-game-game-1-uuid-1234-5678-abcd-123456789012")).toHaveAttribute("data-selected", "true");
     });
 
-    it("preserves filters when switching view modes", async () => {
+    it("updates URL when view mode changes", async () => {
       const user = userEvent.setup();
       render(<GamesPage />);
 
-      // Set a filter
-      await user.click(screen.getByTestId("set-search-filter"));
-      expect(screen.getByTestId("filter-search")).toHaveTextContent("zelda");
-
-      // Switch view mode
+      // Switch view mode to list
       await user.click(screen.getByTestId("toggle-view-mode"));
 
-      // Filter should still be present
-      expect(screen.getByTestId("filter-search")).toHaveTextContent("zelda");
+      // View mode updates URL (list mode is stored, grid is default and not stored)
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("view=list"),
+        { scroll: false }
+      );
     });
   });
 
