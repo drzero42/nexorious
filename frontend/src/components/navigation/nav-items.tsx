@@ -14,8 +14,12 @@ import {
   DatabaseBackup,
 } from 'lucide-react';
 import type { NavItem, NavSection } from './types';
+import { usePendingReviewCount } from '@/hooks/use-jobs';
 
 export function useNavItems() {
+  const { data: reviewData } = usePendingReviewCount();
+  const pendingReviewCount = reviewData?.pendingReviewCount ?? 0;
+
   const mainItems: NavItem[] = [
     {
       href: '/dashboard',
@@ -36,6 +40,7 @@ export function useNavItems() {
       href: '/sync',
       label: 'Sync',
       icon: <RefreshCw className="h-4 w-4" />,
+      badge: pendingReviewCount,
     },
     {
       href: '/tags',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus } from '@/hooks';
+import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,8 +47,11 @@ function SyncServiceCardWithStatus({
   onTriggerSync: (platform: SyncPlatform) => Promise<void>;
 }) {
   const { data: status } = useSyncStatus(config.platform);
+  const { data: reviewData } = usePendingReviewCount();
   const { isPending: isUpdating } = useUpdateSyncConfig();
   const { isPending: isSyncing } = useTriggerSync();
+
+  const pendingReviewCount = reviewData?.countsBySource[config.platform] ?? 0;
 
   const handleUpdate = async (data: SyncConfigUpdateData) => {
     await onUpdate(config.platform, data);
@@ -62,6 +65,7 @@ function SyncServiceCardWithStatus({
     <SyncServiceCard
       config={config}
       status={status}
+      pendingReviewCount={pendingReviewCount}
       onUpdate={handleUpdate}
       onTriggerSync={handleTriggerSync}
       isUpdating={isUpdating}

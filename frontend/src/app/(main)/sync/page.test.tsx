@@ -35,12 +35,14 @@ const mockUseSyncConfigs = vi.fn();
 const mockUseUpdateSyncConfig = vi.fn();
 const mockUseTriggerSync = vi.fn();
 const mockUseSyncStatus = vi.fn();
+const mockUsePendingReviewCount = vi.fn();
 
 vi.mock('@/hooks', () => ({
   useSyncConfigs: () => mockUseSyncConfigs(),
   useUpdateSyncConfig: () => mockUseUpdateSyncConfig(),
   useTriggerSync: () => mockUseTriggerSync(),
   useSyncStatus: (platform: SyncPlatform) => mockUseSyncStatus(platform),
+  usePendingReviewCount: () => mockUsePendingReviewCount(),
 }));
 
 // Mock the SyncServiceCard component
@@ -117,6 +119,15 @@ describe('SyncPage', () => {
 
     mockUseSyncStatus.mockReturnValue({
       data: mockSyncStatus,
+      isLoading: false,
+      error: null,
+    });
+
+    mockUsePendingReviewCount.mockReturnValue({
+      data: {
+        total: 0,
+        countsBySource: {},
+      },
       isLoading: false,
       error: null,
     });

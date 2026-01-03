@@ -540,4 +540,47 @@ describe('SyncServiceCard', () => {
       ).not.toThrow();
     });
   });
+
+  describe('pending review badge', () => {
+    it('shows pending review badge when count > 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          pendingReviewCount={5}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.getByText('5 to review')).toBeInTheDocument();
+    });
+
+    it('does not show pending review badge when count is 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          pendingReviewCount={0}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByText(/to review/)).not.toBeInTheDocument();
+    });
+
+    it('does not show pending review badge when count is undefined', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByText(/to review/)).not.toBeInTheDocument();
+    });
+  });
 });

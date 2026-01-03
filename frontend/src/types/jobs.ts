@@ -140,6 +140,7 @@ export interface JobsSummary {
 
 export interface PendingReviewCountResponse {
   pendingReviewCount: number;
+  countsBySource: Record<string, number>;
 }
 
 export interface RetryFailedResponse {
