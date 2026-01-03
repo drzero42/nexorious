@@ -50,6 +50,7 @@ class PendingReviewCountResponse(BaseModel):
     """Response for pending review count endpoint."""
 
     pending_review_count: int
+    counts_by_source: dict[str, int]
 
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -198,15 +199,24 @@ async def get_pending_review_count(
     Get total count of items needing review across all jobs.
 
     Used by the frontend navigation to show a badge with pending items.
+    Returns both total count and per-source breakdown.
     """
-    count = session.exec(
-        select(func.count())
+    results = session.exec(
+        select(Job.source, func.count())
         .select_from(JobItem)
+        .join(Job, JobItem.job_id == Job.id)
         .where(JobItem.user_id == current_user.id)
         .where(JobItem.status == JobItemStatus.PENDING_REVIEW)
-    ).one()
+        .group_by(Job.source)
+    ).all()
 
-    return PendingReviewCountResponse(pending_review_count=count)
+    counts_by_source = {source.value: count for source, count in results}
+    total = sum(counts_by_source.values())
+
+    return PendingReviewCountResponse(
+        pending_review_count=total,
+        counts_by_source=counts_by_source,
+    )
 
 
 @router.get("/active/{job_type}", response_model=JobResponse | None)

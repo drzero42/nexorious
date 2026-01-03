@@ -1063,7 +1063,7 @@ class TestPendingReviewCount:
         """Test pending review count when user has no items."""
         response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
         assert response.status_code == 200
-        assert response.json() == {"pending_review_count": 0}
+        assert response.json() == {"pending_review_count": 0, "counts_by_source": {}}
 
     def test_pending_review_count_with_items(
         self, client, auth_headers, test_user: User, session: Session
@@ -1098,7 +1098,63 @@ class TestPendingReviewCount:
 
         response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
         assert response.status_code == 200
-        assert response.json() == {"pending_review_count": 2}
+        data = response.json()
+        assert data["pending_review_count"] == 2
+        assert data["counts_by_source"] == {"steam": 2}
+
+    def test_pending_review_count_multiple_sources(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test pending review count aggregates across multiple sources."""
+        # Create Steam job
+        steam_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.STEAM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(steam_job)
+        session.commit()
+
+        # Create Epic job
+        epic_job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.SYNC,
+            source=BackgroundJobSource.EPIC,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(epic_job)
+        session.commit()
+
+        # Add pending review items to Steam
+        for i in range(3):
+            item = JobItem(
+                job_id=steam_job.id,
+                user_id=test_user.id,
+                item_key=f"steam_game_{i}",
+                source_title=f"Steam Game {i}",
+                status=JobItemStatus.PENDING_REVIEW,
+            )
+            session.add(item)
+
+        # Add pending review items to Epic
+        for i in range(2):
+            item = JobItem(
+                job_id=epic_job.id,
+                user_id=test_user.id,
+                item_key=f"epic_game_{i}",
+                source_title=f"Epic Game {i}",
+                status=JobItemStatus.PENDING_REVIEW,
+            )
+            session.add(item)
+
+        session.commit()
+
+        response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pending_review_count"] == 5
+        assert data["counts_by_source"] == {"steam": 3, "epic": 2}
 
     def test_pending_review_count_excludes_other_users(
         self, client, auth_headers, test_user: User, session: Session
@@ -1135,7 +1191,7 @@ class TestPendingReviewCount:
         # Current user should see 0
         response = client.get("/api/jobs/pending-review-count", headers=auth_headers)
         assert response.status_code == 200
-        assert response.json() == {"pending_review_count": 0}
+        assert response.json() == {"pending_review_count": 0, "counts_by_source": {}}
 
 
 # Note: TestDiscardImport class removed - /discard endpoint does not exist.
