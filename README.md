@@ -6,6 +6,7 @@ A self-hostable web application for managing personal video game collections wit
 
 - **IGDB-Only Game Database**: All games sourced from the Internet Game Database (IGDB) with comprehensive metadata, cover art, ratings, and completion time estimates
 - **Multi-Platform Game Tracking**: Support for Steam, Epic Games Store, PlayStation, Xbox, Nintendo, GOG, and physical media
+- **Sync Integrations**: Automatic library sync from Steam, Epic Games Store, and PlayStation Network (PSN)
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes for your IGDB-sourced games
 - **Bulk Operations**: Import from CSV exports (Darkadia format) with intelligent conflict resolution
