@@ -108,6 +108,8 @@ async def dispatch_sync_items(
                 except Exception as e:
                     logger.error(f"Error creating/dispatching item for {game.title}: {e}")
                     stats["errors"] += 1
+                    # Rollback the session to recover from the error
+                    session.rollback()
 
             logger.info(
                 f"Sync dispatch completed for job {job_id}: "
