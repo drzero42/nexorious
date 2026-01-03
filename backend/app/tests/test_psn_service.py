@@ -145,6 +145,7 @@ async def test_get_library_success():
 
         mock_client = Mock()
         mock_client.game_entitlements.return_value = [entitlement1, entitlement2]
+        mock_client.title_stats.return_value = []
         mock_psnawp.return_value.me.return_value = mock_client
 
         from app.services.psn import PSNService
@@ -173,6 +174,7 @@ async def test_get_library_fallback_platform():
 
         mock_client = Mock()
         mock_client.game_entitlements.return_value = [entitlement]
+        mock_client.title_stats.return_value = []
         mock_psnawp.return_value.me.return_value = mock_client
 
         from app.services.psn import PSNService

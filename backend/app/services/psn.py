@@ -105,10 +105,10 @@ class PSNService:
             raise PSNAuthenticationError(f"Failed to get account info: {e}")
 
     async def get_library(self) -> List[PSNGame]:
-        """Get purchased games from PSN library (PS4/PS5 only).
+        """Get purchased games from PSN library with playtime (PS4/PS5 only).
 
         Returns:
-            List of PSN games with platform entitlements
+            List of PSN games with platform entitlements and playtime
 
         Raises:
             PSNTokenExpiredError: If token has expired
@@ -116,6 +116,17 @@ class PSNService:
         """
         try:
             client = self.psnawp.me()
+
+            # Fetch playtime stats and build lookup by title_id
+            playtime_lookup: Dict[str, int] = {}
+            for stats in client.title_stats(limit=None):
+                if stats.title_id and stats.play_duration:
+                    hours = int(stats.play_duration.total_seconds() // 3600)
+                    playtime_lookup[stats.title_id] = hours
+
+            logger.info(f"Fetched playtime data for {len(playtime_lookup)} games from PSN")
+
+            # Fetch game entitlements
             game_entitlements = client.game_entitlements(limit=None)
 
             games = []
@@ -124,6 +135,9 @@ class PSNService:
                 title_meta = entitlement.get("titleMeta", {})
                 game_name = title_meta.get("name", "Unknown Game")
                 title_id = title_meta.get("titleId", entitlement.get("productId", ""))
+
+                # Look up playtime by title_id
+                playtime = playtime_lookup.get(title_id, 0)
 
                 # Detect which platforms user has entitlement for based on entitlementAttributes
                 platforms = []
@@ -146,7 +160,8 @@ class PSNService:
                     metadata={
                         "product_id": entitlement.get("productId", ""),
                         "title_id": title_id,
-                    }
+                    },
+                    playtime_hours=playtime,
                 )
                 games.append(psn_game)
 
