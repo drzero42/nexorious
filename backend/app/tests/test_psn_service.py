@@ -122,3 +122,71 @@ async def test_get_account_info_auth_error():
             await service.get_account_info()
 
         assert "Failed to get account info" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_get_library_success():
+    """Test getting library returns PSN games with platform detection."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_game1 = Mock()
+        mock_game1.product_id = "GAME001"
+        mock_game1.name = "Test Game 1"
+        mock_game1.has_ps5_entitlement = True
+        mock_game1.has_ps4_entitlement = False
+
+        mock_game2 = Mock()
+        mock_game2.product_id = "GAME002"
+        mock_game2.name = "Test Game 2 (PS4+PS5)"
+        mock_game2.has_ps5_entitlement = True
+        mock_game2.has_ps4_entitlement = True
+
+        mock_client = Mock()
+        mock_client.purchased_games.return_value = [mock_game1, mock_game2]
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.get_library()
+
+        assert len(result) == 2
+        assert result[0].product_id == "GAME001"
+        assert result[0].name == "Test Game 1"
+        assert result[0].platforms == ["playstation-5"]
+        assert result[1].product_id == "GAME002"
+        assert result[1].platforms == ["playstation-5", "playstation-4"]
+
+
+@pytest.mark.asyncio
+async def test_get_library_fallback_platform():
+    """Test library falls back to PS5 when no platform info."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_game = Mock(spec=['product_id', 'name'])
+        mock_game.product_id = "GAME003"
+        mock_game.name = "Test Game 3"
+        # No platform attributes
+
+        mock_client = Mock()
+        mock_client.purchased_games.return_value = [mock_game]
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.get_library()
+
+        assert len(result) == 1
+        assert result[0].platforms == ["playstation-5"]
+
+
+@pytest.mark.asyncio
+async def test_get_library_expired_token():
+    """Test library fetch fails with expired token."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_psnawp.return_value.me.return_value.purchased_games.side_effect = Exception("Token expired")
+
+        from app.services.psn import PSNService, PSNTokenExpiredError
+        service = PSNService("a" * 64)
+
+        with pytest.raises(PSNTokenExpiredError):
+            await service.get_library()

@@ -99,6 +99,52 @@ class PSNService:
                 raise PSNTokenExpiredError("NPSSO token has expired")
             raise PSNAuthenticationError(f"Failed to get account info: {e}")
 
+    async def get_library(self) -> List[PSNGame]:
+        """Get purchased games from PSN library (PS4/PS5 only).
+
+        Returns:
+            List of PSN games with platform entitlements
+
+        Raises:
+            PSNTokenExpiredError: If token has expired
+            PSNAPIError: If library cannot be retrieved
+        """
+        try:
+            client = self.psnawp.me()
+            purchased_games = client.purchased_games()
+
+            games = []
+            for game in purchased_games:
+                # Detect which platforms user has entitlement for
+                platforms = []
+                if hasattr(game, 'has_ps5_entitlement') and game.has_ps5_entitlement:
+                    platforms.append("playstation-5")
+                if hasattr(game, 'has_ps4_entitlement') and game.has_ps4_entitlement:
+                    platforms.append("playstation-4")
+
+                # Fallback to PS5 if no platform info
+                if not platforms:
+                    platforms = ["playstation-5"]
+
+                psn_game = PSNGame(
+                    product_id=game.product_id,
+                    name=game.name,
+                    platforms=platforms,
+                    metadata={
+                        "product_id": game.product_id,
+                    }
+                )
+                games.append(psn_game)
+
+            logger.info(f"Retrieved {len(games)} games from PSN library")
+            return games
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if "expired" in error_str or "unauthorized" in error_str:
+                raise PSNTokenExpiredError("NPSSO token has expired")
+            raise PSNAPIError(f"Failed to retrieve PSN library: {e}")
+
 
 def create_psn_service(npsso_token: str) -> PSNService:
     """Factory function to create a PSN service instance."""
