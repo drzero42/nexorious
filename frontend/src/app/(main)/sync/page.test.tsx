@@ -148,7 +148,7 @@ describe('SyncPage', () => {
       render(<SyncPage />);
 
       expect(
-        screen.getByText('Sync your Steam library with Nexorious. More platforms coming soon.')
+        screen.getByText('Sync your Steam, Epic Games, and PlayStation Network libraries with Nexorious.')
       ).toBeInTheDocument();
     });
 
