@@ -237,6 +237,48 @@ export default function GameDetailPage() {
                 )}
               </div>
 
+              {/* Game Modes */}
+              {game.game.game_modes && (
+                <div>
+                  <h3 className="font-medium mb-2">Game Modes</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {game.game.game_modes.split(', ').map((mode) => (
+                      <Badge key={mode} variant="secondary">
+                        {mode}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Themes */}
+              {game.game.themes && (
+                <div>
+                  <h3 className="font-medium mb-2">Themes</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {game.game.themes.split(', ').map((theme) => (
+                      <Badge key={theme} variant="outline">
+                        {theme}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Player Perspectives */}
+              {game.game.player_perspectives && (
+                <div>
+                  <h3 className="font-medium mb-2">Player Perspectives</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {game.game.player_perspectives.split(', ').map((perspective) => (
+                      <Badge key={perspective} variant="secondary">
+                        {perspective}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Platforms */}
               {game.platforms && game.platforms.length > 0 && (
                 <div>
