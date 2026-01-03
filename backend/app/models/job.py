@@ -31,6 +31,7 @@ class BackgroundJobSource(str, Enum):
 
     STEAM = "steam"
     EPIC = "epic"
+    PSN = "psn"
     GOG = "gog"
     XBOX = "xbox"
     PLAYSTATION = "playstation"

@@ -26,6 +26,7 @@ dependencies = [
     "sqlmodel>=0.0.24",
     "taskiq>=0.11",
     "taskiq-nats>=0.5.0",
+    "psnawp>=2.1.0",
     "uvicorn>=0.35.0",
     "vulture>=2.14",
 ]
