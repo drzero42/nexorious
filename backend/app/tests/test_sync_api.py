@@ -26,11 +26,11 @@ class TestSyncConfigEndpoints:
 
         assert "configs" in data
         assert "total" in data
-        assert data["total"] == 3  # steam, epic, gog
+        assert data["total"] == 4  # steam, epic, gog, psn
 
         # Check each platform has default values
         platforms = {c["platform"] for c in data["configs"]}
-        assert platforms == {"steam", "epic", "gog"}
+        assert platforms == {"steam", "epic", "gog", "psn"}
 
         for config in data["configs"]:
             assert config["frequency"] == "manual"
