@@ -63,6 +63,10 @@ class GameMetadata:
     # Platform data from IGDB
     igdb_platform_ids: Optional[List[int]] = None
     platform_names: Optional[List[str]] = None
+    # Additional IGDB metadata
+    game_modes: Optional[List[str]] = None
+    themes: Optional[List[str]] = None
+    player_perspectives: Optional[List[str]] = None
 
 
 class TwitchAuthError(Exception):
