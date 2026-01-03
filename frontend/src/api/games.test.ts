@@ -6,6 +6,7 @@ import { PlayStatus, OwnershipStatus, type GameId } from '@/types';
 import {
   getUserGames,
   getUserGame,
+  getUserGameIds,
   createUserGame,
   updateUserGame,
   deleteUserGame,
@@ -15,6 +16,7 @@ import {
   bulkUpdateUserGames,
   bulkDeleteUserGames,
   getCollectionStats,
+  getUserGameGenres,
   addPlatformToUserGame,
   updatePlatformAssociation,
   removePlatformFromUserGame,
@@ -210,6 +212,156 @@ describe('games.ts', () => {
         message: 'Not authenticated',
         status: 401,
       });
+    });
+
+    it('handles multiple platform values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          const platforms = url.searchParams.getAll('platform');
+          expect(platforms).toEqual(['windows', 'playstation_5']);
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        platform: ['windows', 'playstation_5'],
+      });
+      expect(result).toBeDefined();
+      expect(result.items).toEqual([]);
+    });
+
+    it('handles multiple storefront values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          const storefronts = url.searchParams.getAll('storefront');
+          expect(storefronts).toEqual(['steam', 'epic']);
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        storefront: ['steam', 'epic'],
+      });
+      expect(result).toBeDefined();
+      expect(result.items).toEqual([]);
+    });
+
+    it('handles multiple genre values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          const genres = url.searchParams.getAll('genre');
+          expect(genres).toEqual(['RPG', 'Action']);
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        genre: ['RPG', 'Action'],
+      });
+      expect(result).toBeDefined();
+      expect(result.items).toEqual([]);
+    });
+
+    it('handles multiple tag values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          const tags = url.searchParams.getAll('tag');
+          expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        tags: ['tag-id-1', 'tag-id-2'],
+      });
+      expect(result).toBeDefined();
+      expect(result.items).toEqual([]);
+    });
+
+    it('handles single platform as string', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          expect(url.searchParams.get('platform')).toBe('windows');
+          // Should only have one platform value
+          expect(url.searchParams.getAll('platform')).toEqual(['windows']);
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        platform: 'windows',
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('handles mixed array and single value params', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/`, ({ request }) => {
+          const url = new URL(request.url);
+          // Array params
+          expect(url.searchParams.getAll('platform')).toEqual(['windows', 'ps5']);
+          expect(url.searchParams.getAll('genre')).toEqual(['RPG']);
+          // Single value params
+          expect(url.searchParams.get('play_status')).toBe(PlayStatus.IN_PROGRESS);
+          expect(url.searchParams.get('q')).toBe('zelda');
+
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        })
+      );
+
+      const result = await getUserGames({
+        platform: ['windows', 'ps5'],
+        genre: ['RPG'],
+        status: PlayStatus.IN_PROGRESS,
+        search: 'zelda',
+      });
+      expect(result).toBeDefined();
     });
   });
 
@@ -689,6 +841,98 @@ describe('games.ts', () => {
       await expect(
         removePlatformFromUserGame('user-game-123', 'ugp-1')
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getUserGameGenres', () => {
+    it('fetches unique genres from user collection', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
+        })
+      );
+
+      const genres = await getUserGameGenres();
+
+      expect(Array.isArray(genres)).toBe(true);
+      expect(genres).toEqual(['Action', 'Adventure', 'RPG']);
+    });
+
+    it('returns empty array when no genres exist', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: [] });
+        })
+      );
+
+      const genres = await getUserGameGenres();
+
+      expect(genres).toEqual([]);
+    });
+  });
+
+  describe('getUserGameIds', () => {
+    it('fetches game IDs without filters', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/ids`, () => {
+          return HttpResponse.json({ ids: ['game-1', 'game-2', 'game-3'] });
+        })
+      );
+
+      const ids = await getUserGameIds();
+
+      expect(ids).toEqual(['game-1', 'game-2', 'game-3']);
+    });
+
+    it('handles multiple platform values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/ids`, ({ request }) => {
+          const url = new URL(request.url);
+          const platforms = url.searchParams.getAll('platform');
+          expect(platforms).toEqual(['windows', 'playstation_5']);
+
+          return HttpResponse.json({ ids: ['game-1', 'game-2'] });
+        })
+      );
+
+      const ids = await getUserGameIds({
+        platform: ['windows', 'playstation_5'],
+      });
+      expect(ids).toEqual(['game-1', 'game-2']);
+    });
+
+    it('handles multiple genre values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/ids`, ({ request }) => {
+          const url = new URL(request.url);
+          const genres = url.searchParams.getAll('genre');
+          expect(genres).toEqual(['RPG', 'Action']);
+
+          return HttpResponse.json({ ids: ['game-1'] });
+        })
+      );
+
+      const ids = await getUserGameIds({
+        genre: ['RPG', 'Action'],
+      });
+      expect(ids).toEqual(['game-1']);
+    });
+
+    it('handles multiple tag values', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/ids`, ({ request }) => {
+          const url = new URL(request.url);
+          const tags = url.searchParams.getAll('tag');
+          expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
+
+          return HttpResponse.json({ ids: ['game-1', 'game-2'] });
+        })
+      );
+
+      const ids = await getUserGameIds({
+        tags: ['tag-id-1', 'tag-id-2'],
+      });
+      expect(ids).toEqual(['game-1', 'game-2']);
     });
   });
 });

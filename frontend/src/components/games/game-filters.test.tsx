@@ -3,11 +3,15 @@ import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { GameFilters, type GameFiltersProps } from './game-filters';
 import { PlayStatus } from '@/types';
-import type { Platform } from '@/types/platform';
+import type { Platform, Storefront } from '@/types/platform';
+import type { Tag } from '@/types';
 
 // Mock the hooks module
 vi.mock('@/hooks', () => ({
   useAllPlatforms: vi.fn(),
+  useAllStorefronts: vi.fn(),
+  useUserGameGenres: vi.fn(),
+  useAllTags: vi.fn(),
 }));
 
 
@@ -92,6 +96,48 @@ const mockPlatforms: Platform[] = [
   },
 ];
 
+const mockStorefronts: Storefront[] = [
+  {
+    name: 'steam',
+    display_name: 'Steam',
+    is_active: true,
+    source: 'system',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    name: 'epic',
+    display_name: 'Epic Games Store',
+    is_active: true,
+    source: 'system',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+const mockGenres: string[] = ['Action', 'RPG', 'Adventure'];
+
+const mockTags: Tag[] = [
+  {
+    id: 'tag-1',
+    name: 'Favorite',
+    color: '#ff0000',
+    user_id: 'user-1',
+    game_count: 5,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'tag-2',
+    name: 'Backlog',
+    color: '#00ff00',
+    user_id: 'user-1',
+    game_count: 10,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
 const defaultProps: GameFiltersProps = {
   filters: {
     search: '',
@@ -109,12 +155,27 @@ describe('GameFilters', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Default mock implementation
-    const { useAllPlatforms } = vi.mocked(await import('@/hooks'));
+    const { useAllPlatforms, useAllStorefronts, useUserGameGenres, useAllTags } = vi.mocked(await import('@/hooks'));
     useAllPlatforms.mockReturnValue({
       data: mockPlatforms,
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useAllPlatforms>);
+    useAllStorefronts.mockReturnValue({
+      data: mockStorefronts,
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAllStorefronts>);
+    useUserGameGenres.mockReturnValue({
+      data: mockGenres,
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useUserGameGenres>);
+    useAllTags.mockReturnValue({
+      data: mockTags,
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAllTags>);
   });
 
   describe('search input', () => {
@@ -309,26 +370,26 @@ describe('GameFilters', () => {
     });
   });
 
-  describe('platform filter', () => {
-    it('renders platform select', () => {
+  describe('platform filter (multi-select)', () => {
+    it('renders platforms multi-select button', () => {
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      expect(comboboxes[1]).toBeInTheDocument(); // Second combobox is platform
+      // MultiSelectFilter button contains the label text "Platforms"
+      // The button has role="combobox" so find by text
+      expect(screen.getByText('Platforms')).toBeInTheDocument();
     });
 
     it('displays platforms from useAllPlatforms hook', async () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1]; // Second combobox is platform
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
 
-      expect(screen.getByRole('option', { name: 'All Platforms' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'PC' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'PlayStation 5' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Xbox Series X' })).toBeInTheDocument();
+      // MultiSelectFilter shows checkboxes for each option
+      expect(screen.getByText('PC')).toBeInTheDocument();
+      expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
+      expect(screen.getByText('Xbox Series X')).toBeInTheDocument();
     });
 
     it('handles empty platforms list', async () => {
@@ -342,12 +403,11 @@ describe('GameFilters', () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1];
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
 
-      // Should still show "All Platforms" option
-      expect(screen.getByRole('option', { name: 'All Platforms' })).toBeInTheDocument();
+      // Should show "No options available" message
+      expect(screen.getByText('No options available')).toBeInTheDocument();
     });
 
     it('handles undefined platforms', async () => {
@@ -361,15 +421,14 @@ describe('GameFilters', () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1];
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
 
-      // Should still show "All Platforms" option
-      expect(screen.getByRole('option', { name: 'All Platforms' })).toBeInTheDocument();
+      // Should show "No options available" message
+      expect(screen.getByText('No options available')).toBeInTheDocument();
     });
 
-    it('calls onFiltersChange when platform changes to specific platform', async () => {
+    it('calls onFiltersChange when platform is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
       render(
@@ -379,20 +438,20 @@ describe('GameFilters', () => {
         />
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1];
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
 
-      const ps5Option = screen.getByRole('option', { name: 'PlayStation 5' });
-      await user.click(ps5Option);
+      // Click on PlayStation 5 checkbox
+      const ps5Label = screen.getByText('PlayStation 5');
+      await user.click(ps5Label);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        platformId: 'ps5',
+        platforms: ['ps5'],
       });
     });
 
-    it('calls onFiltersChange with undefined platformId when "All Platforms" is selected', async () => {
+    it('calls onFiltersChange when platform is deselected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
       render(
@@ -400,22 +459,22 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{
             search: '',
-            platformId: 'platform-1',
+            platforms: ['ps5'],
           }}
           onFiltersChange={onFiltersChange}
         />
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1];
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms (1)').closest('button')!;
+      await user.click(platformsButton);
 
-      const allPlatformsOption = screen.getByRole('option', { name: 'All Platforms' });
-      await user.click(allPlatformsOption);
+      // Click on PlayStation 5 checkbox to deselect
+      const ps5Label = screen.getByText('PlayStation 5');
+      await user.click(ps5Label);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        platformId: undefined,
+        platforms: [],
       });
     });
 
@@ -433,17 +492,154 @@ describe('GameFilters', () => {
         />
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes[1];
-      await user.click(platformSelect);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
 
-      const pcOption = screen.getByRole('option', { name: 'PC' });
-      await user.click(pcOption);
+      const pcLabel = screen.getByText('PC');
+      await user.click(pcLabel);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'Test',
         status: PlayStatus.IN_PROGRESS,
-        platformId: 'pc',
+        platforms: ['pc'],
+      });
+    });
+
+    it('shows selected count in button label', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            platforms: ['pc', 'ps5'],
+          }}
+        />
+      );
+
+      expect(screen.getByText('Platforms (2)')).toBeInTheDocument();
+    });
+  });
+
+  describe('storefront filter (multi-select)', () => {
+    it('renders storefronts multi-select button', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByText('Storefronts')).toBeInTheDocument();
+    });
+
+    it('displays storefronts from useAllStorefronts hook', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
+      await user.click(storefrontsButton);
+
+      expect(screen.getByText('Steam')).toBeInTheDocument();
+      expect(screen.getByText('Epic Games Store')).toBeInTheDocument();
+    });
+
+    it('calls onFiltersChange when storefront is selected', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
+      await user.click(storefrontsButton);
+
+      const steamLabel = screen.getByText('Steam');
+      await user.click(steamLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        storefronts: ['steam'],
+      });
+    });
+  });
+
+  describe('genre filter (multi-select)', () => {
+    it('renders genres multi-select button', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByText('Genres')).toBeInTheDocument();
+    });
+
+    it('displays genres from useUserGameGenres hook', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      const genresButton = screen.getByText('Genres').closest('button')!;
+      await user.click(genresButton);
+
+      expect(screen.getByText('Action')).toBeInTheDocument();
+      expect(screen.getByText('RPG')).toBeInTheDocument();
+      expect(screen.getByText('Adventure')).toBeInTheDocument();
+    });
+
+    it('calls onFiltersChange when genre is selected', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      const genresButton = screen.getByText('Genres').closest('button')!;
+      await user.click(genresButton);
+
+      const rpgLabel = screen.getByText('RPG');
+      await user.click(rpgLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        genres: ['RPG'],
+      });
+    });
+  });
+
+  describe('tags filter (multi-select)', () => {
+    it('renders tags multi-select button', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByText('Tags')).toBeInTheDocument();
+    });
+
+    it('displays tags from useAllTags hook', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      const tagsButton = screen.getByText('Tags').closest('button')!;
+      await user.click(tagsButton);
+
+      expect(screen.getByText('Favorite')).toBeInTheDocument();
+      expect(screen.getByText('Backlog')).toBeInTheDocument();
+    });
+
+    it('calls onFiltersChange when tag is selected', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      const tagsButton = screen.getByText('Tags').closest('button')!;
+      await user.click(tagsButton);
+
+      const favoriteLabel = screen.getByText('Favorite');
+      await user.click(favoriteLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        tags: ['Favorite'],
       });
     });
   });
@@ -485,13 +681,69 @@ describe('GameFilters', () => {
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
     });
 
-    it('shows clear button when platform filter is active', () => {
+    it('shows clear button when platform filter is active (legacy platformId)', () => {
       render(
         <GameFilters
           {...defaultProps}
           filters={{
             search: '',
             platformId: 'platform-1',
+          }}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+    });
+
+    it('shows clear button when platforms multi-select filter is active', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            platforms: ['pc'],
+          }}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+    });
+
+    it('shows clear button when storefronts filter is active', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            storefronts: ['steam'],
+          }}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+    });
+
+    it('shows clear button when genres filter is active', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            genres: ['RPG'],
+          }}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+    });
+
+    it('shows clear button when tags filter is active', () => {
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{
+            search: '',
+            tags: ['Favorite'],
           }}
         />
       );
@@ -506,7 +758,8 @@ describe('GameFilters', () => {
           filters={{
             search: 'Test',
             status: PlayStatus.IN_PROGRESS,
-            platformId: 'platform-1',
+            platforms: ['pc'],
+            storefronts: ['steam'],
           }}
         />
       );
@@ -523,7 +776,10 @@ describe('GameFilters', () => {
           filters={{
             search: 'Test',
             status: PlayStatus.COMPLETED,
-            platformId: 'platform-1',
+            platforms: ['pc'],
+            storefronts: ['steam'],
+            genres: ['RPG'],
+            tags: ['Favorite'],
           }}
           onFiltersChange={onFiltersChange}
         />
@@ -532,7 +788,15 @@ describe('GameFilters', () => {
       const clearButton = screen.getByRole('button', { name: /clear/i });
       await user.click(clearButton);
 
-      expect(onFiltersChange).toHaveBeenCalledWith({ search: '' });
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        status: undefined,
+        platformId: undefined,
+        platforms: [],
+        storefronts: [],
+        genres: [],
+        tags: [],
+      });
     });
   });
 
@@ -624,10 +888,9 @@ describe('GameFilters', () => {
         />
       );
 
-      // Change status
+      // Change status - click on the button showing "All Statuses"
       vi.clearAllMocks();
-      const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[0];
+      const statusSelect = screen.getByText('All Statuses').closest('button')!;
       await user.click(statusSelect);
       const completedOption = screen.getByRole('option', { name: 'Completed' });
       await user.click(completedOption);
@@ -645,17 +908,16 @@ describe('GameFilters', () => {
         />
       );
 
-      // Change platform
+      // Change platform (now multi-select)
       vi.clearAllMocks();
-      const comboboxes2 = screen.getAllByRole('combobox');
-      const platformSelect = comboboxes2[1];
-      await user.click(platformSelect);
-      const pcOption = screen.getByRole('option', { name: 'PC' });
-      await user.click(pcOption);
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
+      const pcLabel = screen.getByText('PC');
+      await user.click(pcLabel);
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'T',
         status: PlayStatus.COMPLETED,
-        platformId: 'pc',
+        platforms: ['pc'],
       });
     });
 
@@ -690,9 +952,8 @@ describe('GameFilters', () => {
     it('renders sort dropdown', () => {
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      // Sort dropdown is the 3rd combobox (after status and platform)
-      expect(comboboxes[2]).toBeInTheDocument();
+      // Find the sort select - it shows "Title" by default
+      expect(screen.getByText('Title')).toBeInTheDocument();
     });
 
     it('renders sort direction toggle button', () => {
@@ -714,8 +975,8 @@ describe('GameFilters', () => {
         <GameFilters {...defaultProps} onSortByChange={onSortByChange} />
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const sortSelect = comboboxes[2]; // 3rd combobox is sort
+      // Find the sort select by its current value "Title"
+      const sortSelect = screen.getByText('Title').closest('button')!;
       await user.click(sortSelect);
 
       const dateAddedOption = screen.getByRole('option', { name: 'Date Added' });

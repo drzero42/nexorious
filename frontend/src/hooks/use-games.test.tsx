@@ -11,6 +11,7 @@ import {
   useSearchIGDB,
   useCollectionStats,
   useActiveGames,
+  useUserGameGenres,
   useCreateUserGame,
   useUpdateUserGame,
   useDeleteUserGame,
@@ -1163,6 +1164,98 @@ describe('use-games hooks', () => {
 
       // Should have fetched twice due to different params
       expect(fetchCount).toBe(2);
+    });
+  });
+
+  describe('useUserGameGenres', () => {
+    it('returns genres array', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
+        })
+      );
+
+      const { result } = renderHook(() => useUserGameGenres(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(Array.isArray(result.current.data)).toBe(true);
+      expect(result.current.data).toEqual(['Action', 'Adventure', 'RPG']);
+    });
+
+    it('returns empty array when no genres exist', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ genres: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useUserGameGenres(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(result.current.data).toEqual([]);
+    });
+
+    it('handles error state', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          return HttpResponse.json({ detail: 'Failed to fetch genres' }, { status: 500 });
+        })
+      );
+
+      const { result } = renderHook(() => useUserGameGenres(), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true);
+      });
+
+      expect(result.current.error?.message).toBe('Failed to fetch genres');
+    });
+
+    it('uses staleTime of 5 minutes for caching', async () => {
+      let fetchCount = 0;
+
+      server.use(
+        http.get(`${API_URL}/user-games/genres`, () => {
+          fetchCount++;
+          return HttpResponse.json({ genres: ['Action', 'Adventure'] });
+        })
+      );
+
+      const queryClient = createTestQueryClient();
+
+      const { result: result1 } = renderHook(() => useUserGameGenres(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+
+      await waitFor(() => {
+        expect(result1.current.isSuccess).toBe(true);
+      });
+
+      expect(fetchCount).toBe(1);
+
+      // Render again - should use cache due to staleTime
+      const { result: result2 } = renderHook(() => useUserGameGenres(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+
+      expect(result2.current.data).toEqual(['Action', 'Adventure']);
+      expect(fetchCount).toBe(1); // No additional fetch due to staleTime
     });
   });
 });

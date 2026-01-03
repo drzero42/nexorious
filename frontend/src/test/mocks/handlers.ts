@@ -222,6 +222,10 @@ export const handlers = [
   }),
 
   // Game endpoints
+  http.get(`${API_URL}/user-games/genres`, () => {
+    return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
+  }),
+
   http.get(`${API_URL}/user-games/stats`, () => {
     return HttpResponse.json({
       total_games: 0,

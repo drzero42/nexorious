@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAllPlatforms } from '@/hooks';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
+import { useAllPlatforms, useAllStorefronts, useUserGameGenres, useAllTags } from '@/hooks';
 import { PlayStatus } from '@/types';
 import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X } from 'lucide-react';
 
@@ -33,7 +34,11 @@ export interface GameFiltersProps {
   filters: {
     search: string;
     status?: PlayStatus;
-    platformId?: string;
+    platformId?: string;           // Keep for backwards compat (but will migrate to platforms)
+    platforms?: string[];          // New: multi-select
+    storefronts?: string[];        // New
+    genres?: string[];             // New
+    tags?: string[];               // New
   };
   onFiltersChange: (filters: GameFiltersProps['filters']) => void;
   viewMode: 'grid' | 'list';
@@ -66,11 +71,35 @@ export function GameFilters({
   onSortOrderToggle,
 }: GameFiltersProps) {
   const { data: platforms } = useAllPlatforms();
+  const { data: storefronts } = useAllStorefronts();
+  const { data: genres } = useUserGameGenres();
+  const { data: tags } = useAllTags();
 
-  const hasActiveFilters = filters.search || filters.status || filters.platformId;
+  // Convert data to MultiSelectFilter options
+  const platformOptions = platforms?.map((p) => ({ value: p.name, label: p.display_name })) ?? [];
+  const storefrontOptions = storefronts?.map((s) => ({ value: s.name, label: s.display_name })) ?? [];
+  const genreOptions = genres?.map((g) => ({ value: g, label: g })) ?? [];
+  const tagOptions = tags?.map((t) => ({ value: t.name, label: t.name })) ?? [];
+
+  const hasActiveFilters =
+    filters.search ||
+    filters.status ||
+    filters.platformId ||
+    (filters.platforms && filters.platforms.length > 0) ||
+    (filters.storefronts && filters.storefronts.length > 0) ||
+    (filters.genres && filters.genres.length > 0) ||
+    (filters.tags && filters.tags.length > 0);
 
   const clearFilters = () => {
-    onFiltersChange({ search: '' });
+    onFiltersChange({
+      search: '',
+      status: undefined,
+      platformId: undefined,
+      platforms: [],
+      storefronts: [],
+      genres: [],
+      tags: [],
+    });
   };
 
   return (
@@ -107,28 +136,37 @@ export function GameFilters({
         </SelectContent>
       </Select>
 
-      {/* Platform filter */}
-      <Select
-        value={filters.platformId ?? 'all'}
-        onValueChange={(value) =>
-          onFiltersChange({
-            ...filters,
-            platformId: value === 'all' ? undefined : value,
-          })
-        }
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Platform" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Platforms</SelectItem>
-          {platforms?.map((platform) => (
-            <SelectItem key={platform.name} value={platform.name}>
-              {platform.display_name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* Platform filter (multi-select) */}
+      <MultiSelectFilter
+        label="Platforms"
+        options={platformOptions}
+        selected={filters.platforms ?? []}
+        onChange={(selected) => onFiltersChange({ ...filters, platforms: selected })}
+      />
+
+      {/* Storefront filter (multi-select) */}
+      <MultiSelectFilter
+        label="Storefronts"
+        options={storefrontOptions}
+        selected={filters.storefronts ?? []}
+        onChange={(selected) => onFiltersChange({ ...filters, storefronts: selected })}
+      />
+
+      {/* Genre filter (multi-select) */}
+      <MultiSelectFilter
+        label="Genres"
+        options={genreOptions}
+        selected={filters.genres ?? []}
+        onChange={(selected) => onFiltersChange({ ...filters, genres: selected })}
+      />
+
+      {/* Tags filter (multi-select) */}
+      <MultiSelectFilter
+        label="Tags"
+        options={tagOptions}
+        selected={filters.tags ?? []}
+        onChange={(selected) => onFiltersChange({ ...filters, tags: selected })}
+      />
 
       {/* Sort dropdown */}
       <Select

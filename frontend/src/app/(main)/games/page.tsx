@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useMemo, useCallback } from 'react';
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { useUserGames, useUserGameIds } from '@/hooks';
@@ -32,53 +33,64 @@ const SORT_OPTIONS: SortOption[] = [
   { value: 'release_date', label: 'Release Date', defaultOrder: 'desc' },
 ];
 
-const SORT_STORAGE_KEY = 'games-sort-preference';
-
-function loadSortPreference(): { sortBy: SortField; sortOrder: SortOrder } {
-  if (typeof window === 'undefined') {
-    return { sortBy: 'title', sortOrder: 'asc' };
-  }
-  try {
-    const stored = sessionStorage.getItem(SORT_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        sortBy: parsed.sortBy ?? 'title',
-        sortOrder: parsed.sortOrder ?? 'asc',
-      };
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return { sortBy: 'title', sortOrder: 'asc' };
-}
-
-function saveSortPreference(sortBy: SortField, sortOrder: SortOrder): void {
-  if (typeof window === 'undefined') return;
-  sessionStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ sortBy, sortOrder }));
-}
-
-export default function GamesPage() {
+function GamesPageContent() {
   const router = useRouter();
-  const [filters, setFilters] = useState<{
-    search: string;
-    status?: PlayStatus;
-    platformId?: string;
-  }>({ search: '' });
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const searchParams = useSearchParams();
+
+  // Transient UI state (not persisted in URL)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('manual');
 
-  // Sort state - initialize from sessionStorage
-  const [sortBy, setSortBy] = useState<SortField>(() => loadSortPreference().sortBy);
-  const [sortOrder, setSortOrder] = useState<SortOrder>(() => loadSortPreference().sortOrder);
+  // Read filters from URL params
+  const filters = useMemo(() => {
+    const statusParam = searchParams.get('status');
+    // Handle "null" string or empty string as undefined
+    const status = statusParam && statusParam !== 'null' ? statusParam as PlayStatus : undefined;
+    return {
+      search: searchParams.get('q') ?? '',
+      status,
+      platforms: searchParams.getAll('platform'),
+      storefronts: searchParams.getAll('storefront'),
+      genres: searchParams.getAll('genre'),
+      tags: searchParams.getAll('tag'),
+    };
+  }, [searchParams]);
 
-  // Build query params
+  const sortBy = (searchParams.get('sort') as SortField) ?? 'title';
+  const sortOrder = (searchParams.get('order') as SortOrder) ?? 'asc';
+  const viewMode = (searchParams.get('view') as 'grid' | 'list') ?? 'grid';
+
+  // Helper to update URL params
+  const updateParams = useCallback((updates: Record<string, string | string[] | undefined>) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    Object.entries(updates).forEach(([key, value]) => {
+      params.delete(key);  // Remove existing values for this key
+
+      if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
+        return;  // Don't add empty values
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((v) => params.append(key, v));
+      } else {
+        params.set(key, value);
+      }
+    });
+
+    const queryString = params.toString();
+    router.replace(queryString ? `/games?${queryString}` : '/games', { scroll: false });
+  }, [router, searchParams]);
+
+  // Build query params for API
   const queryParams = useMemo(
     () => ({
       search: filters.search || undefined,
       status: filters.status,
-      platformId: filters.platformId,
+      platform: filters.platforms.length > 0 ? filters.platforms : undefined,
+      storefront: filters.storefronts.length > 0 ? filters.storefronts : undefined,
+      genre: filters.genres.length > 0 ? filters.genres : undefined,
+      tags: filters.tags.length > 0 ? filters.tags : undefined,
       perPage: 50,
       sortBy,
       sortOrder,
@@ -94,26 +106,41 @@ export default function GamesPage() {
   // Hook for fetching all IDs (disabled by default)
   const { refetch: fetchAllIds } = useUserGameIds(queryParams, { enabled: false });
 
-  // Wrap setFilters to also clear selection
-  const handleFiltersChange = useCallback((newFilters: typeof filters) => {
-    setFilters(newFilters);
+  // Wrap filter changes to also clear selection and update URL
+  const handleFiltersChange = useCallback((newFilters: {
+    search: string;
+    status?: PlayStatus;
+    platforms?: string[];
+    storefronts?: string[];
+    genres?: string[];
+    tags?: string[];
+  }) => {
+    updateParams({
+      q: newFilters.search || undefined,
+      status: newFilters.status,
+      platform: newFilters.platforms,
+      storefront: newFilters.storefronts,
+      genre: newFilters.genres,
+      tag: newFilters.tags,
+    });
     setSelectedIds(new Set());
     setSelectionMode('manual');
-  }, []);
+  }, [updateParams]);
 
   const handleSortByChange = useCallback((newSortBy: SortField) => {
     const option = SORT_OPTIONS.find((o) => o.value === newSortBy);
     const newOrder = option?.defaultOrder ?? 'asc';
-    setSortBy(newSortBy);
-    setSortOrder(newOrder);
-    saveSortPreference(newSortBy, newOrder);
-  }, []);
+    updateParams({ sort: newSortBy, order: newOrder });
+  }, [updateParams]);
 
   const handleSortOrderToggle = useCallback(() => {
     const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortOrder(newOrder);
-    saveSortPreference(sortBy, newOrder);
-  }, [sortBy, sortOrder]);
+    updateParams({ order: newOrder });
+  }, [sortOrder, updateParams]);
+
+  const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
+    updateParams({ view: mode === 'grid' ? undefined : mode }); // Don't store default 'grid' in URL
+  }, [updateParams]);
 
   const handleSelectGame = useCallback((id: string) => {
     setSelectionMode('manual');
@@ -194,7 +221,7 @@ export default function GamesPage() {
         filters={filters}
         onFiltersChange={handleFiltersChange}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleViewModeChange}
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortByChange={handleSortByChange}
@@ -231,5 +258,33 @@ export default function GamesPage() {
         />
       )}
     </div>
+  );
+}
+
+// Loading fallback for Suspense
+function GamesPageLoading() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Game Library</h1>
+        </div>
+        <Button asChild>
+          <Link href="/games/add">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Game
+          </Link>
+        </Button>
+      </div>
+      <div className="text-muted-foreground">Loading...</div>
+    </div>
+  );
+}
+
+export default function GamesPage() {
+  return (
+    <Suspense fallback={<GamesPageLoading />}>
+      <GamesPageContent />
+    </Suspense>
   );
 }

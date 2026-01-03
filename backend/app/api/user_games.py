@@ -15,6 +15,7 @@ from ..models.user import User
 from ..models.game import Game
 from ..models.platform import Platform, Storefront
 from ..models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
+from ..models.tag import UserGameTag
 from ..utils.sqlalchemy_typed import is_, is_not, in_, desc, asc, label
 from ..schemas.user_game import (
     UserGameCreateRequest,
@@ -29,7 +30,8 @@ from ..schemas.user_game import (
     BulkAddPlatformRequest,
     BulkRemovePlatformRequest,
     CollectionStatsResponse,
-    UserGameIdsResponse
+    UserGameIdsResponse,
+    UserGameGenresResponse
 )
 from ..schemas.common import SuccessResponse
 from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
@@ -110,8 +112,10 @@ async def list_user_games(
     play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
     ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
     is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
-    platform: Optional[str] = Query(default=None, description="Filter by platform"),
-    storefront: Optional[str] = Query(default=None, description="Filter by storefront"),
+    platform: Optional[List[str]] = Query(default=None, description="Filter by platform(s)"),
+    storefront: Optional[List[str]] = Query(default=None, description="Filter by storefront(s)"),
+    genre: Optional[List[str]] = Query(default=None, description="Filter by genre(s)"),
+    tag: Optional[List[str]] = Query(default=None, description="Filter by tag ID(s)"),
     rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
     has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
@@ -121,32 +125,36 @@ async def list_user_games(
     sort_order: Optional[str] = Query(default="asc", pattern="^(asc|desc)$", description="Sort order")
 ):
     """List user's game collection with filtering and sorting."""
-    
+
     # Handle limit parameter as alias for per_page
     if limit is not None:
         per_page = limit
-    
+
     # Build base query
     query = select(UserGame).where(UserGame.user_id == current_user.id)
-    
+
     # Apply filters
     filters: List[Any] = []
 
+    # Track which tables have been joined to avoid duplicate joins
+    joined_user_game_platform = False
+    joined_game = False
+
     if play_status is not None:
         filters.append(UserGame.play_status == play_status)
-    
+
     if ownership_status is not None:
         filters.append(UserGame.ownership_status == ownership_status)
-    
+
     if is_loved is not None:
         filters.append(UserGame.is_loved == is_loved)
-    
+
     if rating_min is not None:
         filters.append(col(UserGame.personal_rating) >= rating_min)
-    
+
     if rating_max is not None:
         filters.append(col(UserGame.personal_rating) <= rating_max)
-    
+
     if has_notes is not None:
         if has_notes:
             filters.append(is_not(col(UserGame.personal_notes), None))
@@ -156,25 +164,72 @@ async def list_user_games(
                 is_(col(UserGame.personal_notes), None),
                 UserGame.personal_notes == ""
             ))
-    
-    if platform:
-        # Join with UserGamePlatform to filter by platform
-        query = query.join(UserGamePlatform).where(UserGamePlatform.platform == platform)
 
+    # Platform filter (multi-value support with IN clause)
+    if platform:
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.platform), platform))
+
+    # Storefront filter (multi-value support with IN clause)
     if storefront:
-        # Join with UserGamePlatform to filter by storefront
-        query = query.join(UserGamePlatform).where(UserGamePlatform.storefront == storefront)
-    
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.storefront), storefront))
+
+    # Genre filter (multi-value support with OR ILIKE logic)
+    if genre:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        # Build OR conditions for genre ILIKE matching
+        genre_conditions = [col(Game.genre).icontains(g) for g in genre]
+        filters.append(or_(*genre_conditions))
+
+    # Tag filter (multi-value support using subquery)
+    if tag:
+        # Use subquery to find user_game_ids that have any of the specified tags
+        tag_subquery = (
+            select(UserGameTag.user_game_id)
+            .where(in_(col(UserGameTag.tag_id), tag))
+            .distinct()
+        )
+        filters.append(in_(col(UserGame.id), tag_subquery))
+
     # Apply filters
     if filters:
         query = query.where(and_(*filters))
-    
+
+    # Prevent duplicate results when JOIN produces multiple rows for the same UserGame
+    # (e.g., a game owned on both Windows and PS5 when filtering by platform=windows&platform=ps5)
+    # Use subquery approach to avoid PostgreSQL DISTINCT/ORDER BY conflicts
+    if joined_user_game_platform:
+        # Create a subquery with distinct UserGame IDs
+        distinct_ids_subquery = (
+            select(UserGame.id)
+            .join(UserGamePlatform)
+            .where(UserGame.user_id == current_user.id)
+        )
+        if filters:
+            distinct_ids_subquery = distinct_ids_subquery.where(and_(*filters))
+        distinct_ids_subquery = distinct_ids_subquery.distinct()
+
+        # Rebuild main query to select from distinct IDs only
+        query = select(UserGame).where(in_(col(UserGame.id), distinct_ids_subquery))
+        # Reset join tracking since we're using a fresh query
+        joined_user_game_platform = False
+        joined_game = False
+
     # Check if we're in fuzzy search mode
     fuzzy_search_mode = q and fuzzy_threshold is not None
-    
+
     if q and not fuzzy_search_mode:
         # Regular search in game title and personal notes
-        query = query.join(Game)
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
         query = query.where(or_(
             col(Game.title).icontains(q),
             and_(is_not(col(UserGame.personal_notes), None), col(UserGame.personal_notes).icontains(q))
@@ -182,27 +237,29 @@ async def list_user_games(
     
     if fuzzy_search_mode:
         # For fuzzy search, we need to get all matching games first, then apply fuzzy matching
-        # Always join with Game table for fuzzy search
-        query = query.join(Game)
-        
+        # Join with Game table for fuzzy search if not already joined
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+
         # Get all user games matching non-text filters
         all_user_games = session.exec(query).all()
-        
+
         # Apply fuzzy matching
         fuzzy_user_games = _rank_user_games_by_fuzzy_match(
             list(all_user_games),  # Convert Sequence to List
             q or "",               # Provide default empty string
             fuzzy_threshold or 0.6 # Provide default threshold
         )
-        
+
         # Apply pagination to fuzzy results
         total = len(fuzzy_user_games)
         offset = (page - 1) * per_page
         user_games = fuzzy_user_games[offset:offset + per_page]
-        
+
         # Calculate pages
         pages = (total + per_page - 1) // per_page
-        
+
         return UserGameListResponse(
             user_games=[UserGameResponse.model_validate(ug) for ug in user_games],
             total=total,
@@ -210,17 +267,14 @@ async def list_user_games(
             per_page=per_page,
             pages=pages
         )
-    
+
     # Apply sorting
     # Check if we need to join with Game table for sorting
     game_sort_fields = {'title', 'genre', 'developer', 'publisher', 'release_date', 'howlongtobeat_main'}
     need_game_join = sort_by in game_sort_fields
-    
-    # Track if Game table is already joined (for search query)
-    already_joined_game = q is not None
-    
+
     # Only add Game join if needed and not already joined
-    if need_game_join and not already_joined_game:
+    if need_game_join and not joined_game:
         query = query.join(Game)
     
     # Ensure sort_by has a value
@@ -267,8 +321,10 @@ async def get_user_game_ids(
     play_status: Optional[PlayStatus] = Query(default=None, description="Filter by play status"),
     ownership_status: Optional[OwnershipStatus] = Query(default=None, description="Filter by ownership status"),
     is_loved: Optional[bool] = Query(default=None, description="Filter by loved status"),
-    platform: Optional[str] = Query(default=None, description="Filter by platform"),
-    storefront: Optional[str] = Query(default=None, description="Filter by storefront"),
+    platform: Optional[List[str]] = Query(default=None, description="Filter by platform(s)"),
+    storefront: Optional[List[str]] = Query(default=None, description="Filter by storefront(s)"),
+    genre: Optional[List[str]] = Query(default=None, description="Filter by genre(s)"),
+    tag: Optional[List[str]] = Query(default=None, description="Filter by tag ID(s)"),
     rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
     has_notes: Optional[bool] = Query(default=None, description="Filter by presence of notes"),
@@ -281,6 +337,10 @@ async def get_user_game_ids(
 
     # Apply filters
     filters: List[Any] = []
+
+    # Track which tables have been joined to avoid duplicate joins
+    joined_user_game_platform = False
+    joined_game = False
 
     if play_status is not None:
         filters.append(UserGame.play_status == play_status)
@@ -307,17 +367,63 @@ async def get_user_game_ids(
                 UserGame.personal_notes == ""
             ))
 
+    # Platform filter (multi-value support with IN clause)
     if platform:
-        query = query.join(UserGamePlatform).where(UserGamePlatform.platform == platform)
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.platform), platform))
 
+    # Storefront filter (multi-value support with IN clause)
     if storefront:
-        query = query.join(UserGamePlatform).where(UserGamePlatform.storefront == storefront)
+        if not joined_user_game_platform:
+            query = query.join(UserGamePlatform)
+            joined_user_game_platform = True
+        filters.append(in_(col(UserGamePlatform.storefront), storefront))
 
+    # Genre filter (multi-value support with OR ILIKE logic)
+    if genre:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        # Build OR conditions for genre ILIKE matching
+        genre_conditions = [col(Game.genre).icontains(g) for g in genre]
+        filters.append(or_(*genre_conditions))
+
+    # Tag filter (multi-value support using subquery)
+    if tag:
+        # Use subquery to find user_game_ids that have any of the specified tags
+        tag_subquery = (
+            select(UserGameTag.user_game_id)
+            .where(in_(col(UserGameTag.tag_id), tag))
+            .distinct()
+        )
+        filters.append(in_(col(UserGame.id), tag_subquery))
+
+    # Apply filters
     if filters:
         query = query.where(and_(*filters))
 
+    # Prevent duplicate results when JOIN produces multiple rows for the same UserGame
+    # (e.g., a game owned on both Windows and PS5 when filtering by platform=windows&platform=ps5)
+    # Use subquery approach to avoid PostgreSQL DISTINCT/ORDER BY conflicts
+    if joined_user_game_platform:
+        # Create a subquery with distinct UserGame IDs
+        distinct_ids_subquery = (
+            select(UserGame.id)
+            .join(UserGamePlatform)
+            .where(UserGame.user_id == current_user.id)
+        )
+        if filters:
+            distinct_ids_subquery = distinct_ids_subquery.where(and_(*filters))
+        distinct_ids_subquery = distinct_ids_subquery.distinct()
+
+        # Rebuild main query to select from distinct IDs only
+        query = select(UserGame.id).where(in_(col(UserGame.id), distinct_ids_subquery))
+
     if q:
-        query = query.join(Game)
+        if not joined_game:
+            query = query.join(Game)
         query = query.where(or_(
             col(Game.title).icontains(q),
             and_(is_not(col(UserGame.personal_notes), None), col(UserGame.personal_notes).icontains(q))
@@ -327,6 +433,38 @@ async def get_user_game_ids(
     ids = session.exec(query).all()
 
     return UserGameIdsResponse(ids=[str(id) for id in ids])
+
+
+@router.get("/genres", response_model=UserGameGenresResponse)
+async def get_user_game_genres(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get unique genres from user's game collection, sorted alphabetically."""
+
+    # Query all genres from games in user's collection
+    genre_query = (
+        select(Game.genre)
+        .join(UserGame)
+        .where(UserGame.user_id == current_user.id)
+        .where(Game.genre.isnot(None))  # type: ignore[union-attr]
+        .distinct()
+    )
+
+    genre_values = session.exec(genre_query).all()
+
+    # Parse comma-separated genres and deduplicate
+    unique_genres: set[str] = set()
+    for genre_string in genre_values:
+        if genre_string:
+            # Split by comma and strip whitespace
+            for genre in genre_string.split(","):
+                stripped = genre.strip()
+                if stripped:
+                    unique_genres.add(stripped)
+
+    # Sort alphabetically and return
+    return UserGameGenresResponse(genres=sorted(unique_genres))
 
 
 @router.get("/stats", response_model=CollectionStatsResponse)
