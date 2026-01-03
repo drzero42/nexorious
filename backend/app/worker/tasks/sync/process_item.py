@@ -235,20 +235,44 @@ async def _process_with_resolved_id(
         await game_service.create_or_update_game_from_igdb(igdb_id)
 
         # Then create the UserGame association
-        user_game = UserGame(
-            user_id=user_id,
-            game_id=igdb_id,
-        )
-        session.add(user_game)
-        session.commit()
-        session.refresh(user_game)
+        try:
+            user_game = UserGame(
+                user_id=user_id,
+                game_id=igdb_id,
+            )
+            session.add(user_game)
+            session.commit()
+            session.refresh(user_game)
 
-        _add_platform_association(
-            session, user_game.id,
-            platform, storefront, external_id, playtime_hours
-        )
-        result = "imported_new"
-        user_game_id = user_game.id
+            _add_platform_association(
+                session, user_game.id,
+                platform, storefront, external_id, playtime_hours
+            )
+            result = "imported_new"
+            user_game_id = user_game.id
+        except Exception as e:
+            # Handle race condition - another worker may have created UserGame
+            if "uq_user_games_user_game" in str(e) or "duplicate key" in str(e).lower():
+                session.rollback()
+                # Re-query for the UserGame that was created by another worker
+                existing_user_game = session.exec(
+                    select(UserGame).where(
+                        UserGame.user_id == user_id,
+                        UserGame.game_id == igdb_id,
+                    )
+                ).first()
+                if existing_user_game:
+                    _add_platform_association(
+                        session, existing_user_game.id,
+                        platform, storefront, external_id, playtime_hours
+                    )
+                    result = "linked_existing"
+                    user_game_id = existing_user_game.id
+                else:
+                    # This shouldn't happen, but handle it
+                    raise
+            else:
+                raise
 
     # Fetch the game title for result_json
     game = session.get(Game, igdb_id)
