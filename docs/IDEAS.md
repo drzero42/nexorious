@@ -64,3 +64,6 @@ We have multiple places in the app where we claim things are "coming soon". This
 
 ## Add refresh metadata button to games
 On the games detail page we should have a "refresh metadata" button that will update all metadata from IGDB
+
+## Maintenance jobs
+We need scheduled jobs that take care of cleaning up expired jobs and orphaned files.
