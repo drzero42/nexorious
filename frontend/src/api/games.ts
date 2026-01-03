@@ -370,7 +370,7 @@ function buildUserGamesQueryParams(params?: GetUserGamesParams): string | undefi
   appendParam(searchParams, 'platform', params.platform);
   appendParam(searchParams, 'storefront', params.storefront);
   appendParam(searchParams, 'genre', params.genre);
-  appendParam(searchParams, 'tags', params.tags);
+  appendParam(searchParams, 'tag', params.tags);
   appendParam(searchParams, 'q', params.search);
   appendParam(searchParams, 'sort_by', params.sortBy);
   appendParam(searchParams, 'sort_order', params.sortOrder);

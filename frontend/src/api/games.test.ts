@@ -290,7 +290,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/`, ({ request }) => {
           const url = new URL(request.url);
-          const tags = url.searchParams.getAll('tags');
+          const tags = url.searchParams.getAll('tag');
           expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
 
           return HttpResponse.json({
@@ -922,7 +922,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/ids`, ({ request }) => {
           const url = new URL(request.url);
-          const tags = url.searchParams.getAll('tags');
+          const tags = url.searchParams.getAll('tag');
           expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
 
           return HttpResponse.json({ ids: ['game-1', 'game-2'] });
