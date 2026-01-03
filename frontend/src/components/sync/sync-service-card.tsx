@@ -24,6 +24,7 @@ const PLATFORM_ICONS: Record<SyncPlatform, string> = {
 interface SyncServiceCardProps {
   config: SyncConfig;
   status?: SyncStatus;
+  pendingReviewCount?: number;
   onUpdate: (data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: () => Promise<void>;
   isUpdating?: boolean;
@@ -49,6 +50,7 @@ function formatLastSync(dateStr: string | null): string {
 export function SyncServiceCard({
   config,
   status,
+  pendingReviewCount,
   onUpdate,
   onTriggerSync,
   isUpdating = false,
@@ -93,16 +95,23 @@ export function SyncServiceCard({
               </p>
             </div>
           </div>
-          <Badge
-            variant={!config.isConfigured ? 'outline' : 'default'}
-            className={
-              !config.isConfigured
-                ? 'bg-muted text-muted-foreground'
-                : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-            }
-          >
-            {!config.isConfigured ? 'Not Configured' : 'Connected'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
+              <Badge variant="destructive">
+                {pendingReviewCount} to review
+              </Badge>
+            )}
+            <Badge
+              variant={!config.isConfigured ? 'outline' : 'default'}
+              className={
+                !config.isConfigured
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+              }
+            >
+              {!config.isConfigured ? 'Not Configured' : 'Connected'}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
 
