@@ -61,3 +61,6 @@ The frontend reports: The "middleware" file convention is deprecated. Please use
 
 ## Get rid of all "coming soon" messages
 We have multiple places in the app where we claim things are "coming soon". This is not helpful and should be removed.
+
+## Add refresh metadata button to games
+On the games detail page we should have a "refresh metadata" button that will update all metadata from IGDB
