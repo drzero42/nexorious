@@ -9,7 +9,7 @@ import { AlertCircle, Info, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { SUPPORTED_SYNC_PLATFORMS, SyncPlatform } from '@/types';
+import { SUPPORTED_SYNC_PLATFORMS, SyncPlatform, SyncFrequency } from '@/types';
 import type { SyncConfig, SyncConfigUpdateData } from '@/types';
 
 function SyncPageSkeleton() {
@@ -80,6 +80,27 @@ export default function SyncPage() {
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
 
+  // Create map of existing configs by platform
+  const configsByPlatform = new Map<SyncPlatform, SyncConfig>();
+  configs?.configs.forEach(config => {
+    configsByPlatform.set(config.platform, config);
+  });
+
+  // Create configs for all supported platforms (will show "not configured" for missing ones)
+  const allPlatformConfigs = SUPPORTED_SYNC_PLATFORMS.map(platform => {
+    return configsByPlatform.get(platform) || {
+      id: `placeholder-${platform}`,
+      userId: '',
+      platform,
+      frequency: SyncFrequency.MANUAL,
+      autoAdd: false,
+      lastSyncedAt: null,
+      createdAt: '',
+      updatedAt: '',
+      isConfigured: false,
+    };
+  });
+
   const handleUpdateConfig = async (platform: SyncPlatform, data: SyncConfigUpdateData) => {
     try {
       await updateConfig({ platform, data });
@@ -132,11 +153,11 @@ export default function SyncPage() {
         </Alert>
       )}
 
-      {configs && configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).length > 0 && (
+      {!isLoading && !error && (
         <>
-          {/* Connected Services Grid */}
+          {/* All Platform Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {configs.configs.filter((config: SyncConfig) => SUPPORTED_SYNC_PLATFORMS.includes(config.platform)).map((config: SyncConfig) => (
+            {allPlatformConfigs.map((config: SyncConfig) => (
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}
