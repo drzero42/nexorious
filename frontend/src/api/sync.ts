@@ -11,6 +11,8 @@ import type {
   EpicAuthStartResponse,
   EpicAuthCompleteResponse,
   EpicAuthCheckResponse,
+  PSNConfigureResponse,
+  PSNStatusResponse,
 } from '@/types';
 
 // ============================================================================
@@ -324,4 +326,69 @@ export async function checkEpicAuth(): Promise<EpicAuthCheckResponse> {
  */
 export async function disconnectEpic(): Promise<void> {
   await api.delete('/sync/epic/connection');
+}
+
+// ============================================================================
+// PSN API Types
+// ============================================================================
+
+interface PSNConfigureApiRequest {
+  npsso_token: string;
+}
+
+interface PSNConfigureApiResponse {
+  success: boolean;
+  online_id: string | null;
+  account_id: string | null;
+  region: string | null;
+  message: string;
+}
+
+interface PSNStatusApiResponse {
+  is_configured: boolean;
+  online_id: string | null;
+  account_id: string | null;
+  region: string | null;
+  token_expired: boolean;
+}
+
+// ============================================================================
+// PSN Functions
+// ============================================================================
+
+/**
+ * Configure PSN with NPSSO token.
+ */
+export async function configurePSN(npssoToken: string): Promise<PSNConfigureResponse> {
+  const response = await api.post<PSNConfigureApiResponse>('/sync/psn/configure', {
+    npsso_token: npssoToken,
+  } as PSNConfigureApiRequest);
+
+  return {
+    valid: response.success,
+    accountId: response.account_id,
+    onlineId: response.online_id,
+    error: response.success ? null : response.message,
+  };
+}
+
+/**
+ * Get PSN connection status.
+ */
+export async function getPSNStatus(): Promise<PSNStatusResponse> {
+  const response = await api.get<PSNStatusApiResponse>('/sync/psn/status');
+
+  return {
+    configured: response.is_configured,
+    accountId: response.account_id,
+    onlineId: response.online_id,
+    tokenExpired: response.token_expired,
+  };
+}
+
+/**
+ * Disconnect PSN integration.
+ */
+export async function disconnectPSN(): Promise<void> {
+  await api.delete('/sync/psn/disconnect');
 }
