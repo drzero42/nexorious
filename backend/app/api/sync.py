@@ -768,7 +768,8 @@ async def configure_psn(
             "region": account_info.region,
             "is_verified": True
         }
-        current_user.preferences = preferences
+        current_user.preferences_json = json.dumps(preferences)
+        current_user.updated_at = datetime.now(timezone.utc)
         session.commit()
 
         logger.info(f"PSN configured successfully for user {current_user.id}")
@@ -823,7 +824,8 @@ async def disconnect_psn(
     preferences = current_user.preferences or {}
     if "psn" in preferences:
         del preferences["psn"]
-        current_user.preferences = preferences
+        current_user.preferences_json = json.dumps(preferences)
+        current_user.updated_at = datetime.now(timezone.utc)
         session.commit()
         logger.info(f"PSN disconnected for user {current_user.id}")
 

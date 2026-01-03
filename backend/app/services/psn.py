@@ -87,10 +87,14 @@ class PSNService:
         try:
             client = self.psnawp.me()
 
+            # Get region as Country object and convert to alpha_2 code (e.g., "US")
+            region_country = client.get_region()
+            region_code = region_country.alpha_2 if region_country else "US"
+
             return PSNAccountInfo(
                 online_id=client.online_id,
                 account_id=client.account_id,
-                region=client.get_region()
+                region=region_code
             )
         except Exception as e:
             # Check if error indicates expired token
