@@ -178,6 +178,30 @@ describe('GameFilters', () => {
     } as unknown as ReturnType<typeof useAllTags>);
   });
 
+  describe('layout', () => {
+    it('renders "Filters:" label', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByText('Filters:')).toBeInTheDocument();
+    });
+
+    it('renders "Sort by:" label', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      expect(screen.getByText('Sort by:')).toBeInTheDocument();
+    });
+
+    it('renders sort row before filters row', () => {
+      render(<GameFilters {...defaultProps} />);
+
+      const sortLabel = screen.getByText('Sort by:');
+      const filtersLabel = screen.getByText('Filters:');
+
+      // Sort row should come before filters row in the DOM
+      expect(sortLabel.compareDocumentPosition(filtersLabel)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+  });
+
   describe('search input', () => {
     it('renders search input with placeholder', () => {
       render(<GameFilters {...defaultProps} />);
