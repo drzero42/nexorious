@@ -61,3 +61,6 @@ Steam should expose tags that we can ensure are added to games when we sync from
 
 ## Next.js proxy
 The frontend reports: The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+
+## Get rid of all "coming soon" messages
+We have multiple places in the app where we claim things are "coming soon". This is not helpful and should be removed.
