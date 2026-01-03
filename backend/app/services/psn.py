@@ -59,6 +59,21 @@ class PSNService:
             logger.error(f"Failed to initialize PSNAWP: {e}")
             raise PSNAuthenticationError(f"Failed to initialize PSN service: {e}")
 
+    async def verify_token(self) -> bool:
+        """Verify that the NPSSO token is valid.
+
+        Returns:
+            True if token is valid, False otherwise
+        """
+        try:
+            client = self.psnawp.me()
+            # Try to access basic account info
+            _ = client.online_id
+            return True
+        except Exception as e:
+            logger.warning(f"Token verification failed: {e}")
+            return False
+
 
 def create_psn_service(npsso_token: str) -> PSNService:
     """Factory function to create a PSN service instance."""

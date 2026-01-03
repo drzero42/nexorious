@@ -41,3 +41,34 @@ def test_psn_service_init_failure():
             PSNService("a" * 64)
 
         assert "Failed to initialize PSN service" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_verify_token_success():
+    """Test token verification succeeds with valid token."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_client = Mock()
+        mock_client.online_id = "test_user"
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.verify_token()
+
+        assert result is True
+        mock_psnawp.return_value.me.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_verify_token_failure():
+    """Test token verification fails with invalid token."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        mock_psnawp.return_value.me.side_effect = Exception("Invalid token")
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.verify_token()
+
+        assert result is False
