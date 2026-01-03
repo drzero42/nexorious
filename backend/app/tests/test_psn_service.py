@@ -200,6 +200,39 @@ async def test_get_library_expired_token():
 
 
 @pytest.mark.asyncio
+async def test_get_library_with_playtime():
+    """Test getting library includes playtime from title_stats."""
+    from datetime import timedelta
+
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        # Mock game_entitlements response
+        mock_entitlement = {
+            "productId": "PROD001",
+            "titleMeta": {"titleId": "CUSA12345", "name": "Test Game"},
+            "entitlementAttributes": [{"platformId": "ps5"}]
+        }
+
+        # Mock title_stats response with playtime
+        mock_stats = Mock()
+        mock_stats.title_id = "CUSA12345"
+        mock_stats.play_duration = timedelta(hours=42, minutes=30)
+
+        mock_client = Mock()
+        mock_client.game_entitlements.return_value = [mock_entitlement]
+        mock_client.title_stats.return_value = [mock_stats]
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.get_library()
+
+        assert len(result) == 1
+        assert result[0].product_id == "CUSA12345"
+        assert result[0].playtime_hours == 42  # 42h30m truncates to 42h
+
+
+@pytest.mark.asyncio
 async def test_disconnect():
     """Test disconnect is a no-op for stateless PSNAWP."""
     with patch('psnawp_api.PSNAWP'):
