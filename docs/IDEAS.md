@@ -58,3 +58,6 @@ We recently implemented badges to draw attention to when there were games needin
 
 ## Import tags from sync sources
 Steam should expose tags that we can ensure are added to games when we sync from there. Epic may also have tags.
+
+## Next.js proxy
+The frontend reports: The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
