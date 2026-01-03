@@ -26,6 +26,7 @@ class SyncPlatform(str, Enum):
     STEAM = "steam"
     EPIC = "epic"
     GOG = "gog"
+    PSN = "psn"
 
 
 class SyncConfigResponse(BaseModel):
@@ -165,3 +166,31 @@ class EpicAuthCheckResponse(BaseModel):
         default=None,
         description="Epic display name if authenticated"
     )
+
+
+class PSNConfigureRequest(BaseModel):
+    """Request to configure PSN sync with NPSSO token."""
+    npsso_token: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        description="64-character NPSSO token from PlayStation.com"
+    )
+
+
+class PSNConfigureResponse(BaseModel):
+    """Response after configuring PSN sync."""
+    success: bool
+    online_id: str
+    account_id: str
+    region: str
+    message: str
+
+
+class PSNStatusResponse(BaseModel):
+    """PSN connection status."""
+    is_configured: bool
+    online_id: Optional[str] = None
+    account_id: Optional[str] = None
+    region: Optional[str] = None
+    token_expired: bool = False

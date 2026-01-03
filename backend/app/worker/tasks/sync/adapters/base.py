@@ -95,10 +95,12 @@ def get_sync_adapter(source: str) -> SyncSourceAdapter:
     """
     from .steam import SteamSyncAdapter
     from .epic import EpicSyncAdapter
+    from .psn import PSNSyncAdapter
 
     adapters = {
         "steam": SteamSyncAdapter,
         "epic": EpicSyncAdapter,
+        "psn": PSNSyncAdapter,
     }
 
     adapter_class = adapters.get(source.lower())

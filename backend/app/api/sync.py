@@ -35,6 +35,9 @@ from ..schemas.sync import (
     EpicAuthStartResponse,
     EpicAuthCompleteRequest,
     EpicAuthCompleteResponse,
+    PSNConfigureRequest,
+    PSNConfigureResponse,
+    PSNStatusResponse,
     EpicAuthCheckResponse,
 )
 from ..services.steam import SteamService, SteamAPIError, SteamAuthenticationError
@@ -76,6 +79,12 @@ def _is_platform_configured(user: User, platform: str) -> bool:
         return bool(
             epic_config.get("is_verified", False)
             and epic_config.get("account_id")
+        )
+    elif platform == "psn":
+        psn_config = preferences.get("psn", {})
+        return bool(
+            psn_config.get("npsso_token")
+            and psn_config.get("is_verified", False)
         )
     # Other platforms not yet supported
     return False
@@ -732,3 +741,89 @@ async def unignore_game(
         success=True,
         message=f"Game '{ignored_game.title}' removed from ignored list",
     )
+
+
+# ===== PSN Sync Endpoints =====
+
+@router.post("/sync/psn/configure", response_model=PSNConfigureResponse)
+async def configure_psn(
+    request: PSNConfigureRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Configure PSN sync by verifying and storing NPSSO token."""
+    from app.services.psn import PSNService, PSNAuthenticationError
+    from app.schemas.sync import PSNConfigureResponse
+
+    try:
+        psn_service = PSNService(npsso_token=request.npsso_token)
+        account_info = await psn_service.get_account_info()
+
+        preferences = current_user.preferences or {}
+        preferences["psn"] = {
+            "npsso_token": request.npsso_token,
+            "online_id": account_info.online_id,
+            "account_id": account_info.account_id,
+            "region": account_info.region,
+            "is_verified": True
+        }
+        current_user.preferences = preferences
+        session.commit()
+
+        logger.info(f"PSN configured successfully for user {current_user.id}")
+
+        return PSNConfigureResponse(
+            success=True,
+            online_id=account_info.online_id,
+            account_id=account_info.account_id,
+            region=account_info.region,
+            message="PSN configured successfully"
+        )
+
+    except PSNAuthenticationError as e:
+        logger.error(f"PSN authentication failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid NPSSO token: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error configuring PSN: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to configure PSN"
+        )
+
+
+@router.get("/sync/psn/status", response_model=PSNStatusResponse)
+async def get_psn_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Get PSN connection status and account information."""
+    from app.schemas.sync import PSNStatusResponse
+
+    preferences = current_user.preferences or {}
+    psn_config = preferences.get("psn", {})
+
+    return PSNStatusResponse(
+        is_configured=psn_config.get("is_verified", False),
+        online_id=psn_config.get("online_id"),
+        account_id=psn_config.get("account_id"),
+        region=psn_config.get("region"),
+        token_expired=not psn_config.get("is_verified", False) and "token_expired_at" in psn_config
+    )
+
+
+@router.delete("/sync/psn/disconnect")
+async def disconnect_psn(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Disconnect PSN account by removing stored credentials."""
+    preferences = current_user.preferences or {}
+    if "psn" in preferences:
+        del preferences["psn"]
+        current_user.preferences = preferences
+        session.commit()
+        logger.info(f"PSN disconnected for user {current_user.id}")
+
+    return {"success": True, "message": "PSN disconnected successfully"}
