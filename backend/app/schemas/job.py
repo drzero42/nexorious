@@ -17,6 +17,7 @@ class JobType(str, Enum):
     SYNC = "sync"
     IMPORT = "import"
     EXPORT = "export"
+    MAINTENANCE = "maintenance"
 
 
 class JobSource(str, Enum):

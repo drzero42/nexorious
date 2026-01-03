@@ -50,9 +50,10 @@ export function RecentActivity({
   const [isOpen, setIsOpen] = useState(true);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
-  // Fetch recent jobs - we'll filter by date on the client side
-  // since the backend doesn't support date filtering
-  const { data: jobsData, isLoading } = useJobs(undefined, 1, 50);
+  // Fetch recent jobs - filter by job type on backend if single type requested
+  // (date filtering is done client-side since backend doesn't support it)
+  const jobTypeFilter = jobTypes.length === 1 ? { jobType: jobTypes[0] } : undefined;
+  const { data: jobsData, isLoading } = useJobs(jobTypeFilter, 1, 50);
 
   // Filter to jobs within the date range and matching types
   const jobs = jobsData?.jobs;

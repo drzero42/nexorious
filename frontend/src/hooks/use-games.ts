@@ -6,6 +6,7 @@ import type {
   UserGameUpdateData,
   UserGamesListResponse,
   BulkUpdateData,
+  FilterOptions,
 } from '@/api/games';
 import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform, PlayStatus } from '@/types';
 
@@ -20,6 +21,7 @@ export const gameKeys = {
   details: () => [...gameKeys.all, 'detail'] as const,
   detail: (id: string) => [...gameKeys.details(), id] as const,
   stats: () => [...gameKeys.all, 'stats'] as const,
+  filterOptions: () => [...gameKeys.all, 'filterOptions'] as const,
   igdbSearch: (query: string) => ['igdbSearch', query] as const,
 };
 
@@ -107,6 +109,18 @@ export function useUserGameGenres() {
   return useQuery<string[], Error>({
     queryKey: [...gameKeys.all, 'genres'] as const,
     queryFn: () => gamesApi.getUserGameGenres(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
+ * Hook to fetch filter options (unique values for all filter dropdowns).
+ * Returns genres, game modes, themes, and player perspectives from the user's collection.
+ */
+export function useFilterOptions() {
+  return useQuery<FilterOptions, Error>({
+    queryKey: gameKeys.filterOptions(),
+    queryFn: () => gamesApi.getFilterOptions(),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

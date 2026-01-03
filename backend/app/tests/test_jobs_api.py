@@ -82,7 +82,7 @@ class TestListJobs:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["total"] == 3  # sync, import, export
+        assert data["total"] == len(BackgroundJobType)  # All job types
 
     def test_list_jobs_filter_by_type(
         self, client, auth_headers, test_user: User, session: Session
@@ -1430,7 +1430,12 @@ class TestRetryFailedItems:
         with patch(
             "app.api.jobs.enqueue_import_task",
             new_callable=AsyncMock,
-        ):
+        ) as mock_import, patch(
+            "app.api.jobs.enqueue_metadata_refresh_task",
+            new_callable=AsyncMock,
+        ) as mock_maintenance:
+            self.mock_import_task = mock_import
+            self.mock_maintenance_task = mock_maintenance
             yield
 
     def test_retry_failed_items_success(
@@ -1531,5 +1536,71 @@ class TestRetryFailedItems:
 
         response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
         assert response.status_code == 404
+
+    def test_retry_failed_import_job_uses_import_task(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retrying failed items in an import job uses the import task."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.IMPORT,
+            source=BackgroundJobSource.NEXORIOUS,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add failed items
+        for i in range(2):
+            item = JobItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                item_key=f"game_{i}",
+                source_title=f"Game {i}",
+                status=JobItemStatus.FAILED,
+                error_message="IGDB timeout",
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 200
+
+        # Verify import task was called, not maintenance task
+        assert self.mock_import_task.call_count == 2
+        self.mock_maintenance_task.assert_not_called()
+
+    def test_retry_failed_maintenance_job_uses_maintenance_task(
+        self, client, auth_headers, test_user: User, session: Session
+    ):
+        """Test that retrying failed items in a maintenance job uses the maintenance task."""
+        job = Job(
+            user_id=test_user.id,
+            job_type=BackgroundJobType.MAINTENANCE,
+            source=BackgroundJobSource.SYSTEM,
+            status=BackgroundJobStatus.COMPLETED,
+        )
+        session.add(job)
+        session.commit()
+
+        # Add failed items
+        for i in range(2):
+            item = JobItem(
+                job_id=job.id,
+                user_id=test_user.id,
+                item_key=f"game_{i}",
+                source_title=f"Game {i}",
+                status=JobItemStatus.FAILED,
+                error_message="IGDB timeout",
+            )
+            session.add(item)
+        session.commit()
+
+        response = client.post(f"/api/jobs/{job.id}/retry-failed", headers=auth_headers)
+        assert response.status_code == 200
+
+        # Verify maintenance task was called, not import task
+        assert self.mock_maintenance_task.call_count == 2
+        self.mock_import_task.assert_not_called()
 
 

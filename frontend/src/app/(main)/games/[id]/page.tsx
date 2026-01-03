@@ -219,6 +219,24 @@ export default function GameDetailPage() {
                     </dd>
                   </div>
                 )}
+                {game.game.game_modes && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Game Modes</dt>
+                    <dd className="mt-1">{game.game.game_modes}</dd>
+                  </div>
+                )}
+                {game.game.themes && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Themes</dt>
+                    <dd className="mt-1">{game.game.themes}</dd>
+                  </div>
+                )}
+                {game.game.player_perspectives && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Perspectives</dt>
+                    <dd className="mt-1">{game.game.player_perspectives}</dd>
+                  </div>
+                )}
                 {game.game.igdb_slug && (
                   <div>
                     <dt className="font-medium text-muted-foreground">IGDB</dt>

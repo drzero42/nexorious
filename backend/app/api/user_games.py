@@ -31,7 +31,8 @@ from ..schemas.user_game import (
     BulkRemovePlatformRequest,
     CollectionStatsResponse,
     UserGameIdsResponse,
-    UserGameGenresResponse
+    UserGameGenresResponse,
+    FilterOptionsResponse
 )
 from ..schemas.common import SuccessResponse
 from ..services.game_cleanup import cleanup_unreferenced_game, cleanup_multiple_games
@@ -115,6 +116,9 @@ async def list_user_games(
     platform: Optional[List[str]] = Query(default=None, description="Filter by platform(s)"),
     storefront: Optional[List[str]] = Query(default=None, description="Filter by storefront(s)"),
     genre: Optional[List[str]] = Query(default=None, description="Filter by genre(s)"),
+    game_mode: Optional[List[str]] = Query(default=None, description="Filter by game mode(s)"),
+    theme: Optional[List[str]] = Query(default=None, description="Filter by theme(s)"),
+    player_perspective: Optional[List[str]] = Query(default=None, description="Filter by player perspective(s)"),
     tag: Optional[List[str]] = Query(default=None, description="Filter by tag ID(s)"),
     rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
@@ -187,6 +191,30 @@ async def list_user_games(
         # Build OR conditions for genre ILIKE matching
         genre_conditions = [col(Game.genre).icontains(g) for g in genre]
         filters.append(or_(*genre_conditions))
+
+    # Game mode filter (multi-value support with OR ILIKE logic)
+    if game_mode:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        game_mode_conditions = [col(Game.game_modes).icontains(gm) for gm in game_mode]
+        filters.append(or_(*game_mode_conditions))
+
+    # Theme filter (multi-value support with OR ILIKE logic)
+    if theme:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        theme_conditions = [col(Game.themes).icontains(t) for t in theme]
+        filters.append(or_(*theme_conditions))
+
+    # Player perspective filter (multi-value support with OR ILIKE logic)
+    if player_perspective:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        perspective_conditions = [col(Game.player_perspectives).icontains(p) for p in player_perspective]
+        filters.append(or_(*perspective_conditions))
 
     # Tag filter (multi-value support using subquery)
     if tag:
@@ -324,6 +352,9 @@ async def get_user_game_ids(
     platform: Optional[List[str]] = Query(default=None, description="Filter by platform(s)"),
     storefront: Optional[List[str]] = Query(default=None, description="Filter by storefront(s)"),
     genre: Optional[List[str]] = Query(default=None, description="Filter by genre(s)"),
+    game_mode: Optional[List[str]] = Query(default=None, description="Filter by game mode(s)"),
+    theme: Optional[List[str]] = Query(default=None, description="Filter by theme(s)"),
+    player_perspective: Optional[List[str]] = Query(default=None, description="Filter by player perspective(s)"),
     tag: Optional[List[str]] = Query(default=None, description="Filter by tag ID(s)"),
     rating_min: Optional[float] = Query(default=None, ge=1, le=5, description="Minimum rating filter"),
     rating_max: Optional[float] = Query(default=None, ge=1, le=5, description="Maximum rating filter"),
@@ -389,6 +420,30 @@ async def get_user_game_ids(
         # Build OR conditions for genre ILIKE matching
         genre_conditions = [col(Game.genre).icontains(g) for g in genre]
         filters.append(or_(*genre_conditions))
+
+    # Game mode filter (multi-value support with OR ILIKE logic)
+    if game_mode:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        game_mode_conditions = [col(Game.game_modes).icontains(gm) for gm in game_mode]
+        filters.append(or_(*game_mode_conditions))
+
+    # Theme filter (multi-value support with OR ILIKE logic)
+    if theme:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        theme_conditions = [col(Game.themes).icontains(t) for t in theme]
+        filters.append(or_(*theme_conditions))
+
+    # Player perspective filter (multi-value support with OR ILIKE logic)
+    if player_perspective:
+        if not joined_game:
+            query = query.join(Game)
+            joined_game = True
+        perspective_conditions = [col(Game.player_perspectives).icontains(p) for p in player_perspective]
+        filters.append(or_(*perspective_conditions))
 
     # Tag filter (multi-value support using subquery)
     if tag:
@@ -465,6 +520,46 @@ async def get_user_game_genres(
 
     # Sort alphabetically and return
     return UserGameGenresResponse(genres=sorted(unique_genres))
+
+
+@router.get("/filter-options", response_model=FilterOptionsResponse)
+async def get_filter_options(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    """Get all filter options from user's game collection."""
+
+    # Helper to extract unique values from comma-separated field
+    def extract_unique_values(field_values: List[Optional[str]]) -> List[str]:
+        unique: set[str] = set()
+        for value_string in field_values:
+            if value_string:
+                for value in value_string.split(","):
+                    stripped = value.strip()
+                    if stripped:
+                        unique.add(stripped)
+        return sorted(unique)
+
+    # Query all relevant fields from games in user's collection
+    query = (
+        select(Game.genre, Game.game_modes, Game.themes, Game.player_perspectives)
+        .join(UserGame)
+        .where(UserGame.user_id == current_user.id)
+    )
+    results = session.exec(query).all()
+
+    # Extract unique values for each field
+    genres = extract_unique_values([r[0] for r in results])
+    game_modes = extract_unique_values([r[1] for r in results])
+    themes = extract_unique_values([r[2] for r in results])
+    player_perspectives = extract_unique_values([r[3] for r in results])
+
+    return FilterOptionsResponse(
+        genres=genres,
+        game_modes=game_modes,
+        themes=themes,
+        player_perspectives=player_perspectives,
+    )
 
 
 @router.get("/stats", response_model=CollectionStatsResponse)

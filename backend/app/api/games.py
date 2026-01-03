@@ -33,6 +33,8 @@ from ..schemas.game import (
     BulkMetadataResponse,
     BulkCoverArtDownloadRequest,
     CoverArtResult,
+    MetadataRefreshJobRequest,
+    MetadataRefreshJobResponse,
 )
 from ..schemas.common import SuccessResponse
 
@@ -1117,3 +1119,78 @@ async def bulk_download_cover_art(
         results=results,
         errors=errors,
     )
+
+
+@router.post("/metadata/refresh-job", response_model=MetadataRefreshJobResponse)
+async def start_metadata_refresh_job(
+    request: MetadataRefreshJobRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Start a background job to refresh metadata for all games (or specific games).
+
+    This endpoint creates a background job that uses the fan-out pattern to refresh
+    game metadata from IGDB. The job processes games in parallel using worker tasks.
+
+    **Admin Only**: Only administrators can trigger bulk metadata refresh jobs.
+
+    Args:
+        request: Optional list of specific game IDs to refresh (None = all games)
+
+    Returns:
+        Job creation result with the job ID for tracking progress.
+    """
+    # Only admin can perform bulk refresh operations
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can start metadata refresh jobs",
+        )
+
+    try:
+        from ..models.job import (
+            Job,
+            BackgroundJobType,
+            BackgroundJobSource,
+            BackgroundJobStatus,
+            BackgroundJobPriority,
+        )
+        from ..worker.tasks.maintenance.metadata_refresh_dispatch import dispatch_metadata_refresh
+        from ..worker.queues import enqueue_task
+
+        # Create the job record
+        job = Job(
+            user_id=current_user.id,
+            job_type=BackgroundJobType.MAINTENANCE,
+            source=BackgroundJobSource.SYSTEM,
+            status=BackgroundJobStatus.PENDING,
+            priority=BackgroundJobPriority.LOW,
+            total_items=0,  # Will be updated by dispatch task
+        )
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+
+        logger.info(f"Created metadata refresh job {job.id} for user {current_user.username}")
+
+        # Dispatch the fan-out task
+        await enqueue_task(
+            dispatch_metadata_refresh,
+            job.id,
+            current_user.id,
+            request.game_ids,
+            priority=BackgroundJobPriority.LOW,
+        )
+
+        return MetadataRefreshJobResponse(
+            success=True,
+            message="Metadata refresh job started successfully",
+            job_id=job.id,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start metadata refresh job: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start metadata refresh job: {str(e)}",
+        )

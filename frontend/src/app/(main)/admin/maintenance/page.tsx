@@ -4,19 +4,21 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers';
+import { useActiveJob, useCancelJob } from '@/hooks';
+import { JobType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import { toast } from 'sonner';
 import {
   Package,
   Trash2,
   RefreshCw,
-  History,
   Loader2,
   CheckCircle,
-  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { SeedDataResult } from '@/types';
@@ -43,6 +45,20 @@ export default function MaintenancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSeedLoading, setIsSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState<SeedDataResult | null>(null);
+  const [isRefreshLoading, setIsRefreshLoading] = useState(false);
+  const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
+
+  // Track active maintenance job
+  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(JobType.MAINTENANCE);
+  const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
+
+  // Determine which job to display (not dismissed)
+  const activeJob = activeMaintenanceJob && activeMaintenanceJob.id !== dismissedJobId
+    ? activeMaintenanceJob
+    : null;
+
+  const showJobProgress = activeJob != null;
+  const hasActiveJob = activeJob != null && !activeJob.isTerminal;
 
   // Check admin access
   useEffect(() => {
@@ -64,6 +80,41 @@ export default function MaintenancePage() {
       toast.error(message);
     } finally {
       setIsSeedLoading(false);
+    }
+  };
+
+  const handleStartMetadataRefresh = async () => {
+    try {
+      setIsRefreshLoading(true);
+      setDismissedJobId(null);
+      await adminApi.startMetadataRefreshJob();
+      toast.success('Metadata refresh job started');
+      refetchMaintenanceJob();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start metadata refresh';
+      toast.error(message);
+    } finally {
+      setIsRefreshLoading(false);
+    }
+  };
+
+  const handleCancelJob = async () => {
+    if (!activeJob) return;
+
+    cancelJob(activeJob.id, {
+      onSuccess: () => {
+        toast.success('Job cancelled');
+        refetchMaintenanceJob();
+      },
+      onError: (error) => {
+        toast.error(error.message || 'Failed to cancel job');
+      },
+    });
+  };
+
+  const handleDismissJob = () => {
+    if (activeJob) {
+      setDismissedJobId(activeJob.id);
     }
   };
 
@@ -187,45 +238,78 @@ export default function MaintenancePage() {
         </Card>
       </div>
 
-      {/* IGDB Refresh Section - Full width */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5" />
-            IGDB Data Refresh
-          </CardTitle>
-          <CardDescription>Update game metadata from IGDB across your collection</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Coming Soon</AlertTitle>
-            <AlertDescription>
-              IGDB data refresh functionality will be available in a future update. This will allow
-              you to refresh cover art, time to beat data, and other metadata for games in your
-              collection.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      {/* Active Job Progress View */}
+      {showJobProgress && activeJob && (
+        <section className="space-y-4">
+          <JobProgressCard
+            job={activeJob}
+            onCancel={handleCancelJob}
+            isCancelling={isCancelling}
+          />
 
-      {/* Recent Maintenance Jobs */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Recent Maintenance Jobs
-          </CardTitle>
-          <CardDescription>Maintenance operations from the last 7 days</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <History className="mb-4 h-12 w-12 opacity-50" />
-            <p>No recent maintenance jobs</p>
-            <p className="text-sm">Jobs will appear here after running maintenance tasks</p>
-          </div>
-        </CardContent>
-      </Card>
+          {activeJob.progress && (
+            <JobItemsDetails
+              jobId={activeJob.id}
+              progress={activeJob.progress}
+              isTerminal={activeJob.isTerminal}
+            />
+          )}
+
+          {/* Actions for completed jobs */}
+          {activeJob.isTerminal && (
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={handleDismissJob}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Start New
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* IGDB Refresh Section - Full width, hidden when job is in progress */}
+      {!hasActiveJob && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              IGDB Data Refresh
+            </CardTitle>
+            <CardDescription>Update game metadata from IGDB across your collection</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Start a background job to refresh game modes, themes, player perspectives, and other
+              metadata from IGDB for all games in your collection. This operation runs asynchronously
+              and respects IGDB rate limits.
+            </p>
+            <Button onClick={handleStartMetadataRefresh} disabled={isRefreshLoading} className="w-full">
+              {isRefreshLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh All Game Metadata
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent Maintenance Jobs - shows completed jobs from last 7 days */}
+      {!hasActiveJob && (
+        <RecentActivity
+          jobTypes={[JobType.MAINTENANCE]}
+          excludeJobIds={activeJob ? [activeJob.id] : []}
+        />
+      )}
     </div>
   );
 }

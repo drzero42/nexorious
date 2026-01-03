@@ -31,7 +31,10 @@ class GameResponse(BaseModel, TimestampMixin):
     howlongtobeat_completionist: Optional[int]
     igdb_slug: Optional[str]
     igdb_platform_ids: Optional[str]
-    igdb_platform_names: Optional[str]
+    igdb_platform_names: Optional[str] = None
+    game_modes: Optional[str] = None
+    themes: Optional[str] = None
+    player_perspectives: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -185,3 +188,15 @@ class BulkCoverArtDownloadRequest(BaseModel):
     """Request schema for bulk cover art download operations."""
     game_ids: List[int] = Field(..., min_length=1, max_length=100, description="List of game IDs to process")
     skip_existing: bool = Field(default=True, description="Skip games that already have local cover art")
+
+
+class MetadataRefreshJobRequest(BaseModel):
+    """Request schema for starting a metadata refresh background job."""
+    game_ids: Optional[List[int]] = Field(default=None, description="Specific game IDs to refresh (None = all games)")
+
+
+class MetadataRefreshJobResponse(BaseModel):
+    """Response schema for metadata refresh job creation."""
+    success: bool
+    message: str
+    job_id: Optional[str] = None

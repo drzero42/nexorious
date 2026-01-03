@@ -49,6 +49,21 @@ class Game(SQLModel, table=True):
         default=None,
         description="JSON array of IGDB platform names for frontend filtering",
     )
+    game_modes: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Comma-separated game modes from IGDB (e.g., 'Single player, Multiplayer')",
+    )
+    themes: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Comma-separated themes from IGDB (e.g., 'Horror, Sci-fi')",
+    )
+    player_perspectives: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Comma-separated player perspectives from IGDB (e.g., 'First person, Third person')",
+    )
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

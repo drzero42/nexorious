@@ -34,8 +34,18 @@ interface GameApiResponse {
   howlongtobeat_completionist?: number;
   igdb_slug?: string;
   igdb_platform_names?: string;
+  game_modes?: string;
+  themes?: string;
+  player_perspectives?: string;
   created_at: string;
   updated_at: string;
+}
+
+interface FilterOptionsApiResponse {
+  genres: string[];
+  game_modes: string[];
+  themes: string[];
+  player_perspectives: string[];
 }
 
 interface PlatformApiResponse {
@@ -138,6 +148,9 @@ export interface GetUserGamesParams {
   platform?: string | string[];
   storefront?: string | string[];
   genre?: string[];
+  gameMode?: string[];
+  theme?: string[];
+  playerPerspective?: string[];
   tags?: string[];
   search?: string;
   sortBy?: string;
@@ -293,6 +306,9 @@ function transformGame(apiGame: GameApiResponse): Game {
     howlongtobeat_completionist: apiGame.howlongtobeat_completionist,
     igdb_slug: apiGame.igdb_slug,
     igdb_platform_names: apiGame.igdb_platform_names,
+    game_modes: apiGame.game_modes,
+    themes: apiGame.themes,
+    player_perspectives: apiGame.player_perspectives,
     created_at: apiGame.created_at,
     updated_at: apiGame.updated_at,
   };
@@ -370,6 +386,9 @@ function buildUserGamesQueryParams(params?: GetUserGamesParams): string | undefi
   appendParam(searchParams, 'platform', params.platform);
   appendParam(searchParams, 'storefront', params.storefront);
   appendParam(searchParams, 'genre', params.genre);
+  appendParam(searchParams, 'game_mode', params.gameMode);
+  appendParam(searchParams, 'theme', params.theme);
+  appendParam(searchParams, 'player_perspective', params.playerPerspective);
   appendParam(searchParams, 'tag', params.tags);
   appendParam(searchParams, 'q', params.search);
   appendParam(searchParams, 'sort_by', params.sortBy);
@@ -695,4 +714,28 @@ export async function removePlatformFromUserGame(
   platformAssociationId: string
 ): Promise<void> {
   await api.delete(`/user-games/${userGameId}/platforms/${platformAssociationId}`);
+}
+
+/**
+ * Filter options response type for frontend consumption.
+ */
+export interface FilterOptions {
+  genres: string[];
+  gameModes: string[];
+  themes: string[];
+  playerPerspectives: string[];
+}
+
+/**
+ * Get filter options (unique values) from the user's game collection.
+ * Returns only values that exist in the user's collection for each filter type.
+ */
+export async function getFilterOptions(): Promise<FilterOptions> {
+  const response = await api.get<FilterOptionsApiResponse>('/user-games/filter-options');
+  return {
+    genres: response.genres,
+    gameModes: response.game_modes,
+    themes: response.themes,
+    playerPerspectives: response.player_perspectives,
+  };
 }

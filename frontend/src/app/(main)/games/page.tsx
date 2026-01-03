@@ -52,6 +52,9 @@ function GamesPageContent() {
       platforms: searchParams.getAll('platform'),
       storefronts: searchParams.getAll('storefront'),
       genres: searchParams.getAll('genre'),
+      gameModes: searchParams.getAll('gameMode'),
+      themes: searchParams.getAll('theme'),
+      playerPerspectives: searchParams.getAll('playerPerspective'),
       tags: searchParams.getAll('tag'),
     };
   }, [searchParams]);
@@ -90,6 +93,9 @@ function GamesPageContent() {
       platform: filters.platforms.length > 0 ? filters.platforms : undefined,
       storefront: filters.storefronts.length > 0 ? filters.storefronts : undefined,
       genre: filters.genres.length > 0 ? filters.genres : undefined,
+      gameMode: filters.gameModes.length > 0 ? filters.gameModes : undefined,
+      theme: filters.themes.length > 0 ? filters.themes : undefined,
+      playerPerspective: filters.playerPerspectives.length > 0 ? filters.playerPerspectives : undefined,
       tags: filters.tags.length > 0 ? filters.tags : undefined,
       perPage: 50,
       sortBy,
@@ -113,6 +119,9 @@ function GamesPageContent() {
     platforms?: string[];
     storefronts?: string[];
     genres?: string[];
+    gameModes?: string[];
+    themes?: string[];
+    playerPerspectives?: string[];
     tags?: string[];
   }) => {
     updateParams({
@@ -121,6 +130,9 @@ function GamesPageContent() {
       platform: newFilters.platforms,
       storefront: newFilters.storefronts,
       genre: newFilters.genres,
+      gameMode: newFilters.gameModes,
+      theme: newFilters.themes,
+      playerPerspective: newFilters.playerPerspectives,
       tag: newFilters.tags,
     });
     setSelectedIds(new Set());

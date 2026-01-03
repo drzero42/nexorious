@@ -186,3 +186,11 @@ class UserGameIdsResponse(BaseModel):
 class UserGameGenresResponse(BaseModel):
     """Response schema for unique genres in user's collection."""
     genres: List[str] = Field(..., description="List of unique genres sorted alphabetically")
+
+
+class FilterOptionsResponse(BaseModel):
+    """Response schema for filter dropdown options."""
+    genres: List[str] = Field(default_factory=list)
+    game_modes: List[str] = Field(default_factory=list)
+    themes: List[str] = Field(default_factory=list)
+    player_perspectives: List[str] = Field(default_factory=list)
