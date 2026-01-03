@@ -130,6 +130,15 @@ class GameService:
             "igdb_platform_names": json.dumps(game_metadata.platform_names)
             if game_metadata.platform_names
             else None,
+            "game_modes": ", ".join(game_metadata.game_modes)
+            if game_metadata.game_modes
+            else None,
+            "themes": ", ".join(game_metadata.themes)
+            if game_metadata.themes
+            else None,
+            "player_perspectives": ", ".join(game_metadata.player_perspectives)
+            if game_metadata.player_perspectives
+            else None,
             "game_metadata": "{}",
         }
 
