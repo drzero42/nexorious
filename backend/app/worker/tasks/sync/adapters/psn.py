@@ -65,12 +65,15 @@ class PSNSyncAdapter:
             user: The user whose token expired
             session: SQLModel database session
         """
+        import json
         preferences = user.preferences or {}
         if "psn" in preferences:
             preferences["psn"]["is_verified"] = False
             preferences["psn"]["token_expired_at"] = datetime.now(timezone.utc).isoformat()
-            user.preferences = preferences
-            session.commit()
+            user.preferences_json = json.dumps(preferences)
+            user.updated_at = datetime.now(timezone.utc)
+            session.add(user)
+            # Don't commit here - let the caller handle transaction boundaries
             logger.warning(f"Marked PSN token as expired for user {user.id}")
 
     async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
