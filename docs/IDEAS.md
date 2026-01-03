@@ -53,17 +53,11 @@ We recently removed support for importing CSV, but we still have mentions of CSV
 Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
 
-## Import tags from sync sources
-Steam should expose tags that we can ensure are added to games when we sync from there. Epic may also have tags.
-
 ## Next.js proxy
 The frontend reports: The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
 
 ## Get rid of all "coming soon" messages
 We have multiple places in the app where we claim things are "coming soon". This is not helpful and should be removed.
-
-## Add refresh metadata button to games
-On the games detail page we should have a "refresh metadata" button that will update all metadata from IGDB
 
 ## Maintenance jobs
 We need scheduled jobs that take care of cleaning up expired jobs and orphaned files.
