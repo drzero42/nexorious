@@ -62,7 +62,7 @@ We have multiple places in the app where we claim things are "coming soon". This
 We need scheduled jobs that take care of cleaning up expired jobs and orphaned files.
 
 ## Epic Games Store sync configuration
-When clicking Connect we have a box pop-up with a button that says Start Authentication, after which another box pops up with the link to authenticate and an input for the code. We don't need the first box - instead incorporate the information in a single box to handle the full process.
+When clicking Connect we have a box pop-up with a button that says Start Authentication, after which another box pops up with the link to authenticate and an input for the code. This is not the same pattern we have for the other sources. Instead the information should be directly on the page without any popup boxes.
 
 ## Darkadia unknown platform and/or storefront
 When we convert and import Darkadia CSV as nexorious JSON we should make sure missing platforms and storefronts end up as unknown associations in our database. This way the user can go through and handle it after importing. Some games may need to be hunted down.
