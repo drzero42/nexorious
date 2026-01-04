@@ -72,8 +72,8 @@ A function to sort out missing platform/storefronts for games may be a good idea
 ## Apostrophe titles
 When searching IGDB for titles with apostrophes in the name, it can not find any results.
 
-## Icons for sync sources
-The icons for our sync sources look like ass. Must be replaced with the correct ones.
+## Icons for platforms and storefronts
+We have icons for all platforms and storefronts, but they are not used on the /games page or the game details pages.
 
 ## The needs review badges and number of items needing review on the sync page
 They look bad and must be improved.
