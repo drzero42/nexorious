@@ -232,6 +232,7 @@ async def _import_platforms(
             store_url=platform_data.get("store_url"),
             is_available=platform_data.get("is_available", True),
             original_platform_name=platform_name if not platform_slug else None,
+            original_storefront_name=storefront_name if not storefront_slug else None,
         )
         session.add(user_game_platform)
 

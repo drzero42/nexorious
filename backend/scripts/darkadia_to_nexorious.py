@@ -813,23 +813,34 @@ def generate_nexorious_json(
         # Build platform entries
         # Use a set to deduplicate platform/storefront combinations
         platforms = []
-        seen_platform_storefronts: set[tuple[str, Optional[str]]] = set()
+        seen_platform_storefronts: set[tuple[Optional[str], Optional[str]]] = set()
         for copy in game.copies:
-            platform_name = PLATFORM_MAP[copy.platform]
-            storefront_name = STOREFRONT_MAP.get(copy.storefront, "")
+            # Map platform - passthrough unmapped values, empty becomes None
+            if not copy.platform:
+                platform_name_out: Optional[str] = None
+            elif copy.platform in PLATFORM_MAP:
+                platform_name_out = PLATFORM_MAP[copy.platform]
+            else:
+                platform_name_out = copy.platform  # Passthrough unmapped
 
-            # Convert empty string to None (unknown storefront)
-            storefront_name_out: Optional[str] = storefront_name if storefront_name else None
+            # Map storefront - passthrough unmapped values, empty becomes None
+            if not copy.storefront:
+                storefront_name_out: Optional[str] = None
+            elif copy.storefront in STOREFRONT_MAP:
+                mapped = STOREFRONT_MAP[copy.storefront]
+                storefront_name_out = mapped if mapped else None  # "" in map means defunct
+            else:
+                storefront_name_out = copy.storefront  # Passthrough unmapped
 
             # Skip duplicate platform/storefront combinations
-            key = (platform_name, storefront_name_out)
+            key = (platform_name_out, storefront_name_out)
             if key in seen_platform_storefronts:
                 continue
             seen_platform_storefronts.add(key)
 
             platforms.append(
                 {
-                    "platform_name": platform_name,
+                    "platform_name": platform_name_out,
                     "storefront_name": storefront_name_out,
                 }
             )
@@ -912,28 +923,27 @@ def main() -> int:
         print("No games found in CSV.")
         return 1
 
-    # Step 2: Validate mappings (fail fast)
-    print("\nValidating platform and storefront mappings...")
+    # Step 2: Check for unmapped values (warn but continue)
+    print("\nChecking platform and storefront mappings...")
     unmapped_platforms, unmapped_storefronts = validate_mappings(games)
 
     if unmapped_platforms or unmapped_storefronts:
-        print(
-            "\nError: Unmapped values found. Add these to the mapping dictionaries:\n"
-        )
+        print("\nWarning: Unmapped values found (will be imported as 'unknown'):\n")
 
         if unmapped_platforms:
             print("Unmapped platforms:")
             for p in sorted(unmapped_platforms):
-                print(f'    "{p}": "???",  # TODO: map to Nexorious platform')
+                print(f'    "{p}"')
 
         if unmapped_storefronts:
             print("\nUnmapped storefronts:")
             for s in sorted(unmapped_storefronts):
-                print(f'    "{s}": "???",  # TODO: map to Nexorious storefront')
+                print(f'    "{s}"')
 
-        return 1
-
-    print("All mappings valid!")
+        print("\nThese will be stored as unknown associations in the database.")
+        print("You can filter for 'Unknown' in the UI to review and fix them later.\n")
+    else:
+        print("All platforms and storefronts mapped!")
 
     # Step 3: IGDB lookup
     print("\nStarting IGDB lookup...")

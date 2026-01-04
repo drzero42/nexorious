@@ -84,7 +84,8 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     store_url: Optional[str]
     is_available: bool
     hours_played: int
-    original_platform_name: Optional[str]
+    original_platform_name: Optional[str] = None
+    original_storefront_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
