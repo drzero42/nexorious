@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PlatformIconList } from '@/components/ui/platform-icon';
 import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { cn } from '@/lib/utils';
@@ -182,14 +183,11 @@ export function GameList({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm text-muted-foreground truncate block max-w-32">
-                    {game.platforms && game.platforms.length > 0
-                      ? game.platforms
-                          .map((p) => p.platform_details?.display_name ?? p.platform)
-                          .filter(Boolean)
-                          .join(', ')
-                      : '-'}
-                  </span>
+                  <PlatformIconList
+                    platforms={game.platforms ?? []}
+                    size="sm"
+                    showLabels
+                  />
                 </TableCell>
                 <TableCell>
                   <span className="text-sm">{game.hours_played || 0}h</span>
