@@ -350,14 +350,7 @@ describe('GameList', () => {
   });
 
   describe('platform display', () => {
-    it('renders single platform display_name', () => {
-      const games = [createMockGame()];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('PC')).toBeInTheDocument();
-    });
-
-    it('renders multiple platforms separated by comma', () => {
+    it('renders single platform with icon and label', () => {
       const games = [
         createMockGame({
           platforms: [
@@ -367,6 +360,37 @@ describe('GameList', () => {
               platform_details: {
                 name: 'pc',
                 display_name: 'PC',
+                icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
+                is_active: true,
+                source: 'system',
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+              },
+              is_available: true,
+              hours_played: 0,
+              created_at: '2024-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      // List view shows icon with text label
+      expect(screen.getByAltText('PC')).toBeInTheDocument();
+      expect(screen.getByText('PC')).toBeInTheDocument();
+    });
+
+    it('renders multiple platforms with icons and labels', () => {
+      const games = [
+        createMockGame({
+          platforms: [
+            {
+              id: 'ugp-1',
+              platform: 'pc',
+              platform_details: {
+                name: 'pc',
+                display_name: 'PC',
+                icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
                 is_active: true,
                 source: 'system',
                 created_at: '2024-01-01T00:00:00Z',
@@ -382,6 +406,7 @@ describe('GameList', () => {
               platform_details: {
                 name: 'ps5',
                 display_name: 'PlayStation 5',
+                icon_url: '/static/logos/platforms/ps5/ps5-icon-light.svg',
                 is_active: true,
                 source: 'system',
                 created_at: '2024-01-01T00:00:00Z',
@@ -396,10 +421,14 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      expect(screen.getByText('PC, PlayStation 5')).toBeInTheDocument();
+      // List view shows icons with text labels
+      expect(screen.getByAltText('PC')).toBeInTheDocument();
+      expect(screen.getByAltText('PlayStation 5')).toBeInTheDocument();
+      expect(screen.getByText('PC')).toBeInTheDocument();
+      expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
     });
 
-    it('uses platform slug when display_name is not available', () => {
+    it('renders fallback initial when icon_url is not available', () => {
       const games = [
         createMockGame({
           platforms: [
@@ -408,7 +437,7 @@ describe('GameList', () => {
               platform: 'xbox',
               platform_details: {
                 name: 'xbox',
-                display_name: undefined as unknown as string,
+                display_name: 'Xbox',
                 is_active: true,
                 source: 'system',
                 created_at: '2024-01-01T00:00:00Z',
@@ -423,7 +452,9 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      expect(screen.getByText('xbox')).toBeInTheDocument();
+      // Fallback shows first letter and display name
+      expect(screen.getByText('X')).toBeInTheDocument();
+      expect(screen.getByText('Xbox')).toBeInTheDocument();
     });
 
     it('renders "-" when no platforms', () => {
@@ -446,6 +477,7 @@ describe('GameList', () => {
               platform_details: {
                 name: 'pc',
                 display_name: 'PC',
+                icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
                 is_active: true,
                 source: 'system',
                 created_at: '2024-01-01T00:00:00Z',
@@ -468,7 +500,8 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      // Should only show PC, not crash or show empty string
+      // Should only show PC icon and label, not crash or show empty string
+      expect(screen.getByAltText('PC')).toBeInTheDocument();
       expect(screen.getByText('PC')).toBeInTheDocument();
     });
   });

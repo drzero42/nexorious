@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PlatformIconList } from '@/components/ui/platform-icon';
 import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { Timer } from 'lucide-react';
@@ -140,12 +141,13 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
           {game.game?.title ?? 'Unknown Game'}
         </h3>
         {game.platforms && game.platforms.length > 0 && (
-          <p className="text-sm text-muted-foreground truncate mt-1">
-            {game.platforms
-              .map((p) => p.platform_details?.display_name ?? p.platform)
-              .filter(Boolean)
-              .join(', ')}
-          </p>
+          <div className="mt-1">
+            <PlatformIconList
+              platforms={game.platforms}
+              size="sm"
+              showTooltips
+            />
+          </div>
         )}
         <div className="flex items-center justify-between mt-2">
           {game.personal_rating ? (

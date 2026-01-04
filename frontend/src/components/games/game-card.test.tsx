@@ -147,14 +147,7 @@ describe('GameCard', () => {
       expect(screen.getByText('No Cover')).toBeInTheDocument();
     });
 
-    it('renders platform names', () => {
-      const game = createMockGame();
-      render(<GameCard game={game} />);
-
-      expect(screen.getByText('PC')).toBeInTheDocument();
-    });
-
-    it('renders multiple platform names separated by comma', () => {
+    it('renders platform icon', () => {
       const game = createMockGame({
         platforms: [
           {
@@ -163,6 +156,34 @@ describe('GameCard', () => {
             platform_details: {
               name: 'pc',
               display_name: 'PC',
+              icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
+              is_active: true,
+              source: 'system',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+            is_available: true,
+            hours_played: 0,
+            created_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      });
+      render(<GameCard game={game} />);
+
+      // Card view shows icons with tooltips
+      expect(screen.getByAltText('PC')).toBeInTheDocument();
+    });
+
+    it('renders multiple platform icons', () => {
+      const game = createMockGame({
+        platforms: [
+          {
+            id: 'ugp-1',
+            platform: 'pc',
+            platform_details: {
+              name: 'pc',
+              display_name: 'PC',
+              icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
               is_active: true,
               source: 'system',
               created_at: '2024-01-01T00:00:00Z',
@@ -178,6 +199,7 @@ describe('GameCard', () => {
             platform_details: {
               name: 'ps5',
               display_name: 'PlayStation 5',
+              icon_url: '/static/logos/platforms/ps5/ps5-icon-light.svg',
               is_active: true,
               source: 'system',
               created_at: '2024-01-01T00:00:00Z',
@@ -191,7 +213,11 @@ describe('GameCard', () => {
       });
       render(<GameCard game={game} />);
 
-      expect(screen.getByText('PC, PlayStation 5')).toBeInTheDocument();
+      // Card view shows icons with tooltips, verify icons are rendered
+      const pcIcon = screen.getByAltText('PC');
+      const ps5Icon = screen.getByAltText('PlayStation 5');
+      expect(pcIcon).toBeInTheDocument();
+      expect(ps5Icon).toBeInTheDocument();
     });
 
     it('does not render platform section when no platforms', () => {
@@ -378,7 +404,7 @@ describe('GameCard', () => {
       expect(() => render(<GameCard game={game} />)).not.toThrow();
     });
 
-    it('uses platform slug when display_name is not available', () => {
+    it('renders fallback initial when icon_url is not available', () => {
       const game = createMockGame({
         platforms: [
           {
@@ -386,7 +412,7 @@ describe('GameCard', () => {
             platform: 'xbox',
             platform_details: {
               name: 'xbox',
-              display_name: undefined as unknown as string,
+              display_name: 'Xbox',
               is_active: true,
               source: 'system',
               created_at: '2024-01-01T00:00:00Z',
@@ -400,7 +426,8 @@ describe('GameCard', () => {
       });
       render(<GameCard game={game} />);
 
-      expect(screen.getByText('xbox')).toBeInTheDocument();
+      // Fallback shows first letter of display_name
+      expect(screen.getByText('X')).toBeInTheDocument();
     });
 
     it('filters out platforms with no platform_details', () => {
@@ -412,6 +439,7 @@ describe('GameCard', () => {
             platform_details: {
               name: 'pc',
               display_name: 'PC',
+              icon_url: '/static/logos/platforms/pc/pc-icon-light.svg',
               is_active: true,
               source: 'system',
               created_at: '2024-01-01T00:00:00Z',
@@ -433,8 +461,8 @@ describe('GameCard', () => {
       });
       render(<GameCard game={game} />);
 
-      // Should only show PC, not crash or show empty string
-      expect(screen.getByText('PC')).toBeInTheDocument();
+      // Should only show PC icon, not crash or show empty string
+      expect(screen.getByAltText('PC')).toBeInTheDocument();
     });
   });
 });
