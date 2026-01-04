@@ -171,18 +171,52 @@ async def list_user_games(
             ))
 
     # Platform filter (multi-value support with IN clause)
+    # Special handling: "unknown" filters for NULL platform
     if platform:
         if not joined_user_game_platform:
             query = query.join(UserGamePlatform)
             joined_user_game_platform = True
-        filters.append(in_(col(UserGamePlatform.platform), platform))
+
+        # Separate "unknown" from regular platform values
+        unknown_filter = "unknown" in platform
+        regular_platforms = [p for p in platform if p != "unknown"]
+
+        if unknown_filter and regular_platforms:
+            # Both unknown and regular platforms: OR condition
+            filters.append(or_(
+                is_(col(UserGamePlatform.platform), None),
+                in_(col(UserGamePlatform.platform), regular_platforms)
+            ))
+        elif unknown_filter:
+            # Only unknown: filter for NULL
+            filters.append(is_(col(UserGamePlatform.platform), None))
+        else:
+            # Only regular platforms: use IN clause
+            filters.append(in_(col(UserGamePlatform.platform), regular_platforms))
 
     # Storefront filter (multi-value support with IN clause)
+    # Special handling: "unknown" filters for NULL storefront
     if storefront:
         if not joined_user_game_platform:
             query = query.join(UserGamePlatform)
             joined_user_game_platform = True
-        filters.append(in_(col(UserGamePlatform.storefront), storefront))
+
+        # Separate "unknown" from regular storefront values
+        unknown_filter = "unknown" in storefront
+        regular_storefronts = [s for s in storefront if s != "unknown"]
+
+        if unknown_filter and regular_storefronts:
+            # Both unknown and regular storefronts: OR condition
+            filters.append(or_(
+                is_(col(UserGamePlatform.storefront), None),
+                in_(col(UserGamePlatform.storefront), regular_storefronts)
+            ))
+        elif unknown_filter:
+            # Only unknown: filter for NULL
+            filters.append(is_(col(UserGamePlatform.storefront), None))
+        else:
+            # Only regular storefronts: use IN clause
+            filters.append(in_(col(UserGamePlatform.storefront), regular_storefronts))
 
     # Genre filter (multi-value support with OR ILIKE logic)
     if genre:
@@ -414,18 +448,52 @@ async def get_user_game_ids(
             ))
 
     # Platform filter (multi-value support with IN clause)
+    # Special handling: "unknown" filters for NULL platform
     if platform:
         if not joined_user_game_platform:
             query = query.join(UserGamePlatform)
             joined_user_game_platform = True
-        filters.append(in_(col(UserGamePlatform.platform), platform))
+
+        # Separate "unknown" from regular platform values
+        unknown_filter = "unknown" in platform
+        regular_platforms = [p for p in platform if p != "unknown"]
+
+        if unknown_filter and regular_platforms:
+            # Both unknown and regular platforms: OR condition
+            filters.append(or_(
+                is_(col(UserGamePlatform.platform), None),
+                in_(col(UserGamePlatform.platform), regular_platforms)
+            ))
+        elif unknown_filter:
+            # Only unknown: filter for NULL
+            filters.append(is_(col(UserGamePlatform.platform), None))
+        else:
+            # Only regular platforms: use IN clause
+            filters.append(in_(col(UserGamePlatform.platform), regular_platforms))
 
     # Storefront filter (multi-value support with IN clause)
+    # Special handling: "unknown" filters for NULL storefront
     if storefront:
         if not joined_user_game_platform:
             query = query.join(UserGamePlatform)
             joined_user_game_platform = True
-        filters.append(in_(col(UserGamePlatform.storefront), storefront))
+
+        # Separate "unknown" from regular storefront values
+        unknown_filter = "unknown" in storefront
+        regular_storefronts = [s for s in storefront if s != "unknown"]
+
+        if unknown_filter and regular_storefronts:
+            # Both unknown and regular storefronts: OR condition
+            filters.append(or_(
+                is_(col(UserGamePlatform.storefront), None),
+                in_(col(UserGamePlatform.storefront), regular_storefronts)
+            ))
+        elif unknown_filter:
+            # Only unknown: filter for NULL
+            filters.append(is_(col(UserGamePlatform.storefront), None))
+        else:
+            # Only regular storefronts: use IN clause
+            filters.append(in_(col(UserGamePlatform.storefront), regular_storefronts))
 
     # Genre filter (multi-value support with OR ILIKE logic)
     if genre:
