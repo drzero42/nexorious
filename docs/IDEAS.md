@@ -74,3 +74,9 @@ When searching IGDB for titles with apostrophes in the name, it can not find any
 
 ## Pull in playtime for PSN
 The psnawp_api.models.title_stats contain the play_duration attribute which we can use to add playtime to the PSN associated games.
+
+## Icons for sync sources
+The icons for our sync sources look like ass. Must be replaced with the correct ones.
+
+## The needs review badges and  on the sync page
+They look bad and must be improved.
