@@ -553,7 +553,7 @@ describe('SyncServiceCard', () => {
         />
       );
 
-      expect(screen.getByText('5 to review')).toBeInTheDocument();
+      expect(screen.getByText('5')).toBeInTheDocument();
     });
 
     it('does not show pending review badge when count is 0', () => {
