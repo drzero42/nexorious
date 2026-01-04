@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { PlayStatus, UserGame, SelectionMode } from '@/types';
 
-type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date';
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played';
 type SortOrder = 'asc' | 'desc';
 
 interface SortOption {
@@ -31,6 +31,7 @@ const SORT_OPTIONS: SortOption[] = [
   { value: 'howlongtobeat_main', label: 'Time to Beat', defaultOrder: 'asc' },
   { value: 'personal_rating', label: 'My Rating', defaultOrder: 'desc' },
   { value: 'release_date', label: 'Release Date', defaultOrder: 'desc' },
+  { value: 'hours_played', label: 'Hours Played', defaultOrder: 'desc' },
 ];
 
 function GamesPageContent() {

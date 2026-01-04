@@ -241,6 +241,81 @@ class TestUserGamesListEndpoint:
         ttb_values = [game["game"]["howlongtobeat_main"] for game in games]
         assert ttb_values == [100, 10, None], f"DESC sort failed: expected [100, 10, None], got {ttb_values}"
 
+    def test_list_user_games_sorting_hours_played_aggregated(self, client: TestClient, session: Session):
+        """Test that hours_played sorting uses aggregated platform hours with legacy fallback."""
+        from .integration_test_utils import create_test_game, register_and_login_user
+        from ..models.user import User
+        from ..models.user_game import UserGame, UserGamePlatform
+        from ..models.platform import Platform
+
+        # Create a test user
+        user_data = {"username": "hoursortuser", "password": "password123"}
+        auth_headers = register_and_login_user(client, user_data)
+
+        # Get the user from the database
+        user = session.exec(select(User).where(User.username == "hoursortuser")).first()
+        assert user is not None
+
+        # Create platforms needed for UserGamePlatform FK constraints
+        platform_pc = Platform(name="test-pc-hours", display_name="PC", is_active=True)
+        platform_ps5 = Platform(name="test-ps5-hours", display_name="PlayStation 5", is_active=True)
+        session.add_all([platform_pc, platform_ps5])
+        session.commit()
+
+        # Create three games with different hour configurations:
+        # Game 1: 100 hours via platforms (50 + 50)
+        # Game 2: 75 hours via legacy field (no platforms)
+        # Game 3: 150 hours via platforms (150)
+
+        game1 = create_test_game(igdb_id=9001, title="Platform Hours Game")
+        game2 = create_test_game(igdb_id=9002, title="Legacy Hours Game")
+        game3 = create_test_game(igdb_id=9003, title="Single Platform Game")
+
+        session.add_all([game1, game2, game3])
+        session.commit()
+        session.refresh(game1)
+        session.refresh(game2)
+        session.refresh(game3)
+
+        # Game 1: 100 hours from platforms, legacy=0
+        ug1 = UserGame(user_id=user.id, game_id=game1.id, hours_played=0)
+        session.add(ug1)
+        session.commit()
+        session.refresh(ug1)
+
+        ugp1a = UserGamePlatform(user_game_id=ug1.id, platform=platform_pc.name, hours_played=50)
+        ugp1b = UserGamePlatform(user_game_id=ug1.id, platform=platform_ps5.name, hours_played=50)
+        session.add_all([ugp1a, ugp1b])
+
+        # Game 2: 75 hours from legacy field, no platforms
+        ug2 = UserGame(user_id=user.id, game_id=game2.id, hours_played=75)
+        session.add(ug2)
+
+        # Game 3: 150 hours from single platform
+        ug3 = UserGame(user_id=user.id, game_id=game3.id, hours_played=0)
+        session.add(ug3)
+        session.commit()
+        session.refresh(ug3)
+
+        ugp3 = UserGamePlatform(user_game_id=ug3.id, platform=platform_pc.name, hours_played=150)
+        session.add(ugp3)
+        session.commit()
+
+        # Test descending sort: should be 150, 100, 75
+        response = client.get("/api/user-games/?sort_by=hours_played&sort_order=desc", headers=auth_headers)
+        assert response.status_code == 200
+        games = response.json()["user_games"]
+        hours = [game["hours_played"] for game in games]
+        titles = [game["game"]["title"] for game in games]
+        assert hours == [150, 100, 75], f"DESC sort failed: expected [150, 100, 75], got {hours} for titles {titles}"
+
+        # Test ascending sort: should be 75, 100, 150
+        response = client.get("/api/user-games/?sort_by=hours_played&sort_order=asc", headers=auth_headers)
+        assert response.status_code == 200
+        games = response.json()["user_games"]
+        hours = [game["hours_played"] for game in games]
+        assert hours == [75, 100, 150], f"ASC sort failed: expected [75, 100, 150], got {hours}"
+
 
 class TestUserGamesDetailEndpoint:
     """Test GET /api/user-games/{user_game_id} endpoint."""

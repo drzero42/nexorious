@@ -75,8 +75,5 @@ When searching IGDB for titles with apostrophes in the name, it can not find any
 ## Icons for sync sources
 The icons for our sync sources look like ass. Must be replaced with the correct ones.
 
-## The needs review badges and  on the sync page
+## The needs review badges and number of items needing review on the sync page
 They look bad and must be improved.
-
-## Add sort by playtime
-The /games page should also allow sorting by playtime. It should use the aggregated playtime.

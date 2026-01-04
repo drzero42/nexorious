@@ -4,6 +4,7 @@ User game collection management endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, and_, func, or_, col
+from sqlalchemy import case
 from datetime import datetime, timezone
 from typing import Annotated, Optional, List, Any
 import logging
@@ -307,20 +308,34 @@ async def list_user_games(
     
     # Ensure sort_by has a value
     sort_by = sort_by or "title"
-    
+
     # Determine the sort field
-    if sort_by in game_sort_fields:
+    if sort_by == 'hours_played':
+        # Special handling for hours_played: use aggregated platform hours with legacy fallback
+        # This matches the logic in UserGameResponse.compute_hours_played
+        platform_hours_subquery = (
+            select(func.coalesce(func.sum(UserGamePlatform.hours_played), 0))
+            .where(UserGamePlatform.user_game_id == UserGame.id)
+            .correlate(UserGame)
+            .scalar_subquery()
+        )
+        # Use platform hours if > 0, otherwise fall back to legacy hours_played
+        sort_field = case(
+            (platform_hours_subquery > 0, platform_hours_subquery),
+            else_=UserGame.hours_played
+        )
+    elif sort_by in game_sort_fields:
         # Sort by Game model fields
         sort_field = getattr(Game, sort_by, Game.title)
     else:
         # Sort by UserGame model fields (default behavior)
         sort_field = getattr(UserGame, sort_by, UserGame.created_at)
-    
+
     # Apply sort order (nulls always at end for consistent UX)
     if sort_order == "desc":
-        query = query.order_by(desc(col(sort_field)).nulls_last())
+        query = query.order_by(desc(sort_field).nulls_last())
     else:
-        query = query.order_by(asc(col(sort_field)).nulls_last())
+        query = query.order_by(asc(sort_field).nulls_last())
     
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
