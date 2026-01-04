@@ -90,7 +90,7 @@ export function SyncServiceCard({
           <div className="flex items-center gap-2">
             {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
               <Badge variant="destructive">
-                {pendingReviewCount} to review
+                {pendingReviewCount}
               </Badge>
             )}
             <Badge

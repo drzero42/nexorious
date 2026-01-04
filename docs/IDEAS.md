@@ -75,8 +75,5 @@ When searching IGDB for titles with apostrophes in the name, it can not find any
 ## Icons for platforms and storefronts
 We have icons for all platforms and storefronts, but they are not used on the /games page or the game details pages.
 
-## The needs review badges and number of items needing review on the sync page
-They look bad and must be improved.
-
 ## Update PRD to match what Nexorious is and should be now
 
