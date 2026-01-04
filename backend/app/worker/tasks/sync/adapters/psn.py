@@ -124,7 +124,7 @@ class PSNSyncAdapter:
                             "product_id": game.product_id,
                             **game.metadata
                         },
-                        playtime_hours=0  # PSN doesn't provide playtime in library
+                        playtime_hours=game.playtime_hours,
                     )
                 )
 

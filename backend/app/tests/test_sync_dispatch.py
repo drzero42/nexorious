@@ -30,6 +30,11 @@ class TestCreateJobItem:
             metadata={"playtime_minutes": 100},
         )
 
+        # Mock session.exec to return empty result (no existing item)
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+        session.exec.return_value = mock_result
+
         # Mock session behavior
         def mock_refresh(item):
             item.id = "item123"
@@ -38,6 +43,7 @@ class TestCreateJobItem:
 
         job_item = _create_job_item(session, job, "user123", game)
 
+        assert job_item is not None
         assert job_item.job_id == "job123"
         assert job_item.user_id == "user123"
         assert job_item.item_key == "steam_12345"
@@ -63,6 +69,11 @@ class TestCreateJobItem:
             metadata={},
         )
 
+        # Mock session.exec to return empty result (no existing item)
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+        session.exec.return_value = mock_result
+
         def mock_refresh(item):
             item.id = "item456"
 
@@ -70,6 +81,7 @@ class TestCreateJobItem:
 
         job_item = _create_job_item(session, job, "user456", game)
 
+        assert job_item is not None
         assert job_item.job_id == "job456"
         assert job_item.user_id == "user456"
         assert job_item.item_key == "gog_99999"
@@ -92,9 +104,16 @@ class TestCreateJobItem:
             metadata={},
         )
 
+        # Mock session.exec to return empty result (no existing item)
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+        session.exec.return_value = mock_result
+
         session.refresh = MagicMock()
 
-        _create_job_item(session, job, "user789", game)
+        job_item = _create_job_item(session, job, "user789", game)
+
+        assert job_item is not None
 
         session.add.assert_called_once()
         session.commit.assert_called_once()
@@ -171,6 +190,11 @@ class TestDispatchSyncItems:
                 return mock_user
 
             mock_session.get.side_effect = get_side_effect
+
+            # Mock session.exec to return empty result (no existing items)
+            mock_exec_result = MagicMock()
+            mock_exec_result.first.return_value = None
+            mock_session.exec.return_value = mock_exec_result
 
             # Mock refresh to set ID
             def mock_refresh(item):
@@ -372,6 +396,11 @@ class TestDispatchSyncItems:
             mock_session.get.side_effect = lambda model, id: (
                 mock_job if model == Job else mock_user
             )
+
+            # Mock session.exec to return empty result (no existing items)
+            mock_exec_result = MagicMock()
+            mock_exec_result.first.return_value = None
+            mock_session.exec.return_value = mock_exec_result
 
             # First refresh succeeds, second raises an error
             call_count = [0]
