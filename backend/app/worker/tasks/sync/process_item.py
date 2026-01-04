@@ -245,7 +245,7 @@ async def _process_with_resolved_id(
             RETURNING id
         """)
 
-        insert_result = session.exec(insert_sql, {"user_id": user_id, "game_id": igdb_id})
+        insert_result = session.execute(insert_sql, {"user_id": user_id, "game_id": igdb_id})
         inserted_row = insert_result.first()
 
         if inserted_row:
@@ -419,7 +419,7 @@ async def _auto_import_game(
             RETURNING id
         """)
 
-        insert_result = session.exec(insert_sql, {"user_id": user_id, "game_id": igdb_id})
+        insert_result = session.execute(insert_sql, {"user_id": user_id, "game_id": igdb_id})
         inserted_row = insert_result.first()
 
         if inserted_row:
