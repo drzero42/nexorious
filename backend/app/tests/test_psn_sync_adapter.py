@@ -218,6 +218,42 @@ async def test_fetch_games_token_expired():
         assert user.preferences["psn"]["is_verified"] is False
 
 
+@pytest.mark.asyncio
+async def test_fetch_games_includes_playtime():
+    """Test fetch_games includes playtime from PSNGame."""
+    from app.worker.tasks.sync.adapters.psn import PSNSyncAdapter
+    from app.services.psn import PSNGame
+
+    user = Mock()
+    user.id = "user123"
+    user.preferences = {
+        "psn": {
+            "npsso_token": "a" * 64,
+            "is_verified": True
+        }
+    }
+    session = Mock()
+
+    mock_game = PSNGame(
+        product_id="CUSA12345",
+        name="Test Game",
+        platforms=["playstation-5"],
+        metadata={"product_id": "CUSA12345"},
+        playtime_hours=42,
+    )
+
+    with patch('app.worker.tasks.sync.adapters.psn.PSNService') as mock_service_class:
+        mock_service = AsyncMock()
+        mock_service.get_library.return_value = [mock_game]
+        mock_service_class.return_value = mock_service
+
+        adapter = PSNSyncAdapter()
+        result = await adapter.fetch_games(user, session)
+
+    assert len(result) == 1
+    assert result[0].playtime_hours == 42
+
+
 def test_psn_adapter_registered():
     """Test PSN adapter is registered in get_sync_adapter."""
     from app.worker.tasks.sync.adapters.base import get_sync_adapter
