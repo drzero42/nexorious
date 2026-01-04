@@ -80,3 +80,6 @@ The icons for our sync sources look like ass. Must be replaced with the correct 
 
 ## The needs review badges and  on the sync page
 They look bad and must be improved.
+
+## Add sort by playtime
+The /games page should also allow sorting by playtime. It should use the aggregated playtime.
