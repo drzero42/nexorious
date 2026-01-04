@@ -77,3 +77,6 @@ We have icons for all platforms and storefronts, but they are not used on the /g
 
 ## The needs review badges and number of items needing review on the sync page
 They look bad and must be improved.
+
+## Update PRD to match what Nexorious is and should be now
+
