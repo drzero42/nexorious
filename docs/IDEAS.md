@@ -68,13 +68,19 @@ When clicking Connect we have a box pop-up with a button that says Start Authent
 When we convert and import Darkadia CSV as nexorious JSON we should make sure missing platforms and storefronts end up as unknown associations in our database. This way the user can go through and handle it after importing. Some games may need to be hunted down.
 A function to sort out missing platform/storefronts for games may be a good idea to add.
 
-## Apostrophe titles
-When searching IGDB for titles with apostrophes in the name, it can not find any results.
+## IGDB searching
+- When searching IGDB for titles with apostrophes in the name, it can not find any results.
+- Colour == Color
 
 ## Icons for platforms and storefronts
-Icons for Mac do not show up
+- Icons for Mac do not show up
+- Tooltip when pointing to platform on game cards should also tell what storefront it is on
 
 ## Update PRD to match what Nexorious is and should be now
 
 ## Add maintenance function to identify weirdness
 Some games in the database might have data that seems weird. We should have a function that identifies "smells". This is things like games with Platform/Storefront combinations that we don't have mapped. Ie. PS3 game with Humble Bundle as the storefront. It is not necessarily wrong, but the function should show this so the user can potentially fix it.
+
+## Choices for sync sources
+Any skipped games for a sync source should be changeable by the user.
+Game mappings should also be changeable so if a user makes a wrong choice for a game, it can be undone.
