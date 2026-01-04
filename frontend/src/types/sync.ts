@@ -79,27 +79,32 @@ export function getPlatformDisplayInfo(platform: SyncPlatform): {
   name: string;
   color: string;
   bgColor: string;
+  iconUrl: string;
 } {
-  const info: Record<SyncPlatform, { name: string; color: string; bgColor: string }> = {
+  const info: Record<SyncPlatform, { name: string; color: string; bgColor: string; iconUrl: string }> = {
     [SyncPlatform.STEAM]: {
       name: 'Steam',
       color: 'text-[#1b2838]',
       bgColor: 'bg-[#1b2838]/10 dark:bg-[#1b2838]/30',
+      iconUrl: '/static/logos/storefronts/steam/steam-icon-light.svg',
     },
     [SyncPlatform.EPIC]: {
       name: 'Epic Games',
       color: 'text-gray-800 dark:text-gray-200',
       bgColor: 'bg-gray-100 dark:bg-gray-700',
+      iconUrl: '/static/logos/storefronts/epic-games-store/epic-games-store-icon-light.svg',
     },
     [SyncPlatform.GOG]: {
       name: 'GOG',
       color: 'text-purple-700 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30',
+      iconUrl: '/static/logos/storefronts/gog/gog-icon-light.svg',
     },
     [SyncPlatform.PSN]: {
       name: 'PlayStation Network',
       color: 'text-[#003087]',
       bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
+      iconUrl: '/static/logos/storefronts/playstation-store/playstation-store-icon-light.svg',
     },
   };
   return info[platform];
