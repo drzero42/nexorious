@@ -98,9 +98,11 @@ def test_is_configured_false():
 
 def test_mark_token_expired():
     """Test _mark_token_expired marks token as invalid."""
+    import json
     from app.worker.tasks.sync.adapters.psn import PSNSyncAdapter
 
     user = Mock()
+    user.id = "user123"
     user.preferences = {
         "psn": {
             "npsso_token": "a" * 64,
@@ -112,9 +114,12 @@ def test_mark_token_expired():
     adapter = PSNSyncAdapter()
     adapter._mark_token_expired(user, session)
 
-    assert user.preferences["psn"]["is_verified"] is False
-    assert "token_expired_at" in user.preferences["psn"]
-    session.commit.assert_called_once()
+    # The implementation sets preferences_json, not preferences directly
+    updated_prefs = json.loads(user.preferences_json)
+    assert updated_prefs["psn"]["is_verified"] is False
+    assert "token_expired_at" in updated_prefs["psn"]
+    # Implementation does NOT commit (lets caller handle transaction)
+    session.add.assert_called_once_with(user)
 
 
 @pytest.mark.asyncio
