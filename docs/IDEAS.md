@@ -37,14 +37,13 @@ Might be better than claude failing to use curl
 From some platforms/storefronts we can extract information about Achievements/Trophies - at least from Steam this is true.
 We should store at least some information about this. Maybe just a percentage of achievements/trophies gained or maybe more detailed...
 
-## GOG
+## Sync sources
+### GOG
 Use https://github.com/Sude-/lgogdownloader as a CLI tool to pull informatiot about the user's library
-
-## Playstation
-https://psnawp.readthedocs.io
-
-## Xbox
+### Xbox
 https://github.com/OpenXbox/xbox-webapi-python
+### Humble Bundle
+...
 
 ## Remove unneeded CSV code
 We recently removed support for importing CSV, but we still have mentions of CSV as source for importing in the code. This should be removed.
@@ -73,7 +72,9 @@ A function to sort out missing platform/storefronts for games may be a good idea
 When searching IGDB for titles with apostrophes in the name, it can not find any results.
 
 ## Icons for platforms and storefronts
-We have icons for all platforms and storefronts, but they are not used on the /games page or the game details pages.
+Icons for Mac do not show up
 
 ## Update PRD to match what Nexorious is and should be now
 
+## Add maintenance function to identify weirdness
+Some games in the database might have data that seems weird. We should have a function that identifies "smells". This is things like games with Platform/Storefront combinations that we don't have mapped. Ie. PS3 game with Humble Bundle as the storefront. It is not necessarily wrong, but the function should show this so the user can potentially fix it.
