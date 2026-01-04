@@ -424,7 +424,7 @@ describe('GameFilters', () => {
       expect(screen.getByText('Xbox Series X')).toBeInTheDocument();
     });
 
-    it('handles empty platforms list', async () => {
+    it('handles empty platforms list (still shows Unknown option)', async () => {
       const { useAllPlatforms } = vi.mocked(await import('@/hooks'));
       useAllPlatforms.mockReturnValue({
         data: [],
@@ -438,11 +438,11 @@ describe('GameFilters', () => {
       const platformsButton = screen.getByText('Platforms').closest('button')!;
       await user.click(platformsButton);
 
-      // Should show "No options available" message
-      expect(screen.getByText('No options available')).toBeInTheDocument();
+      // Should still show "Unknown" option even when platform list is empty
+      expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
 
-    it('handles undefined platforms', async () => {
+    it('handles undefined platforms (still shows Unknown option)', async () => {
       const { useAllPlatforms } = vi.mocked(await import('@/hooks'));
       useAllPlatforms.mockReturnValue({
         data: undefined,
@@ -456,8 +456,8 @@ describe('GameFilters', () => {
       const platformsButton = screen.getByText('Platforms').closest('button')!;
       await user.click(platformsButton);
 
-      // Should show "No options available" message
-      expect(screen.getByText('No options available')).toBeInTheDocument();
+      // Should still show "Unknown" option even when platform list is undefined
+      expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
 
     it('calls onFiltersChange when platform is selected', async () => {
@@ -1072,6 +1072,120 @@ describe('GameFilters', () => {
       await user.click(listButton);
       expect(onViewModeChange).toHaveBeenCalledWith('list');
       expect(onFiltersChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unknown filter option', () => {
+    it('includes Unknown option in platform filter', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
+
+      // Should include "Unknown" option
+      expect(screen.getByText('Unknown')).toBeInTheDocument();
+    });
+
+    it('includes Unknown option in storefront filter', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
+      const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
+      await user.click(storefrontsButton);
+
+      // Should include "Unknown" option
+      expect(screen.getByText('Unknown')).toBeInTheDocument();
+    });
+
+    it('sorts platform options alphabetically including Unknown', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
+
+      // Get all option labels
+      const options = screen.getAllByRole('checkbox').map(
+        (checkbox) => checkbox.closest('label')?.textContent || ''
+      );
+
+      // Verify options are sorted alphabetically
+      // Expected order: PC, PlayStation 5, Unknown, Xbox Series X
+      expect(options).toEqual(['PC', 'PlayStation 5', 'Unknown', 'Xbox Series X']);
+    });
+
+    it('sorts storefront options alphabetically including Unknown', async () => {
+      const user = userEvent.setup();
+      render(<GameFilters {...defaultProps} />);
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
+      const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
+      await user.click(storefrontsButton);
+
+      // Get all option labels
+      const options = screen.getAllByRole('checkbox').map(
+        (checkbox) => checkbox.closest('label')?.textContent || ''
+      );
+
+      // Verify options are sorted alphabetically
+      // Expected order: Epic Games Store, Steam, Unknown
+      expect(options).toEqual(['Epic Games Store', 'Steam', 'Unknown']);
+    });
+
+    it('can select Unknown platform filter', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      const platformsButton = screen.getByText('Platforms').closest('button')!;
+      await user.click(platformsButton);
+
+      const unknownLabel = screen.getByText('Unknown');
+      await user.click(unknownLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        platforms: ['unknown'],
+      });
+    });
+
+    it('can select Unknown storefront filter', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      // Click "More filters" to expand
+      const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
+      await user.click(moreFiltersButton);
+
+      const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
+      await user.click(storefrontsButton);
+
+      const unknownLabel = screen.getByText('Unknown');
+      await user.click(unknownLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        storefronts: ['unknown'],
+      });
     });
   });
 

@@ -83,8 +83,16 @@ export function GameFilters({
   const { data: tags } = useAllTags();
 
   // Convert data to MultiSelectFilter options
-  const platformOptions = platforms?.map((p) => ({ value: p.name, label: p.display_name })) ?? [];
-  const storefrontOptions = storefronts?.map((s) => ({ value: s.name, label: s.display_name })) ?? [];
+  // Add "Unknown" option and sort alphabetically
+  const platformOptions = [
+    ...(platforms?.map((p) => ({ value: p.name, label: p.display_name })) ?? []),
+    { value: 'unknown', label: 'Unknown' },
+  ].sort((a, b) => a.label.localeCompare(b.label));
+
+  const storefrontOptions = [
+    ...(storefronts?.map((s) => ({ value: s.name, label: s.display_name })) ?? []),
+    { value: 'unknown', label: 'Unknown' },
+  ].sort((a, b) => a.label.localeCompare(b.label));
   const genreOptions = filterOptions?.genres?.map((g) => ({ value: g, label: g })) ?? [];
   const gameModeOptions = filterOptions?.gameModes?.map((gm) => ({ value: gm, label: gm })) ?? [];
   const themeOptions = filterOptions?.themes?.map((t) => ({ value: t, label: t })) ?? [];
