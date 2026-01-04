@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
@@ -40,18 +41,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RefreshCw, Loader2, AlertCircle, Settings, Clock, ArrowLeft } from 'lucide-react';
-
-// Platform icons as SVG paths (matching sync-service-card)
-const PLATFORM_ICONS: Record<SyncPlatform, string> = {
-  [SyncPlatform.STEAM]:
-    'M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z',
-  [SyncPlatform.EPIC]:
-    'M3 3h18v18H3V3zm2 2v14h14V5H5zm3 3h2v8H8V8zm4 0h4v2h-4v2h3v2h-3v2h4v2H12V8z',
-  [SyncPlatform.GOG]:
-    'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-8c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z',
-  [SyncPlatform.PSN]:
-    'M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm-2 13.5v1l-1.5.5c-.5.167-1 .167-1.5 0L6 16.5v-5l1.5-.5c.5-.167 1-.167 1.5 0L10 11.5v2l-.5-.167c-.167-.056-.333-.056-.5 0L8.5 13.5v2l.5.167c.167.056.333.056.5 0l.5-.167zm4 0v-5l1.5-.5c.5-.167 1-.167 1.5 0L18 10.5v1l-1.5-.5c-.167-.056-.333-.056-.5 0l-.5.167v5l-.5.167c-.167.056-.333.056-.5 0L14 16.5zm4-3v-1l1.5-.5c.5-.167 1-.167 1.5 0l.5.167v1l-.5-.167c-.167-.056-.333-.056-.5 0L20 12.5z',
-};
+import { config as envConfig } from '@/lib/env';
 
 interface SyncDetailPageProps {
   params: Promise<{ platform: string }>;
@@ -294,9 +284,13 @@ export default function SyncDetailPage({ params }: SyncDetailPageProps) {
             <div
               className={`flex h-16 w-16 items-center justify-center rounded-lg ${platformInfo.bgColor}`}
             >
-              <svg className={`h-10 w-10 ${platformInfo.color}`} viewBox="0 0 24 24" fill="currentColor">
-                <path d={PLATFORM_ICONS[platform]} />
-              </svg>
+              <Image
+                src={`${envConfig.staticUrl}${platformInfo.iconUrl}`}
+                alt={`${platformInfo.name} icon`}
+                width={40}
+                height={40}
+                className="h-10 w-10"
+              />
             </div>
             <div>
               <CardTitle className="text-2xl">{platformInfo.name}</CardTitle>
