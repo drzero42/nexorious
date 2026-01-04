@@ -286,7 +286,7 @@ describe('SyncPage', () => {
       expect(grid?.className).toMatch(/grid/);
     });
 
-    it('handles empty configs array', () => {
+    it('handles empty configs array by showing all platforms as not configured', () => {
       mockUseSyncConfigs.mockReturnValue({
         data: {
           configs: [],
@@ -298,9 +298,19 @@ describe('SyncPage', () => {
 
       render(<SyncPage />);
 
-      expect(screen.queryByTestId('sync-card-steam')).not.toBeInTheDocument();
-      expect(screen.queryByText('About Platform Syncing')).not.toBeInTheDocument();
-      expect(screen.queryByText('Quick Links')).not.toBeInTheDocument();
+      // All supported platforms should still be shown (with placeholder configs)
+      expect(screen.getByTestId('sync-card-steam')).toBeInTheDocument();
+      expect(screen.getByTestId('sync-card-epic')).toBeInTheDocument();
+      expect(screen.getByTestId('sync-card-psn')).toBeInTheDocument();
+
+      // They should all show as Not Configured
+      expect(screen.getByTestId('platform-configured-steam')).toHaveTextContent('Not Configured');
+      expect(screen.getByTestId('platform-configured-epic')).toHaveTextContent('Not Configured');
+      expect(screen.getByTestId('platform-configured-psn')).toHaveTextContent('Not Configured');
+
+      // Info alert and Quick Links should still be shown
+      expect(screen.getByText('About Platform Syncing')).toBeInTheDocument();
+      expect(screen.getByText('Quick Links')).toBeInTheDocument();
     });
   });
 
