@@ -62,7 +62,7 @@ npm install  # Install all dependencies
 ### Project Structure
 - `backend/` - FastAPI Python backend with API routes, models, services
 - `frontend/` - Next.js 16 TypeScript frontend with React 19, Tailwind CSS, shadcn/ui, TanStack Query
-- `docs/` - PRD, task breakdown, wireframes
+- `docs/` - Project documentation, specifications, and reference guides
 - `storage/` - Runtime file storage for cover art
 
 ## Additional Commands
@@ -113,12 +113,6 @@ npm run test:ui
 - **Coverage Reports**: HTML reports in `htmlcov/` directory
 - **Database Testing**: PostgreSQL support
 
-#### CSV Import Testing
-Comprehensive test coverage (>90%) in `backend/scripts/tests/`:
-- Idempotency validation, merge strategies, decision caching
-- Platform duplicate prevention, performance testing
-- Documentation: `backend/scripts/tests/README.md`
-
 ### Frontend Testing (Vitest)
 - **Framework**: Vitest with @testing-library/react
 - **Test Types**: Component tests, hook tests, API service tests
@@ -134,9 +128,6 @@ uv run pytest --cov=app --cov-report=term-missing
 # Frontend - all must pass
 npm run check
 npm run test
-
-# CSV Import specific tests
-uv run pytest scripts/tests/ -v
 ```
 
 ### Test Conventions
@@ -148,7 +139,7 @@ uv run pytest scripts/tests/ -v
 > **Always ask questions if you are uncertain about something!**
 
 ### Essential Workflow
-1. **Planning**: Read `docs/PRD.md` before starting work
+1. **Planning**: Read `docs/PRD.md` when working on new features or if product context is unclear
 2. **Branching**: Create feature branch before starting ANY task work (see Branch Workflow below)
 3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 4. **Testing**: Run tests after ANY code changes - zero failures accepted
