@@ -67,14 +67,19 @@ npm install  # Install all dependencies
 
 ## Additional Commands
 
-### Database Management
+### Database Migrations (Alembic)
 ```bash
-# Create new migration (after model changes)
-# IMPORTANT: Claude Code should run this command when migrations are needed
-# DO NOT write migration files manually - always use autogenerate
-uv run alembic revision --autogenerate -m "description of changes"
+# Apply pending migrations
+uv run alembic upgrade head
 
-# Alternative backend server start
+# Generate new migration after model changes
+uv run alembic revision --autogenerate -m "description of changes"
+```
+
+**IMPORTANT**: Never write migration files manually. Always use `--autogenerate` to generate migrations from model changes. Claude must run the autogenerate command, not create migration files directly.
+
+### Alternative Server Start
+```bash
 uv run uvicorn app.main:app --reload
 ```
 
@@ -165,7 +170,6 @@ uv run pytest scripts/tests/ -v
 ### Code Reference Documents
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
-- **Alembic Migrations**: Always read `docs/alembic-migrations-guide.md` before creating or modifying database migrations
 
 ### Required After Code Changes
 
