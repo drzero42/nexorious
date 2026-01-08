@@ -6,7 +6,7 @@ The Game Collection Management Service is a self-hostable web application design
 
 ## Product Vision
 
-To create the definitive self-hosted solution for personal game collection management that seamlessly integrates with existing gaming platforms while providing powerful organization, tracking, and discovery features.
+To create the definitive self-hosted solution for personal game collection management that automatically syncs with gaming storefronts to give users a unified view of their digital libraries, with powerful backlog management, progress tracking, and organization features.
 
 ## Target Users
 
@@ -16,11 +16,11 @@ To create the definitive self-hosted solution for personal game collection manag
 
 ## Core Value Propositions
 
-1. **Unified Collection View**: Consolidate games from all platforms in one place
-2. **Progress Tracking**: Monitor gaming progress and completion status
-3. **Self-Hosted Privacy**: Complete control over personal gaming data
-4. **Storefront Integration**: Automatic import from Steam and CSV sources
-5. **Smart Organization**: Advanced tagging, filtering, and bulk operations
+1. **Automatic Storefront Sync**: Connect Steam, Epic, PlayStation, and more - your games appear automatically
+2. **Unified Collection View**: See all your games across every platform and storefront in one place
+3. **Backlog Management**: Know what to play next and identify games you'll never touch
+4. **Progress Tracking**: Track completion status from "Not Started" to "Dominated"
+5. **Self-Hosted Privacy**: Complete control over your gaming data
 
 ## Success Metrics
 
@@ -393,94 +393,96 @@ To create the definitive self-hosted solution for personal game collection manag
   - All system configuration requires admin privileges
   - Configuration changes take effect immediately
 
-### Phase 2: Data Integration & Import
+### Phase 2: Storefront Sync
 
-#### 2.1 CSV Import
+#### 2.1 Sync Architecture
+**Priority**: P0 (Critical)
+- **User Story**: As a user, I want to connect my gaming accounts and have my games automatically appear in Nexorious
+- **Requirements**:
+  - Background worker system using NATS for job coordination
+  - Per-user storefront configuration and credentials
+  - Automatic IGDB matching for synced games
+  - Manual matching interface for unmatched games
+  - Ignore/skip functionality for unwanted games
+  - Re-sync capability to pull new purchases
+- **Acceptance Criteria**:
+  - Users can connect multiple storefronts
+  - Games are automatically matched with IGDB entries
+  - Unmatched games can be manually matched or ignored
+  - Sync status is clearly visible to users
+  - Re-authentication prompts when credentials expire
+
+#### 2.2 Steam Sync
 **Priority**: P0 (Critical) - **IMPLEMENTED**
-- **User Story**: As a user, I want to import my existing game collection from CSV so I don't have to manually enter everything
-- **Requirements**:
-  - Support Darkadia CSV export format (implemented)
-  - Generic CSV import with field mapping (future enhancement)
-  - Validation and error handling for import data (implemented)
-  - Progress tracking during import (implemented)
+- **User Story**: As a user, I want my Steam library automatically synced to Nexorious
+- **Integration**: Steam Web API
+- **Platform/Storefront**: PC (Windows) / Steam
+- **Features**:
+  - Automatic library import via background worker
+  - IGDB matching with manual override capability
+  - Ignore/un-ignore workflow for unwanted games
+  - Categorization: Matched, Unmatched, Ignored, In Sync
 - **Acceptance Criteria**:
-  - CSV files are parsed correctly with proper error handling
-  - Users can map CSV columns to database fields
-  - Import progress is shown to user
-  - Failed imports provide clear error messages
+  - Steam configuration required before sync is available
+  - Games properly matched with IGDB entries
+  - Platform/storefront associations correctly set
 
-#### 2.2 Steam Games Import & Sync
-**Priority**: P1 (High) - **IMPLEMENTED**
-- **User Story**: As a user, I want to import and sync my Steam games into my Nexorious collection so I can review and selectively add games from my Steam library while maintaining control over what gets imported
-
-##### 2.2.1 Steam Games Database Architecture
-- **Steam Games Table**: Dedicated `steam_games` table for importing and processing games from a user's Steam account before syncing to main collection
-- **Table Structure**:
-  - UUID (primary key)
-  - User ID (foreign key)
-  - Steam AppID (from Steam Web API)
-  - Game name (from Steam Web API)
-  - IGDB ID (populated after matching)
-  - Game ID (reference to main games table when synced)
-  - Ignored (boolean, default=False)
-- **Matching Status**: Games with IGDB ID are considered matched, games with Game ID are synced to collection
-
-##### 2.2.2 Steam Games Backend Processing
-- **Background Task Endpoint**: Backend endpoint to start background task for importing Steam library into steam_games table
-- **Steam Web API Integration**: Import complete Steam library and populate table using Steam AppID for deduplication
-- **IGDB Matching**: Backend logic to match Steam games with IGDB entries for metadata enhancement
-- **Collection Sync**: Unified backend logic to synchronize all matched Steam games (not ignored) with main collection, ensuring proper game table entries, user_games associations, and Steam platform/storefront relationships
-- **Backend-First Approach**: Implement as much functionality as possible in backend rather than frontend
-
-##### 2.2.3 Steam Games Frontend Interface
-- **Steam Games Page**: Single dedicated page for managing Steam library import and sync workflow (only visible when user has valid Steam Configuration)
-- **Menu Integration**: Steam Games menu item only appears when user has configured Steam settings
-- **Page Sections**:
-  - **Needs Attention**: Steam games awaiting review or action before being imported to collection
-  - **In Sync**: Steam games successfully imported and synced to main collection
-- **Simple Refresh**: Manual refresh button at top of page (no polling or WebSockets)
-- **Steam Configuration Retention**: Keep existing Steam Configuration functionality in settings page
-
-##### 2.2.4 Needs Attention Section Management
-- **Matched Table**: Steam games with IGDB ID ready for import to collection
-  - Import button to add games to main collection with Steam platform/storefront associations
-  - Search and choose widget to allow users to change IGDB match if incorrect
-  - Ignore button to mark games as ignored (won't be imported)
-- **Unmatched Table**: Steam games without IGDB ID that need matching
-  - Search and choose widget for IGDB game matching
-  - Ignore button to mark games as ignored (won't be imported)
-  - Games move to Matched table after successful IGDB matching
-- **Ignored Table**: Steam games marked as ignored that won't be imported
-  - Un-ignore button to move games back to appropriate section based on their data
-- **Bulk Operations**:
-  - Import button at top: Pull Steam library and add new games to steam_games table (use Steam AppID for deduplication)
-  - Sync button: Process all matched games (not ignored) to ensure they exist in main collection with proper Steam platform/storefront associations
-
-##### 2.2.5 In Sync Section Display
-- **Imported Games Table**: Steam games that have been successfully imported to main collection (Steam AppID, IGDB ID, Game ID all populated)
-- **Display Elements**: Thumbnail cover art, game name, Steam ID, IGDB ID, import status
-- **Sync Functionality**: Sync button ensures all matched games are properly synchronized with main collection
-
-- **Requirements**:
-  - Steam Web API integration for library import with rate limiting and error handling
-  - Dedicated steam_games table with proper indexing for performance
-  - Backend endpoints for Steam library import, IGDB matching, and collection import
-  - Frontend Steam Games page with organized sections and manual refresh capability
-  - IGDB search widget for manual game matching
-  - Steam Configuration integration (retain existing settings functionality)
-  - Ignore/un-ignore workflow for games user doesn't want to import
-
+#### 2.3 Epic Games Store Sync
+**Priority**: P0 (Critical) - **IMPLEMENTED**
+- **User Story**: As a user, I want my Epic Games library automatically synced to Nexorious
+- **Integration**: Device code OAuth via legendary
+- **Platform/Storefront**: PC (Windows) / Epic Games Store
+- **Features**:
+  - Multi-user config isolation via XDG_CONFIG_HOME
+  - Auth expiration handling and re-authentication support
+  - IGDB matching with manual override capability
 - **Acceptance Criteria**:
-  - Steam Games page only accessible to users with valid Steam configuration
-  - Import button successfully pulls Steam library and populates steam_games table
-  - Games are properly categorized into Matched, Unmatched, and Ignored sections
-  - Manual IGDB matching moves games from Unmatched to Matched
-  - Import operations properly add Steam games to main user collection with Steam platform/storefront
-  - Sync maintains proper platform associations for all matched games in main collection
-  - Ignore functionality works bidirectionally (ignore → un-ignore)
-  - All operations work without real-time updates (manual refresh only)
+  - Device code authentication flow works smoothly
+  - Games properly matched with IGDB entries
+  - Re-authentication prompts when tokens expire
 
-#### 2.3 IGDB Metadata Integration
+#### 2.4 PlayStation Network Sync
+**Priority**: P0 (Critical) - **IMPLEMENTED**
+- **User Story**: As a user, I want my PlayStation library automatically synced to Nexorious
+- **Integration**: NPSSO token authentication via PSNAWP library
+- **Platform/Storefront**: PlayStation 4, PlayStation 5 / PlayStation Store
+- **Features**:
+  - Multi-platform support (PS4/PS5)
+  - Token expiration handling
+  - IGDB matching with manual override capability
+- **Acceptance Criteria**:
+  - NPSSO token authentication works correctly
+  - Games properly categorized by platform (PS4 vs PS5)
+  - Platform/storefront associations correctly set
+
+#### 2.5 GOG Sync
+**Priority**: P1 (High) - **PLANNED**
+- **User Story**: As a user, I want my GOG library automatically synced to Nexorious
+- **Integration**: lgogdownloader CLI tool
+- **Platform/Storefront**: PC (Windows) / GOG
+- **Acceptance Criteria**:
+  - GOG authentication flow works smoothly
+  - Games properly matched with IGDB entries
+
+#### 2.6 Xbox Sync
+**Priority**: P1 (High) - **PLANNED**
+- **User Story**: As a user, I want my Xbox library automatically synced to Nexorious
+- **Integration**: xbox-webapi-python library
+- **Platform/Storefront**: Xbox Series X/S, Xbox One / Microsoft Store
+- **Acceptance Criteria**:
+  - Xbox authentication flow works smoothly
+  - Games properly matched with IGDB entries
+  - Multi-platform support (Series X/S, One)
+
+#### 2.7 Humble Bundle Sync
+**Priority**: P2 (Medium) - **PLANNED**
+- **User Story**: As a user, I want my Humble Bundle library automatically synced to Nexorious
+- **Platform/Storefront**: PC (Windows) / Humble Bundle
+- **Acceptance Criteria**:
+  - Humble Bundle authentication works correctly
+  - Games properly matched with IGDB entries
+
+#### 2.8 IGDB Metadata Integration
 **Priority**: P1 (High)
 - **User Story**: As a user, I want game metadata to be automatically populated so I don't have to enter descriptions and cover art manually
 - **Requirements**:
@@ -499,7 +501,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - IGDB links are functional using game slug while displaying game ID in frontend
   - Game slug is retrieved and stored during metadata population
 
-#### 2.4 IGDB Game Data Update System
+#### 2.9 IGDB Game Data Update System
 **Priority**: P1 (High)
 - **User Story**: As a user, I want games imported from IGDB to stay up-to-date with the latest information while maintaining my personal data, and as an admin, I want to control when and how this data is refreshed across the system
 - **Backend Requirements**:
@@ -531,9 +533,50 @@ To create the definitive self-hosted solution for personal game collection manag
   - Batch update operations work efficiently for large collections without data loss
   - IGDB data updates maintain referential integrity and do not break existing user associations
 
-### Phase 3: Discovery & Organization
+### Phase 3: Backlog Management
 
-#### 3.1 Advanced Search & Filtering
+#### 3.1 Backlog View
+**Priority**: P1 (High)
+- **User Story**: As a user, I want to see all my unfinished games so I can decide what to focus on
+- **Requirements**:
+  - View showing games not completed/mastered/dominated and not shelved
+  - Filtering by platform, genre, time-to-beat
+  - Sorting options (recently added, shortest, oldest, etc.)
+  - Quick actions to shelve or drop games
+- **Acceptance Criteria**:
+  - Backlog view accurately shows unfinished games
+  - Filters and sorting work correctly
+  - Quick actions update game status immediately
+
+#### 3.2 Next Up / Choose Next Game
+**Priority**: P1 (High)
+- **User Story**: As a user, I want help deciding what game to play next based on my preferences
+- **Requirements**:
+  - Filter by genre, platform, estimated play time
+  - Consider wishlist games (for purchase decisions)
+  - Time-to-beat integration from IGDB
+  - Randomizer option for the indecisive
+  - "Start playing" action that changes status to In Progress
+- **Acceptance Criteria**:
+  - Filtering produces relevant game suggestions
+  - Time-to-beat data is displayed and filterable
+  - "Start playing" updates status correctly
+
+#### 3.3 Collection Cleanup
+**Priority**: P2 (Medium)
+- **User Story**: As a user, I want to identify games I'll never play so I can clean up my backlog
+- **Requirements**:
+  - Surface games that have been "Not Started" for extended periods
+  - Bulk "Drop" or "Shelve" operations
+  - Statistics on backlog size and growth over time
+- **Acceptance Criteria**:
+  - Long-untouched games are identified
+  - Bulk operations work correctly
+  - Backlog statistics are accurate
+
+### Phase 4: Discovery & Organization
+
+#### 4.1 Advanced Search & Filtering
 **Priority**: P1 (High) - **PARTIALLY IMPLEMENTED**
 - **User Story**: As a user, I want advanced search and filtering capabilities so I can quickly find specific games in large collections using complex criteria
 - **Requirements**:
@@ -556,7 +599,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Bulk operations can be performed on filtered results efficiently
   - Search autocomplete provides relevant suggestions as user types
 
-#### 3.2 Wishlist Management
+#### 4.2 Wishlist Management
 **Priority**: P2 (Medium) - **IMPLEMENTED**
 - **User Story**: As a user, I want to maintain a wishlist so I can track games I want to purchase
 - **Requirements**:
@@ -576,7 +619,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Games can be easily moved from wishlist to owned collection
   - External links open in new tabs/windows
 
-#### 3.3 Statistics Dashboard
+#### 4.3 Statistics Dashboard
 **Priority**: P2 (Medium) - **NOT IMPLEMENTED**
 - **User Story**: As a user, I want to see statistics about my collection so I can understand my gaming habits
 - **Requirements**:
@@ -591,9 +634,9 @@ To create the definitive self-hosted solution for personal game collection manag
   - Charts are responsive and mobile-friendly
   - "Pile of Shame" metric is prominently displayed with actionable insights
 
-### Phase 4: User Experience & Interface
+### Phase 5: User Experience & Interface
 
-#### 4.1 Responsive Web Interface
+#### 5.1 Responsive Web Interface
 **Priority**: P0 (Critical)
 - **User Story**: As a user, I want to access my collection from any device so I can manage it anywhere
 - **Requirements**:
@@ -603,7 +646,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Interface adapts to different screen sizes
   - Touch interactions work smoothly on mobile
 
-#### 4.2 Keyboard Shortcuts
+#### 5.2 Keyboard Shortcuts
 **Priority**: P2 (Medium)
 - **User Story**: As a power user, I want keyboard shortcuts so I can navigate quickly
 - **Requirements**:
@@ -616,9 +659,9 @@ To create the definitive self-hosted solution for personal game collection manag
   - Help overlay shows available shortcuts
   - Shortcuts don't conflict with browser defaults
 
-### Phase 5: Self-Hosting & Deployment
+### Phase 6: Self-Hosting & Deployment
 
-#### 5.1 Container Deployment
+#### 6.1 Container Deployment
 **Priority**: P0 (Critical) - **PENDING**
 - **User Story**: As a system administrator, I want to deploy the service using containers so it's easy to manage
 - **Requirements**:
@@ -632,35 +675,29 @@ To create the definitive self-hosted solution for personal game collection manag
   - Health checks report service status accurately
   - Logs are structured and useful for debugging
 
-#### 5.2 Database Support
+#### 6.2 Database Support
 **Priority**: P0 (Critical) - **IMPLEMENTED**
-- **User Story**: As a user, I want flexible database options so I can choose what works best for my setup
+- **User Story**: As a user, I want reliable database operations for my collection data
 - **Requirements**:
-  - PostgreSQL
+  - PostgreSQL database
   - SQLModel ORM for type-safe database operations
   - Alembic for automatic database migrations
   - Automatic timestamp management via SQLModel for created_at and updated_at fields
-  - Backup and restore capabilities
 - **Implementation Details**:
-  - SQLModel will handle automatic population of created_at timestamps on record creation
-  - SQLModel will handle automatic updates of updated_at timestamps on record modification
-  - Database-agnostic schema design avoiding PostgreSQL-specific features
+  - SQLModel handles automatic population of created_at timestamps on record creation
+  - SQLModel handles automatic updates of updated_at timestamps on record modification
 - **Acceptance Criteria**:
-  - Both database types work without configuration changes
-  - SQLModel provides consistent API across database types
+  - SQLModel provides consistent API
   - Alembic migrations run automatically on startup
   - Timestamp fields are automatically managed by the application layer
-  - Backup tools preserve all user data
-  - Restore process is reliable and documented
 
-#### 5.2.1 Automatic Database Migrations
+#### 6.2.1 Automatic Database Migrations
 **Priority**: P0 (Critical)
 - **User Story**: As a user deploying the application, I want database migrations to run automatically at startup so I don't need to manually execute migration commands
 - **Requirements**:
   - Backend automatically runs pending Alembic migrations during application startup
   - Migration process is logged with clear status messages
   - Application startup fails gracefully if migrations fail
-  - Migration process works for PostgreSQL 
   - No manual intervention required for database schema updates
 - **Implementation Details**:
   - Replace `create_db_and_tables()` with `run_alembic_migrations()` in startup lifespan
@@ -672,7 +709,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Migration failures prevent application startup with clear error messages
   - No manual migration commands required for normal deployment workflow
 
-#### 5.3 Kubernetes Support
+#### 6.3 Kubernetes Support
 **Priority**: P0 (Critical)
 - **User Story**: As a DevOps engineer, I want to deploy on Kubernetes so I can scale and manage the service in my cluster
 - **Requirements**:
@@ -686,7 +723,7 @@ To create the definitive self-hosted solution for personal game collection manag
   - Data persists across pod restarts
   - Configuration is externalized via ConfigMaps
 
-#### 5.4 Testing & Quality Assurance
+#### 6.4 Testing & Quality Assurance
 **Priority**: P0 (Critical)
 - **User Story**: As a developer, I want comprehensive testing to ensure the application works correctly and reliably
 - **Backend Testing Requirements**:
@@ -716,41 +753,65 @@ To create the definitive self-hosted solution for personal game collection manag
   - CI/CD pipeline blocks deployments if tests fail
   - All API endpoints have corresponding integration tests
 
-### Phase 6: Advanced Features
-
-#### 6.1 Enhanced Storefront Integration
-**Priority**: P2 (Medium) - **PARTIALLY IMPLEMENTED**
-- **User Story**: As a user, I want integration with more storefronts so I can import all my games automatically
-
-**Implemented:**
-- ✅ Epic Games Store integration
-  - Server-side sync using legendary CLI (GPL3 licensed, external tool)
-  - Device code OAuth authentication flow
-  - Library import with automatic IGDB matching
-  - Multi-user config isolation via XDG_CONFIG_HOME
-  - Auth expiration handling and re-authentication support
-  - Platform/storefront mapping: pc-windows/epic
-- ✅ PlayStation Network (PSN) integration
-  - Backend implementation complete with PSNAWP library
-  - Frontend implementation complete
-  - NPSSO token authentication
-  - PS4/PS5 game sync with multi-platform support
-  - Token expiration handling
-  - Platform/storefront mapping: playstation-4/psn, playstation-5/psn
-
-**Pending:**
-- GOG integration
-- Xbox Marketplace integration
-
+#### 6.5 Backup System
+**Priority**: P1 (High)
+- **User Story**: As a user, I want my collection data backed up automatically
+- **Requirements**:
+  - Scheduled backups via NATS worker
+  - Export collection to Nexorious-native format
+  - User-triggered manual backups
+  - Restore functionality from backup files
+  - Backup retention policies
 - **Acceptance Criteria**:
-  - Each storefront integration imports library correctly
-  - Authentication flows work smoothly
-  - Sync can be triggered manually or automatically
-  - Error handling provides clear user feedback
+  - Backups run on schedule without user intervention
+  - Manual backup triggers work correctly
+  - Restore process recovers data accurately
+  - Old backups are cleaned up per retention policy
 
-### Phase 7: Performance Optimization
+### Phase 7: Future Enhancements
 
-#### 7.1 IGDB Search Performance Optimization
+#### 7.1 Achievements & Trophies Tracking
+**Priority**: P3 (Low)
+- **User Story**: As a user, I want to see my achievement progress for games that support it
+- **Requirements**:
+  - Pull achievement data from supported storefronts (Steam initially)
+  - Display completion percentage per game
+  - Optional detailed achievement lists
+  - Integration with "Dominated" play status (100% achievements)
+- **Acceptance Criteria**:
+  - Achievement data syncs from supported storefronts
+  - Completion percentage displays on game cards
+  - Achievement progress is tracked over time
+
+#### 7.2 Notifications
+**Priority**: P3 (Low)
+- **User Story**: As a user, I want to be notified about important events in my collection
+- **Requirements**:
+  - Support multiple notification services (Telegram, Pushover, etc.)
+  - Use notification aggregation library to minimize code
+  - Configurable notification preferences per event type
+  - Event types: re-authentication needed, new games synced, sync failures
+- **Acceptance Criteria**:
+  - Users can configure notification destinations
+  - Notifications are sent for configured events
+  - Users can enable/disable specific notification types
+
+#### 7.3 Collection Anomaly Detection
+**Priority**: P3 (Low)
+- **User Story**: As a user, I want to identify potential data issues in my collection
+- **Requirements**:
+  - Flag games with platform/storefront combinations not in IGDB
+  - Identify potential duplicates or mismatches
+  - Suggest corrections based on IGDB data
+  - User-facing view for reviewing and fixing anomalies in their own collection
+- **Acceptance Criteria**:
+  - Anomalies are automatically detected
+  - Users can review flagged items
+  - Corrections can be applied easily
+
+### Phase 8: Performance Optimization
+
+#### 8.1 IGDB Search Performance Optimization
 **Priority**: P2 (Medium)
 - **User Story**: As a user, I want faster search results when looking for games to add so I can quickly find and add games to my collection
 - **Performance Issue**: Current IGDB search fetches time-to-beat data for every search result, requiring additional API calls that slow down search responses and consume IGDB API quota unnecessarily
@@ -764,7 +825,7 @@ To create the definitive self-hosted solution for personal game collection manag
 - **Technical Approach**:
   - Backend: Remove `_get_time_to_beat_data()` calls from `IGDBService.search_games()` method
   - Backend: Keep time-to-beat fetching in `get_game_by_id()` for actual game imports
-  - Frontend: Remove time-to-beat display from search result cards in `GameConfirmStep.svelte`
+  - Frontend: Remove time-to-beat display from search result cards
   - Frontend: Maintain time-to-beat display in import confirmation and game detail views
   - Update API schemas to reflect optional time-to-beat data in search results
 - **Success Criteria**:
@@ -786,42 +847,40 @@ To create the definitive self-hosted solution for personal game collection manag
 - Bulk tag operations across multiple games
 - Tag-based filtering and organization
 
-### Darkadia CSV Integration
-- Complete import system for Darkadia CSV exports
-- Game matching and platform resolution
-- Batch processing with progress tracking
-
 ### Logo Management
 - Official platform and storefront logos
 - Admin logo upload and management system
 - Legal attribution and compliance tracking
 
 ### Security Framework
-- CSV sanitization and validation
 - File upload security measures
-- Memory-safe processing for large imports
-
-### Platform Resolution Service
-- Dynamic platform mapping during imports
-- Fuzzy matching for unknown platforms
-- User-guided platform assignment workflow
+- Memory-safe processing for large operations
 
 ## Technical Architecture
 
 ### Backend
 - **FastAPI** (Python) with SQLModel ORM
-- **PostgreSQL**
+- **PostgreSQL** database
 - **JWT authentication** with refresh tokens
-- **IGDB API** integration for game metadata
+- **IGDB API** integration for all game metadata
+- **NATS** for job queue and worker coordination
+
+### Background Workers
+- Storefront sync jobs (Steam, Epic, PSN, GOG, Xbox)
+- IGDB metadata refresh and maintenance
+- Import/export operations
+- Scheduled backups
+- Maintenance jobs (cleanup, orphaned data)
 
 ### Frontend
-- **SvelteKit** with TypeScript and Svelte 5 runes
+- **Next.js 16** with React 19 and TypeScript
 - **Tailwind CSS** for styling
-- **Entity-based state management** with optimistic updates
+- **shadcn/ui** for accessible components
+- **TanStack Query** for server state
 - **TipTap** rich text editor for notes
 
 ### Deployment
-- **Docker** containers with Docker Compose (pending)
+- **Docker** containers with Docker Compose
 - **Kubernetes** support with Helm charts (future)
 - Comprehensive testing framework (implemented)
 
@@ -855,8 +914,8 @@ To create the definitive self-hosted solution for personal game collection manag
 ### User Experience Success
 - Initial admin setup completes successfully on first run
 - Admin-created users can login with username successfully on first attempt
-- Users can add their first game within 2 minutes
-- CSV import works on first try for standard formats
+- Users can connect a storefront and sync games within 5 minutes
+- Storefront sync successfully imports games on first try
 - Core features are discoverable without documentation
 - Interface works seamlessly on desktop and mobile
 - Admin interface provides clear user management capabilities
@@ -866,8 +925,11 @@ To create the definitive self-hosted solution for personal game collection manag
 ### A. API Integration Details
 - Steam Web API requirements and limitations
 - IGDB API authentication and rate limits
-- Epic Games Store integration possibilities
-- PlayStation Store and Xbox Marketplace API availability
+- Epic Games Store integration via legendary
+- PlayStation Network integration via PSNAWP
+- GOG integration via lgogdownloader (planned)
+- Xbox integration via xbox-webapi-python (planned)
+- Humble Bundle integration (planned)
 
 ### B. Database Schema Design
 - Core entity relationships
@@ -878,7 +940,7 @@ To create the definitive self-hosted solution for personal game collection manag
 #### Database Schema
 
 Complete database schema and models are implemented using SQLModel and can be found in the codebase at:
-- `backend/nexorious/models/` - SQLModel definitions
+- `backend/app/models/` - SQLModel definitions
 - `backend/alembic/versions/` - Database migration files
 
 Key architectural decisions:
