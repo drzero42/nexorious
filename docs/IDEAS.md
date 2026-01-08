@@ -76,8 +76,6 @@ A function to sort out missing platform/storefronts for games may be a good idea
 - Icons for Mac do not show up
 - Tooltip when pointing to platform on game cards should also tell what storefront it is on
 
-## Update PRD to match what Nexorious is and should be now
-
 ## Add maintenance function to identify weirdness
 Some games in the database might have data that seems weird. We should have a function that identifies "smells". This is things like games with Platform/Storefront combinations that we don't have mapped. Ie. PS3 game with Humble Bundle as the storefront. It is not necessarily wrong, but the function should show this so the user can potentially fix it.
 
