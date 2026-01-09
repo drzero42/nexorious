@@ -82,3 +82,14 @@ Some games in the database might have data that seems weird. We should have a fu
 ## Choices for sync sources
 Any skipped games for a sync source should be changeable by the user.
 Game mappings should also be changeable so if a user makes a wrong choice for a game, it can be undone.
+
+## Ownership status should be part of UserGamePlatform
+Since ownership is tied to the storefront, we need to change our data model a bit. We can have access to a game on PSN through a PS Plus Extra subscription, which means the ownership status is "subscription", while we also own a game on Steam which means the status there is "owned" because it won't just be taken away.
+
+## PS Plus Extra and other subscriptions
+Requires ownership status per storefront!
+Can we identify which games are available as part of a subscription and make sure to set the ownership to subscription rather than owned?
+
+## Sync to remove games
+Requires ownership status per storefront!
+During sync, we also need to go through games in our database which have IDs for the sync source as well as ownership status set to "subscription" and check that they still are available on the source. If they are not, the assocation must be removed. This is done so games that are no longer available, like PS Plus Extra games do not show up as owned.
