@@ -23,7 +23,8 @@ import {
   useRemovePlatformFromUserGame,
   gameKeys,
 } from './use-games';
-import type { PlayStatus, OwnershipStatus, GameId } from '@/types';
+import { OwnershipStatus } from '@/types';
+import type { PlayStatus, GameId } from '@/types';
 
 const API_URL = '/api';
 
@@ -82,6 +83,8 @@ const mockUserGamePlatformApi = {
   store_game_id: '123456',
   store_url: 'https://store.steampowered.com/app/123456',
   is_available: true,
+  hours_played: 50,
+  ownership_status: OwnershipStatus.OWNED,
   original_platform_name: null,
   created_at: '2024-01-01T00:00:00Z',
 };
@@ -100,13 +103,11 @@ const mockTagApi = {
 const mockUserGameApi = {
   id: 'ug-12345678-1234-4123-8123-123456789012',
   game: mockGameApi,
-  ownership_status: 'owned' as OwnershipStatus,
   personal_rating: 9,
   is_loved: true,
   play_status: 'completed' as PlayStatus,
   hours_played: 50,
   personal_notes: 'Great game!',
-  acquired_date: '2024-01-01',
   platforms: [mockUserGamePlatformApi],
   tags: [mockTagApi],
   created_at: '2024-01-01T00:00:00Z',
@@ -570,7 +571,6 @@ describe('use-games hooks', () => {
       await act(async () => {
         await result.current.mutateAsync({
           gameId: 12345 as GameId,
-          ownershipStatus: 'owned' as OwnershipStatus,
           playStatus: 'not_started' as PlayStatus,
         });
       });
@@ -580,7 +580,7 @@ describe('use-games hooks', () => {
       });
 
       expect(result.current.data?.game.title).toBe('Test Game');
-      expect(result.current.data?.ownership_status).toBe('owned');
+      expect(result.current.data?.platforms[0].ownership_status).toBe(OwnershipStatus.OWNED);
     });
 
     it('handles creation error', async () => {

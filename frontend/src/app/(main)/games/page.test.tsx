@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GamesPage from "./page";
-import type { UserGame, PlayStatus, OwnershipStatus, GameId, UserGameId } from "@/types";
+import { OwnershipStatus } from "@/types";
+import type { UserGame, PlayStatus, GameId, UserGameId } from "@/types";
 
 // Mock useUserGames and useUserGameIds hooks
 const mockRefetch = vi.fn();
@@ -224,12 +225,28 @@ const createMockGame = (id: string, title: string): UserGame => ({
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
   },
-  ownership_status: "owned" as OwnershipStatus,
   personal_rating: 8,
   is_loved: false,
   play_status: "completed" as PlayStatus,
   hours_played: 25,
-  platforms: [],
+  platforms: [
+    {
+      id: "ugp-1",
+      platform: "pc",
+      platform_details: {
+        name: "pc",
+        display_name: "PC",
+        is_active: true,
+        source: "system",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+      },
+      is_available: true,
+      hours_played: 25,
+      ownership_status: OwnershipStatus.OWNED,
+      created_at: "2024-01-01T00:00:00Z",
+    },
+  ],
   tags: [],
   created_at: "2024-01-01T00:00:00Z",
   updated_at: "2024-01-01T00:00:00Z",

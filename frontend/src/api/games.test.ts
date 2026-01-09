@@ -68,6 +68,8 @@ const mockUserGamePlatformApi = {
   store_game_id: 'steam-12345',
   store_url: 'https://store.steampowered.com/app/12345',
   is_available: true,
+  hours_played: 50,
+  ownership_status: OwnershipStatus.OWNED,
   original_platform_name: null,
   created_at: '2024-01-01T00:00:00Z',
 };
@@ -86,13 +88,11 @@ const mockTagApi = {
 const mockUserGameApi = {
   id: 'user-game-123',
   game: mockGameApi,
-  ownership_status: OwnershipStatus.OWNED,
   personal_rating: 9,
   is_loved: true,
   play_status: PlayStatus.COMPLETED,
   hours_played: 50,
   personal_notes: 'Great game!',
-  acquired_date: '2024-01-01',
   platforms: [mockUserGamePlatformApi],
   tags: [mockTagApi],
   created_at: '2024-01-01T00:00:00Z',
@@ -158,9 +158,9 @@ describe('games.ts', () => {
       expect(game.id).toBe('user-game-123');
       expect(game.game.id).toBe(12345);
       expect(game.game.title).toBe('Test Game');
-      expect(game.ownership_status).toBe(OwnershipStatus.OWNED);
       expect(game.is_loved).toBe(true);
       expect(game.platforms).toHaveLength(1);
+      expect(game.platforms[0].ownership_status).toBe(OwnershipStatus.OWNED);
       expect(game.tags).toHaveLength(1);
     });
 
@@ -400,7 +400,6 @@ describe('games.ts', () => {
         http.post(`${API_URL}/user-games/`, async ({ request }) => {
           const body = (await request.json()) as Record<string, unknown>;
           expect(body.game_id).toBe(12345);
-          expect(body.ownership_status).toBe(OwnershipStatus.OWNED);
           expect(body.play_status).toBe(PlayStatus.NOT_STARTED);
 
           return HttpResponse.json(mockUserGameApi);
@@ -409,7 +408,6 @@ describe('games.ts', () => {
 
       const result = await createUserGame({
         gameId: 12345 as GameId,
-        ownershipStatus: OwnershipStatus.OWNED,
         playStatus: PlayStatus.NOT_STARTED,
       });
 
@@ -457,7 +455,6 @@ describe('games.ts', () => {
           expect(body.is_loved).toBe(true);
           expect(body.hours_played).toBe(10);
           expect(body.personal_notes).toBe('Starting!');
-          expect(body.acquired_date).toBe('2024-06-01');
 
           return HttpResponse.json(mockUserGameApi);
         })
@@ -469,7 +466,36 @@ describe('games.ts', () => {
         isLoved: true,
         hoursPlayed: 10,
         personalNotes: 'Starting!',
-        acquiredDate: '2024-06-01',
+      });
+    });
+
+    it('creates user game with platform-level ownership status and acquired date', async () => {
+      server.use(
+        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+          const body = (await request.json()) as {
+            platforms?: Array<{
+              platform: string;
+              ownership_status?: string;
+              acquired_date?: string;
+            }>;
+          };
+          expect(body.platforms).toHaveLength(1);
+          expect(body.platforms?.[0].ownership_status).toBe(OwnershipStatus.OWNED);
+          expect(body.platforms?.[0].acquired_date).toBe('2024-06-01');
+
+          return HttpResponse.json(mockUserGameApi);
+        })
+      );
+
+      await createUserGame({
+        gameId: 12345 as GameId,
+        platforms: [
+          {
+            platform: 'pc',
+            ownershipStatus: OwnershipStatus.OWNED,
+            acquiredDate: '2024-06-01',
+          },
+        ],
       });
     });
   });

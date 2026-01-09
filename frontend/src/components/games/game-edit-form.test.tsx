@@ -25,6 +25,20 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// Mock hooks
+vi.mock('@/hooks', () => ({
+  useUpdateUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAddPlatformToUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useRemovePlatformFromUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useUpdatePlatformAssociation: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAssignTagsToGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useRemoveTagsFromGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAllPlatforms: () => ({ data: [], isLoading: false }),
+  useAllTags: () => ({ data: [], isLoading: false }),
+  useCreateOrGetTag: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useSyncConfig: () => ({ data: null }),
+}));
+
 const mockGame: UserGame = {
   id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' as UserGameId,
   game: {
@@ -119,10 +133,11 @@ describe('GameEditForm', () => {
   });
 
   it('renders acquired date input per platform with current value', () => {
-    render(<GameEditForm game={mockGame} />);
+    const { container } = render(<GameEditForm game={mockGame} />);
 
     // Acquired date is now per platform, find the date input in the platform section
-    const dateInput = screen.getByLabelText('Acquired');
+    // The label isn't connected with htmlFor, so find via input type
+    const dateInput = container.querySelector('input[type="date"]');
     expect(dateInput).toHaveValue('2024-01-15');
   });
 

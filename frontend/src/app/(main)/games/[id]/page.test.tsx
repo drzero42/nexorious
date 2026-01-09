@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GameDetailPage from "./page";
+import {
+  OwnershipStatus,
+} from "@/types";
 import type {
   UserGame,
   PlayStatus,
-  OwnershipStatus,
   GameId,
   UserGameId,
   UserGamePlatform,
@@ -110,13 +112,11 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides.game,
   },
-  ownership_status: "owned" as OwnershipStatus,
   personal_rating: 9,
   is_loved: true,
   play_status: "completed" as PlayStatus,
   hours_played: 45,
   personal_notes: "<p>Amazing game!</p>",
-  acquired_date: "2023-06-01",
   platforms: [
     {
       id: "platform-1",
@@ -125,6 +125,9 @@ const createMockUserGame = (overrides: Partial<UserGame> = {}): UserGame => ({
       storefront: "eshop",
       storefront_details: createMockStorefront({ name: "eshop", display_name: "Nintendo eShop" }),
       is_available: true,
+      hours_played: 45,
+      ownership_status: OwnershipStatus.OWNED,
+      acquired_date: "2023-06-01",
       created_at: "2024-01-01T00:00:00Z",
     } as UserGamePlatform,
   ],
@@ -480,14 +483,28 @@ describe("GameDetailPage", () => {
 
   describe("ownership status display", () => {
     it.each([
-      ["owned", "Owned"],
-      ["borrowed", "Borrowed"],
-      ["rented", "Rented"],
-      ["subscription", "Subscription"],
-      ["no_longer_owned", "No Longer Owned"],
+      [OwnershipStatus.OWNED, "Owned"],
+      [OwnershipStatus.BORROWED, "Borrowed"],
+      [OwnershipStatus.RENTED, "Rented"],
+      [OwnershipStatus.SUBSCRIPTION, "Subscription"],
+      [OwnershipStatus.NO_LONGER_OWNED, "No Longer Owned"],
     ] as const)("displays %s ownership as %s", (status, label) => {
       mockUseUserGame.mockReturnValue({
-        data: createMockUserGame({ ownership_status: status as OwnershipStatus }),
+        data: createMockUserGame({
+          platforms: [
+            {
+              id: "platform-1",
+              platform: "nintendo-switch",
+              platform_details: createMockPlatform({ name: "nintendo-switch", display_name: "Nintendo Switch" }),
+              storefront: "eshop",
+              storefront_details: createMockStorefront({ name: "eshop", display_name: "Nintendo eShop" }),
+              is_available: true,
+              hours_played: 45,
+              ownership_status: status,
+              created_at: "2024-01-01T00:00:00Z",
+            } as UserGamePlatform,
+          ],
+        }),
         isLoading: false,
         error: null,
       });
@@ -552,6 +569,8 @@ describe("GameDetailPage", () => {
               storefront: "eshop",
               storefront_details: createMockStorefront({ name: "eshop", display_name: "eShop" }),
               is_available: true,
+              hours_played: 20,
+              ownership_status: OwnershipStatus.OWNED,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
             {
@@ -561,6 +580,8 @@ describe("GameDetailPage", () => {
               storefront: "steam",
               storefront_details: createMockStorefront({ name: "steam", display_name: "Steam" }),
               is_available: true,
+              hours_played: 25,
+              ownership_status: OwnershipStatus.OWNED,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
           ],
@@ -586,6 +607,8 @@ describe("GameDetailPage", () => {
               storefront: undefined,
               storefront_details: undefined,
               is_available: true,
+              hours_played: 20,
+              ownership_status: OwnershipStatus.OWNED,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
           ],
@@ -596,7 +619,8 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      expect(screen.getByText("Nintendo Switch")).toBeInTheDocument();
+      // Platform name may appear multiple times in different sections
+      expect(screen.getAllByText("Nintendo Switch").length).toBeGreaterThanOrEqual(1);
     });
 
     it("does not display platforms section when no platforms", () => {
@@ -739,24 +763,56 @@ describe("GameDetailPage", () => {
       render(<GameDetailPage />);
 
       expect(screen.getByText("Hours Played")).toBeInTheDocument();
-      expect(screen.getByText("45h")).toBeInTheDocument();
+      // Hours may appear multiple times (UserGame total and per-platform)
+      expect(screen.getAllByText("45h").length).toBeGreaterThanOrEqual(1);
     });
 
     it("displays 0h when hours played is 0 or undefined", () => {
       mockUseUserGame.mockReturnValue({
-        data: createMockUserGame({ hours_played: 0 }),
+        data: createMockUserGame({
+          hours_played: 0,
+          platforms: [
+            {
+              id: "platform-1",
+              platform: "nintendo-switch",
+              platform_details: createMockPlatform({ name: "nintendo-switch", display_name: "Nintendo Switch" }),
+              storefront: "eshop",
+              storefront_details: createMockStorefront({ name: "eshop", display_name: "Nintendo eShop" }),
+              is_available: true,
+              hours_played: 0,
+              ownership_status: OwnershipStatus.OWNED,
+              created_at: "2024-01-01T00:00:00Z",
+            } as UserGamePlatform,
+          ],
+        }),
         isLoading: false,
         error: null,
       });
 
       render(<GameDetailPage />);
 
-      expect(screen.getByText("0h")).toBeInTheDocument();
+      // Hours may appear multiple times (UserGame total and per-platform)
+      expect(screen.getAllByText("0h").length).toBeGreaterThanOrEqual(1);
     });
 
     it("displays acquired date when available", () => {
       mockUseUserGame.mockReturnValue({
-        data: createMockUserGame({ acquired_date: "2023-06-01" }),
+        data: createMockUserGame({
+          platforms: [
+            {
+              id: "platform-1",
+              platform: "nintendo-switch",
+              platform_details: createMockPlatform({ name: "nintendo-switch", display_name: "Nintendo Switch" }),
+              storefront: "eshop",
+              storefront_details: createMockStorefront({ name: "eshop", display_name: "Nintendo eShop" }),
+              is_available: true,
+              hours_played: 45,
+              ownership_status: OwnershipStatus.OWNED,
+              acquired_date: "2023-06-01",
+              created_at: "2024-01-01T00:00:00Z",
+            } as UserGamePlatform,
+          ],
+        }),
         isLoading: false,
         error: null,
       });
@@ -769,7 +825,22 @@ describe("GameDetailPage", () => {
 
     it("does not display acquired date when not available", () => {
       mockUseUserGame.mockReturnValue({
-        data: createMockUserGame({ acquired_date: undefined }),
+        data: createMockUserGame({
+          platforms: [
+            {
+              id: "platform-1",
+              platform: "nintendo-switch",
+              platform_details: createMockPlatform({ name: "nintendo-switch", display_name: "Nintendo Switch" }),
+              storefront: "eshop",
+              storefront_details: createMockStorefront({ name: "eshop", display_name: "Nintendo eShop" }),
+              is_available: true,
+              hours_played: 45,
+              ownership_status: OwnershipStatus.OWNED,
+              acquired_date: undefined,
+              created_at: "2024-01-01T00:00:00Z",
+            } as UserGamePlatform,
+          ],
+        }),
         isLoading: false,
         error: null,
       });
