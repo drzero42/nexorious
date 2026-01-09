@@ -21,7 +21,7 @@ import Image from 'next/image';
 import { ArrowLeft, Edit, Trash2, Heart, Clock, Calendar, ExternalLink } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import type { PlayStatus, OwnershipStatus } from '@/types';
+import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStatusType } from '@/types';
 
 // Helper to resolve image URLs
 function resolveImageUrl(url: string | undefined): string {
@@ -63,8 +63,8 @@ function getStatusColor(status: PlayStatus): string {
 }
 
 // Format ownership status for display
-function formatOwnershipStatus(status: OwnershipStatus): string {
-  const labels: Record<OwnershipStatus, string> = {
+function formatOwnershipStatus(status: OwnershipStatusType): string {
+  const labels: Record<OwnershipStatusType, string> = {
     owned: 'Owned',
     borrowed: 'Borrowed',
     rented: 'Rented',
@@ -193,7 +193,7 @@ export default function GameDetailPage() {
                 <Badge className={getStatusColor(game.play_status)}>
                   {formatPlayStatus(game.play_status)}
                 </Badge>
-                <Badge variant="outline">{formatOwnershipStatus(game.ownership_status)}</Badge>
+                <Badge variant="outline">{formatOwnershipStatus(game.platforms[0]?.ownership_status ?? OwnershipStatus.OWNED)}</Badge>
                 <StarRating value={game.personal_rating} readonly size="md" showLabel />
               </div>
 
@@ -337,7 +337,7 @@ export default function GameDetailPage() {
             <div className="bg-muted/50 p-4 rounded-lg">
               <dt className="text-sm text-muted-foreground">Ownership</dt>
               <dd className="mt-1 font-medium">
-                {formatOwnershipStatus(game.ownership_status)}
+                {formatOwnershipStatus(game.platforms[0]?.ownership_status ?? OwnershipStatus.OWNED)}
               </dd>
             </div>
             <div className="bg-muted/50 p-4 rounded-lg">
@@ -373,10 +373,10 @@ export default function GameDetailPage() {
             </div>
           </div>
 
-          {game.acquired_date && (
+          {game.platforms[0]?.acquired_date && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              Acquired: {new Date(game.acquired_date).toLocaleDateString()}
+              Acquired: {new Date(game.platforms[0].acquired_date).toLocaleDateString()}
             </div>
           )}
 
