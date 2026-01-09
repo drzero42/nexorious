@@ -554,11 +554,15 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      expect(screen.getByText("Platforms")).toBeInTheDocument();
-      expect(screen.getByText("Nintendo Switch (Nintendo eShop)")).toBeInTheDocument();
+      expect(screen.getByText("Platforms & Ownership")).toBeInTheDocument();
+      // Platform name and storefront are now separate elements
+      expect(screen.getByText("Nintendo Switch")).toBeInTheDocument();
+      expect(screen.getByText("(Nintendo eShop)")).toBeInTheDocument();
+      // Ownership status badge shown per platform
+      expect(screen.getAllByText("Owned").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("displays multiple platforms", () => {
+    it("displays multiple platforms with ownership", () => {
       mockUseUserGame.mockReturnValue({
         data: createMockUserGame({
           platforms: [
@@ -581,7 +585,7 @@ describe("GameDetailPage", () => {
               storefront_details: createMockStorefront({ name: "steam", display_name: "Steam" }),
               is_available: true,
               hours_played: 25,
-              ownership_status: OwnershipStatus.OWNED,
+              ownership_status: OwnershipStatus.SUBSCRIPTION,
               created_at: "2024-01-01T00:00:00Z",
             } as UserGamePlatform,
           ],
@@ -592,8 +596,14 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      expect(screen.getByText("Nintendo Switch (eShop)")).toBeInTheDocument();
-      expect(screen.getByText("PC (Steam)")).toBeInTheDocument();
+      // Platform names shown separately
+      expect(screen.getByText("Nintendo Switch")).toBeInTheDocument();
+      expect(screen.getByText("(eShop)")).toBeInTheDocument();
+      expect(screen.getByText("PC")).toBeInTheDocument();
+      expect(screen.getByText("(Steam)")).toBeInTheDocument();
+      // Each platform has its own ownership badge
+      expect(screen.getByText("Owned")).toBeInTheDocument();
+      expect(screen.getByText("Subscription")).toBeInTheDocument();
     });
 
     it("displays platform without storefront", () => {
@@ -632,7 +642,7 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      expect(screen.queryByText("Platforms")).not.toBeInTheDocument();
+      expect(screen.queryByText("Platforms & Ownership")).not.toBeInTheDocument();
     });
   });
 
@@ -795,7 +805,7 @@ describe("GameDetailPage", () => {
       expect(screen.getAllByText("0h").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("displays acquired date when available", () => {
+    it("displays acquired date per platform when available", () => {
       mockUseUserGame.mockReturnValue({
         data: createMockUserGame({
           platforms: [
@@ -819,8 +829,10 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      // The date will be formatted by toLocaleDateString
-      expect(screen.getByText(/Acquired:/)).toBeInTheDocument();
+      // The date is formatted by toLocaleDateString and shown per platform in the Platforms & Ownership section
+      const platformSection = screen.getByText("Platforms & Ownership").parentElement;
+      // Check that a date formatted as "6/1/2023", "01/06/2023" or similar exists in the platform section
+      expect(platformSection?.textContent).toMatch(/6\/1\/2023|1\/6\/2023|01\/06\/2023|Jun.*2023/);
     });
 
     it("does not display acquired date when not available", () => {
@@ -847,7 +859,10 @@ describe("GameDetailPage", () => {
 
       render(<GameDetailPage />);
 
-      expect(screen.queryByText(/Acquired:/)).not.toBeInTheDocument();
+      // Without acquired_date, there should be no date element shown in the platform row
+      // (except for created_at which is not displayed on the UI)
+      const platformSection = screen.getByText("Platforms & Ownership").parentElement;
+      expect(platformSection?.textContent).not.toMatch(/6\/1\/2023|1\/6\/2023/);
     });
 
     it("displays personal notes when available", () => {
