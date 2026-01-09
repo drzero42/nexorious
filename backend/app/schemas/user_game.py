@@ -40,30 +40,28 @@ class UserGamePlatformCreateRequest(BaseModel):
     store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
     is_available: bool = Field(default=True, description="Whether the game is available on this platform")
     hours_played: int = Field(default=0, ge=0, description="Hours played on this storefront")
+    ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status for this platform")
+    acquired_date: Optional[date] = Field(None, description="Date when game was acquired on this platform")
 
 
 class UserGameCreateRequest(BaseModel):
     """Request schema for adding a game to user's collection."""
     game_id: int = Field(..., gt=0, description="Game ID to add to collection")
-    ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: bool = Field(default=False, description="Whether game is marked as loved")
     play_status: PlayStatus = Field(default=PlayStatus.NOT_STARTED, description="Current play status")
     hours_played: int = Field(default=0, ge=0, description="Hours played")
     personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
-    acquired_date: Optional[date] = Field(None, description="Date when game was acquired")
     platforms: Optional[List[UserGamePlatformCreateRequest]] = Field(default_factory=list, description="Platform associations with complete details")
 
 
 class UserGameUpdateRequest(BaseModel):
     """Request schema for updating user's game collection entry."""
-    ownership_status: Optional[OwnershipStatus] = Field(None, description="Ownership status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="Personal rating (1-5)")
     is_loved: Optional[bool] = Field(None, description="Whether game is marked as loved")
     play_status: Optional[PlayStatus] = Field(None, description="Current play status")
     hours_played: Optional[int] = Field(None, ge=0, description="Hours played")
     personal_notes: Optional[str] = Field(None, description="Personal notes about the game")
-    acquired_date: Optional[date] = Field(None, description="Date when game was acquired")
 
 
 class ProgressUpdateRequest(BaseModel):
@@ -84,6 +82,8 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     store_url: Optional[str]
     is_available: bool
     hours_played: int
+    ownership_status: OwnershipStatus
+    acquired_date: Optional[date]
     original_platform_name: Optional[str] = None
     original_storefront_name: Optional[str] = None
 
@@ -94,13 +94,11 @@ class UserGameResponse(BaseModel, TimestampMixin):
     """Response schema for user's game collection entry."""
     id: str
     game: GameResponse
-    ownership_status: OwnershipStatus
     personal_rating: Optional[float]
     is_loved: bool
     play_status: PlayStatus
     hours_played: int
     personal_notes: Optional[str]
-    acquired_date: Optional[date]
     platforms: List[UserGamePlatformResponse]
 
     model_config = ConfigDict(from_attributes=True)
@@ -143,7 +141,6 @@ class BulkStatusUpdateRequest(BaseModel):
     play_status: Optional[PlayStatus] = Field(None, description="New play status")
     personal_rating: Optional[float] = Field(None, ge=1, le=5, description="New rating")
     is_loved: Optional[bool] = Field(None, description="New loved status")
-    ownership_status: Optional[OwnershipStatus] = Field(None, description="New ownership status")
 
 
 class BulkDeleteRequest(BaseModel):
