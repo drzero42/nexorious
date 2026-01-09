@@ -49,13 +49,11 @@ class UserGame(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     game_id: int = Field(foreign_key="games.id", index=True)
-    ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED)
     personal_rating: Optional[Decimal] = Field(default=None, max_digits=2, decimal_places=1)
     is_loved: bool = Field(default=False, index=True)
     play_status: PlayStatus = Field(default=PlayStatus.NOT_STARTED, index=True)
     hours_played: int = Field(default=0)
     personal_notes: Optional[str] = Field(default=None)
-    acquired_date: Optional[date] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
