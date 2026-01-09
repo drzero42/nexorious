@@ -350,11 +350,14 @@ def test_game_fixture(session: Session) -> Game:
 
 @pytest.fixture(name="test_user_game")
 def test_user_game_fixture(session: Session, test_user: User, test_game: Game) -> UserGame:
-    """Create a test user game in the database."""
+    """Create a test user game in the database.
+
+    Note: ownership_status and acquired_date are now on UserGamePlatform,
+    not on UserGame. This fixture creates a UserGame without platforms.
+    """
     user_game = UserGame(
         user_id=test_user.id,
         game_id=test_game.id,
-        ownership_status="owned",
         personal_rating=4.5,
         is_loved=True,
         play_status="completed",
@@ -723,17 +726,19 @@ def create_test_storefront_data(
 
 def create_test_user_game_data(
     game_id: int,  # Changed to integer for IGDB ID
-    ownership_status: str = "owned",
     personal_rating: Optional[float] = None,
     is_loved: bool = False,
     play_status: str = "not_started",
     hours_played: int = 0,
     personal_notes: str = ""
 ) -> Dict[str, Any]:
-    """Create test user game data."""
+    """Create test user game data.
+
+    Note: ownership_status and acquired_date are now on platform level,
+    not on the user game level. Use platforms list to specify ownership.
+    """
     data: Dict[str, Any] = {
         "game_id": game_id,
-        "ownership_status": ownership_status,
         "is_loved": is_loved,
         "play_status": play_status,
         "hours_played": hours_played,

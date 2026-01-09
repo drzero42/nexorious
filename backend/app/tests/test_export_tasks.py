@@ -21,6 +21,7 @@ from app.worker.tasks.import_export.export import (
 )
 from app.schemas.export import (
     ExportGameData,
+    ExportPlatformData,
     ExportTagData,
     ExportWishlistItem,
     NexoriousExportData,
@@ -52,20 +53,19 @@ class TestExportHelpers:
         self, session: Session, test_user, test_game
     ):
         """_build_user_games_query returns all games."""
-        # Create owned game
-        owned_game = UserGame(
+        # Create user game (ownership_status is now on platform level)
+        user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
         )
-        session.add(owned_game)
+        session.add(user_game)
         session.commit()
 
         games = _build_user_games_query(session, test_user.id)
 
         assert len(games) == 1
-        assert games[0].id == owned_game.id
+        assert games[0].id == user_game.id
 
     def test_build_wishlist_query(
         self, session: Session, test_user, test_game
@@ -130,20 +130,30 @@ class TestWishlistToExportData:
 class TestUserGameToExportData:
     """Tests for converting UserGame to export format."""
 
-    def test_basic_conversion(self, session: Session, test_user, test_game):
+    def test_basic_conversion(self, session: Session, test_user, test_game, test_platform):
         """Convert basic UserGame to ExportGameData."""
+        # ownership_status and acquired_date are now on UserGamePlatform
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
             personal_rating=Decimal("4.5"),
             is_loved=True,
             hours_played=50,
             personal_notes="Great game!",
-            acquired_date=date(2024, 1, 15),
         )
         session.add(user_game)
+        session.commit()
+        session.refresh(user_game)
+
+        # Add platform with ownership_status and acquired_date
+        platform_assoc = UserGamePlatform(
+            user_game_id=user_game.id,
+            platform=test_platform.name,
+            ownership_status=OwnershipStatus.OWNED,
+            acquired_date=date(2024, 1, 15),
+        )
+        session.add(platform_assoc)
         session.commit()
         session.refresh(user_game)
 
@@ -151,13 +161,16 @@ class TestUserGameToExportData:
 
         assert export_data.igdb_id == test_game.id
         assert export_data.title == test_game.title
-        assert export_data.ownership_status == "owned"
+        # ownership_status is now on platforms, not on the game
         assert export_data.play_status == "completed"
         assert export_data.personal_rating == 4.5
         assert export_data.is_loved is True
         assert export_data.hours_played == 50
         assert export_data.personal_notes == "Great game!"
-        assert export_data.acquired_date == date(2024, 1, 15)
+        # Check ownership_status and acquired_date on platform
+        assert len(export_data.platforms) == 1
+        assert export_data.platforms[0].ownership_status == "owned"
+        assert export_data.platforms[0].acquired_date == date(2024, 1, 15)
 
     def test_conversion_with_platforms(
         self, session: Session, test_user, test_game, test_platform
@@ -166,7 +179,6 @@ class TestUserGameToExportData:
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
         )
         session.add(user_game)
@@ -179,6 +191,7 @@ class TestUserGameToExportData:
             store_game_id="12345",
             store_url="https://store.example.com/game",
             is_available=True,
+            ownership_status=OwnershipStatus.OWNED,
         )
         session.add(platform_assoc)
         session.commit()
@@ -193,6 +206,7 @@ class TestUserGameToExportData:
         assert platform_data.store_game_id == "12345"
         assert platform_data.store_url == "https://store.example.com/game"
         assert platform_data.is_available is True
+        assert platform_data.ownership_status == "owned"
 
     def test_conversion_with_tags(
         self, session: Session, test_user, test_game
@@ -210,7 +224,6 @@ class TestUserGameToExportData:
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
         )
         session.add(user_game)
@@ -237,12 +250,12 @@ class TestUserGameToExportData:
 class TestUserGameToCsvRow:
     """Tests for converting UserGame to CSV row format."""
 
-    def test_basic_csv_conversion(self, session: Session, test_user, test_game):
+    def test_basic_csv_conversion(self, session: Session, test_user, test_game, test_platform):
         """Convert basic UserGame to CsvExportRow."""
+        # ownership_status is now on platform level
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
             personal_rating=Decimal("4.5"),
             hours_played=50,
@@ -251,11 +264,22 @@ class TestUserGameToCsvRow:
         session.commit()
         session.refresh(user_game)
 
+        # Add platform with ownership_status
+        platform_assoc = UserGamePlatform(
+            user_game_id=user_game.id,
+            platform=test_platform.name,
+            ownership_status=OwnershipStatus.OWNED,
+        )
+        session.add(platform_assoc)
+        session.commit()
+        session.refresh(user_game)
+
         csv_row = _user_game_to_csv_row(session, user_game)
 
         assert csv_row.igdb_id == test_game.id
         assert csv_row.title == test_game.title
-        assert csv_row.ownership_status == "owned"
+        # ownership_status is now per-platform, in ownership_statuses column
+        assert "owned" in csv_row.ownership_statuses
         assert csv_row.play_status == "completed"
         assert csv_row.personal_rating == 4.5
         assert csv_row.hours_played == 50
@@ -273,7 +297,6 @@ class TestUserGameToCsvRow:
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
-            ownership_status=OwnershipStatus.OWNED,
             play_status=PlayStatus.COMPLETED,
         )
         session.add(user_game)
@@ -284,6 +307,7 @@ class TestUserGameToCsvRow:
             assoc = UserGamePlatform(
                 user_game_id=user_game.id,
                 platform=platform.name,
+                ownership_status=OwnershipStatus.OWNED,
             )
             session.add(assoc)
         session.commit()
@@ -310,8 +334,8 @@ class TestWriteExports:
                 ExportGameData(
                     igdb_id=1942,
                     title="The Witcher 3",
-                    ownership_status="owned",
                     play_status="completed",
+                    platforms=[ExportPlatformData(ownership_status="owned")],
                     created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
                     updated_at=datetime(2024, 1, 15, tzinfo=timezone.utc),
                 )
@@ -381,36 +405,37 @@ class TestCalculateExportStats:
 
     def test_calculate_stats_basic(self):
         """Calculate basic export statistics."""
+        # ownership_status is now on platforms, not on the game
         games = [
             ExportGameData(
                 igdb_id=1,
                 title="Game 1",
-                ownership_status="owned",
                 play_status="completed",
                 personal_rating=4.5,
                 is_loved=True,
                 hours_played=50,
                 personal_notes="Good game",
                 tags=[ExportTagData(name="RPG")],
+                platforms=[ExportPlatformData(ownership_status="owned")],
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             ),
             ExportGameData(
                 igdb_id=2,
                 title="Game 2",
-                ownership_status="owned",
                 play_status="in_progress",
                 hours_played=20,
+                platforms=[ExportPlatformData(ownership_status="owned")],
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             ),
             ExportGameData(
                 igdb_id=3,
                 title="Game 3",
-                ownership_status="subscription",
                 play_status="completed",
                 personal_rating=3.5,
                 hours_played=30,
+                platforms=[ExportPlatformData(ownership_status="subscription")],
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             ),

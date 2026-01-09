@@ -26,7 +26,7 @@ class TestUserGamesListEndpoint:
     def test_list_user_games_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
         """Test successful user games list retrieval."""
         response = client.get("/api/user-games/", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert "user_games" in data
@@ -35,8 +35,8 @@ class TestUserGamesListEndpoint:
         assert "per_page" in data
         assert len(data["user_games"]) == 1
         assert data["user_games"][0]["id"] == str(test_user_game.id)
-        assert data["user_games"][0]["ownership_status"] == test_user_game.ownership_status
-        assert data["user_games"][0]["play_status"] == test_user_game.play_status
+        # ownership_status is now on platform level, not game level
+        assert data["user_games"][0]["play_status"] == test_user_game.play_status.value
     
     def test_list_user_games_without_auth(self, client: TestClient):
         """Test user games list without authentication."""
@@ -323,14 +323,14 @@ class TestUserGamesDetailEndpoint:
     def test_get_user_game_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
         """Test successful user game retrieval."""
         response = client.get(f"/api/user-games/{test_user_game.id}", headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["id"] == str(test_user_game.id)
-        assert data["ownership_status"] == test_user_game.ownership_status
-        assert data["personal_rating"] == test_user_game.personal_rating
+        # ownership_status is now on platform level, not game level
+        assert data["personal_rating"] == float(test_user_game.personal_rating)
         assert data["is_loved"] == test_user_game.is_loved
-        assert data["play_status"] == test_user_game.play_status
+        assert data["play_status"] == test_user_game.play_status.value
         assert data["hours_played"] == test_user_game.hours_played
         assert data["personal_notes"] == test_user_game.personal_notes
     
@@ -364,11 +364,11 @@ class TestUserGamesCreateEndpoint:
         """Test successful user game creation."""
         user_game_data = create_test_user_game_data(test_game.id)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
-        
+
         assert_api_success(response, 201)
         data = response.json()
         assert data["game"]["id"] == test_game.id
-        assert data["ownership_status"] == user_game_data["ownership_status"]
+        # ownership_status is now on platform level, not game level
         assert data["is_loved"] == user_game_data["is_loved"]
         assert data["play_status"] == user_game_data["play_status"]
         assert data["hours_played"] == user_game_data["hours_played"]
@@ -425,7 +425,7 @@ class TestUserGamesUpdateEndpoint:
     def test_update_user_game_success(self, client: TestClient, test_user_game: UserGame, auth_headers: Dict[str, str]):
         """Test successful user game update."""
         update_data = {
-            "ownership_status": "borrowed",
+            # ownership_status is now on platform level, not game level
             "personal_rating": 3.5,
             "is_loved": False,
             "play_status": "in_progress",
@@ -433,10 +433,10 @@ class TestUserGamesUpdateEndpoint:
             "personal_notes": "Updated notes"
         }
         response = client.put(f"/api/user-games/{test_user_game.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
-        assert data["ownership_status"] == "borrowed"
+        # ownership_status is now on platform level, not game level
         assert data["personal_rating"] == 3.5
         assert data["is_loved"] is False
         assert data["play_status"] == "in_progress"
@@ -447,12 +447,12 @@ class TestUserGamesUpdateEndpoint:
         """Test partial user game update."""
         update_data = {"play_status": "completed", "hours_played": 15}
         response = client.put(f"/api/user-games/{test_user_game.id}", json=update_data, headers=auth_headers)
-        
+
         assert_api_success(response, 200)
         data = response.json()
         assert data["play_status"] == "completed"
         assert data["hours_played"] == 15
-        assert data["ownership_status"] == test_user_game.ownership_status  # Should remain unchanged
+        # ownership_status is now on platform level, not game level
     
     def test_update_user_game_not_found(self, client: TestClient, auth_headers: Dict[str, str]):
         """Test user game update with non-existent ID."""
@@ -1185,11 +1185,22 @@ class TestUserGamesDataValidation:
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
         assert_api_error(response, 422)
     
-    def test_ownership_status_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
-        """Test ownership status validation."""
-        # Test invalid ownership status
-        user_game_data = create_test_user_game_data(test_game.id, ownership_status="invalid_status")
+    def test_ownership_status_validation(self, client: TestClient, test_game: Game, test_platform: Platform, test_storefront: Storefront, auth_headers: Dict[str, str]):
+        """Test ownership status validation on platform level."""
+        # ownership_status is now on platform level, test via platform creation
+        # First create a user game
+        user_game_data = create_test_user_game_data(test_game.id)
         response = client.post("/api/user-games/", json=user_game_data, headers=auth_headers)
+        assert_api_success(response, 201)
+        user_game_id = response.json()["id"]
+
+        # Test invalid ownership status on platform
+        platform_data = {
+            "platform": test_platform.name,
+            "storefront": test_storefront.name,
+            "ownership_status": "invalid_status"
+        }
+        response = client.post(f"/api/user-games/{user_game_id}/platforms", json=platform_data, headers=auth_headers)
         assert_api_error(response, 422)
     
     def test_rating_validation(self, client: TestClient, test_game: Game, auth_headers: Dict[str, str]):
@@ -1212,247 +1223,154 @@ class TestUserGamesDataValidation:
         assert_api_error(response, 422)
 
 
-class TestAutomaticOwnershipStatusManagement:
-    """Test automatic ownership status transitions when platforms are added/removed."""
-    
-    def test_owned_to_no_longer_owned_when_last_platform_removed(self,
-                                                                 client: TestClient,
-                                                                 test_user_game: UserGame,
-                                                                 test_platform: Platform,
-                                                                 test_storefront: Storefront,
-                                                                 auth_headers: Dict[str, str],
-                                                                 session: Session):
-        """Test that removing the last platform changes ownership status from OWNED to NO_LONGER_OWNED."""
-        # Ensure the user game starts as OWNED
-        test_user_game.ownership_status = "owned"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
+class TestPlatformOwnershipStatus:
+    """Test ownership status on platform level.
 
-        # Add a platform association
+    Note: ownership_status is now on UserGamePlatform, not on UserGame.
+    These tests verify ownership_status behavior at the platform level.
+    """
+
+    def test_create_platform_with_ownership_status(
+        self,
+        client: TestClient,
+        test_user_game: UserGame,
+        test_platform: Platform,
+        test_storefront: Storefront,
+        auth_headers: Dict[str, str],
+        session: Session
+    ):
+        """Test that platforms can be created with different ownership statuses."""
+        platform_data = {
+            "platform": test_platform.name,
+            "storefront": test_storefront.name,
+            "ownership_status": "borrowed"
+        }
+
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            json=platform_data,
+            headers=auth_headers
+        )
+        assert_api_success(response, 201)
+        data = response.json()
+        # The response is the full UserGame, check the platforms array
+        assert len(data["platforms"]) == 1
+        assert data["platforms"][0]["ownership_status"] == "borrowed"
+
+    def test_update_platform_ownership_status(
+        self,
+        client: TestClient,
+        test_user_game: UserGame,
+        test_platform: Platform,
+        test_storefront: Storefront,
+        auth_headers: Dict[str, str],
+        session: Session
+    ):
+        """Test that platform ownership status can be updated."""
+        # Create a platform with owned status
         platform_assoc = UserGamePlatform(
             user_game_id=test_user_game.id,
             platform=test_platform.name,
-            storefront=test_storefront.name
+            storefront=test_storefront.name,
+            ownership_status="owned"
         )
         session.add(platform_assoc)
         session.commit()
-        
-        # Verify the game is still OWNED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "owned"
-        
-        # Remove the platform association (last one)
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-        
-        # Verify ownership status changed to NO_LONGER_OWNED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "no_longer_owned"
-    
-    def test_no_longer_owned_to_owned_when_platform_added(self,
-                                                          client: TestClient,
-                                                          test_user_game: UserGame,
-                                                          test_platform: Platform,
-                                                          test_storefront: Storefront,
-                                                          auth_headers: Dict[str, str],
-                                                          session: Session):
-        """Test that adding a platform changes ownership status from NO_LONGER_OWNED to OWNED."""
-        # Set the user game as NO_LONGER_OWNED with no platforms
-        test_user_game.ownership_status = "no_longer_owned"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
+        session.refresh(platform_assoc)
 
-        # Verify no platforms exist
-        existing_platforms = session.exec(
-            select(UserGamePlatform).where(UserGamePlatform.user_game_id == test_user_game.id)
-        ).all()
-        assert len(existing_platforms) == 0
-
-        # Add a platform association
-        platform_data = {
+        # Update to subscription status - need to include platform since it's required
+        update_data = {
             "platform": test_platform.name,
             "storefront": test_storefront.name,
-            "store_game_id": "test-store-id",
-            "is_available": True
+            "ownership_status": "subscription"
         }
-
-        response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        assert_api_success(response, 201)
-
-        # Verify ownership status changed to OWNED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "owned"
-    
-    def test_owned_to_no_longer_owned_multiple_platforms_removed(self,
-                                                                client: TestClient,
-                                                                test_user_game: UserGame,
-                                                                test_platform: Platform,
-                                                                test_storefront: Storefront,
-                                                                test_storefront_2: Storefront,
-                                                                auth_headers: Dict[str, str],
-                                                                session: Session):
-        """Test that only removing the LAST platform triggers ownership status change."""
-        # Ensure the user game starts as OWNED
-        test_user_game.ownership_status = "owned"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
-
-        # Add two platform associations (same platform, different storefronts)
-        platform_assoc_1 = UserGamePlatform(
-            user_game_id=test_user_game.id,
-            platform=test_platform.name,
-            storefront=test_storefront.name
+        response = client.put(
+            f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}",
+            json=update_data,
+            headers=auth_headers
         )
-        platform_assoc_2 = UserGamePlatform(
-            user_game_id=test_user_game.id,
-            platform=test_platform.name,
-            storefront=test_storefront_2.name
+        assert_api_success(response, 200)
+        data = response.json()
+        assert data["ownership_status"] == "subscription"
+
+    def test_multiple_platforms_with_different_ownership_statuses(
+        self,
+        client: TestClient,
+        test_user_game: UserGame,
+        test_platform: Platform,
+        test_storefront: Storefront,
+        test_storefront_2: Storefront,
+        auth_headers: Dict[str, str],
+        session: Session
+    ):
+        """Test that a game can have multiple platforms with different ownership statuses."""
+        # Create first platform as owned
+        platform_data_1 = {
+            "platform": test_platform.name,
+            "storefront": test_storefront.name,
+            "ownership_status": "owned"
+        }
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            json=platform_data_1,
+            headers=auth_headers
         )
-        session.add(platform_assoc_1)
-        session.add(platform_assoc_2)
-        session.commit()
-        
-        # Remove first platform association (not the last one)
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc_1.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-        
-        # Verify ownership status is still OWNED (one platform remains)
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "owned"
-        
-        # Remove the last platform association
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc_2.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-        
-        # Verify ownership status changed to NO_LONGER_OWNED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "no_longer_owned"
-    
-    def test_borrowed_status_unchanged_when_platforms_modified(self,
-                                                             client: TestClient,
-                                                             test_user_game: UserGame,
-                                                             test_platform: Platform,
-                                                             test_storefront: Storefront,
-                                                             auth_headers: Dict[str, str],
-                                                             session: Session):
-        """Test that non-OWNED/NO_LONGER_OWNED statuses are not affected by platform changes."""
-        # Set the user game as BORROWED
-        test_user_game.ownership_status = "borrowed"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
+        assert_api_success(response, 201)
+        data = response.json()
+        assert len(data["platforms"]) == 1
+        assert data["platforms"][0]["ownership_status"] == "owned"
 
-        # Add a platform association
+        # Create second platform as subscription
+        platform_data_2 = {
+            "platform": test_platform.name,
+            "storefront": test_storefront_2.name,
+            "ownership_status": "subscription"
+        }
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            json=platform_data_2,
+            headers=auth_headers
+        )
+        assert_api_success(response, 201)
+        data = response.json()
+        assert len(data["platforms"]) == 2
+
+        # Get the user game and verify both platforms exist with different statuses
+        response = client.get(
+            f"/api/user-games/{test_user_game.id}",
+            headers=auth_headers
+        )
+        assert_api_success(response, 200)
+        data = response.json()
+        assert len(data["platforms"]) == 2
+        ownership_statuses = {p["ownership_status"] for p in data["platforms"]}
+        assert ownership_statuses == {"owned", "subscription"}
+
+    def test_default_ownership_status_is_owned(
+        self,
+        client: TestClient,
+        test_user_game: UserGame,
+        test_platform: Platform,
+        test_storefront: Storefront,
+        auth_headers: Dict[str, str]
+    ):
+        """Test that default ownership status is 'owned' when not specified."""
         platform_data = {
             "platform": test_platform.name,
-            "storefront": test_storefront.name,
-            "store_game_id": "test-store-id",
-            "is_available": True
+            "storefront": test_storefront.name
+            # No ownership_status specified
         }
 
-        response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
+        response = client.post(
+            f"/api/user-games/{test_user_game.id}/platforms",
+            json=platform_data,
+            headers=auth_headers
+        )
         assert_api_success(response, 201)
-
-        # Verify ownership status remains BORROWED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "borrowed"
-
-        # Get the platform association for removal
-        platform_assoc = session.exec(
-            select(UserGamePlatform).where(UserGamePlatform.user_game_id == test_user_game.id)
-        ).first()
-        assert platform_assoc is not None, "Platform association should exist"
-
-        # Remove the platform association
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-        
-        # Verify ownership status remains BORROWED (not changed to NO_LONGER_OWNED)
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "borrowed"
-    
-    def test_subscription_status_unchanged_when_platforms_modified(self,
-                                                                 client: TestClient,
-                                                                 test_user_game: UserGame,
-                                                                 test_platform: Platform,
-                                                                 test_storefront: Storefront,
-                                                                 auth_headers: Dict[str, str],
-                                                                 session: Session):
-        """Test that SUBSCRIPTION status is not affected by platform changes."""
-        # Set the user game as SUBSCRIPTION
-        test_user_game.ownership_status = "subscription"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
-
-        # Add a platform association
-        platform_data = {
-            "platform": test_platform.name,
-            "storefront": test_storefront.name,
-            "store_game_id": "test-store-id",
-            "is_available": True
-        }
-
-        response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        assert_api_success(response, 201)
-        
-        # Verify ownership status remains SUBSCRIPTION
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "subscription"
-        
-        # Get the platform association for removal
-        platform_assoc = session.exec(
-            select(UserGamePlatform).where(UserGamePlatform.user_game_id == test_user_game.id)
-        ).first()
-        assert platform_assoc is not None, "Platform association should exist"
-
-        # Remove the platform association
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-
-        # Verify ownership status remains SUBSCRIPTION
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "subscription"
-    
-    def test_rented_status_unchanged_when_platforms_modified(self,
-                                                           client: TestClient,
-                                                           test_user_game: UserGame,
-                                                           test_platform: Platform,
-                                                           test_storefront: Storefront,
-                                                           auth_headers: Dict[str, str],
-                                                           session: Session):
-        """Test that RENTED status is not affected by platform changes."""
-        # Set the user game as RENTED
-        test_user_game.ownership_status = "rented"  # type: ignore[assignment]
-        session.add(test_user_game)
-        session.commit()
-
-        # Add a platform association
-        platform_data = {
-            "platform": test_platform.name,
-            "storefront": test_storefront.name,
-            "store_game_id": "test-store-id",
-            "is_available": True
-        }
-
-        response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
-        assert_api_success(response, 201)
-
-        # Verify ownership status remains RENTED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "rented"
-
-        # Get the platform association for removal
-        platform_assoc = session.exec(
-            select(UserGamePlatform).where(UserGamePlatform.user_game_id == test_user_game.id)
-        ).first()
-        assert platform_assoc is not None, "Platform association should exist"
-
-        # Remove the platform association
-        response = client.delete(f"/api/user-games/{test_user_game.id}/platforms/{platform_assoc.id}", headers=auth_headers)
-        assert_api_success(response, 200)
-
-        # Verify ownership status remains RENTED
-        session.refresh(test_user_game)
-        assert test_user_game.ownership_status == "rented"
+        data = response.json()
+        # The response is the full UserGame, check the platforms array
+        assert len(data["platforms"]) == 1
+        assert data["platforms"][0]["ownership_status"] == "owned"
 
 
 class TestUserGameIdsEndpoint:
