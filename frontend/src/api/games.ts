@@ -81,6 +81,8 @@ interface UserGamePlatformApiResponse {
   store_url?: string;
   is_available: boolean;
   hours_played: number;
+  ownership_status: OwnershipStatus;
+  acquired_date?: string;
   original_platform_name?: string;
   created_at: string;
 }
@@ -99,13 +101,11 @@ interface TagApiResponse {
 interface UserGameApiResponse {
   id: string;
   game: GameApiResponse;
-  ownership_status: OwnershipStatus;
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
   hours_played: number;
   personal_notes?: string;
-  acquired_date?: string;
   platforms: UserGamePlatformApiResponse[];
   tags?: TagApiResponse[];
   created_at: string;
@@ -167,30 +167,28 @@ export interface GetUserGamesParams {
 
 export interface UserGameCreateData {
   gameId: GameId;
-  ownershipStatus?: OwnershipStatus;
   playStatus?: PlayStatus;
   personalRating?: number | null;
   isLoved?: boolean;
   hoursPlayed?: number;
   personalNotes?: string;
-  acquiredDate?: string;
   platforms?: Array<{
     platform: string;
     storefront?: string;
     storeGameId?: string;
     storeUrl?: string;
     isAvailable?: boolean;
+    ownershipStatus?: OwnershipStatus;
+    acquiredDate?: string;
   }>;
 }
 
 export interface UserGameUpdateData {
-  ownershipStatus?: OwnershipStatus;
   personalRating?: number | null;
   isLoved?: boolean;
   playStatus?: PlayStatus;
   hoursPlayed?: number;
   personalNotes?: string;
-  acquiredDate?: string;
 }
 
 export interface UserGamePlatformData {
@@ -200,6 +198,8 @@ export interface UserGamePlatformData {
   storeUrl?: string;
   isAvailable?: boolean;
   hoursPlayed?: number;
+  ownershipStatus?: OwnershipStatus;
+  acquiredDate?: string;
 }
 
 export interface BulkUpdateData {
@@ -269,6 +269,8 @@ function transformUserGamePlatform(
     store_url: apiPlatform.store_url,
     is_available: apiPlatform.is_available,
     hours_played: apiPlatform.hours_played,
+    ownership_status: apiPlatform.ownership_status,
+    acquired_date: apiPlatform.acquired_date,
     original_platform_name: apiPlatform.original_platform_name,
     created_at: apiPlatform.created_at,
   };
@@ -318,13 +320,11 @@ function transformUserGame(apiUserGame: UserGameApiResponse): UserGame {
   return {
     id: apiUserGame.id as UserGameId,
     game: transformGame(apiUserGame.game),
-    ownership_status: apiUserGame.ownership_status,
     personal_rating: apiUserGame.personal_rating,
     is_loved: apiUserGame.is_loved,
     play_status: apiUserGame.play_status,
     hours_played: apiUserGame.hours_played,
     personal_notes: apiUserGame.personal_notes,
-    acquired_date: apiUserGame.acquired_date,
     platforms: apiUserGame.platforms.map(transformUserGamePlatform),
     tags: apiUserGame.tags?.map(transformTag),
     created_at: apiUserGame.created_at,
@@ -443,19 +443,19 @@ export async function getUserGame(id: string): Promise<UserGame> {
 export async function createUserGame(data: UserGameCreateData): Promise<UserGame> {
   const requestBody = {
     game_id: data.gameId,
-    ownership_status: data.ownershipStatus,
     play_status: data.playStatus,
     personal_rating: data.personalRating,
     is_loved: data.isLoved,
     hours_played: data.hoursPlayed,
     personal_notes: data.personalNotes,
-    acquired_date: data.acquiredDate,
     platforms: data.platforms?.map((p) => ({
       platform: p.platform,
       storefront: p.storefront,
       store_game_id: p.storeGameId,
       store_url: p.storeUrl,
       is_available: p.isAvailable ?? true,
+      ownership_status: p.ownershipStatus,
+      acquired_date: p.acquiredDate,
     })),
   };
 
@@ -472,9 +472,6 @@ export async function updateUserGame(
 ): Promise<UserGame> {
   const requestBody: Record<string, unknown> = {};
 
-  if (data.ownershipStatus !== undefined) {
-    requestBody.ownership_status = data.ownershipStatus;
-  }
   if (data.personalRating !== undefined) {
     requestBody.personal_rating = data.personalRating;
   }
@@ -489,9 +486,6 @@ export async function updateUserGame(
   }
   if (data.personalNotes !== undefined) {
     requestBody.personal_notes = data.personalNotes;
-  }
-  if (data.acquiredDate !== undefined) {
-    requestBody.acquired_date = data.acquiredDate;
   }
 
   const response = await api.put<UserGameApiResponse>(
@@ -697,6 +691,8 @@ export async function updatePlatformAssociation(
     store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
     hours_played: data.hoursPlayed ?? 0,
+    ownership_status: data.ownershipStatus,
+    acquired_date: data.acquiredDate,
   };
 
   const response = await api.put<UserGamePlatformApiResponse>(

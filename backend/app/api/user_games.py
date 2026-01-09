@@ -67,43 +67,6 @@ def _rank_user_games_by_fuzzy_match(user_games: List[UserGame], query: str, thre
     return [user_game for user_game, score in scored_games]
 
 
-def _update_ownership_status_after_platform_change(
-    session: Session, 
-    user_game: UserGame
-) -> None:
-    """
-    Update ownership status automatically based on platform associations.
-    
-    Rules:
-    - If last platform is removed from an OWNED game, change to NO_LONGER_OWNED
-    - If platform is added to a NO_LONGER_OWNED game, change to OWNED
-    - Only affects OWNED and NO_LONGER_OWNED statuses, leaves others unchanged
-    """
-    # Only manage OWNED and NO_LONGER_OWNED statuses automatically
-    if user_game.ownership_status not in [OwnershipStatus.OWNED, OwnershipStatus.NO_LONGER_OWNED]:
-        return
-    
-    # Count current platform associations
-    platform_count = session.exec(
-        select(func.count()).where(UserGamePlatform.user_game_id == user_game.id)
-    ).one()
-    
-    old_status = user_game.ownership_status
-    
-    # Apply ownership status rules
-    if platform_count == 0 and user_game.ownership_status == OwnershipStatus.OWNED:
-        # Last platform removed from owned game -> no longer owned
-        user_game.ownership_status = OwnershipStatus.NO_LONGER_OWNED
-        user_game.updated_at = datetime.now(timezone.utc)
-        logger.info(f"Automatically changed ownership status from {old_status} to {user_game.ownership_status} for user game {user_game.id} (no platforms remaining)")
-    
-    elif platform_count > 0 and user_game.ownership_status == OwnershipStatus.NO_LONGER_OWNED:
-        # Platform added to no longer owned game -> owned
-        user_game.ownership_status = OwnershipStatus.OWNED
-        user_game.updated_at = datetime.now(timezone.utc)
-        logger.info(f"Automatically changed ownership status from {old_status} to {user_game.ownership_status} for user game {user_game.id} (platforms available)")
-
-
 @router.get("/", response_model=UserGameListResponse)
 async def list_user_games(
     session: Annotated[Session, Depends(get_session)],
@@ -149,7 +112,14 @@ async def list_user_games(
         filters.append(UserGame.play_status == play_status)
 
     if ownership_status is not None:
-        filters.append(UserGame.ownership_status == ownership_status)
+        # Filter by ownership status at the platform level using subquery
+        filters.append(
+            in_(col(UserGame.id),
+                select(UserGamePlatform.user_game_id).where(
+                    UserGamePlatform.ownership_status == ownership_status
+                )
+            )
+        )
 
     if is_loved is not None:
         filters.append(UserGame.is_loved == is_loved)
@@ -426,7 +396,14 @@ async def get_user_game_ids(
         filters.append(UserGame.play_status == play_status)
 
     if ownership_status is not None:
-        filters.append(UserGame.ownership_status == ownership_status)
+        # Filter by ownership status at the platform level using subquery
+        filters.append(
+            in_(col(UserGame.id),
+                select(UserGamePlatform.user_game_id).where(
+                    UserGamePlatform.ownership_status == ownership_status
+                )
+            )
+        )
 
     if is_loved is not None:
         filters.append(UserGame.is_loved == is_loved)
@@ -741,18 +718,20 @@ async def get_collection_stats(
         else:
             total_hours += ug.hours_played  # Legacy fallback
     
-    # Ownership stats
+    # Ownership stats (now counted at the platform level)
     ownership_stats = {}
-    for ownership_status in OwnershipStatus:
+    for ownership_status_value in OwnershipStatus:
         count = session.exec(
-            select(func.count()).where(
+            select(func.count(func.distinct(UserGamePlatform.user_game_id))).where(
                 and_(
-                    UserGame.user_id == current_user.id,
-                    UserGame.ownership_status == ownership_status
+                    in_(col(UserGamePlatform.user_game_id),
+                        select(UserGame.id).where(UserGame.user_id == current_user.id)
+                    ),
+                    UserGamePlatform.ownership_status == ownership_status_value
                 )
             )
         ).one()
-        ownership_stats[ownership_status] = count
+        ownership_stats[ownership_status_value] = count
     
     # Genre stats (from game data)
     genre_stats = {}
@@ -807,26 +786,22 @@ async def bulk_update_user_games(
     update_count = 0
     failed_count = 0
     
-    # Apply updates
+    # Apply updates (ownership_status is now per-platform, not bulk-updatable)
     for user_game in user_games:
         updated = False
-        
+
         if bulk_data.play_status is not None:
             user_game.play_status = PlayStatus(bulk_data.play_status.value)
             updated = True
-        
+
         if bulk_data.personal_rating is not None:
             user_game.personal_rating = Decimal(str(bulk_data.personal_rating))
             updated = True
-        
+
         if bulk_data.is_loved is not None:
             user_game.is_loved = bulk_data.is_loved
             updated = True
-        
-        if bulk_data.ownership_status is not None:
-            user_game.ownership_status = OwnershipStatus(bulk_data.ownership_status.value)
-            updated = True
-        
+
         if updated:
             user_game.updated_at = datetime.now(timezone.utc)
             update_count += 1
@@ -1091,27 +1066,23 @@ async def add_game_to_collection(
             f"Game title: '{game.title}' | "
             f"Existing user game ID: {existing_user_game.id} | "
             f"Existing entry created: {existing_user_game.created_at} | "
-            f"Existing ownership status: {existing_user_game.ownership_status} | "
             f"Existing play status: {existing_user_game.play_status} | "
-            f"Requested ownership status: {user_game_data.ownership_status} | "
             f"Requested play status: {user_game_data.play_status}"
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Game already exists in your collection"
         )
-    
-    # Create user game
+
+    # Create user game (ownership_status and acquired_date are now per-platform)
     new_user_game = UserGame(
         user_id=current_user.id,
         game_id=user_game_data.game_id,
-        ownership_status=OwnershipStatus(user_game_data.ownership_status.value),
         personal_rating=Decimal(str(user_game_data.personal_rating)) if user_game_data.personal_rating is not None else None,
         is_loved=user_game_data.is_loved,
         play_status=PlayStatus(user_game_data.play_status.value),
         hours_played=user_game_data.hours_played,
         personal_notes=user_game_data.personal_notes,
-        acquired_date=user_game_data.acquired_date
     )
     
     logger.info(f"Created UserGame object with ID: {new_user_game.id}")
@@ -1145,14 +1116,17 @@ async def add_game_to_collection(
                     logger.warning(f"Storefront not found: {platform_data.storefront}")
                     continue
 
-            # Create complete platform association
+            # Create complete platform association with ownership fields
             platform_assoc = UserGamePlatform(
                 user_game_id=new_user_game.id,
                 platform=platform_data.platform,
                 storefront=platform_data.storefront,
                 store_game_id=platform_data.store_game_id,
                 store_url=str(platform_data.store_url) if platform_data.store_url else None,
-                is_available=platform_data.is_available
+                is_available=platform_data.is_available,
+                hours_played=platform_data.hours_played,
+                ownership_status=OwnershipStatus(platform_data.ownership_status.value),
+                acquired_date=platform_data.acquired_date,
             )
             session.add(platform_assoc)
             logger.info(f"Added platform {platform_data.platform} with storefront {platform_data.storefront} to user game {new_user_game.id}")
@@ -1422,13 +1396,11 @@ async def add_platform_to_user_game(
         store_url=str(platform_data.store_url) if platform_data.store_url else None,
         is_available=platform_data.is_available,
         hours_played=platform_data.hours_played,
+        ownership_status=OwnershipStatus(platform_data.ownership_status.value),
+        acquired_date=platform_data.acquired_date,
     )
-    
+
     session.add(new_platform)
-    
-    # Update ownership status automatically after platform addition
-    _update_ownership_status_after_platform_change(session, user_game)
-    
     session.commit()
     session.refresh(new_platform)
     
@@ -1542,6 +1514,8 @@ async def update_platform_association(
     platform_assoc.store_url = str(platform_data.store_url) if platform_data.store_url else None
     platform_assoc.is_available = platform_data.is_available
     platform_assoc.hours_played = platform_data.hours_played
+    platform_assoc.ownership_status = OwnershipStatus(platform_data.ownership_status.value)
+    platform_assoc.acquired_date = platform_data.acquired_date
     platform_assoc.updated_at = datetime.now(timezone.utc)
 
     session.commit()
@@ -1584,31 +1558,8 @@ async def remove_platform_from_user_game(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Platform association not found"
         )
-    
-    # Get the user game for ownership status management
-    user_game = session.exec(
-        select(UserGame).where(
-            and_(
-                UserGame.id == user_game_id,
-                UserGame.user_id == current_user.id
-            )
-        )
-    ).first()
-    
-    if not user_game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User game not found"
-        )
-    
+
     session.delete(platform_assoc)
-    
-    # Flush pending delete operations so the count query sees the correct number of platforms
-    session.flush()
-    
-    # Update ownership status automatically after platform removal
-    _update_ownership_status_after_platform_change(session, user_game)
-    
     session.commit()
-    
+
     return SuccessResponse(message="Platform association deleted successfully")

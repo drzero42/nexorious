@@ -101,6 +101,9 @@ def _user_game_to_export_data(
             store_game_id=ugp.store_game_id,
             store_url=ugp.store_url,
             is_available=ugp.is_available,
+            hours_played=ugp.hours_played,
+            ownership_status=ugp.ownership_status.value,
+            acquired_date=ugp.acquired_date,
         )
         platforms_data.append(platform_data)
 
@@ -123,13 +126,11 @@ def _user_game_to_export_data(
         igdb_id=user_game.game.id,
         title=user_game.game.title,
         release_year=release_year,
-        ownership_status=user_game.ownership_status.value,
         play_status=user_game.play_status.value,
         personal_rating=float(user_game.personal_rating) if user_game.personal_rating else None,
         is_loved=user_game.is_loved,
         hours_played=user_game.hours_played,
         personal_notes=user_game.personal_notes,
-        acquired_date=user_game.acquired_date,
         platforms=platforms_data,
         tags=tags_data,
         created_at=user_game.created_at,
@@ -142,9 +143,11 @@ def _user_game_to_csv_row(
     user_game: UserGame,
 ) -> CsvExportRow:
     """Convert a UserGame to CSV row format."""
-    # Collect platform and storefront names
+    # Collect platform, storefront, ownership status, and acquired date per platform
     platform_names: List[str] = []
     storefront_names: List[str] = []
+    ownership_statuses: List[str] = []
+    acquired_dates: List[str] = []
     for ugp in user_game.platforms:
         if ugp.platform_rel:
             platform_names.append(ugp.platform_rel.name)
@@ -152,6 +155,9 @@ def _user_game_to_csv_row(
             platform_names.append(ugp.original_platform_name)
         if ugp.storefront_rel:
             storefront_names.append(ugp.storefront_rel.name)
+        ownership_statuses.append(ugp.ownership_status.value)
+        if ugp.acquired_date:
+            acquired_dates.append(ugp.acquired_date.isoformat())
 
     # Collect tag names
     tag_names: List[str] = []
@@ -167,15 +173,15 @@ def _user_game_to_csv_row(
         igdb_id=user_game.game.id,
         title=user_game.game.title,
         release_year=release_year,
-        ownership_status=user_game.ownership_status.value,
         play_status=user_game.play_status.value,
         personal_rating=float(user_game.personal_rating) if user_game.personal_rating else None,
         is_loved=user_game.is_loved,
         hours_played=user_game.hours_played,
         personal_notes=user_game.personal_notes,
-        acquired_date=user_game.acquired_date.isoformat() if user_game.acquired_date else None,
         platforms=", ".join(sorted(set(platform_names))),
         storefronts=", ".join(sorted(set(storefront_names))),
+        ownership_statuses=", ".join(ownership_statuses),
+        acquired_dates=", ".join(acquired_dates),
         tags=", ".join(sorted(tag_names)),
         created_at=user_game.created_at.isoformat(),
         updated_at=user_game.updated_at.isoformat(),
@@ -369,11 +375,12 @@ def _calculate_export_stats(games_data: List[ExportGameData]) -> Dict[str, Any]:
         status = game.play_status
         stats["by_play_status"][status] = stats["by_play_status"].get(status, 0) + 1
 
-        # Count by ownership status
-        ownership = game.ownership_status
-        stats["by_ownership_status"][ownership] = (
-            stats["by_ownership_status"].get(ownership, 0) + 1
-        )
+        # Count by ownership status (from platforms, not from games)
+        for platform in game.platforms:
+            ownership = platform.ownership_status
+            stats["by_ownership_status"][ownership] = (
+                stats["by_ownership_status"].get(ownership, 0) + 1
+            )
 
         # Count games with ratings
         if game.personal_rating is not None:

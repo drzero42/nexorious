@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { useAllPlatforms, useAllStorefronts, useAllTags, useFilterOptions } from '@/hooks';
-import { PlayStatus } from '@/types';
+import { PlayStatus, OwnershipStatus } from '@/types';
 import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 
@@ -36,6 +36,7 @@ export interface GameFiltersProps {
   filters: {
     search: string;
     status?: PlayStatus;
+    ownershipStatus?: OwnershipStatus;  // Filter by ownership status (matches if ANY platform has this status)
     platformId?: string;           // Keep for backwards compat (but will migrate to platforms)
     platforms?: string[];          // New: multi-select
     storefronts?: string[];        // New
@@ -63,6 +64,14 @@ const statusOptions: { value: PlayStatus; label: string }[] = [
   { value: PlayStatus.SHELVED, label: 'Shelved' },
   { value: PlayStatus.DROPPED, label: 'Dropped' },
   { value: PlayStatus.REPLAY, label: 'Replay' },
+];
+
+const ownershipOptions: { value: OwnershipStatus; label: string }[] = [
+  { value: OwnershipStatus.OWNED, label: 'Owned' },
+  { value: OwnershipStatus.BORROWED, label: 'Borrowed' },
+  { value: OwnershipStatus.RENTED, label: 'Rented' },
+  { value: OwnershipStatus.SUBSCRIPTION, label: 'Subscription' },
+  { value: OwnershipStatus.NO_LONGER_OWNED, label: 'No Longer Owned' },
 ];
 
 export function GameFilters({
@@ -112,6 +121,7 @@ export function GameFilters({
   const hasActiveFilters =
     filters.search ||
     filters.status ||
+    filters.ownershipStatus ||
     filters.platformId ||
     (filters.platforms && filters.platforms.length > 0) ||
     (filters.storefronts && filters.storefronts.length > 0) ||
@@ -125,6 +135,7 @@ export function GameFilters({
     onFiltersChange({
       search: '',
       status: undefined,
+      ownershipStatus: undefined,
       platformId: undefined,
       platforms: [],
       storefronts: [],
@@ -214,7 +225,7 @@ export function GameFilters({
           className="w-full sm:w-64"
         />
 
-        {/* Status filter */}
+        {/* Play Status filter */}
         <Select
           value={filters.status ?? 'all'}
           onValueChange={(value) =>
@@ -225,11 +236,34 @@ export function GameFilters({
           }
         >
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder="Play Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {statusOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Ownership Status filter */}
+        <Select
+          value={filters.ownershipStatus ?? 'all'}
+          onValueChange={(value) =>
+            onFiltersChange({
+              ...filters,
+              ownershipStatus: value === 'all' ? undefined : (value as OwnershipStatus),
+            })
+          }
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Ownership" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Ownership</SelectItem>
+            {ownershipOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

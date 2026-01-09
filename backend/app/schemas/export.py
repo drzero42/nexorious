@@ -58,6 +58,9 @@ class ExportPlatformData(BaseModel):
     store_game_id: Optional[str] = None
     store_url: Optional[str] = None
     is_available: bool = True
+    hours_played: int = 0
+    ownership_status: str = "owned"
+    acquired_date: Optional[date] = None
 
 
 class ExportTagData(BaseModel):
@@ -76,13 +79,11 @@ class ExportGameData(BaseModel):
     release_year: Optional[int] = None
 
     # User data
-    ownership_status: str
     play_status: str
     personal_rating: Optional[float] = None
     is_loved: bool = False
     hours_played: int = 0
     personal_notes: Optional[str] = None
-    acquired_date: Optional[date] = None
 
     # Relationships
     platforms: List[ExportPlatformData] = Field(default_factory=list)
@@ -132,15 +133,15 @@ class CsvExportRow(BaseModel):
     igdb_id: int
     title: str
     release_year: Optional[int] = None
-    ownership_status: str
     play_status: str
     personal_rating: Optional[float] = None
     is_loved: bool = False
     hours_played: int = 0
     personal_notes: Optional[str] = None
-    acquired_date: Optional[str] = None
     platforms: str = ""  # Comma-separated platform names
     storefronts: str = ""  # Comma-separated storefront names
+    ownership_statuses: str = ""  # Comma-separated ownership statuses per platform
+    acquired_dates: str = ""  # Comma-separated acquired dates per platform
     tags: str = ""  # Comma-separated tag names
     created_at: str
     updated_at: str

@@ -18,10 +18,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import Image from 'next/image';
-import { ArrowLeft, Edit, Trash2, Heart, Clock, Calendar, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import type { PlayStatus, OwnershipStatus } from '@/types';
+import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStatusType } from '@/types';
 
 // Helper to resolve image URLs
 function resolveImageUrl(url: string | undefined): string {
@@ -63,8 +63,8 @@ function getStatusColor(status: PlayStatus): string {
 }
 
 // Format ownership status for display
-function formatOwnershipStatus(status: OwnershipStatus): string {
-  const labels: Record<OwnershipStatus, string> = {
+function formatOwnershipStatus(status: OwnershipStatusType): string {
+  const labels: Record<OwnershipStatusType, string> = {
     owned: 'Owned',
     borrowed: 'Borrowed',
     rented: 'Rented',
@@ -193,7 +193,6 @@ export default function GameDetailPage() {
                 <Badge className={getStatusColor(game.play_status)}>
                   {formatPlayStatus(game.play_status)}
                 </Badge>
-                <Badge variant="outline">{formatOwnershipStatus(game.ownership_status)}</Badge>
                 <StarRating value={game.personal_rating} readonly size="md" showLabel />
               </div>
 
@@ -255,16 +254,34 @@ export default function GameDetailPage() {
                 )}
               </div>
 
-              {/* Platforms */}
+              {/* Platforms & Ownership */}
               {game.platforms && game.platforms.length > 0 && (
                 <div>
-                  <h3 className="font-medium mb-2">Platforms</h3>
-                  <div className="flex flex-wrap gap-2">
+                  <h3 className="font-medium mb-2">Platforms & Ownership</h3>
+                  <div className="space-y-2">
                     {game.platforms.map((p) => (
-                      <Badge key={p.id} variant="outline">
-                        {p.platform_details?.display_name || p.platform || 'Unknown'}
-                        {p.storefront_details && ` (${p.storefront_details.display_name})`}
-                      </Badge>
+                      <div key={p.id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {p.platform_details?.display_name || p.platform || 'Unknown'}
+                          </span>
+                          {p.storefront_details && (
+                            <span className="text-sm text-muted-foreground">
+                              ({p.storefront_details.display_name})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">
+                            {formatOwnershipStatus(p.ownership_status ?? OwnershipStatus.OWNED)}
+                          </Badge>
+                          {p.acquired_date && (
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(p.acquired_date).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -325,19 +342,13 @@ export default function GameDetailPage() {
           <CardTitle>Your Information</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div className="bg-muted/50 p-4 rounded-lg">
               <dt className="text-sm text-muted-foreground">Status</dt>
               <dd className="mt-1">
                 <Badge className={getStatusColor(game.play_status)}>
                   {formatPlayStatus(game.play_status)}
                 </Badge>
-              </dd>
-            </div>
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <dt className="text-sm text-muted-foreground">Ownership</dt>
-              <dd className="mt-1 font-medium">
-                {formatOwnershipStatus(game.ownership_status)}
               </dd>
             </div>
             <div className="bg-muted/50 p-4 rounded-lg">
@@ -372,13 +383,6 @@ export default function GameDetailPage() {
               )}
             </div>
           </div>
-
-          {game.acquired_date && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="h-4 w-4" />
-              Acquired: {new Date(game.acquired_date).toLocaleDateString()}
-            </div>
-          )}
 
           {game.personal_notes && (
             <div className="mt-4">

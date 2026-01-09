@@ -25,6 +25,20 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// Mock hooks
+vi.mock('@/hooks', () => ({
+  useUpdateUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAddPlatformToUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useRemovePlatformFromUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useUpdatePlatformAssociation: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAssignTagsToGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useRemoveTagsFromGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useAllPlatforms: () => ({ data: [], isLoading: false }),
+  useAllTags: () => ({ data: [], isLoading: false }),
+  useCreateOrGetTag: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useSyncConfig: () => ({ data: null }),
+}));
+
 const mockGame: UserGame = {
   id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' as UserGameId,
   game: {
@@ -41,13 +55,11 @@ const mockGame: UserGame = {
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   },
-  ownership_status: OwnershipStatus.OWNED,
   personal_rating: 4,
   is_loved: false,
   play_status: PlayStatus.IN_PROGRESS,
   hours_played: 10,
   personal_notes: '<p>Some notes</p>',
-  acquired_date: '2024-01-15',
   platforms: [
     {
       id: 'ugp-1',
@@ -70,7 +82,9 @@ const mockGame: UserGame = {
         updated_at: '2024-01-01T00:00:00Z',
       },
       is_available: true,
-      hours_played: 0,
+      hours_played: 10,
+      ownership_status: OwnershipStatus.OWNED,
+      acquired_date: '2024-01-15',
       created_at: '2024-01-01T00:00:00Z',
     },
   ],
@@ -106,7 +120,7 @@ describe('GameEditForm', () => {
     // Check play status is shown
     expect(screen.getByText('In Progress')).toBeInTheDocument();
 
-    // Check ownership status is shown
+    // Check ownership status is shown per platform (in Platforms section)
     expect(screen.getByText('Owned')).toBeInTheDocument();
   });
 
@@ -118,10 +132,12 @@ describe('GameEditForm', () => {
     expect(screen.getByText('10 hours total')).toBeInTheDocument();
   });
 
-  it('renders acquired date input with current value', () => {
-    render(<GameEditForm game={mockGame} />);
+  it('renders acquired date input per platform with current value', () => {
+    const { container } = render(<GameEditForm game={mockGame} />);
 
-    const dateInput = screen.getByLabelText('Acquired Date');
+    // Acquired date is now per platform, find the date input in the platform section
+    // The label isn't connected with htmlFor, so find via input type
+    const dateInput = container.querySelector('input[type="date"]');
     expect(dateInput).toHaveValue('2024-01-15');
   });
 

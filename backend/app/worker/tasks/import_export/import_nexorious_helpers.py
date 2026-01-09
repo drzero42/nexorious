@@ -77,16 +77,15 @@ async def _process_nexorious_game(
             return "error"
 
     # Create UserGame with user data from export
+    # Note: ownership_status and acquired_date are now at platform level
     user_game = UserGame(
         user_id=user_id,
         game_id=igdb_id,
         play_status=_map_play_status(game_data.get("play_status")),
-        ownership_status=_map_ownership_status(game_data.get("ownership_status")),
         personal_rating=_parse_rating(game_data.get("personal_rating")),
         is_loved=game_data.get("is_loved", False),
         hours_played=game_data.get("hours_played", 0),
         personal_notes=game_data.get("personal_notes"),
-        acquired_date=_parse_date(game_data.get("acquired_date")),
     )
     session.add(user_game)
     try:
@@ -98,9 +97,16 @@ async def _process_nexorious_game(
     session.refresh(user_game)
 
     # Import platforms if present
+    # Pass game-level ownership as defaults for v1.x backward compatibility
     platforms_data = game_data.get("platforms", [])
     if platforms_data:
-        await _import_platforms(session, user_game, platforms_data)
+        await _import_platforms(
+            session,
+            user_game,
+            platforms_data,
+            default_ownership_status=game_data.get("ownership_status"),
+            default_acquired_date=game_data.get("acquired_date"),
+        )
 
     # Import tags if present
     tags_data = game_data.get("tags", [])
@@ -183,8 +189,18 @@ async def _import_platforms(
     session: Session,
     user_game: UserGame,
     platforms_data: List[Dict[str, Any]],
+    default_ownership_status: Optional[str] = None,
+    default_acquired_date: Optional[str] = None,
 ) -> None:
-    """Import platform associations for a user game."""
+    """Import platform associations for a user game.
+
+    Args:
+        session: Database session
+        user_game: The UserGame to associate platforms with
+        platforms_data: List of platform data dictionaries
+        default_ownership_status: Fallback ownership status from game level (v1.x compat)
+        default_acquired_date: Fallback acquired date from game level (v1.x compat)
+    """
     # Track seen platform/storefront combinations to avoid duplicates
     seen_combinations: set[tuple[Optional[str], Optional[str]]] = set()
 
@@ -196,26 +212,26 @@ async def _import_platforms(
 
         # Try to resolve platform by name
         # Note: platform FK now references platforms.name
-        platform_slug = None
+        resolved_platform = None
         if platform_name:
             platform_record = session.exec(
                 select(Platform).where(Platform.name == platform_name)
             ).first()
             if platform_record:
-                platform_slug = platform_record.name
+                resolved_platform = platform_record.name
 
         # Try to resolve storefront by name
         # Note: storefront FK now references storefronts.name
-        storefront_slug = None
+        resolved_storefront = None
         if storefront_name:
             storefront_record = session.exec(
                 select(Storefront).where(Storefront.name == storefront_name)
             ).first()
             if storefront_record:
-                storefront_slug = storefront_record.name
+                resolved_storefront = storefront_record.name
 
         # Skip duplicate platform/storefront combinations
-        combination_key = (platform_slug, storefront_slug)
+        combination_key = (resolved_platform, resolved_storefront)
         if combination_key in seen_combinations:
             logger.debug(
                 f"Skipping duplicate platform/storefront: {platform_name}/{storefront_name}"
@@ -223,16 +239,31 @@ async def _import_platforms(
             continue
         seen_combinations.add(combination_key)
 
-        # Create platform association
+        # Store original names for unresolved platforms/storefronts
+        original_platform_name = platform_name if not resolved_platform else None
+        original_storefront_name = storefront_name if not resolved_storefront else None
+
+        # Get ownership from platform data or fall back to game-level defaults (v1.x compatibility)
+        ownership_status = _map_ownership_status(
+            platform_data.get("ownership_status") or default_ownership_status
+        )
+        acquired_date = _parse_date(
+            platform_data.get("acquired_date") or default_acquired_date
+        )
+
+        # Create platform association with ownership fields
         user_game_platform = UserGamePlatform(
             user_game_id=user_game.id,
-            platform=platform_slug,
-            storefront=storefront_slug,
+            platform=resolved_platform,
+            storefront=resolved_storefront,
             store_game_id=platform_data.get("store_game_id"),
             store_url=platform_data.get("store_url"),
             is_available=platform_data.get("is_available", True),
-            original_platform_name=platform_name if not platform_slug else None,
-            original_storefront_name=storefront_name if not storefront_slug else None,
+            hours_played=platform_data.get("hours_played", 0),
+            ownership_status=ownership_status,
+            acquired_date=acquired_date,
+            original_platform_name=original_platform_name,
+            original_storefront_name=original_storefront_name,
         )
         session.add(user_game_platform)
 
