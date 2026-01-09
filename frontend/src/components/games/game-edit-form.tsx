@@ -77,12 +77,24 @@ export function GameEditForm({ game }: GameEditFormProps) {
 
   // Form state
   const [playStatus, setPlayStatus] = useState<PlayStatus>(game.play_status);
-  const [ownershipStatus, setOwnershipStatus] = useState<OwnershipStatus>(game.ownership_status);
   const [personalRating, setPersonalRating] = useState<number | null>(game.personal_rating ?? null);
   const [isLoved, setIsLoved] = useState(game.is_loved);
-  const [acquiredDate, setAcquiredDate] = useState(game.acquired_date ?? '');
   const [platformPlaytimes, setPlatformPlaytimes] = useState<Record<string, number>>(
     Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played]))
+  );
+  const [platformOwnership, setPlatformOwnership] = useState<Record<string, {
+    ownershipStatus: OwnershipStatus;
+    acquiredDate: string;
+  }>>(
+    Object.fromEntries(
+      game.platforms.map((p) => [
+        p.id,
+        {
+          ownershipStatus: p.ownership_status,
+          acquiredDate: p.acquired_date ?? ''
+        }
+      ])
+    )
   );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
@@ -150,15 +162,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
 
   const handleSave = async () => {
     try {
-      // 1. Update basic game properties (no longer updating hours_played - it's per platform now)
+      // 1. Update basic game properties (no longer updating hours_played or ownership - it's per platform now)
       await updateGame.mutateAsync({
         id: game.id,
         data: {
           playStatus,
-          ownershipStatus,
           personalRating,
           isLoved,
-          acquiredDate: acquiredDate || undefined,
           personalNotes: personalNotes || undefined,
         },
       });
@@ -194,19 +204,29 @@ export function GameEditForm({ game }: GameEditFormProps) {
         }
       }
 
-      // 3. Update platform playtimes
-      for (const [platformId, hours] of Object.entries(platformPlaytimes)) {
+      // 3. Update platform playtimes and ownership
+      for (const [platformId, data] of Object.entries(platformOwnership)) {
         const originalPlatform = game.platforms.find((p) => p.id === platformId);
-        if (originalPlatform && originalPlatform.hours_played !== hours) {
-          await updatePlatformAssoc.mutateAsync({
-            userGameId: game.id,
-            platformAssociationId: platformId,
-            data: {
-              platform: originalPlatform.platform || '',
-              storefront: originalPlatform.storefront,
-              hoursPlayed: hours,
-            },
-          });
+        if (originalPlatform) {
+          const hours = platformPlaytimes[platformId] ?? originalPlatform.hours_played;
+          const needsUpdate =
+            originalPlatform.hours_played !== hours ||
+            originalPlatform.ownership_status !== data.ownershipStatus ||
+            (originalPlatform.acquired_date ?? '') !== data.acquiredDate;
+
+          if (needsUpdate) {
+            await updatePlatformAssoc.mutateAsync({
+              userGameId: game.id,
+              platformAssociationId: platformId,
+              data: {
+                platform: originalPlatform.platform || '',
+                storefront: originalPlatform.storefront,
+                hoursPlayed: hours,
+                ownershipStatus: data.ownershipStatus,
+                acquiredDate: data.acquiredDate || undefined,
+              },
+            });
+          }
         }
       }
 
@@ -309,7 +329,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
           <CardTitle>Status & Rating</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Play Status */}
             <div className="space-y-2">
               <Label htmlFor="play-status">Play Status</Label>
@@ -327,28 +347,6 @@ export function GameEditForm({ game }: GameEditFormProps) {
               </Select>
             </div>
 
-            {/* Ownership Status */}
-            <div className="space-y-2">
-              <Label htmlFor="ownership-status">Ownership Status</Label>
-              <Select
-                value={ownershipStatus}
-                onValueChange={(v) => setOwnershipStatus(v as OwnershipStatus)}
-              >
-                <SelectTrigger id="ownership-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {OWNERSHIP_STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Personal Rating */}
             <div className="space-y-2">
               <Label>Personal Rating</Label>
@@ -382,40 +380,27 @@ export function GameEditForm({ game }: GameEditFormProps) {
         </CardContent>
       </Card>
 
-      {/* Progress & Dates */}
+      {/* Progress */}
       <Card>
         <CardHeader>
-          <CardTitle>Progress & Dates</CardTitle>
+          <CardTitle>Progress</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Hours Played - now per-platform */}
-            <div className="space-y-2">
-              <Label>Hours Played</Label>
-              <p className="text-sm text-muted-foreground">
-                Playtime is tracked per platform below.
-              </p>
-              <p className="text-lg font-medium">{totalHoursPlayed} hours total</p>
-            </div>
-
-            {/* Acquired Date */}
-            <div className="space-y-2">
-              <Label htmlFor="acquired-date">Acquired Date</Label>
-              <Input
-                id="acquired-date"
-                type="date"
-                value={acquiredDate}
-                onChange={(e) => setAcquiredDate(e.target.value)}
-              />
-            </div>
+        <CardContent>
+          {/* Hours Played - now per-platform */}
+          <div className="space-y-2">
+            <Label>Total Hours Played</Label>
+            <p className="text-sm text-muted-foreground">
+              Playtime and ownership are tracked per platform below.
+            </p>
+            <p className="text-lg font-medium">{totalHoursPlayed} hours total</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Platforms & Playtime */}
+      {/* Platforms & Ownership */}
       <Card>
         <CardHeader>
-          <CardTitle>Platforms & Playtime</CardTitle>
+          <CardTitle>Platforms & Ownership</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {platformsLoading ? (
@@ -429,39 +414,97 @@ export function GameEditForm({ game }: GameEditFormProps) {
                 placeholder="Select platforms..."
               />
 
-              {/* Playtime per platform */}
+              {/* Per-platform details */}
               {game.platforms.length > 0 && (
-                <div className="space-y-3 pt-4 border-t">
-                  <Label>Playtime by Platform</Label>
+                <div className="space-y-4 pt-4 border-t">
                   {game.platforms.map((p) => {
                     const isSteamPlatform = p.storefront === 'steam';
-                    const isDisabled = isSteamSyncEnabled && isSteamPlatform;
+                    const isSteamSynced = isSteamSyncEnabled && isSteamPlatform;
+                    const ownership = platformOwnership[p.id] ?? {
+                      ownershipStatus: p.ownership_status,
+                      acquiredDate: p.acquired_date ?? ''
+                    };
+                    const platformName =
+                      p.storefront_details?.display_name ||
+                      p.storefront ||
+                      p.platform_details?.display_name ||
+                      p.platform ||
+                      'Unknown';
+
                     return (
-                      <div key={p.id} className="flex items-center gap-4">
-                        <span className="min-w-[150px] text-sm">
-                          {p.storefront_details?.display_name ||
-                            p.storefront ||
-                            p.platform_details?.display_name ||
-                            p.platform ||
-                            'Unknown'}
-                        </span>
-                        <Input
-                          type="number"
-                          min="0"
-                          className="w-24"
-                          value={platformPlaytimes[p.id] ?? p.hours_played}
-                          onChange={(e) =>
-                            setPlatformPlaytimes((prev) => ({
-                              ...prev,
-                              [p.id]: parseInt(e.target.value) || 0,
-                            }))
-                          }
-                          disabled={isDisabled}
-                        />
-                        <span className="text-sm text-muted-foreground">hours</span>
-                        {isDisabled && (
-                          <span className="text-xs text-muted-foreground">(Synced from Steam)</span>
-                        )}
+                      <div key={p.id} className="p-4 rounded-lg border bg-muted/30">
+                        <div className="font-medium mb-3">{platformName}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Ownership Status */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Ownership</Label>
+                            <Select
+                              value={ownership.ownershipStatus}
+                              onValueChange={(v) =>
+                                setPlatformOwnership((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...prev[p.id],
+                                    ownershipStatus: v as OwnershipStatus
+                                  }
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {OWNERSHIP_STATUS_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Acquired Date */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Acquired</Label>
+                            <Input
+                              type="date"
+                              className="h-9"
+                              value={ownership.acquiredDate}
+                              onChange={(e) =>
+                                setPlatformOwnership((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...prev[p.id],
+                                    acquiredDate: e.target.value
+                                  }
+                                }))
+                              }
+                            />
+                          </div>
+
+                          {/* Hours Played */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Hours{isSteamSynced && ' (Synced)'}
+                            </Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                className="h-9 w-24"
+                                value={platformPlaytimes[p.id] ?? p.hours_played}
+                                onChange={(e) =>
+                                  setPlatformPlaytimes((prev) => ({
+                                    ...prev,
+                                    [p.id]: parseInt(e.target.value) || 0,
+                                  }))
+                                }
+                                disabled={isSteamSynced}
+                              />
+                              <span className="text-sm text-muted-foreground">hrs</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
