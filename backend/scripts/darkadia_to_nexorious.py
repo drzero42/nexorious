@@ -796,13 +796,11 @@ def generate_nexorious_json(
         play_status = derive_play_status(game)
         ownership_status = derive_ownership_status(game)
 
-        # Update stats
+        # Update stats (play_status is game-level)
         stats["by_play_status"][play_status] = (
             stats["by_play_status"].get(play_status, 0) + 1
         )
-        stats["by_ownership_status"][ownership_status] = (
-            stats["by_ownership_status"].get(ownership_status, 0) + 1
-        )
+        # Note: ownership stats are counted per platform below
         if game.rating is not None:
             stats["games_with_ratings"] += 1
         if game.notes:
@@ -838,10 +836,20 @@ def generate_nexorious_json(
                 continue
             seen_platform_storefronts.add(key)
 
+            # Count ownership stats per platform
+            stats["by_ownership_status"][ownership_status] = (
+                stats["by_ownership_status"].get(ownership_status, 0) + 1
+            )
+
+            # Use copy's purchase_date if available, else fall back to game's added_date
+            platform_acquired_date = copy.purchase_date or game.added_date
+
             platforms.append(
                 {
                     "platform_name": platform_name_out,
                     "storefront_name": storefront_name_out,
+                    "ownership_status": ownership_status,
+                    "acquired_date": platform_acquired_date.isoformat() if platform_acquired_date else None,
                 }
             )
 
@@ -850,13 +858,11 @@ def generate_nexorious_json(
             "igdb_id": game.igdb_id,
             "title": game.igdb_title or game.name,
             "release_year": game.release_year,
-            "ownership_status": ownership_status,
             "play_status": play_status,
             "personal_rating": game.rating,
             "is_loved": game.loved,
             "hours_played": 0,  # Not tracked in Darkadia CSV
             "personal_notes": game.notes if game.notes else None,
-            "acquired_date": game.added_date.isoformat() if game.added_date else None,
             "platforms": platforms,
             "tags": [],
             "created_at": now.isoformat(),
