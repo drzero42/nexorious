@@ -118,6 +118,8 @@ export interface UserGamePlatform {
   store_url?: string;
   is_available: boolean;
   hours_played: number;
+  ownership_status: OwnershipStatus;
+  acquired_date?: string;
   original_platform_name?: string;
   created_at: string;
 }
@@ -136,13 +138,11 @@ export interface Tag {
 export interface UserGame {
   id: UserGameId;
   game: Game;
-  ownership_status: OwnershipStatus;
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
   hours_played: number;
   personal_notes?: string;
-  acquired_date?: string;
   platforms: UserGamePlatform[];
   tags?: Tag[];
   created_at: string;
@@ -205,11 +205,9 @@ export interface UserGameCreateRequest {
 }
 
 export interface UserGameUpdateRequest {
-  ownership_status?: OwnershipStatus;
   personal_rating?: number | null;
   is_loved?: boolean;
   play_status?: PlayStatus;
   hours_played?: number;
   personal_notes?: string;
-  acquired_date?: string;
 }
