@@ -14,7 +14,7 @@ import {
 } from '@/components/games';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import type { PlayStatus, UserGame, SelectionMode } from '@/types';
+import type { PlayStatus, OwnershipStatus, UserGame, SelectionMode } from '@/types';
 
 type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played';
 type SortOrder = 'asc' | 'desc';
@@ -45,11 +45,14 @@ function GamesPageContent() {
   // Read filters from URL params
   const filters = useMemo(() => {
     const statusParam = searchParams.get('status');
+    const ownershipParam = searchParams.get('ownership');
     // Handle "null" string or empty string as undefined
     const status = statusParam && statusParam !== 'null' ? statusParam as PlayStatus : undefined;
+    const ownershipStatus = ownershipParam && ownershipParam !== 'null' ? ownershipParam as OwnershipStatus : undefined;
     return {
       search: searchParams.get('q') ?? '',
       status,
+      ownershipStatus,
       platforms: searchParams.getAll('platform'),
       storefronts: searchParams.getAll('storefront'),
       genres: searchParams.getAll('genre'),
@@ -91,6 +94,7 @@ function GamesPageContent() {
     () => ({
       search: filters.search || undefined,
       status: filters.status,
+      ownershipStatus: filters.ownershipStatus,
       platform: filters.platforms.length > 0 ? filters.platforms : undefined,
       storefront: filters.storefronts.length > 0 ? filters.storefronts : undefined,
       genre: filters.genres.length > 0 ? filters.genres : undefined,
@@ -117,6 +121,7 @@ function GamesPageContent() {
   const handleFiltersChange = useCallback((newFilters: {
     search: string;
     status?: PlayStatus;
+    ownershipStatus?: OwnershipStatus;
     platforms?: string[];
     storefronts?: string[];
     genres?: string[];
@@ -128,6 +133,7 @@ function GamesPageContent() {
     updateParams({
       q: newFilters.search || undefined,
       status: newFilters.status,
+      ownership: newFilters.ownershipStatus,
       platform: newFilters.platforms,
       storefront: newFilters.storefronts,
       genre: newFilters.genres,
