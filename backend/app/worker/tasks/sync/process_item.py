@@ -22,7 +22,7 @@ from app.models.job import (
     BackgroundJobSource,
 )
 from app.models.game import Game
-from app.models.user_game import UserGame, UserGamePlatform
+from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus
 from app.models.user_sync_config import UserSyncConfig
 from app.models.ignored_external_game import IgnoredExternalGame
 from app.services.igdb.service import IGDBService
@@ -239,8 +239,8 @@ async def _process_with_resolved_id(
 
         # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
         insert_sql = text("""
-            INSERT INTO user_games (id, user_id, game_id, ownership_status, personal_rating, is_loved, play_status, hours_played, personal_notes, acquired_date, created_at, updated_at)
-            VALUES (gen_random_uuid(), :user_id, :game_id, 'OWNED', NULL, false, 'NOT_STARTED', 0, NULL, NULL, NOW(), NOW())
+            INSERT INTO user_games (id, user_id, game_id, personal_rating, is_loved, play_status, hours_played, personal_notes, created_at, updated_at)
+            VALUES (gen_random_uuid(), :user_id, :game_id, NULL, false, 'NOT_STARTED', 0, NULL, NOW(), NOW())
             ON CONFLICT (user_id, game_id) DO NOTHING
             RETURNING id
         """)
@@ -413,8 +413,8 @@ async def _auto_import_game(
 
         # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
         insert_sql = text("""
-            INSERT INTO user_games (id, user_id, game_id, ownership_status, personal_rating, is_loved, play_status, hours_played, personal_notes, acquired_date, created_at, updated_at)
-            VALUES (gen_random_uuid(), :user_id, :game_id, 'OWNED', NULL, false, 'NOT_STARTED', 0, NULL, NULL, NOW(), NOW())
+            INSERT INTO user_games (id, user_id, game_id, personal_rating, is_loved, play_status, hours_played, personal_notes, created_at, updated_at)
+            VALUES (gen_random_uuid(), :user_id, :game_id, NULL, false, 'NOT_STARTED', 0, NULL, NOW(), NOW())
             ON CONFLICT (user_id, game_id) DO NOTHING
             RETURNING id
         """)
@@ -506,6 +506,7 @@ def _add_platform_association(
             store_url=store_url,
             is_available=True,
             hours_played=playtime_hours,
+            ownership_status=OwnershipStatus.OWNED,
         )
         session.add(platform_assoc)
         session.commit()
