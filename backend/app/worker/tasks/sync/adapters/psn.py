@@ -12,6 +12,7 @@ from sqlmodel import Session
 
 from app.models.user import User
 from app.models.job import BackgroundJobSource
+from app.models.user_game import OwnershipStatus
 from app.services.psn import PSNService, PSNTokenExpiredError
 from .base import ExternalGame
 
@@ -113,6 +114,12 @@ class PSNSyncAdapter:
             # product_id is the full SKU which can have variants, title_id is the game identifier
             title_id = game.metadata.get("title_id", game.product_id)
 
+            # Determine ownership status based on subscription flag
+            ownership_status = (
+                OwnershipStatus.SUBSCRIPTION if game.is_subscription
+                else OwnershipStatus.OWNED
+            )
+
             for platform in game.platforms:
                 external_games.append(
                     ExternalGame(
@@ -125,6 +132,7 @@ class PSNSyncAdapter:
                             **game.metadata
                         },
                         playtime_hours=game.playtime_hours,
+                        ownership_status=ownership_status,
                     )
                 )
 

@@ -25,6 +25,7 @@ class PSNGame:
     platforms: List[str]  # ["playstation-4", "playstation-5"]
     metadata: Dict[str, Any]  # Additional game metadata
     playtime_hours: int = 0   # Total playtime in hours
+    is_subscription: bool = False  # True if available via PS Plus subscription
 
 
 class PSNAPIError(Exception):
@@ -153,6 +154,9 @@ class PSNService:
                 if not platforms:
                     platforms = ["playstation-5"]
 
+                # Check if this is a subscription entitlement (e.g., PS Plus)
+                is_subscription = entitlement.get("isSubscription", False)
+
                 psn_game = PSNGame(
                     product_id=title_id,
                     name=game_name,
@@ -162,6 +166,7 @@ class PSNService:
                         "title_id": title_id,
                     },
                     playtime_hours=playtime,
+                    is_subscription=is_subscription,
                 )
                 games.append(psn_game)
 

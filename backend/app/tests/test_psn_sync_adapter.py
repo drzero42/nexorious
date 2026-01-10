@@ -262,3 +262,54 @@ def test_psn_adapter_registered():
     adapter = get_sync_adapter("psn")
 
     assert isinstance(adapter, PSNSyncAdapter)
+
+
+@pytest.mark.asyncio
+async def test_fetch_games_subscription_ownership_status():
+    """Test fetch_games maps is_subscription to ownership_status correctly."""
+    from app.worker.tasks.sync.adapters.psn import PSNSyncAdapter
+    from app.services.psn import PSNGame
+    from app.models.user_game import OwnershipStatus
+
+    user = Mock()
+    user.id = "user123"
+    user.preferences = {
+        "psn": {
+            "npsso_token": "a" * 64,
+            "is_verified": True
+        }
+    }
+    session = Mock()
+
+    # Owned game
+    owned_game = PSNGame(
+        product_id="OWNED001",
+        name="Owned Game",
+        platforms=["playstation-5"],
+        metadata={"product_id": "OWNED001"},
+        is_subscription=False,
+    )
+    # Subscription game (PS Plus)
+    subscription_game = PSNGame(
+        product_id="SUB001",
+        name="PS Plus Game",
+        platforms=["playstation-5"],
+        metadata={"product_id": "SUB001"},
+        is_subscription=True,
+    )
+
+    with patch('app.worker.tasks.sync.adapters.psn.PSNService') as mock_service_class:
+        mock_service = AsyncMock()
+        mock_service.get_library.return_value = [owned_game, subscription_game]
+        mock_service_class.return_value = mock_service
+
+        adapter = PSNSyncAdapter()
+        result = await adapter.fetch_games(user, session)
+
+    assert len(result) == 2
+    # Owned game should have OWNED status
+    assert result[0].external_id == "OWNED001"
+    assert result[0].ownership_status == OwnershipStatus.OWNED
+    # Subscription game should have SUBSCRIPTION status
+    assert result[1].external_id == "SUB001"
+    assert result[1].ownership_status == OwnershipStatus.SUBSCRIPTION

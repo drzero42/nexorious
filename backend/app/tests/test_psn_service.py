@@ -241,3 +241,41 @@ async def test_disconnect():
 
         # Should not raise
         await service.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_get_library_subscription_flag():
+    """Test getting library correctly detects subscription games (e.g., PS Plus)."""
+    with patch('psnawp_api.PSNAWP') as mock_psnawp:
+        # Owned game (not subscription)
+        owned_entitlement = {
+            "productId": "PROD001",
+            "titleMeta": {"titleId": "OWNED001", "name": "Owned Game"},
+            "entitlementAttributes": [{"platformId": "ps5"}],
+            "isSubscription": False,
+        }
+        # Subscription game (PS Plus)
+        subscription_entitlement = {
+            "productId": "PROD002",
+            "titleMeta": {"titleId": "SUB001", "name": "PS Plus Game"},
+            "entitlementAttributes": [{"platformId": "ps5"}],
+            "isSubscription": True,
+        }
+
+        mock_client = Mock()
+        mock_client.game_entitlements.return_value = [owned_entitlement, subscription_entitlement]
+        mock_client.title_stats.return_value = []
+        mock_psnawp.return_value.me.return_value = mock_client
+
+        from app.services.psn import PSNService
+        service = PSNService("a" * 64)
+
+        result = await service.get_library()
+
+        assert len(result) == 2
+        # Owned game should have is_subscription=False
+        assert result[0].product_id == "OWNED001"
+        assert result[0].is_subscription is False
+        # Subscription game should have is_subscription=True
+        assert result[1].product_id == "SUB001"
+        assert result[1].is_subscription is True

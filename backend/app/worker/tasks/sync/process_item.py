@@ -89,6 +89,14 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
     platform = metadata.get("platform")
     storefront = metadata.get("storefront")
     playtime_hours = metadata.get("playtime_hours", 0)
+    # Parse ownership_status from metadata (may be None for backward compatibility)
+    ownership_status_str = metadata.get("ownership_status")
+    ownership_status: Optional[OwnershipStatus] = None
+    if ownership_status_str:
+        try:
+            ownership_status = OwnershipStatus(ownership_status_str)
+        except ValueError:
+            logger.warning(f"Invalid ownership_status '{ownership_status_str}', defaulting to None")
 
     if not external_id or not storefront:
         return await _update_job_item_error(job_item_id, "Missing external_id or storefront")
@@ -128,14 +136,14 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
             return await _process_with_resolved_id(
                 session, job_item_id, job_id, user_id,
                 resolved_igdb_id, platform, storefront, external_id, source_title,
-                playtime_hours
+                playtime_hours, ownership_status
             )
 
         # Step 4: Flow A - Match via IGDB
         return await _process_with_matching(
             session, job_item_id, job_id, user_id,
             source_title, platform, storefront, external_id, metadata,
-            playtime_hours
+            playtime_hours, ownership_status
         )
 
     except Exception as e:
@@ -206,6 +214,7 @@ async def _process_with_resolved_id(
     external_id: str,
     source_title: str,
     playtime_hours: int = 0,
+    ownership_status: Optional[OwnershipStatus] = None,
 ) -> Dict[str, Any]:
     """Process item with user-provided IGDB ID (Flow B)."""
     logger.info(f"Processing {source_title} with resolved IGDB ID {igdb_id}")
@@ -222,7 +231,7 @@ async def _process_with_resolved_id(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours
+            platform, storefront, external_id, playtime_hours, ownership_status
         )
         result = "linked_existing"
         user_game_id = existing_user_game.id
@@ -271,7 +280,7 @@ async def _process_with_resolved_id(
         # Add platform association
         _add_platform_association(
             session, user_game_id,
-            platform, storefront, external_id, playtime_hours
+            platform, storefront, external_id, playtime_hours, ownership_status
         )
 
     # Fetch the game title for result_json
@@ -307,6 +316,7 @@ async def _process_with_matching(
     external_id: str,
     metadata: Dict[str, Any],
     playtime_hours: int = 0,
+    ownership_status: Optional[OwnershipStatus] = None,
 ) -> Dict[str, Any]:
     """Process item with IGDB matching (Flow A)."""
     logger.debug(f"Matching {source_title} via IGDB")
@@ -339,7 +349,7 @@ async def _process_with_matching(
             return await _auto_import_game(
                 session, job_item_id, job_id, user_id,
                 igdb_id, platform, storefront, external_id,
-                match_result, confidence, playtime_hours
+                match_result, confidence, playtime_hours, ownership_status
             )
         else:
             # Low confidence - needs review
@@ -380,6 +390,7 @@ async def _auto_import_game(
     match_result: MatchResult,
     confidence: float,
     playtime_hours: int = 0,
+    ownership_status: Optional[OwnershipStatus] = None,
 ) -> Dict[str, Any]:
     """Auto-import a high-confidence match."""
     logger.info(f"Auto-importing {match_result.igdb_title} (confidence: {confidence:.2f})")
@@ -396,7 +407,7 @@ async def _auto_import_game(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours
+            platform, storefront, external_id, playtime_hours, ownership_status
         )
         result = "auto_linked"
         user_game_id = existing_user_game.id
@@ -445,7 +456,7 @@ async def _auto_import_game(
         # Add platform association
         _add_platform_association(
             session, user_game_id,
-            platform, storefront, external_id, playtime_hours
+            platform, storefront, external_id, playtime_hours, ownership_status
         )
 
     # Update JobItem with match info AND result data for recent activity display
@@ -474,6 +485,7 @@ def _add_platform_association(
     storefront: str,
     external_id: str,
     playtime_hours: int = 0,
+    ownership_status: Optional[OwnershipStatus] = None,
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
@@ -486,9 +498,13 @@ def _add_platform_association(
         )
     ).first()
 
+    # Default to OWNED if not specified
+    final_ownership_status = ownership_status or OwnershipStatus.OWNED
+
     if existing:
-        # Update playtime if already exists (sync updates)
+        # Update playtime and ownership_status if already exists (sync updates)
         existing.hours_played = playtime_hours
+        existing.ownership_status = final_ownership_status
         session.add(existing)
         session.commit()
         logger.debug(f"Updated playtime for existing platform association on UserGame {user_game_id}")
@@ -506,7 +522,7 @@ def _add_platform_association(
             store_url=store_url,
             is_available=True,
             hours_played=playtime_hours,
-            ownership_status=OwnershipStatus.OWNED,
+            ownership_status=final_ownership_status,
         )
         session.add(platform_assoc)
         session.commit()
