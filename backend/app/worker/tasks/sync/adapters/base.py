@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from app.models.user import User
 from app.models.job import BackgroundJobSource
+from app.models.user_game import OwnershipStatus
 
 
 @dataclass
@@ -24,6 +25,7 @@ class ExternalGame:
         storefront: Storefront identifier (e.g., "steam")
         metadata: Source-specific data (playtime, achievements, etc.)
         playtime_hours: Total playtime in hours from the source
+        ownership_status: Optional ownership status (e.g., subscription vs owned)
     """
     external_id: str
     title: str
@@ -31,6 +33,7 @@ class ExternalGame:
     storefront: str
     metadata: Dict[str, Any]
     playtime_hours: int = 0
+    ownership_status: Optional[OwnershipStatus] = None
 
 
 class SyncSourceAdapter(Protocol):

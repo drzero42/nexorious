@@ -173,6 +173,7 @@ def _create_job_item(
         "storefront": game.storefront,
         "metadata": game.metadata,
         "playtime_hours": game.playtime_hours,
+        "ownership_status": game.ownership_status.value if game.ownership_status else None,
     }
 
     job_item = JobItem(
