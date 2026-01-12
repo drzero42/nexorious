@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from .wishlist import Wishlist
     from .job import Job
     from .user_sync_config import UserSyncConfig
-    from .ignored_external_game import IgnoredExternalGame
     from .external_game import ExternalGame
 
 
@@ -54,7 +53,6 @@ class User(SQLModel, table=True):
     wishlists: List["Wishlist"] = Relationship(back_populates="user")
     jobs: List["Job"] = Relationship(back_populates="user")
     sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")
-    ignored_external_games: List["IgnoredExternalGame"] = Relationship(back_populates="user")
     external_games: List["ExternalGame"] = Relationship(back_populates="user")
 
 
