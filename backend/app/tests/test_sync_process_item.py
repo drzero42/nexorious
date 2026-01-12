@@ -41,27 +41,32 @@ class TestGetExistingSync:
 class TestIsIgnored:
     """Tests for _is_ignored helper."""
 
-    def test_returns_true_when_ignored(self):
-        """Test returns True when game is ignored."""
+    def test_returns_true_when_skipped(self):
+        """Test returns True when ExternalGame.is_skipped is True."""
         session = MagicMock()
-        session.exec.return_value.first.return_value = MagicMock()  # Found
+        mock_external_game = MagicMock()
+        mock_external_game.is_skipped = True
+        session.exec.return_value.first.return_value = mock_external_game
 
         result = _is_ignored(session, "user123", "steam", "12345")
         assert result is True
 
-    def test_returns_false_when_not_ignored(self):
-        """Test returns False when game is not ignored."""
+    def test_returns_false_when_not_skipped(self):
+        """Test returns False when ExternalGame.is_skipped is False."""
         session = MagicMock()
-        session.exec.return_value.first.return_value = None
+        mock_external_game = MagicMock()
+        mock_external_game.is_skipped = False
+        session.exec.return_value.first.return_value = mock_external_game
 
         result = _is_ignored(session, "user123", "steam", "12345")
         assert result is False
 
-    def test_returns_false_for_unknown_storefront(self):
-        """Test returns False for unknown storefront."""
+    def test_returns_false_when_no_external_game(self):
+        """Test returns False when ExternalGame not found."""
         session = MagicMock()
+        session.exec.return_value.first.return_value = None
 
-        result = _is_ignored(session, "user123", "unknown", "12345")
+        result = _is_ignored(session, "user123", "steam", "12345")
         assert result is False
 
 
@@ -126,6 +131,53 @@ class TestAddPlatformAssociation:
         call_args = session.add.call_args
         platform = call_args[0][0]
         assert platform.store_url is None
+
+    def test_creates_association_with_external_game_id(self):
+        """Test creates new association with external_game_id."""
+        session = MagicMock()
+        session.exec.return_value.first.return_value = None  # Not found
+
+        _add_platform_association(
+            session, "ug123", "pc-windows", "steam", "12345",
+            external_game_id="ext-game-123"
+        )
+
+        # Check the added platform has external_game_id set
+        call_args = session.add.call_args
+        platform = call_args[0][0]
+        assert platform.external_game_id == "ext-game-123"
+
+    def test_updates_external_game_id_when_not_set(self):
+        """Test updates external_game_id if not already set on existing association."""
+        session = MagicMock()
+        existing_platform = MagicMock()
+        existing_platform.hours_played = 10
+        existing_platform.external_game_id = None  # Not set
+        session.exec.return_value.first.return_value = existing_platform
+
+        _add_platform_association(
+            session, "ug123", "pc-windows", "steam", "12345", 25,
+            external_game_id="ext-game-123"
+        )
+
+        # Should update external_game_id
+        assert existing_platform.external_game_id == "ext-game-123"
+
+    def test_preserves_existing_external_game_id(self):
+        """Test preserves existing external_game_id if already set."""
+        session = MagicMock()
+        existing_platform = MagicMock()
+        existing_platform.hours_played = 10
+        existing_platform.external_game_id = "original-ext-id"  # Already set
+        session.exec.return_value.first.return_value = existing_platform
+
+        _add_platform_association(
+            session, "ug123", "pc-windows", "steam", "12345", 25,
+            external_game_id="new-ext-id"
+        )
+
+        # Should NOT update external_game_id when already set
+        assert existing_platform.external_game_id == "original-ext-id"
 
 
 class TestProcessSyncItem:

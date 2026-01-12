@@ -24,7 +24,7 @@ from app.models.job import (
 from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus
 from app.models.user_sync_config import UserSyncConfig
-from app.models.ignored_external_game import IgnoredExternalGame
+from app.models.external_game import ExternalGame
 from app.services.igdb.service import IGDBService
 from app.services.matching.service import MatchingService
 from app.services.matching.models import MatchRequest, MatchStatus, MatchResult
@@ -89,6 +89,7 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
     platform = metadata.get("platform")
     storefront = metadata.get("storefront")
     playtime_hours = metadata.get("playtime_hours", 0)
+    external_game_id = metadata.get("external_game_id")
     # Parse ownership_status from metadata (may be None for backward compatibility)
     ownership_status_str = metadata.get("ownership_status")
     ownership_status: Optional[OwnershipStatus] = None
@@ -136,14 +137,16 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
             return await _process_with_resolved_id(
                 session, job_item_id, job_id, user_id,
                 resolved_igdb_id, platform, storefront, external_id, source_title,
-                playtime_hours, ownership_status
+                playtime_hours, ownership_status,
+                external_game_id=external_game_id
             )
 
         # Step 4: Flow A - Match via IGDB
         return await _process_with_matching(
             session, job_item_id, job_id, user_id,
             source_title, platform, storefront, external_id, metadata,
-            playtime_hours, ownership_status
+            playtime_hours, ownership_status,
+            external_game_id=external_game_id
         )
 
     except Exception as e:
@@ -182,25 +185,15 @@ def _is_ignored(
     storefront: str,
     external_id: str
 ) -> bool:
-    """Check if game is in the ignored list."""
-    # Map storefront to BackgroundJobSource
-    source_map = {
-        "steam": BackgroundJobSource.STEAM,
-        "epic": BackgroundJobSource.EPIC,
-        "gog": BackgroundJobSource.GOG,
-    }
-    source = source_map.get(storefront)
-    if not source:
-        return False
-
+    """Check if game is skipped via ExternalGame.is_skipped."""
     result = session.exec(
-        select(IgnoredExternalGame).where(
-            IgnoredExternalGame.user_id == user_id,
-            IgnoredExternalGame.source == source,
-            IgnoredExternalGame.external_id == external_id,
+        select(ExternalGame).where(
+            ExternalGame.user_id == user_id,
+            ExternalGame.storefront == storefront,
+            ExternalGame.external_id == external_id,
         )
     ).first()
-    return result is not None
+    return result is not None and result.is_skipped
 
 
 async def _process_with_resolved_id(
@@ -215,6 +208,7 @@ async def _process_with_resolved_id(
     source_title: str,
     playtime_hours: int = 0,
     ownership_status: Optional[OwnershipStatus] = None,
+    external_game_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Process item with user-provided IGDB ID (Flow B)."""
     logger.info(f"Processing {source_title} with resolved IGDB ID {igdb_id}")
@@ -231,7 +225,8 @@ async def _process_with_resolved_id(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours, ownership_status
+            platform, storefront, external_id, playtime_hours, ownership_status,
+            external_game_id=external_game_id
         )
         result = "linked_existing"
         user_game_id = existing_user_game.id
@@ -280,8 +275,17 @@ async def _process_with_resolved_id(
         # Add platform association
         _add_platform_association(
             session, user_game_id,
-            platform, storefront, external_id, playtime_hours, ownership_status
+            platform, storefront, external_id, playtime_hours, ownership_status,
+            external_game_id=external_game_id
         )
+
+    # Update ExternalGame.resolved_igdb_id
+    if external_game_id:
+        external_game = session.get(ExternalGame, external_game_id)
+        if external_game and not external_game.resolved_igdb_id:
+            external_game.resolved_igdb_id = igdb_id
+            session.add(external_game)
+            session.commit()
 
     # Fetch the game title for result_json
     game = session.get(Game, igdb_id)
@@ -317,6 +321,7 @@ async def _process_with_matching(
     metadata: Dict[str, Any],
     playtime_hours: int = 0,
     ownership_status: Optional[OwnershipStatus] = None,
+    external_game_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Process item with IGDB matching (Flow A)."""
     logger.debug(f"Matching {source_title} via IGDB")
@@ -349,7 +354,8 @@ async def _process_with_matching(
             return await _auto_import_game(
                 session, job_item_id, job_id, user_id,
                 igdb_id, platform, storefront, external_id,
-                match_result, confidence, playtime_hours, ownership_status
+                match_result, confidence, playtime_hours, ownership_status,
+                external_game_id=external_game_id
             )
         else:
             # Low confidence - needs review
@@ -391,6 +397,7 @@ async def _auto_import_game(
     confidence: float,
     playtime_hours: int = 0,
     ownership_status: Optional[OwnershipStatus] = None,
+    external_game_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Auto-import a high-confidence match."""
     logger.info(f"Auto-importing {match_result.igdb_title} (confidence: {confidence:.2f})")
@@ -407,7 +414,8 @@ async def _auto_import_game(
         # Add platform association to existing game
         _add_platform_association(
             session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours, ownership_status
+            platform, storefront, external_id, playtime_hours, ownership_status,
+            external_game_id=external_game_id
         )
         result = "auto_linked"
         user_game_id = existing_user_game.id
@@ -456,8 +464,17 @@ async def _auto_import_game(
         # Add platform association
         _add_platform_association(
             session, user_game_id,
-            platform, storefront, external_id, playtime_hours, ownership_status
+            platform, storefront, external_id, playtime_hours, ownership_status,
+            external_game_id=external_game_id
         )
+
+    # Update ExternalGame.resolved_igdb_id
+    if external_game_id:
+        external_game = session.get(ExternalGame, external_game_id)
+        if external_game and not external_game.resolved_igdb_id:
+            external_game.resolved_igdb_id = igdb_id
+            session.add(external_game)
+            session.commit()
 
     # Update JobItem with match info AND result data for recent activity display
     job_item = session.get(JobItem, job_item_id)
@@ -486,6 +503,7 @@ def _add_platform_association(
     external_id: str,
     playtime_hours: int = 0,
     ownership_status: Optional[OwnershipStatus] = None,
+    external_game_id: Optional[str] = None,
 ) -> None:
     """Add platform association to a UserGame."""
     # Check if association already exists
@@ -505,6 +523,9 @@ def _add_platform_association(
         # Update playtime and ownership_status if already exists (sync updates)
         existing.hours_played = playtime_hours
         existing.ownership_status = final_ownership_status
+        # Also update external_game_id if not set
+        if external_game_id and not existing.external_game_id:
+            existing.external_game_id = external_game_id
         session.add(existing)
         session.commit()
         logger.debug(f"Updated playtime for existing platform association on UserGame {user_game_id}")
@@ -523,6 +544,7 @@ def _add_platform_association(
             is_available=True,
             hours_played=playtime_hours,
             ownership_status=final_ownership_status,
+            external_game_id=external_game_id,
         )
         session.add(platform_assoc)
         session.commit()
