@@ -3,6 +3,9 @@ Tests for the ignored games API endpoints in sync.py.
 
 Covers listing ignored games with filters/pagination and
 removing games from the ignored list.
+
+Note: "Ignored games" are now represented as ExternalGame records
+with is_skipped=True, rather than a separate IgnoredExternalGame model.
 """
 
 import pytest
@@ -11,8 +14,9 @@ from sqlmodel import Session, select
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from app.models.ignored_external_game import IgnoredExternalGame
+from app.models.external_game import ExternalGame
 from app.models.job import BackgroundJobSource
+from app.models.platform import Storefront
 from app.models.user import User, UserSession
 from app.core.security import create_access_token, hash_token
 
@@ -39,41 +43,64 @@ def auth_headers(test_user: User, session: Session) -> dict[str, str]:
 
 
 @pytest.fixture
-def test_ignored_games(session: Session, test_user: User) -> list[IgnoredExternalGame]:
-    """Create test ignored games for different sources."""
-    ignored_games = [
-        IgnoredExternalGame(
+def test_storefronts_for_skipped_games(session: Session) -> dict[str, Storefront]:
+    """Create test storefronts for skipped games tests."""
+    storefronts = {}
+    for name, display_name in [("steam", "Steam"), ("epic", "Epic Games"), ("gog", "GOG")]:
+        storefront = Storefront(
+            name=name,
+            display_name=display_name,
+            is_active=True,
+        )
+        session.add(storefront)
+        storefronts[name] = storefront
+    session.commit()
+    for sf in storefronts.values():
+        session.refresh(sf)
+    return storefronts
+
+
+@pytest.fixture
+def test_skipped_games(
+    session: Session, test_user: User, test_storefronts_for_skipped_games: dict[str, Storefront]
+) -> list[ExternalGame]:
+    """Create test skipped (ignored) games for different storefronts."""
+    skipped_games = [
+        ExternalGame(
             user_id=test_user.id,
-            source=BackgroundJobSource.STEAM,
+            storefront="steam",
             external_id="123456",
             title="Test Steam Game",
+            is_skipped=True,
             created_at=datetime.now(timezone.utc),
         ),
-        IgnoredExternalGame(
+        ExternalGame(
             user_id=test_user.id,
-            source=BackgroundJobSource.EPIC,
+            storefront="epic",
             external_id="epic-game-id",
             title="Test Epic Game",
+            is_skipped=True,
             created_at=datetime.now(timezone.utc),
         ),
-        IgnoredExternalGame(
+        ExternalGame(
             user_id=test_user.id,
-            source=BackgroundJobSource.GOG,
+            storefront="gog",
             external_id="gog-game-123",
             title="Test GOG Game",
+            is_skipped=True,
             created_at=datetime.now(timezone.utc),
         ),
     ]
 
-    for game in ignored_games:
+    for game in skipped_games:
         session.add(game)
 
     session.commit()
 
-    for game in ignored_games:
+    for game in skipped_games:
         session.refresh(game)
 
-    return ignored_games
+    return skipped_games
 
 
 def test_list_ignored_games_empty(client: TestClient, auth_headers: dict[str, str]) -> None:
@@ -91,7 +118,7 @@ def test_list_ignored_games_empty(client: TestClient, auth_headers: dict[str, st
 def test_list_ignored_games_with_items(
     client: TestClient,
     auth_headers: dict[str, str],
-    test_ignored_games: list[IgnoredExternalGame],
+    test_skipped_games: list[ExternalGame],
 ) -> None:
     """Test listing ignored games when items exist."""
     response = client.get("/api/sync/ignored", headers=auth_headers)
@@ -113,7 +140,7 @@ def test_list_ignored_games_with_items(
 def test_list_ignored_games_filter_by_source(
     client: TestClient,
     auth_headers: dict[str, str],
-    test_ignored_games: list[IgnoredExternalGame],
+    test_skipped_games: list[ExternalGame],
 ) -> None:
     """Test filtering ignored games by source."""
     response = client.get(
@@ -133,7 +160,7 @@ def test_list_ignored_games_filter_by_source(
 def test_list_ignored_games_pagination(
     client: TestClient,
     auth_headers: dict[str, str],
-    test_ignored_games: list[IgnoredExternalGame],
+    test_skipped_games: list[ExternalGame],
 ) -> None:
     """Test pagination of ignored games list."""
     # Get first page
@@ -165,13 +192,13 @@ def test_unignore_game_success(
     client: TestClient,
     session: Session,
     auth_headers: dict[str, str],
-    test_ignored_games: list[IgnoredExternalGame],
+    test_skipped_games: list[ExternalGame],
 ) -> None:
-    """Test successfully removing a game from ignored list."""
-    game_to_remove = test_ignored_games[0]
+    """Test successfully removing a game from ignored list (clearing is_skipped)."""
+    game_to_unignore = test_skipped_games[0]
 
     response = client.delete(
-        f"/api/sync/ignored/{game_to_remove.id}",
+        f"/api/sync/ignored/{game_to_unignore.id}",
         headers=auth_headers,
     )
 
@@ -179,19 +206,19 @@ def test_unignore_game_success(
     data = response.json()
     assert data["success"] is True
     assert "message" in data
-    assert game_to_remove.title in data["message"]
+    assert game_to_unignore.title in data["message"]
 
-    # Verify the game was actually deleted from the database
-    stmt = select(IgnoredExternalGame).where(
-        IgnoredExternalGame.id == game_to_remove.id
-    )
-    deleted_game = session.exec(stmt).first()
-    assert deleted_game is None
+    # Verify the game's is_skipped flag was cleared (not deleted)
+    session.expire_all()
+    stmt = select(ExternalGame).where(ExternalGame.id == game_to_unignore.id)
+    unignored_game = session.exec(stmt).first()
+    assert unignored_game is not None
+    assert unignored_game.is_skipped is False
 
-    # Verify the other games still exist
-    stmt = select(IgnoredExternalGame)
-    remaining_games = session.exec(stmt).all()
-    assert len(remaining_games) == 2
+    # Verify the other games still have is_skipped=True
+    stmt = select(ExternalGame).where(ExternalGame.is_skipped == True)  # noqa: E712
+    remaining_skipped = session.exec(stmt).all()
+    assert len(remaining_skipped) == 2
 
 
 def test_unignore_game_not_found(
@@ -219,6 +246,7 @@ def test_unignore_game_wrong_user(
     session: Session,
     auth_headers: dict[str, str],
     test_user: User,
+    test_storefronts_for_skipped_games: dict[str, Storefront],
 ) -> None:
     """Test that users can't unignore games from other users."""
     # Create another user
@@ -230,18 +258,19 @@ def test_unignore_game_wrong_user(
     session.commit()
     session.refresh(other_user)
 
-    # Create an ignored game for the other user
-    other_game = IgnoredExternalGame(
+    # Create a skipped game for the other user
+    other_game = ExternalGame(
         user_id=other_user.id,
-        source=BackgroundJobSource.STEAM,
+        storefront="steam",
         external_id="999999",
         title="Other User's Game",
+        is_skipped=True,
     )
     session.add(other_game)
     session.commit()
     session.refresh(other_game)
 
-    # Try to delete the other user's ignored game
+    # Try to unignore the other user's skipped game
     response = client.delete(
         f"/api/sync/ignored/{other_game.id}",
         headers=auth_headers,
@@ -252,12 +281,12 @@ def test_unignore_game_wrong_user(
     # FastAPI uses 'error' field from custom exception handler
     assert "error" in data or "detail" in data
 
-    # Verify the game still exists
-    stmt = select(IgnoredExternalGame).where(
-        IgnoredExternalGame.id == other_game.id
-    )
-    still_exists = session.exec(stmt).first()
-    assert still_exists is not None
+    # Verify the game still has is_skipped=True
+    session.expire_all()
+    stmt = select(ExternalGame).where(ExternalGame.id == other_game.id)
+    still_skipped = session.exec(stmt).first()
+    assert still_skipped is not None
+    assert still_skipped.is_skipped is True
 
 
 def test_list_ignored_games_unauthorized(client: TestClient) -> None:

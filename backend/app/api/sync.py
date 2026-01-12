@@ -21,7 +21,7 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..models.user_sync_config import UserSyncConfig, SyncFrequency as ModelSyncFrequency
 from ..models.job import Job, BackgroundJobType, BackgroundJobSource, BackgroundJobStatus, BackgroundJobPriority
-from ..models.ignored_external_game import IgnoredExternalGame
+from ..models.external_game import ExternalGame
 from ..schemas.sync import (
     SyncConfigResponse,
     SyncConfigListResponse,
@@ -649,7 +649,7 @@ async def list_ignored_games(
     """
     List all ignored games for the current user.
 
-    Returns games that have been explicitly ignored during sync operations,
+    Returns games that have been explicitly skipped during sync operations,
     optionally filtered by source platform with pagination support.
     """
     logger.debug(
@@ -657,25 +657,27 @@ async def list_ignored_games(
         f"limit={limit}, offset={offset}"
     )
 
-    # Build query
-    stmt = select(IgnoredExternalGame).where(
-        IgnoredExternalGame.user_id == current_user.id
+    # Build query - filter for skipped ExternalGames
+    stmt = select(ExternalGame).where(
+        ExternalGame.user_id == current_user.id,
+        ExternalGame.is_skipped == True,  # noqa: E712
     )
 
-    # Apply source filter if provided
+    # Apply source filter if provided (storefront matches source value)
     if source:
-        stmt = stmt.where(IgnoredExternalGame.source == source)
+        stmt = stmt.where(ExternalGame.storefront == source.value)
 
     # Apply ordering (newest first)
     # pyrefly: ignore[missing-attribute] - SQLAlchemy column has desc() method
-    stmt = stmt.order_by(IgnoredExternalGame.created_at.desc())
+    stmt = stmt.order_by(ExternalGame.created_at.desc())
 
     # Get total count
-    count_stmt = select(func.count()).select_from(IgnoredExternalGame).where(
-        IgnoredExternalGame.user_id == current_user.id
+    count_stmt = select(func.count()).select_from(ExternalGame).where(
+        ExternalGame.user_id == current_user.id,
+        ExternalGame.is_skipped == True,  # noqa: E712
     )
     if source:
-        count_stmt = count_stmt.where(IgnoredExternalGame.source == source)
+        count_stmt = count_stmt.where(ExternalGame.storefront == source.value)
 
     total = session.exec(count_stmt).one()
 
@@ -683,18 +685,18 @@ async def list_ignored_games(
     stmt = stmt.limit(limit).offset(offset)
 
     # Execute query
-    ignored_games = session.exec(stmt).all()
+    skipped_games = session.exec(stmt).all()
 
     # Convert to response models
     items = [
         IgnoredGameResponse(
             id=game.id,
-            source=game.source,
+            source=BackgroundJobSource(game.storefront),
             external_id=game.external_id,
             title=game.title,
             created_at=game.created_at,
         )
-        for game in ignored_games
+        for game in skipped_games
     ]
 
     logger.debug(f"Found {len(items)} ignored games (total: {total})")
@@ -711,36 +713,37 @@ async def unignore_game(
     """
     Remove a game from the ignored list.
 
-    This allows the game to appear in future sync operations.
-    The ignored_id must belong to the current user.
+    This clears the is_skipped flag, allowing the game to appear in future sync operations.
+    The ignored_id must belong to the current user and be a skipped game.
     """
     logger.info(f"Unignoring game {ignored_id} for user {current_user.id}")
 
-    # Find the ignored game
-    stmt = select(IgnoredExternalGame).where(
-        IgnoredExternalGame.id == ignored_id,
-        IgnoredExternalGame.user_id == current_user.id,
+    # Find the skipped external game
+    stmt = select(ExternalGame).where(
+        ExternalGame.id == ignored_id,
+        ExternalGame.user_id == current_user.id,
+        ExternalGame.is_skipped == True,  # noqa: E712
     )
-    ignored_game = session.exec(stmt).first()
+    skipped_game = session.exec(stmt).first()
 
-    if not ignored_game:
+    if not skipped_game:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ignored game not found: {ignored_id}",
         )
 
-    # Delete the ignored game
-    session.delete(ignored_game)
+    # Clear the is_skipped flag instead of deleting
+    skipped_game.is_skipped = False
     session.commit()
 
     logger.info(
-        f"Successfully unignored game {ignored_id} ({ignored_game.title}) "
-        f"from {ignored_game.source} for user {current_user.id}"
+        f"Successfully unignored game {ignored_id} ({skipped_game.title}) "
+        f"from {skipped_game.storefront} for user {current_user.id}"
     )
 
     return SuccessResponse(
         success=True,
-        message=f"Game '{ignored_game.title}' removed from ignored list",
+        message=f"Game '{skipped_game.title}' removed from ignored list",
     )
 
 

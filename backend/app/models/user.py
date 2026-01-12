@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from .job import Job
     from .user_sync_config import UserSyncConfig
     from .external_game import ExternalGame
-    from .ignored_external_game import IgnoredExternalGame
 
 
 class User(SQLModel, table=True):
@@ -55,7 +54,6 @@ class User(SQLModel, table=True):
     jobs: List["Job"] = Relationship(back_populates="user")
     sync_configs: List["UserSyncConfig"] = Relationship(back_populates="user")
     external_games: List["ExternalGame"] = Relationship(back_populates="user")
-    ignored_external_games: List["IgnoredExternalGame"] = Relationship(back_populates="user")
 
 
 class UserSession(SQLModel, table=True):

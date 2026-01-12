@@ -23,7 +23,6 @@ from ..models import (  # noqa: F401
     Wishlist,
     Job,
 )
-from app.models.ignored_external_game import IgnoredExternalGame  # noqa: F401
 from ..models.backup_config import BackupConfig  # noqa: F401
 
 logger = logging.getLogger(__name__)
