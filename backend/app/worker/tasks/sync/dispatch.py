@@ -23,6 +23,8 @@ from app.models.job import (
 )
 from app.models.user import User
 from app.worker.tasks.sync.adapters import ExternalGame, get_sync_adapter
+from app.services.external_game_service import ExternalGameService
+from app.models.user_game import OwnershipStatus
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ async def dispatch_sync_items(
         "total_games": 0,
         "dispatched": 0,
         "errors": 0,
+        "marked_unavailable": 0,
     }
 
     async with get_session_context() as session:
@@ -88,17 +91,38 @@ async def dispatch_sync_items(
 
             logger.info(f"Fetched {len(games)} games from {source} for user {user_id}")
 
+            # Create ExternalGameService
+            external_game_service = ExternalGameService(session)
+
+            # Track external_ids for marking unavailable
+            available_external_ids: set[str] = set()
+
             # Determine priority for item tasks
             priority = job.priority
 
             # Stream create JobItems and dispatch tasks
             for game in games:
                 try:
+                    available_external_ids.add(game.external_id)
+
+                    # Create or update ExternalGame
+                    external_game = external_game_service.create_or_update(
+                        user_id=user_id,
+                        storefront=game.storefront,
+                        external_id=game.external_id,
+                        title=game.title,
+                        platform=game.platform,
+                        playtime_hours=game.playtime_hours,
+                        ownership_status=game.ownership_status,
+                        is_subscription=game.ownership_status == OwnershipStatus.SUBSCRIPTION if game.ownership_status else False,
+                    )
+
                     job_item = _create_job_item(
                         session=session,
                         job=job,
                         user_id=user_id,
                         game=game,
+                        external_game_id=external_game.id,
                     )
 
                     # Only dispatch if we created a new item (not a duplicate)
@@ -111,6 +135,13 @@ async def dispatch_sync_items(
                     stats["errors"] += 1
                     # Rollback the session to recover from the error
                     session.rollback()
+
+            # Mark games not in source as unavailable
+            stats["marked_unavailable"] = external_game_service.mark_unavailable_except(
+                user_id=user_id,
+                storefront=source,
+                available_external_ids=available_external_ids,
+            )
 
             logger.info(
                 f"Sync dispatch completed for job {job_id}: "
@@ -137,6 +168,7 @@ def _create_job_item(
     job: Job,
     user_id: str,
     game: ExternalGame,
+    external_game_id: str,
 ) -> JobItem | None:
     """Create a JobItem for a game, or return None if it already exists.
 
@@ -148,6 +180,7 @@ def _create_job_item(
         job: The parent Job
         user_id: User ID
         game: ExternalGame from adapter
+        external_game_id: ID of the created/updated ExternalGame record
 
     Returns:
         Created JobItem, or None if item already exists
@@ -174,6 +207,7 @@ def _create_job_item(
         "metadata": game.metadata,
         "playtime_hours": game.playtime_hours,
         "ownership_status": game.ownership_status.value if game.ownership_status else None,
+        "external_game_id": external_game_id,
     }
 
     job_item = JobItem(
