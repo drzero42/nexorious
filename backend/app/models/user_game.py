@@ -80,8 +80,6 @@ class UserGamePlatform(SQLModel, table=True):
     user_game_id: str = Field(foreign_key="user_games.id", index=True)
     platform: Optional[str] = Field(default=None, foreign_key="platforms.name", index=True)
     storefront: Optional[str] = Field(default=None, foreign_key="storefronts.name")
-    store_game_id: Optional[str] = Field(default=None, max_length=200)
-    store_url: Optional[str] = Field(default=None, max_length=500)
     is_available: bool = Field(default=True)
     hours_played: int = Field(default=0, ge=0, description="Hours played on this storefront")
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED)

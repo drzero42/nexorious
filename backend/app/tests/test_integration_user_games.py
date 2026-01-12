@@ -584,8 +584,6 @@ class TestUserGamePlatformsEndpoints:
         platform_data = {
             "platform": test_platform.name,
             "storefront": test_storefront.name,
-            "store_game_id": "steam_12345",
-            "store_url": "https://store.example.com/game/12345",
             "is_available": True
         }
         response = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data, headers=auth_headers)
@@ -599,8 +597,6 @@ class TestUserGamePlatformsEndpoints:
         platform = data["platforms"][0]
         assert platform["platform"] == test_platform.name
         assert platform["storefront"] == test_storefront.name
-        assert platform["store_game_id"] == "steam_12345"
-        assert platform["store_url"] == "https://store.example.com/game/12345"
         assert platform["is_available"] is True
     
     def test_create_user_game_platform_without_storefront(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, auth_headers: Dict[str, str]):
@@ -672,8 +668,6 @@ class TestUpdatePlatformAssociation:
             user_game_id=test_user_game.id,
             platform=test_platform.name,
             storefront=test_storefront.name,
-            store_game_id="old_id",
-            store_url="https://old.example.com",
             is_available=True
         )
         session.add(platform_association)
@@ -684,8 +678,6 @@ class TestUpdatePlatformAssociation:
         update_data = {
             "platform": test_platform.name,
             "storefront": test_storefront_2.name,
-            "store_game_id": "new_id",
-            "store_url": "https://new.example.com",
             "is_available": False
         }
         response = client.put(f"/api/user-games/{test_user_game.id}/platforms/{platform_association.id}", json=update_data, headers=auth_headers)
@@ -694,8 +686,6 @@ class TestUpdatePlatformAssociation:
         data = response.json()
         assert data["platform"] == test_platform.name
         assert data["storefront"] == test_storefront_2.name
-        assert data["store_game_id"] == "new_id"
-        assert data["store_url"] == "https://new.example.com/"
         assert data["is_available"] is False
     
     def test_update_platform_association_conflict(self, client: TestClient, test_user_game: UserGame, test_platform: Platform, test_storefront: Storefront, test_storefront_2: Storefront, auth_headers: Dict[str, str], session: Session):
@@ -834,7 +824,6 @@ class TestUserGamePlatformMultipleStorefronts:
         platform_data_1 = {
             "platform": test_platform.name,
             "storefront": test_storefront.name,
-            "store_game_id": "steam_123",
             "is_available": True
         }
         response1 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_1, headers=auth_headers)
@@ -844,7 +833,6 @@ class TestUserGamePlatformMultipleStorefronts:
         platform_data_2 = {
             "platform": test_platform.name,
             "storefront": test_storefront_2.name,
-            "store_game_id": "epic_456",
             "is_available": True
         }
         response2 = client.post(f"/api/user-games/{test_user_game.id}/platforms", json=platform_data_2, headers=auth_headers)

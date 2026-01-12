@@ -2,7 +2,7 @@
 User game collection-related schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Optional, List, Self
 from datetime import date
 from enum import Enum
@@ -36,8 +36,6 @@ class UserGamePlatformCreateRequest(BaseModel):
     """Request schema for adding platform association to user game."""
     platform: str = Field(..., description="Platform slug")
     storefront: Optional[str] = Field(None, description="Storefront slug")
-    store_game_id: Optional[str] = Field(None, max_length=200, description="Game ID in store")
-    store_url: Optional[HttpUrl] = Field(None, description="Store URL for game")
     is_available: bool = Field(default=True, description="Whether the game is available on this platform")
     hours_played: int = Field(default=0, ge=0, description="Hours played on this storefront")
     ownership_status: OwnershipStatus = Field(default=OwnershipStatus.OWNED, description="Ownership status for this platform")
@@ -78,8 +76,6 @@ class UserGamePlatformResponse(BaseModel, TimestampMixin):
     storefront: Optional[str]
     platform_details: Optional[PlatformResponse] = Field(default=None, validation_alias="platform_rel")
     storefront_details: Optional[StorefrontResponse] = Field(default=None, validation_alias="storefront_rel")
-    store_game_id: Optional[str]
-    store_url: Optional[str]
     is_available: bool
     hours_played: int
     ownership_status: OwnershipStatus

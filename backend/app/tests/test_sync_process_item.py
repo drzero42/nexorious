@@ -109,29 +109,6 @@ class TestAddPlatformAssociation:
         session.add.assert_called_once_with(existing_platform)
         session.commit.assert_called_once()
 
-    def test_sets_steam_store_url(self):
-        """Test sets correct store URL for Steam."""
-        session = MagicMock()
-        session.exec.return_value.first.return_value = None
-
-        _add_platform_association(session, "ug123", "pc-windows", "steam", "12345")
-
-        # Check the added platform has correct URL
-        call_args = session.add.call_args
-        platform = call_args[0][0]
-        assert platform.store_url == "https://store.steampowered.com/app/12345"
-
-    def test_no_store_url_for_non_steam(self):
-        """Test no store URL is set for non-Steam storefronts."""
-        session = MagicMock()
-        session.exec.return_value.first.return_value = None
-
-        _add_platform_association(session, "ug123", "pc-windows", "gog", "12345")
-
-        call_args = session.add.call_args
-        platform = call_args[0][0]
-        assert platform.store_url is None
-
     def test_creates_association_with_external_game_id(self):
         """Test creates new association with external_game_id."""
         session = MagicMock()

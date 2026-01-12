@@ -29,9 +29,10 @@ from app.schemas.export import (
 )
 from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus, PlayStatus
-from app.models.platform import Platform
+from app.models.platform import Platform, Storefront
 from app.models.tag import Tag, UserGameTag
 from app.models.wishlist import Wishlist
+from app.models.external_game import ExternalGame
 
 
 class TestExportHelpers:
@@ -176,6 +177,24 @@ class TestUserGameToExportData:
         self, session: Session, test_user, test_game, test_platform
     ):
         """Convert UserGame with platform associations."""
+        # Create a storefront for the ExternalGame
+        storefront = session.get(Storefront, "steam")
+        if not storefront:
+            storefront = Storefront(name="steam", display_name="Steam")
+            session.add(storefront)
+            session.commit()
+
+        # Create an ExternalGame to link to the platform
+        external_game = ExternalGame(
+            user_id=test_user.id,
+            storefront="steam",
+            external_id="12345",
+            title="Test Game",
+        )
+        session.add(external_game)
+        session.commit()
+        session.refresh(external_game)
+
         user_game = UserGame(
             user_id=test_user.id,
             game_id=test_game.id,
@@ -188,10 +207,10 @@ class TestUserGameToExportData:
         platform_assoc = UserGamePlatform(
             user_game_id=user_game.id,
             platform=test_platform.name,
-            store_game_id="12345",
-            store_url="https://store.example.com/game",
+            storefront="steam",
             is_available=True,
             ownership_status=OwnershipStatus.OWNED,
+            external_game_id=external_game.id,
         )
         session.add(platform_assoc)
         session.commit()
@@ -203,8 +222,8 @@ class TestUserGameToExportData:
         platform_data = export_data.platforms[0]
         assert platform_data.platform_id == test_platform.name  # FK now references name
         assert platform_data.platform_name == test_platform.name
-        assert platform_data.store_game_id == "12345"
-        assert platform_data.store_url == "https://store.example.com/game"
+        assert platform_data.store_game_id == "12345"  # From ExternalGame.external_id
+        assert platform_data.store_url == "https://store.steampowered.com/app/12345"  # Computed from ExternalGame
         assert platform_data.is_available is True
         assert platform_data.ownership_status == "owned"
 

@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform
+from app.models.external_game import ExternalGame
 
 from .models import MatchResult, MatchStatus, MatchSource
 
@@ -26,8 +27,8 @@ async def lookup_by_steam_appid(
     """
     Look up a game by Steam AppID in the existing database.
 
-    Checks UserGamePlatform records for this AppID where storefront='steam'
-    and store_game_id matches the Steam AppID. First checks user-specific
+    Checks ExternalGame records for this AppID where storefront='steam'
+    and external_id matches the Steam AppID. First checks user-specific
     matches, then any user's matches.
 
     Args:
@@ -40,13 +41,13 @@ async def lookup_by_steam_appid(
     """
     logger.debug(f"Looking up Steam AppID {steam_appid} in database")
 
-    # Strategy 1: Check user's UserGamePlatform records for this AppID
+    # Strategy 1: Check user's ExternalGame records for this AppID
     if user_id:
         user_match = _lookup_user_platform_game(session, steam_appid, user_id)
         if user_match:
             return user_match
 
-    # Strategy 2: Check any user's UserGamePlatform records for this AppID
+    # Strategy 2: Check any user's ExternalGame records for this AppID
     any_user_match = _lookup_any_user_platform_game(session, steam_appid)
     if any_user_match:
         return any_user_match
@@ -59,26 +60,27 @@ async def lookup_by_steam_appid(
 def _lookup_user_platform_game(
     session: Session, steam_appid: int, user_id: str
 ) -> Optional[MatchResult]:
-    """Check if user has already matched this Steam game via UserGamePlatform."""
-    # Convert Steam AppID to string for comparison with store_game_id
+    """Check if user has already matched this Steam game via ExternalGame."""
+    # Convert Steam AppID to string for comparison with external_id
     steam_appid_str = str(steam_appid)
 
-    # Query UserGamePlatform where storefront='steam' and store_game_id matches
-    # Join with UserGame to get the game_id (IGDB ID)
+    # Query ExternalGame where storefront='steam' and external_id matches
+    # Join via UserGamePlatform -> UserGame -> Game to get the IGDB ID
     stmt = (
-        select(UserGamePlatform, UserGame, Game)
+        select(ExternalGame, UserGame, Game)
+        .join(UserGamePlatform, ExternalGame.id == UserGamePlatform.external_game_id)  # pyrefly: ignore[bad-argument-type]
         .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
         .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
-            UserGamePlatform.storefront == "steam",
-            UserGamePlatform.store_game_id == steam_appid_str,
-            UserGame.user_id == user_id,
+            ExternalGame.storefront == "steam",
+            ExternalGame.external_id == steam_appid_str,
+            ExternalGame.user_id == user_id,
         )
     )
     result = session.exec(stmt).first()
 
     if result:
-        platform, user_game, game = result
+        external_game, user_game, game = result
         logger.info(
             f"Found user's existing match for Steam AppID {steam_appid}: "
             f"IGDB ID {game.id}"
@@ -98,25 +100,26 @@ def _lookup_user_platform_game(
 def _lookup_any_user_platform_game(
     session: Session, steam_appid: int
 ) -> Optional[MatchResult]:
-    """Check if any user has matched this Steam game via UserGamePlatform."""
-    # Convert Steam AppID to string for comparison with store_game_id
+    """Check if any user has matched this Steam game via ExternalGame."""
+    # Convert Steam AppID to string for comparison with external_id
     steam_appid_str = str(steam_appid)
 
-    # Query UserGamePlatform where storefront='steam' and store_game_id matches
-    # Join with UserGame to get the game_id (IGDB ID)
+    # Query ExternalGame where storefront='steam' and external_id matches
+    # Join via UserGamePlatform -> UserGame -> Game to get the IGDB ID
     stmt = (
-        select(UserGamePlatform, UserGame, Game)
+        select(ExternalGame, UserGame, Game)
+        .join(UserGamePlatform, ExternalGame.id == UserGamePlatform.external_game_id)  # pyrefly: ignore[bad-argument-type]
         .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
         .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
-            UserGamePlatform.storefront == "steam",
-            UserGamePlatform.store_game_id == steam_appid_str,
+            ExternalGame.storefront == "steam",
+            ExternalGame.external_id == steam_appid_str,
         )
     )
     result = session.exec(stmt).first()
 
     if result:
-        platform, user_game, game = result
+        external_game, user_game, game = result
         logger.info(
             f"Found another user's match for Steam AppID {steam_appid}: "
             f"IGDB ID {game.id}"

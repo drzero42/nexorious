@@ -933,8 +933,6 @@ async def bulk_add_platforms_to_user_games(
                     user_game_id=user_game.id,
                     platform=platform_assoc.platform,
                     storefront=platform_assoc.storefront,
-                    store_game_id=platform_assoc.store_game_id,
-                    store_url=str(platform_assoc.store_url) if platform_assoc.store_url else None,
                     is_available=platform_assoc.is_available,
                     hours_played=platform_assoc.hours_played,
                 )
@@ -1121,8 +1119,6 @@ async def add_game_to_collection(
                 user_game_id=new_user_game.id,
                 platform=platform_data.platform,
                 storefront=platform_data.storefront,
-                store_game_id=platform_data.store_game_id,
-                store_url=str(platform_data.store_url) if platform_data.store_url else None,
                 is_available=platform_data.is_available,
                 hours_played=platform_data.hours_played,
                 ownership_status=OwnershipStatus(platform_data.ownership_status.value),
@@ -1377,11 +1373,7 @@ async def add_platform_to_user_game(
             f"Platform: {platform_obj.name} (slug: {platform_data.platform}) | "
             f"Storefront: {storefront_name} (slug: {platform_data.storefront}) | "
             f"Existing association ID: {existing_platform.id} | "
-            f"Existing association created: {existing_platform.created_at} | "
-            f"Existing store game ID: {existing_platform.store_game_id} | "
-            f"Existing store URL: {existing_platform.store_url} | "
-            f"Requested store game ID: {platform_data.store_game_id} | "
-            f"Requested store URL: {platform_data.store_url}"
+            f"Existing association created: {existing_platform.created_at}"
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1392,8 +1384,6 @@ async def add_platform_to_user_game(
         user_game_id=user_game_id,
         platform=platform_data.platform,
         storefront=platform_data.storefront,
-        store_game_id=platform_data.store_game_id,
-        store_url=str(platform_data.store_url) if platform_data.store_url else None,
         is_available=platform_data.is_available,
         hours_played=platform_data.hours_played,
         ownership_status=OwnershipStatus(platform_data.ownership_status.value),
@@ -1510,8 +1500,6 @@ async def update_platform_association(
     # Update the platform association
     platform_assoc.platform = platform_data.platform
     platform_assoc.storefront = platform_data.storefront
-    platform_assoc.store_game_id = platform_data.store_game_id
-    platform_assoc.store_url = str(platform_data.store_url) if platform_data.store_url else None
     platform_assoc.is_available = platform_data.is_available
     platform_assoc.hours_played = platform_data.hours_played
     platform_assoc.ownership_status = OwnershipStatus(platform_data.ownership_status.value)

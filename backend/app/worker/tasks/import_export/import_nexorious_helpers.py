@@ -256,8 +256,6 @@ async def _import_platforms(
             user_game_id=user_game.id,
             platform=resolved_platform,
             storefront=resolved_storefront,
-            store_game_id=platform_data.get("store_game_id"),
-            store_url=platform_data.get("store_url"),
             is_available=platform_data.get("is_available", True),
             hours_played=platform_data.get("hours_played", 0),
             ownership_status=ownership_status,

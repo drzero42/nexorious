@@ -93,13 +93,19 @@ def _user_game_to_export_data(
     # Get platforms
     platforms_data: List[ExportPlatformData] = []
     for ugp in user_game.platforms:
+        # Get store_game_id and store_url from linked ExternalGame if available
+        store_game_id = None
+        store_url = None
+        if ugp.external_game:
+            store_game_id = ugp.external_game.external_id
+            store_url = ugp.external_game.store_url
         platform_data = ExportPlatformData(
             platform_id=ugp.platform,
             platform_name=ugp.platform_rel.name if ugp.platform_rel else ugp.original_platform_name,
             storefront_id=ugp.storefront,
             storefront_name=ugp.storefront_rel.name if ugp.storefront_rel else None,
-            store_game_id=ugp.store_game_id,
-            store_url=ugp.store_url,
+            store_game_id=store_game_id,
+            store_url=store_url,
             is_available=ugp.is_available,
             hours_played=ugp.hours_played,
             ownership_status=ugp.ownership_status.value,

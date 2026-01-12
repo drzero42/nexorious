@@ -162,15 +162,19 @@ def _get_existing_sync(
     storefront: str,
     external_id: str
 ) -> tuple[str, int, str] | None:
-    """Check if game is already synced and return (user_game_id, game_id, game_title) if so."""
+    """Check if game is already synced and return (user_game_id, game_id, game_title) if so.
+
+    Now looks up via ExternalGame since store_game_id was removed from UserGamePlatform.
+    """
     result = session.exec(
         select(UserGamePlatform, UserGame, Game)
-        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
-        .join(Game, UserGame.game_id == Game.id)
+        .join(ExternalGame, UserGamePlatform.external_game_id == ExternalGame.id)  # pyrefly: ignore[bad-argument-type]
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)  # pyrefly: ignore[bad-argument-type]
+        .join(Game, UserGame.game_id == Game.id)  # pyrefly: ignore[bad-argument-type]
         .where(
             UserGame.user_id == user_id,
-            UserGamePlatform.storefront == storefront,
-            UserGamePlatform.store_game_id == external_id,
+            ExternalGame.storefront == storefront,
+            ExternalGame.external_id == external_id,
         )
     ).first()
     if result:
@@ -530,17 +534,10 @@ def _add_platform_association(
         session.commit()
         logger.debug(f"Updated playtime for existing platform association on UserGame {user_game_id}")
     else:
-        # Build store URL based on storefront
-        store_url = None
-        if storefront == "steam":
-            store_url = f"https://store.steampowered.com/app/{external_id}"
-
         platform_assoc = UserGamePlatform(
             user_game_id=user_game_id,
             platform=platform,
             storefront=storefront,
-            store_game_id=external_id,
-            store_url=store_url,
             is_available=True,
             hours_played=playtime_hours,
             ownership_status=final_ownership_status,
