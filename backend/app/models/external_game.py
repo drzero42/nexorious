@@ -16,6 +16,7 @@ from .user_game import OwnershipStatus
 
 if TYPE_CHECKING:
     from .user import User
+    from .user_game import UserGamePlatform
 
 
 def build_store_url(storefront: str, external_id: str) -> Optional[str]:
@@ -74,6 +75,7 @@ class ExternalGame(SQLModel, table=True):
 
     # Relationships
     user: "User" = Relationship(back_populates="external_games")
+    user_game_platforms: list["UserGamePlatform"] = Relationship(back_populates="external_game")
 
     __table_args__ = (
         UniqueConstraint("user_id", "storefront", "external_id", name="uq_external_games_user_storefront_external"),

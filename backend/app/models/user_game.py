@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .game import Game
     from .platform import Platform, Storefront
     from .tag import UserGameTag
+    from .external_game import ExternalGame
 
 
 class OwnershipStatus(str, Enum):
@@ -87,6 +88,9 @@ class UserGamePlatform(SQLModel, table=True):
     acquired_date: Optional[date] = Field(default=None)
     original_platform_name: Optional[str] = Field(default=None, max_length=200, description="Original platform name for unresolved platforms")
     original_storefront_name: Optional[str] = Field(default=None, max_length=200, description="Original storefront name for unresolved storefronts")
+    # Sync link fields
+    external_game_id: Optional[str] = Field(default=None, foreign_key="external_games.id", index=True)
+    sync_from_source: bool = Field(default=True, description="If True, sync updates this entry from ExternalGame")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -94,6 +98,7 @@ class UserGamePlatform(SQLModel, table=True):
     user_game: UserGame = Relationship(back_populates="platforms")
     platform_rel: Optional["Platform"] = Relationship(back_populates="user_game_platforms")
     storefront_rel: Optional["Storefront"] = Relationship(back_populates="user_game_platforms")
+    external_game: Optional["ExternalGame"] = Relationship(back_populates="user_game_platforms")
     
     __table_args__ = (
         UniqueConstraint("user_game_id", "platform", "storefront", name="uq_user_game_platform_storefront"),
