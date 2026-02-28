@@ -47,6 +47,8 @@ nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pyte
 
 **Note**: `pyrefly` is installed in the backend venv via uv, not in the Nix shell. Run it using `uv run pyrefly` from the backend directory.
 
+**Note**: `pyrightconfig.json` in the project root is for IDE/Pylance integration only. The authoritative type checker for CI and commits is `pyrefly`.
+
 ### Initial Setup
 ```bash
 # Backend setup
@@ -61,6 +63,16 @@ npm install  # Install all dependencies
 
 ### Project Structure
 - `backend/` - FastAPI Python backend with API routes, models, services
+  - `app/api/` - Route handlers (FastAPI routers)
+  - `app/models/` - SQLModel ORM models
+  - `app/schemas/` - Pydantic request/response schemas
+  - `app/services/` - Business logic
+  - `app/core/` - Database session, config, settings
+  - `app/security/` - JWT auth
+  - `app/middleware/` - HTTP middleware
+  - `app/worker/` - Background tasks
+  - `app/seed_data/` - Idempotent DB seed data
+  - `app/tests/` - pytest test files
 - `frontend/` - Next.js 16 TypeScript frontend with React 19, Tailwind CSS, shadcn/ui, TanStack Query
 - `docs/` - Project documentation, specifications, and reference guides
 - `storage/` - Runtime file storage for cover art
@@ -88,8 +100,8 @@ uv run uvicorn app.main:app --reload
 # Build for production
 npm run build
 
-# Preview production build  
-npm run preview
+# Run production build locally
+npm run start
 
 # Run tests with UI
 npm run test:ui
@@ -125,9 +137,15 @@ npm run test:ui
 uv run pytest
 uv run pytest --cov=app --cov-report=term-missing
 
+# Backend - single test
+uv run pytest app/tests/test_file.py::test_function_name -v
+
 # Frontend - all must pass
 npm run check
 npm run test
+
+# Frontend - single test file
+npm run test game-card.test.tsx
 ```
 
 ### Test Conventions
@@ -157,6 +175,20 @@ npm run test
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
 - ❌ Never work on multiple unrelated changes in one branch
+
+### Code Style
+
+**Python (Backend)**
+- Imports: stdlib → third-party → local (`from ..core.database import get_session`)
+- Naming: `snake_case` functions/vars, `PascalCase` classes, `UPPER_CASE` constants
+- FastAPI DI pattern: `Annotated[Session, Depends(get_session)]`
+- Always use `async def` for route handlers and DB operations
+
+**TypeScript (Frontend)**
+- Imports: external libs → internal (`@/...`) → types
+- Naming: `camelCase` functions/vars, `PascalCase` components, `UPPER_CASE` constants
+- Props: interface-typed with destructuring — `function GameCard({ game }: Props)`
+- TanStack Query for server state, `useState` for local state only
 
 ### Code Reference Documents
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
@@ -198,7 +230,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Authentication**: JWT tokens with refresh mechanism
 - **External APIs**: IGDB integration for game metadata and cover art
 - **File Storage**: Local filesystem storage for cover art with configurable paths
-- **Testing**: pytest with >80% coverage requirement
+- **Testing**: pytest
 
 ### Frontend Stack
 - **Framework**: Next.js 16 with React 19 and TypeScript - Modern React framework with App Router
@@ -208,7 +240,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Forms**: React Hook Form with Zod validation
 - **Rich Text**: TipTap editor for notes and descriptions
 - **Build Tool**: Turbopack for fast development builds
-- **Testing**: Vitest with @testing-library/react, >70% coverage requirement
+- **Testing**: Vitest with @testing-library/react
 
 ### Database Design
 - **Database**: PostgreSQL
