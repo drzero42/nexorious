@@ -1,7 +1,7 @@
 """Steam sync adapter for fetching user's Steam library.
 
 Implements SyncSourceAdapter protocol to fetch games from Steam
-and convert them to the standardized ExternalGame format.
+and convert them to the standardized ExternalLibraryEntry format.
 """
 
 import logging
@@ -12,7 +12,7 @@ from sqlmodel import Session
 from app.models.user import User
 from app.models.job import BackgroundJobSource
 from app.services.steam import SteamService
-from .base import ExternalGame
+from .base import ExternalLibraryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,12 @@ class SteamSyncAdapter:
     """Adapter for syncing games from Steam.
 
     Fetches the user's Steam library and converts games to
-    ExternalGame format for generic processing.
+    ExternalLibraryEntry format for generic processing.
     """
 
     source = BackgroundJobSource.STEAM
 
-    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalLibraryEntry]:
         """Fetch all games from user's Steam library.
 
         Args:
@@ -34,7 +34,7 @@ class SteamSyncAdapter:
             session: SQLModel database session
 
         Returns:
-            List of ExternalGame objects
+            List of ExternalLibraryEntry objects
 
         Raises:
             ValueError: If Steam credentials are not configured
@@ -49,7 +49,7 @@ class SteamSyncAdapter:
         logger.info(f"Fetched {len(steam_games)} games from Steam for user {user.id}")
 
         return [
-            ExternalGame(
+            ExternalLibraryEntry(
                 external_id=str(game.appid),
                 title=game.name,
                 platform="pc-windows",

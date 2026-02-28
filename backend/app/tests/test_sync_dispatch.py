@@ -5,7 +5,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.worker.tasks.sync.dispatch import dispatch_sync_items, _create_job_item
-from app.worker.tasks.sync.adapters import ExternalGame
+from app.worker.tasks.sync.adapters import ExternalLibraryEntry
 from app.models.job import (
     Job,
     BackgroundJobStatus,
@@ -22,7 +22,7 @@ class TestCreateJobItem:
         job = MagicMock()
         job.id = "job123"
 
-        game = ExternalGame(
+        game = ExternalLibraryEntry(
             external_id="12345",
             title="Test Game",
             platform="pc-windows",
@@ -61,7 +61,7 @@ class TestCreateJobItem:
         job = MagicMock()
         job.id = "job456"
 
-        game = ExternalGame(
+        game = ExternalLibraryEntry(
             external_id="99999",
             title="Another Game",
             platform="pc-windows",
@@ -96,7 +96,7 @@ class TestCreateJobItem:
         job = MagicMock()
         job.id = "job789"
 
-        game = ExternalGame(
+        game = ExternalLibraryEntry(
             external_id="11111",
             title="Game Name",
             platform="pc-windows",
@@ -166,8 +166,8 @@ class TestDispatchSyncItems:
     async def test_dispatches_items_for_each_game(self):
         """Test creates JobItems and dispatches tasks for each game."""
         mock_games = [
-            ExternalGame("1", "Game 1", "pc-windows", "steam", {}),
-            ExternalGame("2", "Game 2", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("1", "Game 1", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("2", "Game 2", "pc-windows", "steam", {}),
         ]
 
         with (
@@ -224,7 +224,7 @@ class TestDispatchSyncItems:
     @pytest.mark.asyncio
     async def test_updates_job_status_to_processing(self):
         """Test job status is updated to PROCESSING when dispatch starts."""
-        mock_games = [ExternalGame("1", "Game 1", "pc-windows", "steam", {})]
+        mock_games = [ExternalLibraryEntry("1", "Game 1", "pc-windows", "steam", {})]
 
         with (
             patch("app.worker.tasks.sync.dispatch.get_session_context") as mock_ctx,
@@ -261,9 +261,9 @@ class TestDispatchSyncItems:
     async def test_updates_job_total_items(self):
         """Test job total_items is updated with number of games."""
         mock_games = [
-            ExternalGame("1", "Game 1", "pc-windows", "steam", {}),
-            ExternalGame("2", "Game 2", "pc-windows", "steam", {}),
-            ExternalGame("3", "Game 3", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("1", "Game 1", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("2", "Game 2", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("3", "Game 3", "pc-windows", "steam", {}),
         ]
 
         with (
@@ -375,8 +375,8 @@ class TestDispatchSyncItems:
     async def test_counts_errors_during_dispatch(self):
         """Test that errors during individual item dispatch are counted."""
         mock_games = [
-            ExternalGame("1", "Game 1", "pc-windows", "steam", {}),
-            ExternalGame("2", "Game 2", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("1", "Game 1", "pc-windows", "steam", {}),
+            ExternalLibraryEntry("2", "Game 2", "pc-windows", "steam", {}),
         ]
 
         with (

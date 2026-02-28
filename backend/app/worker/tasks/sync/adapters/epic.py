@@ -1,7 +1,7 @@
 """Epic Games Store sync adapter for fetching user's Epic library.
 
 Implements SyncSourceAdapter protocol to fetch games from Epic Games Store
-and convert them to the standardized ExternalGame format.
+and convert them to the standardized ExternalLibraryEntry format.
 """
 
 import logging
@@ -12,7 +12,7 @@ from sqlmodel import Session
 from app.models.user import User
 from app.models.job import BackgroundJobSource
 from app.services.epic import EpicService
-from .base import ExternalGame
+from .base import ExternalLibraryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,12 @@ class EpicSyncAdapter:
     """Adapter for syncing games from Epic Games Store.
 
     Fetches the user's Epic library and converts games to
-    ExternalGame format for generic processing.
+    ExternalLibraryEntry format for generic processing.
     """
 
     source = BackgroundJobSource.EPIC
 
-    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalLibraryEntry]:
         """Fetch all games from user's Epic library.
 
         Args:
@@ -34,7 +34,7 @@ class EpicSyncAdapter:
             session: SQLModel database session
 
         Returns:
-            List of ExternalGame objects
+            List of ExternalLibraryEntry objects
 
         Raises:
             ValueError: If Epic credentials are not configured
@@ -50,7 +50,7 @@ class EpicSyncAdapter:
         logger.info(f"Fetched {len(epic_games)} games from Epic for user {user.id}")
 
         return [
-            ExternalGame(
+            ExternalLibraryEntry(
                 external_id=game.app_name,
                 title=game.title,
                 platform="pc-windows",

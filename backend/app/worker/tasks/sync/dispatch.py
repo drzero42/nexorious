@@ -22,7 +22,7 @@ from app.models.job import (
     BackgroundJobPriority,
 )
 from app.models.user import User
-from app.worker.tasks.sync.adapters import ExternalGame, get_sync_adapter
+from app.worker.tasks.sync.adapters import ExternalLibraryEntry, get_sync_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ def _create_job_item(
     session: Session,
     job: Job,
     user_id: str,
-    game: ExternalGame,
+    game: ExternalLibraryEntry,
 ) -> JobItem | None:
     """Create a JobItem for a game, or return None if it already exists.
 
