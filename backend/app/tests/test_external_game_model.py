@@ -39,3 +39,17 @@ class TestExternalGameDefaults:
         assert game.resolved_igdb_id is None
         assert game.ownership_status is None
         assert game.platform is None
+
+
+class TestUserGamePlatformNewFields:
+    """Tests for new fields on UserGamePlatform."""
+
+    def test_external_game_id_defaults_to_none(self):
+        from app.models.user_game import UserGamePlatform
+        ugp = UserGamePlatform(user_game_id="ug1", platform="pc-windows", storefront="steam")
+        assert ugp.external_game_id is None
+
+    def test_sync_from_source_defaults_to_true(self):
+        from app.models.user_game import UserGamePlatform
+        ugp = UserGamePlatform(user_game_id="ug1", platform="pc-windows", storefront="steam")
+        assert ugp.sync_from_source is True
