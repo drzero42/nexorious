@@ -166,7 +166,8 @@ def _sync_external_game_to_collection(session: Session, eg: ExternalGame) -> Non
     ).first()
 
     if ugp is None:
-        # Check for a manual entry to auto-link
+        # Check for a matching entry by game identity; also catches UGPs already claimed by
+        # another ExternalGame (e.g. same game appearing under two Steam app IDs in a bundle)
         ugp = session.exec(
             select(UserGamePlatform)
             .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
@@ -175,13 +176,12 @@ def _sync_external_game_to_collection(session: Session, eg: ExternalGame) -> Non
                 UserGame.game_id == eg.resolved_igdb_id,
                 UserGamePlatform.platform == eg.platform,
                 UserGamePlatform.storefront == eg.storefront,
-                UserGamePlatform.external_game_id == None,
             )
         ).first()
 
         if ugp is None:
             ugp = _create_user_game_platform(session, eg)
-        else:
+        elif ugp.external_game_id is None:
             ugp.external_game_id = eg.id
 
     if ugp is None:
