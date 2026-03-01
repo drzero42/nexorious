@@ -1,5 +1,5 @@
 """Sync source adapters for external game libraries."""
 
-from .base import ExternalGame, SyncSourceAdapter, get_sync_adapter
+from .base import ExternalLibraryEntry, SyncSourceAdapter, get_sync_adapter
 
-__all__ = ["ExternalGame", "SyncSourceAdapter", "get_sync_adapter"]
+__all__ = ["ExternalLibraryEntry", "SyncSourceAdapter", "get_sync_adapter"]

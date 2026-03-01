@@ -3,17 +3,17 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.worker.tasks.sync.adapters import ExternalGame, get_sync_adapter
+from app.worker.tasks.sync.adapters import ExternalLibraryEntry, get_sync_adapter
 from app.worker.tasks.sync.adapters.steam import SteamSyncAdapter
 from app.models.job import BackgroundJobSource
 
 
-class TestExternalGame:
-    """Tests for ExternalGame dataclass."""
+class TestExternalLibraryEntry:
+    """Tests for ExternalLibraryEntry dataclass."""
 
     def test_external_game_creation(self):
-        """Test creating an ExternalGame."""
-        game = ExternalGame(
+        """Test creating an ExternalLibraryEntry."""
+        game = ExternalLibraryEntry(
             external_id="12345",
             title="Test Game",
             platform="pc-windows",
@@ -177,7 +177,7 @@ class TestSteamSyncAdapter:
 
     @pytest.mark.asyncio
     async def test_fetch_games_returns_external_games(self):
-        """Test fetch_games returns list of ExternalGame objects."""
+        """Test fetch_games returns list of ExternalLibraryEntry objects."""
         adapter = SteamSyncAdapter()
         user = MagicMock()
         user.id = "user123"

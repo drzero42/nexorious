@@ -1,7 +1,7 @@
 """PSN sync adapter for fetching user's PlayStation Network library.
 
 Implements SyncSourceAdapter protocol to fetch games from PSN
-and convert them to the standardized ExternalGame format.
+and convert them to the standardized ExternalLibraryEntry format.
 """
 
 import logging
@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.job import BackgroundJobSource
 from app.models.user_game import OwnershipStatus
 from app.services.psn import PSNService, PSNTokenExpiredError
-from .base import ExternalGame
+from .base import ExternalLibraryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class PSNSyncAdapter:
     """Adapter for syncing games from PlayStation Network.
 
     Fetches the user's PSN purchased library and converts games to
-    ExternalGame format for generic processing.
+    ExternalLibraryEntry format for generic processing.
     """
 
     source = BackgroundJobSource.PSN
@@ -77,7 +77,7 @@ class PSNSyncAdapter:
             # Don't commit here - let the caller handle transaction boundaries
             logger.warning(f"Marked PSN token as expired for user {user.id}")
 
-    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalLibraryEntry]:
         """Fetch all purchased games from user's PSN library.
 
         Args:
@@ -85,7 +85,7 @@ class PSNSyncAdapter:
             session: SQLModel database session
 
         Returns:
-            List of ExternalGame objects
+            List of ExternalLibraryEntry objects
 
         Raises:
             ValueError: If PSN credentials are not configured
@@ -106,8 +106,8 @@ class PSNSyncAdapter:
 
         logger.info(f"Fetched {len(psn_games)} games from PSN for user {user.id}")
 
-        # Convert to ExternalGame objects
-        # Create one ExternalGame per platform entitlement
+        # Convert to ExternalLibraryEntry objects
+        # Create one ExternalLibraryEntry per platform entitlement
         external_games = []
         for game in psn_games:
             # Use title_id from metadata as the unique identifier
@@ -122,7 +122,7 @@ class PSNSyncAdapter:
 
             for platform in game.platforms:
                 external_games.append(
-                    ExternalGame(
+                    ExternalLibraryEntry(
                         external_id=title_id,  # Use title_id, not product_id
                         title=game.name,
                         platform=platform,  # "playstation-4" or "playstation-5"
@@ -136,5 +136,5 @@ class PSNSyncAdapter:
                     )
                 )
 
-        logger.info(f"Created {len(external_games)} ExternalGame objects from {len(psn_games)} PSN games")
+        logger.info(f"Created {len(external_games)} ExternalLibraryEntry objects from {len(psn_games)} PSN games")
         return external_games

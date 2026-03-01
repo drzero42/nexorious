@@ -85,4 +85,4 @@ Game mappings should also be changeable so if a user makes a wrong choice for a 
 
 ## Sync to remove games
 Requires ownership status per storefront!
-During sync, we also need to go through games in our database which have IDs for the sync source as well as ownership status set to "subscription" and check that they still are available on the source. If they are not, the assocation must be removed. This is done so games that are no longer available, like PS Plus Extra games do not show up as owned.
+During sync, we also need to go through games in our database which have IDs for the sync source as well as ownership status set to "subscription" and check that they still are available on the source. If they are not, the assocation must be removed. This is done so games that are no longer available, like PS Plus Extra games do not show up as owned. This will also identify mis-matched games where the user has manually added that the game is owned on eg. Steam. During the steam sync, if that game is not there, the link to Steam should be removed to only show reality.

@@ -1,28 +1,25 @@
-"""Sync dispatch task for fan-out processing.
+"""Sync dispatch task: fetch library, upsert ExternalGame records, mark removed games.
 
-Creates JobItems for each game from an external source and dispatches
-individual processing tasks for parallel execution.
+Phases 1-3 of the sync flow. After completing, dispatches process_sync_item
+for each ExternalGame that still needs IGDB resolution or collection sync.
 """
 
-import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Set
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.worker.broker import broker
 from app.worker.queues import enqueue_task
 from app.core.database import get_session_context
 from app.models.job import (
-    Job,
-    JobItem,
-    JobItemStatus,
-    BackgroundJobStatus,
-    BackgroundJobPriority,
+    Job, JobItem, JobItemStatus, BackgroundJobStatus, BackgroundJobPriority,
 )
 from app.models.user import User
-from app.worker.tasks.sync.adapters import ExternalGame, get_sync_adapter
+from app.models.external_game import ExternalGame
+from app.models.user_game import OwnershipStatus
+from app.worker.tasks.sync.adapters import ExternalLibraryEntry, get_sync_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -34,29 +31,11 @@ async def dispatch_sync_items(
     source: str,
 ) -> Dict[str, Any]:
     """
-    Fan-out task that creates JobItems and dispatches worker tasks.
-
-    This task:
-    1. Fetches the user's game library via the source adapter
-    2. Creates a JobItem for each game (streaming insert)
-    3. Dispatches a process_sync_item task for each JobItem
-    4. Returns quickly - actual processing happens in parallel workers
-
-    Args:
-        job_id: The Job ID for tracking progress
-        user_id: The user to sync
-        source: Source identifier ("steam", "epic", "gog")
-
-    Returns:
-        Dictionary with dispatch statistics.
+    Phases 1-3: fetch library, upsert ExternalGames, mark removed.
+    Then dispatches process_sync_item for each actionable ExternalGame.
     """
     logger.info(f"Starting sync dispatch for user {user_id}, source {source} (job: {job_id})")
-
-    stats: Dict[str, int] = {
-        "total_games": 0,
-        "dispatched": 0,
-        "errors": 0,
-    }
+    stats: Dict[str, int] = {"total_games": 0, "dispatched": 0, "errors": 0}
 
     async with get_session_context() as session:
         job = session.get(Job, job_id)
@@ -65,61 +44,57 @@ async def dispatch_sync_items(
             return {"status": "error", "error": "Job not found"}
 
         try:
-            # Update job status to PROCESSING
             job.status = BackgroundJobStatus.PROCESSING
             job.started_at = datetime.now(timezone.utc)
             session.add(job)
             session.commit()
 
-            # Get user
             user = session.get(User, user_id)
             if not user:
                 raise ValueError(f"User {user_id} not found")
 
-            # Get adapter and fetch games
+            # Phase 1: Fetch from source
             adapter = get_sync_adapter(source)
-            games = await adapter.fetch_games(user, session)
-            stats["total_games"] = len(games)
+            entries = await adapter.fetch_games(user, session)
+            stats["total_games"] = len(entries)
 
-            # Update job total_items
-            job.total_items = len(games)
+            # Phase 2: Upsert ExternalGame records
+            seen_external_ids: Set[str] = set()
+            external_games: list[ExternalGame] = []
+            for entry in entries:
+                try:
+                    eg = _upsert_external_game(session, user_id, entry)
+                    external_games.append(eg)
+                    seen_external_ids.add(entry.external_id)
+                except Exception as e:
+                    logger.error(f"Error upserting ExternalGame for {entry.title}: {e}")
+                    stats["errors"] += 1
+                    session.rollback()
+
+            # Phase 3: Mark removed games + handle subscription lapses
+            _mark_removed_games(session, user_id, source, seen_external_ids)
+
+            # Dispatch process_sync_item for each available, non-skipped game
+            actionable = [eg for eg in external_games if eg.is_available and not eg.is_skipped]
+            job.total_items = len(actionable)
             session.add(job)
             session.commit()
 
-            logger.info(f"Fetched {len(games)} games from {source} for user {user_id}")
-
-            # Determine priority for item tasks
-            priority = job.priority
-
-            # Stream create JobItems and dispatch tasks
-            for game in games:
+            for eg in actionable:
                 try:
-                    job_item = _create_job_item(
-                        session=session,
-                        job=job,
-                        user_id=user_id,
-                        game=game,
-                    )
-
-                    # Only dispatch if we created a new item (not a duplicate)
+                    job_item = _create_job_item(session, job, eg)
                     if job_item:
-                        await _dispatch_process_task(job_item.id, priority)
+                        await _dispatch_process_task(job_item.id, job.priority)
                         stats["dispatched"] += 1
-
                 except Exception as e:
-                    logger.error(f"Error creating/dispatching item for {game.title}: {e}")
+                    logger.error(f"Error dispatching item for {eg.title}: {e}")
                     stats["errors"] += 1
-                    # Rollback the session to recover from the error
                     session.rollback()
 
             logger.info(
                 f"Sync dispatch completed for job {job_id}: "
                 f"{stats['dispatched']} dispatched, {stats['errors']} errors"
             )
-
-            # Note: Job stays in PROCESSING state
-            # It will be marked COMPLETED by the last worker task
-
             return {"status": "dispatched", **stats}
 
         except Exception as e:
@@ -132,75 +107,106 @@ async def dispatch_sync_items(
             return {"status": "error", "error": str(e), **stats}
 
 
-def _create_job_item(
+def _upsert_external_game(
     session: Session,
-    job: Job,
     user_id: str,
-    game: ExternalGame,
-) -> JobItem | None:
-    """Create a JobItem for a game, or return None if it already exists.
+    entry: ExternalLibraryEntry,
+) -> ExternalGame:
+    """Phase 2: Find or create ExternalGame, always updating source fields."""
+    existing = session.exec(
+        select(ExternalGame).where(
+            ExternalGame.user_id == user_id,
+            ExternalGame.storefront == entry.storefront,
+            ExternalGame.external_id == entry.external_id,
+        )
+    ).first()
 
-    This function is idempotent - if a JobItem with the same job_id and item_key
-    already exists, it returns None to signal the duplicate should be skipped.
+    is_subscription = entry.ownership_status == OwnershipStatus.SUBSCRIPTION
 
-    Args:
-        session: Database session
-        job: The parent Job
-        user_id: User ID
-        game: ExternalGame from adapter
+    if existing:
+        existing.title = entry.title
+        existing.playtime_hours = entry.playtime_hours
+        existing.is_subscription = is_subscription
+        existing.ownership_status = entry.ownership_status
+        existing.platform = entry.platform
+        existing.is_available = True
+        existing.updated_at = datetime.now(timezone.utc)
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+    else:
+        eg = ExternalGame(
+            user_id=user_id,
+            storefront=entry.storefront,
+            external_id=entry.external_id,
+            title=entry.title,
+            playtime_hours=entry.playtime_hours,
+            is_subscription=is_subscription,
+            ownership_status=entry.ownership_status,
+            platform=entry.platform,
+            is_available=True,
+        )
+        session.add(eg)
+        session.commit()
+        session.refresh(eg)
+        return eg
 
-    Returns:
-        Created JobItem, or None if item already exists
-    """
-    from sqlmodel import select
 
-    item_key = f"{game.storefront}_{game.external_id}"
+def _mark_removed_games(
+    session: Session,
+    user_id: str,
+    storefront: str,
+    present_external_ids: Set[str],
+) -> None:
+    """Phase 3: Mark absent games unavailable. Auto-downgrade lapsed subscriptions."""
+    all_available = session.exec(
+        select(ExternalGame).where(
+            ExternalGame.user_id == user_id,
+            ExternalGame.storefront == storefront,
+            ExternalGame.is_available == True,
+        )
+    ).all()
 
-    # Check if item already exists (for idempotency in case of task retry)
-    existing_item_stmt = select(JobItem).where(
-        JobItem.job_id == job.id,
-        JobItem.item_key == item_key
-    )
-    existing_item = session.exec(existing_item_stmt).first()
+    for eg in all_available:
+        if eg.external_id not in present_external_ids:
+            eg.is_available = False
+            eg.updated_at = datetime.now(timezone.utc)
+            session.add(eg)
 
-    if existing_item:
-        logger.debug(f"JobItem already exists for {game.title}, skipping")
+            if eg.is_subscription:
+                for ugp in eg.user_game_platforms:
+                    if ugp.ownership_status == OwnershipStatus.SUBSCRIPTION:
+                        ugp.ownership_status = OwnershipStatus.NO_LONGER_OWNED
+                        ugp.updated_at = datetime.now(timezone.utc)
+                        session.add(ugp)
+
+    session.commit()
+
+
+def _create_job_item(session: Session, job: Job, eg: ExternalGame) -> JobItem | None:
+    """Create a JobItem for an ExternalGame (idempotent by job + external game key)."""
+    item_key = f"{eg.storefront}_{eg.external_id}"
+    existing = session.exec(
+        select(JobItem).where(JobItem.job_id == job.id, JobItem.item_key == item_key)
+    ).first()
+    if existing:
         return None
-
-    source_metadata = {
-        "external_id": game.external_id,
-        "platform": game.platform,
-        "storefront": game.storefront,
-        "metadata": game.metadata,
-        "playtime_hours": game.playtime_hours,
-        "ownership_status": game.ownership_status.value if game.ownership_status else None,
-    }
 
     job_item = JobItem(
         job_id=job.id,
-        user_id=user_id,
+        user_id=eg.user_id,
         item_key=item_key,
-        source_title=game.title,
-        source_metadata_json=json.dumps(source_metadata),
+        source_title=eg.title,
+        source_metadata_json=f'{{"external_game_id": "{eg.id}"}}',
         status=JobItemStatus.PENDING,
     )
-
     session.add(job_item)
     session.commit()
     session.refresh(job_item)
-
-    logger.debug(f"Created JobItem {job_item.id} for {game.title}")
-
     return job_item
 
 
 async def _dispatch_process_task(job_item_id: str, priority: BackgroundJobPriority) -> None:
-    """Dispatch a process_sync_item task for a JobItem.
-
-    Args:
-        job_item_id: The JobItem ID to process
-        priority: Task priority (HIGH or LOW)
-    """
     from app.worker.tasks.sync.process_item import process_sync_item
-
     await enqueue_task(process_sync_item, job_item_id, priority=priority)

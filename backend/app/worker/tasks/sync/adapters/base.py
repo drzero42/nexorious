@@ -15,7 +15,7 @@ from app.models.user_game import OwnershipStatus
 
 
 @dataclass
-class ExternalGame:
+class ExternalLibraryEntry:
     """Standardized representation of a game from an external source.
 
     Attributes:
@@ -45,7 +45,7 @@ class SyncSourceAdapter(Protocol):
 
     source: BackgroundJobSource
 
-    async def fetch_games(self, user: User, session: Session) -> List[ExternalGame]:
+    async def fetch_games(self, user: User, session: Session) -> List[ExternalLibraryEntry]:
         """Fetch all games from external source for user.
 
         Args:

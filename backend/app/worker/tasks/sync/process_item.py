@@ -1,150 +1,112 @@
-"""Sync item processor for individual game processing.
+"""Sync item processor: Phases 4 (IGDB resolution) and 5 (collection sync).
 
-Processes individual JobItems created by the dispatch task.
-Handles matching, linking, and review workflow.
+Each JobItem carries an ExternalGame ID in its source_metadata_json.
+Phase 4: If unresolved, runs IGDB matching. High confidence → sets resolved_igdb_id.
+         Low confidence → PENDING_REVIEW (user resolves, next sync picks it up).
+Phase 5: If resolved, syncs playtime + ownership_status to UserGamePlatform.
+         Auto-links manually added entries on first match by (user+igdb+platform+storefront).
 """
 
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select, func, col
 
 from app.worker.broker import broker
 from app.core.database import get_sync_session
-from app.models.job import (
-    Job,
-    JobItem,
-    JobItemStatus,
-    BackgroundJobStatus,
-    BackgroundJobType,
-    BackgroundJobSource,
-)
+from app.models.job import Job, JobItem, JobItemStatus, BackgroundJobStatus
 from app.models.game import Game
 from app.models.user_game import UserGame, UserGamePlatform, OwnershipStatus
-from app.models.user_sync_config import UserSyncConfig
-from app.models.ignored_external_game import IgnoredExternalGame
+from app.models.external_game import ExternalGame
 from app.services.igdb.service import IGDBService
 from app.services.matching.service import MatchingService
-from app.services.matching.models import MatchRequest, MatchStatus, MatchResult
+from app.services.matching.models import MatchRequest, MatchStatus
 from app.services.game_service import GameService
 
 logger = logging.getLogger(__name__)
 
-# Auto-match confidence threshold (85%)
 AUTO_MATCH_CONFIDENCE_THRESHOLD = 0.85
+
+OWNERSHIP_PRECEDENCE: dict[OwnershipStatus, int] = {
+    OwnershipStatus.OWNED: 4,
+    OwnershipStatus.BORROWED: 3,
+    OwnershipStatus.RENTED: 3,
+    OwnershipStatus.SUBSCRIPTION: 2,
+    OwnershipStatus.NO_LONGER_OWNED: 1,
+}
+
+
+def _should_update_ownership(current: OwnershipStatus, incoming: OwnershipStatus) -> bool:
+    """Return True only if incoming ownership rank >= current rank (never downgrade)."""
+    return OWNERSHIP_PRECEDENCE.get(incoming, 0) >= OWNERSHIP_PRECEDENCE.get(current, 0)
 
 
 @broker.task(task_name="sync.process_item")
 async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
-    """
-    Process a single sync item.
-
-    Implements the processing flows:
-    - Flow A (new item): Check synced -> check ignored -> IGDB match -> link/review
-    - Flow B (reviewed item): Check synced -> use resolved_igdb_id -> link
-
-    Args:
-        job_item_id: The JobItem ID to process
-
-    Returns:
-        Dictionary with processing result details
-    """
-    # Phase 1: Fetch job item and validate
+    """Process a single sync item via its linked ExternalGame."""
     session = get_sync_session()
     try:
         job_item = session.get(JobItem, job_item_id)
         if not job_item:
-            logger.error(f"JobItem {job_item_id} not found")
             return {"status": "error", "error": "JobItem not found"}
-
-        # Idempotency check
         if job_item.status not in (JobItemStatus.PENDING, JobItemStatus.PROCESSING):
-            logger.info(f"JobItem {job_item_id} already processed: {job_item.status}")
             return {"status": "skipped", "reason": "already_processed"}
 
-        # Set status to PROCESSING
         job_item.status = JobItemStatus.PROCESSING
         session.add(job_item)
         session.commit()
 
-        # Extract data
-        user_id = job_item.user_id
+        metadata = json.loads(job_item.source_metadata_json)
+        external_game_id = metadata.get("external_game_id")
         job_id = job_item.job_id
-        resolved_igdb_id = job_item.resolved_igdb_id
-        source_metadata_json = job_item.source_metadata_json
-        source_title = job_item.source_title
+        user_resolved_igdb_id = job_item.resolved_igdb_id
     finally:
         session.close()
 
-    # Phase 2: Parse metadata
-    try:
-        metadata = json.loads(source_metadata_json)
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in JobItem {job_item_id}: {e}")
-        return await _update_job_item_error(job_item_id, f"Invalid metadata: {e}")
+    if not external_game_id:
+        return await _update_job_item_error(job_item_id, "Missing external_game_id in metadata")
 
-    external_id = metadata.get("external_id")
-    platform = metadata.get("platform")
-    storefront = metadata.get("storefront")
-    playtime_hours = metadata.get("playtime_hours", 0)
-    # Parse ownership_status from metadata (may be None for backward compatibility)
-    ownership_status_str = metadata.get("ownership_status")
-    ownership_status: Optional[OwnershipStatus] = None
-    if ownership_status_str:
-        try:
-            ownership_status = OwnershipStatus(ownership_status_str)
-        except ValueError:
-            logger.warning(f"Invalid ownership_status '{ownership_status_str}', defaulting to None")
-
-    if not external_id or not storefront:
-        return await _update_job_item_error(job_item_id, "Missing external_id or storefront")
-
-    # Phase 3: Process with fresh session
     session = get_sync_session()
     try:
-        # Step 1: Check if already synced
-        existing_sync = _get_existing_sync(session, user_id, storefront, external_id)
-        if existing_sync:
-            user_game_id, game_id, game_title = existing_sync
-            # Update JobItem with result data for recent activity display
-            job_item = session.get(JobItem, job_item_id)
-            if job_item:
-                job_item.resolved_igdb_id = game_id
-                job_item.result_json = json.dumps({
-                    "igdb_title": game_title,
-                    "igdb_id": game_id,
-                    "user_game_id": user_game_id,
-                    "result_type": "already_synced",
-                })
-                session.add(job_item)
-            return await _complete_job_item(
-                session, job_item_id, job_id,
-                JobItemStatus.COMPLETED, "already_synced"
-            )
+        eg = session.get(ExternalGame, external_game_id)
+        if not eg:
+            return await _update_job_item_error(job_item_id, f"ExternalGame {external_game_id} not found")
 
-        # Step 2: Check if ignored
-        if _is_ignored(session, user_id, storefront, external_id):
-            return await _complete_job_item(
-                session, job_item_id, job_id,
-                JobItemStatus.SKIPPED, "ignored"
-            )
+        if eg.is_skipped:
+            return await _complete_job_item(session, job_item_id, job_id, JobItemStatus.SKIPPED, "skipped")
 
-        # Step 3: Check if user provided resolved_igdb_id (Flow B)
-        if resolved_igdb_id:
-            return await _process_with_resolved_id(
-                session, job_item_id, job_id, user_id,
-                resolved_igdb_id, platform, storefront, external_id, source_title,
-                playtime_hours, ownership_status
-            )
+        # Phase 4: Resolve IGDB if not yet resolved
+        if not eg.resolved_igdb_id:
+            if user_resolved_igdb_id:
+                # User manually chose this mapping; persist it to ExternalGame
+                game_service = GameService(session, IGDBService())
+                await game_service.create_or_update_game_from_igdb(user_resolved_igdb_id)
+                eg.resolved_igdb_id = user_resolved_igdb_id
+                eg.updated_at = datetime.now(timezone.utc)
+                session.add(eg)
+                session.commit()
+            else:
+                resolved = await _resolve_igdb(session, job_item_id, job_id, eg)
+                if not resolved:
+                    return {"status": "success", "result": "pending_review"}
 
-        # Step 4: Flow A - Match via IGDB
-        return await _process_with_matching(
-            session, job_item_id, job_id, user_id,
-            source_title, platform, storefront, external_id, metadata,
-            playtime_hours, ownership_status
-        )
+        # Phase 5: Sync resolved game to collection
+        _sync_external_game_to_collection(session, eg)
+
+        game = session.get(Game, eg.resolved_igdb_id)
+        job_item = session.get(JobItem, job_item_id)
+        if job_item and game:
+            job_item.resolved_igdb_id = eg.resolved_igdb_id
+            job_item.result_json = json.dumps({
+                "igdb_title": game.title,
+                "igdb_id": game.id,
+                "result_type": "synced",
+            })
+            session.add(job_item)
+
+        return await _complete_job_item(session, job_item_id, job_id, JobItemStatus.COMPLETED, "synced")
 
     except Exception as e:
         logger.error(f"Error processing JobItem {job_item_id}: {e}", exc_info=True)
@@ -153,380 +115,148 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         session.close()
 
 
-def _get_existing_sync(
+async def _resolve_igdb(
     session: Session,
-    user_id: str,
-    storefront: str,
-    external_id: str
-) -> tuple[str, int, str] | None:
-    """Check if game is already synced and return (user_game_id, game_id, game_title) if so."""
-    result = session.exec(
-        select(UserGamePlatform, UserGame, Game)
-        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
-        .join(Game, UserGame.game_id == Game.id)
-        .where(
-            UserGame.user_id == user_id,
-            UserGamePlatform.storefront == storefront,
-            UserGamePlatform.store_game_id == external_id,
-        )
-    ).first()
-    if result:
-        _, user_game, game = result
-        return (user_game.id, game.id, game.title)
-    return None
-
-
-def _is_ignored(
-    session: Session,
-    user_id: str,
-    storefront: str,
-    external_id: str
+    job_item_id: str,
+    job_id: str,
+    eg: ExternalGame,
 ) -> bool:
-    """Check if game is in the ignored list."""
-    # Map storefront to BackgroundJobSource
-    source_map = {
-        "steam": BackgroundJobSource.STEAM,
-        "epic": BackgroundJobSource.EPIC,
-        "gog": BackgroundJobSource.GOG,
-    }
-    source = source_map.get(storefront)
-    if not source:
-        return False
-
-    result = session.exec(
-        select(IgnoredExternalGame).where(
-            IgnoredExternalGame.user_id == user_id,
-            IgnoredExternalGame.source == source,
-            IgnoredExternalGame.external_id == external_id,
-        )
-    ).first()
-    return result is not None
-
-
-async def _process_with_resolved_id(
-    session: Session,
-    job_item_id: str,
-    job_id: str,
-    user_id: str,
-    igdb_id: int,
-    platform: str,
-    storefront: str,
-    external_id: str,
-    source_title: str,
-    playtime_hours: int = 0,
-    ownership_status: Optional[OwnershipStatus] = None,
-) -> Dict[str, Any]:
-    """Process item with user-provided IGDB ID (Flow B)."""
-    logger.info(f"Processing {source_title} with resolved IGDB ID {igdb_id}")
-
-    # Check if game exists in user's collection
-    existing_user_game = session.exec(
-        select(UserGame).where(
-            UserGame.user_id == user_id,
-            UserGame.game_id == igdb_id,
-        )
-    ).first()
-
-    if existing_user_game:
-        # Add platform association to existing game
-        _add_platform_association(
-            session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours, ownership_status
-        )
-        result = "linked_existing"
-        user_game_id = existing_user_game.id
-    else:
-        # Create new UserGame and add platform association
-        igdb_service = IGDBService()
-        game_service = GameService(session, igdb_service)
-
-        # First ensure the Game record exists in the database
-        await game_service.create_or_update_game_from_igdb(igdb_id)
-
-        # Use raw SQL with ON CONFLICT to avoid race conditions at the database level
-        from sqlalchemy import text
-
-        # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
-        insert_sql = text("""
-            INSERT INTO user_games (id, user_id, game_id, personal_rating, is_loved, play_status, hours_played, personal_notes, created_at, updated_at)
-            VALUES (gen_random_uuid(), :user_id, :game_id, NULL, false, 'NOT_STARTED', 0, NULL, NOW(), NOW())
-            ON CONFLICT (user_id, game_id) DO NOTHING
-            RETURNING id
-        """)
-
-        insert_result = session.execute(insert_sql, {"user_id": user_id, "game_id": igdb_id})
-        inserted_row = insert_result.first()
-
-        if inserted_row:
-            # New UserGame was created
-            user_game_id = inserted_row[0]
-            result = "imported_new"
-            logger.debug(f"Created new UserGame {user_game_id} for user {user_id}, game {igdb_id}")
-        else:
-            # UserGame already existed (conflict occurred)
-            # Re-query to get the existing UserGame ID
-            existing_user_game = session.exec(
-                select(UserGame).where(
-                    UserGame.user_id == user_id,
-                    UserGame.game_id == igdb_id,
-                )
-            ).first()
-            user_game_id = existing_user_game.id
-            result = "linked_existing"
-            logger.debug(f"UserGame already existed (ID: {user_game_id}), adding platform association")
-
-        session.commit()
-
-        # Add platform association
-        _add_platform_association(
-            session, user_game_id,
-            platform, storefront, external_id, playtime_hours, ownership_status
-        )
-
-    # Fetch the game title for result_json
-    game = session.get(Game, igdb_id)
-    igdb_title = game.title if game else source_title
-
-    # Update JobItem with result data for recent activity display
-    job_item = session.get(JobItem, job_item_id)
-    if job_item:
-        job_item.resolved_igdb_id = igdb_id
-        job_item.result_json = json.dumps({
-            "igdb_title": igdb_title,
-            "igdb_id": igdb_id,
-            "user_game_id": user_game_id,
-            "result_type": result,
-        })
-        session.add(job_item)
-
-    return await _complete_job_item(
-        session, job_item_id, job_id,
-        JobItemStatus.COMPLETED, result
-    )
-
-
-async def _process_with_matching(
-    session: Session,
-    job_item_id: str,
-    job_id: str,
-    user_id: str,
-    source_title: str,
-    platform: str,
-    storefront: str,
-    external_id: str,
-    metadata: Dict[str, Any],
-    playtime_hours: int = 0,
-    ownership_status: Optional[OwnershipStatus] = None,
-) -> Dict[str, Any]:
-    """Process item with IGDB matching (Flow A)."""
-    logger.debug(f"Matching {source_title} via IGDB")
-
+    """Phase 4: IGDB matching. Returns True if resolved, False if sent to review."""
     igdb_service = IGDBService()
     matching_service = MatchingService(session, igdb_service)
 
-    match_request = MatchRequest(
-        source_title=source_title,
-        source_platform=storefront,
-        platform_id=external_id,
-        source_metadata=metadata.get("metadata", {}),
-    )
+    match_result = await matching_service.match_game(MatchRequest(
+        source_title=eg.title,
+        source_platform=eg.storefront,
+        platform_id=eg.external_id,
+        source_metadata={},
+    ))
 
-    match_result = await matching_service.match_game(match_request)
-
-    if match_result.status == MatchStatus.MATCHED:
+    if match_result.status == MatchStatus.MATCHED and match_result.igdb_id:
         confidence = match_result.confidence_score or 0.0
-        igdb_id = match_result.igdb_id
-
-        if not igdb_id:
-            logger.warning(f"Match result MATCHED but no IGDB ID for {source_title}")
-            return await _set_pending_review(
-                session, job_item_id, job_id,
-                candidates=[], confidence=0.0
-            )
-
         if confidence >= AUTO_MATCH_CONFIDENCE_THRESHOLD:
-            # High confidence - auto-import
-            return await _auto_import_game(
-                session, job_item_id, job_id, user_id,
-                igdb_id, platform, storefront, external_id,
-                match_result, confidence, playtime_hours, ownership_status
-            )
-        else:
-            # Low confidence - needs review
-            return await _set_pending_review(
-                session, job_item_id, job_id,
-                candidates=match_result.candidates or [],
-                confidence=confidence,
-                igdb_id=igdb_id,
-                igdb_title=match_result.igdb_title,
-            )
+            game_service = GameService(session, igdb_service)
+            await game_service.create_or_update_game_from_igdb(match_result.igdb_id)
+            eg.resolved_igdb_id = match_result.igdb_id
+            eg.updated_at = datetime.now(timezone.utc)
+            session.add(eg)
+            session.commit()
+            return True
 
-    elif match_result.status == MatchStatus.NEEDS_REVIEW:
-        # Multiple candidates
-        return await _set_pending_review(
+        await _set_pending_review(
             session, job_item_id, job_id,
             candidates=match_result.candidates or [],
-            confidence=0.0,
+            confidence=confidence,
+            igdb_id=match_result.igdb_id,
+            igdb_title=match_result.igdb_title,
         )
+        return False
 
-    else:
-        # No match found
-        return await _set_pending_review(
-            session, job_item_id, job_id,
-            candidates=[],
-            confidence=0.0,
-        )
-
-
-async def _auto_import_game(
-    session: Session,
-    job_item_id: str,
-    job_id: str,
-    user_id: str,
-    igdb_id: int,
-    platform: str,
-    storefront: str,
-    external_id: str,
-    match_result: MatchResult,
-    confidence: float,
-    playtime_hours: int = 0,
-    ownership_status: Optional[OwnershipStatus] = None,
-) -> Dict[str, Any]:
-    """Auto-import a high-confidence match."""
-    logger.info(f"Auto-importing {match_result.igdb_title} (confidence: {confidence:.2f})")
-
-    # Check if game exists in user's collection
-    existing_user_game = session.exec(
-        select(UserGame).where(
-            UserGame.user_id == user_id,
-            UserGame.game_id == igdb_id,
-        )
-    ).first()
-
-    if existing_user_game:
-        # Add platform association to existing game
-        _add_platform_association(
-            session, existing_user_game.id,
-            platform, storefront, external_id, playtime_hours, ownership_status
-        )
-        result = "auto_linked"
-        user_game_id = existing_user_game.id
-    else:
-        # Create new UserGame
-        igdb_service = IGDBService()
-        game_service = GameService(session, igdb_service)
-
-        # First ensure the Game record exists in the database
-        await game_service.create_or_update_game_from_igdb(igdb_id)
-
-        # Use raw SQL with ON CONFLICT to avoid race conditions at the database level
-        from sqlalchemy import text
-
-        # Insert UserGame with ON CONFLICT DO NOTHING to handle race conditions at DB level
-        insert_sql = text("""
-            INSERT INTO user_games (id, user_id, game_id, personal_rating, is_loved, play_status, hours_played, personal_notes, created_at, updated_at)
-            VALUES (gen_random_uuid(), :user_id, :game_id, NULL, false, 'NOT_STARTED', 0, NULL, NOW(), NOW())
-            ON CONFLICT (user_id, game_id) DO NOTHING
-            RETURNING id
-        """)
-
-        insert_result = session.execute(insert_sql, {"user_id": user_id, "game_id": igdb_id})
-        inserted_row = insert_result.first()
-
-        if inserted_row:
-            # New UserGame was created
-            user_game_id = inserted_row[0]
-            result = "auto_imported"
-            logger.debug(f"Created new UserGame {user_game_id} for user {user_id}, game {igdb_id}")
-        else:
-            # UserGame already existed (conflict occurred)
-            # Re-query to get the existing UserGame ID
-            existing_user_game = session.exec(
-                select(UserGame).where(
-                    UserGame.user_id == user_id,
-                    UserGame.game_id == igdb_id,
-                )
-            ).first()
-            user_game_id = existing_user_game.id
-            result = "auto_linked"
-            logger.debug(f"UserGame already existed (ID: {user_game_id}), adding platform association")
-
-        session.commit()
-
-        # Add platform association
-        _add_platform_association(
-            session, user_game_id,
-            platform, storefront, external_id, playtime_hours, ownership_status
-        )
-
-    # Update JobItem with match info AND result data for recent activity display
-    job_item = session.get(JobItem, job_item_id)
-    if job_item:
-        job_item.resolved_igdb_id = igdb_id
-        job_item.match_confidence = confidence
-        job_item.result_json = json.dumps({
-            "igdb_title": match_result.igdb_title,
-            "igdb_id": igdb_id,
-            "user_game_id": user_game_id,
-            "result_type": result,
-        })
-        session.add(job_item)
-
-    return await _complete_job_item(
+    await _set_pending_review(
         session, job_item_id, job_id,
-        JobItemStatus.COMPLETED, result
+        candidates=getattr(match_result, "candidates", []) or [],
+        confidence=0.0,
     )
+    return False
 
 
-def _add_platform_association(
-    session: Session,
-    user_game_id: str,
-    platform: str,
-    storefront: str,
-    external_id: str,
-    playtime_hours: int = 0,
-    ownership_status: Optional[OwnershipStatus] = None,
-) -> None:
-    """Add platform association to a UserGame."""
-    # Check if association already exists
-    # Note: unique constraint is on (user_game_id, platform, storefront)
-    existing = session.exec(
-        select(UserGamePlatform).where(
-            UserGamePlatform.user_game_id == user_game_id,
-            UserGamePlatform.platform == platform,
-            UserGamePlatform.storefront == storefront,
+def _sync_external_game_to_collection(session: Session, eg: ExternalGame) -> None:
+    """Phase 5: Create or update UserGamePlatform, respecting ownership precedence."""
+    if not eg.resolved_igdb_id:
+        return
+
+    # Find already-linked UserGamePlatform
+    ugp = session.exec(
+        select(UserGamePlatform)
+        .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
+        .where(
+            UserGamePlatform.external_game_id == eg.id,
+            UserGame.user_id == eg.user_id,
         )
     ).first()
 
-    # Default to OWNED if not specified
-    final_ownership_status = ownership_status or OwnershipStatus.OWNED
+    if ugp is None:
+        # Check for a matching entry by game identity; also catches UGPs already claimed by
+        # another ExternalGame (e.g. same game appearing under two Steam app IDs in a bundle)
+        ugp = session.exec(
+            select(UserGamePlatform)
+            .join(UserGame, UserGamePlatform.user_game_id == UserGame.id)
+            .where(
+                UserGame.user_id == eg.user_id,
+                UserGame.game_id == eg.resolved_igdb_id,
+                UserGamePlatform.platform == eg.platform,
+                UserGamePlatform.storefront == eg.storefront,
+            )
+        ).first()
 
-    if existing:
-        # Update playtime and ownership_status if already exists (sync updates)
-        existing.hours_played = playtime_hours
-        existing.ownership_status = final_ownership_status
-        session.add(existing)
-        session.commit()
-        logger.debug(f"Updated playtime for existing platform association on UserGame {user_game_id}")
+        if ugp is None:
+            ugp = _create_user_game_platform(session, eg)
+        elif ugp.external_game_id is None:
+            ugp.external_game_id = eg.id
+
+    if ugp is None:
+        return
+
+    if not ugp.sync_from_source:
+        return
+
+    # Always update playtime
+    ugp.hours_played = eg.playtime_hours
+
+    # Update ownership only if incoming rank >= current rank
+    incoming = eg.ownership_status or OwnershipStatus.OWNED
+    if _should_update_ownership(ugp.ownership_status, incoming):
+        ugp.ownership_status = incoming
+
+    ugp.updated_at = datetime.now(timezone.utc)
+    session.add(ugp)
+    session.commit()
+
+
+def _create_user_game_platform(session: Session, eg: ExternalGame) -> Optional[UserGamePlatform]:
+    """Create UserGame (if needed) and a new linked UserGamePlatform."""
+    from sqlalchemy import text
+
+    insert_sql = text("""
+        INSERT INTO user_games (id, user_id, game_id, personal_rating, is_loved, play_status,
+                                hours_played, personal_notes, created_at, updated_at)
+        VALUES (gen_random_uuid(), :user_id, :game_id, NULL, false, 'NOT_STARTED', 0, NULL, NOW(), NOW())
+        ON CONFLICT (user_id, game_id) DO NOTHING
+        RETURNING id
+    """)
+    result = session.execute(insert_sql, {"user_id": eg.user_id, "game_id": eg.resolved_igdb_id})
+    row = result.first()
+
+    if row:
+        user_game_id = row[0]
     else:
-        # Build store URL based on storefront
-        store_url = None
-        if storefront == "steam":
-            store_url = f"https://store.steampowered.com/app/{external_id}"
+        existing_ug = session.exec(
+            select(UserGame).where(
+                UserGame.user_id == eg.user_id,
+                UserGame.game_id == eg.resolved_igdb_id,
+            )
+        ).first()
+        if not existing_ug:
+            logger.error(f"Could not find or create UserGame for user {eg.user_id}, game {eg.resolved_igdb_id}")
+            return None
+        user_game_id = existing_ug.id
 
-        platform_assoc = UserGamePlatform(
-            user_game_id=user_game_id,
-            platform=platform,
-            storefront=storefront,
-            store_game_id=external_id,
-            store_url=store_url,
-            is_available=True,
-            hours_played=playtime_hours,
-            ownership_status=final_ownership_status,
-        )
-        session.add(platform_assoc)
-        session.commit()
-        logger.debug(f"Added platform association for UserGame {user_game_id} with {playtime_hours}h playtime")
+    session.commit()
+
+    ugp = UserGamePlatform(
+        user_game_id=user_game_id,
+        platform=eg.platform,
+        storefront=eg.storefront,
+        external_game_id=eg.id,
+        is_available=True,
+        hours_played=eg.playtime_hours,
+        ownership_status=eg.ownership_status or OwnershipStatus.OWNED,
+        sync_from_source=True,
+    )
+    session.add(ugp)
+    session.commit()
+    session.refresh(ugp)
+    return ugp
 
 
 async def _set_pending_review(
@@ -537,44 +267,34 @@ async def _set_pending_review(
     confidence: float,
     igdb_id: Optional[int] = None,
     igdb_title: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Set JobItem to PENDING_REVIEW status."""
-    # Serialize candidates
-    serializable_candidates = []
-    for candidate in candidates:
-        if hasattr(candidate, "to_dict"):
-            serializable_candidates.append(candidate.to_dict())
-        elif isinstance(candidate, dict):
-            serializable_candidates.append(candidate)
+) -> None:
+    serializable = []
+    for c in candidates:
+        if hasattr(c, "to_dict"):
+            serializable.append(c.to_dict())
+        elif isinstance(c, dict):
+            serializable.append(c)
         else:
             try:
-                serializable_candidates.append(candidate.__dict__)
+                serializable.append(c.__dict__)
             except AttributeError:
-                logger.warning(f"Failed to serialize candidate: {candidate}")
+                pass
 
-    # Add matched game to candidates if not present
     if igdb_id and igdb_title:
-        candidate_ids = {c.get("igdb_id") for c in serializable_candidates}
-        if igdb_id not in candidate_ids:
-            serializable_candidates.insert(0, {
-                "igdb_id": igdb_id,
-                "name": igdb_title,
-                "similarity_score": confidence,
-            })
+        existing_ids = {c.get("igdb_id") for c in serializable}
+        if igdb_id not in existing_ids:
+            serializable.insert(0, {"igdb_id": igdb_id, "name": igdb_title, "similarity_score": confidence})
 
     job_item = session.get(JobItem, job_item_id)
     if job_item:
         job_item.status = JobItemStatus.PENDING_REVIEW
-        job_item.igdb_candidates_json = json.dumps(serializable_candidates)
+        job_item.igdb_candidates_json = json.dumps(serializable)
         job_item.match_confidence = confidence if confidence > 0 else None
         job_item.processed_at = datetime.now(timezone.utc)
         session.add(job_item)
         session.commit()
 
-    # Check job completion (PENDING_REVIEW counts as "processed" for job status)
     _check_and_update_job_completion(session, job_id)
-
-    return {"status": "success", "result": "pending_review", "candidates": len(serializable_candidates)}
 
 
 async def _complete_job_item(
@@ -584,116 +304,65 @@ async def _complete_job_item(
     status: JobItemStatus,
     result: str,
 ) -> Dict[str, Any]:
-    """Mark JobItem as complete and check job completion."""
     job_item = session.get(JobItem, job_item_id)
     if job_item:
         job_item.status = status
         job_item.processed_at = datetime.now(timezone.utc)
         session.add(job_item)
         session.commit()
-
     _check_and_update_job_completion(session, job_id)
-
     return {"status": "success", "result": result, "job_item_status": status.value}
 
 
-async def _update_job_item_error(job_item_id: str, error_message: str) -> Dict[str, Any]:
-    """Update JobItem with error status."""
+async def _update_job_item_error(job_item_id: str, error_msg: str) -> Dict[str, Any]:
     session = get_sync_session()
     try:
         job_item = session.get(JobItem, job_item_id)
         if job_item:
-            job_id = job_item.job_id
             job_item.status = JobItemStatus.FAILED
-            job_item.error_message = error_message
+            job_item.error_message = error_msg
             job_item.processed_at = datetime.now(timezone.utc)
             session.add(job_item)
             session.commit()
-
-            _check_and_update_job_completion(session, job_id)
+            _check_and_update_job_completion(session, job_item.job_id)
     finally:
         session.close()
-
-    return {"status": "error", "error": error_message}
+    return {"status": "error", "error": error_msg}
 
 
 def _check_and_update_job_completion(session: Session, job_id: str) -> bool:
     """Check if all job items are processed and update job status.
 
-    A job is considered complete only when ALL items are in terminal states:
-    - COMPLETED
-    - SKIPPED
-    - FAILED
-
-    PENDING_REVIEW items block completion - user must resolve them first.
-
-    Also updates last_synced_at for SYNC jobs when complete.
-
-    Returns:
-        True if job was marked complete, False otherwise
+    PENDING_REVIEW items block completion — user must resolve them first.
+    Returns True if job was marked complete, False otherwise.
     """
-    # Count items that are NOT in terminal state (still need work)
+    if not job_id:
+        return False
+
     non_terminal_count = session.exec(
-        select(func.count())
-        .select_from(JobItem)
-        .where(
+        select(func.count()).select_from(JobItem).where(
             JobItem.job_id == job_id,
             col(JobItem.status).in_([
                 JobItemStatus.PENDING,
                 JobItemStatus.PROCESSING,
-                JobItemStatus.PENDING_REVIEW,  # PENDING_REVIEW blocks completion
-            ])
+                JobItemStatus.PENDING_REVIEW,
+            ]),
         )
-    ).one()
+    ).first() or 0
 
     if non_terminal_count > 0:
         return False
 
-    # All items processed - update job
     job = session.get(Job, job_id)
     if not job:
-        logger.error(f"Job {job_id} not found when checking completion")
         return False
 
-    # Only update if not already terminal
     if job.status in (BackgroundJobStatus.COMPLETED, BackgroundJobStatus.FAILED, BackgroundJobStatus.CANCELLED):
         return False
 
-    # Mark job complete
     job.status = BackgroundJobStatus.COMPLETED
     job.completed_at = datetime.now(timezone.utc)
     session.add(job)
-
-    # Update last_synced_at for SYNC jobs
-    if job.job_type == BackgroundJobType.SYNC:
-        _update_sync_config_timestamp(session, job.user_id, job.source)
-
     session.commit()
     logger.info(f"Job {job_id} marked as COMPLETED")
-
     return True
-
-
-def _update_sync_config_timestamp(session: Session, user_id: str, source: BackgroundJobSource):
-    """Update last_synced_at for the user's sync config."""
-    platform_map = {
-        BackgroundJobSource.STEAM: "steam",
-        BackgroundJobSource.EPIC: "epic",
-        BackgroundJobSource.GOG: "gog",
-        BackgroundJobSource.PSN: "psn",
-    }
-    platform = platform_map.get(source)
-    if not platform:
-        return
-
-    sync_config = session.exec(
-        select(UserSyncConfig).where(
-            UserSyncConfig.user_id == user_id,
-            UserSyncConfig.platform == platform,
-        )
-    ).first()
-
-    if sync_config:
-        sync_config.last_synced_at = datetime.now(timezone.utc)
-        session.add(sync_config)
-        logger.info(f"Updated last_synced_at for user {user_id}, platform {platform}")
