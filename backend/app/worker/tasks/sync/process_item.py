@@ -61,6 +61,7 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
         metadata = json.loads(job_item.source_metadata_json)
         external_game_id = metadata.get("external_game_id")
         job_id = job_item.job_id
+        user_resolved_igdb_id = job_item.resolved_igdb_id
     finally:
         session.close()
 
@@ -78,9 +79,18 @@ async def process_sync_item(job_item_id: str) -> Dict[str, Any]:
 
         # Phase 4: Resolve IGDB if not yet resolved
         if not eg.resolved_igdb_id:
-            resolved = await _resolve_igdb(session, job_item_id, job_id, eg)
-            if not resolved:
-                return {"status": "success", "result": "pending_review"}
+            if user_resolved_igdb_id:
+                # User manually chose this mapping; persist it to ExternalGame
+                game_service = GameService(session, IGDBService())
+                await game_service.create_or_update_game_from_igdb(user_resolved_igdb_id)
+                eg.resolved_igdb_id = user_resolved_igdb_id
+                eg.updated_at = datetime.now(timezone.utc)
+                session.add(eg)
+                session.commit()
+            else:
+                resolved = await _resolve_igdb(session, job_item_id, job_id, eg)
+                if not resolved:
+                    return {"status": "success", "result": "pending_review"}
 
         # Phase 5: Sync resolved game to collection
         _sync_external_game_to_collection(session, eg)

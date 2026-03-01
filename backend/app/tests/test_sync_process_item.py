@@ -1,5 +1,7 @@
 """Tests for sync process_item task (Phases 4 and 5)."""
-from unittest.mock import MagicMock
+import json
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
 from app.models.user_game import OwnershipStatus, UserGamePlatform
 from app.models.external_game import ExternalGame as ExternalGameModel
 
@@ -116,3 +118,55 @@ class TestSyncToCollection:
         assert already_claimed_ugp.external_game_id == "eg1"
         # playtime should still be updated
         assert already_claimed_ugp.hours_played == 60
+
+
+class TestProcessSyncItemUserResolution:
+    """Tests that process_sync_item uses JobItem.resolved_igdb_id when user manually resolves."""
+
+    @pytest.mark.asyncio
+    async def test_user_resolved_igdb_id_sets_external_game_without_igdb_matching(self):
+        """When a user manually resolves a PENDING_REVIEW item, the worker must propagate
+        the chosen igdb_id to ExternalGame.resolved_igdb_id instead of re-running IGDB matching."""
+        from app.models.job import JobItem, JobItemStatus
+        from app.models.game import Game
+        from app.worker.tasks.sync.process_item import process_sync_item
+
+        job_item = MagicMock(spec=JobItem)
+        job_item.status = JobItemStatus.PENDING
+        job_item.job_id = "job1"
+        job_item.resolved_igdb_id = 9999  # user chose this igdb game
+        job_item.source_metadata_json = json.dumps({"external_game_id": "eg1"})
+
+        eg = MagicMock(spec=ExternalGameModel)
+        eg.resolved_igdb_id = None  # not yet set on ExternalGame
+        eg.is_skipped = False
+
+        session1 = MagicMock()
+        session1.get.return_value = job_item
+
+        game_mock = MagicMock(spec=Game)
+        game_mock.title = "Test Game"
+        game_mock.id = 9999
+
+        session2 = MagicMock()
+        session2.get.side_effect = [eg, game_mock, MagicMock(spec=JobItem)]
+
+        with patch("app.worker.tasks.sync.process_item.get_sync_session", side_effect=[session1, session2]), \
+             patch("app.worker.tasks.sync.process_item._resolve_igdb", new_callable=AsyncMock) as mock_resolve_igdb, \
+             patch("app.worker.tasks.sync.process_item.GameService") as MockGameService, \
+             patch("app.worker.tasks.sync.process_item.IGDBService"), \
+             patch("app.worker.tasks.sync.process_item._sync_external_game_to_collection"), \
+             patch("app.worker.tasks.sync.process_item._complete_job_item", new_callable=AsyncMock) as mock_complete:
+
+            mock_game_service = AsyncMock()
+            MockGameService.return_value = mock_game_service
+            mock_complete.return_value = {"status": "success", "result": "synced", "job_item_status": "completed"}
+
+            await process_sync_item("item1")
+
+        # _resolve_igdb must NOT be called — user already chose the mapping
+        mock_resolve_igdb.assert_not_called()
+        # The user's chosen igdb_id must be written to ExternalGame
+        assert eg.resolved_igdb_id == 9999
+        # The game must be ensured to exist in the local DB
+        mock_game_service.create_or_update_game_from_igdb.assert_awaited_once_with(9999)
