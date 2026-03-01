@@ -283,39 +283,43 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
     current_game_name: Optional[str] = None
 
     with open(filepath, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        _header = next(reader)  # Skip header row
+        reader = csv.DictReader(f)
 
         for row_num, row in enumerate(
             reader, start=2
         ):  # Start at 2 (1-indexed, after header)
-            if len(row) < 29:
-                print(f"Warning: Row {row_num} has fewer than 29 fields, skipping")
+            required = {"Name", "Loved", "Owned", "Played", "Playing", "Finished",
+                        "Mastered", "Dominated", "Shelved", "Rating",
+                        "Copy platform", "Copy media", "Copy media other",
+                        "Copy source", "Copy source other", "Copy purchase date",
+                        "Platforms", "Notes"}
+            missing = required - row.keys()
+            if missing:
+                print(f"Warning: Row {row_num} missing expected columns {missing}, skipping")
                 continue
 
-            # Extract fields (0-indexed)
-            name = row[0].strip()
-            added = row[1].strip()
-            loved = row[2]
-            owned = row[3]
-            played = row[4]
-            playing = row[5]
-            finished = row[6]
-            mastered = row[7]
-            dominated = row[8]
-            shelved = row[9]
-            rating = row[10]
-            copy_label = row[11].strip()
-            _copy_release = row[12].strip()
-            copy_platform = row[13].strip()
-            copy_media = row[14].strip()
-            copy_media_other = row[15].strip()
-            copy_source = row[16].strip()
-            copy_source_other = row[17].strip()
-            copy_purchase_date = row[18].strip()
-            # Rows 19-27: physical copy metadata (box, manual, etc.) - not used
-            platforms_field = row[27].strip() if len(row) > 27 else ""
-            notes = row[28].strip() if len(row) > 28 else ""
+            # Extract fields by column name (immune to column order/addition changes)
+            name = row["Name"].strip()
+            added = row.get("Added", "").strip()
+            loved = row["Loved"]
+            owned = row["Owned"]
+            played = row["Played"]
+            playing = row["Playing"]
+            finished = row["Finished"]
+            mastered = row["Mastered"]
+            dominated = row["Dominated"]
+            shelved = row["Shelved"]
+            rating = row["Rating"]
+            copy_label = row.get("Copy label", "").strip()
+            copy_platform = row["Copy platform"].strip()
+            copy_media = row["Copy media"].strip()
+            copy_media_other = row["Copy media other"].strip()
+            copy_source = row["Copy source"].strip()
+            copy_source_other = row["Copy source other"].strip()
+            copy_purchase_date = row["Copy purchase date"].strip()
+            # Physical copy metadata (box, manual, etc.) - not used
+            platforms_field = row["Platforms"].strip()
+            notes = row["Notes"].strip()
 
             # Determine game name (empty = continuation row)
             if name:
@@ -364,9 +368,9 @@ def parse_csv(filepath: str) -> list[ConsolidatedGame]:
                     game.notes = notes
 
             # Extract copy data
-            # Note: Darkadia's "Copy platform" field (field 13) is confusingly named -
+            # Note: Darkadia's "Copy platform" field is confusingly named -
             # it actually contains storefront info, not platform info.
-            # When it's "Other", field 14 (copy_media) contains the actual storefront,
+            # When it's "Other", "Copy media" contains the actual storefront,
             # and the platform defaults to PC.
 
             if copy_platform.lower() == "other":
@@ -537,11 +541,12 @@ def clear_igdb_cache() -> None:
 async def setup_igdb_service():
     """Initialize IGDB service with credentials from environment."""
     from app.services.igdb.service import IGDBService
+    from app.utils.rate_limiter import create_igdb_rate_limiter
 
-    # Note: IGDBService reads credentials from app.core.config.settings
-    # which are populated from environment variables (IGDB_CLIENT_ID, IGDB_CLIENT_SECRET)
-    service = IGDBService()
-
+    # Pass a local rate limiter directly so IGDBService skips NATS entirely.
+    # NATS is only needed for distributed rate limiting across multiple server
+    # processes; a single-process script doesn't need it.
+    service = IGDBService(rate_limiter=create_igdb_rate_limiter())
     return service
 
 
