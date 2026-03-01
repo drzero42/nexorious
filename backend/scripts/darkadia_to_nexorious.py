@@ -641,8 +641,51 @@ async def lookup_igdb_ids(
     skipped = 0
     from_cache = 0
 
+    # Track igdb_id -> ConsolidatedGame for games already assigned in this session.
+    # Storing the game object (not just its name) lets us reset a previously
+    # assigned game when a conflict is detected, so BOTH conflicting games are
+    # forced into interactive re-selection.
+    used_igdb_ids: dict[int, ConsolidatedGame] = {}
+
+    # Games whose assignment was revoked due to a conflict; processed after the
+    # main loop so they get a second chance at interactive selection.
+    reprocess_queue: list[ConsolidatedGame] = []
+
+    def _revoke_assignment(conflicting_id: int) -> None:
+        """Reset the game that holds conflicting_id and queue it for re-processing."""
+        prior_game = used_igdb_ids.pop(conflicting_id)
+        print(
+            f"  !! Revoking assignment of igdb_id {conflicting_id} from "
+            f'"{prior_game.name}" — that match may also be wrong. '
+            f'Both "{prior_game.name}" and "{game.name}" will require manual selection.'
+        )
+        prior_game.igdb_id = None
+        prior_game.igdb_title = None
+        prior_game.release_year = None
+        if prior_game.name in cache:
+            del cache[prior_game.name]
+        reprocess_queue.append(prior_game)
+
+    async def _interactive_with_conflict_check(label: str) -> None:
+        """Interactive selection loop that rejects already-used IGDB IDs."""
+        while True:
+            result = await search_igdb_interactive(service, label)
+            if result is None:
+                break
+            candidate_id, candidate_title, _ = result
+            if candidate_id in used_igdb_ids:
+                print(
+                    f"  !! igdb_id {candidate_id} ({candidate_title}) is already "
+                    f'mapped to "{used_igdb_ids[candidate_id].name}". '
+                    f"These must be different games — please select a different entry."
+                )
+                continue
+            game.igdb_id, game.igdb_title, game.release_year = result
+            break
+
     for i, game in enumerate(games, 1):
         print(f"\n[{i}/{len(games)}] Processing: {game.name}")
+        conflict_detected = False
 
         # Check cache first
         if game.name in cache:
@@ -657,41 +700,62 @@ async def lookup_igdb_ids(
 
             # Handle new format (dict with full data)
             if isinstance(cached_entry, dict):
-                game.igdb_id = cached_entry["igdb_id"]
-                game.igdb_title = cached_entry["title"]
-                game.release_year = cached_entry.get("release_year")
-                print(
-                    f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})"
-                )
-                matched += 1
-                from_cache += 1
-                continue
-
-            # Handle legacy format (int) - migrate by fetching details
-            if isinstance(cached_entry, int):
-                print(f"  -> Migrating legacy cache entry (ID: {cached_entry})...")
-                game_details = await service.get_game_by_id(cached_entry)
-                if game_details:
-                    game.igdb_id = cached_entry
-                    game.igdb_title = game_details.title
-                    game.release_year = extract_year_from_date(
-                        game_details.release_date
-                    )
-                    # Update cache to new format
-                    cache[game.name] = {
-                        "igdb_id": cached_entry,
-                        "title": game_details.title,
-                        "release_year": game.release_year,
-                    }
+                candidate_id = cached_entry["igdb_id"]
+                if candidate_id in used_igdb_ids:
+                    _revoke_assignment(candidate_id)
+                    del cache[game.name]
                     save_igdb_cache(cache)
+                    conflict_detected = True
+                else:
+                    game.igdb_id = candidate_id
+                    game.igdb_title = cached_entry["title"]
+                    game.release_year = cached_entry.get("release_year")
                     print(
-                        f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})"
+                        f"  -> From cache: {game.igdb_title} ({game.release_year or '???'})"
                     )
+                    used_igdb_ids[candidate_id] = game
                     matched += 1
                     from_cache += 1
                     continue
+
+            # Handle legacy format (int) - migrate by fetching details
+            elif isinstance(cached_entry, int):
+                print(f"  -> Migrating legacy cache entry (ID: {cached_entry})...")
+                game_details = await service.get_game_by_id(cached_entry)
+                if game_details:
+                    if cached_entry in used_igdb_ids:
+                        _revoke_assignment(cached_entry)
+                        del cache[game.name]
+                        save_igdb_cache(cache)
+                        conflict_detected = True
+                    else:
+                        game.igdb_id = cached_entry
+                        game.igdb_title = game_details.title
+                        game.release_year = extract_year_from_date(
+                            game_details.release_date
+                        )
+                        cache[game.name] = {
+                            "igdb_id": cached_entry,
+                            "title": game_details.title,
+                            "release_year": game.release_year,
+                        }
+                        save_igdb_cache(cache)
+                        print(
+                            f"  -> Migrated: {game.igdb_title} ({game.release_year or '???'})"
+                        )
+                        used_igdb_ids[cached_entry] = game
+                        matched += 1
+                        from_cache += 1
+                        continue
                 else:
                     print(f"  -> Legacy ID {cached_entry} not found, re-searching...")
+
+        # If a conflict was found in the cache, defer this game to the reprocess
+        # queue rather than falling through to auto-match, which might re-grab
+        # the just-revoked IGDB ID before the user has a chance to fix either game.
+        if conflict_detected:
+            reprocess_queue.append(game)
+            continue
 
         # Try automatic match first (single high-confidence result)
         results = await service.search_games(game.name)
@@ -704,13 +768,21 @@ async def lookup_igdb_ids(
                 exact_match = result
                 break
 
-        if exact_match:
+        if exact_match and exact_match.igdb_id in used_igdb_ids:
+            # Auto-match conflicts with an existing assignment — revoke the prior
+            # game and defer BOTH to the reprocess queue. Do NOT fall through to
+            # interactive here: the auto-match would otherwise immediately re-claim
+            # the just-revoked ID, locking the other game out again.
+            _revoke_assignment(exact_match.igdb_id)
+            save_igdb_cache(cache)
+            reprocess_queue.append(game)
+        elif exact_match:
             game.igdb_id = exact_match.igdb_id
             game.igdb_title = exact_match.title
             game.release_year = extract_year_from_date(exact_match.release_date)
             print(f"  -> Auto-matched: {game.igdb_title} ({game.release_year})")
+            used_igdb_ids[exact_match.igdb_id] = game
             matched += 1
-            # Save to cache
             cache[game.name] = {
                 "igdb_id": exact_match.igdb_id,
                 "title": exact_match.title,
@@ -718,14 +790,12 @@ async def lookup_igdb_ids(
             }
             save_igdb_cache(cache)
         else:
-            # Interactive selection needed
-            result = await search_igdb_interactive(service, game.name)
+            await _interactive_with_conflict_check(game.name)
 
-            if result:
-                game.igdb_id, game.igdb_title, game.release_year = result
+            if game.igdb_id is not None:
                 print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
+                used_igdb_ids[game.igdb_id] = game
                 matched += 1
-                # Save to cache
                 cache[game.name] = {
                     "igdb_id": game.igdb_id,
                     "title": game.igdb_title,
@@ -734,7 +804,29 @@ async def lookup_igdb_ids(
             else:
                 print("  -> Skipped")
                 skipped += 1
-                # Save skip to cache (as None)
+                cache[game.name] = None
+
+            save_igdb_cache(cache)
+
+    # Re-process any games whose assignment was revoked due to a conflict.
+    if reprocess_queue:
+        print(f"\n\nRe-processing {len(reprocess_queue)} game(s) with revoked assignments:")
+        for game in reprocess_queue:
+            print(f"\n[re-process] {game.name}")
+            await _interactive_with_conflict_check(game.name)
+
+            if game.igdb_id is not None:
+                print(f"  -> Selected: {game.igdb_title} ({game.release_year})")
+                used_igdb_ids[game.igdb_id] = game
+                matched += 1
+                cache[game.name] = {
+                    "igdb_id": game.igdb_id,
+                    "title": game.igdb_title,
+                    "release_year": game.release_year,
+                }
+            else:
+                print("  -> Skipped")
+                skipped += 1
                 cache[game.name] = None
 
             save_igdb_cache(cache)
