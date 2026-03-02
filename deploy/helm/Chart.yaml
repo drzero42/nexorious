@@ -1,0 +1,20 @@
+apiVersion: v2
+name: nexorious
+description: A self-hosted game collection management application
+type: application
+version: 0.1.0
+appVersion: "latest"
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/your-org/nexorious
+sources:
+  - https://github.com/your-org/nexorious
+maintainers:
+  - name: Nexorious
+keywords:
+  - games
+  - collection
+  - self-hosted
+dependencies:
+  - name: common
+    repository: https://bjw-s-labs.github.io/helm-charts/
+    version: 4.6.2
