@@ -179,11 +179,6 @@ controllers:
           - secretRef:
               name: nexorious-credentials
         env:
-          # Connection strings -- pre-wired for in-cluster services with release name "nexorious".
-          # Update these if using a different release name or external services.
-          DATABASE_URL: "postgresql://nexorious:$(POSTGRES_PASSWORD)@nexorious-postgresql:5432/nexorious"
-          NATS_URL: "nats://nexorious-nats:4222"
-          INTERNAL_API_URL: "http://nexorious-api:8000"
           CORS_ORIGINS: ""
           STORAGE_PATH: /app/storage
           LOG_LEVEL: INFO
@@ -268,9 +263,6 @@ controllers:
           - secretRef:
               name: nexorious-credentials
         env:
-          DATABASE_URL: "postgresql://nexorious:$(POSTGRES_PASSWORD)@nexorious-postgresql:5432/nexorious"
-          NATS_URL: "nats://nexorious-nats:4222"
-          INTERNAL_API_URL: "http://nexorious-api:8000"
           STORAGE_PATH: /app/storage
           TASKIQ_SKIP_TABLE_CREATION: "true"
           LOG_LEVEL: INFO
@@ -303,9 +295,6 @@ controllers:
           - secretRef:
               name: nexorious-credentials
         env:
-          DATABASE_URL: "postgresql://nexorious:$(POSTGRES_PASSWORD)@nexorious-postgresql:5432/nexorious"
-          NATS_URL: "nats://nexorious-nats:4222"
-          INTERNAL_API_URL: "http://nexorious-api:8000"
           LOG_LEVEL: INFO
         probes:
           liveness:

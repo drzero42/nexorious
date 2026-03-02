@@ -36,3 +36,27 @@ Validate required values.
   {{- fail "nexorious.natsUrl must be set when the nats controller is disabled" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Compute the database URL.
+Uses nexorious.databaseUrl if set; otherwise builds in-cluster URL.
+*/}}
+{{- define "nexorious.databaseUrl" -}}
+{{- if .Values.nexorious.databaseUrl -}}
+{{- .Values.nexorious.databaseUrl -}}
+{{- else -}}
+postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Compute the NATS URL.
+Uses nexorious.natsUrl if set; otherwise builds in-cluster URL.
+*/}}
+{{- define "nexorious.natsUrl" -}}
+{{- if .Values.nexorious.natsUrl -}}
+{{- .Values.nexorious.natsUrl -}}
+{{- else -}}
+nats://{{ include "nexorious.fullname" . }}-nats:4222
+{{- end -}}
+{{- end }}
