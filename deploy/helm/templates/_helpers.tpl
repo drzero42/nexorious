@@ -35,6 +35,12 @@ Validate required values.
 {{- if and (not (dig "nats" "enabled" true .Values.controllers)) (empty .Values.nexorious.natsUrl) }}
   {{- fail "nexorious.natsUrl must be set when the nats controller is disabled" }}
 {{- end }}
+{{- if empty .Values.nexorious.igdbClientId }}
+  {{- fail "nexorious.igdbClientId is required. Nexorious will not function without valid IGDB credentials." }}
+{{- end }}
+{{- if empty .Values.nexorious.igdbClientSecret }}
+  {{- fail "nexorious.igdbClientSecret is required. Nexorious will not function without valid IGDB credentials." }}
+{{- end }}
 {{- end }}
 
 {{/*

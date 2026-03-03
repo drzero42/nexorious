@@ -16,6 +16,22 @@ WARNING: nexorious.internalApiKey is set to the default placeholder value.
 
 {{- end }}
 
+{{- if eq .Values.nexorious.igdbClientId "" }}
+
+WARNING: nexorious.igdbClientId is not set.
+   Nexorious requires valid IGDB credentials to function.
+   Obtain credentials at: https://api.igdb.com/v4/getting-started
+   --set nexorious.igdbClientId=<your-client-id>
+
+{{- end }}
+
+{{- if eq .Values.nexorious.igdbClientSecret "" }}
+
+WARNING: nexorious.igdbClientSecret is not set.
+   --set nexorious.igdbClientSecret=<your-client-secret>
+
+{{- end }}
+
 {{- if eq .Values.nexorious.postgresql.password "change-me-in-production" }}
 
 WARNING: nexorious.postgresql.password is set to the default placeholder value.

@@ -11,7 +11,7 @@
     "nexorious": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["secretKey", "internalApiKey", "postgresql"],
+      "required": ["secretKey", "internalApiKey", "igdbClientId", "igdbClientSecret", "postgresql"],
       "properties": {
         "secretKey": {
           "type": "string",
@@ -25,11 +25,13 @@
         },
         "igdbClientId": {
           "type": "string",
-          "description": "IGDB API client ID (optional)"
+          "minLength": 1,
+          "description": "IGDB API client ID. Required — Nexorious will not function without valid IGDB credentials."
         },
         "igdbClientSecret": {
           "type": "string",
-          "description": "IGDB API client secret (optional)"
+          "minLength": 1,
+          "description": "IGDB API client secret. Required — Nexorious will not function without valid IGDB credentials."
         },
         "databaseUrl": {
           "type": "string",

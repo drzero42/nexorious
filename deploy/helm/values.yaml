@@ -23,10 +23,11 @@ nexorious:
   # -- Internal worker-to-API authentication key. REQUIRED. Generate with: openssl rand -hex 32
   internalApiKey: "change-me-in-production"
 
-  # -- IGDB API client ID (optional -- IGDB features will be disabled if not set)
+  # -- IGDB API client ID. REQUIRED. Nexorious will not function without valid IGDB credentials.
+  # -- Obtain from: https://api.igdb.com/v4/getting-started
   igdbClientId: ""
 
-  # -- IGDB API client secret (optional)
+  # -- IGDB API client secret. REQUIRED.
   igdbClientSecret: ""
 
   # -- Database URL. Leave empty to use the in-cluster PostgreSQL controller.
