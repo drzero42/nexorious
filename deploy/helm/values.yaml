@@ -40,13 +40,16 @@ nexorious:
   natsUrl: ""
 
   # -- Internal API URL used by worker/scheduler to reach the api service.
-  # -- Defaults to the in-cluster API service. Update if using a different release name.
-  internalApiUrl: "http://nexorious-api:8000"
+  # -- Leave empty to auto-build from release name (http://<release>-api:8000).
+  # -- Set explicitly if using a custom release name or external API.
+  internalApiUrl: ""
 
   postgresql:
     # -- PostgreSQL username
     username: nexorious
     # -- PostgreSQL password. REQUIRED. Change before deploying.
+    # -- Use only URL-safe characters. For passwords with special characters (: @ / ? #),
+    # -- set nexorious.databaseUrl directly with the password pre-encoded.
     password: "change-me-in-production"
     # -- PostgreSQL database name
     database: nexorious

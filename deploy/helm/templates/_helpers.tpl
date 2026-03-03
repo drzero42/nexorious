@@ -40,6 +40,9 @@ Validate required values.
 {{/*
 Compute the database URL.
 Uses nexorious.databaseUrl if set; otherwise builds in-cluster URL.
+NOTE: The auto-built URL does not URL-encode the password. If the password
+contains special characters (: @ / ? # etc.), set nexorious.databaseUrl
+explicitly with the password pre-encoded.
 */}}
 {{- define "nexorious.databaseUrl" -}}
 {{- if .Values.nexorious.databaseUrl -}}
@@ -58,5 +61,17 @@ Uses nexorious.natsUrl if set; otherwise builds in-cluster URL.
 {{- .Values.nexorious.natsUrl -}}
 {{- else -}}
 nats://{{ include "nexorious.fullname" . }}-nats:4222
+{{- end -}}
+{{- end }}
+
+{{/*
+Compute the internal API URL used by worker/scheduler.
+Uses nexorious.internalApiUrl if set; otherwise builds in-cluster URL.
+*/}}
+{{- define "nexorious.internalApiUrl" -}}
+{{- if .Values.nexorious.internalApiUrl -}}
+{{- .Values.nexorious.internalApiUrl -}}
+{{- else -}}
+http://{{ include "nexorious.fullname" . }}-api:8000
 {{- end -}}
 {{- end }}
