@@ -2,7 +2,7 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
-import { QueryProvider, AuthProvider } from '@/providers';
+import { QueryProvider } from '@/providers';
 import '@fontsource/geist-sans/400.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-mono/400.css';
@@ -16,10 +16,8 @@ function RootComponent() {
   return (
     <QueryProvider>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <AuthProvider>
-          <Outlet />
-          <Toaster />
-        </AuthProvider>
+        <Outlet />
+        <Toaster />
       </ThemeProvider>
     </QueryProvider>
   );
