@@ -1,10 +1,9 @@
-const isDevelopment = process.env.NODE_ENV === 'development';
-
+// frontend/src/lib/env.ts
 export const config = {
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || (isDevelopment ? 'http://localhost:8000/api' : '/api'),
-  staticUrl: process.env.NEXT_PUBLIC_STATIC_URL || (isDevelopment ? 'http://localhost:8000' : ''),
-  appName: process.env.NEXT_PUBLIC_APP_NAME || 'Nexorious',
-  appVersion: process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0',
-  isDevelopment,
-  isProduction: !isDevelopment,
+  apiUrl: import.meta.env.VITE_API_URL ?? '/api',
+  staticUrl: import.meta.env.VITE_STATIC_URL ?? '',
+  appName: import.meta.env.VITE_APP_NAME ?? 'Nexorious',
+  appVersion: import.meta.env.VITE_APP_VERSION ?? '1.0.0',
+  isDevelopment: import.meta.env.DEV,
+  isProduction: import.meta.env.PROD,
 } as const;
