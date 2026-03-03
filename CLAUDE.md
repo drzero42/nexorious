@@ -255,3 +255,17 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Platform Support**: Multi-platform game ownership tracking
 - **Storefront Integration**: Support for Steam, Epic, GOG, PlayStation, Xbox, Nintendo, and physical media
 
+## Helm Chart
+
+### Location & Commands
+- Chart lives at `deploy/helm/` (single chart, release name: `nexorious`)
+- `helm dependency update deploy/helm/` — fetch/update `charts/common-4.6.2.tgz`
+- `helm lint --strict deploy/helm/ --set nexorious.secretKey=x --set nexorious.internalApiKey=x --set nexorious.postgresql.password=x`
+- `helm template nexorious deploy/helm/ --set nexorious.secretKey=x ...` — dry-run to inspect rendered resources
+
+### bjw-s Common Library (v4.6.2)
+- Repo: `https://bjw-s-labs.github.io/helm-charts/` — required entrypoint: `{{- include "bjw-s.common.loader.all" . -}}` in `templates/common.yaml`
+- **Controller disable cascade**: Disabling a controller (e.g. `controllers.postgresql.enabled: false`) also requires disabling its service (`service.postgresql.enabled: false`) and any persistence that references it via `advancedMounts` — failing to do so causes `No enabled controller found` errors
+- Go template functions **cannot** be called in `values.yaml` — compute dynamic values (DATABASE_URL, etc.) in `templates/` files
+- `values.schema.json`: validate only custom `nexorious.*` block; use `additionalProperties: true` on bjw-s-managed blocks (`controllers`, `service`, `ingress`, `persistence`)
+

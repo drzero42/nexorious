@@ -1,0 +1,80 @@
+Thank you for installing {{ .Chart.Name }} {{ .Chart.Version }}!
+
+{{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
+
+WARNING: nexorious.secretKey is set to the default placeholder value.
+   Set it to a secure random value:
+   --set nexorious.secretKey=$(openssl rand -hex 32)
+
+{{- end }}
+
+{{- if eq .Values.nexorious.internalApiKey "change-me-in-production" }}
+
+WARNING: nexorious.internalApiKey is set to the default placeholder value.
+   Set it to a secure random value:
+   --set nexorious.internalApiKey=$(openssl rand -hex 32)
+
+{{- end }}
+
+{{- if eq .Values.nexorious.igdbClientId "" }}
+
+WARNING: nexorious.igdbClientId is not set.
+   Nexorious requires valid IGDB credentials to function.
+   Obtain credentials at: https://api.igdb.com/v4/getting-started
+   --set nexorious.igdbClientId=<your-client-id>
+
+{{- end }}
+
+{{- if eq .Values.nexorious.igdbClientSecret "" }}
+
+WARNING: nexorious.igdbClientSecret is not set.
+   --set nexorious.igdbClientSecret=<your-client-secret>
+
+{{- end }}
+
+{{- if eq .Values.nexorious.postgresql.password "change-me-in-production" }}
+
+WARNING: nexorious.postgresql.password is set to the default placeholder value.
+   Set it before deploying to production.
+
+{{- end }}
+
+== Access ==
+
+{{- if .Values.ingress.frontend.enabled }}
+  Frontend: https://{{ (first .Values.ingress.frontend.hosts).host }}
+{{- else }}
+  Frontend is not exposed via ingress. Use port-forward to access:
+  kubectl port-forward svc/{{ include "nexorious.fullname" . }}-frontend 3000:3000
+
+  Then open: http://localhost:3000
+{{- end }}
+
+== External Services ==
+
+To use an external database instead of in-cluster PostgreSQL, disable ALL three:
+  controllers.postgresql.enabled: false
+  service.postgresql.enabled: false
+  persistence.postgresql-data.enabled: false
+  nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
+
+To use an external NATS instance instead of in-cluster NATS, disable ALL three:
+  controllers.nats.enabled: false
+  service.nats.enabled: false
+  persistence.nats-data.enabled: false
+  nexorious.natsUrl: "nats://host:4222"
+
+== Naming Note ==
+
+This chart was designed to be installed as:
+  helm install nexorious ./deploy/helm
+
+If you used a different release name, update these values in your overrides:
+  nexorious.databaseUrl
+  nexorious.natsUrl
+  nexorious.internalApiUrl
+  controllers.frontend.containers.main.env.INTERNAL_API_URL
+  controllers.frontend.containers.main.env.NEXT_PUBLIC_API_URL
+  controllers.frontend.containers.main.env.NEXT_PUBLIC_STATIC_URL
+
+OR set: global.fullnameOverride: nexorious

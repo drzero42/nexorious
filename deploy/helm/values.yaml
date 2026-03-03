@@ -1,0 +1,446 @@
+# =============================================================================
+# Nexorious Helm Chart Values
+# =============================================================================
+# Based on the bjw-s common library: https://bjw-s-labs.github.io/helm-charts/
+#
+# Default release name assumed: nexorious
+# Install with: helm install nexorious ./deploy/helm
+#
+# If using a different release name, set:
+#   global.fullnameOverride: nexorious
+# =============================================================================
+
+# -- Global values used by the bjw-s common library.
+# fullnameOverride: set this if installing with a release name other than "nexorious"
+# to keep service names predictable (e.g. nexorious-api, nexorious-postgresql).
+global: {}
+
+# -- Custom Nexorious configuration (not part of the common library)
+nexorious:
+  # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
+  secretKey: "change-me-in-production"
+
+  # -- Internal worker-to-API authentication key. REQUIRED. Generate with: openssl rand -hex 32
+  internalApiKey: "change-me-in-production"
+
+  # -- IGDB API client ID. REQUIRED. Nexorious will not function without valid IGDB credentials.
+  # -- Obtain from: https://api.igdb.com/v4/getting-started
+  igdbClientId: ""
+
+  # -- IGDB API client secret. REQUIRED.
+  igdbClientSecret: ""
+
+  # -- Database URL. Leave empty to use the in-cluster PostgreSQL controller.
+  # -- Set this when disabling the postgresql controller for an external database.
+  # -- Example: postgresql://user:pass@my-postgres:5432/nexorious
+  databaseUrl: ""
+
+  # -- NATS URL. Leave empty to use the in-cluster NATS controller.
+  # -- Set this when disabling the nats controller for an external NATS instance.
+  # -- Example: nats://my-nats:4222
+  natsUrl: ""
+
+  # -- Internal API URL used by worker/scheduler to reach the api service.
+  # -- Leave empty to auto-build from release name (http://<release>-api:8000).
+  # -- Set explicitly if using a custom release name or external API.
+  internalApiUrl: ""
+
+  postgresql:
+    # -- PostgreSQL username
+    username: nexorious
+    # -- PostgreSQL password. REQUIRED. Change before deploying.
+    # -- Use only URL-safe characters. For passwords with special characters (: @ / ? #),
+    # -- set nexorious.databaseUrl directly with the password pre-encoded.
+    password: "change-me-in-production"
+    # -- PostgreSQL database name
+    database: nexorious
+
+# =============================================================================
+# Controllers
+# =============================================================================
+
+controllers:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL -- in-cluster database (StatefulSet)
+  # To use an external database, disable ALL three postgresql resources and
+  # provide nexorious.databaseUrl:
+  #   controllers.postgresql.enabled: false
+  #   service.postgresql.enabled: false
+  #   persistence.postgresql-data.enabled: false
+  #   nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
+  # ---------------------------------------------------------------------------
+  postgresql:
+    enabled: true
+    type: statefulset
+    containers:
+      main:
+        image:
+          repository: postgres
+          # -- PostgreSQL image tag. Change to use a different version.
+          tag: 18-alpine
+          pullPolicy: IfNotPresent
+        env:
+          POSTGRES_USER: nexorious
+          POSTGRES_DB: nexorious
+          POSTGRES_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: nexorious-credentials
+                key: POSTGRES_PASSWORD
+          PGDATA: /var/lib/postgresql/data/pgdata
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  - -U
+                  - nexorious
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              failureThreshold: 5
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  - -U
+                  - nexorious
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              failureThreshold: 5
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  - -U
+                  - nexorious
+              failureThreshold: 30
+              periodSeconds: 5
+
+  # ---------------------------------------------------------------------------
+  # NATS -- in-cluster message broker with JetStream (StatefulSet)
+  # To use an external NATS instance, disable ALL three nats resources and
+  # provide nexorious.natsUrl:
+  #   controllers.nats.enabled: false
+  #   service.nats.enabled: false
+  #   persistence.nats-data.enabled: false
+  #   nexorious.natsUrl: "nats://host:4222"
+  # ---------------------------------------------------------------------------
+  nats:
+    enabled: true
+    type: statefulset
+    containers:
+      main:
+        image:
+          repository: nats
+          tag: alpine
+          pullPolicy: IfNotPresent
+        args:
+          - --jetstream
+          - --store_dir=/data
+          - --http_port=8222
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /healthz
+                port: 8222
+              initialDelaySeconds: 10
+              periodSeconds: 10
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /healthz
+                port: 8222
+              initialDelaySeconds: 5
+              periodSeconds: 5
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /healthz
+                port: 8222
+              failureThreshold: 30
+              periodSeconds: 5
+
+  # ---------------------------------------------------------------------------
+  # API -- FastAPI backend (Deployment)
+  # ---------------------------------------------------------------------------
+  api:
+    type: deployment
+    replicas: 1
+    containers:
+      main:
+        image:
+          # -- API container image repository. Change to your actual image.
+          repository: ghcr.io/your-org/nexorious-api
+          tag: latest
+          pullPolicy: IfNotPresent
+        envFrom:
+          - secretRef:
+              name: nexorious-credentials
+        env:
+          CORS_ORIGINS: ""
+          STORAGE_PATH: /app/storage
+          LOG_LEVEL: INFO
+          DEBUG: "false"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              failureThreshold: 3
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+              failureThreshold: 30
+              periodSeconds: 5
+
+  # ---------------------------------------------------------------------------
+  # Frontend -- Next.js (Deployment)
+  # ---------------------------------------------------------------------------
+  frontend:
+    type: deployment
+    replicas: 1
+    containers:
+      main:
+        image:
+          # -- Frontend container image repository. Change to your actual image.
+          repository: ghcr.io/your-org/nexorious-frontend
+          tag: latest
+          pullPolicy: IfNotPresent
+        env:
+          # Client-side URL (must be reachable from the user's browser)
+          NEXT_PUBLIC_API_URL: "http://nexorious.example.com/api"
+          NEXT_PUBLIC_STATIC_URL: "http://nexorious.example.com"
+          # Server-side URL (container-to-container, not browser-facing)
+          INTERNAL_API_URL: "http://nexorious-api:8000/api"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 3000
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              failureThreshold: 3
+
+  # ---------------------------------------------------------------------------
+  # Worker -- Taskiq background worker (Deployment, horizontally scalable)
+  # ---------------------------------------------------------------------------
+  worker:
+    type: deployment
+    replicas: 1
+    containers:
+      main:
+        image:
+          # -- Same image as the api controller
+          repository: ghcr.io/your-org/nexorious-api
+          tag: latest
+          pullPolicy: IfNotPresent
+        command:
+          - uv
+          - run
+          - taskiq
+          - worker
+          - --workers
+          - "1"
+          - --max-async-tasks
+          - "5"
+          - app.worker.broker:broker
+          - app.worker.tasks
+        envFrom:
+          - secretRef:
+              name: nexorious-credentials
+        env:
+          STORAGE_PATH: /app/storage
+          TASKIQ_SKIP_TABLE_CREATION: "true"
+          LOG_LEVEL: INFO
+
+  # ---------------------------------------------------------------------------
+  # Scheduler -- Taskiq scheduler (Deployment, MUST remain at 1 replica)
+  #
+  # WARNING: Do NOT scale this above 1 replica.
+  # The scheduler creates NATS JetStream tables on startup.
+  # Multiple instances will conflict and cause data corruption.
+  # ---------------------------------------------------------------------------
+  scheduler:
+    type: deployment
+    replicas: 1
+    containers:
+      main:
+        image:
+          # -- Same image as the api controller
+          repository: ghcr.io/your-org/nexorious-api
+          tag: latest
+          pullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - |
+            uv run python -c 'import asyncio; from app.worker.broker import broker; asyncio.run(broker.startup())' &&
+            touch /tmp/taskiq_ready &&
+            uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks
+        envFrom:
+          - secretRef:
+              name: nexorious-credentials
+        env:
+          LOG_LEVEL: INFO
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - test
+                  - -f
+                  - /tmp/taskiq_ready
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              failureThreshold: 3
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - test
+                  - -f
+                  - /tmp/taskiq_ready
+              failureThreshold: 60
+              periodSeconds: 5
+
+# =============================================================================
+# Services
+# =============================================================================
+
+service:
+  api:
+    controller: api
+    ports:
+      http:
+        port: 8000
+
+  frontend:
+    controller: frontend
+    ports:
+      http:
+        port: 3000
+
+  postgresql:
+    controller: postgresql
+    ports:
+      postgresql:
+        port: 5432
+
+  nats:
+    controller: nats
+    ports:
+      client:
+        port: 4222
+      monitoring:
+        port: 8222
+
+# =============================================================================
+# Ingress
+# =============================================================================
+
+ingress:
+  # -- Frontend ingress (disabled by default)
+  # Enable and configure hosts to expose the frontend via an ingress controller.
+  frontend:
+    enabled: false
+    # -- Ingress class name (e.g. nginx, traefik, etc.)
+    className: ""
+    annotations: {}
+    hosts:
+      - host: nexorious.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: frontend
+              port: http
+    tls: []
+
+# =============================================================================
+# Persistence
+# =============================================================================
+
+persistence:
+  # -- Main storage volume for cover art, uploads, and backups.
+  # Shared between the api and worker controllers.
+  # By default, backups are stored under /app/storage/backups on this same PVC.
+  # To use separate storage for backups (e.g. NFS), add another persistence entry:
+  #
+  #   backups:
+  #     enabled: true
+  #     type: nfs
+  #     server: nas.local
+  #     path: /backups/nexorious
+  #     advancedMounts:
+  #       api:
+  #         main:
+  #           - path: /app/storage/backups
+  #       worker:
+  #         main:
+  #           - path: /app/storage/backups
+  storage:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    advancedMounts:
+      api:
+        main:
+          - path: /app/storage
+      worker:
+        main:
+          - path: /app/storage
+
+  # -- PostgreSQL data volume
+  postgresql-data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 8Gi
+    advancedMounts:
+      postgresql:
+        main:
+          - path: /var/lib/postgresql/data
+
+  # -- NATS JetStream data volume
+  nats-data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    advancedMounts:
+      nats:
+        main:
+          - path: /data
