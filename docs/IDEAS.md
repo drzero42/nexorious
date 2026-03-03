@@ -86,3 +86,7 @@ Game mappings should also be changeable so if a user makes a wrong choice for a 
 ## Sync to remove games
 Requires ownership status per storefront!
 During sync, we also need to go through games in our database which have IDs for the sync source as well as ownership status set to "subscription" and check that they still are available on the source. If they are not, the assocation must be removed. This is done so games that are no longer available, like PS Plus Extra games do not show up as owned. This will also identify mis-matched games where the user has manually added that the game is owned on eg. Steam. During the steam sync, if that game is not there, the link to Steam should be removed to only show reality.
+
+## External secrets must be support in helm chart
+It is important to allow the helm chart values to point to externally-managed secrets for all the secrets that are needed.
+That will allow the user to handle things like IGDB credentials in a secure manner, but will also allow pointing to a secret managed by CNPG for a properly running PostgreSQL database.
