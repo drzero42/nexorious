@@ -61,7 +61,12 @@ nexorious:
 controllers:
   # ---------------------------------------------------------------------------
   # PostgreSQL -- in-cluster database (StatefulSet)
-  # Disable and set nexorious.databaseUrl to use an external database.
+  # To use an external database, disable ALL three postgresql resources and
+  # provide nexorious.databaseUrl:
+  #   controllers.postgresql.enabled: false
+  #   service.postgresql.enabled: false
+  #   persistence.postgresql-data.enabled: false
+  #   nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
   # ---------------------------------------------------------------------------
   postgresql:
     enabled: true
@@ -121,7 +126,12 @@ controllers:
 
   # ---------------------------------------------------------------------------
   # NATS -- in-cluster message broker with JetStream (StatefulSet)
-  # Disable and set nexorious.natsUrl to use an external NATS instance.
+  # To use an external NATS instance, disable ALL three nats resources and
+  # provide nexorious.natsUrl:
+  #   controllers.nats.enabled: false
+  #   service.nats.enabled: false
+  #   persistence.nats-data.enabled: false
+  #   nexorious.natsUrl: "nats://host:4222"
   # ---------------------------------------------------------------------------
   nats:
     enabled: true

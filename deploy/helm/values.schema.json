@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nexorious Helm Chart Values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "nexorious": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secretKey", "internalApiKey", "postgresql"],
+      "properties": {
+        "secretKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "JWT signing secret key. Generate with: openssl rand -hex 32"
+        },
+        "internalApiKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Internal worker-to-API authentication key. Generate with: openssl rand -hex 32"
+        },
+        "igdbClientId": {
+          "type": "string",
+          "description": "IGDB API client ID (optional)"
+        },
+        "igdbClientSecret": {
+          "type": "string",
+          "description": "IGDB API client secret (optional)"
+        },
+        "databaseUrl": {
+          "type": "string",
+          "description": "External database URL. Leave empty to use in-cluster PostgreSQL."
+        },
+        "natsUrl": {
+          "type": "string",
+          "description": "External NATS URL. Leave empty to use in-cluster NATS."
+        },
+        "internalApiUrl": {
+          "type": "string",
+          "description": "Internal API URL for worker/scheduler. Leave empty to auto-build from release name."
+        },
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["username", "password", "database"],
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1,
+              "description": "PostgreSQL username"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 1,
+              "description": "PostgreSQL password. Use only URL-safe characters when relying on auto-built DATABASE_URL."
+            },
+            "database": {
+              "type": "string",
+              "minLength": 1,
+              "description": "PostgreSQL database name"
+            }
+          }
+        }
+      }
+    },
+    "controllers": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

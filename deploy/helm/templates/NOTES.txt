@@ -34,6 +34,20 @@ WARNING: nexorious.postgresql.password is set to the default placeholder value.
   Then open: http://localhost:3000
 {{- end }}
 
+== External Services ==
+
+To use an external database instead of in-cluster PostgreSQL, disable ALL three:
+  controllers.postgresql.enabled: false
+  service.postgresql.enabled: false
+  persistence.postgresql-data.enabled: false
+  nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
+
+To use an external NATS instance instead of in-cluster NATS, disable ALL three:
+  controllers.nats.enabled: false
+  service.nats.enabled: false
+  persistence.nats-data.enabled: false
+  nexorious.natsUrl: "nats://host:4222"
+
 == Naming Note ==
 
 This chart was designed to be installed as:
