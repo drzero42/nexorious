@@ -52,6 +52,20 @@ We recently removed support for importing CSV, but we still have mentions of CSV
 Allow notifications to be sent to some external service like Telegram. A helper should be used for this, which can send to many different services (pushover and various others) and which will also help keep the amount of needed code down.
 Notifications should be configurable so the user can choose what to receive notifications for. Examples of notifications would be needing to re-auth Epic or that new games were added from sync sources.
 
+## Migrate frontend from Next.js to Vite + React SPA
+Replace Next.js with Vite and TanStack Router while keeping Tailwind CSS, shadcn/ui, and TanStack Query unchanged.
+
+### Why
+The frontend is a pure client-side SPA — every page uses `"use client"`, zero server features are in use. In production we want to serve static files from the FastAPI backend, but Next.js `output: 'export'` fails on dynamic routes (e.g. `games/[id]`) because it needs `generateStaticParams` at build time. Vite produces a single `index.html` + assets with no such constraint, making the FastAPI catch-all serving pattern trivial. It also eliminates the separate frontend container and the need for CORS.
+
+### Implications
+- All `next/navigation` hooks (57 sites) and `next/link` (30 sites) replaced with TanStack Router equivalents.
+- `next/image` (18 sites) replaced with plain `<img loading="lazy">`.
+- `middleware.ts` setup-wizard redirect moved to client-side `AuthProvider` initialisation.
+- `NEXT_PUBLIC_` env var prefix replaced with `VITE_` throughout.
+- FastAPI needs a catch-all route returning `index.html` for all non-API paths.
+- Frontend `Dockerfile` and Helm chart updated: `dist/` output instead of `.next/`, frontend controller/service/ingress removed if serving from the backend image.
+
 ## Next.js proxy
 The frontend reports: The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
 
