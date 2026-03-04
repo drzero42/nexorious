@@ -41,13 +41,13 @@ WARNING: nexorious.postgresql.password is set to the default placeholder value.
 
 == Access ==
 
-{{- if .Values.ingress.frontend.enabled }}
-  Frontend: https://{{ (first .Values.ingress.frontend.hosts).host }}
+{{- if .Values.ingress.api.enabled }}
+  App: https://{{ (first .Values.ingress.api.hosts).host }}
 {{- else }}
-  Frontend is not exposed via ingress. Use port-forward to access:
-  kubectl port-forward svc/{{ include "nexorious.fullname" . }}-frontend 3000:3000
+  App is not exposed via ingress. Use port-forward to access:
+  kubectl port-forward svc/{{ include "nexorious.fullname" . }}-api 8000:8000
 
-  Then open: http://localhost:3000
+  Then open: http://localhost:8000
 {{- end }}
 
 == External Services ==
@@ -73,8 +73,5 @@ If you used a different release name, update these values in your overrides:
   nexorious.databaseUrl
   nexorious.natsUrl
   nexorious.internalApiUrl
-  controllers.frontend.containers.main.env.INTERNAL_API_URL
-  controllers.frontend.containers.main.env.NEXT_PUBLIC_API_URL
-  controllers.frontend.containers.main.env.NEXT_PUBLIC_STATIC_URL
 
 OR set: global.fullnameOverride: nexorious
