@@ -1,5 +1,9 @@
 # Nexorious
 
+> [!WARNING]
+> **Work in Progress — Not Ready for Use**
+> Nexorious is under active development and is not ready for production use or general adoption. Expect breaking changes, missing features, incomplete documentation, and rough edges. Use at your own risk.
+
 A self-hostable web application for managing personal video game collections with comprehensive IGDB integration for tracking, organizing, and discovering games across multiple platforms and storefronts.
 
 ## Features
@@ -571,6 +575,12 @@ cd backend && uv run pytest      # Backend tests
 - **Import Help**: See `backend/scripts/README.md` for CSV import guide
 - **Testing Guide**: See `backend/scripts/tests/README.md` for testing details
 - **Issues**: Report bugs and feature requests via GitHub issues
+
+## AI-Assisted Development
+
+Nexorious was built with extensive use of AI tooling, specifically [Claude Code](https://claude.ai/code) by Anthropic. AI assistance was used throughout the project for code generation, architecture decisions, debugging, and documentation.
+
+This is an intentional choice — Nexorious is partly an experiment in what AI-assisted software development can produce. If you have strong objections to AI-generated or AI-assisted code, Nexorious may not be the right project for you.
 
 ## Trademarks and Copyright
 
