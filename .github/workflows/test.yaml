@@ -13,21 +13,6 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: nexorious_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,7 +29,10 @@ jobs:
 
       - name: Run backend tests
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexorious_test
+          # Tests use testcontainers to spin up their own PostgreSQL container.
+          # Point testcontainers at the Docker daemon available on GitHub-hosted runners.
+          # The code defaults to the Podman socket path which doesn't exist here.
+          DOCKER_HOST: unix:///var/run/docker.sock
         run: |
           cd backend
           uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
