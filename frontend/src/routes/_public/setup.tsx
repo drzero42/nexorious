@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-export const Route = createFileRoute('/setup')({
+export const Route = createFileRoute('/_public/setup')({
   component: SetupPage,
 });
 

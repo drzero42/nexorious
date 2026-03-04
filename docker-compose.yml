@@ -4,7 +4,7 @@
 # Services:
 #   db           - PostgreSQL 16 database
 #   api          - FastAPI backend (hot-reload enabled)
-#   frontend     - Next.js frontend (hot-reload enabled) - port 3000
+#   frontend     - Vite frontend dev server (hot-reload enabled) - port 3000
 #   worker       - Taskiq background task worker (scalable)
 #   scheduler    - Taskiq scheduled task runner (single instance only)
 #
@@ -73,15 +73,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Client-side (browser) API URL - goes directly to backend
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api
-      NEXT_PUBLIC_STATIC_URL: http://localhost:8000
-      # Server-side (middleware) API URL - container-to-container
-      INTERNAL_API_URL: http://api:8000/api
+      # Vite dev server proxy target - container-to-container routing
+      API_TARGET: http://api:8000
     volumes:
       - ./frontend:/app:Z
       - /app/node_modules
-      - /app/.next
     depends_on:
       - api
 
