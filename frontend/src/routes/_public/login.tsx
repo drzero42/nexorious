@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, redirect, isRedirect } from '@tanstack/react-router';
+import * as authApi from '@/api/auth';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/providers';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,17 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const Route = createFileRoute('/_public/login')({
+  beforeLoad: async () => {
+    try {
+      const status = await authApi.checkSetupStatus();
+      if (status.needs_setup) {
+        throw redirect({ to: '/setup' });
+      }
+    } catch (e) {
+      if (isRedirect(e)) throw e;
+      // API failure - proceed to login page, auth errors will surface naturally
+    }
+  },
   component: LoginPage,
 });
 
