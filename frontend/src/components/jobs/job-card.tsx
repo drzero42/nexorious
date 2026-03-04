@@ -1,6 +1,4 @@
-'use client';
-
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,7 +49,7 @@ export function JobCard({
 
   if (compact) {
     return (
-      <Link href={`/jobs/${job.id}`} className="block">
+      <Link to="/jobs/$id" params={{ id: String(job.id) }} className="block">
         <Card className="transition-colors hover:border-primary/50">
           <CardContent className="flex items-center justify-between p-4">
             <div className="flex min-w-0 items-center gap-4">
@@ -144,7 +142,7 @@ export function JobCard({
           className="ml-auto"
           onClick={() => onView?.(job)}
         >
-          <Link href={`/jobs/${job.id}`}>
+          <Link to="/jobs/$id" params={{ id: String(job.id) }}>
             <ExternalLink className="mr-2 h-4 w-4" />
             View Details
           </Link>

@@ -1,8 +1,5 @@
-// frontend/src/components/navigation/mobile-nav.tsx
-'use client';
-
 import { useState } from 'react';
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import { Menu, LogOut, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +41,7 @@ export function MobileNav() {
           <SheetContent side="left" className="w-72 p-0">
             <SheetHeader className="p-4 border-b">
               <SheetTitle>
-                <Link href="/games" onClick={handleNavigate}>
+                <Link to="/games" onClick={handleNavigate}>
                   Nexorious
                 </Link>
               </SheetTitle>
@@ -78,7 +75,7 @@ export function MobileNav() {
                 <ul className="space-y-1">
                   <li>
                     <Link
-                      href="/profile"
+                      to="/profile"
                       onClick={handleNavigate}
                       className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
                     >
@@ -92,7 +89,7 @@ export function MobileNav() {
                   </li>
                   <li>
                     <Link
-                      href="/import-export"
+                      to="/import-export"
                       onClick={handleNavigate}
                       className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
                     >
@@ -115,13 +112,13 @@ export function MobileNav() {
           </SheetContent>
         </Sheet>
 
-        <Link href="/games" className="font-bold text-lg">
+        <Link to="/games" className="font-bold text-lg">
           Nexorious
         </Link>
       </div>
 
       {/* Avatar on right */}
-      <Link href="/profile">
+      <Link to="/profile">
         <Avatar className="h-8 w-8">
           <AvatarFallback>
             {user?.username?.charAt(0).toUpperCase()}

@@ -1,7 +1,5 @@
-'use client';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from '@tanstack/react-router';
 import { useAuth } from '@/providers';
 import * as authApi from '@/api/auth';
 
@@ -10,7 +8,7 @@ interface RouteGuardProps {
 }
 
 export function RouteGuard({ children }: RouteGuardProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -22,7 +20,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
         const status = await authApi.checkSetupStatus();
         if (status.needs_setup) {
           setNeedsSetup(true);
-          router.replace('/setup');
+          navigate({ to: '/setup', replace: true });
           return;
         }
       } catch {
@@ -34,14 +32,14 @@ export function RouteGuard({ children }: RouteGuardProps) {
     };
 
     checkSetup();
-  }, [router]);
+  }, [navigate]);
 
   // Handle auth redirect after setup check completes
   useEffect(() => {
     if (!isCheckingSetup && !needsSetup && !authLoading && !isAuthenticated) {
-      router.replace('/login');
+      navigate({ to: '/login', replace: true });
     }
-  }, [isCheckingSetup, needsSetup, authLoading, isAuthenticated, router]);
+  }, [isCheckingSetup, needsSetup, authLoading, isAuthenticated, navigate]);
 
   // Show loading spinner while checking setup or auth
   if (isCheckingSetup || authLoading) {

@@ -2,15 +2,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
 import {
-  getSyncConfigs,
-  getSyncConfig,
-  updateSyncConfig,
-  triggerSync,
-  getSyncStatus,
-  getIgnoredGames,
-  unignoreGame,
-  verifySteamCredentials,
-  disconnectSteam,
   startEpicAuth,
   completeEpicAuth,
   checkEpicAuth,

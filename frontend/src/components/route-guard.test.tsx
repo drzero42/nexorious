@@ -8,15 +8,15 @@ vi.mock("@/providers", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Mock next/navigation with a spy for router.replace
-const mockReplace = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    replace: mockReplace,
-    push: vi.fn(),
-    prefetch: vi.fn(),
-  }),
-}));
+// Mock @tanstack/react-router with a spy for navigate
+const mockNavigate = vi.fn();
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 // Mock auth API
 const mockCheckSetupStatus = vi.fn();
@@ -89,7 +89,7 @@ describe("RouteGuard", () => {
 
       // Wait a tick to let any potential redirects happen
       await waitFor(() => {
-        expect(mockReplace).not.toHaveBeenCalled();
+        expect(mockNavigate).not.toHaveBeenCalled();
       });
     });
   });
@@ -109,7 +109,7 @@ describe("RouteGuard", () => {
       );
 
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/setup");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/setup", replace: true });
       });
     });
 
@@ -127,7 +127,7 @@ describe("RouteGuard", () => {
       );
 
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/setup");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/setup", replace: true });
       });
 
       expect(screen.queryByTestId("children")).not.toBeInTheDocument();
@@ -150,7 +150,7 @@ describe("RouteGuard", () => {
         expect(screen.getByTestId("children")).toBeInTheDocument();
       });
 
-      expect(mockReplace).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
 
     it("continues to login redirect if setup check fails", async () => {
@@ -168,7 +168,7 @@ describe("RouteGuard", () => {
 
       // Should fall through to auth check and redirect to login
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/login");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/login", replace: true });
       });
     });
   });
@@ -188,7 +188,7 @@ describe("RouteGuard", () => {
       );
 
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/login");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/login", replace: true });
       });
     });
 
@@ -207,7 +207,7 @@ describe("RouteGuard", () => {
 
       // Wait for setup check to complete
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/login");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/login", replace: true });
       });
 
       // Should not render children
@@ -250,7 +250,7 @@ describe("RouteGuard", () => {
 
       // Wait for setup check to complete
       await waitFor(() => {
-        expect(mockReplace).not.toHaveBeenCalled();
+        expect(mockNavigate).not.toHaveBeenCalled();
       });
     });
 
@@ -341,7 +341,7 @@ describe("RouteGuard", () => {
 
       // Should redirect to login
       await waitFor(() => {
-        expect(mockReplace).toHaveBeenCalledWith("/login");
+        expect(mockNavigate).toHaveBeenCalledWith({ to: "/login", replace: true });
       });
     });
   });

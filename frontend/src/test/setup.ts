@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeAll, afterAll, vi } from "vitest";
+import type React from "react";
 import { server } from "./mocks/server";
 
 // Establish API mocking before all tests
@@ -20,42 +21,31 @@ afterAll(() => {
   server.close();
 });
 
-// Mock next/navigation
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    prefetch: vi.fn(),
-    back: vi.fn(),
-    forward: vi.fn(),
-    refresh: vi.fn(),
-  }),
-  usePathname: () => "/",
-  useSearchParams: () => new URLSearchParams(),
-  useParams: () => ({}),
-}));
-
-// Mock next/image to avoid warnings about non-boolean attributes
-vi.mock("next/image", () => ({
-  default: function MockImage(props: Record<string, unknown>) {
-    // Filter out Next.js specific props that aren't valid HTML attributes
-    const { fill, unoptimized, priority, sizes, ...rest } = props;
-    // Create a plain object with only valid HTML img attributes
-    const imgProps: Record<string, unknown> = {
-      ...rest,
-      "data-testid": "next-image",
-    };
-    if (fill) imgProps["data-fill"] = "true";
-    if (unoptimized) imgProps["data-unoptimized"] = "true";
-    if (priority) imgProps["data-priority"] = "true";
-    if (sizes) imgProps["data-sizes"] = sizes;
-
-    // Return using createElement to avoid JSX in .ts file
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const React = require("react");
-    return React.createElement("img", imgProps);
-  },
-}));
+// Mock @tanstack/react-router for tests
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+    useParams: () => ({}),
+    useSearch: () => ({}),
+    useRouterState: vi.fn((opts?: { select?: (s: unknown) => unknown }) => {
+      const state = { location: { pathname: '/', search: '', hash: '' } };
+      return opts?.select ? opts.select(state) : state;
+    }),
+    Link: ({ children, to, params, ...props }: { children: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const React = require('react');
+      let href = to;
+      if (params && typeof params === 'object') {
+        for (const [key, value] of Object.entries(params)) {
+          href = href.replace(`$${key}`, String(value));
+        }
+      }
+      return React.createElement('a', { href, ...props }, children);
+    },
+  };
+});
 
 // Mock localStorage
 const localStorageMock = {

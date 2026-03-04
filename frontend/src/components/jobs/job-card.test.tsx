@@ -5,12 +5,6 @@ import { JobCard } from './job-card';
 import type { Job } from '@/types';
 import { JobType, JobSource, JobStatus, JobPriority } from '@/types';
 
-// Mock next/link
-vi.mock('next/link', () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
-  ),
-}));
 
 const mockJob: Job = {
   id: 'job-1',

@@ -1,8 +1,5 @@
-'use client';
-
 import * as React from 'react';
 import { Search, Loader2, Gamepad2, Calendar, Monitor } from 'lucide-react';
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import {
   Command,
@@ -78,12 +75,11 @@ function GameResultItem({ game, onSelect }: GameResultItemProps) {
         {/* Cover Art */}
         <div className="relative h-16 w-12 flex-shrink-0 rounded overflow-hidden bg-muted">
           {game.cover_art_url ? (
-            <Image
+            <img
               src={game.cover_art_url}
               alt={`${game.title} cover`}
-              fill
-              className="object-cover"
-              unoptimized
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              loading="lazy"
             />
           ) : (
             <div className="h-full w-full flex items-center justify-center">

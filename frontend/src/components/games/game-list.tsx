@@ -1,6 +1,3 @@
-'use client';
-
-import Image from 'next/image';
 import {
   Table,
   TableBody,
@@ -148,12 +145,11 @@ export function GameList({
                 <TableCell>
                   <div className="relative h-12 w-9 bg-muted rounded overflow-hidden">
                     {coverUrl ? (
-                      <Image
+                      <img
                         src={coverUrl}
                         alt={game.game?.title ?? 'Game cover'}
-                        fill
-                        className="object-cover"
-                        sizes="36px"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        loading="lazy"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
