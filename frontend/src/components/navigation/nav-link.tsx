@@ -1,7 +1,4 @@
-'use client';
-
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { NavBadge } from '@/components/ui/nav-badge';
 import type { NavItem } from './types';
@@ -20,8 +17,8 @@ export function NavLink({
   onNavigate,
   className,
 }: NavLinkProps) {
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
 
   // Check if this link is active
   // Exact match for root paths, prefix match for nested paths
@@ -34,7 +31,7 @@ export function NavLink({
     if (badgeHref) {
       e.preventDefault();
       e.stopPropagation();
-      router.push(badgeHref);
+      navigate({ to: badgeHref });
       onNavigate?.();
     }
   };
@@ -45,7 +42,7 @@ export function NavLink({
 
   return (
     <Link
-      href={href}
+      to={href}
       onClick={handleClick}
       className={cn(
         'flex items-center justify-between gap-2 px-3 py-2 rounded-md transition-colors',

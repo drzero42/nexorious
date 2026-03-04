@@ -1,6 +1,4 @@
-'use client';
-
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import { LogOut, User, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +18,7 @@ export function Sidebar() {
     <aside className="hidden md:flex md:fixed md:left-0 md:top-0 w-64 bg-card border-r flex-col h-screen">
       {/* Logo */}
       <div className="p-4 border-b">
-        <Link href="/games" className="block">
+        <Link to="/games" className="block">
           <h1 className="text-xl font-bold">Nexorious</h1>
         </Link>
       </div>
@@ -58,13 +56,13 @@ export function Sidebar() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
             <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/profile">
+              <Link to="/profile">
                 <User className="mr-2 h-4 w-4" />
                 <span>Profile</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/import-export">
+              <Link to="/import-export">
                 <ArrowLeftRight className="mr-2 h-4 w-4" />
                 <span>Import / Export</span>
               </Link>

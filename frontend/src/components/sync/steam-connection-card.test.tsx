@@ -486,8 +486,7 @@ describe('SteamConnectionCard', () => {
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
       await user.click(disconnectButton);
 
-      // Click confirm in the dialog
-      const confirmButton = screen.getByRole('button', { name: 'Disconnect' });
+      // Click confirm in the dialog - find the one inside alertdialog
       // There should be two buttons with Disconnect - one in the trigger, one in the dialog
       const dialogConfirmButton = screen
         .getAllByRole('button', { name: 'Disconnect' })

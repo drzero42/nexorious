@@ -53,7 +53,7 @@ export function EpicAuthDialog({ open, onOpenChange, onSuccess }: EpicAuthDialog
       const result = await startMutation.mutateAsync();
       setAuthUrl(result.authUrl);
       setStep('code');
-    } catch (err) {
+    } catch {
       toast.error('Failed to start Epic authentication');
     }
   };
@@ -80,7 +80,7 @@ export function EpicAuthDialog({ open, onOpenChange, onSuccess }: EpicAuthDialog
       toast.success(`Epic Games connected as ${result.displayName}`);
       handleClose();
       onSuccess();
-    } catch (err) {
+    } catch {
       toast.error('Failed to complete Epic authentication');
     }
   };

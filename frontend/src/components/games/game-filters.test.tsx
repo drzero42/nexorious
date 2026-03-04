@@ -115,8 +115,6 @@ const mockStorefronts: Storefront[] = [
   },
 ];
 
-const mockGenres: string[] = ['Action', 'RPG', 'Adventure'];
-
 const mockTags: Tag[] = [
   {
     id: 'tag-1',

@@ -1,14 +1,11 @@
-'use client';
-
 import { useState } from 'react';
-import Image from 'next/image';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, History } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
 import type { SyncConfig, SyncStatus, SyncConfigUpdateData } from '@/types';
 import { SyncFrequency, getSyncFrequencyLabel, getPlatformDisplayInfo } from '@/types';
@@ -72,12 +69,13 @@ export function SyncServiceCard({
             <div
               className={`flex h-12 w-12 items-center justify-center rounded-lg ${platformInfo.bgColor}`}
             >
-              <Image
+              <img
                 src={`${envConfig.staticUrl}${platformInfo.iconUrl}`}
                 alt={`${platformInfo.name} icon`}
                 width={28}
                 height={28}
                 className="h-7 w-7"
+                loading="lazy"
               />
             </div>
             <div>
@@ -142,7 +140,7 @@ export function SyncServiceCard({
 
       <CardFooter className="flex items-center justify-between border-t bg-muted/50 px-6 py-4">
         <Link
-          href={`/sync/${config.platform}`}
+          to="/sync/$platform" params={{ platform: config.platform }}
           className="flex items-center gap-1 text-sm text-primary hover:underline"
         >
           <History className="h-4 w-4" />

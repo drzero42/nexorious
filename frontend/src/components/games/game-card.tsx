@@ -1,6 +1,3 @@
-'use client';
-
-import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -68,13 +65,12 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
       {/* Cover image */}
       <div className="aspect-[3/4] relative bg-muted">
         {coverUrl ? (
-          <Image
+          <img
             src={coverUrl}
             alt={game.game?.title ?? 'Game cover'}
-            fill
-            unoptimized
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             className="object-cover group-hover:scale-105 transition-transform duration-300"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+            loading="lazy"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground">

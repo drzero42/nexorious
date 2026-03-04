@@ -168,16 +168,11 @@ logos_path = "static/logos"
 os.makedirs(logos_path, exist_ok=True)
 app.mount("/static/logos", StaticFiles(directory=logos_path), name="logos")
 
-
-@app.get("/")
-async def root():
-    """Root endpoint with basic app information"""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.app_version,
-        "docs": "/docs",
-        "health": "/health",
-    }
+# Mount SPA — must be last, catches all non-API paths
+# Only active in production (when dist/ exists); dev uses the Vite dev server
+_dist_dir = os.path.join(os.path.dirname(__file__), "..", "dist")
+if os.path.isdir(_dist_dir):
+    app.mount("/", StaticFiles(directory=_dist_dir, html=True), name="spa")
 
 
 @app.get("/health")

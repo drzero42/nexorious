@@ -1,5 +1,3 @@
-'use client';
-
 import {
   createContext,
   useContext,
@@ -9,7 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from '@tanstack/react-router';
 import type { User } from '@/types';
 import * as authApi from '@/api/auth';
 import { setAuthHandlers } from '@/api/client';
@@ -63,7 +61,7 @@ function clearStoredAuth(): void {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
@@ -91,8 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
     setRefreshToken(null);
     setError(null);
-    router.push('/login');
-  }, [router]);
+    navigate({ to: '/login' });
+  }, [navigate]);
 
   // Token refresh with deduplication
   const refreshTokensFn = useCallback(async (): Promise<boolean> => {

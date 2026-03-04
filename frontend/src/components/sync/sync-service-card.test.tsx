@@ -5,12 +5,6 @@ import { SyncServiceCard } from './sync-service-card';
 import { SyncPlatform, SyncFrequency } from '@/types';
 import type { SyncConfig, SyncStatus } from '@/types';
 
-// Mock next/link
-vi.mock('next/link', () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
-  ),
-}));
 
 const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   id: 'config-1',

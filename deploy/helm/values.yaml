@@ -219,35 +219,9 @@ controllers:
               periodSeconds: 5
 
   # ---------------------------------------------------------------------------
-  # Frontend -- Next.js (Deployment)
+  # Note: Frontend (SPA) is now bundled into the api image and served by
+  # FastAPI's StaticFiles catch-all. No separate frontend Deployment needed.
   # ---------------------------------------------------------------------------
-  frontend:
-    type: deployment
-    replicas: 1
-    containers:
-      main:
-        image:
-          # -- Frontend container image repository. Change to your actual image.
-          repository: ghcr.io/your-org/nexorious-frontend
-          tag: latest
-          pullPolicy: IfNotPresent
-        env:
-          # Client-side URL (must be reachable from the user's browser)
-          NEXT_PUBLIC_API_URL: "http://nexorious.example.com/api"
-          NEXT_PUBLIC_STATIC_URL: "http://nexorious.example.com"
-          # Server-side URL (container-to-container, not browser-facing)
-          INTERNAL_API_URL: "http://nexorious-api:8000/api"
-        probes:
-          liveness:
-            enabled: true
-            custom: true
-            spec:
-              httpGet:
-                path: /
-                port: 3000
-              initialDelaySeconds: 15
-              periodSeconds: 10
-              failureThreshold: 3
 
   # ---------------------------------------------------------------------------
   # Worker -- Taskiq background worker (Deployment, horizontally scalable)
@@ -346,12 +320,6 @@ service:
       http:
         port: 8000
 
-  frontend:
-    controller: frontend
-    ports:
-      http:
-        port: 3000
-
   postgresql:
     controller: postgresql
     ports:
@@ -371,9 +339,10 @@ service:
 # =============================================================================
 
 ingress:
-  # -- Frontend ingress (disabled by default)
-  # Enable and configure hosts to expose the frontend via an ingress controller.
-  frontend:
+  # -- API ingress (also serves the SPA at /)
+  # Enable and configure hosts to expose the app via an ingress controller.
+  # The api service handles both API routes (/api) and the SPA (all other paths).
+  api:
     enabled: false
     # -- Ingress class name (e.g. nginx, traefik, etc.)
     className: ""
@@ -384,7 +353,7 @@ ingress:
           - path: /
             pathType: Prefix
             service:
-              identifier: frontend
+              identifier: api
               port: http
     tls: []
 

@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -18,7 +16,7 @@ import {
   SkipForward,
   AlertCircle,
 } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import { useRecentJobs } from '@/hooks';
 import type { RecentJobDetail, JobItemSummary } from '@/types';
 
@@ -78,7 +76,7 @@ function ItemsList({
                     <>
                       <span className="mx-1">&rarr;</span>
                       <Link
-                        href={`/games/${item.resultUserGameId}`}
+                        to="/games/$id" params={{ id: String(item.resultUserGameId) }}
                         className="font-medium hover:underline"
                       >
                         {item.resultGameTitle}

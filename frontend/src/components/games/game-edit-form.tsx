@@ -1,8 +1,5 @@
-'use client';
-
 import { useState, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -73,7 +70,7 @@ export interface GameEditFormProps {
 }
 
 export function GameEditForm({ game }: GameEditFormProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   // Form state
   const [playStatus, setPlayStatus] = useState<PlayStatus>(game.play_status);
@@ -249,7 +246,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
       }
 
       toast.success('Game updated successfully');
-      router.push(`/games/${game.id}`);
+      navigate({ to: `/games/${game.id}` });
     } catch (error) {
       console.error('Failed to update game:', error);
       toast.error('Failed to update game');
@@ -270,7 +267,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   };
 
   const handleCancel = () => {
-    router.push(`/games/${game.id}`);
+    navigate({ to: `/games/${game.id}` });
   };
 
   const coverArtUrl = resolveImageUrl(game.game.cover_art_url);
@@ -300,12 +297,11 @@ export function GameEditForm({ game }: GameEditFormProps) {
             {/* Cover Art Thumbnail */}
             <div className="w-20 h-28 flex-shrink-0 overflow-hidden rounded-md bg-muted relative">
               {coverArtUrl ? (
-                <Image
+                <img
                   src={coverArtUrl}
                   alt={game.game.title}
-                  fill
-                  className="object-cover"
-                  unoptimized
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  loading="lazy"
                 />
               ) : (
                 <div className="h-full w-full flex items-center justify-center text-2xl">

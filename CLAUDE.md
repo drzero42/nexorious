@@ -73,7 +73,13 @@ npm install  # Install all dependencies
   - `app/worker/` - Background tasks
   - `app/seed_data/` - Idempotent DB seed data
   - `app/tests/` - pytest test files
-- `frontend/` - Next.js 16 TypeScript frontend with React 19, Tailwind CSS, shadcn/ui, TanStack Query
+- `frontend/` - Vite + React SPA with TanStack Router (file-based), Tailwind CSS v4, shadcn/ui, TanStack Query
+  - `src/routes/` - TanStack Router file-based routes (`_authenticated/`, `_public/`, `__root.tsx`)
+  - `src/components/` - Reusable React components
+  - `src/api/` - API client functions
+  - `src/providers/` - React context providers (auth, query)
+  - `src/lib/` - Utilities and helpers
+  - `src/styles/` - Global CSS (Tailwind v4)
 - `docs/` - Project documentation, specifications, and reference guides
 - `storage/` - Runtime file storage for cover art
 
@@ -97,11 +103,11 @@ uv run uvicorn app.main:app --reload
 
 ### Frontend Building
 ```bash
-# Build for production
+# Build for production (outputs to frontend/dist/)
 npm run build
 
-# Run production build locally
-npm run start
+# Preview production build locally
+npm run preview
 
 # Run tests with UI
 npm run test:ui
@@ -233,14 +239,15 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Testing**: pytest
 
 ### Frontend Stack
-- **Framework**: Next.js 16 with React 19 and TypeScript - Modern React framework with App Router
-- **Styling**: Tailwind CSS for utility-first styling
+- **Framework**: Vite 6 + React 19 + TypeScript — SPA served by FastAPI in production
+- **Routing**: TanStack Router v1 with file-based routes (`src/routes/`)
+- **Styling**: Tailwind CSS v4 (`@import "tailwindcss"` syntax, PostCSS via `@tailwindcss/postcss`)
 - **UI Components**: shadcn/ui for accessible, customizable components
 - **State Management**: TanStack Query (React Query) for server state and caching
 - **Forms**: React Hook Form with Zod validation
 - **Rich Text**: TipTap editor for notes and descriptions
-- **Build Tool**: Turbopack for fast development builds
 - **Testing**: Vitest with @testing-library/react
+- **Production serving**: Built `dist/` is copied into the backend Docker image; FastAPI serves it via `StaticFiles(html=True)` catch-all
 
 ### Database Design
 - **Database**: PostgreSQL
@@ -260,7 +267,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 ### Location & Commands
 - Chart lives at `deploy/helm/` (single chart, release name: `nexorious`)
 - `helm dependency update deploy/helm/` — fetch/update `charts/common-4.6.2.tgz`
-- `helm lint --strict deploy/helm/ --set nexorious.secretKey=x --set nexorious.internalApiKey=x --set nexorious.postgresql.password=x`
+- `helm lint --strict deploy/helm/ --set nexorious.secretKey=x --set nexorious.internalApiKey=x --set nexorious.postgresql.password=x --set nexorious.igdbClientId=x --set nexorious.igdbClientSecret=x`
 - `helm template nexorious deploy/helm/ --set nexorious.secretKey=x ...` — dry-run to inspect rendered resources
 
 ### bjw-s Common Library (v4.6.2)

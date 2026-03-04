@@ -1,6 +1,3 @@
-'use client';
-
-import Image from 'next/image';
 import { config } from '@/lib/env';
 import {
   Tooltip,
@@ -37,12 +34,13 @@ export function PlatformIcon({
     : null;
 
   const icon = iconUrl ? (
-    <Image
+    <img
       src={iconUrl}
       alt={platform.display_name}
       width={24}
       height={24}
       className={cn(sizeClasses[size], 'object-contain', className)}
+      loading="lazy"
     />
   ) : (
     <span className={cn('text-muted-foreground', sizeClasses[size], className)}>

@@ -1,7 +1,4 @@
-'use client';
-
-import Link from 'next/link';
-import Image from 'next/image';
+import { Link } from '@tanstack/react-router';
 import { Badge } from '@/components/ui/badge';
 import { config } from '@/lib/env';
 import { useActiveGames } from '@/hooks/use-games';
@@ -56,19 +53,18 @@ export function CurrentlyPlayingSection() {
           return (
             <Link
               key={game.id}
-              href={`/games/${game.id}`}
+              to="/games/$id" params={{ id: String(game.id) }}
               className="flex-shrink-0 w-[140px] sm:w-40 group shadow-md hover:shadow-lg transition-shadow rounded-lg"
             >
               {/* Cover art with 3:4 aspect ratio */}
               <div className="aspect-[3/4] relative bg-muted rounded-lg overflow-hidden mb-2">
                 {coverUrl ? (
-                  <Image
+                  <img
                     src={coverUrl}
                     alt={game.game?.title ?? 'Game cover'}
-                    fill
-                    unoptimized
-                    className="object-cover group-hover:scale-105 transition-transform duration-300"
-                    sizes="160px"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    className="group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-muted-foreground">

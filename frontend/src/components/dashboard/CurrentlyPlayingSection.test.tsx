@@ -14,30 +14,6 @@ vi.mock('@/hooks/use-games', async () => {
   };
 });
 
-// Mock Next.js Image component - passes through the src prop as-is
-vi.mock('next/image', () => ({
-  default: ({ src, alt }: { src: string; alt: string }) => {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={alt} />;
-  },
-}));
-
-// Mock Next.js Link component
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string;
-    children: React.ReactNode;
-    [key: string]: unknown;
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
 
 const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   id: 'game-1' as UserGameId,

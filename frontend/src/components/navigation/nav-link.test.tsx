@@ -5,11 +5,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { NavLink } from './nav-link';
 import { Library } from 'lucide-react';
 
-// Mock next/navigation
-vi.mock('next/navigation', () => ({
-  usePathname: vi.fn(() => '/games'),
-  useRouter: vi.fn(() => ({ push: vi.fn() })),
-}));
+// Mock @tanstack/react-router - override useRouterState to return '/games' as pathname
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+    useRouterState: vi.fn((opts?: { select?: (s: unknown) => unknown }) => {
+      const state = { location: { pathname: '/games', search: '', hash: '' } };
+      return opts?.select ? opts.select(state) : state;
+    }),
+    Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [key: string]: unknown }) => (
+      <a href={to} {...props as React.HTMLAttributes<HTMLAnchorElement>}>{children}</a>
+    ),
+  };
+});
 
 describe('NavLink', () => {
   const defaultProps = {

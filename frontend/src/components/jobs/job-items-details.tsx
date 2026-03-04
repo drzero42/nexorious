@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
@@ -30,7 +28,7 @@ import {
   SkipForward,
   ImageOff,
 } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from '@tanstack/react-router';
 import {
   useJobItems,
   useRetryFailedItems,
@@ -450,7 +448,7 @@ function StatusSection({
                     <div className="min-w-0 flex-1">
                       {item.resultUserGameId ? (
                         <Link
-                          href={`/games/${item.resultUserGameId}`}
+                          to="/games/$id" params={{ id: String(item.resultUserGameId) }}
                           className="font-medium truncate hover:underline text-primary block"
                         >
                           {item.resultGameTitle || item.sourceTitle}

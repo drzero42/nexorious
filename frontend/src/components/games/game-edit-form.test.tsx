@@ -5,17 +5,22 @@ import { GameEditForm } from './game-edit-form';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame, GameId, UserGameId } from '@/types';
 
-// Mock next/navigation
-const mockPush = vi.fn();
-const mockBack = vi.fn();
+// Mock @tanstack/react-router navigation
+const mockNavigate = vi.fn();
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-    back: mockBack,
-  }),
-  useParams: () => ({ id: 'test-game-id' }),
-}));
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useParams: () => ({}),
+    useSearch: () => ({}),
+    useRouterState: vi.fn((opts?: { select?: (s: unknown) => unknown }) => {
+      const state = { location: { pathname: '/', search: '', hash: '' } };
+      return opts?.select ? opts.select(state) : state;
+    }),
+  };
+});
 
 // Mock sonner toast
 vi.mock('sonner', () => ({
@@ -105,6 +110,7 @@ const mockGame: UserGame = {
 describe('GameEditForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockNavigate.mockReset();
   });
 
   it('renders the form with game title', async () => {
@@ -148,7 +154,7 @@ describe('GameEditForm', () => {
     const cancelButtons = screen.getAllByRole('button', { name: /cancel/i });
     await user.click(cancelButtons[0]);
 
-    expect(mockPush).toHaveBeenCalledWith('/games/f47ac10b-58cc-4372-a567-0e02b2c3d479');
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/games/f47ac10b-58cc-4372-a567-0e02b2c3d479' });
   });
 
   it('renders save button', () => {
