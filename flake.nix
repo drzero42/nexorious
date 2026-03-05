@@ -39,12 +39,14 @@
             # Git for version control
             git
 
-            # Add task
+            # task
             go-task
 
             # Playwright
             playwright-test
             playwright-mcp
+
+            minikube
           ];
 
           shellHook = ''
