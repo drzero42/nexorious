@@ -47,6 +47,7 @@
             playwright-mcp
 
             minikube
+            docker-machine-kvm2
           ];
 
           shellHook = ''
