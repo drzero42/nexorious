@@ -26,6 +26,7 @@ tasks:
 
   dev:up:
     desc: "Start minikube cluster, enable addons, and deploy the Helm chart (TAG={{.TAG}})"
+    dir: "{{.ROOT_DIR}}"
     cmds:
       - task: minikube:start
       - task: minikube:addons
@@ -39,11 +40,13 @@ tasks:
 
   dev:deploy:
     desc: "Deploy/upgrade the Helm chart only — cluster must already be running (TAG={{.TAG}})"
+    dir: "{{.ROOT_DIR}}"
     cmds:
       - task: helm:deploy
 
   dev:down:
     desc: "Uninstall the Helm release and stop minikube"
+    dir: "{{.ROOT_DIR}}"
     cmds:
       - helm uninstall {{.RELEASE}} --ignore-not-found
       - minikube stop
@@ -66,6 +69,7 @@ tasks:
   check-env:
     internal: true
     desc: "Verify .env exists and contains IGDB credentials"
+    dir: "{{.ROOT_DIR}}"
     cmds:
       - |
         if [ ! -f .env ]; then
@@ -92,6 +96,7 @@ tasks:
   helm:deploy:
     internal: true
     desc: "Run helm upgrade --install with dev values and env-sourced IGDB creds"
+    dir: "{{.ROOT_DIR}}"
     deps: [check-env]
     vars:
       IGDB_CLIENT_ID:
