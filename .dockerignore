@@ -1,0 +1,34 @@
+# Version control
+.git/
+.github/
+
+# Documentation and planning
+docs/
+*.md
+
+# Deployment configs (not needed in image)
+deploy/
+
+# Frontend build artifacts and deps (rebuilt inside Docker)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+
+# Backend virtualenv and test artifacts (rebuilt inside Docker)
+backend/.venv/
+backend/app/tests/
+backend/htmlcov/
+backend/.pytest_cache/
+
+# Python bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Local development
+*.env
+.env*
+
+# Runtime storage (populated at runtime, not baked in)
+storage/
