@@ -5,9 +5,9 @@ type: application
 version: 0.1.0
 appVersion: "latest"
 kubeVersion: ">=1.28.0-0"
-home: https://github.com/your-org/nexorious
+home: https://github.com/drzero42/nexorious
 sources:
-  - https://github.com/your-org/nexorious
+  - https://github.com/drzero42/nexorious
 maintainers:
   - name: Nexorious
 keywords:

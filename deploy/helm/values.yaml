@@ -185,9 +185,8 @@ controllers:
     containers:
       main:
         image:
-          # -- API container image repository. Change to your actual image.
-          repository: ghcr.io/your-org/nexorious-api
-          tag: latest
+          repository: ghcr.io/drzero42/nexorious
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         envFrom:
           - secretRef:
@@ -232,9 +231,8 @@ controllers:
     containers:
       main:
         image:
-          # -- Same image as the api controller
-          repository: ghcr.io/your-org/nexorious-api
-          tag: latest
+          repository: ghcr.io/drzero42/nexorious
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
           - uv
@@ -268,9 +266,8 @@ controllers:
     containers:
       main:
         image:
-          # -- Same image as the api controller
-          repository: ghcr.io/your-org/nexorious-api
-          tag: latest
+          repository: ghcr.io/drzero42/nexorious
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
           - sh
