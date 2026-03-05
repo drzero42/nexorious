@@ -91,17 +91,20 @@ jobs:
         run: helm dependency update deploy/helm/
 
       - name: Package Helm chart
+        id: helm-package
         run: |
-          helm package deploy/helm/ \
-            --version ${{ steps.chart-version.outputs.version }} \
-            --app-version ${{ steps.chart-version.outputs.app_version }}
+          PKG=$(helm package deploy/helm/ \
+            --version "${{ steps.chart-version.outputs.version }}" \
+            --app-version "${{ steps.chart-version.outputs.app_version }}" \
+            | awk '{print $NF}')
+          echo "path=$PKG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to ghcr.io (Helm)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
             helm registry login ghcr.io \
-              --username ${{ github.actor }} \
+              --username "${{ github.actor }}" \
               --password-stdin
 
       - name: Push Helm chart
-        run: helm push nexorious-*.tgz oci://ghcr.io/drzero42/charts
+        run: helm push "${{ steps.helm-package.outputs.path }}" oci://ghcr.io/drzero42/charts
