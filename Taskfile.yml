@@ -1,0 +1,101 @@
+# Taskfile.yml
+# Task runner for local Helm chart testing with minikube (KVM2 driver).
+# Usage:
+#   task dev:up            # Start cluster and deploy chart (TAG=dev)
+#   task dev:up TAG=1.2.3  # Same with a specific image tag
+#   task dev:deploy        # Deploy/upgrade chart only (cluster must be running)
+#   task dev:down          # Uninstall release and stop minikube
+#
+# Prerequisites:
+#   - minikube installed with kvm2 driver
+#   - helm installed
+#   - .env file at repo root with IGDB_CLIENT_ID and IGDB_CLIENT_SECRET
+
+version: '3'
+
+vars:
+  TAG: '{{.TAG | default "dev"}}'
+  RELEASE: nexorious
+  CHART: deploy/helm
+
+tasks:
+
+  # ---------------------------------------------------------------------------
+  # Public tasks
+  # ---------------------------------------------------------------------------
+
+  dev:up:
+    desc: "Start minikube cluster, enable addons, and deploy the Helm chart (TAG={{.TAG}})"
+    cmds:
+      - task: minikube:start
+      - task: minikube:addons
+      - task: helm:deploy
+
+  dev:deploy:
+    desc: "Deploy/upgrade the Helm chart only — cluster must already be running (TAG={{.TAG}})"
+    cmds:
+      - task: helm:deploy
+
+  dev:down:
+    desc: "Uninstall the Helm release and stop minikube"
+    cmds:
+      - helm uninstall {{.RELEASE}} --ignore-not-found
+      - minikube stop
+
+  minikube:start:
+    desc: "Start minikube with the KVM2 driver (idempotent)"
+    cmds:
+      - minikube start --driver=kvm2 --cpus=4 --memory=8192 --disk-size=20g
+
+  minikube:addons:
+    desc: "Enable storage-provisioner and ingress addons (idempotent)"
+    cmds:
+      - minikube addons enable storage-provisioner
+      - minikube addons enable ingress
+
+  # ---------------------------------------------------------------------------
+  # Internal tasks (not shown in task --list)
+  # ---------------------------------------------------------------------------
+
+  check-env:
+    internal: true
+    desc: "Verify .env exists and contains IGDB credentials"
+    cmds:
+      - |
+        if [ ! -f .env ]; then
+          echo "ERROR: .env file not found."
+          echo "Copy .env.example and fill in your IGDB credentials:"
+          echo "  cp .env.example .env"
+          exit 1
+        fi
+      - |
+        if ! grep -q '^IGDB_CLIENT_ID=' .env; then
+          echo "ERROR: IGDB_CLIENT_ID not found in .env"
+          exit 1
+        fi
+      - |
+        if ! grep -q '^IGDB_CLIENT_SECRET=' .env; then
+          echo "ERROR: IGDB_CLIENT_SECRET not found in .env"
+          exit 1
+        fi
+
+  helm:deploy:
+    internal: true
+    desc: "Run helm upgrade --install with dev values and env-sourced IGDB creds"
+    deps: [check-env]
+    vars:
+      IGDB_CLIENT_ID:
+        sh: grep '^IGDB_CLIENT_ID=' .env | cut -d= -f2-
+      IGDB_CLIENT_SECRET:
+        sh: grep '^IGDB_CLIENT_SECRET=' .env | cut -d= -f2-
+    cmds:
+      - helm dependency update {{.CHART}}
+      - |
+        helm upgrade --install {{.RELEASE}} {{.CHART}} \
+          -f {{.CHART}}/values-dev.yaml \
+          --set nexorious.igdbClientId={{.IGDB_CLIENT_ID}} \
+          --set nexorious.igdbClientSecret={{.IGDB_CLIENT_SECRET}} \
+          --set controllers.api.containers.main.image.tag={{.TAG}} \
+          --set controllers.worker.containers.main.image.tag={{.TAG}} \
+          --set controllers.scheduler.containers.main.image.tag={{.TAG}} \
+          --wait --timeout=5m
