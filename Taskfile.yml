@@ -78,20 +78,32 @@ tasks:
           echo "  cp .env.example .env"
           exit 1
         fi
-      - |
         IGDB_ID=$(grep '^IGDB_CLIENT_ID=' .env | cut -d= -f2-)
-        if [ -z "$IGDB_ID" ] || echo "$IGDB_ID" | grep -q '^your-'; then
-          echo "ERROR: IGDB_CLIENT_ID is not set or still contains the placeholder value."
+        if [ -z "$IGDB_ID" ]; then
+          echo "ERROR: IGDB_CLIENT_ID is not set in .env"
           echo "Edit .env and set a real IGDB_CLIENT_ID."
           exit 1
         fi
-      - |
+        case "$IGDB_ID" in
+          your-*)
+            echo "ERROR: IGDB_CLIENT_ID still contains the placeholder value."
+            echo "Edit .env and set a real IGDB_CLIENT_ID."
+            exit 1
+            ;;
+        esac
         IGDB_SECRET=$(grep '^IGDB_CLIENT_SECRET=' .env | cut -d= -f2-)
-        if [ -z "$IGDB_SECRET" ] || echo "$IGDB_SECRET" | grep -q '^your-'; then
-          echo "ERROR: IGDB_CLIENT_SECRET is not set or still contains the placeholder value."
+        if [ -z "$IGDB_SECRET" ]; then
+          echo "ERROR: IGDB_CLIENT_SECRET is not set in .env"
           echo "Edit .env and set a real IGDB_CLIENT_SECRET."
           exit 1
         fi
+        case "$IGDB_SECRET" in
+          your-*)
+            echo "ERROR: IGDB_CLIENT_SECRET still contains the placeholder value."
+            echo "Edit .env and set a real IGDB_CLIENT_SECRET."
+            exit 1
+            ;;
+        esac
 
   helm:deploy:
     internal: true
