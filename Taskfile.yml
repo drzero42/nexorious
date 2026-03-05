@@ -30,6 +30,7 @@ tasks:
     cmds:
       - task: minikube:start
       - task: minikube:addons
+      - task: ingress:wait
       - task: helm:deploy
       - |
         echo ""
@@ -65,6 +66,32 @@ tasks:
   # ---------------------------------------------------------------------------
   # Internal tasks (not shown in task --list)
   # ---------------------------------------------------------------------------
+
+  ingress:wait:
+    internal: true
+    desc: "Wait for ingress-nginx controller pod and admission webhook endpoint to be ready"
+    cmds:
+      - |
+        echo "Waiting for ingress-nginx controller pod..."
+        kubectl wait --namespace ingress-nginx \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/component=controller \
+          --timeout=120s
+      - |
+        echo "Probing ingress-nginx admission webhook TCP port 443..."
+        SVC_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller-admission \
+          -o jsonpath='{.spec.clusterIP}')
+        deadline=$(($(date +%s) + 90))
+        until minikube ssh "bash -c 'echo >/dev/tcp/${SVC_IP}/443'" 2>/dev/null; do
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "ERROR: timed out waiting for ingress-nginx admission webhook on ${SVC_IP}:443"
+            exit 1
+          fi
+          echo "  port not open yet, retrying in 3s..."
+          sleep 3
+        done
+        echo "Ingress admission webhook is accepting connections."
+
 
   check-env:
     internal: true
