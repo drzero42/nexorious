@@ -214,6 +214,7 @@ controllers:
               httpGet:
                 path: /health
                 port: 8000
+              initialDelaySeconds: 15
               failureThreshold: 30
               periodSeconds: 5
 
