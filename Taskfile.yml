@@ -116,7 +116,6 @@ tasks:
       IGDB_CLIENT_SECRET:
         sh: grep '^IGDB_CLIENT_SECRET=' .env | cut -d= -f2-
     cmds:
-      - helm dependency update {{.CHART}}
       - |
         helm upgrade --install {{.RELEASE}} {{.CHART}} \
           -f {{.CHART}}/values-dev.yaml \
