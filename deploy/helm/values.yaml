@@ -186,7 +186,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/drzero42/nexorious
-          tag: ""
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         envFrom:
           - secretRef:
@@ -232,7 +232,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/drzero42/nexorious
-          tag: ""
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
           - uv
@@ -267,7 +267,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/drzero42/nexorious
-          tag: ""
+          tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
           - sh
