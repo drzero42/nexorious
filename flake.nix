@@ -39,6 +39,9 @@
             # Git for version control
             git
 
+            # Add task
+            go-task
+
             # Playwright
             playwright-test
             playwright-mcp
