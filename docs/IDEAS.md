@@ -104,3 +104,6 @@ During sync, we also need to go through games in our database which have IDs for
 ## External secrets must be support in helm chart
 It is important to allow the helm chart values to point to externally-managed secrets for all the secrets that are needed.
 That will allow the user to handle things like IGDB credentials in a secure manner, but will also allow pointing to a secret managed by CNPG for a properly running PostgreSQL database.
+
+## Sync all button
+We need a "Sync All Now" button on the sync page which basically just starts a sync on all configured sync sources.
