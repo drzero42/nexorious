@@ -4,8 +4,9 @@
 # Used by: task dev:up / task dev:deploy
 #
 # To reach the app after deploy:
-#   1. Add "$(minikube ip) nexorious.local" to /etc/hosts
-#   2. Run "minikube tunnel" in a separate terminal
+#   Open http://nexorious.<minikube-ip>.nip.io in your browser.
+#   The exact URL is printed by "task dev:up" after a successful deploy.
+#   nip.io resolves nexorious.<ip>.nip.io to <ip> via public DNS — no /etc/hosts edits needed.
 
 nexorious:
   secretKey: "local-dev-secret-key-not-for-production"

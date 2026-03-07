@@ -34,9 +34,8 @@ tasks:
       - task: helm:deploy
       - |
         echo ""
-        echo "Deploy complete. To access nexorious.local:"
-        echo "  1. Add to /etc/hosts:  $(minikube ip) nexorious.local"
-        echo "  2. In another terminal: minikube tunnel"
+        echo "Deploy complete. Open in browser:"
+        echo "  http://nexorious.$(minikube ip).nip.io"
         echo ""
 
   dev:deploy:
@@ -142,6 +141,8 @@ tasks:
         sh: grep '^IGDB_CLIENT_ID=' .env | cut -d= -f2-
       IGDB_CLIENT_SECRET:
         sh: grep '^IGDB_CLIENT_SECRET=' .env | cut -d= -f2-
+      MINIKUBE_IP:
+        sh: minikube ip
     cmds:
       - |
         helm upgrade --install {{.RELEASE}} {{.CHART}} \
@@ -151,4 +152,5 @@ tasks:
           --set controllers.api.containers.main.image.tag={{.TAG}} \
           --set controllers.worker.containers.main.image.tag={{.TAG}} \
           --set controllers.scheduler.containers.main.image.tag={{.TAG}} \
+          --set "ingress.api.hosts[0].host=nexorious.{{.MINIKUBE_IP}}.nip.io" \
           --wait --timeout=5m
