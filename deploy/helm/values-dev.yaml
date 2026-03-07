@@ -18,6 +18,8 @@ ingress:
   api:
     enabled: true
     className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "500m"
     hosts:
       - host: nexorious.local
         paths:
