@@ -107,3 +107,7 @@ That will allow the user to handle things like IGDB credentials in a secure mann
 
 ## Sync all button
 We need a "Sync All Now" button on the sync page which basically just starts a sync on all configured sync sources.
+
+## Clickable statuses on dashboard
+The dashboard shows a breakdown on progress - how many games are not started, how many are in progress, completed, dropped etc.
+Clicking one of these progress statuses should take you to the library view with a filter for that status.
