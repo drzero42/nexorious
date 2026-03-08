@@ -203,3 +203,6 @@ __marimo__/
 
 # Git worktrees
 .worktrees/
+
+# Kubeconfig
+kubeconfig
