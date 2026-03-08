@@ -111,3 +111,6 @@ We need a "Sync All Now" button on the sync page which basically just starts a s
 ## Clickable statuses on dashboard
 The dashboard shows a breakdown on progress - how many games are not started, how many are in progress, completed, dropped etc.
 Clicking one of these progress statuses should take you to the library view with a filter for that status.
+
+## Sync reports
+When the a sync has run we should have generated a summary that the user can use to figure out what was done - added, removed or changed games. This should be available to view in the list of previous syncs and can also be used for sending out notifications when that feature is added.
