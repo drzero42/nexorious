@@ -9,6 +9,7 @@ in {
     # UV_CACHE_DIR = "./.uv-cache";
     # LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib/:${pkgs.lib.makeLibraryPath [ pkgs.zlib ]}";
     PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright.passthru.browsers}";
+    ENABLE_LSP_TOOL = 1; # Claude Code workaround for LSPs
   };
 
   # https://devenv.sh/packages/
