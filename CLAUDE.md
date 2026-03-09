@@ -49,6 +49,8 @@ nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pyte
 
 **Note**: `pyrightconfig.json` in the project root is for IDE/Pylance integration only. The authoritative type checker for CI and commits is `pyrefly`.
 
+**Note**: The `LSP` tool (goToDefinition, findReferences, hover, documentSymbol, etc.) works for both Python and TypeScript. Ignore LSP diagnostics — Pyright reports missing imports for `fastapi`/`uvicorn` etc. (can't see `backend/.venv`) and TypeScript LSP reports missing modules for `@tanstack/react-router` etc. (node_modules path issue). Use `uv run pyrefly check` and `npm run check` as authoritative type checkers instead.
+
 ### Initial Setup
 ```bash
 # Backend setup
