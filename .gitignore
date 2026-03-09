@@ -206,3 +206,11 @@ __marimo__/
 
 # Kubeconfig
 kubeconfig
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# pre-commit
+.pre-commit-config.yaml
