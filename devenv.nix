@@ -21,7 +21,8 @@ in {
     # Playwright
     playwright-test
     playwright-mcp
-    minikube
+    pkgs-upstream.minikube
+    pkgs-upstream.docker-machine-kvm2
   ];
 
   # https://devenv.sh/languages/
