@@ -2,7 +2,7 @@
 # Stage 1 builds the frontend SPA, Stage 2 builds the backend and copies the dist in.
 
 # Stage 1: Build frontend
-FROM node:22-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
