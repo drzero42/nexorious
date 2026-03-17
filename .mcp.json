@@ -7,6 +7,10 @@
     "jcodemunch": {
       "command": "uvx",
       "args": ["jcodemunch-mcp"]
+    },
+    "jdocmunch": {
+      "command": "uvx",
+      "args": ["jdocmunch-mcp"]
     }
   }
 }
