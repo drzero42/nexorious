@@ -193,7 +193,7 @@ npm run test:ui
 ### Code Reference Documents
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
-- **Product context**: Read `docs/PRD.md` for feature context; `docs/IDEAS.md` for planned work; `docs/BUGS.md` for known issues
+- **Product context**: Read `docs/PRD.md` for feature context and planned work (roadmap); `docs/BUGS.md` for known issues
 - **Import/CLI specs**: See `docs/CLI_IMPLEMENTATION_GUIDE.md`, `docs/DARKADIA_CSV_IMPORT_SPECIFICATION.md` for import feature context
 
 ### Required After Code Changes
