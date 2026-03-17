@@ -8,7 +8,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 - Before searching: use search_symbols or search_text
 - Before exploring structure: use get_file_tree or get_repo_outline
 - Call list_repos first; if the project is not indexed, call index_folder with the current directory.
-- **Scope**: jCodemunch is for code only (Python, TypeScript, etc.). For markdown and documentation files, use Read/Grep/Glob directly.
+- **Scope**: jCodemunch is for code only (Python, TypeScript, etc.). For markdown and documentation files, use jdocmunch MCP (`local/docs` repo; call `mcp__jdocmunch__list_repos` first to verify it's indexed — if not, run `mcp__jdocmunch__index_local` on `docs/`).
 
 ## Quick Reference
 
