@@ -14,7 +14,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 ### Common Commands
 | Task                     | Backend Command                                            | Frontend Command                                                |
 |--------------------------|------------------------------------------------------------|-----------------------------------------------------------------|
-| Install dependencies     | `cd /home/abo/workspace/home/nexorious/backend && uv sync` | `cd /home/abo/workspace/home/nexorious/frontend && npm install` |
+| Install dependencies     | `cd backend && uv sync`                                    | `cd frontend && npm install`                                    |
 | Start development server | `uv run python -m app.main`                                | `npm run dev`                                                   |
 | Run tests                | `uv run pytest`                                            | `npm run test`                                                  |
 | Run tests with coverage  | `uv run pytest --cov=app --cov-report=term-missing`        | `npm run test:coverage`                                         |
@@ -25,9 +25,9 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 ### Environment Validation
 ```bash
 # Verify development environment
-nix develop  # Enter development shell
-cd /home/abo/workspace/home/nexorious/backend && uv --version
-cd /home/abo/workspace/home/nexorious/frontend && npm --version
+devenv shell  # Enter development shell
+cd backend && uv --version
+cd frontend && npm --version
 ```
 
 ### Docker/Podman Compose (Alternative)
@@ -47,12 +47,12 @@ cd /home/abo/workspace/home/nexorious/frontend && npm --version
 ## Setup & Development
 
 ### Development Environment
-The project uses Nix for reproducible development:
+The project uses devenv for reproducible development:
 ```bash
-nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pytest
+devenv shell  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pytest
 ```
 
-**Note**: `pyrefly` is installed in the backend venv via uv, not in the Nix shell. Run it using `uv run pyrefly` from the backend directory.
+**Note**: `pyrefly` is installed in the backend venv via uv, not in the devenv shell. Run it using `uv run pyrefly` from the backend directory.
 
 **Note**: `pyrightconfig.json` in the project root is for IDE/Pylance integration only. The authoritative type checker for CI and commits is `pyrefly`.
 
@@ -61,12 +61,12 @@ nix develop  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pyte
 ### Initial Setup
 ```bash
 # Backend setup
-cd /home/abo/workspace/home/nexorious/backend
+cd backend
 uv sync  # Install all dependencies
 uv run alembic upgrade head  # Run database migrations
 
-# Frontend setup  
-cd /home/abo/workspace/home/nexorious/frontend
+# Frontend setup
+cd frontend
 npm install  # Install all dependencies
 ```
 
@@ -76,16 +76,18 @@ npm install  # Install all dependencies
   - `app/models/` - SQLModel ORM models
   - `app/schemas/` - Pydantic request/response schemas
   - `app/services/` - Business logic
-  - `app/core/` - Database session, config, settings
-  - `app/security/` - JWT auth
+  - `app/core/` - Database session, config, settings, JWT security
   - `app/middleware/` - HTTP middleware
-  - `app/worker/` - Background tasks
+  - `app/worker/` - Background tasks (NATS-backed queues, scheduled maintenance, sync)
   - `app/seed_data/` - Idempotent DB seed data
+  - `app/utils/` - Shared utilities (rate limiter, fuzzy match, JSON serialization, etc.)
   - `app/tests/` - pytest test files
 - `frontend/` - Vite + React SPA with TanStack Router (file-based), Tailwind CSS v4, shadcn/ui, TanStack Query
   - `src/routes/` - TanStack Router file-based routes (`_authenticated/`, `_public/`, `__root.tsx`)
   - `src/components/` - Reusable React components
   - `src/api/` - API client functions
+  - `src/hooks/` - Custom TanStack Query hooks (use-games, use-sync, use-platforms, etc.)
+  - `src/types/` - Shared TypeScript type definitions
   - `src/providers/` - React context providers (auth, query)
   - `src/lib/` - Utilities and helpers
   - `src/styles/` - Global CSS (Tailwind v4)
@@ -146,26 +148,9 @@ npm run test:ui
 - **Coverage Reports**: HTML reports in `coverage/` directory
 - **DOM Testing**: jsdom environment
 
-### Test Commands
-```bash
-# Backend - all must pass
-uv run pytest
-uv run pytest --cov=app --cov-report=term-missing
-
-# Backend - single test
-uv run pytest app/tests/test_file.py::test_function_name -v
-
-# Frontend - all must pass
-npm run check
-npm run test
-
-# Frontend - single test file
-npm run test game-card.test.tsx
-```
-
 ### Test Conventions
-- Backend: `test_*.py` files in `app/tests/`
-- Frontend: `*.test.ts` or `*.test.tsx` files alongside source files
+- Backend: `test_*.py` files in `app/tests/`; run single test: `uv run pytest app/tests/test_file.py::test_function_name -v`
+- Frontend: `*.test.ts` or `*.test.tsx` files alongside source files; run single test: `npm run test game-card.test.tsx`
 
 ## Development Rules
 
@@ -208,6 +193,8 @@ npm run test game-card.test.tsx
 ### Code Reference Documents
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
+- **Product context**: Read `docs/PRD.md` for feature context; `docs/IDEAS.md` for planned work; `docs/BUGS.md` for known issues
+- **Import/CLI specs**: See `docs/CLI_IMPLEMENTATION_GUIDE.md`, `docs/DARKADIA_CSV_IMPORT_SPECIFICATION.md` for import feature context
 
 ### Required After Code Changes
 
@@ -224,10 +211,6 @@ uv run ruff check .  # Check for common errors and problems (linting)
 uv run pyrefly check  # Type checking with pyrefly (installed in venv)
 uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverage
 ```
-
-### File Naming Rules
-- Backend tests: `test_*.py` files in `app/tests/`
-- Frontend tests: `*.test.ts` or `*.test.tsx` files alongside source files
 
 ### Quality Gates
 - All tests must pass before committing

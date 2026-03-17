@@ -1,5 +1,4 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
     "python.analysis.autoImportCompletions": true,
     "python.languageServer": "Pylance",
     "ruff.interpreter": [
@@ -19,5 +18,6 @@
         "**/node_modules": true,
         "**/.git": false
     },
+    "python-envs.workspaceSearchPaths": ["backend"],
     "python-envs.pythonProjects": []
 }
