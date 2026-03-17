@@ -8,6 +8,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 - Before searching: use search_symbols or search_text
 - Before exploring structure: use get_file_tree or get_repo_outline
 - Call list_repos first; if the project is not indexed, call index_folder with the current directory.
+- **Exception**: jCodemunch does not reliably index markdown/docs files. If get_file_content returns "File not found" for a `.md` file, fall back to the Read tool — do not attempt index_folder for a single missing doc.
 
 ## Quick Reference
 
@@ -194,6 +195,7 @@ npm run test:ui
 - **Pydantic Code**: Always read `docs/pydantic-v2-best-practices.md` before generating any Pydantic models or validators
 - **SQLModel Computed Fields**: Always read `docs/sqlmodel-computed-fields-guide.md` when working with computed fields in SQLModel
 - **Product context**: Read `docs/PRD.md` for feature context and planned work (roadmap); `docs/BUGS.md` for known issues
+- **Design history**: `docs/superpowers/specs/` contains brainstorming design docs; `docs/superpowers/plans/` contains implementation plans
 - **Import/CLI specs**: See `docs/CLI_IMPLEMENTATION_GUIDE.md`, `docs/DARKADIA_CSV_IMPORT_SPECIFICATION.md` for import feature context
 
 ### Required After Code Changes
