@@ -87,7 +87,7 @@ def _rank_games_by_fuzzy_match(
         f"Fuzzy matching results for '{query}': {[(g.title, s) for g, s in scored_games[:5]]}"
     )
 
-    return [game for game, score in scored_games]
+    return [game for game, _ in scored_games]
 
 
 @router.get("/", response_model=GameListResponse)
