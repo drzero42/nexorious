@@ -216,73 +216,139 @@ All secrets and environment-specific values are provided via environment variabl
 
 Items are removed when completed. When a completed item introduces a new feature domain, sync source, or deployment option, the spec above is updated to reflect it.
 
+---
+
 ### UX & Library
 
-| Item | Priority |
-|---|---|
-| IGDB ratings display fix (show X.X not XX) | High |
-| Search field icon overlaps placeholder text | High |
-| Storefront management table clips edit/delete buttons | High |
-| Remove all "coming soon" placeholder messages | High |
-| Epic Games Store auth UX (inline flow, not dialog) | High |
-| Backlog view (unfinished, unshelved games) | Medium |
-| Clickable dashboard status counts → filtered library | Medium |
-| Choose-next-game flow | Low |
+#### Remove all "coming soon" placeholder messages `High`
+There are multiple places in the app that claim things are "coming soon". This is not helpful and should be removed.
+
+#### Epic Games Store auth UX `High`
+When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
+
+#### IGDB ratings display fix `High`
+IGDB ratings are stored as integers (0–100) but should be displayed as decimals (0.0–10.0) with a single digit after the decimal point.
+
+#### Search field icon overlaps placeholder text `High`
+In the search field on My Games, the magnifying glass icon is placed on top of the word "Search" in the placeholder text.
+
+#### Storefront management table clips buttons `High`
+The storefront management table cuts off the right-hand side, making the edit button hard to click and the delete button completely hidden.
+
+#### Clickable dashboard status counts `Medium`
+The dashboard shows a breakdown of progress — how many games are not started, in progress, completed, dropped, etc. Clicking one of these counts should navigate to the library view filtered to that status.
+
+#### Backlog view `Medium`
+Add a view that shows all games that are not completed (or mastered/dominated) and not shelved — i.e. the active backlog.
+
+#### Choose-next-game flow `Low`
+Add functionality to help the user decide what to play next (a "Next Up" view). Should consider wishlist games and use sorting/filtering based on genres, platforms, and time-to-beat estimates.
+
+---
 
 ### Sync
 
-| Item | Priority |
-|---|---|
-| Sync All Now button | High |
-| Sync reports (summary of added/changed/removed per run) | High |
-| Sync to remove subscription games no longer available | Medium |
-| User-configurable skipped games and mapping corrections | Medium |
-| GOG sync (via lgogdownloader CLI) | Medium |
-| Xbox sync (via xbox-webapi-python) | Low |
-| Humble Bundle sync | Low |
+#### Sync All Now button `High`
+Add a "Sync All Now" button on the sync page that triggers a sync on all configured sync sources simultaneously.
+
+#### Sync reports `High`
+After a sync runs, generate a summary report showing what was added, changed, or removed. Reports should be viewable in the sync history list and reusable for notifications when that feature is added.
+
+#### Sync to remove subscription games `Medium`
+During sync, check games in the database that have IDs for the sync source and an ownership status of "subscription" to verify they are still available. If a game is no longer available (e.g. a PS Plus Extra game that left the catalogue), remove the storefront association. This also catches mismatches where a user manually added a game as owned on Steam but the Steam sync doesn't find it — the Steam link should be removed to reflect reality.
+
+Requires ownership status tracking per storefront (already implemented).
+
+#### User-configurable skipped games and mapping corrections `Medium`
+Any game skipped during a sync should be revisable by the user. Game-to-IGDB mappings made during sync should also be correctable if the user made the wrong choice.
+
+#### GOG sync `Medium`
+Sync the user's GOG library using [lgogdownloader](https://github.com/Sude-/lgogdownloader) as a CLI tool to pull library information.
+
+#### Xbox sync `Low`
+Sync the user's Xbox library using [xbox-webapi-python](https://github.com/OpenXbox/xbox-webapi-python).
+
+#### Humble Bundle sync `Low`
+Sync games acquired through Humble Bundle.
+
+---
 
 ### Data Integrity
 
-| Item | Priority |
-|---|---|
-| UserGame lifecycle: no delete on last platform removal — change status to "no longer owned" instead | High |
-| IGDB search fixes (apostrophes in titles, colour/color normalization) | High |
-| IGDB ID / game ID refactor (remove redundant `game_id` field now that IGDB ID is primary key) | Medium |
-| Darkadia CSV-to-Nexorious-JSON conversion: map missing platforms/storefronts to "unknown" for post-import review | Medium |
-| Data smell detection: maintenance function to surface suspicious platform/storefront combinations | Low |
+#### UserGame lifecycle rules `High`
+Ensure the following logic is applied everywhere:
+- When removing the last platform/storefront from a UserGame, change ownership status to "No Longer Owned" rather than deleting the record.
+- When adding a platform/storefront to a "No Longer Owned" UserGame, change ownership status to "Owned".
+- Only actually delete a UserGame if the user explicitly deletes it.
+
+#### IGDB search fixes `High`
+- Searching for titles with apostrophes returns no results.
+- "Colour" and "Color" are not treated as equivalent search terms.
+
+#### IGDB ID / game ID refactor `Medium`
+After refactoring to use the IGDB ID as the primary key for games, both `igdb_id` and `game_id` fields now exist in several schemas and models — but they refer to the same value. The redundant `game_id` field should be removed. This may require rethinking how sync and import flows reference games, since `game_id` should no longer be used as an indicator of whether a game has been synced.
+
+#### Transparent IGDB import `Medium`
+The current workflow requires an explicit "import from IGDB" step before adding a UserGame entry. This should be transparent: the user-games add endpoint should accept an IGDB ID directly. If no game with that ID exists in the database, it is imported automatically. If it already exists, it is used as-is.
+
+#### Darkadia CSV import: unknown platform/storefront handling `Medium`
+When converting a Darkadia CSV export to Nexorious JSON for import, games with missing or unrecognised platforms/storefronts should be mapped to "unknown" associations rather than being dropped or erroring. This allows the user to review and resolve them after import. A helper function to identify and sort out games with missing platform/storefront data may also be useful.
+
+#### Data smell detection `Low`
+Add a maintenance function that identifies suspicious data combinations — for example, a PS3 game with Humble Bundle as the storefront. These are not necessarily wrong, but surfacing them lets the user review and correct any mismatches.
+
+---
 
 ### Notifications
 
-| Item | Priority |
-|---|---|
-| External notifications via helper library (Telegram, Pushover, etc.) | Medium |
-| Configurable notification events (re-auth needed, new games added, sync complete) | Medium |
+#### External notifications `Medium`
+Allow notifications to be sent to external services such as Telegram, Pushover, and others. Use a helper library that supports multiple services to keep the implementation lean. Examples of notification events: needing to re-authenticate Epic, new games added from a sync, sync completed.
+
+#### Configurable notification events `Medium`
+Users should be able to choose which notification types they want to receive.
+
+---
 
 ### Platform & Storefront
 
-| Item | Priority |
-|---|---|
-| Mac platform icon not displaying | Medium |
-| Platform icon tooltip: also show storefront name | Medium |
+#### Mac platform icon not displaying `Medium`
+Icons for the Mac platform do not show up in the UI.
+
+#### Storefront name in platform icon tooltip `Medium`
+When hovering over a platform indicator on a game card, the tooltip should also show which storefront the game is on (not just the platform).
+
+---
 
 ### Achievements & Trophies
 
-| Item | Priority |
-|---|---|
-| Steam achievement/trophy tracking (percentage or full detail) | Low |
+#### Steam achievement/trophy tracking `Low`
+Steam exposes achievement and trophy data. At minimum, store the percentage of achievements earned per game. A more detailed view could be added later.
+
+---
 
 ### Operations
 
-| Item | Priority |
-|---|---|
-| External secrets support in Helm chart (IGDB creds, CNPG-managed PostgreSQL secret) | High |
-| Remove hard docker-compose service dependencies (graceful degradation when DB/NATS unavailable) | Medium |
-| Maintenance job for orphaned file cleanup | Medium |
+#### External secrets support in Helm chart `High`
+The Helm chart should allow values to point to externally-managed Kubernetes secrets for all sensitive configuration. This enables IGDB credentials to be managed securely and allows pointing to a secret managed by CNPG (CloudNativePG) for the PostgreSQL password.
+
+#### Remove hard docker-compose service dependencies `Medium`
+Unlike Kubernetes, the docker-compose setup uses hard `depends_on` relationships. The API backend and workers/scheduler must be able to start and gracefully handle unavailability of the database and/or NATS, consistent with how they behave in Kubernetes.
+
+#### Maintenance job for orphaned file cleanup `Medium`
+Add scheduled maintenance jobs to clean up orphaned cover art files and expired/stale job records.
+
+---
 
 ### Code Quality
 
-| Item | Priority |
-|---|---|
-| Remove leftover CSV import code | High |
-| knip — frontend dead code detection | Low |
-| vulture — backend dead code detection | Low |
+#### Remove leftover CSV import code `High`
+Support for importing via CSV was removed, but references to CSV as an import source remain in the code. These should be removed.
+
+#### knip — frontend dead code detection `Low`
+Use [knip](https://knip.dev) to identify unused exports, files, and dependencies in the frontend. Run periodically to keep the codebase lean.
+
+#### vulture — backend dead code detection `Low`
+Use [vulture](https://github.com/jendrikseipp/vulture) to find unused Python code in the backend.
+
+#### Experiment with slumber `Low`
+[slumber](https://github.com/LucasPickering/slumber) is a TUI HTTP client that may be more reliable than ad-hoc curl commands for API testing and development workflows.
