@@ -11,7 +11,6 @@ import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/j
 import { toast } from 'sonner';
 import {
   Package,
-  Trash2,
   RefreshCw,
   Loader2,
   CheckCircle,
@@ -31,10 +30,7 @@ function MaintenancePageSkeleton() {
         <Skeleton className="mb-2 h-8 w-48" />
         <Skeleton className="h-4 w-64" />
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Skeleton className="h-64" />
-        <Skeleton className="h-64" />
-      </div>
+      <Skeleton className="h-64" />
       <Skeleton className="h-64" />
     </div>
   );
@@ -149,95 +145,53 @@ function MaintenancePage() {
         </p>
       </div>
 
-      {/* Seed Data and Cleanup in 2-column grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Seed Data Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Seed Data
-            </CardTitle>
-            <CardDescription>
-              Load official platforms, storefronts, and default mappings
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {seedResult && (
-              <Alert className="border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                <AlertTitle>Success</AlertTitle>
-                <AlertDescription>
-                  {seedResult.message}
-                  {seedResult.totalChanges > 0 && (
-                    <ul className="mt-2 list-inside list-disc text-sm">
-                      <li>{seedResult.platformsAdded} platforms</li>
-                      <li>{seedResult.storefrontsAdded} storefronts</li>
-                      <li>{seedResult.mappingsCreated} mappings</li>
-                    </ul>
-                  )}
-                </AlertDescription>
-              </Alert>
+      {/* Seed Data Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Seed Data
+          </CardTitle>
+          <CardDescription>
+            Load official platforms, storefronts, and default mappings
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {seedResult && (
+            <Alert className="border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <AlertTitle>Success</AlertTitle>
+              <AlertDescription>
+                {seedResult.message}
+                {seedResult.totalChanges > 0 && (
+                  <ul className="mt-2 list-inside list-disc text-sm">
+                    <li>{seedResult.platformsAdded} platforms</li>
+                    <li>{seedResult.storefrontsAdded} storefronts</li>
+                    <li>{seedResult.mappingsCreated} mappings</li>
+                  </ul>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          <p className="text-sm text-muted-foreground">
+            This operation is idempotent and safe to run multiple times. Existing data will be
+            preserved.
+          </p>
+          <Button onClick={handleLoadSeedData} disabled={isSeedLoading} className="w-full">
+            {isSeedLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <Package className="mr-2 h-4 w-4" />
+                Load Seed Data
+              </>
             )}
-            <p className="text-sm text-muted-foreground">
-              This operation is idempotent and safe to run multiple times. Existing data will be
-              preserved.
-            </p>
-            <Button onClick={handleLoadSeedData} disabled={isSeedLoading} className="w-full">
-              {isSeedLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <Package className="mr-2 h-4 w-4" />
-                  Load Seed Data
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Database Cleanup Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />
-              Database Cleanup
-            </CardTitle>
-            <CardDescription>Remove orphaned data and expired records</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Orphaned Files</p>
-                  <p className="text-sm text-muted-foreground">
-                    Remove cover art not linked to any game
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" disabled>
-                  Coming Soon
-                </Button>
-              </div>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Expired Jobs</p>
-                  <p className="text-sm text-muted-foreground">
-                    Clean up job data older than 7 days
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" disabled>
-                  Coming Soon
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Active Job Progress View */}
       {showJobProgress && activeJob && (
