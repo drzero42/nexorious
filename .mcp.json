@@ -3,6 +3,10 @@
     "playwright": {
       "command": "nix",
       "args": ["run", "github:benjaminkitt/nix-playwright-mcp"]
+    },
+    "jcodemunch": {
+      "command": "uvx",
+      "args": ["jcodemunch-mcp"]
     }
   }
 }
