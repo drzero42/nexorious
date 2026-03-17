@@ -22,8 +22,11 @@ Remove the entire "Database Cleanup" card from the Maintenance page. The actual 
 
 1. Delete the "Database Cleanup" `<Card>` block (~45 lines).
 2. Remove the `lg:grid-cols-2` grid wrapper that previously held two cards side by side. Render the remaining "Seed Data" card full-width instead — a single card in a 2-column grid looks unintentional.
+<<<<<<< HEAD
 3. Remove the `Trash2` import from `lucide-react` — it is used only in the Database Cleanup card header and will become unused.
 4. Update `MaintenancePageSkeleton`: remove the `lg:grid-cols-2` grid wrapper and the second `<Skeleton className="h-64" />` placeholder so the loading state stays consistent with the live layout.
+=======
+>>>>>>> 4108cc9 (docs: add design spec for removing coming soon placeholder messages)
 
 ## Out of Scope
 
