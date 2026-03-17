@@ -226,14 +226,11 @@ There are multiple places in the app that claim things are "coming soon". This i
 #### Epic Games Store auth UX `High`
 When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
 
-#### IGDB ratings display fix `High`
-IGDB ratings are stored as integers (0–100) but should be displayed as decimals (0.0–10.0) with a single digit after the decimal point.
+#### IGDB ratings display `High`
+IGDB ratings (`rating_average`) are stored in the DB and returned by the API but are not displayed anywhere in the UI — the display was dropped during the frontend rewrite. The rating should be shown on the game detail view. IGDB stores ratings as integers (0–100) but they should be displayed as decimals (0.0–10.0) with a single digit after the decimal point.
 
 #### Search field icon overlaps placeholder text `High`
 In the search field on My Games, the magnifying glass icon is placed on top of the word "Search" in the placeholder text.
-
-#### Storefront management table clips buttons `High`
-The storefront management table cuts off the right-hand side, making the edit button hard to click and the delete button completely hidden.
 
 #### Clickable dashboard status counts `Medium`
 The dashboard shows a breakdown of progress — how many games are not started, in progress, completed, dropped, etc. Clicking one of these counts should navigate to the library view filtered to that status.
