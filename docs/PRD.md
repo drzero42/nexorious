@@ -322,8 +322,14 @@ Steam exposes achievement and trophy data. At minimum, store the percentage of a
 
 ### Operations
 
-#### External secrets support in Helm chart `High`
-The Helm chart should allow values to point to externally-managed Kubernetes secrets for all sensitive configuration. This enables IGDB credentials to be managed securely and allows pointing to a secret managed by CNPG (CloudNativePG) for the PostgreSQL password.
+#### External database secret support in Helm chart `High`
+The Helm chart should allow the database connection to be sourced from an externally-managed Kubernetes secret (e.g. one managed by CloudNativePG). Two modes are supported: pointing to a single URI key containing a full connection string, or pointing to individual keys for host, port, user, password, and dbname (requires the backend to support individual DB connection env vars — see backend task below).
+
+#### Backend support for individual DB connection env vars `High`
+The backend settings should accept individual database connection parameters (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`) as an alternative to a single `DATABASE_URL` env var. This is a prerequisite for the Helm chart component-mode external database secret support.
+
+#### External secret support for non-database credentials `Medium`
+Extend the external secret mechanism to cover the remaining sensitive Helm values: `secretKey`, `internalApiKey`, `igdbClientId`, and `igdbClientSecret`. Each field should independently support an `*From` reference pointing to a key in an externally-managed Kubernetes secret.
 
 #### Remove hard docker-compose service dependencies `Medium`
 Unlike Kubernetes, the docker-compose setup uses hard `depends_on` relationships. The API backend and workers/scheduler must be able to start and gracefully handle unavailability of the database and/or NATS, consistent with how they behave in Kubernetes.
