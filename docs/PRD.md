@@ -220,9 +220,6 @@ Items are removed when completed. When a completed item introduces a new feature
 
 ### UX & Library
 
-#### Remove all "coming soon" placeholder messages `High`
-There are multiple places in the app that claim things are "coming soon". This is not helpful and should be removed.
-
 #### Epic Games Store auth UX `High`
 When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
 
