@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { Suspense, useMemo, useCallback, useState } from 'react';
+import { Suspense, useMemo, useCallback, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { useUserGames, useUserGameIds } from '@/hooks';
 import {
@@ -7,6 +7,7 @@ import {
   GameGrid,
   GameList,
   BulkActions,
+  GamesPagination,
 } from '@/components/games';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -33,6 +34,14 @@ const SORT_OPTIONS: SortOption[] = [
   { value: 'release_date', label: 'Release Date', defaultOrder: 'desc' },
   { value: 'hours_played', label: 'Hours Played', defaultOrder: 'desc' },
 ];
+
+const VALID_PER_PAGE = [25, 50, 100, 500] as const;
+type PerPage = typeof VALID_PER_PAGE[number];
+
+function parsePerPage(raw: string): PerPage {
+  const n = parseInt(raw, 10);
+  return (VALID_PER_PAGE as readonly number[]).includes(n) ? (n as PerPage) : 50;
+}
 
 function GamesPageContent() {
   const navigate = useNavigate();
@@ -73,6 +82,9 @@ function GamesPageContent() {
   const sortBy = (s['sort'] as SortField) ?? 'title';
   const sortOrder = (s['order'] as SortOrder) ?? 'asc';
   const viewMode = (s['view'] as 'grid' | 'list') ?? 'grid';
+  const rawPage = parseInt(s['page'] ?? '1', 10);
+  const currentPage = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+  const currentPerPage = parsePerPage(s['perPage'] ?? '50');
 
   // Helper to update URL params
   const updateParams = useCallback((updates: Record<string, string | string[] | undefined>) => {
@@ -90,8 +102,8 @@ function GamesPageContent() {
     navigate({ to: '/games', search: params as Record<string, string>, replace: true });
   }, [navigate, search]);
 
-  // Build query params for API
-  const queryParams = useMemo(
+  // Shared filter fields — no pagination params
+  const filterFields = useMemo(
     () => ({
       search: filters.search || undefined,
       status: filters.status,
@@ -103,20 +115,46 @@ function GamesPageContent() {
       theme: filters.themes.length > 0 ? filters.themes : undefined,
       playerPerspective: filters.playerPerspectives.length > 0 ? filters.playerPerspectives : undefined,
       tags: filters.tags.length > 0 ? filters.tags : undefined,
-      perPage: 50,
+    }),
+    [filters]
+  );
+
+  // Passed to useUserGames — includes page + perPage
+  const listQueryParams = useMemo(
+    () => ({
+      ...filterFields,
+      page: currentPage,
+      perPage: currentPerPage,
       sortBy,
       sortOrder,
     }),
-    [filters, sortBy, sortOrder]
+    [filterFields, currentPage, currentPerPage, sortBy, sortOrder]
   );
 
-  const { data, isLoading, refetch } = useUserGames(queryParams);
+  // Passed to useUserGameIds — no page/perPage so "select all" spans all pages
+  const idsQueryParams = useMemo(
+    () => ({
+      ...filterFields,
+      sortBy,
+      sortOrder,
+    }),
+    [filterFields, sortBy, sortOrder]
+  );
+
+  const { data, isLoading, refetch } = useUserGames(listQueryParams);
   const games = useMemo(() => data?.items ?? [], [data?.items]);
   const totalCount = data?.total ?? 0;
   const visibleCount = games.length;
 
+  // Reset to page 1 if the URL page exceeds available pages after data loads
+  useEffect(() => {
+    if (data && data.pages > 0 && currentPage > data.pages) {
+      updateParams({ page: undefined });
+    }
+  }, [data, currentPage, updateParams]);
+
   // Hook for fetching all IDs (disabled by default)
-  const { refetch: fetchAllIds } = useUserGameIds(queryParams, { enabled: false });
+  const { refetch: fetchAllIds } = useUserGameIds(idsQueryParams, { enabled: false });
 
   // Wrap filter changes to also clear selection and update URL
   const handleFiltersChange = useCallback((newFilters: {
@@ -142,6 +180,7 @@ function GamesPageContent() {
       theme: newFilters.themes,
       playerPerspective: newFilters.playerPerspectives,
       tag: newFilters.tags,
+      page: undefined,
     });
     setSelectedIds(new Set());
     setSelectionMode('manual');
@@ -150,12 +189,12 @@ function GamesPageContent() {
   const handleSortByChange = useCallback((newSortBy: SortField) => {
     const option = SORT_OPTIONS.find((o) => o.value === newSortBy);
     const newOrder = option?.defaultOrder ?? 'asc';
-    updateParams({ sort: newSortBy, order: newOrder });
+    updateParams({ sort: newSortBy, order: newOrder, page: undefined });
   }, [updateParams]);
 
   const handleSortOrderToggle = useCallback(() => {
     const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    updateParams({ order: newOrder });
+    updateParams({ order: newOrder, page: undefined });
   }, [sortOrder, updateParams]);
 
   const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
@@ -212,6 +251,21 @@ function GamesPageContent() {
     }
   }, [selectionMode, selectedIds.size, games, visibleCount, totalCount, fetchAllIds, clearSelection]);
 
+  const handlePageChange = useCallback((page: number) => {
+    updateParams({ page: page === 1 ? undefined : String(page) });
+    setSelectedIds(new Set());
+    setSelectionMode('manual');
+  }, [updateParams]);
+
+  const handlePerPageChange = useCallback((perPage: number) => {
+    updateParams({
+      perPage: perPage === 50 ? undefined : String(perPage),
+      page: undefined,
+    });
+    setSelectedIds(new Set());
+    setSelectionMode('manual');
+  }, [updateParams]);
+
   const handleClickGame = (game: UserGame) => {
     navigate({ to: '/games/$id', params: { id: game.id } });
   };
@@ -248,6 +302,19 @@ function GamesPageContent() {
         onSortOrderToggle={handleSortOrderToggle}
       />
 
+      {/* Top pagination bar — includes per-page selector */}
+      {data && (
+        <GamesPagination
+          page={currentPage}
+          perPage={currentPerPage}
+          totalPages={data.pages}
+          totalCount={data.total}
+          onPageChange={handlePageChange}
+          onPerPageChange={handlePerPageChange}
+          showPerPageSelector={true}
+        />
+      )}
+
       {/* Bulk actions */}
       <BulkActions
         selectedIds={selectedIds}
@@ -275,6 +342,19 @@ function GamesPageContent() {
           selectedIds={selectedIds}
           onSelectGame={handleSelectGame}
           onClickGame={handleClickGame}
+        />
+      )}
+
+      {/* Bottom pagination bar — page navigation only */}
+      {data && (
+        <GamesPagination
+          page={currentPage}
+          perPage={currentPerPage}
+          totalPages={data.pages}
+          totalCount={data.total}
+          onPageChange={handlePageChange}
+          onPerPageChange={handlePerPageChange}
+          showPerPageSelector={false}
         />
       )}
     </div>
