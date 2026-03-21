@@ -15,18 +15,22 @@ When a filter is active on the My Games list, pagination controls are absent. On
 
 The backend API (`GET /user-games/`) already supports server-side pagination via `page` and `per_page` query params and returns full pagination metadata: `total`, `page`, `per_page`, `pages`. The frontend API client (`buildUserGamesQueryParams`, `UserGamesListResponse`) already handles these fields. The existing shadcn/ui `Pagination` component exists at `frontend/src/components/ui/pagination.tsx`. The bug is entirely in the games list page: `page` is never sent to the API and no pagination UI is rendered.
 
+The route uses `useSearch({ strict: false })` with a raw `as Record<string, string>` cast — no `validateSearch` schema is defined for this route and none will be added as part of this change.
+
 ---
 
 ## URL State
 
 Two new URL search params are added alongside the existing `sort`, `order`, `view` params:
 
-| Param | Type | Default | Values |
+| Param | Type | Default | Omit when default? |
 |-------|------|---------|--------|
-| `page` | integer | `1` | `1..totalPages` |
-| `perPage` | integer | `50` | `25 \| 50 \| 100 \| 500` |
+| `page` | integer | `1` | Yes — omit `page` when it equals `1` (like `view` omits `'grid'`) |
+| `perPage` | integer | `50` | Yes — omit `perPage` when it equals `50` |
 
-Both params are managed identically to existing sort/filter params (read via `useSearch`, written via `updateParams`, serialized as strings in the URL).
+Omitting default values keeps URLs clean (e.g. no `?page=1&perPage=50` on first load).
+
+Both params are managed via `updateParams` → `navigate({ to: '/games', search: params, replace: true })`, consistent with existing sort/filter params.
 
 ---
 
@@ -52,7 +56,7 @@ interface GamesPaginationProps {
 **Behaviour:**
 - Hidden entirely when `totalPages <= 1`.
 - Renders prev/next buttons and numbered page buttons with ellipsis for large page counts, using the existing shadcn `Pagination`, `PaginationContent`, `PaginationItem`, `PaginationLink`, `PaginationPrevious`, `PaginationNext`, `PaginationEllipsis` components.
-- When `showPerPageSelector` is `true`, renders a shadcn `<Select>` with options 25 / 50 / 100 / 500 before the page navigation controls.
+- When `showPerPageSelector` is `true`, renders a shadcn `<Select>` with options 25 / 50 / 100 / 500 before the page navigation controls. The `showPerPageSelector` prop exists because the per-page selector always appears at the top and never at the bottom — this is intentional and not expected to change.
 
 **Placement in `GamesPageContent`:**
 
@@ -72,40 +76,67 @@ interface GamesPaginationProps {
 ### Reading URL params
 
 ```ts
-const currentPage = clampPage(parseInt(s['page'] ?? '1', 10), 1, data?.pages ?? 1);
+// Read raw string values (data may still be loading — don't clamp against totalPages here)
+const rawPage = parseInt(s['page'] ?? '1', 10);
+const currentPage = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
 const currentPerPage = parsePerPage(s['perPage'] ?? '50'); // validates against [25,50,100,500], defaults to 50
 ```
 
-Both are parsed/validated at read time. Invalid values fall back to defaults silently.
+Clamping against `totalPages` is **not** done at read time because `data` is undefined during the initial loading state. Clamping before data loads would reset the URL to page 1 immediately, losing the desired page. Instead, the out-of-range case is handled via an effect after data resolves (see Edge Cases).
 
-### `queryParams` additions
+### `queryParams` for game list vs. bulk-ID fetch
+
+Two separate param objects are used:
 
 ```ts
-{
-  // ...existing fields...
+// Used by useUserGames (paginated list)
+const listQueryParams = useMemo(() => ({
+  ...filterFields,
   page: currentPage,
   perPage: currentPerPage,
-}
+  sortBy,
+  sortOrder,
+}), [...]);
+
+// Used by useUserGameIds (all matching IDs for bulk select — no pagination)
+const idsQueryParams = useMemo(() => ({
+  ...filterFields,
+  sortBy,
+  sortOrder,
+  // No page/perPage — IDs endpoint returns all matching IDs
+}), [...]);
 ```
+
+This ensures "Select all" in bulk-actions fetches IDs across all pages, not just the current page.
 
 ### Filter reset on change
 
-All filter/sort change handlers that modify the result set gain a `page: '1'` reset:
+All handlers that modify the result set gain a `page: undefined` reset (which removes `page` from the URL, falling back to default 1):
 
-- `handleFiltersChange` — resets page to 1
-- `handleSortByChange` — resets page to 1
-- `handleSortOrderToggle` — resets page to 1
-- `handlePerPageChange` (new) — resets page to 1, sets new perPage
+- `handleFiltersChange` — resets page to default (removes from URL)
+- `handleSortByChange` — resets page to default
+- `handleSortOrderToggle` — resets page to default
+- `handlePerPageChange` (new) — resets page to default, sets new perPage (omits perPage if 50)
+- `handlePageChange` (new) — clears selection (see below), sets new page (omits if 1)
+
+### Selection cleared on page change
+
+`handlePageChange` clears `selectedIds` and resets `selectionMode` to `'manual'`, consistent with how `handleFiltersChange` clears selection. Items from a previous page should not remain selected when navigating to a different page.
 
 ### Handlers (new/updated)
 
 ```ts
 const handlePageChange = useCallback((page: number) => {
-  updateParams({ page: String(page) });
+  updateParams({ page: page === 1 ? undefined : String(page) });
+  setSelectedIds(new Set());
+  setSelectionMode('manual');
 }, [updateParams]);
 
 const handlePerPageChange = useCallback((perPage: number) => {
-  updateParams({ perPage: String(perPage), page: '1' });
+  updateParams({
+    perPage: perPage === 50 ? undefined : String(perPage),
+    page: undefined, // reset to page 1
+  });
 }, [updateParams]);
 ```
 
@@ -115,10 +146,12 @@ const handlePerPageChange = useCallback((perPage: number) => {
 
 | Scenario | Handling |
 |----------|----------|
-| `page` in URL exceeds `totalPages` after filters narrow results | Detect `items.length === 0 && currentPage > 1`, auto-reset to page 1 via `updateParams` |
-| Non-numeric or out-of-range `page` in URL | Parsed with `parseInt`, clamped to `[1, totalPages]`, defaults to 1 |
-| `perPage` value not in `[25, 50, 100, 500]` | Falls back to 50 |
-| `totalPages <= 1` | Both pagination bars hidden |
+| `page` in URL exceeds `totalPages` after data loads | `useEffect` watching `[data, currentPage]`: if `data` is defined and `currentPage > data.pages`, call `updateParams({ page: undefined })` to reset to page 1 |
+| Non-numeric `page` in URL | `parseInt` returns `NaN`, falls back to `1` |
+| `perPage` value not in `[25, 50, 100, 500]` | `parsePerPage` falls back to `50` |
+| `totalPages <= 1` | Both pagination bars hidden entirely |
+| Page navigation while items are selected | `handlePageChange` clears selection |
+| `useUserGameIds` with pagination params | Uses `idsQueryParams` (no `page`/`perPage`) — returns all matching IDs |
 
 ---
 
@@ -135,7 +168,7 @@ const handlePerPageChange = useCallback((perPage: number) => {
 
 ### Existing tests: `games/index.tsx` (if any)
 
-- Update to account for `page` and `perPage` URL params being present
+- Update to account for `page` and `perPage` URL params
 
 ---
 
@@ -145,7 +178,7 @@ const handlePerPageChange = useCallback((perPage: number) => {
 |------|--------|
 | `frontend/src/components/games/game-pagination.tsx` | New component |
 | `frontend/src/components/games/index.ts` | Export `GamesPagination` |
-| `frontend/src/routes/_authenticated/games/index.tsx` | Read `page`/`perPage` from URL, pass to `queryParams`, render `GamesPagination` top and bottom, add reset-to-page-1 on filter/sort change |
+| `frontend/src/routes/_authenticated/games/index.tsx` | Read `page`/`perPage` from URL, split into `listQueryParams`/`idsQueryParams`, render `GamesPagination` top and bottom, add reset-to-page-1 on filter/sort/page change, add out-of-range page reset effect |
 | `frontend/src/components/games/game-pagination.test.tsx` | New tests |
 
 No backend changes required.
@@ -157,3 +190,4 @@ No backend changes required.
 - Configurable default page size (YAGNI)
 - "Jump to page" number input
 - Remembering per-page preference outside of URL (e.g. localStorage)
+- `validateSearch` schema for the games route
