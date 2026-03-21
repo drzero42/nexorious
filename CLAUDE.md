@@ -160,9 +160,11 @@ npm run test:ui
 ### Essential Workflow
 1. **Planning**: Read `docs/PRD.md` when working on new features or if product context is unclear
 2. **Branching**: Create feature branch before starting ANY task work (see Branch Workflow below)
-3. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
-4. **Testing**: Run tests after ANY code changes - zero failures accepted
-5. **Documentation**: Use context7 MCP to verify API usage in generated code
+3. **Baseline**: Run the full test suite before writing any code — all tests must pass before work starts
+4. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
+5. **Testing**: Run tests after ANY code changes - zero failures accepted
+6. **Documentation**: Use context7 MCP to verify API usage in generated code
+7. **Roadmap**: Remove completed items from `docs/PRD.md` when finishing a feature (the PRD says "Items are removed when completed")
 
 ### Branch Workflow (MANDATORY)
 **AI agents MUST use branches when working on tasks. Never commit directly to main.**
@@ -174,6 +176,7 @@ npm run test:ui
 - ✅ Review PR diff before merging; ask user only if issues found
 - ✅ Always use `--squash --delete-branch` when merging PRs (squash commits for clean history)
 - After a squash merge, `git pull --ff-only` may fail if local main has diverged. Use `git reset --hard origin/main` to sync.
+- When merging a PR from a worktree branch, run `git worktree remove <path>` before `gh pr merge --squash --delete-branch` — otherwise the local branch deletion fails with "used by worktree".
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
 - ❌ Never work on multiple unrelated changes in one branch
