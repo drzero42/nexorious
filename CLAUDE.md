@@ -160,7 +160,7 @@ npm run test:ui
 ### Essential Workflow
 1. **Planning**: Read `docs/PRD.md` when working on new features or if product context is unclear
 2. **Branching**: Create feature branch before starting ANY task work (see Branch Workflow below)
-3. **Baseline**: Run the full test suite before writing any code — all tests must pass before work starts
+3. **Baseline**: Run the full test suite before creating a feature branch or starting plan implementation — all tests must pass so regressions can be distinguished from pre-existing failures
 4. **Development**: Use full paths for `cd` commands, use `uv run python` for backend
 5. **Testing**: Run tests after ANY code changes - zero failures accepted
 6. **Documentation**: Use context7 MCP to verify API usage in generated code
