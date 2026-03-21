@@ -173,6 +173,7 @@ npm run test:ui
 - ✅ Create PRs for code review before merging to main
 - ✅ Review PR diff before merging; ask user only if issues found
 - ✅ Always use `--squash --delete-branch` when merging PRs (squash commits for clean history)
+- After a squash merge, `git pull --ff-only` may fail if local main has diverged. Use `git reset --hard origin/main` to sync.
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
 - ❌ Never work on multiple unrelated changes in one branch
@@ -242,6 +243,10 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Rich Text**: TipTap editor for notes and descriptions
 - **Testing**: Vitest with @testing-library/react
 - **Production serving**: Built `dist/` is copied into the backend Docker image; FastAPI serves it via `StaticFiles(html=True)` catch-all
+
+### Frontend Quirks
+- **`routeTree.gen.ts` is not committed** — TanStack Router generates this file at build time. Worktrees won't have it, causing ~29 pre-existing TypeScript errors in `npm run check`. These are expected — don't treat them as regressions.
+- **shadcn `Pagination` in tests** — `PaginationLink`, `PaginationPrevious`, `PaginationNext` render as `<a>` tags. JSDOM gives `<a>` without `href` role `generic`, not `link`. Always use `href="#"` + `e.preventDefault()` so tests can use `getByRole('link')`.
 
 ### Database Design
 - **Database**: PostgreSQL
