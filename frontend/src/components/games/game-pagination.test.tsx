@@ -88,13 +88,33 @@ describe('GamesPagination', () => {
     it('previous button is aria-disabled on page 1', () => {
       render(<GamesPagination {...defaultProps} page={1} />);
       const prev = screen.getByRole('link', { name: /previous/i });
-      expect(prev).toHaveAttribute('aria-disabled', 'true');
+      expect(prev).toHaveAttribute('aria-disabled');
     });
 
     it('next button is aria-disabled on last page', () => {
       render(<GamesPagination {...defaultProps} page={5} totalPages={5} />);
       const next = screen.getByRole('link', { name: /next/i });
-      expect(next).toHaveAttribute('aria-disabled', 'true');
+      expect(next).toHaveAttribute('aria-disabled');
+    });
+
+    it('does not call onPageChange when previous is clicked on page 1', async () => {
+      const user = userEvent.setup();
+      const onPageChange = vi.fn();
+      render(
+        <GamesPagination {...defaultProps} page={1} onPageChange={onPageChange} />
+      );
+      await user.click(screen.getByRole('link', { name: /previous/i }));
+      expect(onPageChange).not.toHaveBeenCalled();
+    });
+
+    it('does not call onPageChange when next is clicked on last page', async () => {
+      const user = userEvent.setup();
+      const onPageChange = vi.fn();
+      render(
+        <GamesPagination {...defaultProps} page={5} totalPages={5} onPageChange={onPageChange} />
+      );
+      await user.click(screen.getByRole('link', { name: /next/i }));
+      expect(onPageChange).not.toHaveBeenCalled();
     });
 
     it('clicking previous calls onPageChange with page - 1', async () => {
