@@ -220,9 +220,6 @@ Items are removed when completed. When a completed item introduces a new feature
 
 ### UX & Library
 
-#### Pagination hidden when filtering games list `High`
-When a filter is active on the My Games list, pagination controls disappear even though the total game count (e.g. 1060) is shown at the top. Only the first page of results is displayed. Pagination should remain visible and functional when filters are applied.
-
 #### Filter state lost when navigating back from game edit `Medium`
 Pressing "Back to Games" from the game edit page clears any active filters on the games list. The filter state should be preserved so the user returns to the same filtered view they left.
 
