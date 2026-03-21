@@ -10,3 +10,5 @@ export { GameList } from './game-list';
 export type { GameListProps } from './game-list';
 export { GameEditForm } from './game-edit-form';
 export type { GameEditFormProps } from './game-edit-form';
+export { GamesPagination } from './game-pagination';
+export type { GamesPaginationProps } from './game-pagination';
