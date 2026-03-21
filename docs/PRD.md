@@ -220,11 +220,20 @@ Items are removed when completed. When a completed item introduces a new feature
 
 ### UX & Library
 
+#### Pagination hidden when filtering games list `High`
+When a filter is active on the My Games list, pagination controls disappear even though the total game count (e.g. 1060) is shown at the top. Only the first page of results is displayed. Pagination should remain visible and functional when filters are applied.
+
+#### Filter state lost when navigating back from game edit `Medium`
+Pressing "Back to Games" from the game edit page clears any active filters on the games list. The filter state should be preserved so the user returns to the same filtered view they left.
+
+#### List view missing Time to Beat times `Medium`
+The list view for the games library does not show Time to Beat estimates, unlike the card view. Time to Beat data should be visible in list view.
+
 #### Epic Games Store auth UX `High`
 When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
 
-#### IGDB ratings display `High`
-IGDB ratings (`rating_average`) are stored in the DB and returned by the API but are not displayed anywhere in the UI — the display was dropped during the frontend rewrite. The rating should be shown on the game detail view. IGDB stores ratings as integers (0–100) but they should be displayed as decimals (0.0–10.0) with a single digit after the decimal point.
+#### IGDB ratings display and sorting `High`
+IGDB ratings (`rating_average`) are stored in the DB and returned by the API but are not displayed anywhere in the UI — the display was dropped during the frontend rewrite. The rating should be shown on the game detail view. IGDB stores ratings as integers (0–100) but they should be displayed as decimals (0.0–10.0) with a single digit after the decimal point. Sorting by IGDB rating should also be available on the games list.
 
 #### Search field icon overlaps placeholder text `High`
 In the search field on My Games, the magnifying glass icon is placed on top of the word "Search" in the placeholder text.
