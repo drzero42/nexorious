@@ -13,6 +13,8 @@ import { PlatformIconList } from '@/components/ui/platform-icon';
 import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { cn } from '@/lib/utils';
+import { Timer } from 'lucide-react';
+import { formatTtb } from '@/lib/game-utils';
 
 export interface GameListProps {
   games: UserGame[];
@@ -78,6 +80,9 @@ function GameListSkeleton() {
             <Skeleton className="h-4 w-12" />
           </TableCell>
           <TableCell>
+            <Skeleton className="h-4 w-20" />
+          </TableCell>
+          <TableCell>
             <Skeleton className="h-4 w-8" />
           </TableCell>
         </TableRow>
@@ -114,6 +119,7 @@ export function GameList({
           <TableHead className="w-28">Status</TableHead>
           <TableHead className="w-36">Platform(s)</TableHead>
           <TableHead className="w-20">Hours</TableHead>
+          <TableHead className="w-32">Time to Beat</TableHead>
           <TableHead className="w-20">Rating</TableHead>
         </TableRow>
       </TableHeader>
@@ -187,6 +193,22 @@ export function GameList({
                 </TableCell>
                 <TableCell>
                   <span className="text-sm">{game.hours_played || 0}h</span>
+                </TableCell>
+                <TableCell>
+                  {game.game?.howlongtobeat_main != null ||
+                  game.game?.howlongtobeat_extra != null ||
+                  game.game?.howlongtobeat_completionist != null ? (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Timer className="h-3 w-3" />
+                      <span>
+                        {formatTtb(game.game?.howlongtobeat_main)} /{' '}
+                        {formatTtb(game.game?.howlongtobeat_extra)} /{' '}
+                        {formatTtb(game.game?.howlongtobeat_completionist)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {game.personal_rating ? (

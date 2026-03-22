@@ -104,7 +104,7 @@ describe('GameList', () => {
         el.className.includes('animate-pulse')
       );
 
-      // There should be 7 skeleton cells per row × 10 rows = 70 skeleton divs
+      // There should be 8 skeleton cells per row × 10 rows = 80 skeleton divs
       expect(skeletons.length).toBeGreaterThanOrEqual(10);
     });
 
@@ -129,6 +129,7 @@ describe('GameList', () => {
       expect(screen.getByText('Status')).toBeInTheDocument();
       expect(screen.getByText('Platform(s)')).toBeInTheDocument();
       expect(screen.getByText('Hours')).toBeInTheDocument();
+      expect(screen.getByText('Time to Beat')).toBeInTheDocument();
       expect(screen.getByText('Rating')).toBeInTheDocument();
     });
   });
@@ -167,6 +168,7 @@ describe('GameList', () => {
       expect(screen.getByText('Status')).toBeInTheDocument();
       expect(screen.getByText('Platform(s)')).toBeInTheDocument();
       expect(screen.getByText('Hours')).toBeInTheDocument();
+      expect(screen.getByText('Time to Beat')).toBeInTheDocument();
       expect(screen.getByText('Rating')).toBeInTheDocument();
     });
 
@@ -175,18 +177,18 @@ describe('GameList', () => {
       const onSelectGame = vi.fn();
       render(<GameList games={games} onSelectGame={onSelectGame} />);
 
-      // Should have 7 headers instead of 6 (one extra for checkbox column)
+      // Should have 8 headers: checkbox + Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating
       const headers = screen.getAllByRole('columnheader');
-      expect(headers.length).toBe(7);
+      expect(headers.length).toBe(8);
     });
 
     it('does not render selection column header when onSelectGame is not provided', () => {
       const games = [createMockGame()];
       render(<GameList games={games} />);
 
-      // Should have 6 headers
+      // Should have 7 headers: Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating
       const headers = screen.getAllByRole('columnheader');
-      expect(headers.length).toBe(6);
+      expect(headers.length).toBe(7);
     });
   });
 
@@ -538,6 +540,66 @@ describe('GameList', () => {
       render(<GameList games={games} />);
 
       expect(screen.getByText('0h')).toBeInTheDocument();
+    });
+  });
+
+  describe('time to beat display', () => {
+    it('renders TTB values when all three are present', () => {
+      const games = [
+        createMockGame({
+          game: {
+            ...createMockGame().game,
+            howlongtobeat_main: 10,
+            howlongtobeat_extra: 20,
+            howlongtobeat_completionist: 30,
+          },
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      expect(screen.getByText('10h / 20h / 30h')).toBeInTheDocument();
+    });
+
+    it('renders em-dash for null individual TTB values', () => {
+      const games = [
+        createMockGame({
+          game: {
+            ...createMockGame().game,
+            howlongtobeat_main: 15,
+            howlongtobeat_extra: null as unknown as number,
+            howlongtobeat_completionist: null as unknown as number,
+          },
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      expect(screen.getByText('15h / — / —')).toBeInTheDocument();
+    });
+
+    it('renders em-dash cell when all TTB values are null', () => {
+      const games = [
+        createMockGame({
+          game: {
+            ...createMockGame().game,
+            howlongtobeat_main: undefined,
+            howlongtobeat_extra: undefined,
+            howlongtobeat_completionist: undefined,
+          },
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      // Should show em-dash in the TTB cell
+      const cells = screen.getAllByRole('cell');
+      const ttbCell = cells.find((cell) => cell.textContent === '—');
+      expect(ttbCell).toBeInTheDocument();
+    });
+
+    it('renders TTB column header', () => {
+      const games = [createMockGame()];
+      render(<GameList games={games} />);
+
+      expect(screen.getByText('Time to Beat')).toBeInTheDocument();
     });
   });
 

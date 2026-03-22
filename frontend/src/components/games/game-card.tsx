@@ -6,10 +6,7 @@ import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-function formatTtb(hours: number | null | undefined): string {
-  return hours != null ? `${hours}h` : '—';
-}
+import { formatTtb } from '@/lib/game-utils';
 
 export interface GameCardProps {
   game: UserGame;

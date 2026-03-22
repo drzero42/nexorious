@@ -10,7 +10,7 @@ const apiTarget = process.env.API_TARGET ?? 'http://localhost:8000';
 
 export default defineConfig({
   plugins: [
-    TanStackRouterVite({ routesDirectory: './src/routes' }),
+    TanStackRouterVite({ routesDirectory: './src/routes', routeFileIgnorePattern: '\\.(test|spec)\\.(ts|tsx)$' }),
     react(),
   ],
   resolve: {
