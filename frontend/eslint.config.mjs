@@ -18,4 +18,25 @@ export default defineConfig([
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  // TanStack Router requires exporting `Route` alongside the component in route files
+  {
+    files: ['src/routes/**/*.tsx', 'src/routes/**/*.ts'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  // shadcn/ui components export variants (e.g. buttonVariants) alongside components
+  {
+    files: ['src/components/ui/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  // Test utilities are not production components
+  {
+    files: ['src/test/**/*.tsx', 'src/test/**/*.ts'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ]);
