@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
+import { Route } from './$id.edit';
 
 const { mockNavigate } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
@@ -11,7 +12,6 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useParams: () => ({ id: 'game-123' }),
     useSearch: () => ({}),
   };
 });
@@ -29,6 +29,9 @@ describe('GameEditPage — error state Back to Games navigation', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     sessionStorage.clear();
+
+    // Mock Route.useParams so the component doesn't need a router context
+    vi.spyOn(Route, 'useParams').mockReturnValue({ id: 'game-123' });
 
     const { useUserGame } = vi.mocked(await import('@/hooks'));
     // Default: put the component in error/not-found state

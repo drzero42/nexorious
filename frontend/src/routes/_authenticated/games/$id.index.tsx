@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useUserGame, useDeleteUserGame } from '@/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -94,7 +94,7 @@ function formatOwnershipStatus(status: OwnershipStatusType): string {
 }
 
 export function GameDetailPage() {
-  const { id: gameId } = (useParams as unknown as () => { id: string })();
+  const { id: gameId } = Route.useParams();
   const navigate = useNavigate();
 
   const { data: game, isLoading, error } = useUserGame(gameId);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
+import { Route } from './$id.index';
 
 // vi.hoisted ensures mockNavigate is captured by the vi.mock factory below
 const { mockNavigate } = vi.hoisted(() => ({
@@ -13,7 +14,6 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useParams: () => ({ id: 'game-123' }),
     useSearch: () => ({}),
   };
 });
@@ -55,6 +55,9 @@ describe('GameDetailPage — Back to Games navigation', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     sessionStorage.clear();
+
+    // Mock Route.useParams so the component doesn't need a router context
+    vi.spyOn(Route, 'useParams').mockReturnValue({ id: 'game-123' });
 
     const { useUserGame, useDeleteUserGame } = vi.mocked(await import('@/hooks'));
     useUserGame.mockReturnValue({

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useUserGame } from '@/hooks';
 import { GameEditForm } from '@/components/games/game-edit-form';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
 }
 
 export function GameEditPage() {
-  const { id: gameId } = (useParams as unknown as () => { id: string })();
+  const { id: gameId } = Route.useParams();
   const navigate = useNavigate();
 
   const { data: game, isLoading, error } = useUserGame(gameId);
