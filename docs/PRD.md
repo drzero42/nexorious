@@ -220,9 +220,6 @@ Items are removed when completed. When a completed item introduces a new feature
 
 ### UX & Library
 
-#### List view missing Time to Beat times `Medium`
-The list view for the games library does not show Time to Beat estimates, unlike the card view. Time to Beat data should be visible in list view.
-
 #### Epic Games Store auth UX `High`
 When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
 
