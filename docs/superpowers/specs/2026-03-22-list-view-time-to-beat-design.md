@@ -34,14 +34,15 @@ In `frontend/src/components/games/game-list.tsx`:
 - Add a `<TableCell>` in the row renderer:
   - If all three TTB fields are null: render `<span className="text-sm text-muted-foreground">—</span>`
   - Otherwise: render `<div className="flex items-center gap-1 text-xs text-muted-foreground"><Timer className="h-3 w-3" /><span>{formatTtb(main)} / {formatTtb(extra)} / {formatTtb(completionist)}</span></div>`
-- Update `GameListSkeleton` to add an 8th `<TableCell><Skeleton className="h-4 w-20" /></TableCell>` matching the new column
+- Update `GameListSkeleton` to add a cell for the new column, growing from 7 cells to 8: `<TableCell><Skeleton className="h-4 w-20" /></TableCell>`
 
 ### 3. Tests
 
-Update (or add) tests for `GameList` to cover:
-- TTB data present: column renders `Timer` icon and formatted values
-- TTB data absent (all null): column renders `—`
-- Skeleton: renders 8 cells per row
+`frontend/src/components/games/game-list.test.tsx` does not currently exist — it must be **created**. It should cover:
+- Baseline: existing columns render correctly (title, status, hours, rating, platform)
+- TTB data present: new column renders `Timer` icon and formatted values (e.g. `10h / 20h / 30h`)
+- TTB data absent (all three null): new column renders `—`
+- Skeleton: each skeleton row renders 8 cells
 
 ## Files Changed
 
@@ -57,3 +58,4 @@ Update (or add) tests for `GameList` to cover:
 - Backend changes (TTB data already in the `UserGame` type)
 - Sorting by TTB in list view (separate feature)
 - Detail page changes
+- `getCoverUrl` duplication — this function is identically defined in both `game-card.tsx` and `game-list.tsx` (pre-existing issue). Consolidating it into `game-utils.ts` is out of scope for this change.
