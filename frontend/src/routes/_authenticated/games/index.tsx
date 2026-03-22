@@ -267,7 +267,7 @@ function GamesPageContent() {
   }, [updateParams]);
 
   const handleClickGame = (game: UserGame) => {
-    sessionStorage.setItem('games_list_return_url', window.location.search);
+    sessionStorage.setItem('games_list_return_url', JSON.stringify(search));
     navigate({ to: '/games/$id', params: { id: game.id } });
   };
 

@@ -30,16 +30,12 @@ function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
     navigate({ to: '/games' });
     return;
   }
-  const usp = new URLSearchParams(stored);
-  const search: Record<string, string | string[]> = {};
-  const seen = new Set<string>();
-  usp.forEach((_, key) => {
-    if (seen.has(key)) return;
-    seen.add(key);
-    const vals = usp.getAll(key);
-    search[key] = vals.length === 1 ? vals[0] : vals;
-  });
-  navigate({ to: '/games', search: search as Record<string, string> });
+  try {
+    const search = JSON.parse(stored) as Record<string, string>;
+    navigate({ to: '/games', search });
+  } catch {
+    navigate({ to: '/games' });
+  }
 }
 
 // Helper to resolve image URLs

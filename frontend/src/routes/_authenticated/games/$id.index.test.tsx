@@ -72,7 +72,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
 
   it('navigates to stored return URL when Back to Games is clicked', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', '?q=foo&status=completed');
+    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'foo', status: 'completed' }));
 
     const { GameDetailPage } = await import(
       './$id.index'
@@ -101,7 +101,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
 
   it('error state Back to Games uses stored return URL', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', '?status=in_progress');
+    sessionStorage.setItem('games_list_return_url', JSON.stringify({ status: 'in_progress' }));
 
     const { useUserGame } = vi.mocked(await import('@/hooks'));
     useUserGame.mockReturnValue({
@@ -141,7 +141,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
 
   it('navigates to stored return URL after deleting a game', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', '?q=rpg');
+    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'rpg' }));
 
     const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
     const { useDeleteUserGame } = vi.mocked(await import('@/hooks'));
@@ -167,6 +167,21 @@ describe('GameDetailPage — Back to Games navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/games',
       search: { q: 'rpg' },
+    });
+  });
+
+  it('restores page number without double-encoding (regression: page="2" not page="\\"2\\"")', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('games_list_return_url', JSON.stringify({ page: '2', status: 'completed' }));
+
+    const { GameDetailPage } = await import('./$id.index');
+    render(<GameDetailPage />);
+
+    await user.click(screen.getByRole('button', { name: /back to games/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/games',
+      search: { page: '2', status: 'completed' },
     });
   });
 

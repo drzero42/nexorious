@@ -44,7 +44,7 @@ describe('GameEditPage — error state Back to Games navigation', () => {
 
   it('navigates to stored return URL when Back to Games is clicked in error state', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', '?q=zelda&sort=title');
+    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'zelda', sort: 'title' }));
 
     const { GameEditPage } = await import('./$id.edit');
     render(<GameEditPage />);
