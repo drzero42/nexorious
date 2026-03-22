@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { useUserGame, useDeleteUserGame } from '@/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,24 @@ import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStat
 export const Route = createFileRoute('/_authenticated/games/$id/')({
   component: GameDetailPage,
 });
+
+function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
+  const stored = sessionStorage.getItem('games_list_return_url');
+  if (!stored) {
+    navigate({ to: '/games' });
+    return;
+  }
+  const usp = new URLSearchParams(stored);
+  const search: Record<string, string | string[]> = {};
+  const seen = new Set<string>();
+  usp.forEach((_, key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const vals = usp.getAll(key);
+    search[key] = vals.length === 1 ? vals[0] : vals;
+  });
+  navigate({ to: '/games', search: search as Record<string, string> });
+}
 
 // Helper to resolve image URLs
 function resolveImageUrl(url: string | undefined): string {
@@ -75,8 +93,8 @@ function formatOwnershipStatus(status: OwnershipStatusType): string {
   return labels[status] || status;
 }
 
-function GameDetailPage() {
-  const { id: gameId } = Route.useParams();
+export function GameDetailPage() {
+  const { id: gameId } = useParams({ from: '/_authenticated/games/$id/' });
   const navigate = useNavigate();
 
   const { data: game, isLoading, error } = useUserGame(gameId);
@@ -84,7 +102,7 @@ function GameDetailPage() {
 
   const handleDelete = async () => {
     await deleteGame.mutateAsync(gameId);
-    navigate({ to: '/games' });
+    navigateToReturnUrl(navigate);
   };
 
   if (isLoading) {
@@ -100,7 +118,7 @@ function GameDetailPage() {
             The requested game could not be found in your collection.
           </p>
           <div className="mt-6">
-            <Button onClick={() => navigate({ to: '/games' })}>
+            <Button onClick={() => navigateToReturnUrl(navigate)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Games
             </Button>
@@ -114,7 +132,7 @@ function GameDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => navigate({ to: '/games' })}>
+        <Button variant="outline" onClick={() => navigateToReturnUrl(navigate)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Games
         </Button>
