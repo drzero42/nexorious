@@ -178,6 +178,7 @@ npm run test:ui
 - ✅ Review PR diff before merging; ask user only if issues found
 - ✅ Always use `--squash --delete-branch` when merging PRs (squash commits for clean history)
 - After a squash merge, `git pull --ff-only` may fail if local main has diverged. Use `git reset --hard origin/main` to sync.
+- **Always push main before branching** — any unpushed commits on main will be lost if `git reset --hard origin/main` is needed later.
 - When merging a PR from a worktree branch, run `git worktree remove <path>` before `gh pr merge --squash --delete-branch` — otherwise the local branch deletion fails with "used by worktree".
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
