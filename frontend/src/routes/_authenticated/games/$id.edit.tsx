@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { useUserGame } from '@/hooks';
 import { GameEditForm } from '@/components/games/game-edit-form';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,26 @@ export const Route = createFileRoute('/_authenticated/games/$id/edit')({
   component: GameEditPage,
 });
 
-function GameEditPage() {
-  const { id: gameId } = Route.useParams();
+function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
+  const stored = sessionStorage.getItem('games_list_return_url');
+  if (!stored) {
+    navigate({ to: '/games' });
+    return;
+  }
+  const usp = new URLSearchParams(stored);
+  const search: Record<string, string | string[]> = {};
+  const seen = new Set<string>();
+  usp.forEach((_, key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const vals = usp.getAll(key);
+    search[key] = vals.length === 1 ? vals[0] : vals;
+  });
+  navigate({ to: '/games', search: search as Record<string, string> });
+}
+
+export function GameEditPage() {
+  const { id: gameId } = (useParams as unknown as () => { id: string })();
   const navigate = useNavigate();
 
   const { data: game, isLoading, error } = useUserGame(gameId);
@@ -29,7 +47,7 @@ function GameEditPage() {
             The requested game could not be found in your collection.
           </p>
           <div className="mt-6">
-            <Button onClick={() => navigate({ to: '/games' })}>
+            <Button onClick={() => navigateToReturnUrl(navigate)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Games
             </Button>
