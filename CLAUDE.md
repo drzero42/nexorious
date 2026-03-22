@@ -153,7 +153,7 @@ npm run test:ui
 
 ### Test Conventions
 - Backend: `test_*.py` files in `app/tests/`; run single test: `uv run pytest app/tests/test_file.py::test_function_name -v`
-- Frontend: `*.test.ts` or `*.test.tsx` files alongside source files; run single test: `npm run test game-card.test.tsx`
+- Frontend: `*.test.ts` or `*.test.tsx` files alongside source files; run single test: `npm run test game-card.test.tsx`; for route files with `$` in their name: `npm run test -- "\$id.index.test.tsx"`
 
 ## Development Rules
 
@@ -181,6 +181,7 @@ npm run test:ui
 - When merging a PR from a worktree branch, run `git worktree remove <path>` before `gh pr merge --squash --delete-branch` — otherwise the local branch deletion fails with "used by worktree".
 - ❌ Never commit directly to main
 - ❌ Never merge PRs without reviewing the diff first
+- ❌ Never merge a PR on your own initiative — only merge when the user explicitly instructs you to
 - ❌ Never work on multiple unrelated changes in one branch
 
 ### Code Style
@@ -250,7 +251,8 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **Production serving**: Built `dist/` is copied into the backend Docker image; FastAPI serves it via `StaticFiles(html=True)` catch-all
 
 ### Frontend Quirks
-- **`routeTree.gen.ts` is not committed** — TanStack Router generates this file at build time. Worktrees won't have it, causing ~29 pre-existing TypeScript errors in `npm run check`. These are expected — don't treat them as regressions.
+- **`routeTree.gen.ts` is not committed** — TanStack Router generates this file at build time (`npm run dev` or `npm run build`). Worktrees won't have it. **Do not copy it manually — it must be generated.** Before running `npm run check` in a worktree, run `npm run build` once to generate it, or accept that type checking is not reliable without it. **Never dismiss TypeScript errors as "pre-existing from routeTree.gen.ts" — if the file is missing, generate it first, then check.**
+- **`Route.useParams()` in tests** — Components using `Route.useParams()` (the TanStack Router typed accessor) cannot be tested by mocking `useParams` in `@tanstack/react-router`, because `Route.useParams()` calls the router internals directly. Instead, spy on the Route object exported from the component module: `vi.spyOn(Route, 'useParams').mockReturnValue({ id: '...' })` in `beforeEach`. Do NOT change production code to use `useParams` directly or add type casts to work around this — mock `Route.useParams` in the test instead.
 - **shadcn `Pagination` in tests** — `PaginationLink`, `PaginationPrevious`, `PaginationNext` render as `<a>` tags. JSDOM gives `<a>` without `href` role `generic`, not `link`. Always use `href="#"` + `e.preventDefault()` so tests can use `getByRole('link')`.
 
 ### Database Design
