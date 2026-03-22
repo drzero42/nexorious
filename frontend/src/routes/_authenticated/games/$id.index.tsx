@@ -94,7 +94,7 @@ function formatOwnershipStatus(status: OwnershipStatusType): string {
 }
 
 export function GameDetailPage() {
-  const { id: gameId } = useParams({ from: '/_authenticated/games/$id/' });
+  const { id: gameId } = (useParams as unknown as () => { id: string })();
   const navigate = useNavigate();
 
   const { data: game, isLoading, error } = useUserGame(gameId);
