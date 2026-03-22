@@ -470,4 +470,48 @@ describe('GameCard', () => {
       expect(screen.getByAltText('PC')).toBeInTheDocument();
     });
   });
+
+  describe('time to beat display', () => {
+    it('renders TTB row when main value is present', () => {
+      const game = createMockGame({
+        game: {
+          ...createMockGame().game,
+          howlongtobeat_main: 10,
+          howlongtobeat_extra: 20,
+          howlongtobeat_completionist: 30,
+        },
+      });
+      render(<GameCard game={game} />);
+
+      expect(screen.getByText('10h / 20h / 30h')).toBeInTheDocument();
+    });
+
+    it('renders em-dash for null TTB values', () => {
+      const game = createMockGame({
+        game: {
+          ...createMockGame().game,
+          howlongtobeat_main: 10,
+          howlongtobeat_extra: null as unknown as number,
+          howlongtobeat_completionist: null as unknown as number,
+        },
+      });
+      render(<GameCard game={game} />);
+
+      expect(screen.getByText('10h / — / —')).toBeInTheDocument();
+    });
+
+    it('does not render TTB row when all values are null', () => {
+      const game = createMockGame({
+        game: {
+          ...createMockGame().game,
+          howlongtobeat_main: undefined,
+          howlongtobeat_extra: undefined,
+          howlongtobeat_completionist: undefined,
+        },
+      });
+      render(<GameCard game={game} />);
+
+      expect(screen.queryByText(/h \//)).not.toBeInTheDocument();
+    });
+  });
 });
