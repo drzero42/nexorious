@@ -220,9 +220,6 @@ Items are removed when completed. When a completed item introduces a new feature
 
 ### UX & Library
 
-#### Filter state lost when navigating back from game edit `Medium`
-Pressing "Back to Games" from the game edit page clears any active filters on the games list. The filter state should be preserved so the user returns to the same filtered view they left.
-
 #### List view missing Time to Beat times `Medium`
 The list view for the games library does not show Time to Beat estimates, unlike the card view. Time to Beat data should be visible in list view.
 
