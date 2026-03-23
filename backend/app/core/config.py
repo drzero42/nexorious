@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from typing import Optional, Union
+from urllib.parse import quote as urlquote
 
 
 class Settings(BaseSettings):
@@ -13,9 +14,19 @@ class Settings(BaseSettings):
     )
     
     # Database (PostgreSQL only)
+    # Individual vars are used to construct the URL when DATABASE_URL is not set.
+    db_host: str = Field(default="localhost", description="PostgreSQL host")
+    db_port: int = Field(default=5432, description="PostgreSQL port")
+    db_user: str = Field(default="nexorious", description="PostgreSQL username")
+    db_password: str = Field(default="nexorious", description="PostgreSQL password")
+    db_name: str = Field(default="nexorious", description="PostgreSQL database name")
+
     database_url: str = Field(
-        default="postgresql://nexorious:nexorious@localhost:5432/nexorious",
-        description="PostgreSQL database URL. Format: postgresql://user:pass@host:port/db"
+        default="",
+        description=(
+            "PostgreSQL database URL. If set (non-empty), takes priority over individual "
+            "DB_* vars. Format: postgresql://user:pass@host:port/db"
+        )
     )
     
     # Security
@@ -43,7 +54,20 @@ class Settings(BaseSettings):
             return v
         else:
             return ["http://localhost:5173", "http://localhost:3000"]
-    
+
+    @model_validator(mode='after')
+    def resolve_database_url(self) -> 'Settings':
+        """Construct database_url from individual DB vars when DATABASE_URL is not set."""
+        if not self.database_url:
+            user = urlquote(self.db_user, safe='')
+            password = urlquote(self.db_password, safe='')
+            dbname = urlquote(self.db_name, safe='')
+            self.database_url = (
+                f"postgresql://{user}:{password}"
+                f"@{self.db_host}:{self.db_port}/{dbname}"
+            )
+        return self
+
     # External APIs
     igdb_client_id: Optional[str] = Field(
         default=None,
