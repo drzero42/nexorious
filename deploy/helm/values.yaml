@@ -45,6 +45,49 @@ nexorious:
   # -- Set explicitly if using a custom release name or external API.
   internalApiUrl: ""
 
+  # -- External secret references (*From pattern)
+  # When *From.name and *From.key are both non-empty, the external secret is used
+  # and the corresponding inline value is ignored.
+
+  # Non-DB credentials
+  secretKeyFrom:
+    name: ""
+    key: ""
+  internalApiKeyFrom:
+    name: ""
+    key: ""
+  igdbClientIdFrom:
+    name: ""
+    key: ""
+  igdbClientSecretFrom:
+    name: ""
+    key: ""
+
+  # Database: URI mode (single key containing full DATABASE_URL)
+  # Mutually exclusive with databaseUrl and db*From.
+  databaseUrlFrom:
+    name: ""
+    key: ""
+
+  # Database: individual keys mode (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+  # Mutually exclusive with databaseUrl and databaseUrlFrom.
+  # No inline equivalents — individual keys always come from an external secret.
+  dbHostFrom:
+    name: ""
+    key: ""
+  dbPortFrom:
+    name: ""
+    key: ""
+  dbUserFrom:
+    name: ""
+    key: ""
+  dbPasswordFrom:
+    name: ""
+    key: ""
+  dbNameFrom:
+    name: ""
+    key: ""
+
   postgresql:
     # -- PostgreSQL username
     username: nexorious

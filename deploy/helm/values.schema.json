@@ -15,22 +15,18 @@
       "properties": {
         "secretKey": {
           "type": "string",
-          "minLength": 1,
           "description": "JWT signing secret key. Generate with: openssl rand -hex 32"
         },
         "internalApiKey": {
           "type": "string",
-          "minLength": 1,
           "description": "Internal worker-to-API authentication key. Generate with: openssl rand -hex 32"
         },
         "igdbClientId": {
           "type": "string",
-          "minLength": 1,
           "description": "IGDB API client ID. Required — Nexorious will not function without valid IGDB credentials."
         },
         "igdbClientSecret": {
           "type": "string",
-          "minLength": 1,
           "description": "IGDB API client secret. Required — Nexorious will not function without valid IGDB credentials."
         },
         "databaseUrl": {
@@ -65,6 +61,86 @@
               "minLength": 1,
               "description": "PostgreSQL database name"
             }
+          }
+        },
+        "secretKeyFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "internalApiKeyFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "igdbClientIdFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "igdbClientSecretFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "databaseUrlFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "dbHostFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "dbPortFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "dbUserFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "dbPasswordFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
+        "dbNameFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
           }
         }
       }
