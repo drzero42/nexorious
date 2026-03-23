@@ -119,7 +119,7 @@ The `nexorious.validateValues` helper is extended with:
 
 2. **Non-DB credential bypass:** The existing "must not be default/empty" checks for `secretKey`, `internalApiKey`, `igdbClientId`, `igdbClientSecret` are skipped when the corresponding `*From` is configured.
 
-3. **DB mode exclusivity:** Exactly one of `databaseUrl`, `databaseUrlFrom`, or the `db*From` group may be active. Using more than one is a hard failure: `"Only one DB mode may be configured: databaseUrl, databaseUrlFrom, or db*From"`.
+3. **DB mode exclusivity:** At most one of `databaseUrl`, `databaseUrlFrom`, or the `db*From` group may be active (zero is valid — means in-cluster postgresql). Using more than one is a hard failure: `"Only one DB mode may be configured: databaseUrl, databaseUrlFrom, or db*From"`.
 
 4. **postgresql-disabled check:** The existing requirement that a DB connection is provided when the postgresql controller is disabled is extended to pass when any of the three DB modes is configured (not just `databaseUrl`).
 
@@ -140,6 +140,8 @@ Each new `*From` field is added to the `nexorious` object as an optional object 
 
 Same shape for all eleven `*From` fields. The `required` array on `nexorious` is unchanged — all `*From` fields are optional.
 
+The existing `minLength: 1` constraints on `secretKey`, `internalApiKey`, `igdbClientId`, and `igdbClientSecret` must be **removed** from the schema. When a user configures a `*From` variant, they will naturally leave the inline field empty (or at its default placeholder), and `minLength: 1` would reject the values file at schema validation before template logic even runs. Runtime validation in `_helpers.tpl` (item 2 above) takes over the completeness check, so the schema constraint is redundant and harmful.
+
 ## Files Changed
 
 | File | Change |
@@ -147,7 +149,7 @@ Same shape for all eleven `*From` fields. The `required` array on `nexorious` is
 | `deploy/helm/values.yaml` | Add eleven `*From` fields; replace `envFrom` with individual `env.valueFrom.secretKeyRef` entries in api/worker/scheduler controllers |
 | `deploy/helm/templates/_helpers.tpl` | Add ~22 secret-name/key helper templates; extend `nexorious.validateValues` |
 | `deploy/helm/templates/credentials-secret.yaml` | Conditionally omit fields when `*From` is configured |
-| `deploy/helm/values.schema.json` | Add eleven `*From` fields to `nexorious` schema object |
+| `deploy/helm/values.schema.json` | Add eleven `*From` fields; remove `minLength: 1` from `secretKey`, `internalApiKey`, `igdbClientId`, `igdbClientSecret` |
 
 `values-dev.yaml` requires no changes.
 
