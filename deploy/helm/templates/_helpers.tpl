@@ -152,3 +152,99 @@ IGDB_CLIENT_ID
 IGDB_CLIENT_SECRET
 {{- end -}}
 {{- end }}
+
+{{- define "nexorious.databaseUrlSecretName" -}}
+{{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.name -}}
+{{- .Values.nexorious.databaseUrlFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.databaseUrlSecretKey" -}}
+{{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.key -}}
+{{- .Values.nexorious.databaseUrlFrom.key -}}
+{{- else -}}
+DATABASE_URL
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbHostSecretName" -}}
+{{- if and .Values.nexorious.dbHostFrom .Values.nexorious.dbHostFrom.name -}}
+{{- .Values.nexorious.dbHostFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbHostSecretKey" -}}
+{{- if and .Values.nexorious.dbHostFrom .Values.nexorious.dbHostFrom.key -}}
+{{- .Values.nexorious.dbHostFrom.key -}}
+{{- else -}}
+_nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbPortSecretName" -}}
+{{- if and .Values.nexorious.dbPortFrom .Values.nexorious.dbPortFrom.name -}}
+{{- .Values.nexorious.dbPortFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbPortSecretKey" -}}
+{{- if and .Values.nexorious.dbPortFrom .Values.nexorious.dbPortFrom.key -}}
+{{- .Values.nexorious.dbPortFrom.key -}}
+{{- else -}}
+_nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbUserSecretName" -}}
+{{- if and .Values.nexorious.dbUserFrom .Values.nexorious.dbUserFrom.name -}}
+{{- .Values.nexorious.dbUserFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbUserSecretKey" -}}
+{{- if and .Values.nexorious.dbUserFrom .Values.nexorious.dbUserFrom.key -}}
+{{- .Values.nexorious.dbUserFrom.key -}}
+{{- else -}}
+_nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbPasswordSecretName" -}}
+{{- if and .Values.nexorious.dbPasswordFrom .Values.nexorious.dbPasswordFrom.name -}}
+{{- .Values.nexorious.dbPasswordFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbPasswordSecretKey" -}}
+{{- if and .Values.nexorious.dbPasswordFrom .Values.nexorious.dbPasswordFrom.key -}}
+{{- .Values.nexorious.dbPasswordFrom.key -}}
+{{- else -}}
+_nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbNameSecretName" -}}
+{{- if and .Values.nexorious.dbNameFrom .Values.nexorious.dbNameFrom.name -}}
+{{- .Values.nexorious.dbNameFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbNameSecretKey" -}}
+{{- if and .Values.nexorious.dbNameFrom .Values.nexorious.dbNameFrom.key -}}
+{{- .Values.nexorious.dbNameFrom.key -}}
+{{- else -}}
+_nexorious_unused
+{{- end -}}
+{{- end }}
