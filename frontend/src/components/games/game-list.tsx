@@ -14,7 +14,7 @@ import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { Timer } from 'lucide-react';
-import { formatTtb } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating } from '@/lib/game-utils';
 
 export interface GameListProps {
   games: UserGame[];
@@ -85,6 +85,9 @@ function GameListSkeleton() {
           <TableCell>
             <Skeleton className="h-4 w-8" />
           </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-12" />
+          </TableCell>
         </TableRow>
       ))}
     </>
@@ -121,6 +124,7 @@ export function GameList({
           <TableHead className="w-20">Hours</TableHead>
           <TableHead className="w-32">Time to Beat</TableHead>
           <TableHead className="w-20">Rating</TableHead>
+          <TableHead className="w-20">IGDB</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -221,6 +225,9 @@ export function GameList({
                   ) : (
                     <span className="text-sm text-muted-foreground">-</span>
                   )}
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm">{formatIgdbRating(game.game?.rating_average)}</span>
                 </TableCell>
               </TableRow>
             );

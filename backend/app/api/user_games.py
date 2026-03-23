@@ -303,7 +303,7 @@ async def list_user_games(
 
     # Apply sorting
     # Check if we need to join with Game table for sorting
-    game_sort_fields = {'title', 'genre', 'developer', 'publisher', 'release_date', 'howlongtobeat_main'}
+    game_sort_fields = {'title', 'genre', 'developer', 'publisher', 'release_date', 'howlongtobeat_main', 'rating_average'}
     need_game_join = sort_by in game_sort_fields
 
     # Only add Game join if needed and not already joined

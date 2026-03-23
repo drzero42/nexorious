@@ -104,7 +104,7 @@ describe('GameList', () => {
         el.className.includes('animate-pulse')
       );
 
-      // There should be 8 skeleton cells per row × 10 rows = 80 skeleton divs
+      // There should be 9 skeleton cells per row × 10 rows = 90 skeleton divs
       expect(skeletons.length).toBeGreaterThanOrEqual(10);
     });
 
@@ -131,6 +131,7 @@ describe('GameList', () => {
       expect(screen.getByText('Hours')).toBeInTheDocument();
       expect(screen.getByText('Time to Beat')).toBeInTheDocument();
       expect(screen.getByText('Rating')).toBeInTheDocument();
+      expect(screen.getByText('IGDB')).toBeInTheDocument();
     });
   });
 
@@ -170,6 +171,7 @@ describe('GameList', () => {
       expect(screen.getByText('Hours')).toBeInTheDocument();
       expect(screen.getByText('Time to Beat')).toBeInTheDocument();
       expect(screen.getByText('Rating')).toBeInTheDocument();
+      expect(screen.getByText('IGDB')).toBeInTheDocument();
     });
 
     it('renders selection column header when onSelectGame is provided', () => {
@@ -177,18 +179,18 @@ describe('GameList', () => {
       const onSelectGame = vi.fn();
       render(<GameList games={games} onSelectGame={onSelectGame} />);
 
-      // Should have 8 headers: checkbox + Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating
+      // Should have 9 headers: checkbox + Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating + IGDB
       const headers = screen.getAllByRole('columnheader');
-      expect(headers.length).toBe(8);
+      expect(headers.length).toBe(9);
     });
 
     it('does not render selection column header when onSelectGame is not provided', () => {
       const games = [createMockGame()];
       render(<GameList games={games} />);
 
-      // Should have 7 headers: Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating
+      // Should have 8 headers: Cover + Title + Status + Platform(s) + Hours + Time to Beat + Rating + IGDB
       const headers = screen.getAllByRole('columnheader');
-      expect(headers.length).toBe(7);
+      expect(headers.length).toBe(8);
     });
   });
 
@@ -851,6 +853,46 @@ describe('GameList', () => {
 
       render(<GameList games={[game]} />);
       expect(screen.getByText('Unknown Game')).toBeInTheDocument();
+    });
+  });
+
+  describe('IGDB rating display', () => {
+    it('renders "IGDB" column header', () => {
+      const games = [createMockGame()];
+      render(<GameList games={games} />);
+
+      expect(screen.getByText('IGDB')).toBeInTheDocument();
+    });
+
+    it('renders formatted IGDB rating when rating_average is provided', () => {
+      const games = [
+        createMockGame({
+          game: {
+            ...createMockGame().game,
+            rating_average: 85.0,
+          },
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      expect(screen.getByText('8.5')).toBeInTheDocument();
+    });
+
+    it('renders em dash when rating_average is null', () => {
+      const games = [
+        createMockGame({
+          game: {
+            ...createMockGame().game,
+            rating_average: null as unknown as number,
+          },
+        }),
+      ];
+      render(<GameList games={games} />);
+
+      // Find a cell that contains the em dash (—)
+      const cells = screen.getAllByRole('cell');
+      const igdbCell = cells.find((cell) => cell.textContent === '—');
+      expect(igdbCell).toBeInTheDocument();
     });
   });
 

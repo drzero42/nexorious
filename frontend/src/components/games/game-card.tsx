@@ -4,9 +4,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { PlatformIconList } from '@/components/ui/platform-icon';
 import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
-import { Timer } from 'lucide-react';
+import { Timer, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatTtb } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating } from '@/lib/game-utils';
 
 export interface GameCardProps {
   game: UserGame;
@@ -152,6 +152,12 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
             <div className="flex items-center space-x-1 text-muted-foreground">
               <span>&#9734;</span>
               <span className="text-sm">Not rated</span>
+            </div>
+          )}
+          {game.game?.rating_average != null && (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <Gamepad2 className="h-3 w-3" />
+              <span className="text-sm font-medium text-foreground">{formatIgdbRating(game.game.rating_average)}</span>
             </div>
           )}
           <span className="text-sm text-muted-foreground">

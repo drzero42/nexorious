@@ -241,6 +241,59 @@ class TestUserGamesListEndpoint:
         ttb_values = [game["game"]["howlongtobeat_main"] for game in games]
         assert ttb_values == [100, 10, None], f"DESC sort failed: expected [100, 10, None], got {ttb_values}"
 
+    def test_list_user_games_sorting_rating_average(self, client: TestClient, session: Session):
+        """Test sorting by IGDB rating_average, nulls sort last in both directions."""
+        from .integration_test_utils import create_test_game, register_and_login_user
+        from ..models.user import User
+        from ..models.user_game import UserGame
+        from decimal import Decimal
+
+        user_data = {"username": "ratingsortuser", "password": "password123"}
+        auth_headers = register_and_login_user(client, user_data)
+
+        user = session.exec(select(User).where(User.username == "ratingsortuser")).first()
+        assert user is not None
+
+        game_high = create_test_game(title="High Rated", rating_average=Decimal("85.00"))
+        game_low = create_test_game(title="Low Rated", rating_average=Decimal("60.00"))
+        game_null = create_test_game(title="Unrated", rating_average=None)
+
+        session.add_all([game_high, game_low, game_null])
+        session.commit()
+        session.refresh(game_high)
+        session.refresh(game_low)
+        session.refresh(game_null)
+
+        for game in [game_high, game_low, game_null]:
+            user_game = UserGame(
+                user_id=user.id,
+                game_id=game.id,
+                ownership_status="owned",
+                play_status="not_started",
+            )
+            session.add(user_game)
+        session.commit()
+
+        # Ascending: 60.0, 85.0, null
+        response = client.get(
+            "/api/user-games/?sort_by=rating_average&sort_order=asc",
+            headers=auth_headers,
+        )
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        ratings = [g["game"]["rating_average"] for g in games]
+        assert ratings == [60.0, 85.0, None], f"ASC failed: {ratings}"
+
+        # Descending: 85.0, 60.0, null
+        response = client.get(
+            "/api/user-games/?sort_by=rating_average&sort_order=desc",
+            headers=auth_headers,
+        )
+        assert_api_success(response, 200)
+        games = response.json()["user_games"]
+        ratings = [g["game"]["rating_average"] for g in games]
+        assert ratings == [85.0, 60.0, None], f"DESC failed: {ratings}"
+
     def test_list_user_games_sorting_hours_played_aggregated(self, client: TestClient, session: Session):
         """Test that hours_played sorting uses aggregated platform hours with legacy fallback."""
         from .integration_test_utils import create_test_game, register_and_login_user
