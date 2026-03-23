@@ -20,27 +20,108 @@ Name of the credentials secret.
 {{- end }}
 
 {{/*
+Validate a single *From struct: both name and key must be set, or neither.
+Input dict: .label (string), .from (object with .name and .key fields).
+Returns an error string if invalid, empty string if valid.
+*/}}
+{{- define "nexorious._validateFrom" -}}
+{{- $name := dig "name" "" .from -}}
+{{- $key := dig "key" "" .from -}}
+{{- if and (not (empty $name)) (empty $key) -}}
+{{- printf "%s: both name and key must be set, or neither" .label -}}
+{{- else if and (empty $name) (not (empty $key)) -}}
+{{- printf "%s: both name and key must be set, or neither" .label -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate required values.
 */}}
 {{- define "nexorious.validateValues" -}}
-{{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
-  {{- fail "nexorious.secretKey must be set to a secure random value" }}
+
+{{/* --- *From completeness checks --- */}}
+{{- $fromFields := list
+  (dict "label" "secretKeyFrom"        "from" .Values.nexorious.secretKeyFrom)
+  (dict "label" "internalApiKeyFrom"   "from" .Values.nexorious.internalApiKeyFrom)
+  (dict "label" "igdbClientIdFrom"     "from" .Values.nexorious.igdbClientIdFrom)
+  (dict "label" "igdbClientSecretFrom" "from" .Values.nexorious.igdbClientSecretFrom)
+  (dict "label" "databaseUrlFrom"      "from" .Values.nexorious.databaseUrlFrom)
+  (dict "label" "dbHostFrom"           "from" .Values.nexorious.dbHostFrom)
+  (dict "label" "dbPortFrom"           "from" .Values.nexorious.dbPortFrom)
+  (dict "label" "dbUserFrom"           "from" .Values.nexorious.dbUserFrom)
+  (dict "label" "dbPasswordFrom"       "from" .Values.nexorious.dbPasswordFrom)
+  (dict "label" "dbNameFrom"           "from" .Values.nexorious.dbNameFrom)
+-}}
+{{- range $fromFields -}}
+  {{- $err := include "nexorious._validateFrom" . -}}
+  {{- if not (empty $err) -}}
+    {{- fail $err -}}
+  {{- end -}}
+{{- end -}}
+
+{{/* --- Non-DB credential checks (bypass when *From is configured) --- */}}
+{{- $secretKeyFromConfigured := not (empty (dig "name" "" .Values.nexorious.secretKeyFrom)) -}}
+{{- if not $secretKeyFromConfigured -}}
+  {{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
+    {{- fail "nexorious.secretKey must be set to a secure random value" }}
+  {{- end }}
 {{- end }}
-{{- if eq .Values.nexorious.internalApiKey "change-me-in-production" }}
-  {{- fail "nexorious.internalApiKey must be set to a secure random value" }}
+
+{{- $internalApiKeyFromConfigured := not (empty (dig "name" "" .Values.nexorious.internalApiKeyFrom)) -}}
+{{- if not $internalApiKeyFromConfigured -}}
+  {{- if eq .Values.nexorious.internalApiKey "change-me-in-production" }}
+    {{- fail "nexorious.internalApiKey must be set to a secure random value" }}
+  {{- end }}
 {{- end }}
-{{- if and (not (dig "postgresql" "enabled" true .Values.controllers)) (empty .Values.nexorious.databaseUrl) }}
-  {{- fail "nexorious.databaseUrl must be set when the postgresql controller is disabled" }}
+
+{{- $igdbClientIdFromConfigured := not (empty (dig "name" "" .Values.nexorious.igdbClientIdFrom)) -}}
+{{- if not $igdbClientIdFromConfigured -}}
+  {{- if empty .Values.nexorious.igdbClientId }}
+    {{- fail "nexorious.igdbClientId is required. Nexorious will not function without valid IGDB credentials." }}
+  {{- end }}
 {{- end }}
+
+{{- $igdbClientSecretFromConfigured := not (empty (dig "name" "" .Values.nexorious.igdbClientSecretFrom)) -}}
+{{- if not $igdbClientSecretFromConfigured -}}
+  {{- if empty .Values.nexorious.igdbClientSecret }}
+    {{- fail "nexorious.igdbClientSecret is required. Nexorious will not function without valid IGDB credentials." }}
+  {{- end }}
+{{- end }}
+
+{{/* --- DB mode exclusivity check --- */}}
+{{/* Mode A: inline databaseUrl */}}
+{{- $modeA := not (empty .Values.nexorious.databaseUrl) -}}
+{{/* Mode B: databaseUrlFrom */}}
+{{- $modeB := not (empty (dig "name" "" .Values.nexorious.databaseUrlFrom)) -}}
+{{/* Mode C: any individual db*From field */}}
+{{- $modeC := or
+  (not (empty (dig "name" "" .Values.nexorious.dbHostFrom)))
+  (not (empty (dig "name" "" .Values.nexorious.dbPortFrom)))
+  (not (empty (dig "name" "" .Values.nexorious.dbUserFrom)))
+  (not (empty (dig "name" "" .Values.nexorious.dbPasswordFrom)))
+  (not (empty (dig "name" "" .Values.nexorious.dbNameFrom)))
+-}}
+{{- $activeModes := 0 -}}
+{{- if $modeA }}{{- $activeModes = add $activeModes 1 }}{{- end -}}
+{{- if $modeB }}{{- $activeModes = add $activeModes 1 }}{{- end -}}
+{{- if $modeC }}{{- $activeModes = add $activeModes 1 }}{{- end -}}
+{{- if gt $activeModes 1 -}}
+  {{- fail "DB connection: at most one of databaseUrl, databaseUrlFrom, or individual db*From fields may be configured" }}
+{{- end -}}
+
+{{/* --- postgresql-disabled guard --- */}}
+{{- $postgresqlEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
+{{- if not $postgresqlEnabled -}}
+  {{- if not (or $modeA $modeB $modeC) -}}
+    {{- fail "postgresql is disabled but no database configuration provided" }}
+  {{- end -}}
+{{- end -}}
+
+{{/* --- NATS disabled guard --- */}}
 {{- if and (not (dig "nats" "enabled" true .Values.controllers)) (empty .Values.nexorious.natsUrl) }}
   {{- fail "nexorious.natsUrl must be set when the nats controller is disabled" }}
 {{- end }}
-{{- if empty .Values.nexorious.igdbClientId }}
-  {{- fail "nexorious.igdbClientId is required. Nexorious will not function without valid IGDB credentials." }}
-{{- end }}
-{{- if empty .Values.nexorious.igdbClientSecret }}
-  {{- fail "nexorious.igdbClientSecret is required. Nexorious will not function without valid IGDB credentials." }}
-{{- end }}
+
 {{- end }}
 
 {{/*
