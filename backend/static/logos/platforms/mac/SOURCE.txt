@@ -1,0 +1,16 @@
+Mac (Apple) Platform Logo
+=========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/22037/apple-logo
+License: CC0 License
+Downloaded: 2026-03-23
+
+Description: Free Apple Logo SVG Vector Icon
+
+License Details:
+CC0 License - Free to use for personal and commercial projects with no attribution required. Public domain.
+
+Files:
+- mac-icon-light.svg: Light variant (black) for light backgrounds
+- mac-icon-dark.svg: Dark variant (white) for dark backgrounds
