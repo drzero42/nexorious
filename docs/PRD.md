@@ -299,9 +299,6 @@ Users should be able to choose which notification types they want to receive.
 
 ### Platform & Storefront
 
-#### Mac platform icon not displaying `Medium`
-Icons for the Mac platform do not show up in the UI.
-
 #### Storefront name in platform icon tooltip `Medium`
 When hovering over a platform indicator on a game card, the tooltip should also show which storefront the game is on (not just the platform).
 
