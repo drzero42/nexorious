@@ -45,6 +45,49 @@ nexorious:
   # -- Set explicitly if using a custom release name or external API.
   internalApiUrl: ""
 
+  # -- External secret references (*From pattern)
+  # When *From.name and *From.key are both non-empty, the external secret is used
+  # and the corresponding inline value is ignored.
+
+  # Non-DB credentials
+  secretKeyFrom:
+    name: ""
+    key: ""
+  internalApiKeyFrom:
+    name: ""
+    key: ""
+  igdbClientIdFrom:
+    name: ""
+    key: ""
+  igdbClientSecretFrom:
+    name: ""
+    key: ""
+
+  # Database: URI mode (single key containing full DATABASE_URL)
+  # Mutually exclusive with databaseUrl and db*From.
+  databaseUrlFrom:
+    name: ""
+    key: ""
+
+  # Database: individual keys mode (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+  # Mutually exclusive with databaseUrl and databaseUrlFrom.
+  # No inline equivalents — individual keys always come from an external secret.
+  dbHostFrom:
+    name: ""
+    key: ""
+  dbPortFrom:
+    name: ""
+    key: ""
+  dbUserFrom:
+    name: ""
+    key: ""
+  dbPasswordFrom:
+    name: ""
+    key: ""
+  dbNameFrom:
+    name: ""
+    key: ""
+
   postgresql:
     # -- PostgreSQL username
     username: nexorious
@@ -188,14 +231,67 @@ controllers:
           repository: ghcr.io/drzero42/nexorious
           tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
-        envFrom:
-          - secretRef:
-              name: nexorious-credentials
         env:
           CORS_ORIGINS: ""
           STORAGE_PATH: /app/storage
           LOG_LEVEL: INFO
           DEBUG: "false"
+          SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.secretKeySecretName" . }}'
+                key: '{{ include "nexorious.secretKeySecretKey" . }}'
+          INTERNAL_API_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.internalApiKeySecretName" . }}'
+                key: '{{ include "nexorious.internalApiKeySecretKey" . }}'
+          IGDB_CLIENT_ID:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientIdSecretKey" . }}'
+          IGDB_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientSecretSecretKey" . }}'
+          DATABASE_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious.databaseUrlSecretKey" . }}'
+                optional: true
+          DB_HOST:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbHostSecretName" . }}'
+                key: '{{ include "nexorious.dbHostSecretKey" . }}'
+                optional: true
+          DB_PORT:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPortSecretName" . }}'
+                key: '{{ include "nexorious.dbPortSecretKey" . }}'
+                optional: true
+          DB_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbUserSecretName" . }}'
+                key: '{{ include "nexorious.dbUserSecretKey" . }}'
+                optional: true
+          DB_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious.dbPasswordSecretKey" . }}'
+                optional: true
+          DB_NAME:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbNameSecretName" . }}'
+                key: '{{ include "nexorious.dbNameSecretKey" . }}'
+                optional: true
         probes:
           liveness:
             enabled: true
@@ -246,13 +342,66 @@ controllers:
           - "5"
           - app.worker.broker:broker
           - app.worker.tasks
-        envFrom:
-          - secretRef:
-              name: nexorious-credentials
         env:
           STORAGE_PATH: /app/storage
           TASKIQ_SKIP_TABLE_CREATION: "true"
           LOG_LEVEL: INFO
+          SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.secretKeySecretName" . }}'
+                key: '{{ include "nexorious.secretKeySecretKey" . }}'
+          INTERNAL_API_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.internalApiKeySecretName" . }}'
+                key: '{{ include "nexorious.internalApiKeySecretKey" . }}'
+          IGDB_CLIENT_ID:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientIdSecretKey" . }}'
+          IGDB_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientSecretSecretKey" . }}'
+          DATABASE_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious.databaseUrlSecretKey" . }}'
+                optional: true
+          DB_HOST:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbHostSecretName" . }}'
+                key: '{{ include "nexorious.dbHostSecretKey" . }}'
+                optional: true
+          DB_PORT:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPortSecretName" . }}'
+                key: '{{ include "nexorious.dbPortSecretKey" . }}'
+                optional: true
+          DB_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbUserSecretName" . }}'
+                key: '{{ include "nexorious.dbUserSecretKey" . }}'
+                optional: true
+          DB_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious.dbPasswordSecretKey" . }}'
+                optional: true
+          DB_NAME:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbNameSecretName" . }}'
+                key: '{{ include "nexorious.dbNameSecretKey" . }}'
+                optional: true
 
   # ---------------------------------------------------------------------------
   # Scheduler -- Taskiq scheduler (Deployment, MUST remain at 1 replica)
@@ -277,11 +426,64 @@ controllers:
             uv run python -c 'import asyncio; from app.worker.broker import broker; asyncio.run(broker.startup())' &&
             touch /tmp/taskiq_ready &&
             uv run taskiq scheduler app.worker.schedules:scheduler app.worker.tasks
-        envFrom:
-          - secretRef:
-              name: nexorious-credentials
         env:
           LOG_LEVEL: INFO
+          SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.secretKeySecretName" . }}'
+                key: '{{ include "nexorious.secretKeySecretKey" . }}'
+          INTERNAL_API_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.internalApiKeySecretName" . }}'
+                key: '{{ include "nexorious.internalApiKeySecretKey" . }}'
+          IGDB_CLIENT_ID:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientIdSecretKey" . }}'
+          IGDB_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientSecretSecretKey" . }}'
+          DATABASE_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious.databaseUrlSecretKey" . }}'
+                optional: true
+          DB_HOST:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbHostSecretName" . }}'
+                key: '{{ include "nexorious.dbHostSecretKey" . }}'
+                optional: true
+          DB_PORT:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPortSecretName" . }}'
+                key: '{{ include "nexorious.dbPortSecretKey" . }}'
+                optional: true
+          DB_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbUserSecretName" . }}'
+                key: '{{ include "nexorious.dbUserSecretKey" . }}'
+                optional: true
+          DB_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious.dbPasswordSecretKey" . }}'
+                optional: true
+          DB_NAME:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbNameSecretName" . }}'
+                key: '{{ include "nexorious.dbNameSecretKey" . }}'
+                optional: true
         probes:
           liveness:
             enabled: true
