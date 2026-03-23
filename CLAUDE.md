@@ -282,5 +282,8 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - Repo: `https://bjw-s-labs.github.io/helm-charts/` — required entrypoint: `{{- include "bjw-s.common.loader.all" . -}}` in `templates/common.yaml`
 - **Controller disable cascade**: Disabling a controller (e.g. `controllers.postgresql.enabled: false`) also requires disabling its service (`service.postgresql.enabled: false`) and any persistence that references it via `advancedMounts` — failing to do so causes `No enabled controller found` errors
 - Go template functions **cannot** be called in `values.yaml` — compute dynamic values (DATABASE_URL, etc.) in `templates/` files
+- **`env` string values ARE tpl-rendered**: string values under a controller's `env` block go through Go `tpl`, so `'{{ include "my.helper" . }}'` works as a `secretKeyRef` `name` or `key`
+- **No nested `{{- define }}` blocks**: Helm does not support defines inside defines — extract helpers needed by another helper into separate top-level defines placed *before* the caller
+- **`dig` for nil-safe value access**: use `dig "key" "default" .Values.nexorious.field` instead of `.Values.nexorious.field.key` — direct access panics if the parent map is nil
 - `values.schema.json`: validate only custom `nexorious.*` block; use `additionalProperties: true` on bjw-s-managed blocks (`controllers`, `service`, `ingress`, `persistence`)
 
