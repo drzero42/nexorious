@@ -223,9 +223,6 @@ Items are removed when completed. When a completed item introduces a new feature
 #### Epic Games Store auth UX `High`
 When clicking Connect for Epic, a box pops up with a "Start Authentication" button, after which another box appears with a link and a code input field. This is inconsistent with the other sync sources. The authentication information should be displayed directly on the page without popup dialogs.
 
-#### Search field icon overlaps placeholder text `High`
-In the search field on My Games, the magnifying glass icon is placed on top of the word "Search" in the placeholder text.
-
 #### Clickable dashboard status counts `Medium`
 The dashboard shows a breakdown of progress — how many games are not started, in progress, completed, dropped, etc. Clicking one of these counts should navigate to the library view filtered to that status.
 
