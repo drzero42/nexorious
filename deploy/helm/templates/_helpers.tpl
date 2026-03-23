@@ -81,3 +81,74 @@ Uses nexorious.internalApiUrl if set; otherwise builds in-cluster URL.
 http://{{ include "nexorious.fullname" . }}-api:8000
 {{- end -}}
 {{- end }}
+
+{{/*
+Helpers for resolving secret sources via the *From pattern.
+Each credential has two helpers: SecretName and SecretKey.
+When *From.name is non-empty, the external secret is used.
+Otherwise, falls back to the managed nexorious-credentials secret.
+*/}}
+
+{{- define "nexorious.secretKeySecretName" -}}
+{{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.name -}}
+{{- .Values.nexorious.secretKeyFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.secretKeySecretKey" -}}
+{{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.key -}}
+{{- .Values.nexorious.secretKeyFrom.key -}}
+{{- else -}}
+SECRET_KEY
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.internalApiKeySecretName" -}}
+{{- if and .Values.nexorious.internalApiKeyFrom .Values.nexorious.internalApiKeyFrom.name -}}
+{{- .Values.nexorious.internalApiKeyFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.internalApiKeySecretKey" -}}
+{{- if and .Values.nexorious.internalApiKeyFrom .Values.nexorious.internalApiKeyFrom.key -}}
+{{- .Values.nexorious.internalApiKeyFrom.key -}}
+{{- else -}}
+INTERNAL_API_KEY
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.igdbClientIdSecretName" -}}
+{{- if and .Values.nexorious.igdbClientIdFrom .Values.nexorious.igdbClientIdFrom.name -}}
+{{- .Values.nexorious.igdbClientIdFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.igdbClientIdSecretKey" -}}
+{{- if and .Values.nexorious.igdbClientIdFrom .Values.nexorious.igdbClientIdFrom.key -}}
+{{- .Values.nexorious.igdbClientIdFrom.key -}}
+{{- else -}}
+IGDB_CLIENT_ID
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.igdbClientSecretSecretName" -}}
+{{- if and .Values.nexorious.igdbClientSecretFrom .Values.nexorious.igdbClientSecretFrom.name -}}
+{{- .Values.nexorious.igdbClientSecretFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.igdbClientSecretSecretKey" -}}
+{{- if and .Values.nexorious.igdbClientSecretFrom .Values.nexorious.igdbClientSecretFrom.key -}}
+{{- .Values.nexorious.igdbClientSecretFrom.key -}}
+{{- else -}}
+IGDB_CLIENT_SECRET
+{{- end -}}
+{{- end }}
