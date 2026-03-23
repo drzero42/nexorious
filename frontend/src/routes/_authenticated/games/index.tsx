@@ -17,7 +17,7 @@ export const Route = createFileRoute('/_authenticated/games/')({
   component: GamesPage,
 });
 
-type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played';
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played' | 'rating_average';
 type SortOrder = 'asc' | 'desc';
 
 interface SortOption {
@@ -33,6 +33,7 @@ const SORT_OPTIONS: SortOption[] = [
   { value: 'personal_rating', label: 'My Rating', defaultOrder: 'desc' },
   { value: 'release_date', label: 'Release Date', defaultOrder: 'desc' },
   { value: 'hours_played', label: 'Hours Played', defaultOrder: 'desc' },
+  { value: 'rating_average', label: 'IGDB Rating', defaultOrder: 'desc' },
 ];
 
 const VALID_PER_PAGE = [25, 50, 100, 500] as const;

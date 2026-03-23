@@ -15,7 +15,7 @@ import { PlayStatus, OwnershipStatus } from '@/types';
 import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 
-type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played';
+type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played' | 'rating_average';
 type SortOrder = 'asc' | 'desc';
 
 interface SortOption {
@@ -30,6 +30,7 @@ const sortOptions: SortOption[] = [
   { value: 'personal_rating', label: 'My Rating' },
   { value: 'release_date', label: 'Release Date' },
   { value: 'hours_played', label: 'Hours Played' },
+  { value: 'rating_average', label: 'IGDB Rating' },
 ];
 
 export interface GameFiltersProps {
