@@ -59,7 +59,7 @@ devenv shell  # Enter development shell with Python 3.13, uv, ruff, pyrefly, pyt
 
 **Note**: `pyrightconfig.json` in the project root is for IDE/Pylance integration only. The authoritative type checker for CI and commits is `pyrefly`.
 
-**Note**: The `LSP` tool (goToDefinition, findReferences, hover, documentSymbol, etc.) works for both Python and TypeScript. Use `uv run pyrefly check` and `npm run check` as authoritative type checkers — Pyright (LSP) is configured for IDE use only and may diverge slightly in edge cases.
+**Note**: The `LSP` tool (goToDefinition, findReferences, hover, documentSymbol, etc.) works for both Python and TypeScript. Use `uv run pyrefly check` and `npm run check` as authoritative type checkers — Pyright (LSP) is configured for IDE use only and may diverge slightly in edge cases. IDE diagnostics can lag after subagent file writes (e.g. showing "declared but never read" on valid imports) — always use `npm run check` to confirm, not the IDE error panel.
 
 ### Initial Setup
 ```bash
@@ -255,6 +255,7 @@ uv run pytest --cov=app --cov-report=term-missing  # Must pass with >80% coverag
 - **`routeTree.gen.ts` is not committed** — TanStack Router generates this file at build time (`npm run dev` or `npm run build`). Worktrees won't have it. **Do not copy it manually — it must be generated.** Before running `npm run check` in a worktree, run `npm run build` once to generate it, or accept that type checking is not reliable without it. **Never dismiss TypeScript errors as "pre-existing from routeTree.gen.ts" — if the file is missing, generate it first, then check.**
 - **`Route.useParams()` in tests** — Components using `Route.useParams()` (the TanStack Router typed accessor) cannot be tested by mocking `useParams` in `@tanstack/react-router`, because `Route.useParams()` calls the router internals directly. Instead, spy on the Route object exported from the component module: `vi.spyOn(Route, 'useParams').mockReturnValue({ id: '...' })` in `beforeEach`. Do NOT change production code to use `useParams` directly or add type casts to work around this — mock `Route.useParams` in the test instead.
 - **shadcn `Pagination` in tests** — `PaginationLink`, `PaginationPrevious`, `PaginationNext` render as `<a>` tags. JSDOM gives `<a>` without `href` role `generic`, not `link`. Always use `href="#"` + `e.preventDefault()` so tests can use `getByRole('link')`.
+- **Sort field architecture** — `game_sort_fields` in `backend/app/api/user_games.py` lists fields that require a JOIN with the `Game` table for sorting. Frontend sort options are defined independently in both `game-filters.tsx` and `games/index.tsx` with their own local `SortField` types — TypeScript won't catch a mismatch, so both must always be updated together. `game-filters.tsx` SortOption has `{value, label}` only; `games/index.tsx` has `{value, label, defaultOrder}`.
 
 ### Database Design
 - **Database**: PostgreSQL
