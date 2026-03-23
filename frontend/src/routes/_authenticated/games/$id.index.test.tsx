@@ -209,3 +209,52 @@ describe('GameDetailPage — Back to Games navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/games' });
   });
 });
+
+describe('GameDetailPage — IGDB rating display', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+
+    vi.spyOn(Route, 'useParams').mockReturnValue({ id: 'game-123' });
+
+    const { useDeleteUserGame } = vi.mocked(await import('@/hooks'));
+    useDeleteUserGame.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ReturnType<typeof useDeleteUserGame>);
+  });
+
+  it('shows IGDB rating in Quick Stats bar when rating_average is present', async () => {
+    const { useUserGame } = vi.mocked(await import('@/hooks'));
+    useUserGame.mockReturnValue({
+      data: {
+        ...mockGame,
+        game: { ...mockGame.game, rating_average: 85.0 },
+      },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useUserGame>);
+
+    const { GameDetailPage } = await import('./$id.index');
+    render(<GameDetailPage />);
+
+    expect(screen.getByText('8.5')).toBeInTheDocument();
+    expect(screen.getByText('IGDB')).toBeInTheDocument();
+  });
+
+  it('does not show IGDB rating in Quick Stats bar when rating_average is null', async () => {
+    const { useUserGame } = vi.mocked(await import('@/hooks'));
+    useUserGame.mockReturnValue({
+      data: {
+        ...mockGame,
+        game: { ...mockGame.game, rating_average: null },
+      },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useUserGame>);
+
+    const { GameDetailPage } = await import('./$id.index');
+    render(<GameDetailPage />);
+
+    expect(screen.queryByText('IGDB')).not.toBeInTheDocument();
+  });
+});

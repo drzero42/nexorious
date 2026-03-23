@@ -15,9 +15,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
+import { formatIgdbRating } from '@/lib/game-utils';
 import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStatusType } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
@@ -207,6 +208,15 @@ export function GameDetailPage() {
                   {formatPlayStatus(game.play_status)}
                 </Badge>
                 <StarRating value={game.personal_rating} readonly size="md" showLabel />
+                {game.game.rating_average != null && (
+                  <div className="flex items-center gap-1">
+                    <Gamepad2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      {formatIgdbRating(game.game.rating_average)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">IGDB</span>
+                  </div>
+                )}
               </div>
 
               {/* Game Metadata Grid */}
