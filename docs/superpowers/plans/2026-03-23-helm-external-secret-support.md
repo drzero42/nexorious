@@ -23,6 +23,32 @@
 
 ---
 
+## Task 0: Create feature branch
+
+- [ ] **Step 1: Ensure main is up to date and push any unpushed commits**
+
+```bash
+cd /home/abo/workspace/home/nexorious
+git push
+```
+
+- [ ] **Step 2: Create and check out the feature branch**
+
+```bash
+cd /home/abo/workspace/home/nexorious
+git checkout -b feat/helm-external-secret-support
+```
+
+- [ ] **Step 3: Verify you are on the new branch**
+
+```bash
+git branch --show-current
+```
+
+Expected: `feat/helm-external-secret-support`
+
+---
+
 ## Task 1: Gate — verify bjw-s tpl rendering and `optional` passthrough
 
 **Why first:** The entire env-injection approach depends on bjw-s rendering `valueFrom.secretKeyRef.name` and `.key` strings through `tpl`, and passing `optional: true` through to the rendered pod spec. If either doesn't work, stop here and redesign.
@@ -1242,3 +1268,31 @@ cd /home/abo/workspace/home/nexorious
 git add docs/PRD.md
 git commit -m "docs: remove completed external secret support items from roadmap"
 ```
+
+- [ ] **Step 7: Push branch and open PR for review**
+
+```bash
+cd /home/abo/workspace/home/nexorious
+git push -u origin feat/helm-external-secret-support
+gh pr create --title "feat(helm): external secret support via *From pattern" --body "$(cat <<'EOF'
+## Summary
+- Adds `*From` companion fields for all secret-valued Helm values (`secretKey`, `internalApiKey`, `igdbClientId`, `igdbClientSecret`, `databaseUrl`, and individual DB keys)
+- Replaces `envFrom: secretRef` with per-credential `env.valueFrom.secretKeyRef` in api/worker/scheduler containers
+- Supports DB URI mode (`databaseUrlFrom`) and individual keys mode (`db*From`) as mutually exclusive options
+- Managed secret conditionally omits externalized fields
+
+## Test plan
+- [ ] `helm lint --strict` passes in default mode (in-cluster postgresql)
+- [ ] `helm lint --strict` passes with all credentials externalized
+- [ ] `helm lint --strict` passes with URI-from DB mode (postgresql disabled)
+- [ ] `helm lint --strict` passes with individual-keys DB mode (postgresql disabled)
+- [ ] `helm template` confirms credential env vars reference external secrets when `*From` is configured
+- [ ] `helm template` confirms individual DB vars are absent when not in individual-keys mode
+- [ ] Validation errors fire correctly for partial `*From`, mixed DB modes, and missing DB connection
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
+
+**Do not merge** — wait for user review of the PR diff before merging.
