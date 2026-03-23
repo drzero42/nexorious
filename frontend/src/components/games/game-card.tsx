@@ -151,7 +151,6 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
           ) : (
             <div className="flex items-center space-x-1 text-muted-foreground">
               <span>&#9734;</span>
-              <span className="text-sm">Not rated</span>
             </div>
           )}
           {game.game?.rating_average != null && (

@@ -253,18 +253,20 @@ describe('GameCard', () => {
       expect(screen.getByText('4')).toBeInTheDocument();
     });
 
-    it('renders "Not rated" when personal_rating is null', () => {
+    it('renders empty star when personal_rating is null', () => {
       const game = createMockGame({ personal_rating: null });
       render(<GameCard game={game} />);
 
-      expect(screen.getByText('Not rated')).toBeInTheDocument();
+      expect(screen.getByText('☆')).toBeInTheDocument();
+      expect(screen.queryByText('Not rated')).not.toBeInTheDocument();
     });
 
-    it('renders "Not rated" when personal_rating is undefined', () => {
+    it('renders empty star when personal_rating is undefined', () => {
       const game = createMockGame({ personal_rating: undefined });
       render(<GameCard game={game} />);
 
-      expect(screen.getByText('Not rated')).toBeInTheDocument();
+      expect(screen.getByText('☆')).toBeInTheDocument();
+      expect(screen.queryByText('Not rated')).not.toBeInTheDocument();
     });
   });
 
