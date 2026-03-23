@@ -65,6 +65,7 @@
         },
         "secretKeyFrom": {
           "type": "object",
+          "description": "External secret reference for secretKey. When name and key are both non-empty, the secretKey inline value is ignored.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -73,6 +74,7 @@
         },
         "internalApiKeyFrom": {
           "type": "object",
+          "description": "External secret reference for internalApiKey. When name and key are both non-empty, the internalApiKey inline value is ignored.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -81,6 +83,7 @@
         },
         "igdbClientIdFrom": {
           "type": "object",
+          "description": "External secret reference for igdbClientId. When name and key are both non-empty, the igdbClientId inline value is ignored.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -89,6 +92,7 @@
         },
         "igdbClientSecretFrom": {
           "type": "object",
+          "description": "External secret reference for igdbClientSecret. When name and key are both non-empty, the igdbClientSecret inline value is ignored.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -97,6 +101,7 @@
         },
         "databaseUrlFrom": {
           "type": "object",
+          "description": "External secret reference for DATABASE_URL (URI mode). Mutually exclusive with databaseUrl and db*From. When name and key are both non-empty, points to a key in the external secret containing the full connection URL.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -105,6 +110,7 @@
         },
         "dbHostFrom": {
           "type": "object",
+          "description": "External secret reference for DB_HOST (individual keys mode). Mutually exclusive with databaseUrl and databaseUrlFrom.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -113,6 +119,7 @@
         },
         "dbPortFrom": {
           "type": "object",
+          "description": "External secret reference for DB_PORT (individual keys mode). Mutually exclusive with databaseUrl and databaseUrlFrom.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -121,6 +128,7 @@
         },
         "dbUserFrom": {
           "type": "object",
+          "description": "External secret reference for DB_USER (individual keys mode). Mutually exclusive with databaseUrl and databaseUrlFrom.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -129,6 +137,7 @@
         },
         "dbPasswordFrom": {
           "type": "object",
+          "description": "External secret reference for DB_PASSWORD (individual keys mode). Mutually exclusive with databaseUrl and databaseUrlFrom.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
@@ -137,6 +146,7 @@
         },
         "dbNameFrom": {
           "type": "object",
+          "description": "External secret reference for DB_NAME (individual keys mode). Mutually exclusive with databaseUrl and databaseUrlFrom.",
           "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
