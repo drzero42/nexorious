@@ -99,6 +99,15 @@
             "key":  { "type": "string" }
           }
         },
+        "natsUrlFrom": {
+          "type": "object",
+          "description": "External secret reference for NATS_URL. When name and key are both non-empty, natsUrl is ignored. Use when the NATS URL contains credentials.",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
         "databaseUrlFrom": {
           "type": "object",
           "description": "External secret reference for DATABASE_URL (URI mode). Mutually exclusive with databaseUrl and db*From. When name and key are both non-empty, points to a key in the external secret containing the full connection URL.",
