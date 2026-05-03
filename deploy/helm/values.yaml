@@ -40,6 +40,13 @@ nexorious:
   # -- Example: nats://my-nats:4222
   natsUrl: ""
 
+  # -- External secret reference for NATS URL (*From pattern)
+  # When name and key are both non-empty, the external secret is used
+  # and natsUrl is ignored. Use when the NATS URL contains credentials.
+  natsUrlFrom:
+    name: ""
+    key: ""
+
   # -- Internal API URL used by worker/scheduler to reach the api service.
   # -- Leave empty to auto-build from release name (http://<release>-api:8000).
   # -- Set explicitly if using a custom release name or external API.
@@ -292,6 +299,11 @@ controllers:
                 name: '{{ include "nexorious.dbNameSecretName" . }}'
                 key: '{{ include "nexorious.dbNameSecretKey" . }}'
                 optional: true
+          NATS_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.natsUrlSecretName" . }}'
+                key: '{{ include "nexorious.natsUrlSecretKey" . }}'
         probes:
           liveness:
             enabled: true
@@ -402,6 +414,12 @@ controllers:
                 name: '{{ include "nexorious.dbNameSecretName" . }}'
                 key: '{{ include "nexorious.dbNameSecretKey" . }}'
                 optional: true
+          NATS_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.natsUrlSecretName" . }}'
+                key: '{{ include "nexorious.natsUrlSecretKey" . }}'
+          INTERNAL_API_URL: '{{ include "nexorious.internalApiUrl" . }}'
 
   # ---------------------------------------------------------------------------
   # Scheduler -- Taskiq scheduler (Deployment, MUST remain at 1 replica)
@@ -484,6 +502,12 @@ controllers:
                 name: '{{ include "nexorious.dbNameSecretName" . }}'
                 key: '{{ include "nexorious.dbNameSecretKey" . }}'
                 optional: true
+          NATS_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.natsUrlSecretName" . }}'
+                key: '{{ include "nexorious.natsUrlSecretKey" . }}'
+          INTERNAL_API_URL: '{{ include "nexorious.internalApiUrl" . }}'
         probes:
           liveness:
             enabled: true

@@ -45,6 +45,7 @@ Validate required values.
   (dict "label" "internalApiKeyFrom"   "from" .Values.nexorious.internalApiKeyFrom)
   (dict "label" "igdbClientIdFrom"     "from" .Values.nexorious.igdbClientIdFrom)
   (dict "label" "igdbClientSecretFrom" "from" .Values.nexorious.igdbClientSecretFrom)
+  (dict "label" "natsUrlFrom"          "from" .Values.nexorious.natsUrlFrom)
   (dict "label" "databaseUrlFrom"      "from" .Values.nexorious.databaseUrlFrom)
   (dict "label" "dbHostFrom"           "from" .Values.nexorious.dbHostFrom)
   (dict "label" "dbPortFrom"           "from" .Values.nexorious.dbPortFrom)
@@ -118,8 +119,9 @@ Validate required values.
 {{- end -}}
 
 {{/* --- NATS disabled guard --- */}}
-{{- if and (not (dig "nats" "enabled" true .Values.controllers)) (empty .Values.nexorious.natsUrl) }}
-  {{- fail "nexorious.natsUrl must be set when the nats controller is disabled" }}
+{{- $natsExternallyConfigured := or (not (empty .Values.nexorious.natsUrl)) (not (empty (dig "name" "" .Values.nexorious.natsUrlFrom))) -}}
+{{- if and (not (dig "nats" "enabled" true .Values.controllers)) (not $natsExternallyConfigured) }}
+  {{- fail "nexorious.natsUrl or nexorious.natsUrlFrom must be set when the nats controller is disabled" }}
 {{- end }}
 
 {{- end }}
@@ -327,5 +329,21 @@ _nexorious_unused
 {{- .Values.nexorious.dbNameFrom.key -}}
 {{- else -}}
 _nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.natsUrlSecretName" -}}
+{{- if and .Values.nexorious.natsUrlFrom .Values.nexorious.natsUrlFrom.name -}}
+{{- .Values.nexorious.natsUrlFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.natsUrlSecretKey" -}}
+{{- if and .Values.nexorious.natsUrlFrom .Values.nexorious.natsUrlFrom.key -}}
+{{- .Values.nexorious.natsUrlFrom.key -}}
+{{- else -}}
+NATS_URL
 {{- end -}}
 {{- end }}
