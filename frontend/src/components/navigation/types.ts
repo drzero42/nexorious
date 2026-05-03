@@ -1,4 +1,3 @@
-// frontend/src/components/navigation/types.ts
 import type { ReactNode } from 'react';
 
 export interface NavItem {

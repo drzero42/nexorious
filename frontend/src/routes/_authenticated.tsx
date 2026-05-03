@@ -1,4 +1,3 @@
-// frontend/src/routes/_authenticated.tsx
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { RouteGuard } from '@/components/route-guard';
 import { Sidebar, MobileNav } from '@/components/navigation';

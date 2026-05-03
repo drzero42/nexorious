@@ -1,4 +1,3 @@
-// frontend-next/src/api/sync.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
 import {

@@ -1,4 +1,3 @@
-// frontend/src/components/navigation/nav-items.tsx
 
 import {
   LayoutDashboard,
