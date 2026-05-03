@@ -41,9 +41,8 @@ jobs:
         with:
           images: ghcr.io/drzero42/nexorious
           tags: |
-            # Release tags: v1.2.3 → 1.2.3 + latest
+            # Release tags: v1.2.3 → 1.2.3
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
             # Main branch builds: YYYYMMDD-<short-sha> + dev
             type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
