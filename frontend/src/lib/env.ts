@@ -1,4 +1,3 @@
-// frontend/src/lib/env.ts
 export const config = {
   apiUrl: import.meta.env.VITE_API_URL ?? '/api',
   staticUrl: import.meta.env.VITE_STATIC_URL ?? '',

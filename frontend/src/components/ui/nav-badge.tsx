@@ -1,4 +1,3 @@
-// frontend/src/components/ui/nav-badge.tsx
 import { cn } from '@/lib/utils';
 
 interface NavBadgeProps {

@@ -1,15 +1,8 @@
-// frontend/src/components/navigation/nav-section.test.tsx
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { NavSectionCollapsible } from './nav-section';
 import { Settings, Tag, User } from 'lucide-react';
-
-// Mock next/navigation
-vi.mock('next/navigation', () => ({
-  usePathname: vi.fn(() => '/other'),
-  useRouter: vi.fn(() => ({ push: vi.fn() })),
-}));
 
 describe('NavSectionCollapsible', () => {
   const defaultProps = {

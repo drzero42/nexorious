@@ -1,4 +1,3 @@
-// frontend/src/routes/__root.tsx
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';

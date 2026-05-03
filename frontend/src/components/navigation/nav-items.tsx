@@ -1,5 +1,3 @@
-// frontend/src/components/navigation/nav-items.tsx
-'use client';
 
 import {
   LayoutDashboard,

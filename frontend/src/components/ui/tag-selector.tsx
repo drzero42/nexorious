@@ -1,4 +1,3 @@
-'use client';
 
 import * as React from 'react';
 import { Check, ChevronsUpDown, Plus, Search, Tag as TagIcon, X } from 'lucide-react';

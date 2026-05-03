@@ -1,4 +1,3 @@
-'use client';
 
 import { GameCard } from './game-card';
 import { Skeleton } from '@/components/ui/skeleton';

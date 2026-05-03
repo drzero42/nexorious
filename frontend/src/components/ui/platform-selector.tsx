@@ -1,4 +1,3 @@
-'use client';
 
 import * as React from 'react';
 import { Check, ChevronsUpDown, Monitor, ShoppingBag, X } from 'lucide-react';
