@@ -89,3 +89,26 @@ jobs:
         # the TanStack Router plugin to generate src/routeTree.gen.ts (gitignored),
         # which tsc requires. Running `npm run check` alone would fail without it.
         run: cd frontend && npm run build
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build Helm dependencies
+        run: helm dependency build deploy/helm/
+
+      - name: Lint Helm chart
+        run: |
+          helm lint --strict deploy/helm/ \
+            --set nexorious.secretKey=x \
+            --set nexorious.internalApiKey=x \
+            --set nexorious.postgresql.password=x \
+            --set nexorious.igdbClientId=x \
+            --set nexorious.igdbClientSecret=x
