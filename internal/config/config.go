@@ -69,7 +69,7 @@ type Config struct {
 
 	Port     int    `env:"PORT"      envDefault:"8000"`
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
-	Debug    bool   `env:"DEBUG"     envDefault:"false"`
+	Debug bool `env:"DEBUG"`
 
 	// CORSOrigins is only needed in development; production is same-origin.
 	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`

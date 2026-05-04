@@ -7,31 +7,20 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 )
 
-// Alias so tests call Load() without the package prefix.
-var Load = config.Load
-
 func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 	// Clear DATABASE_URL so the fallback path is exercised.
-	os.Unsetenv("DATABASE_URL")
-	os.Setenv("DB_HOST", "db.example.com")
-	os.Setenv("DB_PORT", "5433")
-	os.Setenv("DB_USER", "myuser")
-	os.Setenv("DB_PASSWORD", "p@ss word!")
-	os.Setenv("DB_NAME", "mydb")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("DB_HOST", "db.example.com")
+	t.Setenv("DB_PORT", "5433")
+	t.Setenv("DB_USER", "myuser")
+	t.Setenv("DB_PASSWORD", "p@ss word!")
+	t.Setenv("DB_NAME", "mydb")
 	// Required fields.
-	os.Setenv("SECRET_KEY", "testsecretkey")
-	os.Setenv("IGDB_CLIENT_ID", "testclientid")
-	os.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
-	t.Cleanup(func() {
-		for _, k := range []string{
-			"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
-			"SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET",
-		} {
-			os.Unsetenv(k)
-		}
-	})
+	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -44,28 +33,25 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 }
 
 func TestLoad_DatabaseURLExplicit(t *testing.T) {
-	os.Setenv("DATABASE_URL", "postgresql://override:pass@host/db")
-	os.Setenv("SECRET_KEY", "testsecretkey")
-	os.Setenv("IGDB_CLIENT_ID", "testclientid")
-	os.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
-	t.Cleanup(func() {
-		for _, k := range []string{
-			"DATABASE_URL", "SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET",
-		} {
-			os.Unsetenv(k)
-		}
-	})
+	t.Setenv("DATABASE_URL", "postgresql://override:pass@host/db")
+	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.DatabaseURL != "postgresql://override:pass@host/db" {
-		t.Errorf("DatabaseURL = %q; want explicit value", cfg.DatabaseURL)
+	const wantURL = "postgresql://override:pass@host/db"
+	if cfg.DatabaseURL != wantURL {
+		t.Errorf("DatabaseURL = %q; want %q", cfg.DatabaseURL, wantURL)
 	}
 }
 
 func TestLoad_RequiredFieldsMissing(t *testing.T) {
+	// os.Unsetenv is required here because caarlos0/env distinguishes between
+	// an unset variable and an empty string when checking `required` fields.
+	// t.Setenv("KEY", "") would set the var to empty string, not unset it.
 	keys := []string{"SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET"}
 	saved := make(map[string]string)
 	for _, k := range keys {
@@ -82,25 +68,18 @@ func TestLoad_RequiredFieldsMissing(t *testing.T) {
 		}
 	})
 
-	_, err := Load()
+	_, err := config.Load()
 	if err == nil {
 		t.Fatal("expected error when required fields are missing, got nil")
 	}
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	os.Setenv("SECRET_KEY", "testsecretkey")
-	os.Setenv("IGDB_CLIENT_ID", "testclientid")
-	os.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
-	t.Cleanup(func() {
-		for _, k := range []string{
-			"SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET",
-		} {
-			os.Unsetenv(k)
-		}
-	})
+	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
