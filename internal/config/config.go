@@ -109,15 +109,17 @@ func Load() (*Config, error) {
 
 // resolveDatabaseURL builds DatabaseURL from individual DB_* vars when
 // DATABASE_URL is not set. Special characters in user/password are
-// percent-encoded, matching Python's urllib.parse.quote(value, safe='').
+// percent-encoded using url.UserPassword, which correctly encodes userinfo
+// authority components (e.g. spaces as %20, @ as %40).
 func (c *Config) resolveDatabaseURL() {
 	if c.DatabaseURL != "" {
 		return
 	}
-	user := url.QueryEscape(c.DbUser)
-	pass := url.QueryEscape(c.DbPassword)
-	c.DatabaseURL = fmt.Sprintf(
-		"postgresql://%s:%s@%s:%d/%s",
-		user, pass, c.DbHost, c.DbPort, c.DbName,
-	)
+	u := &url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(c.DbUser, c.DbPassword),
+		Host:   fmt.Sprintf("%s:%d", c.DbHost, c.DbPort),
+		Path:   "/" + c.DbName,
+	}
+	c.DatabaseURL = u.String()
 }

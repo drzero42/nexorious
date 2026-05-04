@@ -37,7 +37,7 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 	}
 
 	// Password and user must be percent-encoded; special chars in password.
-	want := "postgresql://myuser:p%40ss+word%21@db.example.com:5433/mydb"
+	want := "postgresql://myuser:p%40ss%20word%21@db.example.com:5433/mydb"
 	if cfg.DatabaseURL != want {
 		t.Errorf("DatabaseURL = %q; want %q", cfg.DatabaseURL, want)
 	}
@@ -66,9 +66,21 @@ func TestLoad_DatabaseURLExplicit(t *testing.T) {
 }
 
 func TestLoad_RequiredFieldsMissing(t *testing.T) {
-	os.Unsetenv("SECRET_KEY")
-	os.Unsetenv("IGDB_CLIENT_ID")
-	os.Unsetenv("IGDB_CLIENT_SECRET")
+	keys := []string{"SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET"}
+	saved := make(map[string]string)
+	for _, k := range keys {
+		saved[k] = os.Getenv(k)
+		os.Unsetenv(k)
+	}
+	t.Cleanup(func() {
+		for _, k := range keys {
+			if v := saved[k]; v != "" {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	})
 
 	_, err := Load()
 	if err == nil {
