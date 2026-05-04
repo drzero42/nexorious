@@ -106,12 +106,6 @@ from .common import (
     SearchParams,
     TimestampMixin,
 )
-from .mapping_resolution import (
-    UnresolvedMapping,
-    UnresolvedMappingsResponse,
-    MappingResolution,
-    ResolveMappingsRequest,
-)
 
 __all__ = [
     # Auth schemas
@@ -213,9 +207,4 @@ __all__ = [
     "SortParams",
     "SearchParams",
     "TimestampMixin",
-    # Mapping resolution schemas
-    "UnresolvedMapping",
-    "UnresolvedMappingsResponse",
-    "MappingResolution",
-    "ResolveMappingsRequest",
 ]

@@ -116,17 +116,6 @@ export {
 // Re-export jobs API functions
 export { getJobs, getJob, cancelJob, deleteJob, getJobsSummary, getJobItems, getActiveJob, getPendingReviewCount, resolveJobItem, skipJobItem } from './jobs';
 
-// Re-export import mappings API functions
-export {
-  getImportMappings,
-  getImportMapping,
-  lookupImportMapping,
-  createImportMapping,
-  updateImportMapping,
-  deleteImportMapping,
-  batchImportMappings,
-} from './import-mappings';
-
 // Re-export backup API functions
 export {
   getBackupConfig,

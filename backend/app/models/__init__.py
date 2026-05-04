@@ -21,7 +21,6 @@ from .job import (
     JobItemStatus,
 )
 from .user_sync_config import UserSyncConfig, SyncFrequency
-from .ignored_external_game import IgnoredExternalGame
 from .external_game import ExternalGame
 from .backup_config import BackupConfig, BackupSchedule, RetentionMode
 
@@ -47,7 +46,6 @@ __all__ = [
     "JobItemStatus",
     "UserSyncConfig",
     "SyncFrequency",
-    "IgnoredExternalGame",
     "ExternalGame",
     "BackupConfig",
     "BackupSchedule",

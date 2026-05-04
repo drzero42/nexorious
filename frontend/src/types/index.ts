@@ -3,7 +3,6 @@ export * from './auth';
 export * from './backup';
 export * from './game';
 export * from './import-export';
-export * from './import-mapping';
 export * from './jobs';
 export * from './platform';
 export * from './sync';
