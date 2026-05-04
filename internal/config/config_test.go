@@ -56,14 +56,14 @@ func TestLoad_RequiredFieldsMissing(t *testing.T) {
 	saved := make(map[string]string)
 	for _, k := range keys {
 		saved[k] = os.Getenv(k)
-		os.Unsetenv(k)
+		os.Unsetenv(k) //nolint:errcheck
 	}
 	t.Cleanup(func() {
 		for _, k := range keys {
 			if v := saved[k]; v != "" {
-				os.Setenv(k, v)
+				os.Setenv(k, v) //nolint:errcheck
 			} else {
-				os.Unsetenv(k)
+				os.Unsetenv(k) //nolint:errcheck
 			}
 		}
 	})
