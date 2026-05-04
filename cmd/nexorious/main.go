@@ -40,7 +40,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("shutdown error: %v", err)
+		log.Printf("shutdown error: %v", err)
 	}
 	log.Println("shutdown complete")
 }
