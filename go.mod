@@ -3,8 +3,11 @@ module github.com/drzero42/nexorious-go
 go 1.25.9
 
 require (
-	github.com/caarlos0/env/v11 v11.4.1 // indirect
-	github.com/labstack/echo/v4 v4.15.2 // indirect
+	github.com/caarlos0/env/v11 v11.4.1
+	github.com/labstack/echo/v4 v4.15.2
+)
+
+require (
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
@@ -14,4 +17,5 @@ require (
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 )
