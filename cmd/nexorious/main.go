@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 
@@ -74,6 +75,25 @@ func main() {
 	})))
 
 	// -------------------------------------------------------------------------
+	// Database pool
+	// -------------------------------------------------------------------------
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("failed to create database pool", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	// Verify connectivity before starting anything else.
+	if err := pool.Ping(ctx); err != nil {
+		slog.Error("database ping failed", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("database connected")
+
+	// -------------------------------------------------------------------------
 	// --migrate-only mode: placeholder until the migrator is implemented.
 	// -------------------------------------------------------------------------
 	if migrateOnly {
@@ -94,11 +114,11 @@ func main() {
 		HidePort:        true,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	slog.Info("nexorious starting", "addr", addr, "version", version, "commit", commit)
-	if err := sc.Start(ctx, e); err != nil {
+	if err := sc.Start(shutdownCtx, e); err != nil {
 		slog.Info("server stopped", "err", err)
 	}
 	slog.Info("shutdown complete")
