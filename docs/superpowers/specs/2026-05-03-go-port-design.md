@@ -190,15 +190,15 @@ PUT  /api/auth/change-password   Invalidates all sessions on success; user must 
 GET  /api/auth/username/check/:username   Returns {available: bool}; no side effects
 PUT  /api/auth/username
 
-GET  /api/games
+GET  /api/games                          Query params: page, per_page, q (ILIKE title/description), genre, developer, publisher, release_year, sort_by, sort_order
 GET  /api/games/:id
 POST /api/games/search/igdb
-GET  /api/games/igdb/:igdb_id
+GET  /api/games/igdb/:igdb_id            Returns IGDBSearchResponse (same shape as search), not GameResponse
 POST /api/games/igdb-import
 GET  /api/games/:id/metadata/status
 POST /api/games/:id/metadata/refresh
 POST /api/games/:id/metadata/populate
-POST /api/games/metadata/bulk
+POST /api/games/metadata/bulk            operation field: "refresh" | "populate" | "cover_art"
 POST /api/games/:id/cover-art/download
 POST /api/games/cover-art/bulk-download
 POST /api/games/metadata/refresh-job
@@ -273,7 +273,7 @@ PUT  /api/sync/config/:platform
 GET  /api/sync/ignored            List skipped external games (is_skipped=true in external_games)
 DELETE /api/sync/ignored/:id      Un-skip (clears is_skipped flag on external_games row)
 
-GET  /api/status
+GET  /api/status              (public — no JWT required)
 GET  /health
 
 POST /api/import/nexorious   Upload and process nexorious JSON export file
@@ -715,16 +715,16 @@ The `SELECT FOR UPDATE SKIP LOCKED` claim pattern is safe for multiple concurren
 
 `gocron` v2 jobs start only after the app transitions to `Ready`.
 
-| Job | Schedule |
-|---|---|
-| Cleanup job results | Daily at 3:00 AM UTC |
-| Cleanup exports | Daily at 4:00 AM UTC |
-| Cleanup sessions | Every 30 minutes |
-| Scheduled backup | Cron expression from `backup_config.schedule_cron` (default `"0 2 * * *"`; empty string = disabled) |
-| Metadata refresh dispatch | Configurable interval (`METADATA_REFRESH_INTERVAL`, default 24h) |
-| Check pending syncs | Every 15 minutes |
+| Job | Schedule | Notes |
+|---|---|---|
+| Cleanup job results | Daily at 3:00 AM UTC | Inline in gocron goroutine (fast DB op) |
+| Cleanup exports | Daily at 4:00 AM UTC | Inline in gocron goroutine (fast DB op) |
+| Cleanup sessions | Every 30 minutes | Inline in gocron goroutine (fast DB op) |
+| Scheduled backup | Cron expression from `backup_config.schedule_cron` (default `"0 2 * * *"`; empty string = disabled) | Submits `BackupScheduledTask` to worker pool |
+| Metadata refresh dispatch | Configurable interval (`METADATA_REFRESH_INTERVAL`, default 24h) | Submits `MetadataRefreshDispatchTask` to pool |
+| Check pending syncs | Every 15 minutes | Submits `DispatchSyncTask` to pool |
 
-Jobs that generate significant work (metadata refresh dispatch, sync check) submit `TaskFunc`s to the worker pool rather than executing inline.
+Jobs that generate significant work (metadata refresh dispatch, sync check, scheduled backup) submit tasks to the worker pool rather than executing inline. Cleanup jobs (job results, exports, sessions) run inline in the gocron goroutine — they are fast single-query operations with no external I/O.
 
 ---
 
@@ -843,9 +843,27 @@ Two internal services that the sync system depends on, not exposed as API endpoi
 
 Both paths are registered as Echo `Static` routes before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
 
-### Unreferenced Game Cleanup
+### Backup Archive Format
 
-When a `user_games` row is deleted (via `DELETE /api/user-games/:id` or bulk delete), the handler checks whether any other user has the same `game_id` in their collection. If no other `user_games` row references that game, the `games` row is deleted and its cover art file on disk is removed. This mirrors the Python `cleanup_unreferenced_game()` behaviour.
+Backup archives are `.tar.gz` files created by `BackupCreateTask` and the manual `POST /api/admin/backups` endpoint. Each archive contains:
+
+```
+backup-{id}.tar.gz
+└── backup-{id}/
+    ├── manifest.json       # Metadata: backup ID, type, timestamps, file checksums, DB stats
+    ├── database.sql        # Full pg_dump output (plain SQL format)
+    ├── cover_art/          # Copy of {STORAGE_PATH}/cover_art/ directory
+    └── logos/              # Copy of static/logos/ directory (relative to binary working dir)
+```
+
+**Restore** (`POST /api/admin/backups/:id/restore`, `POST /api/admin/backups/restore/upload`, `POST /api/auth/setup/restore`) extracts the archive and:
+1. Runs `psql` (or equivalent) to restore `database.sql` into the database.
+2. Copies `cover_art/` back to `{STORAGE_PATH}/cover_art/`.
+3. Copies `logos/` back to `static/logos/` (relative to binary working directory).
+
+**Manifest** (`manifest.json`) includes: `backup_id`, `backup_type` (`manual`|`scheduled`), `created_at`, per-file checksums and sizes, and DB stats (user count, game count, tag count). The `backup_type` field uses the same enum values as the Python version.
+
+### Unreferenced Game Cleanup (via `DELETE /api/user-games/:id` or bulk delete), the handler checks whether any other user has the same `game_id` in their collection. If no other `user_games` row references that game, the `games` row is deleted and its cover art file on disk is removed. This mirrors the Python `cleanup_unreferenced_game()` behaviour.
 
 The check and cleanup run within the same transaction as the user-game deletion. No separate worker task is needed — the operation is fast (single indexed lookup + conditional delete).
 
@@ -857,13 +875,50 @@ The Go port does **not** check the wishlists table (which is dropped), simplifyi
 
 `POST /api/admin/backups/:id/restore` and `POST /api/admin/backups/restore/upload` reset the database to a previous state. Because the database is being replaced wholesale, all in-flight application state becomes invalid the moment the restore starts.
 
-**Approach:** the restore handler closes the pgxpool connection pool before running the restore, waits for all active pool connections to drain (with a short timeout), then restores the database, and finally calls `os.Exit(0)`. The process manager (systemd, Kubernetes, Docker) is responsible for restarting the binary. On restart the app re-runs its startup sequence: opens a new pool, checks migration state, and transitions to `Ready`.
+**Approach:** the restore handler:
+1. Sets a process-level **maintenance mode** flag before touching the pool.
+2. While maintenance mode is active, the maintenance middleware returns `503 Service Unavailable` for all requests except `/health` and the backup admin endpoints (`/api/admin/backups/*`, `/api/auth/me`). This gives in-flight requests a clean failure rather than a connection-reset error.
+3. Closes the pgxpool connection pool, waits for active connections to drain (10-second timeout; forced close if exceeded).
+4. Shuts down the worker pool (same `Shutdown()` path as graceful SIGTERM). In-flight worker tasks will fail; their `pending_tasks` rows remain in `running` state and are orphaned by the restore (the restored DB has different data). This is correct.
+5. Runs the restore (pg_restore + file copy from archive).
+6. Calls `os.Exit(0)`. The process manager (systemd, Kubernetes, Docker) restarts the binary; on restart the app re-runs its startup sequence and transitions to `Ready`.
 
-This means any in-flight HTTP requests that hold a pool connection will fail with a connection error during the drain window. Clients will see a 5xx or connection-reset response. This is acceptable — restoring a backup is a destructive admin operation and the admin is expected to communicate downtime.
+### Maintenance Mode Middleware
 
-The drain timeout is 10 seconds. If connections do not drain within 10 seconds, the restore proceeds anyway and the pool is forcibly closed.
+A package-level `maintenanceMode bool` (protected by a `sync.RWMutex`) drives the middleware:
 
-The worker pool is shut down before the connection pool closes, using the same `Shutdown()` path as graceful SIGTERM handling. In-flight worker tasks will fail and their `pending_tasks` rows will remain in `running` state — they are orphaned by the restore (the restored DB has different data). This is correct: after restore, the admin starts fresh.
+```go
+// internal/middleware/maintenance.go
+
+var (
+    mu              sync.RWMutex
+    maintenanceMode bool
+)
+
+func SetMaintenanceMode(enabled bool) {
+    mu.Lock()
+    defer mu.Unlock()
+    maintenanceMode = enabled
+}
+
+func IsMaintenanceMode() bool {
+    mu.RLock()
+    defer mu.RUnlock()
+    return maintenanceMode
+}
+```
+
+The Echo middleware for maintenance mode sits inside the app-state middleware (i.e. only runs once state is `Ready`) and is checked on every request. Allowed during maintenance:
+
+- `GET /health`
+- `GET|POST|DELETE /api/admin/backups/*` — the restore operation itself, and any concurrent admin backup actions
+- `GET /api/auth/me` — lets the frontend confirm the session is still valid while maintenance is in progress
+
+All other requests receive:
+```json
+{ "error": "Service Unavailable", "detail": "Restore in progress", "maintenance_mode": true }
+```
+with HTTP status `503`.
 
 ---
 
@@ -875,24 +930,21 @@ All existing Python env var names are preserved. New Go-specific vars are additi
 |---|---|
 | `NATS_URL` | NATS eliminated |
 | `RATE_LIMITER_NATS_BUCKET`, `RATE_LIMITER_CAS_MAX_RETRIES`, `RATE_LIMITER_CAS_RETRY_BASE_MS`, `RATE_LIMITER_CAS_RETRY_MAX_MS` | NATS rate limiter replaced by local/postgres backends |
-| `INTERNAL_API_KEY`, `INTERNAL_API_URL` | Worker-to-API HTTP callbacks eliminated; workers run in-process |
+| `INTERNAL_API_KEY`, `INTERNAL_API_URL` | Worker-to-API HTTP callbacks eliminated; workers run in-process. The Python `POST /api/admin/backups/internal/create` endpoint (hidden from schema) was called by the worker via HTTP using `INTERNAL_API_KEY`; this is replaced by a direct in-process function call in the Go port. |
 | `JWT_SECRET` | Consolidated into `SECRET_KEY` (the Python version only uses `SECRET_KEY` for JWT) |
 | `SCHEDULER_RECONNECT_*` | Scheduler reconnection logic was NATS-specific |
 
 ```go
 type Config struct {
     // Database
-    // DATABASE_URL takes priority when non-empty. When absent, the URL is constructed
-    // from the individual DB_* vars below (matching the Python individual-vars spec).
+    // DATABASE_URL takes priority when set. When not set, the individual DB_* vars are
+    // used to construct the URL — matching the Python config behaviour exactly.
     DatabaseURL string `env:"DATABASE_URL"`
-
-    // Individual DB connection vars — fallback when DATABASE_URL is not set.
-    // Defaults match the dev URL: postgresql://nexorious:nexorious@localhost:5432/nexorious
-    DbHost     string `env:"DB_HOST" envDefault:"localhost"`
-    DbPort     int    `env:"DB_PORT" envDefault:"5432"`
-    DbUser     string `env:"DB_USER" envDefault:"nexorious"`
-    DbPassword string `env:"DB_PASSWORD" envDefault:"nexorious"`
-    DbName     string `env:"DB_NAME" envDefault:"nexorious"`
+    DBHost      string `env:"DB_HOST" envDefault:"localhost"`
+    DBPort      int    `env:"DB_PORT" envDefault:"5432"`
+    DBUser      string `env:"DB_USER" envDefault:"nexorious"`
+    DBPassword  string `env:"DB_PASSWORD" envDefault:"nexorious"`
+    DBName      string `env:"DB_NAME" envDefault:"nexorious"`
 
     // Security
     SecretKey string `env:"SECRET_KEY,required"` // used for JWT signing and credential encryption
@@ -941,7 +993,7 @@ type Config struct {
 }
 ```
 
-**Database URL resolution:** After all fields are parsed from env vars, a post-parse hook constructs `DatabaseURL` when it is empty: `user` and `password` and `dbname` are percent-encoded (same as the Python `urllib.parse.quote(value, safe='')` logic), then assembled as `postgresql://user:password@host:port/dbname`. `DATABASE_URL` is therefore always a non-empty string after config initialisation — all downstream consumers (`pgxpool.Connect`, the migrator, backup service) use it without any nil/empty guard. This mirrors the Python `resolve_database_url` model validator exactly.
+**Database URL resolution:** At startup, if `DATABASE_URL` is set (non-empty), it is used as-is. If it is empty or absent, the binary constructs a URL from `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`, URL-encoding the user and password components. `DATABASE_URL` must be set or the individual `DB_*` vars must produce a valid URL — the binary fails to start if neither is usable.
 
 **IGDB credential note:** `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are marked `required` — the binary will refuse to start without them. The Python implementation marks them `Optional` and emits a startup warning instead, which was a mistake: IGDB credentials are load-bearing for game search, import, and the sync matching pipeline. Allowing the app to start without them produces a degraded-but-plausible-looking state where those features silently fail at runtime. The Go port treats them as required to make the dependency explicit at startup.
 
