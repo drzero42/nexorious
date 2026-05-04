@@ -13,104 +13,17 @@ from .integration_test_utils import (
     assert_api_error,
     assert_api_success,
     register_and_login_user,
+    create_user_in_db,
 )
-
-
-class TestAuthRegisterEndpoint:
-    """Test /api/auth/register endpoint."""
-
-    def test_register_success(self, client: TestClient):
-        """Test successful user registration."""
-        user_data = create_test_user_data()
-        response = client.post("/api/auth/register", json=user_data)
-
-        assert_api_success(response, 201)
-        data = response.json()
-        assert data["username"] == user_data["username"]
-        assert data["is_active"] is True
-        assert data["is_admin"] is False
-        assert "password_hash" not in data
-
-    def test_register_duplicate_username(self, client: TestClient):
-        """Test registration with duplicate username."""
-        user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
-
-        # Try to register with same username
-        duplicate_data = create_test_user_data(username="newuser")
-        response = client.post("/api/auth/register", json=duplicate_data)
-
-        assert_api_error(response, 400, "Username already taken")
-
-    def test_register_missing_fields(self, client: TestClient):
-        """Test registration with missing required fields."""
-        incomplete_data = {"username": "testuser"}
-        response = client.post("/api/auth/register", json=incomplete_data)
-
-        assert_api_error(response, 422)
-
-    def test_password_is_hashed_with_bcrypt(self, client: TestClient, session: Session):
-        """Test that password is properly hashed using bcrypt."""
-        user_data = create_test_user_data()
-        response = client.post("/api/auth/register", json=user_data)
-
-        assert_api_success(response, 201)
-
-        # Verify password is hashed with bcrypt in database
-        user = session.exec(
-            select(User).where(User.username == user_data["username"])
-        ).first()
-        assert user is not None
-        assert user.password_hash != user_data["password"]
-        assert len(user.password_hash) > 50  # Bcrypt hashes are long
-        assert user.password_hash.startswith("$2b$")  # Bcrypt identifier
-
-
-class TestAuthRegisterValidation:
-    """Test registration field validation."""
-
-    def test_username_too_short(self, client: TestClient):
-        """Test registration with username too short (less than 3 chars)."""
-        register_data = {
-            "username": "ab",
-            "password": "password123"
-        }
-        response = client.post("/api/auth/register", json=register_data)
-
-        assert_api_error(response, 422)
-        result = response.json()
-        assert any("username" in str(error).lower() for error in result["detail"])
-
-    def test_password_too_short(self, client: TestClient):
-        """Test registration with password too short (less than 8 chars)."""
-        register_data = {
-            "username": "testuser",
-            "password": "short"
-        }
-        response = client.post("/api/auth/register", json=register_data)
-
-        assert_api_error(response, 422)
-        result = response.json()
-        assert any("password" in str(error).lower() for error in result["detail"])
-
-    def test_empty_required_fields(self, client: TestClient):
-        """Test registration with empty required fields."""
-        register_data = {
-            "username": "",
-            "password": ""
-        }
-        response = client.post("/api/auth/register", json=register_data)
-
-        assert_api_error(response, 422)
 
 
 class TestAuthLoginEndpoint:
     """Test /api/auth/login endpoint."""
 
-    def test_login_success(self, client: TestClient):
+    def test_login_success(self, client: TestClient, session: Session):
         """Test successful login."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         login_data = {
             "username": user_data["username"],
@@ -138,13 +51,13 @@ class TestAuthLoginEndpoint:
     def test_login_inactive_user(self, client: TestClient, session: Session):
         """Test login with inactive user."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         # Deactivate user
         user = session.exec(
             select(User).where(User.username == user_data["username"])
         ).first()
-        assert user is not None, "User should exist after registration"
+        assert user is not None, "User should exist after creation"
         user.is_active = False
         session.add(user)
         session.commit()
@@ -168,13 +81,10 @@ class TestAuthLoginEndpoint:
 class TestAuthRefreshEndpoint:
     """Test /api/auth/refresh endpoint."""
 
-    def test_refresh_success(self, client: TestClient):
+    def test_refresh_success(self, client: TestClient, session: Session):
         """Test successful token refresh."""
         user_data = create_test_user_data()
-
-        # Register and login user
-        register_response = client.post("/api/auth/register", json=user_data)
-        assert_api_success(register_response, 201)
+        create_user_in_db(session, user_data)
 
         login_response = client.post(
             "/api/auth/login",
@@ -183,7 +93,6 @@ class TestAuthRefreshEndpoint:
         assert_api_success(login_response, 200)
         refresh_token = login_response.json()["refresh_token"]
 
-        # Use refresh token
         refresh_data = {"refresh_token": refresh_token}
         response = client.post("/api/auth/refresh", json=refresh_data)
 
@@ -199,19 +108,18 @@ class TestAuthRefreshEndpoint:
         refresh_data = {"refresh_token": "invalid-token"}
         response = client.post("/api/auth/refresh", json=refresh_data)
 
-        # verify_token raises "Could not validate credentials" for invalid JWT
         assert_api_error(response, 401, "Could not validate credentials")
 
     def test_refresh_expired_token(self, client: TestClient, session: Session):
         """Test refresh with expired token."""
         user_data = create_test_user_data()
-        register_and_login_user(client, user_data)
+        register_and_login_user(client, user_data, session)
 
         # Get user and create expired session
         user = session.exec(
             select(User).where(User.username == user_data["username"])
         ).first()
-        assert user is not None, "User should exist after registration"
+        assert user is not None, "User should exist after creation"
         expired_session = UserSession(
             user_id=user.id,
             token_hash="expired-token-hash",
@@ -224,7 +132,6 @@ class TestAuthRefreshEndpoint:
         refresh_data = {"refresh_token": "expired-refresh-token"}
         response = client.post("/api/auth/refresh", json=refresh_data)
 
-        # verify_token raises "Could not validate credentials" for invalid JWT
         assert_api_error(response, 401, "Could not validate credentials")
 
     def test_refresh_missing_token(self, client: TestClient):
@@ -237,13 +144,10 @@ class TestAuthRefreshEndpoint:
 class TestAuthLogoutEndpoint:
     """Test /api/auth/logout endpoint."""
 
-    def test_logout_success(self, client: TestClient):
+    def test_logout_success(self, client: TestClient, session: Session):
         """Test successful logout."""
         user_data = create_test_user_data()
-
-        # Register and login user to get both tokens and headers
-        register_response = client.post("/api/auth/register", json=user_data)
-        assert_api_success(register_response, 201)
+        create_user_in_db(session, user_data)
 
         login_data = {
             "username": user_data["username"],
@@ -263,11 +167,10 @@ class TestAuthLogoutEndpoint:
         data = response.json()
         assert data["message"] == "Successfully logged out"
 
-    def test_logout_without_auth_headers(self, client: TestClient):
+    def test_logout_without_auth_headers(self, client: TestClient, session: Session):
         """Test logout without authentication headers."""
         user_data = create_test_user_data()
-        register_response = client.post("/api/auth/register", json=user_data)
-        assert_api_success(register_response, 201)
+        create_user_in_db(session, user_data)
 
         login_data = {
             "username": user_data["username"],
@@ -277,40 +180,37 @@ class TestAuthLogoutEndpoint:
         assert_api_success(login_response, 200)
         refresh_token = login_response.json()["refresh_token"]
 
-        # Try logout without authentication headers
         logout_data = {"refresh_token": refresh_token}
         response = client.post("/api/auth/logout", json=logout_data)
 
         assert_api_error(response, 403, "Not authenticated")
 
-    def test_logout_without_refresh_token(self, client: TestClient):
+    def test_logout_without_refresh_token(self, client: TestClient, session: Session):
         """Test logout without refresh token but with auth headers."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         response = client.post("/api/auth/logout", json={}, headers=headers)
 
         assert_api_error(response, 422)
 
-    def test_logout_invalid_refresh_token(self, client: TestClient):
+    def test_logout_invalid_refresh_token(self, client: TestClient, session: Session):
         """Test logout with invalid refresh token."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         logout_data = {"refresh_token": "invalid-token"}
         response = client.post("/api/auth/logout", json=logout_data, headers=headers)
 
-        # Should now return 401 for invalid refresh token (token verification fails)
         assert_api_error(response, 401, "Could not validate credentials")
 
-    def test_logout_mismatched_refresh_token(self, client: TestClient):
+    def test_logout_mismatched_refresh_token(self, client: TestClient, session: Session):
         """Test logout with refresh token from different user."""
         user1_data = create_test_user_data(username="user1")
         user2_data = create_test_user_data(username="user2")
 
-        # Create user1 and get their tokens
-        register_response1 = client.post("/api/auth/register", json=user1_data)
-        assert_api_success(register_response1, 201)
+        # Create user1 and get their refresh token
+        create_user_in_db(session, user1_data)
         login_response1 = client.post(
             "/api/auth/login",
             json={
@@ -321,7 +221,7 @@ class TestAuthLogoutEndpoint:
         user1_refresh_token = login_response1.json()["refresh_token"]
 
         # Create user2 and get their auth headers
-        user2_headers = register_and_login_user(client, user2_data)
+        user2_headers = register_and_login_user(client, user2_data, session)
 
         # Try to logout user2 with user1's refresh token
         logout_data = {"refresh_token": user1_refresh_token}
@@ -331,13 +231,10 @@ class TestAuthLogoutEndpoint:
 
         assert_api_error(response, 400, "Invalid refresh token for authenticated user")
 
-    def test_logout_twice(self, client: TestClient):
+    def test_logout_twice(self, client: TestClient, session: Session):
         """Test logout twice with same refresh token."""
         user_data = create_test_user_data()
-
-        # Register and login user
-        register_response = client.post("/api/auth/register", json=user_data)
-        assert_api_success(register_response, 201)
+        create_user_in_db(session, user_data)
 
         login_data = {
             "username": user_data["username"],
@@ -350,24 +247,22 @@ class TestAuthLogoutEndpoint:
         refresh_token = login_response.json()["refresh_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # First logout
         logout_data = {"refresh_token": refresh_token}
         response1 = client.post("/api/auth/logout", json=logout_data, headers=headers)
         assert_api_success(response1, 200)
 
-        # Second logout with same refresh token should fail since session is invalidated
+        # Second logout should fail since session was deleted
         response2 = client.post("/api/auth/logout", json=logout_data, headers=headers)
-        # The access token is now invalid since session was deleted, should get 401
         assert_api_error(response2, 401)
 
 
 class TestAuthMeEndpoint:
     """Test /api/auth/me endpoints."""
 
-    def test_get_me_success(self, client: TestClient):
+    def test_get_me_success(self, client: TestClient, session: Session):
         """Test successful GET /me."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         response = client.get("/api/auth/me", headers=headers)
 
@@ -395,10 +290,10 @@ class TestAuthMeEndpoint:
 
         assert_api_error(response, 403, "Not authenticated")
 
-    def test_update_me_success(self, client: TestClient):
+    def test_update_me_success(self, client: TestClient, session: Session):
         """Test successful PUT /me."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         update_data = {"preferences": {"theme": "dark", "language": "en"}}
         response = client.put("/api/auth/me", json=update_data, headers=headers)
@@ -407,12 +302,12 @@ class TestAuthMeEndpoint:
         data = response.json()
         assert data["preferences"]["theme"] == "dark"
         assert data["preferences"]["language"] == "en"
-        assert data["username"] == user_data["username"]  # Should not change
+        assert data["username"] == user_data["username"]
 
-    def test_update_me_partial(self, client: TestClient):
+    def test_update_me_partial(self, client: TestClient, session: Session):
         """Test partial update of profile."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         update_data = {"preferences": {"theme": "light"}}
         response = client.put("/api/auth/me", json=update_data, headers=headers)
@@ -440,10 +335,10 @@ class TestAuthMeEndpoint:
 class TestAuthChangePasswordEndpoint:
     """Test /api/auth/change-password endpoint."""
 
-    def test_change_password_success(self, client: TestClient):
+    def test_change_password_success(self, client: TestClient, session: Session):
         """Test successful password change."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         change_data = {
             "current_password": user_data["password"],
@@ -462,10 +357,10 @@ class TestAuthChangePasswordEndpoint:
         login_response = client.post("/api/auth/login", json=login_data)
         assert_api_success(login_response, 200)
 
-    def test_change_password_wrong_current(self, client: TestClient):
+    def test_change_password_wrong_current(self, client: TestClient, session: Session):
         """Test password change with wrong current password."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         change_data = {
             "current_password": "wrongpassword",
@@ -477,10 +372,10 @@ class TestAuthChangePasswordEndpoint:
 
         assert_api_error(response, 400, "Current password is incorrect")
 
-    def test_change_password_same_password(self, client: TestClient):
+    def test_change_password_same_password(self, client: TestClient, session: Session):
         """Test password change with same password."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         change_data = {
             "current_password": user_data["password"],
@@ -517,10 +412,10 @@ class TestAuthChangePasswordEndpoint:
 
         assert_api_error(response, 401, "Could not validate credentials")
 
-    def test_change_password_missing_fields(self, client: TestClient):
+    def test_change_password_missing_fields(self, client: TestClient, session: Session):
         """Test password change with missing fields."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         incomplete_data = {"current_password": "oldpassword"}
         response = client.put(
@@ -529,10 +424,10 @@ class TestAuthChangePasswordEndpoint:
 
         assert_api_error(response, 422)
 
-    def test_change_password_weak_password(self, client: TestClient):
+    def test_change_password_weak_password(self, client: TestClient, session: Session):
         """Test password change with weak password."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         change_data = {
             "current_password": user_data["password"],
@@ -548,20 +443,10 @@ class TestAuthChangePasswordEndpoint:
 class TestAuthEndpointSecurity:
     """Test security aspects of auth endpoints."""
 
-    def test_register_password_not_returned(self, client: TestClient):
-        """Test that password is never returned in responses."""
-        user_data = create_test_user_data()
-        response = client.post("/api/auth/register", json=user_data)
-
-        assert_api_success(response, 201)
-        data = response.json()
-        assert "password" not in data
-        assert "password_hash" not in data
-
-    def test_login_password_not_returned(self, client: TestClient):
+    def test_login_password_not_returned(self, client: TestClient, session: Session):
         """Test that password is never returned in login response."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         login_data = {
             "username": user_data["username"],
@@ -574,10 +459,10 @@ class TestAuthEndpointSecurity:
         assert "password" not in data
         assert "password_hash" not in data
 
-    def test_me_password_not_returned(self, client: TestClient):
+    def test_me_password_not_returned(self, client: TestClient, session: Session):
         """Test that password is never returned in /me response."""
         user_data = create_test_user_data()
-        headers = register_and_login_user(client, user_data)
+        headers = register_and_login_user(client, user_data, session)
 
         response = client.get("/api/auth/me", headers=headers)
 
@@ -586,12 +471,11 @@ class TestAuthEndpointSecurity:
         assert "password" not in data
         assert "password_hash" not in data
 
-    def test_token_invalidation_on_logout(self, client: TestClient):
+    def test_token_invalidation_on_logout(self, client: TestClient, session: Session):
         """Test that access token is invalidated after logout."""
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
-        # Get both tokens from login
         login_data = {
             "username": user_data["username"],
             "password": user_data["password"],
@@ -601,14 +485,12 @@ class TestAuthEndpointSecurity:
         refresh_token = login_response.json()["refresh_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # Logout with authentication headers (now required)
         logout_data = {"refresh_token": refresh_token}
         logout_response = client.post(
             "/api/auth/logout", json=logout_data, headers=headers
         )
         assert_api_success(logout_response, 200)
 
-        # Try to use access token after logout
         me_response = client.get("/api/auth/me", headers=headers)
         assert_api_error(me_response, 401)
 
@@ -620,7 +502,6 @@ class TestAuthSetupStatus:
         self, client: TestClient, session: Session
     ):
         """Test setup status returns needs_setup=true when no users exist."""
-        # Ensure no users exist in database
         users = session.exec(select(User)).all()
         for user in users:
             session.delete(user)
@@ -632,11 +513,12 @@ class TestAuthSetupStatus:
         data = response.json()
         assert data["needs_setup"] is True
 
-    def test_setup_status_no_setup_when_users_exist(self, client: TestClient):
+    def test_setup_status_no_setup_when_users_exist(
+        self, client: TestClient, session: Session
+    ):
         """Test setup status returns needs_setup=false when users exist."""
-        # Create a user
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         response = client.get("/api/auth/setup/status")
 
@@ -644,21 +526,19 @@ class TestAuthSetupStatus:
         data = response.json()
         assert data["needs_setup"] is False
 
-    def test_setup_status_response_schema(self, client: TestClient):
+    def test_setup_status_response_schema(self, client: TestClient, session: Session):
         """Test setup status response has correct schema."""
-        # Create a user to ensure consistent state
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         response = client.get("/api/auth/setup/status")
 
         assert_api_success(response, 200)
         data = response.json()
 
-        # Verify response schema
         assert "needs_setup" in data
         assert isinstance(data["needs_setup"], bool)
-        assert len(data) == 1  # Should only contain needs_setup field
+        assert len(data) == 1
 
 
 class TestInitialAdminSetup:
@@ -666,7 +546,6 @@ class TestInitialAdminSetup:
 
     def test_initial_admin_setup_success(self, client: TestClient, session: Session):
         """Test successful initial admin setup when no users exist."""
-        # Ensure no users exist in database
         users = session.exec(select(User)).all()
         for user in users:
             session.delete(user)
@@ -682,18 +561,18 @@ class TestInitialAdminSetup:
         assert data["is_active"] is True
         assert "password_hash" not in data
 
-        # Verify user exists in database
         user = session.exec(
             select(User).where(User.username == admin_data["username"])
         ).first()
         assert user is not None
         assert user.is_admin is True
 
-    def test_initial_admin_setup_fails_when_users_exist(self, client: TestClient):
+    def test_initial_admin_setup_fails_when_users_exist(
+        self, client: TestClient, session: Session
+    ):
         """Test initial admin setup fails when users already exist."""
-        # Create a user first
         user_data = create_test_user_data()
-        client.post("/api/auth/register", json=user_data)
+        create_user_in_db(session, user_data)
 
         admin_data = {"username": "admin", "password": "admin123"}
         response = client.post("/api/auth/setup/admin", json=admin_data)
@@ -704,23 +583,19 @@ class TestInitialAdminSetup:
 
     def test_initial_admin_setup_validation(self, client: TestClient, session: Session):
         """Test initial admin setup with invalid data."""
-        # Ensure no users exist in database
         users = session.exec(select(User)).all()
         for user in users:
             session.delete(user)
         session.commit()
 
-        # Test missing fields
         incomplete_data = {"username": "admin"}
         response = client.post("/api/auth/setup/admin", json=incomplete_data)
         assert_api_error(response, 422)
 
-        # Test password too short
         short_password_data = {"username": "admin", "password": "short"}
         response = client.post("/api/auth/setup/admin", json=short_password_data)
         assert_api_error(response, 422)
 
-        # Test username too short
         short_username_data = {"username": "ad", "password": "admin123"}
         response = client.post("/api/auth/setup/admin", json=short_username_data)
         assert_api_error(response, 422)
@@ -729,7 +604,6 @@ class TestInitialAdminSetup:
         self, client: TestClient, session: Session
     ):
         """Test initial admin setup response has correct schema."""
-        # Ensure no users exist in database
         users = session.exec(select(User)).all()
         for user in users:
             session.delete(user)
@@ -741,7 +615,6 @@ class TestInitialAdminSetup:
         assert_api_success(response, 201)
         data = response.json()
 
-        # Verify response schema matches UserProfileResponse
         required_fields = [
             "id",
             "username",
@@ -754,7 +627,6 @@ class TestInitialAdminSetup:
         for field in required_fields:
             assert field in data
 
-        # Verify data types
         assert isinstance(data["id"], str)
         assert isinstance(data["username"], str)
         assert isinstance(data["is_active"], bool)

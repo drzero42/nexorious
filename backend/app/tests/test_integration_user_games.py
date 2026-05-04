@@ -94,8 +94,8 @@ class TestUserGamesListEndpoint:
         user1_data = {"username": "user1", "password": "password123"}
         user2_data = {"username": "user2", "password": "password123"}
         
-        user1_headers = register_and_login_user(client_with_mock_igdb, user1_data)
-        user2_headers = register_and_login_user(client_with_mock_igdb, user2_data)
+        user1_headers = register_and_login_user(client_with_mock_igdb, user1_data, session)
+        user2_headers = register_and_login_user(client_with_mock_igdb, user2_data, session)
         
         # Create a game for user1 using IGDB import
         import_data = {
@@ -122,7 +122,7 @@ class TestUserGamesListEndpoint:
         """Test user games list with different sorting options."""
         # Create a test user
         user_data = {"username": "testuser", "password": "password123"}
-        auth_headers = register_and_login_user(client_with_mock_igdb, user_data)
+        auth_headers = register_and_login_user(client_with_mock_igdb, user_data, session)
         
         # Create multiple games using IGDB import
         import_games_data = [
@@ -198,7 +198,7 @@ class TestUserGamesListEndpoint:
 
         # Create a test user
         user_data = {"username": "nullsortuser", "password": "password123"}
-        auth_headers = register_and_login_user(client, user_data)
+        auth_headers = register_and_login_user(client, user_data, session)
 
         # Get the user from the database
         from ..models.user import User
@@ -249,7 +249,7 @@ class TestUserGamesListEndpoint:
         from decimal import Decimal
 
         user_data = {"username": "ratingsortuser", "password": "password123"}
-        auth_headers = register_and_login_user(client, user_data)
+        auth_headers = register_and_login_user(client, user_data, session)
 
         user = session.exec(select(User).where(User.username == "ratingsortuser")).first()
         assert user is not None
@@ -303,7 +303,7 @@ class TestUserGamesListEndpoint:
 
         # Create a test user
         user_data = {"username": "hoursortuser", "password": "password123"}
-        auth_headers = register_and_login_user(client, user_data)
+        auth_headers = register_and_login_user(client, user_data, session)
 
         # Get the user from the database
         user = session.exec(select(User).where(User.username == "hoursortuser")).first()
@@ -403,7 +403,7 @@ class TestUserGamesDetailEndpoint:
         """Test user game retrieval by different user."""
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
-        other_headers = register_and_login_user(client, other_user_data)
+        other_headers = register_and_login_user(client, other_user_data, session)
         
         response = client.get(f"/api/user-games/{test_user_game.id}", headers=other_headers)
         
@@ -521,11 +521,11 @@ class TestUserGamesUpdateEndpoint:
         
         assert_api_error(response, 403, "Not authenticated")
     
-    def test_update_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame):
+    def test_update_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame, session: Session):
         """Test user game update by different user."""
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
-        other_headers = register_and_login_user(client, other_user_data)
+        other_headers = register_and_login_user(client, other_user_data, session)
         
         update_data = {"play_status": "completed"}
         response = client.put(f"/api/user-games/{test_user_game.id}", json=update_data, headers=other_headers)
@@ -599,11 +599,11 @@ class TestUserGamesDeleteEndpoint:
         
         assert_api_error(response, 403, "Not authenticated")
     
-    def test_delete_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame):
+    def test_delete_user_game_wrong_user(self, client: TestClient, test_user_game: UserGame, session: Session):
         """Test user game deletion by different user."""
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
-        other_headers = register_and_login_user(client, other_user_data)
+        other_headers = register_and_login_user(client, other_user_data, session)
         
         response = client.delete(f"/api/user-games/{test_user_game.id}", headers=other_headers)
         
@@ -867,7 +867,7 @@ class TestUpdatePlatformAssociation:
 
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
-        other_headers = register_and_login_user(client, other_user_data)
+        other_headers = register_and_login_user(client, other_user_data, session)
 
         update_data = {
             "platform": test_platform.name,
@@ -1181,7 +1181,7 @@ class TestUserGamesEndpointsSecurity:
         """Test that users can only access their own data."""
         # Create another user
         other_user_data = {"username": "other", "password": "password123"}
-        other_headers = register_and_login_user(client, other_user_data)
+        other_headers = register_and_login_user(client, other_user_data, session)
         
         # Test list endpoint
         response = client.get("/api/user-games/", headers=other_headers)

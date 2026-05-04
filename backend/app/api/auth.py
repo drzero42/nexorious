@@ -1,5 +1,5 @@
 """
-Authentication endpoints for user registration, login, and session management.
+Authentication endpoints for login and session management.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
@@ -31,7 +31,6 @@ from ..models.tag import Tag
 from ..models.wishlist import Wishlist
 from ..models.job import Job, BackgroundJobType
 from ..schemas.auth import (
-    UserRegisterRequest,
     UserLoginRequest,
     TokenResponse,
     RefreshTokenRequest,
@@ -185,38 +184,6 @@ async def restore_from_backup_setup(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
-
-@router.post("/register", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(
-    user_data: UserRegisterRequest,
-    session: Annotated[Session, Depends(get_session)]
-):
-    """Register a new user."""
-    
-    # Check if user already exists
-    existing_user = session.exec(
-        select(User).where(User.username == user_data.username)
-    ).first()
-    
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
-        )
-    
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    new_user = User(
-        username=user_data.username,
-        password_hash=hashed_password
-    )
-    
-    session.add(new_user)
-    session.commit()
-    session.refresh(new_user)
-    
-    return new_user
 
 
 @router.post("/login", response_model=TokenResponse)

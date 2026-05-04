@@ -793,19 +793,31 @@ def assert_api_success(response, status_code: int = 200):
         assert data["error"] is None or data["error"] == ""
 
 
-def register_and_login_user(client: TestClient, user_data: Dict[str, Any]) -> Dict[str, str]:
-    """Register a user and return authentication headers."""
-    # Register user
-    register_response = client.post("/api/auth/register", json=user_data)
-    assert register_response.status_code == 201
-    
-    # Login user
-    login_data = {
-        "username": user_data["username"],
-        "password": user_data["password"]
-    }
-    login_response = client.post("/api/auth/login", json=login_data)
+def create_user_in_db(session: Session, user_data: Dict[str, Any]) -> "User":
+    """Create a user directly in the database (bypasses the HTTP layer)."""
+    from ..core.security import get_password_hash
+    from ..models.user import User
+
+    user = User(
+        username=user_data["username"],
+        password_hash=get_password_hash(user_data["password"]),
+        is_active=True,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def register_and_login_user(client: TestClient, user_data: Dict[str, Any], session: Session) -> Dict[str, str]:
+    """Create a user in the database and return authentication headers."""
+    create_user_in_db(session, user_data)
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={"username": user_data["username"], "password": user_data["password"]},
+    )
     assert login_response.status_code == 200
-    
+
     token = login_response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

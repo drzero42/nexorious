@@ -3,7 +3,6 @@ API schemas for request/response validation.
 """
 
 from .auth import (
-    UserRegisterRequest,
     UserLoginRequest,
     TokenResponse,
     RefreshTokenRequest,
@@ -120,7 +119,6 @@ from .mapping_resolution import (
 
 __all__ = [
     # Auth schemas
-    "UserRegisterRequest",
     "UserLoginRequest",
     "TokenResponse",
     "RefreshTokenRequest",

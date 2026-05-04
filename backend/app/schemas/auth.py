@@ -7,12 +7,6 @@ from typing import Optional
 from datetime import datetime
 
 
-class UserRegisterRequest(BaseModel):
-    """Request schema for user registration."""
-    username: str = Field(..., min_length=3, max_length=100, description="Username")
-    password: str = Field(..., min_length=8, max_length=128, description="Password")
-
-
 class UserLoginRequest(BaseModel):
     """Request schema for user login."""
     username: str = Field(..., description="Username")

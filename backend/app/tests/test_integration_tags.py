@@ -15,7 +15,7 @@ from .integration_test_utils import (
     assert_api_success,
     register_and_login_user,
     create_test_user_data,
-    create_test_games
+    create_test_games,
 )
 
 
@@ -115,8 +115,8 @@ class TestTagsListEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        user1_headers = register_and_login_user(client, user1_data)
-        user2_headers = register_and_login_user(client, user2_data)
+        user1_headers = register_and_login_user(client, user1_data, session)
+        user2_headers = register_and_login_user(client, user2_data, session)
         
         # Get user IDs from database
         user1 = session.exec(select(User).where(User.username == "user1")).first()
@@ -301,8 +301,8 @@ class TestTagGetEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        register_and_login_user(client, user1_data)
-        user2_headers = register_and_login_user(client, user2_data)
+        register_and_login_user(client, user1_data, session)
+        user2_headers = register_and_login_user(client, user2_data, session)
         
         # Get user IDs
         user1 = session.exec(select(User).where(User.username == "user1")).first()
@@ -384,8 +384,8 @@ class TestTagUpdateEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        register_and_login_user(client, user1_data)
-        user2_headers = register_and_login_user(client, user2_data)
+        register_and_login_user(client, user1_data, session)
+        user2_headers = register_and_login_user(client, user2_data, session)
         
         # Get user1 ID
         user1 = session.exec(select(User).where(User.username == "user1")).first()
@@ -471,8 +471,8 @@ class TestTagDeleteEndpoint:
         user1_data = create_test_user_data("user1", "password123")
         user2_data = create_test_user_data("user2", "password456")
         
-        register_and_login_user(client, user1_data)
-        user2_headers = register_and_login_user(client, user2_data)
+        register_and_login_user(client, user1_data, session)
+        user2_headers = register_and_login_user(client, user2_data, session)
         
         # Get user1 ID
         user1 = session.exec(select(User).where(User.username == "user1")).first()
