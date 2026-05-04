@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -29,14 +30,17 @@ func main() {
 	// CLI flags
 	// -------------------------------------------------------------------------
 	var (
-		showVersion = flag.Bool("version", false, "Print version and exit")
-		configFile  = flag.String("config", "", "Path to .env file (default: .env in working directory)")
-		migrateOnly = flag.Bool("migrate-only", false, "Run pending migrations then exit (for initContainers)")
+		showVersion bool
+		configFile  string
+		migrateOnly bool
 	)
-	flag.BoolVar(showVersion, "v", false, "Print version and exit (shorthand)")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
+	flag.BoolVar(&showVersion, "v", false, "Print version and exit (shorthand)")
+	flag.StringVar(&configFile, "config", "", "Path to .env file (default: .env in working directory)")
+	flag.BoolVar(&migrateOnly, "migrate-only", false, "Run pending migrations then exit (for initContainers)")
 	flag.Parse()
 
-	if *showVersion {
+	if showVersion {
 		fmt.Printf("nexorious %s (%s)\n", version, commit)
 		os.Exit(0)
 	}
@@ -44,13 +48,16 @@ func main() {
 	// -------------------------------------------------------------------------
 	// .env file loading
 	// -------------------------------------------------------------------------
-	envFile := *configFile
-	if envFile == "" {
-		envFile = ".env"
-	}
-	// godotenv.Load is a no-op when the file does not exist.
-	if err := godotenv.Load(envFile); err != nil && !os.IsNotExist(err) {
-		log.Fatalf("failed to load env file %q: %v", envFile, err)
+	if configFile != "" {
+		// User explicitly provided a config file path — fatal if it doesn't exist.
+		if err := godotenv.Load(configFile); err != nil {
+			log.Fatalf("failed to load env file %q: %v", configFile, err)
+		}
+	} else {
+		// Default .env is optional — ignore missing file, fatal on other errors.
+		if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Fatalf("failed to load .env: %v", err)
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -69,7 +76,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	// --migrate-only mode: placeholder until the migrator is implemented.
 	// -------------------------------------------------------------------------
-	if *migrateOnly {
+	if migrateOnly {
 		slog.Info("migrate-only mode: migrator not yet implemented, exiting")
 		os.Exit(0)
 	}
