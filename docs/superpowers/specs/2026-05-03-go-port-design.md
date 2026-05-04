@@ -256,7 +256,7 @@ POST /api/job-items/:id/resolve   Resolve item to an IGDB game (review workflow)
 POST /api/job-items/:id/skip      Skip item during review
 POST /api/job-items/:id/retry
 
-POST /api/sync/:platform          Trigger manual sync
+POST /api/sync/:platform          Trigger manual sync (GOG returns 501 Not Implemented)
 GET  /api/sync/:platform/status   Current sync status
 POST /api/sync/steam/verify       Verify Steam credentials
 DELETE /api/sync/steam/connection
@@ -300,8 +300,8 @@ GET    /api/admin/backups            List available backups
 POST   /api/admin/backups            Create manual backup
 DELETE /api/admin/backups/:id        Delete a backup
 GET    /api/admin/backups/:id/download   Download backup archive
-POST   /api/admin/backups/:id/restore   Restore from a stored backup
-POST   /api/admin/backups/restore/upload   Upload and restore an external .tar.gz archive
+POST   /api/admin/backups/:id/restore   Restore from a stored backup — drops all in-flight requests (see Restore Behaviour below)
+POST   /api/admin/backups/restore/upload   Upload and restore an external .tar.gz archive — same
 
 POST   /api/platforms                              Create platform
 PUT    /api/platforms/:platform                    Update platform
@@ -486,7 +486,7 @@ These tables are managed entirely by admin-only API endpoints (see Platform/Stor
 
 The Python codebase previously had a separate `ignored_external_games` table. An Alembic migration (Mar 2026) migrated all ignored-game data to `external_games.is_skipped = true` and dropped the old table. **The Go port does not include an `ignored_external_games` table.** Skip/un-skip functionality is exposed via the sync router (`GET /api/sync/ignored`, `DELETE /api/sync/ignored/:id`), which reads/writes `external_games.is_skipped`.
 
-The Python `Wishlist` model is also **not included** in the Go schema. No API endpoints for wishlists were ever implemented, the frontend never calls a wishlist API, and the model served no active purpose. The Go schema starts clean without it.
+The Python `Wishlist` model is also **not included** in the Go schema. No user-facing API endpoints for wishlists exist, the frontend calls no wishlist API, and the table is not brought forward. The Go schema starts clean without it.
 
 #### User Sync Configs
 
@@ -498,6 +498,8 @@ The Python `Wishlist` model is also **not included** in the Go schema. No API en
 - `last_synced_at`
 
 The sync config API (`GET/PUT /api/sync/config/:platform`) lets users configure these settings and supply credentials. Credentials are stored encrypted at rest (AES-GCM, key derived from `SECRET_KEY`).
+
+**`is_configured` field:** The `SyncConfigResponse` includes an `is_configured` boolean indicating whether the user has working credentials stored for that platform. In the Go port this is determined by checking whether `user_sync_configs.platform_credentials` is non-null and non-empty for the row (after decryption). In the Python version, credentials were stored in `users.preferences` rather than `user_sync_configs`, so the Python `_is_platform_configured()` logic reads from a different location. The Go implementation reads from `user_sync_configs.platform_credentials` exclusively.
 
 #### Backup Config
 
@@ -515,7 +517,7 @@ The Python backend has fuzzy matching in three contexts. Two are carried forward
 
 ### Context 1: Database list search — DROPPED
 
-The Python backend accepts a `fuzzy_threshold` query parameter on both `GET /api/games` and `GET /api/user-games`. These are two distinct endpoints with different purposes: `GET /api/games` queries the **global game catalog** (IGDB records cached in the local DB) and is used for admin/internal access — the frontend never calls it directly for browsing. `GET /api/user-games` queries the **user's personal collection** and is the endpoint the frontend actually uses for game browsing. Despite serving different purposes, neither endpoint's `fuzzy_threshold` is ever sent by the frontend: `fuzzyThreshold` exists in `UserGameListParams` in the API client but no UI component populates it. The feature was built in both endpoints but never surfaced in any UI.
+The Python backend accepts a `fuzzy_threshold` query parameter on both `GET /api/games` and `GET /api/user-games`. These are two distinct endpoints with different purposes: `GET /api/games` queries the **global game catalog** (IGDB records cached in the local DB) and is the mechanism by which users add games to their collection — it is JWT-protected but not admin-only. `GET /api/user-games` queries the **user's personal collection** and is the endpoint the frontend uses for game browsing. Despite serving different purposes, neither endpoint's `fuzzy_threshold` is ever sent by the frontend: `fuzzyThreshold` exists in `UserGameListParams` in the API client but no UI component populates it. The feature was built in both endpoints but never surfaced in any UI. Despite serving different purposes, neither endpoint's `fuzzy_threshold` is ever sent by the frontend: `fuzzyThreshold` exists in `UserGameListParams` in the API client but no UI component populates it. The feature was built in both endpoints but never surfaced in any UI.
 
 The Go port uses `ILIKE` for text search on both list endpoints. The `fuzzy_threshold` parameter is not implemented on either. `pg_trgm` is not needed and is not enabled.
 
@@ -716,7 +718,7 @@ The `SELECT FOR UPDATE SKIP LOCKED` claim pattern is safe for multiple concurren
 | Job | Schedule |
 |---|---|
 | Cleanup job results | Daily at 3:00 AM UTC |
-| Cleanup exports | Every 24 hours |
+| Cleanup exports | Daily at 4:00 AM UTC |
 | Cleanup sessions | Every 30 minutes |
 | Scheduled backup | Cron expression from `backup_config.schedule_cron` (default `"0 2 * * *"`; empty string = disabled) |
 | Metadata refresh dispatch | Configurable interval (`METADATA_REFRESH_INTERVAL`, default 24h) |
@@ -840,6 +842,28 @@ Two internal services that the sync system depends on, not exposed as API endpoi
 - **Platform/storefront logos**: `static/logos/` (relative to binary working directory, matching Python) — static assets bundled with the deployment. Served at `/static/logos/*`.
 
 Both paths are registered as Echo `Static` routes before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
+
+### Unreferenced Game Cleanup
+
+When a `user_games` row is deleted (via `DELETE /api/user-games/:id` or bulk delete), the handler checks whether any other user has the same `game_id` in their collection. If no other `user_games` row references that game, the `games` row is deleted and its cover art file on disk is removed. This mirrors the Python `cleanup_unreferenced_game()` behaviour.
+
+The check and cleanup run within the same transaction as the user-game deletion. No separate worker task is needed — the operation is fast (single indexed lookup + conditional delete).
+
+The Go port does **not** check the wishlists table (which is dropped), simplifying the reference check to `user_games` only.
+
+---
+
+## Restore Behaviour
+
+`POST /api/admin/backups/:id/restore` and `POST /api/admin/backups/restore/upload` reset the database to a previous state. Because the database is being replaced wholesale, all in-flight application state becomes invalid the moment the restore starts.
+
+**Approach:** the restore handler closes the pgxpool connection pool before running the restore, waits for all active pool connections to drain (with a short timeout), then restores the database, and finally calls `os.Exit(0)`. The process manager (systemd, Kubernetes, Docker) is responsible for restarting the binary. On restart the app re-runs its startup sequence: opens a new pool, checks migration state, and transitions to `Ready`.
+
+This means any in-flight HTTP requests that hold a pool connection will fail with a connection error during the drain window. Clients will see a 5xx or connection-reset response. This is acceptable — restoring a backup is a destructive admin operation and the admin is expected to communicate downtime.
+
+The drain timeout is 10 seconds. If connections do not drain within 10 seconds, the restore proceeds anyway and the pool is forcibly closed.
+
+The worker pool is shut down before the connection pool closes, using the same `Shutdown()` path as graceful SIGTERM handling. In-flight worker tasks will fail and their `pending_tasks` rows will remain in `running` state — they are orphaned by the restore (the restored DB has different data). This is correct: after restore, the admin starts fresh.
 
 ---
 
@@ -1182,7 +1206,8 @@ Use [`fergusstrange/embedded-postgres`](https://github.com/fergusstrange/embedde
 - Helm chart (can be adapted from the existing nexorious chart once the binary is stable)
 - Darkadia import source (not currently active in the Python version)
 - One-time Steam library import (the Python `import_sources/steam.py` one-shot import; ongoing sync via `user_sync_configs` covers this use case)
-- Wishlist table and API — the Python `Wishlist` model was never backed by an API or used by the frontend; **do not bring this over** to the Go schema. The `total_wishlist_items` field in the Python deletion-impact response is also dropped — the Go port's `GET /api/auth/admin/users/:id/deletion-impact` response does not include it, and the frontend deletion-impact UI must be updated to remove that row.
+- Wishlist table and API — the Python `Wishlist` model has no user-facing API routes and the frontend calls no wishlist endpoints. **Do not bring the `wishlists` table over** to the Go schema. The `total_wishlist_items` field in the Python deletion-impact response is dropped — the Go port's `GET /api/auth/admin/users/:id/deletion-impact` response does not include it, and the frontend deletion-impact UI must be updated to remove that row. **Import handling:** the Python JSON export format includes a `wishlist` array in the export payload. The Go import handler must silently discard this key — do not error if it is present.
+- GOG sync — the `SyncPlatform` enum includes `"gog"` for forward-compatibility, but `POST /api/sync/gog` returns `501 Not Implemented`. No GOG sync adapter is implemented in this port; it is deferred to a future task.
 - `ignored_external_games` table — **do not bring this over**; it was already dropped in the Python codebase (Mar 2026 Alembic migration `bbcb63f60154`) and replaced by `external_games.is_skipped`. The Python ORM file `backend/app/models/ignored_external_game.py` still exists as a leftover artefact but the table no longer exists in a migrated database. The Go schema has no `ignored_external_games` table.
 - `import_mappings` — **do not bring this over**; dead code in both Python and frontend. The Python backend has schema definitions and a Pydantic schema file but no DB model and no registered router — the `/api/import-mappings/` endpoint never existed at runtime. The frontend has a full API client, hooks, and type definitions for it, but zero route components or UI pages call any of those functions. If the feature is ever completed, it should be designed and implemented from scratch.
 - `pg_trgm` / local-DB fuzzy search — the Python `fuzzy_threshold` parameter on list endpoints was never wired to the frontend UI; the Go port uses `ILIKE` for local text search only
