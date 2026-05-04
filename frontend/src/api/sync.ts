@@ -4,7 +4,6 @@ import type {
   SyncConfigUpdateData,
   SyncStatus,
   ManualSyncResponse,
-  IgnoredGame,
   SyncPlatform,
   SyncFrequency,
   SteamVerifyResponse,
@@ -50,30 +49,12 @@ interface ManualSyncApiResponse {
   status: string;
 }
 
-interface IgnoredGameApiResponse {
-  id: string;
-  source: string;
-  external_id: string;
-  title: string;
-  created_at: string;
-}
-
-interface IgnoredGameListApiResponse {
-  items: IgnoredGameApiResponse[];
-  total: number;
-}
-
 // ============================================================================
 // Response Types
 // ============================================================================
 
 export interface SyncConfigsResponse {
   configs: SyncConfig[];
-  total: number;
-}
-
-export interface IgnoredGamesResponse {
-  items: IgnoredGame[];
   total: number;
 }
 
@@ -110,16 +91,6 @@ function transformManualSyncResponse(apiResponse: ManualSyncApiResponse): Manual
     jobId: apiResponse.job_id,
     platform: apiResponse.platform,
     status: apiResponse.status,
-  };
-}
-
-function transformIgnoredGame(apiGame: IgnoredGameApiResponse): IgnoredGame {
-  return {
-    id: apiGame.id,
-    source: apiGame.source,
-    externalId: apiGame.external_id,
-    title: apiGame.title,
-    createdAt: apiGame.created_at,
   };
 }
 
@@ -183,36 +154,6 @@ export async function triggerSync(platform: SyncPlatform): Promise<ManualSyncRes
 export async function getSyncStatus(platform: SyncPlatform): Promise<SyncStatus> {
   const response = await api.get<SyncStatusApiResponse>(`/sync/${platform}/status`);
   return transformSyncStatus(response);
-}
-
-/**
- * Get ignored games list with optional filtering.
- */
-export async function getIgnoredGames(params?: {
-  source?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<IgnoredGamesResponse> {
-  const queryParams: Record<string, string | number> = {};
-  if (params?.source) queryParams.source = params.source;
-  if (params?.limit) queryParams.limit = params.limit;
-  if (params?.offset) queryParams.offset = params.offset;
-
-  const response = await api.get<IgnoredGameListApiResponse>('/sync/ignored', {
-    params: queryParams,
-  });
-
-  return {
-    items: response.items.map(transformIgnoredGame),
-    total: response.total,
-  };
-}
-
-/**
- * Remove a game from the ignored list.
- */
-export async function unignoreGame(id: string): Promise<void> {
-  await api.delete(`/sync/ignored/${id}`);
 }
 
 // ============================================================================

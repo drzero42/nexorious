@@ -24,8 +24,6 @@ export const syncKeys = {
   config: (platform: SyncPlatform) => [...syncKeys.configs(), platform] as const,
   statuses: () => [...syncKeys.all, 'statuses'] as const,
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
-  ignoredGames: (params?: { source?: string; limit?: number; offset?: number }) =>
-    [...syncKeys.all, 'ignored', params] as const,
   epicAuth: () => [...syncKeys.all, 'epicAuth'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
 };
@@ -84,16 +82,6 @@ export function useSyncStatuses() {
   };
 }
 
-/**
- * Hook to fetch ignored games list.
- */
-export function useIgnoredGames(params?: { source?: string; limit?: number; offset?: number }) {
-  return useQuery({
-    queryKey: syncKeys.ignoredGames(params),
-    queryFn: () => syncApi.getIgnoredGames(params),
-  });
-}
-
 // ============================================================================
 // Mutation Hooks
 // ============================================================================
@@ -142,21 +130,6 @@ export function useTriggerSync() {
       );
       // Also invalidate to get fresh data from server
       queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
-    },
-  });
-}
-
-/**
- * Hook to remove a game from the ignored list.
- */
-export function useUnignoreGame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<void, Error, string>({
-    mutationFn: (id) => syncApi.unignoreGame(id),
-    onSuccess: () => {
-      // Invalidate ignored games list
-      queryClient.invalidateQueries({ queryKey: syncKeys.ignoredGames() });
     },
   });
 }

@@ -106,10 +106,6 @@ from .common import (
     SearchParams,
     TimestampMixin,
 )
-from .ignored_game import (
-    IgnoredGameResponse,
-    IgnoredGameListResponse,
-)
 from .mapping_resolution import (
     UnresolvedMapping,
     UnresolvedMappingsResponse,
@@ -217,9 +213,6 @@ __all__ = [
     "SortParams",
     "SearchParams",
     "TimestampMixin",
-    # Ignored game schemas
-    "IgnoredGameResponse",
-    "IgnoredGameListResponse",
     # Mapping resolution schemas
     "UnresolvedMapping",
     "UnresolvedMappingsResponse",

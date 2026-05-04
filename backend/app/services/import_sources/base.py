@@ -184,16 +184,6 @@ class ImportSourceService(ABC):
         pass
     
     @abstractmethod
-    async def ignore_game(self, user_id: str, game_id: str) -> ImportGame:
-        """Toggle ignore status of game."""
-        pass
-    
-    @abstractmethod
-    async def unignore_all_games(self, user_id: str) -> BulkOperationResult:
-        """Unignore all ignored games."""
-        pass
-    
-    @abstractmethod
     async def unmatch_all_games(self, user_id: str) -> BulkOperationResult:
         """Remove IGDB matches from all matched games."""
         pass

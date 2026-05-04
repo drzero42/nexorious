@@ -55,14 +55,6 @@ export interface ManualSyncResponse {
   status: string;
 }
 
-export interface IgnoredGame {
-  id: string;
-  source: string;
-  externalId: string;
-  title: string;
-  createdAt: string;
-}
-
 // Helper to get human-readable frequency label
 export function getSyncFrequencyLabel(frequency: SyncFrequency): string {
   const labels: Record<SyncFrequency, string> = {

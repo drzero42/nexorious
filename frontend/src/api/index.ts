@@ -99,12 +99,10 @@ export {
   updateSyncConfig,
   triggerSync,
   getSyncStatus,
-  getIgnoredGames,
-  unignoreGame,
 } from './sync';
 
 // Re-export sync API types
-export type { SyncConfigsResponse, IgnoredGamesResponse } from './sync';
+export type { SyncConfigsResponse } from './sync';
 
 // Re-export import/export API functions
 export {

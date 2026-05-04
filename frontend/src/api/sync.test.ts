@@ -148,43 +148,6 @@ describe('syncApi', () => {
     });
   });
 
-  describe('getIgnoredGames', () => {
-    it('should fetch ignored games with filters', async () => {
-      const mockResponse = {
-        items: [
-          {
-            id: 'ignored-1',
-            source: 'STEAM',
-            external_id: '12345',
-            title: 'Some Game',
-            created_at: '2025-01-01T00:00:00Z',
-          },
-        ],
-        total: 1,
-      };
-
-      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
-
-      const result = await syncApi.getIgnoredGames({ source: 'STEAM', limit: 10 });
-
-      expect(api.get).toHaveBeenCalledWith('/sync/ignored', {
-        params: { source: 'STEAM', limit: 10 },
-      });
-      expect(result.items[0].externalId).toBe('12345');
-      expect(result.total).toBe(1);
-    });
-  });
-
-  describe('unignoreGame', () => {
-    it('should delete ignored game', async () => {
-      vi.mocked(api.delete).mockResolvedValueOnce(undefined);
-
-      await syncApi.unignoreGame('ignored-1');
-
-      expect(api.delete).toHaveBeenCalledWith('/sync/ignored/ignored-1');
-    });
-  });
-
   describe('Epic Auth API', () => {
     it('should start Epic auth and return URL', async () => {
       const mockResponse = {

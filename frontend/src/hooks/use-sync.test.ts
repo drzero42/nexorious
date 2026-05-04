@@ -8,10 +8,8 @@ import {
   useSyncConfigs,
   useSyncConfig,
   useSyncStatus,
-  useIgnoredGames,
   useUpdateSyncConfig,
   useTriggerSync,
-  useUnignoreGame,
   useStartEpicAuth,
   useCompleteEpicAuth,
   useCheckEpicAuth,
@@ -41,14 +39,6 @@ const mockSyncStatusApi = {
   is_syncing: false,
   last_synced_at: '2025-01-01T12:00:00Z',
   active_job_id: null,
-};
-
-const mockIgnoredGameApi = {
-  id: 'ignored-1',
-  source: 'steam',
-  external_id: '12345',
-  title: 'Ignored Game',
-  created_at: '2025-01-01T00:00:00Z',
 };
 
 describe('use-sync hooks', () => {
@@ -93,19 +83,6 @@ describe('use-sync hooks', () => {
       expect(syncKeys.status(SyncPlatform.GOG)).toEqual(['sync', 'statuses', 'gog']);
     });
 
-    it('generates correct query keys for ignoredGames', () => {
-      expect(syncKeys.ignoredGames()).toEqual(['sync', 'ignored', undefined]);
-      expect(syncKeys.ignoredGames({ source: 'steam' })).toEqual([
-        'sync',
-        'ignored',
-        { source: 'steam' },
-      ]);
-      expect(syncKeys.ignoredGames({ limit: 10, offset: 0 })).toEqual([
-        'sync',
-        'ignored',
-        { limit: 10, offset: 0 },
-      ]);
-    });
   });
 
   describe('useSyncConfigs', () => {
@@ -244,67 +221,6 @@ describe('use-sync hooks', () => {
     });
   });
 
-  describe('useIgnoredGames', () => {
-    it('fetches ignored games list successfully', async () => {
-      server.use(
-        http.get(`${API_URL}/sync/ignored`, () => {
-          return HttpResponse.json({
-            items: [mockIgnoredGameApi],
-            total: 1,
-          });
-        })
-      );
-
-      const { result } = renderHook(() => useIgnoredGames(), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.items).toHaveLength(1);
-      expect(result.current.data?.items[0].title).toBe('Ignored Game');
-      expect(result.current.data?.items[0].source).toBe('steam');
-      expect(result.current.data?.total).toBe(1);
-    });
-
-    it('passes filter parameters correctly', async () => {
-      let capturedParams: URLSearchParams | null = null;
-
-      server.use(
-        http.get(`${API_URL}/sync/ignored`, ({ request }) => {
-          const url = new URL(request.url);
-          capturedParams = url.searchParams;
-
-          return HttpResponse.json({
-            items: [],
-            total: 0,
-          });
-        })
-      );
-
-      const { result } = renderHook(
-        () =>
-          useIgnoredGames({
-            source: 'steam',
-            limit: 10,
-            offset: 20,
-          }),
-        { wrapper: QueryWrapper }
-      );
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(capturedParams).not.toBeNull();
-      expect(capturedParams!.get('source')).toBe('steam');
-      expect(capturedParams!.get('limit')).toBe('10');
-      expect(capturedParams!.get('offset')).toBe('20');
-    });
-  });
-
   describe('useUpdateSyncConfig', () => {
     it('updates sync config successfully', async () => {
       const updatedConfig = {
@@ -435,54 +351,6 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Sync already in progress');
-    });
-  });
-
-  describe('useUnignoreGame', () => {
-    it('removes game from ignored list successfully', async () => {
-      server.use(
-        http.delete(`${API_URL}/sync/ignored/ignored-1`, () => {
-          return new HttpResponse(null, { status: 204 });
-        })
-      );
-
-      const { result } = renderHook(() => useUnignoreGame(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync('ignored-1');
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-    });
-
-    it('handles unignore error', async () => {
-      server.use(
-        http.delete(`${API_URL}/sync/ignored/non-existent`, () => {
-          return HttpResponse.json({ detail: 'Ignored game not found' }, { status: 404 });
-        })
-      );
-
-      const { result } = renderHook(() => useUnignoreGame(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        try {
-          await result.current.mutateAsync('non-existent');
-        } catch {
-          // Expected error
-        }
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe('Ignored game not found');
     });
   });
 
