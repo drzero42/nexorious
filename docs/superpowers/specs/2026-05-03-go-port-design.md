@@ -858,7 +858,17 @@ All existing Python env var names are preserved. New Go-specific vars are additi
 ```go
 type Config struct {
     // Database
-    DatabaseURL string `env:"DATABASE_URL,required"`
+    // DATABASE_URL takes priority when non-empty. When absent, the URL is constructed
+    // from the individual DB_* vars below (matching the Python individual-vars spec).
+    DatabaseURL string `env:"DATABASE_URL"`
+
+    // Individual DB connection vars — fallback when DATABASE_URL is not set.
+    // Defaults match the dev URL: postgresql://nexorious:nexorious@localhost:5432/nexorious
+    DbHost     string `env:"DB_HOST" envDefault:"localhost"`
+    DbPort     int    `env:"DB_PORT" envDefault:"5432"`
+    DbUser     string `env:"DB_USER" envDefault:"nexorious"`
+    DbPassword string `env:"DB_PASSWORD" envDefault:"nexorious"`
+    DbName     string `env:"DB_NAME" envDefault:"nexorious"`
 
     // Security
     SecretKey string `env:"SECRET_KEY,required"` // used for JWT signing and credential encryption
@@ -906,6 +916,8 @@ type Config struct {
     RateLimiterBackend string `env:"RATE_LIMITER_BACKEND" envDefault:"local"`
 }
 ```
+
+**Database URL resolution:** After all fields are parsed from env vars, a post-parse hook constructs `DatabaseURL` when it is empty: `user` and `password` and `dbname` are percent-encoded (same as the Python `urllib.parse.quote(value, safe='')` logic), then assembled as `postgresql://user:password@host:port/dbname`. `DATABASE_URL` is therefore always a non-empty string after config initialisation — all downstream consumers (`pgxpool.Connect`, the migrator, backup service) use it without any nil/empty guard. This mirrors the Python `resolve_database_url` model validator exactly.
 
 **IGDB credential note:** `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are marked `required` — the binary will refuse to start without them. The Python implementation marks them `Optional` and emits a startup warning instead, which was a mistake: IGDB credentials are load-bearing for game search, import, and the sync matching pipeline. Allowing the app to start without them produces a degraded-but-plausible-looking state where those features silently fail at runtime. The Go port treats them as required to make the dependency explicit at startup.
 
