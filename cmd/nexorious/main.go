@@ -87,8 +87,11 @@ func main() {
 	defer pool.Close()
 
 	// Verify connectivity before starting anything else.
-	if err := pool.Ping(ctx); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pingCancel()
+	if err := pool.Ping(pingCtx); err != nil {
 		slog.Error("database ping failed", "err", err)
+		pool.Close()
 		os.Exit(1)
 	}
 	slog.Info("database connected")
@@ -98,6 +101,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	if migrateOnly {
 		slog.Info("migrate-only mode: migrator not yet implemented, exiting")
+		pool.Close()
 		os.Exit(0)
 	}
 
