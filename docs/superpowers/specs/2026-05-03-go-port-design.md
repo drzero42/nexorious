@@ -928,6 +928,48 @@ type Config struct {
 
 ---
 
+## CLI Flags
+
+The binary accepts a small set of command-line flags. Configuration remains env-var-driven (`caarlos0/env`); flags are reserved for *per-invocation modes and overrides* — things you'd set at launch time rather than in a deployment's environment.
+
+Implemented using stdlib `flag` (no new dependency for Phase 1). Cobra subcommands are deferred to Phase 5 (see Phased Roadmap).
+
+### Phase 1 flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--help`, `-h` | — | Print usage and exit (stdlib `flag` provides this automatically) |
+| `--version`, `-v` | — | Print `nexorious <version> (<commit>)` and exit; version and commit are injected at build time via `-ldflags` |
+| `--config` | `""` | Path to a `.env` file; loaded before env vars are parsed by `caarlos0/env`. When empty, the binary checks for a `.env` file in the working directory (matching `godotenv`'s default behaviour) |
+| `--migrate-only` | `false` | Run pending migrations then exit with code 0 (or non-zero on failure). Does not start the HTTP server or workers. The standard pattern for Kubernetes `initContainers` |
+
+### Build-time version injection
+
+```makefile
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT  ?= $(shell git rev-parse --short HEAD)
+
+build:
+    go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" ./cmd/nexorious
+```
+
+`--version` prints: `nexorious v0.1.0-3-gabcdef1 (abcdef1)`
+
+### Future: Cobra subcommands (Phase 5)
+
+Phase 1 uses stdlib `flag` because the binary has a single mode of operation. Phase 5 will migrate to `cobra` to support subcommands such as:
+
+```
+nexorious serve           # default: start the HTTP server (all current behaviour)
+nexorious migrate         # run pending migrations (replaces --migrate-only)
+nexorious migrate status  # print pending count and current version, then exit
+nexorious version         # print version info (replaces --version flag)
+```
+
+The migration to Cobra in Phase 5 is a breaking change to the CLI surface. Any tooling (Helm chart, systemd units, Kubernetes manifests) that invokes `nexorious --migrate-only` must be updated to `nexorious migrate`.
+
+---
+
 ## Epic Games Store Sync
 
 The Python version uses the `legendary-gl` Python library directly. The Go version shells out to the `legendary` CLI binary if it is present on `PATH`. If `legendary` is not found, Epic sync is disabled gracefully (the sync endpoint returns a descriptive error; other sync providers are unaffected).
@@ -1041,6 +1083,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 *Goal: a working binary that starts, runs migrations in the browser, serves the React SPA, and handles auth.*
 
 - Project scaffolding: `go.mod`, directory structure, Makefile
+- CLI flags: `--help`, `--version`, `--config`, `--migrate-only` (stdlib `flag`; build-time version injection via `-ldflags`)
 - Config (`caarlos0/env`)
 - `pgxpool` connection + initial schema migration (`0001_initial.up.sql`) — full table list including all models
 - golang-migrate + migration state machine + browser migration UI (SSE)
@@ -1103,6 +1146,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 *Goal: production-grade deployment.*
 
 - PostgreSQL-backed rate limiter (multi-instance support)
+- Migrate CLI surface to `cobra` subcommands (`serve`, `migrate`, `migrate status`, `version`); update Helm chart, systemd units, and any tooling that uses `--migrate-only`
 - Full test coverage (testcontainers-go, >80%)
 - Dockerfile (single-stage: React build → go build → minimal runtime image)
 - Helm chart (adapted from existing nexorious chart)
