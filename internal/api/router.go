@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 
 	"github.com/drzero42/nexorious-go/internal/config"
 )
@@ -34,9 +34,6 @@ func New(cfg *config.Config) *echo.Echo {
 	})))
 
 	e := echo.New()
-	e.Debug = cfg.Debug
-	e.HideBanner = true
-	e.HidePort = true
 
 	// Middleware
 	e.Use(middleware.Recover())
@@ -45,9 +42,8 @@ func New(cfg *config.Config) *echo.Echo {
 		LogURI:      true,
 		LogMethod:   true,
 		LogLatency:  true,
-		LogError:    true,
 		HandleError: true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
 			if v.Error != nil {
 				slog.Error("request", "method", v.Method, "uri", v.URI, "status", v.Status, "latency", v.Latency, "err", v.Error)
 			} else {
@@ -69,6 +65,6 @@ func registerRoutes(e *echo.Echo) {
 
 // handleHealth returns 200 OK with a JSON body.
 // GET /health
-func handleHealth(c echo.Context) error {
+func handleHealth(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

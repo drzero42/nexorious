@@ -26,7 +26,7 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 
 | Concern | Library |
 |---|---|
-| HTTP framework | `echo/v4` |
+| HTTP framework | `echo/v5` |
 | DB driver | `pgx/v5` (`pgxpool`) |
 | Type-safe static queries | `sqlc` (code generation) |
 | Dynamic filter queries | `sqlx` + `goqu/v9` (see Database Layer) |

@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/labstack/echo/v5"
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/config"
@@ -22,25 +22,21 @@ func main() {
 
 	e := api.New(cfg)
 
-	// Start server in a goroutine so we can listen for shutdown signals.
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	go func() {
-		log.Printf("nexorious starting on %s", addr)
-		if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server error: %v", err)
-		}
-	}()
+	sc := echo.StartConfig{
+		Address:         addr,
+		GracefulTimeout: 10 * time.Second,
+		HideBanner:      true,
+		HidePort:        true,
+	}
 
 	// Wait for interrupt/term signal then shut down gracefully.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	<-ctx.Done()
 
-	log.Println("shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := e.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown error: %v", err)
+	log.Printf("nexorious starting on %s", addr)
+	if err := sc.Start(ctx, e); err != nil {
+		log.Printf("server stopped: %v", err)
 	}
 	log.Println("shutdown complete")
 }
