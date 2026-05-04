@@ -3,7 +3,6 @@ package api
 import (
 	"log/slog"
 	"net/http"
-	"os"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -11,31 +10,11 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 )
 
-// parseSlogLevel maps a LOG_LEVEL string to a slog.Level.
-// Unrecognised values default to Info.
-func parseSlogLevel(s string) slog.Level {
-	switch s {
-	case "debug":
-		return slog.LevelDebug
-	case "warn", "warning":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
-}
-
 // New creates and configures the Echo instance with all middleware and routes.
+// The caller is responsible for configuring the global slog logger before calling New.
 func New(cfg *config.Config) *echo.Echo {
-	// Configure the global slog logger from cfg.LogLevel.
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseSlogLevel(cfg.LogLevel),
-	})))
-
 	e := echo.New()
 
-	// Middleware
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus:   true,
@@ -53,7 +32,6 @@ func New(cfg *config.Config) *echo.Echo {
 		},
 	}))
 
-	// Routes
 	registerRoutes(e)
 
 	return e
