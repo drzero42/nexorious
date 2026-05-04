@@ -1,1 +1,9 @@
-.devenv
+# Go binary
+/nexorious
+
+# Frontend build output (populated by make frontend)
+ui/dist/
+
+# devenv
+.devenv/
+.devenv.flake.nix
