@@ -67,7 +67,7 @@ func NewMigrator(ctx context.Context, databaseURL string) (*Migrator, error) {
 	}
 
 	if err := mg.determineState(); err != nil {
-		m.Close()
+		_, _ = m.Close()
 		return nil, err
 	}
 
@@ -125,7 +125,7 @@ func (mg *Migrator) PendingCount() (int, error) {
 	if srcErr != nil {
 		return 0, fmt.Errorf("pending count source: %w", srcErr)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	count := 0
 	next := ver
@@ -218,7 +218,7 @@ type logAdapter struct {
 func (l *logAdapter) Printf(format string, v ...any) {
 	line := fmt.Sprintf(format, v...)
 	if l.writer != nil {
-		fmt.Fprint(l.writer, line)
+		_, _ = fmt.Fprint(l.writer, line)
 		return
 	}
 	select {

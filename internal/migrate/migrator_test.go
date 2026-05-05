@@ -44,7 +44,11 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	defer m.Close()
+	defer func() {
+		if err := m.Close(); err != nil {
+			t.Logf("close: %v", err)
+		}
+	}()
 
 	if m.State() != migrate.AppStateNeedsMigration {
 		t.Errorf("expected NeedsMigration, got %v", m.State())
@@ -75,7 +79,11 @@ func TestRunMigrations_TransitionsToReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	defer m.Close()
+	defer func() {
+		if err := m.Close(); err != nil {
+			t.Logf("close: %v", err)
+		}
+	}()
 
 	if err := m.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
@@ -114,14 +122,20 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 	if err := m1.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations first run: %v", err)
 	}
-	m1.Close()
+	if err := m1.Close(); err != nil {
+		t.Logf("close: %v", err)
+	}
 
 	// Second run — schema is current; should start Ready.
 	m2, err := migrate.NewMigrator(ctx, connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator second run: %v", err)
 	}
-	defer m2.Close()
+	defer func() {
+		if err := m2.Close(); err != nil {
+			t.Logf("close: %v", err)
+		}
+	}()
 
 	if m2.State() != migrate.AppStateReady {
 		t.Errorf("expected Ready on already-migrated DB, got %v", m2.State())

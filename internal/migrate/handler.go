@@ -112,11 +112,11 @@ func (h *Handler) HandleProgress(c *echo.Context) error {
 	}
 
 	for line := range ch {
-		fmt.Fprintf(w, "data: %s\n\n", line)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", line)
 		flusher.Flush()
 	}
 
-	fmt.Fprintf(w, "event: complete\ndata: {}\n\n")
+	_, _ = fmt.Fprintf(w, "event: complete\ndata: {}\n\n")
 	flusher.Flush()
 	return nil
 }

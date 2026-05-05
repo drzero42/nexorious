@@ -20,7 +20,11 @@ func newTestHandler(t *testing.T) *migrate.Handler {
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Logf("close migrator: %v", err)
+		}
+	})
 	return migrate.NewHandler(m)
 }
 
@@ -91,7 +95,11 @@ func TestHandleRun_409_WhenMigrating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Logf("close migrator: %v", err)
+		}
+	})
 
 	// Manually set state to Migrating.
 	m.SetStateForTest(migrate.AppStateMigrating)
@@ -116,7 +124,11 @@ func TestHandleRun_400_WhenReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	t.Cleanup(func() { m.Close() })
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Logf("close migrator: %v", err)
+		}
+	})
 
 	m.SetStateForTest(migrate.AppStateReady)
 
