@@ -1,1 +1,19 @@
-DROP TABLE IF EXISTS schema_info;
+-- Drop in reverse dependency order
+
+DROP TABLE IF EXISTS rate_limiter_tokens;
+DROP TABLE IF EXISTS backup_config;
+DROP TABLE IF EXISTS pending_tasks;
+DROP TABLE IF EXISTS job_items;
+DROP TABLE IF EXISTS jobs;
+DROP TABLE IF EXISTS user_sync_configs;
+DROP TABLE IF EXISTS user_game_tags;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS user_game_platforms;
+DROP TABLE IF EXISTS external_games;
+DROP TABLE IF EXISTS user_games;
+DROP TABLE IF EXISTS platform_storefronts;
+DROP TABLE IF EXISTS platforms;
+DROP TABLE IF EXISTS storefronts;
+DROP TABLE IF EXISTS games;
+DROP TABLE IF EXISTS user_sessions;
+DROP TABLE IF EXISTS users;

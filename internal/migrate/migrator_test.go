@@ -2,9 +2,11 @@ package migrate_test
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -143,4 +145,98 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 	if m2.State() != migrate.AppStateReady {
 		t.Errorf("expected Ready on already-migrated DB, got %v", m2.State())
 	}
+}
+
+func TestRunMigrations_AllTablesExist(t *testing.T) {
+	ctx := context.Background()
+
+	// Need a raw postgres:// URL for database/sql; spin up a second container.
+	ctr, err := postgres.Run(ctx,
+		"postgres:18-alpine",
+		postgres.WithDatabase("nexorious_test"),
+		postgres.WithUsername("test"),
+		postgres.WithPassword("test"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2),
+		),
+	)
+	if err != nil {
+		t.Fatalf("failed to start postgres container: %v", err)
+	}
+	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
+
+	rawConn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("failed to get connection string: %v", err)
+	}
+
+	// Apply migrations via the Migrator (uses pgx5:// scheme internally).
+	pgx5Conn := "pgx5" + strings.TrimPrefix(rawConn, "postgres")
+	m, err := migrate.NewMigrator(ctx, pgx5Conn)
+	if err != nil {
+		t.Fatalf("NewMigrator: %v", err)
+	}
+	defer func() { _ = m.Close() }()
+
+	if err := m.RunMigrations(ctx); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	// Inspect tables via database/sql + pgx stdlib driver.
+	db, err := openStdlib(rawConn)
+	if err != nil {
+		t.Fatalf("open stdlib db: %v", err)
+	}
+	defer db.Close()
+
+	expectedTables := []string{
+		"users",
+		"user_sessions",
+		"games",
+		"platforms",
+		"storefronts",
+		"platform_storefronts",
+		"user_games",
+		"user_game_platforms",
+		"tags",
+		"user_game_tags",
+		"external_games",
+		"user_sync_configs",
+		"jobs",
+		"job_items",
+		"pending_tasks",
+		"backup_config",
+		"rate_limiter_tokens",
+	}
+
+	for _, table := range expectedTables {
+		var exists bool
+		if err := db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables
+				WHERE table_schema = 'public' AND table_name = $1
+			)`, table).Scan(&exists); err != nil {
+			t.Fatalf("checking table %s: %v", table, err)
+		}
+		if !exists {
+			t.Errorf("table %q was not created by the migration", table)
+		}
+	}
+
+	// Verify backup_config singleton row seeded correctly.
+	var schedCron string
+	if err := db.QueryRowContext(ctx,
+		"SELECT schedule_cron FROM backup_config WHERE id = 1").Scan(&schedCron); err != nil {
+		t.Fatalf("reading backup_config: %v", err)
+	}
+	if schedCron != "0 2 * * *" {
+		t.Errorf("backup_config.schedule_cron = %q, want %q", schedCron, "0 2 * * *")
+	}
+}
+
+// openStdlib opens a *sql.DB using the pgx stdlib driver.
+// rawConn must be a standard postgres:// URL (not pgx5://).
+func openStdlib(rawConn string) (*sql.DB, error) {
+	return sql.Open("pgx", rawConn)
 }
