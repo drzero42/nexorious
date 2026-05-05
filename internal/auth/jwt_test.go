@@ -1,10 +1,13 @@
 package auth_test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v5"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 )
@@ -35,7 +38,7 @@ func TestGenerateAndParseAccessToken(t *testing.T) {
 		t.Fatal("ExpiresAt is nil")
 	}
 	expectedExpiry := time.Now().Add(15 * time.Minute)
-	diff := claims.ExpiresAt.Time.Sub(expectedExpiry)
+	diff := claims.ExpiresAt.Sub(expectedExpiry)
 	if diff < -5*time.Second || diff > 5*time.Second {
 		t.Errorf("ExpiresAt off by %v", diff)
 	}
@@ -64,7 +67,7 @@ func TestGenerateAndParseRefreshToken(t *testing.T) {
 		t.Errorf("Type = %q, want %q", claims.Type, "refresh")
 	}
 	expectedExpiry := time.Now().Add(30 * 24 * time.Hour)
-	diff := claims.ExpiresAt.Time.Sub(expectedExpiry)
+	diff := claims.ExpiresAt.Sub(expectedExpiry)
 	if diff < -5*time.Second || diff > 5*time.Second {
 		t.Errorf("ExpiresAt off by %v", diff)
 	}
@@ -153,5 +156,145 @@ func TestHashToken(t *testing.T) {
 	hash3 := auth.HashToken("different-token")
 	if hash1 == hash3 {
 		t.Error("different inputs produced the same hash")
+	}
+
+	const knownInput = "hello"
+	const knownHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	if auth.HashToken(knownInput) != knownHash {
+		t.Errorf("HashToken(%q) = %s, want %s", knownInput, auth.HashToken(knownInput), knownHash)
+	}
+}
+
+func TestGenerateAccessToken_EmptyKey(t *testing.T) {
+	_, err := auth.GenerateAccessToken("", "user1", 15)
+	if err == nil {
+		t.Fatal("expected error when secretKey is empty")
+	}
+}
+
+func TestGenerateRefreshToken_EmptyKey(t *testing.T) {
+	_, err := auth.GenerateRefreshToken("", "user1", 30)
+	if err == nil {
+		t.Fatal("expected error when secretKey is empty")
+	}
+}
+
+func TestParseToken_EmptyKey(t *testing.T) {
+	_, err := auth.ParseToken("", "some.token.string", "access")
+	if err == nil {
+		t.Fatal("expected error when secretKey is empty")
+	}
+}
+
+func TestGenerateAccessToken_ZeroExpiry(t *testing.T) {
+	_, err := auth.GenerateAccessToken("test-secret-key-at-least-32-bytes!", "user1", 0)
+	if err == nil {
+		t.Fatal("expected error when expireMinutes is 0")
+	}
+	_, err = auth.GenerateAccessToken("test-secret-key-at-least-32-bytes!", "user1", -1)
+	if err == nil {
+		t.Fatal("expected error when expireMinutes is negative")
+	}
+}
+
+func TestGenerateRefreshToken_ZeroDays(t *testing.T) {
+	_, err := auth.GenerateRefreshToken("test-secret-key-at-least-32-bytes!", "user1", 0)
+	if err == nil {
+		t.Fatal("expected error when expireDays is 0")
+	}
+	_, err = auth.GenerateRefreshToken("test-secret-key-at-least-32-bytes!", "user1", -1)
+	if err == nil {
+		t.Fatal("expected error when expireDays is negative")
+	}
+}
+
+func TestContextHelpers(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	// Before setting — defaults.
+	if got := auth.UserIDFromContext(c); got != "" {
+		t.Errorf("UserIDFromContext before Set = %q, want empty", got)
+	}
+	if got := auth.IsAdminFromContext(c); got != false {
+		t.Errorf("IsAdminFromContext before Set = %v, want false", got)
+	}
+
+	// After setting.
+	c.Set("user_id", "user-123")
+	c.Set("is_admin", true)
+
+	if got := auth.UserIDFromContext(c); got != "user-123" {
+		t.Errorf("UserIDFromContext = %q, want %q", got, "user-123")
+	}
+	if got := auth.IsAdminFromContext(c); got != true {
+		t.Errorf("IsAdminFromContext = %v, want true", got)
+	}
+}
+
+func TestAdminMiddleware_Admin(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	c.Set("is_admin", true)
+
+	handlerCalled := false
+	handler := func(c *echo.Context) error {
+		handlerCalled = true
+		return c.String(http.StatusOK, "ok")
+	}
+
+	mw := auth.AdminMiddleware()(handler)
+	err := mw(c)
+	if err != nil {
+		t.Fatalf("AdminMiddleware returned error: %v", err)
+	}
+	if !handlerCalled {
+		t.Error("handler was not called for admin user")
+	}
+}
+
+func TestAdminMiddleware_NonAdmin(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	c.Set("is_admin", false)
+
+	handler := func(c *echo.Context) error {
+		t.Error("handler should not be called for non-admin")
+		return nil
+	}
+
+	mw := auth.AdminMiddleware()(handler)
+	_ = mw(c)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestAdminMiddleware_NoAdminKey(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	// Don't set is_admin at all.
+	handler := func(c *echo.Context) error {
+		t.Error("handler should not be called when is_admin is absent")
+		return nil
+	}
+
+	mw := auth.AdminMiddleware()(handler)
+	_ = mw(c)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
