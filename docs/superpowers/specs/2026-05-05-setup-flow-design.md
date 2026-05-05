@@ -239,7 +239,7 @@ The loop runs in a goroutine so it does not block the HTTP server (the migration
 
 **Startup ordering in `main.go`:**
 
-`initAppState` (which calls `InitNeedsSetup`) runs before the HTTP server starts. The `needsSetup` bool has a Go zero value of `false`, so if the server starts before `InitNeedsSetup` runs, the window between server start and the `SELECT COUNT(*) FROM users` completing incorrectly passes all requests through the setup gate on a fresh install.
+`initAppState` (which calls `InitNeedsSetup`) runs **before** the HTTP server starts, so `needsSetup` is always set correctly before the first request is served. On the DB-unavailable startup path, the server starts in `AppStateDBUnavailable` which gates all requests to `/db-error` until the probe recovers and calls `initAppState`.
 
 ```
 pgxpool.New()              ← fatal only on DSN parse error
@@ -247,11 +247,11 @@ pool.Ping():
   success → initAppState() → NewMigrator + determineState + InitNeedsSetup
   failure → AppStateDBUnavailable (no exit)
 Start HTTP server
-StartDBProbe(shutdownCtx, pool)   ← goroutine; retries initAppState on first recovery
+StartDBProbe(shutdownCtx, pool, initAppState)  ← goroutine; calls initAppState on first recovery
 Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 ```
 
-If the DB is unreachable at startup, `InitNeedsSetup` is not called immediately — the probe goroutine calls `initAppState()` on first recovery, which calls `InitNeedsSetup`. This is safe because the HTTP server is in `DBUnavailable` state and redirects all requests to `/db-error` until `initAppState` completes.
+`StartDBProbe` receives `initAppState` as an `onRecovery func(ctx context.Context) error` callback (see Gap 1 in main spec notes). This avoids a circular dependency between `migrator.go` and `main.go` — the Migrator does not import `main`; `main` passes the callback in.
 
 ## File Summary
 
@@ -265,6 +265,7 @@ If the DB is unreachable at startup, `InitNeedsSetup` is not called immediately 
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
+| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin` |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
 | Create | `ui/db-error/index.html` — standalone DB-unavailable error page; displays redacted DSN and last-failed-at timestamp injected by the handler at serve time |

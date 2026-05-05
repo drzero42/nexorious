@@ -84,8 +84,15 @@ type Migrator struct {
 ```
 
 **`StartDBProbe(ctx, pool)`** — polls `pool.Ping()` every 5 seconds:
-- Ping fails + state ≠ DBUnavailable → save current state to `prevState`, set `DBUnavailable`, log WARN
-- Ping succeeds + state == DBUnavailable → restore `prevState`; if migrator was never initialized (startup failure), call `initAppState()` first to determine the correct restored state
+- Ping fails + state ≠ DBUnavailable → save current state to `prevState`, set `DBUnavailable`, log WARN, record `lastUnavailableAt`
+- Ping succeeds + state == DBUnavailable → if migrator was never initialized (startup failure), call the `onRecovery` callback first; on callback success, restore `prevState`; log INFO
+
+Signature:
+```go
+func (mg *Migrator) StartDBProbe(ctx context.Context, pool *pgxpool.Pool, onRecovery func(ctx context.Context) error)
+```
+
+`onRecovery` is passed from `main.go` as the `initAppState` closure. This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialization logic; `main.go` injects it as a callback. If `onRecovery` returns an error, the probe logs it at ERROR and remains in `DBUnavailable` — it will retry on the next successful ping.
 
 **Middleware** — three sequential checks on every request:
 
@@ -100,14 +107,13 @@ type Migrator struct {
 
 **`GET /db-error`** — if `State() != DBUnavailable`, redirects to `?from=` param (or `/`). Otherwise serves the static error page (auto-reloads itself every 5s via `setTimeout(() => location.reload(), 5000)`). When the auto-reload fires and the DB has recovered, the server-side redirect sends the user back to their original page.
 
-The page displays a redacted connection string for debugging — useful in cloud environments where an operator needs to verify the DSN without leaking the password. The handler parses `cfg.DatabaseURL` once at registration time using `net/url` and constructs a display string:
-- Keep: scheme, host, port, database name, user
-- Redact: password (replace with `***`)
-- Keep: non-sensitive query params (e.g. `sslmode`); redact any param whose name contains `password`, `secret`, or `key`
+The page displays a redacted connection string and a last-failed timestamp for debugging — useful in cloud environments where an operator needs to verify the DSN without leaking the password. Both values are injected **at serve time** (not registration time) by the `GET /db-error` handler:
+- **Redacted DSN**: parsed from `cfg.DatabaseURL` via `net/url` once at handler registration and stored as a string; the handler injects the pre-computed string into the HTML at each serve. Keep: scheme, user, host, port, database name, non-sensitive query params (e.g. `sslmode`). Redact: password → `***`; any query param whose name contains `password`, `secret`, or `key` → `***`.
+- **Last-failed-at timestamp**: read from `migrator.LastUnavailableAt()` (returns `time.Time` stored as `atomic.Value`) at each serve, formatted as UTC. Updated by the probe each time it transitions into `DBUnavailable`.
 
 Example display: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=require`
 
-The redacted string is injected into the HTML at registration time (template or string replacement) so the static page needs no JavaScript to fetch it. The page also shows the current UTC timestamp of the last failed ping (updated by the probe and stored as an atomic value on the Migrator).
+The handler uses `html/template` (or simple `strings.ReplaceAll` on placeholder tokens) to inject both values into the static HTML — no JavaScript fetch required.
 
 **`GET /health`** — always bypasses all middleware gates:
 - `200 {"status": "ok"}` when `Ready`
