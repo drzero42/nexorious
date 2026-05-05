@@ -613,3 +613,44 @@ func TestJWTMiddleware_InactiveUser(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestJWTMiddleware_ExpiredSession(t *testing.T) {
+	pool := setupTestPool(t)
+	secret := "test-secret-key-at-least-32-bytes!"
+	userID := "550e8400-e29b-41d4-a716-446655440003"
+
+	insertTestUser(t, pool, userID, "expireduser", true, false)
+	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
+	if err != nil {
+		t.Fatalf("GenerateAccessToken: %v", err)
+	}
+
+	// Insert session with past expires_at — simulates a force-expired session.
+	_, err = pool.Exec(context.Background(),
+		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
+		 VALUES (gen_random_uuid()::text, $1, $2, 'unused_refresh_hash', now() - interval '1 second')`,
+		userID, auth.HashToken(accessToken),
+	)
+	if err != nil {
+		t.Fatalf("insert expired session: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	handler := func(c *echo.Context) error {
+		t.Error("handler should not be called for expired session")
+		return nil
+	}
+
+	mw := auth.JWTMiddleware(secret, pool)(handler)
+	if err := mw(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}

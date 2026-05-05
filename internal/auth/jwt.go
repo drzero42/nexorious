@@ -1,15 +1,16 @@
 package auth
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 )
@@ -159,28 +160,38 @@ func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc {
 				})
 			}
 
-			// Step 5: Check session in DB.
+			// Step 5: Check session in DB (must exist and not be expired).
 			tokenHash := HashToken(tokenString)
-			var sessionID string
-			err = pool.QueryRow(context.Background(),
-				"SELECT id FROM user_sessions WHERE user_id = $1 AND token_hash = $2",
+			var one int
+			err = pool.QueryRow(c.Request().Context(),
+				"SELECT 1 FROM user_sessions WHERE user_id = $1 AND token_hash = $2 AND expires_at > now()",
 				userID, tokenHash,
-			).Scan(&sessionID)
+			).Scan(&one)
 			if err != nil {
-				return c.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "session not found or expired",
+				if errors.Is(err, pgx.ErrNoRows) {
+					return c.JSON(http.StatusUnauthorized, map[string]string{
+						"error": "session not found or expired",
+					})
+				}
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "internal server error",
 				})
 			}
 
 			// Step 6: Load user from DB.
 			var user AuthUser
-			err = pool.QueryRow(context.Background(),
+			err = pool.QueryRow(c.Request().Context(),
 				"SELECT id, username, is_active, is_admin FROM users WHERE id = $1",
 				userID,
 			).Scan(&user.ID, &user.Username, &user.IsActive, &user.IsAdmin)
 			if err != nil {
-				return c.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "user not found",
+				if errors.Is(err, pgx.ErrNoRows) {
+					return c.JSON(http.StatusUnauthorized, map[string]string{
+						"error": "user not found",
+					})
+				}
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "internal server error",
 				})
 			}
 			if !user.IsActive {
