@@ -100,6 +100,15 @@ type Migrator struct {
 
 **`GET /db-error`** — if `State() != DBUnavailable`, redirects to `?from=` param (or `/`). Otherwise serves the static error page (auto-reloads itself every 5s via `setTimeout(() => location.reload(), 5000)`). When the auto-reload fires and the DB has recovered, the server-side redirect sends the user back to their original page.
 
+The page displays a redacted connection string for debugging — useful in cloud environments where an operator needs to verify the DSN without leaking the password. The handler parses `cfg.DatabaseURL` once at registration time using `net/url` and constructs a display string:
+- Keep: scheme, host, port, database name, user
+- Redact: password (replace with `***`)
+- Keep: non-sensitive query params (e.g. `sslmode`); redact any param whose name contains `password`, `secret`, or `key`
+
+Example display: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=require`
+
+The redacted string is injected into the HTML at registration time (template or string replacement) so the static page needs no JavaScript to fetch it. The page also shows the current UTC timestamp of the last failed ping (updated by the probe and stored as an atomic value on the Migrator).
+
 **`GET /health`** — always bypasses all middleware gates:
 - `200 {"status": "ok"}` when `Ready`
 - `503 {"status": "degraded", "db": "unavailable"}` when `DBUnavailable`

@@ -257,7 +257,7 @@ If the DB is unreachable at startup, `InitNeedsSetup` is not called immediately 
 
 | Action | File |
 |--------|------|
-| Modify | `internal/migrate/migrator.go` — add `needsSetup` field + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; also `AppStateDBUnavailable`, `prevState`, `StartDBProbe()` (see main spec) |
+| Modify | `internal/migrate/migrator.go` — add `needsSetup` field + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; also `AppStateDBUnavailable`, `prevState`, `lastUnavailableAt atomic.Value`, `StartDBProbe()` (see main spec) |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
 | Modify | `internal/api/router.go` — add DB-unavailable gate + setup gate to middleware; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`; update `/health` to return 503 when degraded |
@@ -267,7 +267,7 @@ If the DB is unreachable at startup, `InitNeedsSetup` is not called immediately 
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
-| Create | `ui/db-error/index.html` — standalone DB-unavailable error page (no build step) |
+| Create | `ui/db-error/index.html` — standalone DB-unavailable error page; displays redacted DSN and last-failed-at timestamp injected by the handler at serve time |
 | Modify | `ui/ui.go` — add `//go:embed setup` + `SetupBox`, `//go:embed db-error` + `DBErrorBox` |
 
 ---
