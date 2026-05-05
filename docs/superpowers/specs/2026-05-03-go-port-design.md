@@ -1126,7 +1126,7 @@ No `imports:` — unlike the Python version which merged `backend/` and `fronten
 | `legendary` | Epic sync (if available in nixpkgs) |
 | `psql` | Direct DB access; `$DATABASE_URL` is pre-set |
 
-PostgreSQL runs as a devenv service (`devenv up` / started automatically on `devenv shell`). No separate Postgres install or Docker container needed for development — testcontainers is still used for CI and isolated test runs.
+PostgreSQL runs as a devenv service. **Services are not started by `devenv shell`** — they require a separate `devenv up` (foreground) or `devenv up -d` (background/daemonized). `devenv shell` only activates the environment (tools, env vars, language toolchains). The typical workflow is to run `devenv up -d` once in the background and then work in `devenv shell`. No separate Postgres install or Docker container needed for development — testcontainers is still used for CI and isolated test runs.
 
 ---
 

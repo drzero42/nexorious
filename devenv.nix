@@ -5,6 +5,8 @@
   env = {
     ENABLE_LSP_TOOL = 1; # Claude Code workaround for LSPs
     CGO_ENABLED = 0;
+    DATABASE_URL = "postgresql:///nexorious";
+    SECRET_KEY = "dev-only-insecure-secret-do-not-use-in-production";
   };
 
   # https://devenv.sh/packages/
@@ -26,6 +28,13 @@
     typescript = {
       enable = true;
     };
+  };
+
+  # https://devenv.sh/services/
+  services.postgres = {
+    enable = true;
+    package = pkgs.postgresql_18;
+    initialDatabases = [{ name = "nexorious"; }];
   };
 
   # See full reference at https://devenv.sh/reference/options/
