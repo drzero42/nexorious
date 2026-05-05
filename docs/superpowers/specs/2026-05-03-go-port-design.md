@@ -805,15 +805,19 @@ JWT access + refresh tokens via `golang-jwt/jwt/v5`:
 
 ### First-Run Setup Flow
 
-The Go port uses **server-driven setup gating**, matching the same pattern as the migration gate. Rather than the frontend polling a status endpoint, the middleware redirects all routes to `/setup` until at least one user exists.
+The Go port uses **server-driven setup gating**, matching the same pattern as the migration gate. Rather than the frontend polling a status endpoint, the middleware redirects all routes to `/setup` until at least one user exists. Full design detail is in `docs/superpowers/specs/2026-05-05-setup-flow-design.md`.
 
-1. On startup (after migrations complete), the server queries `SELECT COUNT(*) FROM users`. If zero rows, `needsSetup` is set to `true`.
+**Key decisions:**
+
+1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. If the DB is unreachable, it retries every 2 seconds until the query succeeds or the context is cancelled (SIGTERM). Must complete **before** the HTTP server starts — the zero value `false` would incorrectly bypass the gate during the startup window.
 2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
-3. `POST /api/auth/setup/admin` creates the first admin user and idempotently loads seed data (platforms and storefronts). On success, clears `needsSetup` to `false`. Returns 403 if any user already exists.
-4. `POST /api/auth/setup/restore` accepts a `.tar.gz` backup archive, restores the database, and completes setup in one step. Returns 403 if any user already exists. **Deferred to Phase 3** — implement alongside the backup/restore system.
-5. Setup endpoints are JWT-exempt (no user exists yet to authenticate as).
+3. `GET /setup` serves a self-contained static HTML page (inlined CSS + JS, no Vite build, same pattern as `ui/migrate/`). If `needsSetup=false`, it redirects to `/` — the gate works in both directions.
+4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race) and idempotently seeds platforms/storefronts. On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.
+5. `POST /api/auth/setup/restore` — **deferred to Phase 3**.
+6. Setup endpoints are JWT-exempt (no user exists yet to authenticate as).
+7. Workers and the gocron scheduler are held in a gate-loop goroutine (same `shutdownCtx` as HTTP graceful shutdown) that polls `State() == Ready && !NeedsSetup()` every 2 seconds. They start only after setup is complete. This prevents scheduled tasks from running against an empty database.
 
-The `RouteGuard` component in the React frontend is simplified: it no longer needs to check `GET /api/auth/setup/status`. It only handles the unauthenticated → `/login` redirect for protected routes. The `/setup` route renders an unconditional setup form. If reached after setup is complete (e.g. direct URL navigation), `POST /api/auth/setup/admin` returns 403 and the frontend redirects to `/login`.
+**No React SPA changes** are required for this feature. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) should be confirmed during Phase 2 frontend work if that call exists in the Python code being ported.
 
 ### Profile and Credential Management
 

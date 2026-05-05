@@ -30,6 +30,30 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 - After `RunMigrations` completes (migration path)
 - At startup when state is already `Ready` (already-migrated path)
 
+**DB unavailability at startup:** If the database is unreachable when `InitNeedsSetup` is called, it must not fatally exit. Instead it retries with a backoff loop until the query succeeds or the context is cancelled (SIGTERM). Pattern:
+
+```go
+func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error {
+    for {
+        var count int
+        err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+        if err == nil {
+            m.SetNeedsSetup(count == 0)
+            return nil
+        }
+        // Log at WARN — DB may still be starting up
+        log.Warn().Err(err).Msg("InitNeedsSetup: DB unavailable, retrying in 2s")
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case <-time.After(2 * time.Second):
+        }
+    }
+}
+```
+
+The caller (`main.go`) checks the returned error; if it is `context.Canceled` or `context.DeadlineExceeded`, it exits cleanly. Any other error is impossible under this implementation since the loop only returns on success or context cancellation.
+
 ### 2. App-state middleware (`internal/api/router.go`)
 
 The existing middleware gets a second check added after the migration gate:
@@ -118,7 +142,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
 4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
-5. Issue access token + refresh token for the new admin user (same logic as `POST /api/auth/login`) and persist a `UserSession` row
+5. Issue access token + refresh token by calling a shared helper `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — the same function called by `POST /api/auth/login`. This function generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the login and setup handlers.
 6. Call `h.migrator.SetNeedsSetup(false)`
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
@@ -291,6 +315,8 @@ Spawn gate-loop goroutine(shutdownCtx) → on condition met, start workers + sch
 - `TestSetupAdmin_AlreadySetup` — 403 when user exists
 - `TestSetupAdmin_InvalidBody` — 400 for missing fields
 - `TestSetupAdmin_ShortPassword` — 400 for password < 8 chars
+- `TestSetupPage_ServesPage` — GET /setup returns 200 with `text/html` content-type when `needsSetup=true`
+- `TestSetupPage_RedirectsWhenDone` — GET /setup returns 302 to `/` when `needsSetup=false`
 
 **`internal/migrate/migrator_test.go`** — add:
 - `TestInitNeedsSetup_NoUsers` — returns true on empty DB
