@@ -791,6 +791,8 @@ JWT access + refresh tokens via `golang-jwt/jwt/v5`:
 - **Refresh token**: longer-lived (default 30 days, configurable via `REFRESH_TOKEN_EXPIRE_DAYS`), stored as a hash in the `user_sessions` table, cleaned up every 30 minutes by the scheduler
 - **Logout**: deletes the `UserSession` row; subsequent refresh attempts with that token return 401
 
+> **Frontend fix required:** The Python frontend's logout flow only clears client-side token storage (localStorage/memory) without calling `POST /api/auth/logout`. As a result, the `UserSession` row is never deleted and refresh tokens remain valid indefinitely until the scheduler cleans them up. The Go port must fix this: the frontend logout handler **must** call `POST /api/auth/logout` before clearing local state. If the request fails (network error, 401), the frontend should still clear local state and redirect to `/login` — but the API call is not optional. This is an explicit in-scope frontend change for the Go port.
+
 ### First-Run Setup Flow
 
 The Go port handles first-run differently from the Python version. Rather than a `/register` endpoint that returns 403 once users exist, the setup flow is explicit and stateful:
