@@ -33,6 +33,8 @@ New entries in `go.mod`:
 github.com/golang-migrate/migrate/v4
 github.com/golang-migrate/migrate/v4/database/pgx/v5   (pgx driver adapter)
 github.com/golang-migrate/migrate/v4/source/iofs       (embed.FS source)
+github.com/testcontainers/testcontainers-go             (PostgreSQL containers for tests)
+github.com/testcontainers/testcontainers-go/modules/postgres
 ```
 
 ---
@@ -106,7 +108,12 @@ type Migrator struct {
 
 ### Dirty state handling in `NewMigrator`
 
-If `dirty=true` is returned by golang-migrate at startup (a previous migration failed mid-run), `NewMigrator` logs a clear error message — e.g. `"database schema is dirty at version N — manual intervention required (run migrate force N-1 or fix the migration)"` — and sets state to `NeedsMigration`. The migration UI will be shown and the admin can investigate. The binary does **not** crash; it does **not** attempt to auto-fix the dirty state.
+`NewMigrator` calls `m.Version()` to determine initial state. The following cases must be handled explicitly:
+
+- `migrate.ErrNilVersion` — fresh database, no migrations applied; set state to `NeedsMigration`. This is normal on first install and must **not** be treated as an error.
+- `dirty=true` — a previous migration failed mid-run; log a clear error message — e.g. `"database schema is dirty at version N — manual intervention required (run migrate force N-1 or fix the migration)"` — and set state to `NeedsMigration`. The migration UI will be shown and the admin can investigate. The binary does **not** crash; it does **not** attempt to auto-fix the dirty state.
+- Pending count > 0 — unapplied migrations exist; set state to `NeedsMigration`.
+- Pending count == 0 — schema is current; set state to `Ready`.
 
 ### RunMigrations behaviour
 
@@ -134,7 +141,7 @@ type Handler struct {
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/migrate` | Render `migrate.html` template; inject `PendingCount` and `CurrentVersion` |
+| `GET` | `/migrate` | Render `migrate.html` as `html/template` (not `text/template`); template parsed from `ui.MigrateBox` via `template.ParseFS(ui.MigrateBox, "migrate/migrate.html")`; inject `PendingCount` and `CurrentVersion` |
 | `GET` | `/api/migrate/status` | JSON: `{pending_count, current_version, dirty, state}` |
 | `POST` | `/api/migrate/run` | Start migration async; 202 if `NeedsMigration`, 409 if `Migrating`, 400 if `Ready` |
 | `GET` | `/api/migrate/progress` | SSE stream from `logCh`; `event: complete` on close |
@@ -285,6 +292,7 @@ e := api.New(cfg, migrator)
 |---|---|
 | DB unreachable on startup | `pool.Ping` fails → log + `os.Exit(1)` (existing) |
 | `NewMigrator` fails (migrate source error) | Log + `os.Exit(1)` |
+| `m.Version()` returns `migrate.ErrNilVersion` in `NewMigrator` | Treated as fresh database — state → `NeedsMigration`; not an error |
 | Dirty schema at startup (`dirty=true`) | Log clear error with version number; set state to `NeedsMigration`; migration UI shown; no auto-fix |
 | `m.Up()` returns `migrate.ErrNoChange` | Treated as success — state → `Ready`; `logCh` closed normally |
 | Migration SQL error | State → `NeedsMigration`; error line sent to `logCh`; SSE client sees error line + `complete` event; page re-enables button |
