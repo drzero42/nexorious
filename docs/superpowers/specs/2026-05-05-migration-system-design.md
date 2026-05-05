@@ -84,6 +84,7 @@ const (
 type Migrator struct {
     state       atomic.Int32   // AppState
     databaseURL string         // DSN passed to golang-migrate's pgx/v5 driver
+    m           *migrate.Migrate // golang-migrate instance; created once in NewMigrator, closed in Close()
     logCh       chan string     // SSE log lines; buffered (256); closed on RunMigrations completion
     logWriter   io.Writer      // alternate log sink for --migrate-only mode (slog-backed); nil = use logCh
     mu          sync.Mutex     // prevents concurrent RunMigrations calls
@@ -92,19 +93,22 @@ type Migrator struct {
 
 **Note on the driver:** golang-migrate's pgx/v5 driver opens its own connection internally using a DSN string — it does not accept a `*pgxpool.Pool`. `NewMigrator` therefore takes `databaseURL string` (from `cfg.DatabaseURL`) rather than the pool. The pool is not stored in the `Migrator` struct; it is managed entirely by `main.go` and passed separately to API handlers.
 
+**`*migrate.Migrate` lifecycle:** The instance is created once in `NewMigrator` and stored in the `m` field. It holds open source and database connections for its lifetime. `Migrator.Close()` must be called on shutdown to release them. `RunMigrations` reuses the stored instance — it does not create a fresh one per call. This means the source and driver connections persist for the process lifetime, which is correct: golang-migrate is designed for this usage pattern.
+
 **`logWriter` field:** When `logWriter` is non-nil, the golang-migrate logger adapter writes to it instead of `logCh`. This is used in `--migrate-only` mode (no HTTP server, no SSE consumer) so that migration output reaches `slog`/stdout rather than being silently buffered and discarded. `main.go` calls `SetLogWriter` before calling `RunMigrations`. When `logWriter` is nil (normal server mode), log lines go to `logCh` as usual.
 
 ### Methods
 
 | Method | Description |
 |---|---|
-| `NewMigrator(ctx, databaseURL) (*Migrator, error)` | Creates struct; checks pending migrations; handles dirty state; sets `NeedsMigration` or `Ready` |
+| `NewMigrator(ctx, databaseURL) (*Migrator, error)` | Creates struct; builds `*migrate.Migrate`; checks pending migrations; handles dirty state; sets `NeedsMigration` or `Ready` |
 | `State() AppState` | Atomic read |
 | `PendingCount() (int, error)` | Number of unapplied migrations |
-| `CurrentVersion() (uint, bool, error)` | Current version + dirty flag |
+| `CurrentVersion() (uint, bool, error)` | Current version + dirty flag; returns `(0, false, nil)` when `ErrNilVersion` (no migrations applied yet) |
 | `LogCh() <-chan string` | Returns current log channel for SSE handler |
 | `SetLogWriter(w io.Writer)` | Overrides log sink to `w`; call before `RunMigrations` in `--migrate-only` mode |
 | `RunMigrations(ctx) error` | Transitions state, runs `m.Up()`, streams logs, transitions to `Ready` or back to `NeedsMigration` on failure |
+| `Close() error` | Closes the golang-migrate source and database connections; call on shutdown |
 
 ### Dirty state handling in `NewMigrator`
 
@@ -142,7 +146,7 @@ type Handler struct {
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/migrate` | Render `migrate.html` as `html/template` (not `text/template`); template parsed from `ui.MigrateBox` via `template.ParseFS(ui.MigrateBox, "migrate/migrate.html")`; inject `PendingCount` and `CurrentVersion` |
-| `GET` | `/api/migrate/status` | JSON: `{pending_count, current_version, dirty, state}` |
+| `GET` | `/api/migrate/status` | JSON: `{pending_count, current_version, dirty, state}`; `current_version` is `0` when no migrations have been applied (`ErrNilVersion`) |
 | `POST` | `/api/migrate/run` | Start migration async; 202 if `NeedsMigration`, 409 if `Migrating`, 400 if `Ready` |
 | `GET` | `/api/migrate/progress` | SSE stream from `logCh`; `event: complete` on close |
 
@@ -224,6 +228,8 @@ var MigrateBox embed.FS
 
 Go template rendered by the migration handler. Template variables: `{{.PendingCount}}`, `{{.CurrentVersion}}`.
 
+`CurrentVersion` is `uint` — `0` when no migrations have been applied. The template displays `0` as "–" (e.g. `{{if .CurrentVersion}}{{.CurrentVersion}}{{else}}–{{end}}`) to avoid showing a misleading version number on a fresh database.
+
 Behaviour:
 1. Display pending count and current version from template vars
 2. "Run Migrations" button — disabled after first click
@@ -267,6 +273,7 @@ if err != nil {
     pool.Close()
     os.Exit(1)
 }
+defer migrator.Close() // releases golang-migrate source and database connections
 
 // --migrate-only mode: no HTTP server or SSE consumer, so direct log output to slog.
 if migrateOnly {
