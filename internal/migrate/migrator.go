@@ -75,7 +75,7 @@ func NewMigrator(ctx context.Context, databaseURL string) (*Migrator, error) {
 }
 
 func (mg *Migrator) determineState() error {
-	_, dirty, err := mg.m.Version()
+	ver, dirty, err := mg.m.Version()
 	if errors.Is(err, gmigrate.ErrNilVersion) {
 		mg.state.Store(int32(AppStateNeedsMigration))
 		return nil
@@ -85,7 +85,6 @@ func (mg *Migrator) determineState() error {
 	}
 
 	if dirty {
-		ver, _, _ := mg.m.Version()
 		slog.Error("database is in dirty state",
 			"version", ver,
 			"hint", "manually resolve the migration and clear the dirty flag")

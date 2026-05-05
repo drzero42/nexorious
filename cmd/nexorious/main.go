@@ -116,11 +116,14 @@ func main() {
 	// --migrate-only mode: run migrations then exit (for initContainers).
 	// -------------------------------------------------------------------------
 	if migrateOnly {
+		migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
 		if err := migrator.RunMigrations(ctx); err != nil {
 			slog.Error("migrate-only: migrations failed", "err", err)
+			pool.Close()
 			os.Exit(1)
 		}
 		slog.Info("migrate-only: migrations complete")
+		pool.Close()
 		os.Exit(0)
 	}
 

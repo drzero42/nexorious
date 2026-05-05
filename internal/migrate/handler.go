@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -83,7 +84,7 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	}
 
 	go func() {
-		if err := h.migrator.RunMigrations(c.Request().Context()); err != nil {
+		if err := h.migrator.RunMigrations(context.Background()); err != nil {
 			// Error already recorded in logCh by RunMigrations.
 			_ = err
 		}
