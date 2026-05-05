@@ -46,26 +46,66 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 ### Startup Sequence
 
 1. Parse config from env vars (+ `.env` file via `godotenv`)
-2. Open `pgxpool` connection pool
-3. Check pending migrations → set initial app state: `NeedsMigration` or `Ready`
-4. If `Ready`: query `SELECT COUNT(*) FROM users` → set `needsSetup = true` if zero rows
-5. Start Echo HTTP server (serves migration UI if `NeedsMigration`; setup UI if `needsSetup`; normal app otherwise)
-6. On transition to `Ready`: query user count, set `needsSetup`, then start worker pool + gocron scheduler
+2. `pgxpool.New()` — fatal only on DSN parse error (misconfiguration); not a transient failure
+3. `pool.Ping()` — if unreachable, set `AppStateDBUnavailable` and continue (no exit); if reachable, call `initAppState()`
+4. `initAppState()` — `NewMigrator()` + `determineState()` + (if `Ready`) `InitNeedsSetup()`; sets the correct initial state
+5. Start Echo HTTP server (always — serves DB error page, migration UI, setup UI, or the app depending on state)
+6. Start `StartDBProbe(shutdownCtx, pool)` goroutine — monitors DB connectivity, drives state transitions, retries `initAppState()` on first recovery if migrator was not yet initialized
+7. Spawn worker/scheduler gate-loop goroutine — starts workers + gocron only when `State() == Ready && !NeedsSetup()`
 
-Workers and the scheduler are never started until migrations have been applied. Graceful shutdown on `SIGTERM`/`SIGINT` drains the worker queue before the process exits.
+Workers and the scheduler are never started until migrations have been applied and setup is complete. Graceful shutdown on `SIGTERM`/`SIGINT` drains the worker queue before the process exits.
 
 ### App State Machine
 
 ```
-NeedsMigration → Migrating → Ready → (NeedsSetup checked inline)
+DBUnavailable ↔ NeedsMigration → Migrating → Ready
+DBUnavailable ↔ Ready
 ```
 
-A single Echo middleware checks state on every incoming request. Two sequential checks:
+`AppStateDBUnavailable` is the new zero value (iota=0). Before any DB check, the state is "unavailable" — which is the correct semantic. All transitions into and out of `DBUnavailable` are driven by the `StartDBProbe` goroutine.
 
-1. **Migration check** — while not `Ready`, all non-migration routes redirect to `/migrate`. Migration routes (`/migrate*`, `/api/migrate/*`) always pass through.
-2. **Setup check** — once `Ready`, a lightweight `needsSetup bool` flag (set at startup via `SELECT COUNT(*) FROM users`, cleared after `POST /api/auth/setup/admin` succeeds) gates all non-setup routes. While `needsSetup` is true, all routes except `/setup`, `/api/auth/setup/admin`, `/health`, and `/api/migrate/*` redirect to `/setup`. This is the same server-driven pattern as the migration gate — the React SPA never loads the authenticated app until at least one admin user exists.
+**State constants (`internal/migrate/migrator.go`):**
+```go
+const (
+    AppStateDBUnavailable  AppState = iota  // 0 — zero value; DB unreachable
+    AppStateNeedsMigration                  // 1
+    AppStateMigrating                       // 2
+    AppStateReady                           // 3
+)
+```
 
-`needsSetup` is not a formal state machine state — it is a boolean checked inside the `Ready` branch of the middleware, cleared once by the setup handler. No state machine transition is needed.
+**Migrator struct additions:**
+```go
+type Migrator struct {
+    state     atomic.Int32
+    prevState atomic.Int32  // state saved before entering DBUnavailable; restored on recovery
+    // ... existing fields
+}
+```
+
+**`StartDBProbe(ctx, pool)`** — polls `pool.Ping()` every 5 seconds:
+- Ping fails + state ≠ DBUnavailable → save current state to `prevState`, set `DBUnavailable`, log WARN
+- Ping succeeds + state == DBUnavailable → restore `prevState`; if migrator was never initialized (startup failure), call `initAppState()` first to determine the correct restored state
+
+**Middleware** — three sequential checks on every request:
+
+```
+1. if State() == DBUnavailable → 302 /db-error?from=<original path>
+       bypass: /db-error, /health
+2. if State() != Ready         → 302 /migrate
+       bypass: /migrate, /api/migrate/*
+3. if NeedsSetup()             → 302 /setup
+       bypass: /setup, /api/auth/setup/*, /health, /api/migrate/*
+```
+
+**`GET /db-error`** — if `State() != DBUnavailable`, redirects to `?from=` param (or `/`). Otherwise serves the static error page (auto-reloads itself every 5s via `setTimeout(() => location.reload(), 5000)`). When the auto-reload fires and the DB has recovered, the server-side redirect sends the user back to their original page.
+
+**`GET /health`** — always bypasses all middleware gates:
+- `200 {"status": "ok"}` when `Ready`
+- `503 {"status": "degraded", "db": "unavailable"}` when `DBUnavailable`
+- `200 {"status": "needs_migration" | "migrating"}` otherwise
+
+`needsSetup` remains a bool on the Migrator (not a state machine state), checked inline in the `Ready` branch of the middleware and cleared once by the setup handler.
 
 ---
 
@@ -809,7 +849,7 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 
 **Key decisions:**
 
-1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. If the DB is unreachable, it retries every 2 seconds until the query succeeds or the context is cancelled (SIGTERM). Must complete **before** the HTTP server starts — the zero value `false` would incorrectly bypass the gate during the startup window.
+1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window.
 2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
 3. `GET /setup` serves a self-contained static HTML page (inlined CSS + JS, no Vite build, same pattern as `ui/migrate/`). If `needsSetup=false`, it redirects to `/` — the gate works in both directions.
 4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race) and idempotently seeds platforms/storefronts. On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.

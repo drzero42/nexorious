@@ -23,44 +23,21 @@ func (m *Migrator) SetNeedsSetup(v bool)       // Lock write
 func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 // InitNeedsSetup runs: SELECT COUNT(*) FROM users
 // Sets needsSetup = (count == 0)
-// Called from main.go immediately after RunMigrations succeeds (or on startup when already Ready)
+// Single-attempt: called only when DB is confirmed reachable (from initAppState in main.go)
 ```
 
-`InitNeedsSetup` is called from `main.go` in two places:
-- After `RunMigrations` completes (migration path)
-- At startup when state is already `Ready` (already-migrated path)
-
-**DB unavailability at startup:** If the database is unreachable when `InitNeedsSetup` is called, it must not fatally exit. Instead it retries with a backoff loop until the query succeeds or the context is cancelled (SIGTERM). Pattern:
-
-```go
-func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error {
-    for {
-        var count int
-        err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
-        if err == nil {
-            m.SetNeedsSetup(count == 0)
-            return nil
-        }
-        // Log at WARN — DB may still be starting up
-        log.Warn().Err(err).Msg("InitNeedsSetup: DB unavailable, retrying in 2s")
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        case <-time.After(2 * time.Second):
-        }
-    }
-}
-```
-
-The caller (`main.go`) checks the returned error; if it is `context.Canceled` or `context.DeadlineExceeded`, it exits cleanly. Any other error is impossible under this implementation since the loop only returns on success or context cancellation.
+`InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (see the main port design spec). `InitNeedsSetup` is called from `initAppState()` in `main.go` in two situations:
+- At startup, if the initial `pool.Ping()` succeeds and state is `Ready` (already-migrated path)
+- By the probe callback on first DB recovery, after `NewMigrator()` + `determineState()` run and the state is `Ready`
 
 ### 2. App-state middleware (`internal/api/router.go`)
 
-The existing middleware gets a second check added after the migration gate:
+The middleware has three sequential checks. The setup gate is the third (innermost) check:
 
 ```
-if migrator.State() != Ready → redirect /migrate (existing)
-if migrator.NeedsSetup()    → redirect /setup   (new)
+if migrator.State() == DBUnavailable → redirect /db-error (existing gate — see main spec)
+if migrator.State() != Ready        → redirect /migrate   (existing gate)
+if migrator.NeedsSetup()            → redirect /setup     (new)
     bypass: /setup, /api/auth/setup/*, /health, /api/migrate/*
 ```
 
@@ -262,31 +239,36 @@ The loop runs in a goroutine so it does not block the HTTP server (the migration
 
 **Startup ordering in `main.go`:**
 
-`InitNeedsSetup` must be called **before** the HTTP server starts accepting requests. The `needsSetup` bool has a Go zero value of `false`, so if the server starts before `InitNeedsSetup` runs, the window between server start and the `SELECT COUNT(*) FROM users` completing incorrectly passes all requests through the setup gate on a fresh install.
+`initAppState` (which calls `InitNeedsSetup`) runs before the HTTP server starts. The `needsSetup` bool has a Go zero value of `false`, so if the server starts before `InitNeedsSetup` runs, the window between server start and the `SELECT COUNT(*) FROM users` completing incorrectly passes all requests through the setup gate on a fresh install.
 
 ```
-Call InitNeedsSetup   ← before HTTP server starts
+pgxpool.New()              ← fatal only on DSN parse error
+pool.Ping():
+  success → initAppState() → NewMigrator + determineState + InitNeedsSetup
+  failure → AppStateDBUnavailable (no exit)
 Start HTTP server
-Spawn gate-loop goroutine(shutdownCtx) → on condition met, start workers + scheduler
+StartDBProbe(shutdownCtx, pool)   ← goroutine; retries initAppState on first recovery
+Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 ```
 
-`InitNeedsSetup` is a single fast query against a local DB and will not meaningfully delay startup.
+If the DB is unreachable at startup, `InitNeedsSetup` is not called immediately — the probe goroutine calls `initAppState()` on first recovery, which calls `InitNeedsSetup`. This is safe because the HTTP server is in `DBUnavailable` state and redirects all requests to `/db-error` until `initAppState` completes.
 
 ## File Summary
 
 | Action | File |
 |--------|------|
-| Modify | `internal/migrate/migrator.go` — add `needsSetup` field + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()` |
+| Modify | `internal/migrate/migrator.go` — add `needsSetup` field + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; also `AppStateDBUnavailable`, `prevState`, `StartDBProbe()` (see main spec) |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` |
-| Modify | `cmd/nexorious/main.go` — call `InitNeedsSetup` after `Ready`; add gate-loop goroutine for workers + scheduler |
-| Modify | `internal/api/router.go` — add setup gate to middleware; register `GET /setup` + `POST /api/auth/setup/admin` |
+| Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
+| Modify | `internal/api/router.go` — add DB-unavailable gate + setup gate to middleware; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`; update `/health` to return 503 when degraded |
 | Create | `internal/seed/data.go` — official seed data |
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
-| Modify | `ui/ui.go` — add `//go:embed setup` + `SetupBox embed.FS` |
+| Create | `ui/db-error/index.html` — standalone DB-unavailable error page (no build step) |
+| Modify | `ui/ui.go` — add `//go:embed setup` + `SetupBox`, `//go:embed db-error` + `DBErrorBox` |
 
 ---
 
@@ -321,3 +303,12 @@ Spawn gate-loop goroutine(shutdownCtx) → on condition met, start workers + sch
 **`internal/migrate/migrator_test.go`** — add:
 - `TestInitNeedsSetup_NoUsers` — returns true on empty DB
 - `TestInitNeedsSetup_UsersExist` — returns false when users present
+- `TestStartDBProbe_SetsUnavailableOnPingFail` — probe sets `AppStateDBUnavailable` and saves `prevState` when ping fails
+- `TestStartDBProbe_RestoresPrevStateOnRecovery` — probe restores previous state when ping succeeds after unavailability
+- `TestStartDBProbe_RespectsContext` — probe goroutine exits cleanly when context is cancelled
+
+**`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
+- `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
+- `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`
+- `TestDBErrorPage_RedirectsOnRecovery` — `GET /db-error?from=/foo` returns 302 to `/foo` when state ≠ `DBUnavailable`
+- `TestHealth_DegradedReturns503` — `GET /health` returns 503 + `{"status":"degraded","db":"unavailable"}` when state is `DBUnavailable`
