@@ -90,7 +90,7 @@ type Migrator struct {
 
 **Note on the driver:** golang-migrate's pgx/v5 driver opens its own connection internally using a DSN string — it does not accept a `*pgxpool.Pool`. `NewMigrator` therefore takes `databaseURL string` (from `cfg.DatabaseURL`) rather than the pool. The pool is not stored in the `Migrator` struct; it is managed entirely by `main.go` and passed separately to API handlers.
 
-**`logWriter` field:** When `logWriter` is non-nil, the golang-migrate logger adapter writes to it instead of `logCh`. This is used in `--migrate-only` mode (no HTTP server, no SSE consumer) so that migration output reaches `slog`/stdout rather than being silently buffered and discarded. `main.go` sets this via a `WithLogWriter(w io.Writer)` option or a dedicated constructor before calling `RunMigrations`. When `logWriter` is nil (normal server mode), log lines go to `logCh` as usual.
+**`logWriter` field:** When `logWriter` is non-nil, the golang-migrate logger adapter writes to it instead of `logCh`. This is used in `--migrate-only` mode (no HTTP server, no SSE consumer) so that migration output reaches `slog`/stdout rather than being silently buffered and discarded. `main.go` calls `SetLogWriter` before calling `RunMigrations`. When `logWriter` is nil (normal server mode), log lines go to `logCh` as usual.
 
 ### Methods
 
@@ -114,8 +114,9 @@ If `dirty=true` is returned by golang-migrate at startup (a previous migration f
 2. Create fresh buffered `logCh` (capacity 256)
 3. Set state to `Migrating`
 4. Run `m.Up()` in the same goroutine (caller is already in a goroutine from the HTTP handler)
-5. On success: set state to `Ready`, close `logCh`; **deferred hook:** when workers and the scheduler are added (Phase 3), the `Ready` transition here is where `pool.Start()` and `scheduler.Start()` will be called — a `OnReady func()` callback on the `Migrator` struct is the intended extension point
-6. On error: set state to `NeedsMigration`, send error line to `logCh`, close `logCh`, return error
+5. If `m.Up()` returns `migrate.ErrNoChange` — treat as success: set state to `Ready`, close `logCh`
+6. On success (`nil`): set state to `Ready`, close `logCh`; **deferred hook:** when workers and the scheduler are added (Phase 3), the `Ready` transition here is where `pool.Start()` and `scheduler.Start()` will be called — a `OnReady func()` callback on the `Migrator` struct is the intended extension point
+7. On error (any other non-nil error): set state to `NeedsMigration`, send error line to `logCh`, close `logCh`, return error
 
 golang-migrate's logger interface is satisfied by a small adapter that writes to `logCh`.
 
@@ -146,7 +147,7 @@ data: Migration complete.\n\n
 event: complete\ndata: {}\n\n
 ```
 
-Handler sets `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`. Reads from `migrator.LogCh()` until closed, then sends `event: complete` and returns.
+Handler sets `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`. Reads from `migrator.LogCh()` until closed, then sends `event: complete` and returns. If `LogCh()` returns nil (no migration has been started yet), the handler returns `409 Conflict` immediately.
 
 ---
 
@@ -285,9 +286,11 @@ e := api.New(cfg, migrator)
 | DB unreachable on startup | `pool.Ping` fails → log + `os.Exit(1)` (existing) |
 | `NewMigrator` fails (migrate source error) | Log + `os.Exit(1)` |
 | Dirty schema at startup (`dirty=true`) | Log clear error with version number; set state to `NeedsMigration`; migration UI shown; no auto-fix |
+| `m.Up()` returns `migrate.ErrNoChange` | Treated as success — state → `Ready`; `logCh` closed normally |
 | Migration SQL error | State → `NeedsMigration`; error line sent to `logCh`; SSE client sees error line + `complete` event; page re-enables button |
 | `POST /api/migrate/run` while `Migrating` | 409 Conflict |
 | `POST /api/migrate/run` while `Ready` | 400 Bad Request |
+| `GET /api/migrate/progress` before `RunMigrations` called | 409 Conflict (nil `logCh`) |
 | SSE client disconnects mid-migration | Handler returns; migration continues; `logCh` drains normally (buffered) |
 
 ---
