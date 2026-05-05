@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 )
 
@@ -115,6 +118,85 @@ func IsAdminFromContext(c *echo.Context) bool {
 		return false
 	}
 	return b
+}
+
+// AuthUser holds the user data loaded by JWTMiddleware from the database.
+type AuthUser struct {
+	ID       string
+	Username string
+	IsActive bool
+	IsAdmin  bool
+}
+
+// JWTMiddleware returns middleware that validates the access token JWT,
+// checks the session exists in user_sessions, loads the user from users,
+// and sets user_id, is_admin, and user on the Echo context.
+func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			// Step 1-2: Read and validate Authorization header.
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "missing or invalid authorization header",
+				})
+			}
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+			// Step 3: Parse and validate JWT (must be access token).
+			claims, err := ParseToken(secretKey, tokenString, "access")
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "invalid or expired token",
+				})
+			}
+
+			// Step 4: Extract user ID.
+			userID := claims.Subject
+			if userID == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "invalid token: missing subject",
+				})
+			}
+
+			// Step 5: Check session in DB.
+			tokenHash := HashToken(tokenString)
+			var sessionID string
+			err = pool.QueryRow(context.Background(),
+				"SELECT id FROM user_sessions WHERE user_id = $1 AND token_hash = $2",
+				userID, tokenHash,
+			).Scan(&sessionID)
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "session not found or expired",
+				})
+			}
+
+			// Step 6: Load user from DB.
+			var user AuthUser
+			err = pool.QueryRow(context.Background(),
+				"SELECT id, username, is_active, is_admin FROM users WHERE id = $1",
+				userID,
+			).Scan(&user.ID, &user.Username, &user.IsActive, &user.IsAdmin)
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "user not found",
+				})
+			}
+			if !user.IsActive {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "user account is disabled",
+				})
+			}
+
+			// Step 7: Set on context.
+			c.Set("user_id", user.ID)
+			c.Set("is_admin", user.IsAdmin)
+			c.Set("user", &user)
+
+			return next(c)
+		}
+	}
 }
 
 // AdminMiddleware returns middleware that requires is_admin=true on the context.
