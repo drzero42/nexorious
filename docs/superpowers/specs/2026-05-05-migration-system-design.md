@@ -62,14 +62,17 @@ const (
 
 ```go
 type Migrator struct {
-    state      atomic.Int32   // AppState
-    databaseURL string        // DSN passed to golang-migrate's pgx/v5 driver
-    logCh      chan string     // SSE log lines; buffered (256); closed on RunMigrations completion
-    mu         sync.Mutex     // prevents concurrent RunMigrations calls
+    state       atomic.Int32   // AppState
+    databaseURL string         // DSN passed to golang-migrate's pgx/v5 driver
+    logCh       chan string     // SSE log lines; buffered (256); closed on RunMigrations completion
+    logWriter   io.Writer      // alternate log sink for --migrate-only mode (slog-backed); nil = use logCh
+    mu          sync.Mutex     // prevents concurrent RunMigrations calls
 }
 ```
 
 **Note on the driver:** golang-migrate's pgx/v5 driver opens its own connection internally using a DSN string — it does not accept a `*pgxpool.Pool`. `NewMigrator` therefore takes `databaseURL string` (from `cfg.DatabaseURL`) rather than the pool. The pool is not stored in the `Migrator` struct; it is managed entirely by `main.go` and passed separately to API handlers.
+
+**`logWriter` field:** When `logWriter` is non-nil, the golang-migrate logger adapter writes to it instead of `logCh`. This is used in `--migrate-only` mode (no HTTP server, no SSE consumer) so that migration output reaches `slog`/stdout rather than being silently buffered and discarded. `main.go` sets this via a `WithLogWriter(w io.Writer)` option or a dedicated constructor before calling `RunMigrations`. When `logWriter` is nil (normal server mode), log lines go to `logCh` as usual.
 
 ### Methods
 
@@ -140,7 +143,7 @@ if migrator.State() != Ready && !isBypassedPath(path) {
 
 The bypass check is implemented as a configurable prefix list (initially `["/migrate"]`) rather than a hardcoded string comparison. This allows the setup zone (`/api/auth/setup*`) to be added to the bypass list when that feature is built in Phase 1, without restructuring the middleware.
 
-Migration routes are registered before this middleware so they always pass through.
+The middleware is registered globally via `e.Use()`. Migration routes bypass it purely because their paths match the bypass prefix list — not because of route registration order.
 
 `api.New` signature change:
 
@@ -225,8 +228,9 @@ if err != nil {
     os.Exit(1)
 }
 
-// --migrate-only mode:
+// --migrate-only mode: no HTTP server or SSE consumer, so direct log output to slog.
 if migrateOnly {
+    migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
     if err := migrator.RunMigrations(ctx); err != nil {
         slog.Error("migration failed", "err", err)
         pool.Close()
