@@ -14,6 +14,7 @@ Implements the golang-migrate runner, app-state machine (`NeedsMigration → Mig
 
 - `internal/migrate/migrator.go` — state machine + golang-migrate wrapper
 - `internal/migrate/handler.go` — Echo handlers for migration routes
+- `internal/db/migrations/migrations.go` — `//go:embed *.sql` declaration
 - `internal/db/migrations/0001_initial.up.sql` / `.down.sql` — minimal stub
 - `ui/ui.go` — two `embed.FS` vars (`UIBox`, `MigrateBox`)
 - `ui/migrate/migrate.html` — standalone migration UI (Go template, vanilla JS)
@@ -33,6 +34,23 @@ github.com/golang-migrate/migrate/v4
 github.com/golang-migrate/migrate/v4/database/pgx/v5   (pgx driver adapter)
 github.com/golang-migrate/migrate/v4/source/iofs       (embed.FS source)
 ```
+
+---
+
+## Migrations Embed
+
+Migration SQL files are embedded via `//go:embed` in `internal/db/migrations/migrations.go`:
+
+```go
+package migrations
+
+import "embed"
+
+//go:embed *.sql
+var FS embed.FS
+```
+
+`NewMigrator` constructs the golang-migrate source using `iofs.New(migrations.FS, ".")` and the driver using `pgx5.Open(databaseURL)`.
 
 ---
 
@@ -83,6 +101,7 @@ type Migrator struct {
 | `PendingCount() (int, error)` | Number of unapplied migrations |
 | `CurrentVersion() (uint, bool, error)` | Current version + dirty flag |
 | `LogCh() <-chan string` | Returns current log channel for SSE handler |
+| `SetLogWriter(w io.Writer)` | Overrides log sink to `w`; call before `RunMigrations` in `--migrate-only` mode |
 | `RunMigrations(ctx) error` | Transitions state, runs `m.Up()`, streams logs, transitions to `Ready` or back to `NeedsMigration` on failure |
 
 ### Dirty state handling in `NewMigrator`
@@ -151,14 +170,27 @@ The middleware is registered globally via `e.Use()`. Migration routes bypass it 
 func New(cfg *config.Config, migrator *migrate.Migrator) *echo.Echo
 ```
 
-### Route registration order in `registerRoutes`
+### Middleware stack (`e.Use()` calls, outermost → innermost)
 
-1. Migration zone: `/migrate` (GET), `/api/migrate/*` (GET/POST)
-2. App-state middleware (inserted here — only runs for non-migration paths)
-3. CORS middleware — uses `cfg.CORSOrigins`; in production both API and frontend are same-origin so this is a no-op unless `CORS_ORIGINS` is set (development use)
-4. Health: `/health`
-5. Static files: `/static/cover_art/*`, `/static/logos/*` (Echo `Static` — directories must exist at startup or routes are no-ops)
-6. SPA catch-all: serves `ui.UIBox` (`ui/dist/`); unknown paths fall back to `index.html`
+1. `Recover`
+2. `RequestLogger` (slog-backed)
+3. App-state middleware — redirects to `/migrate` unless state is `Ready` or path matches bypass list
+4. CORS — uses `cfg.CORSOrigins`; no-op in production (same-origin); active in development
+
+### Routes registered in `registerRoutes`
+
+| Path | Method(s) | Notes |
+|---|---|---|
+| `/migrate` | GET | Migration UI — rendered by `migrate.Handler`; in bypass list |
+| `/api/migrate/status` | GET | Migration status JSON — in bypass list |
+| `/api/migrate/run` | POST | Trigger migration — in bypass list |
+| `/api/migrate/progress` | GET | SSE stream — in bypass list |
+| `/health` | GET | Health check; always available |
+| `/static/cover_art/*` | GET | Served from `cfg.StoragePath/cover_art/` on disk |
+| `/static/logos/*` | GET | Served from `static/logos/` relative to working directory |
+| `/*` | GET | SPA catch-all — serves `ui.UIBox`; falls back to `index.html` |
+
+The bypass prefix list starts as `["/migrate", "/api/migrate"]`. The `/health` route is not in the bypass list — it requires `Ready` state, which is correct (if migrations haven't run, the app isn't healthy). Static and SPA routes also require `Ready`.
 
 ---
 
