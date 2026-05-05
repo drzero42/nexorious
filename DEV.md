@@ -41,7 +41,8 @@ Use this when you want to start completely from scratch — e.g. the cluster is 
 
 ```bash
 # 1. Stop devenv services
-devenv down      # or Ctrl-C if running in the foreground
+devenv processes down   # stops background processes started with `devenv up -d`
+                        # (Ctrl-C if running in the foreground instead)
 
 # 2. Delete the cluster data directory
 rm -rf .devenv/state/postgres
