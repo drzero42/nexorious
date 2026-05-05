@@ -127,14 +127,23 @@ func (mg *Migrator) PendingCount() (int, error) {
 	defer func() { _ = src.Close() }()
 
 	count := 0
-	next := ver
+	if ver == 0 {
+		// Fresh database: start from the first available migration.
+		firstVer, firstErr := src.First()
+		if firstErr != nil {
+			// No migrations exist at all.
+			return 0, nil
+		}
+		count = 1
+		ver = firstVer
+	}
 	for {
-		nextVer, openErr := src.Next(next)
+		nextVer, openErr := src.Next(ver)
 		if openErr != nil {
 			break
 		}
 		count++
-		next = nextVer
+		ver = nextVer
 	}
 	return count, nil
 }

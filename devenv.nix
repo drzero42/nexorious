@@ -37,5 +37,13 @@
     initialDatabases = [{ name = "nexorious"; }];
   };
 
+  # Podman socket for testcontainers-go integration tests.
+  # Ryuk doesn't work with rootless Podman; tests use defer container.Terminate() instead.
+  enterShell = ''
+    export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+    export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="/run/user/$(id -u)/podman/podman.sock"
+    export TESTCONTAINERS_RYUK_DISABLED="true"
+  '';
+
   # See full reference at https://devenv.sh/reference/options/
 }

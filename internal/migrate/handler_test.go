@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -79,8 +80,13 @@ func TestHandleRun_202_ThenReady(t *testing.T) {
 		t.Errorf("expected 202, got %d", rec.Code)
 	}
 
+	// Wait for RunMigrations to start (goroutine may not have run yet).
+	var ch <-chan string
+	for ch == nil {
+		runtime.Gosched()
+		ch = h.Migrator().LogCh()
+	}
 	// Wait for migration to finish.
-	ch := h.Migrator().LogCh()
 	for range ch {
 	}
 
@@ -171,6 +177,11 @@ func TestHandleProgress_SSE_CompletionEvent(t *testing.T) {
 	runCtx := e.NewContext(runReq, runRec)
 	if err := h.HandleRun(runCtx); err != nil {
 		t.Fatalf("HandleRun: %v", err)
+	}
+
+	// Wait for RunMigrations goroutine to create the log channel.
+	for h.Migrator().LogCh() == nil {
+		runtime.Gosched()
 	}
 
 	// Read SSE stream.

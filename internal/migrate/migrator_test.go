@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -15,7 +16,7 @@ func setupTestDB(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
 	ctr, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:18-alpine",
 		postgres.WithDatabase("nexorious_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
@@ -33,6 +34,8 @@ func setupTestDB(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
+	// golang-migrate's pgx/v5 driver registers under the "pgx5" scheme.
+	connStr = "pgx5" + strings.TrimPrefix(connStr, "postgres")
 	return connStr
 }
 
