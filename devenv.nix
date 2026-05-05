@@ -17,6 +17,7 @@
     sqlc
     golangci-lint
     nodejs_24
+    uv
   ];
 
   # https://devenv.sh/languages/
