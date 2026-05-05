@@ -7,3 +7,5 @@ ui/dist/
 # devenv
 .devenv/
 .devenv.flake.nix
+
+.env
