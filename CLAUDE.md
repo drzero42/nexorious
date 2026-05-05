@@ -169,3 +169,12 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 - Zero Go build errors and zero `golangci-lint` errors before committing
 - Zero TypeScript errors (`npm run check`) before committing
 - All tests must pass before committing
+
+## Known Gotchas
+
+- **`//go:embed all:dir`** — use `all:` prefix when the directory contains dot-files (e.g. `.gitkeep`); without it, Go silently excludes them and the build fails
+- **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists
+- **Package name `migrate`** — collides with the golang-migrate import; alias it: `gmigrate "github.com/golang-migrate/migrate/v4"`
+- **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
+- **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
+- **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
