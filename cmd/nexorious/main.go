@@ -18,6 +18,7 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious-go/internal/migrate"
 )
 
 // Injected at build time via -ldflags.
@@ -97,18 +98,36 @@ func main() {
 	slog.Info("database connected")
 
 	// -------------------------------------------------------------------------
-	// --migrate-only mode: placeholder until the migrator is implemented.
+	// Migrator
+	// -------------------------------------------------------------------------
+	migrator, err := migrate.NewMigrator(ctx, cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("failed to create migrator", "err", err)
+		pool.Close()
+		os.Exit(1)
+	}
+	defer func() {
+		if err := migrator.Close(); err != nil {
+			slog.Error("migrator close error", "err", err)
+		}
+	}()
+
+	// -------------------------------------------------------------------------
+	// --migrate-only mode: run migrations then exit (for initContainers).
 	// -------------------------------------------------------------------------
 	if migrateOnly {
-		slog.Info("migrate-only mode: migrator not yet implemented, exiting")
-		pool.Close()
+		if err := migrator.RunMigrations(ctx); err != nil {
+			slog.Error("migrate-only: migrations failed", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("migrate-only: migrations complete")
 		os.Exit(0)
 	}
 
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg)
+	e := api.New(cfg, migrator)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	sc := echo.StartConfig{

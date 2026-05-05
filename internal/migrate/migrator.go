@@ -209,6 +209,14 @@ func (mg *Migrator) SetStateForTest(s AppState) {
 	mg.state.Store(int32(s))
 }
 
+// NewMigratorForTest creates a Migrator with the given state for testing middleware.
+// The underlying golang-migrate instance is nil — do not call RunMigrations or PendingCount.
+func NewMigratorForTest(s AppState) *Migrator {
+	mg := &Migrator{}
+	mg.state.Store(int32(s))
+	return mg
+}
+
 // logAdapter implements migrate.Logger.
 type logAdapter struct {
 	ch     chan string
