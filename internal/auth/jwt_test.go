@@ -218,8 +218,8 @@ func TestContextHelpers(t *testing.T) {
 	if got := auth.UserIDFromContext(c); got != "" {
 		t.Errorf("UserIDFromContext before Set = %q, want empty", got)
 	}
-	if got := auth.IsAdminFromContext(c); got != false {
-		t.Errorf("IsAdminFromContext before Set = %v, want false", got)
+	if auth.IsAdminFromContext(c) {
+		t.Error("IsAdminFromContext before Set should be false")
 	}
 
 	// After setting.
@@ -229,8 +229,8 @@ func TestContextHelpers(t *testing.T) {
 	if got := auth.UserIDFromContext(c); got != "user-123" {
 		t.Errorf("UserIDFromContext = %q, want %q", got, "user-123")
 	}
-	if got := auth.IsAdminFromContext(c); got != true {
-		t.Errorf("IsAdminFromContext = %v, want true", got)
+	if !auth.IsAdminFromContext(c) {
+		t.Error("IsAdminFromContext after Set should be true")
 	}
 }
 
@@ -272,7 +272,9 @@ func TestAdminMiddleware_NonAdmin(t *testing.T) {
 	}
 
 	mw := auth.AdminMiddleware()(handler)
-	_ = mw(c)
+	if err := mw(c); err != nil {
+		t.Fatalf("AdminMiddleware returned unexpected error: %v", err)
+	}
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -292,7 +294,9 @@ func TestAdminMiddleware_NoAdminKey(t *testing.T) {
 	}
 
 	mw := auth.AdminMiddleware()(handler)
-	_ = mw(c)
+	if err := mw(c); err != nil {
+		t.Fatalf("AdminMiddleware returned unexpected error: %v", err)
+	}
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
