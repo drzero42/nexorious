@@ -96,6 +96,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. Workers 
 
 ### Database Layer
 - **Static queries**: `sqlc` generates type-safe Go from SQL in `internal/db/queries/`. Never edit `internal/db/gen/` by hand.
+- **Exception**: `internal/auth` uses raw `pool.QueryRow` directly (not sqlc) to avoid coupling auth to `internal/db/gen`.
 - **Dynamic filter queries**: `goqu/v9` + `sqlx` used in `internal/filter/` for user-game list filtering (JOINs, WHERE, HAVING accumulate via `filterBuilder`).
 - **Driver**: `pgx/v5` with `pgxpool`.
 - **Migrations**: `golang-migrate/v4`; migration SQL lives in `internal/db/migrations/`.
@@ -159,7 +160,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 **Go (Backend)**
 - Standard Go conventions: `camelCase` unexported, `PascalCase` exported, `UPPER_CASE` constants
 - Errors returned, not panicked; wrap with `fmt.Errorf("context: %w", err)`
-- Echo handler signature: `func (h *Handler) ListGames(c echo.Context) error`
+- Echo handler signature: `func (h *Handler) ListGames(c *echo.Context) error` — note `*echo.Context` (pointer) in v5; middleware is `func(echo.HandlerFunc) echo.HandlerFunc`
 - Use `pgxpool` for DB; pass `*db.Queries` via dependency injection
 
 **TypeScript (Frontend)**
@@ -174,8 +175,10 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 
 ## Known Gotchas
 
+- **`pgx.ErrNoRows` vs DB errors** — always `errors.Is(err, pgx.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"github.com/jackc/pgx/v5"` for the sentinel
+
 - **`//go:embed all:dir`** — use `all:` prefix when the directory contains dot-files (e.g. `.gitkeep`); without it, Go silently excludes them and the build fails
-- **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists
+- **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists. Connection string must use `pgx5://` scheme: `"pgx5" + strings.TrimPrefix(connStr, "postgres")`
 - **Package name `migrate`** — collides with the golang-migrate import; alias it: `gmigrate "github.com/golang-migrate/migrate/v4"`
 - **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
