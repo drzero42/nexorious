@@ -62,23 +62,29 @@ const (
 
 ```go
 type Migrator struct {
-    state  atomic.Int32   // AppState
-    pool   *pgxpool.Pool
-    logCh  chan string     // SSE log lines; buffered (256); closed on RunMigrations completion
-    mu     sync.Mutex     // prevents concurrent RunMigrations calls
+    state      atomic.Int32   // AppState
+    databaseURL string        // DSN passed to golang-migrate's pgx/v5 driver
+    logCh      chan string     // SSE log lines; buffered (256); closed on RunMigrations completion
+    mu         sync.Mutex     // prevents concurrent RunMigrations calls
 }
 ```
+
+**Note on the driver:** golang-migrate's pgx/v5 driver opens its own connection internally using a DSN string — it does not accept a `*pgxpool.Pool`. `NewMigrator` therefore takes `databaseURL string` (from `cfg.DatabaseURL`) rather than the pool. The pool is not stored in the `Migrator` struct; it is managed entirely by `main.go` and passed separately to API handlers.
 
 ### Methods
 
 | Method | Description |
 |---|---|
-| `NewMigrator(ctx, pool) (*Migrator, error)` | Creates struct; checks pending migrations; sets `NeedsMigration` or `Ready` |
+| `NewMigrator(ctx, databaseURL) (*Migrator, error)` | Creates struct; checks pending migrations; handles dirty state; sets `NeedsMigration` or `Ready` |
 | `State() AppState` | Atomic read |
 | `PendingCount() (int, error)` | Number of unapplied migrations |
 | `CurrentVersion() (uint, bool, error)` | Current version + dirty flag |
 | `LogCh() <-chan string` | Returns current log channel for SSE handler |
 | `RunMigrations(ctx) error` | Transitions state, runs `m.Up()`, streams logs, transitions to `Ready` or back to `NeedsMigration` on failure |
+
+### Dirty state handling in `NewMigrator`
+
+If `dirty=true` is returned by golang-migrate at startup (a previous migration failed mid-run), `NewMigrator` logs a clear error message — e.g. `"database schema is dirty at version N — manual intervention required (run migrate force N-1 or fix the migration)"` — and sets state to `NeedsMigration`. The migration UI will be shown and the admin can investigate. The binary does **not** crash; it does **not** attempt to auto-fix the dirty state.
 
 ### RunMigrations behaviour
 
@@ -86,7 +92,7 @@ type Migrator struct {
 2. Create fresh buffered `logCh` (capacity 256)
 3. Set state to `Migrating`
 4. Run `m.Up()` in the same goroutine (caller is already in a goroutine from the HTTP handler)
-5. On success: set state to `Ready`, close `logCh`
+5. On success: set state to `Ready`, close `logCh`; **deferred hook:** when workers and the scheduler are added (Phase 3), the `Ready` transition here is where `pool.Start()` and `scheduler.Start()` will be called — a `OnReady func()` callback on the `Migrator` struct is the intended extension point
 6. On error: set state to `NeedsMigration`, send error line to `logCh`, close `logCh`, return error
 
 golang-migrate's logger interface is satisfied by a small adapter that writes to `logCh`.
@@ -212,7 +218,7 @@ The full application schema is added in subsequent migrations as each API domain
 
 ```go
 // After pool.Ping succeeds:
-migrator, err := migrate.NewMigrator(ctx, pool)
+migrator, err := migrate.NewMigrator(ctx, cfg.DatabaseURL)
 if err != nil {
     slog.Error("failed to initialise migrator", "err", err)
     pool.Close()
@@ -242,6 +248,7 @@ e := api.New(cfg, migrator)
 |---|---|
 | DB unreachable on startup | `pool.Ping` fails → log + `os.Exit(1)` (existing) |
 | `NewMigrator` fails (migrate source error) | Log + `os.Exit(1)` |
+| Dirty schema at startup (`dirty=true`) | Log clear error with version number; set state to `NeedsMigration`; migration UI shown; no auto-fix |
 | Migration SQL error | State → `NeedsMigration`; error line sent to `logCh`; SSE client sees error line + `complete` event; page re-enables button |
 | `POST /api/migrate/run` while `Migrating` | 409 Conflict |
 | `POST /api/migrate/run` while `Ready` | 400 Bad Request |
