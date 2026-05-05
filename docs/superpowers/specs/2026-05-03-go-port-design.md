@@ -48,18 +48,24 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 1. Parse config from env vars (+ `.env` file via `godotenv`)
 2. Open `pgxpool` connection pool
 3. Check pending migrations → set initial app state: `NeedsMigration` or `Ready`
-4. Start Echo HTTP server (serves migration UI if `NeedsMigration`, normal app if `Ready`)
-5. On transition to `Ready`: start worker pool + gocron scheduler
+4. If `Ready`: query `SELECT COUNT(*) FROM users` → set `needsSetup = true` if zero rows
+5. Start Echo HTTP server (serves migration UI if `NeedsMigration`; setup UI if `needsSetup`; normal app otherwise)
+6. On transition to `Ready`: query user count, set `needsSetup`, then start worker pool + gocron scheduler
 
 Workers and the scheduler are never started until migrations have been applied. Graceful shutdown on `SIGTERM`/`SIGINT` drains the worker queue before the process exits.
 
 ### App State Machine
 
 ```
-NeedsMigration → Migrating → Ready
+NeedsMigration → Migrating → Ready → (NeedsSetup checked inline)
 ```
 
-A single Echo middleware checks state on every incoming request. While not `Ready`, all non-migration routes redirect to `/migrate`. Migration routes (`/migrate*`, `/api/migrate/*`) always pass through.
+A single Echo middleware checks state on every incoming request. Two sequential checks:
+
+1. **Migration check** — while not `Ready`, all non-migration routes redirect to `/migrate`. Migration routes (`/migrate*`, `/api/migrate/*`) always pass through.
+2. **Setup check** — once `Ready`, a lightweight `needsSetup bool` flag (set at startup via `SELECT COUNT(*) FROM users`, cleared after `POST /api/auth/setup/admin` succeeds) gates all non-setup routes. While `needsSetup` is true, all routes except `/setup`, `/api/auth/setup/admin`, `/health`, and `/api/migrate/*` redirect to `/setup`. This is the same server-driven pattern as the migration gate — the React SPA never loads the authenticated app until at least one admin user exists.
+
+`needsSetup` is not a formal state machine state — it is a boolean checked inside the `Ready` branch of the middleware, cleared once by the setup handler. No state machine transition is needed.
 
 ---
 
@@ -170,12 +176,14 @@ POST /api/migrate/run            Trigger migration async
 GET  /api/migrate/progress       SSE stream: live log lines + completion event
 ```
 
-**Setup zone** — requires `Ready` state (migrations must have run); bypasses JWT only (no users exist yet during first-run):
+**Setup zone** — requires `Ready` state (migrations must have run); bypasses JWT (no users exist yet during first-run); all other routes redirect to `/setup` while `needsSetup` is true:
 ```
-GET  /api/auth/setup/status      Returns {needs_setup: bool}; checks whether any user row exists
 POST /api/auth/setup/admin       Create initial admin + load seed data; 403 if any user exists
 POST /api/auth/setup/restore     Restore from .tar.gz backup archive during setup; 403 if any user exists
+                                 (deferred to Phase 3 — implement alongside backup/restore system)
 ```
+
+> **Note:** `GET /api/auth/setup/status` is dropped. The server enforces the setup gate via middleware redirect, so the frontend does not need to poll for setup state. The `/setup` React route renders an unconditional setup form — if the user somehow reaches it after setup is complete, `POST /api/auth/setup/admin` returns 403 and the frontend redirects to `/login`.
 
 **API zone** — gated by app-state middleware, then JWT where required:
 ```
@@ -339,7 +347,9 @@ POST   /api/platforms/seed   Load or reload official seed data for platforms and
 
 1. `recover` — panic recovery
 2. `logger` — request logging
-3. `app-state` — redirect to `/migrate` unless state is `Ready` or path is `/migrate*`; setup endpoints (`/api/auth/setup*`) are gated by `Ready` state but are JWT-exempt
+3. `app-state` — two sequential checks:
+   - Migration check: redirect to `/migrate` unless state is `Ready` or path is `/migrate*`
+   - Setup check: redirect to `/setup` unless `needsSetup` is false or path is in the setup bypass list (`/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`)
 4. `cors` — same origins as Python version; in production both API and frontend are same-origin so CORS is only needed in development
 5. `jwt` — on protected route groups only
 
@@ -795,14 +805,15 @@ JWT access + refresh tokens via `golang-jwt/jwt/v5`:
 
 ### First-Run Setup Flow
 
-The Go port handles first-run differently from the Python version. Rather than a `/register` endpoint that returns 403 once users exist, the setup flow is explicit and stateful:
+The Go port uses **server-driven setup gating**, matching the same pattern as the migration gate. Rather than the frontend polling a status endpoint, the middleware redirects all routes to `/setup` until at least one user exists.
 
-1. The frontend checks `GET /api/auth/setup/status` when a protected route is accessed without a valid token — if `needs_setup: true`, it redirects to `/setup` instead of `/login`
-2. `POST /api/auth/setup/admin` creates the first admin user and idempotently loads seed data (platforms and storefronts). Returns 403 if any user already exists
-3. `POST /api/auth/setup/restore` accepts a `.tar.gz` backup archive, restores the database, and completes setup in one step. Returns 403 if any user already exists
-4. All three setup endpoints are in the **Setup zone** — they require `Ready` state (migrations must have run, since seed data is written to tables created by migrations) but are JWT-exempt (no user exists yet to authenticate as).
+1. On startup (after migrations complete), the server queries `SELECT COUNT(*) FROM users`. If zero rows, `needsSetup` is set to `true`.
+2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
+3. `POST /api/auth/setup/admin` creates the first admin user and idempotently loads seed data (platforms and storefronts). On success, clears `needsSetup` to `false`. Returns 403 if any user already exists.
+4. `POST /api/auth/setup/restore` accepts a `.tar.gz` backup archive, restores the database, and completes setup in one step. Returns 403 if any user already exists. **Deferred to Phase 3** — implement alongside the backup/restore system.
+5. Setup endpoints are JWT-exempt (no user exists yet to authenticate as).
 
-The `RouteGuard` component in the React frontend checks setup status once on mount when entering the authenticated route tree. It does **not** poll on every page load.
+The `RouteGuard` component in the React frontend is simplified: it no longer needs to check `GET /api/auth/setup/status`. It only handles the unauthenticated → `/login` redirect for protected routes. The `/setup` route renders an unconditional setup form. If reached after setup is complete (e.g. direct URL navigation), `POST /api/auth/setup/admin` returns 403 and the frontend redirects to `/login`.
 
 ### Profile and Credential Management
 
@@ -1167,7 +1178,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - golang-migrate + migration state machine + browser migration UI (SSE)
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
 - Static file routes: `/static/cover_art/*` and `/static/logos/*`
-- JWT auth: login, refresh, first-run setup flow (setup/status, setup/admin, setup/restore), seed data
+- JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin, seed data); `needsSetup` flag cleared after first admin created
 - Health/status endpoint
 - `internal/filter/` package: filterBuilder + criterion handlers
 
@@ -1198,6 +1209,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - Import handler (`POST /api/import/nexorious` — nexorious JSON format, the upgrade path from Python)
 - Export handler
 - Backup create + scheduled backup
+- `POST /api/auth/setup/restore` — deferred from Phase 1; shares restore logic with the backup system implemented here
 
 **Checkpoint:** existing Python users can export their data and import it into the Go version.
 
