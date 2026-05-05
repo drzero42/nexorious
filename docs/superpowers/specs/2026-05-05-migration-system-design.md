@@ -127,10 +127,12 @@ Handler sets `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Ac
 Added to the Echo middleware stack after `Recover` and `RequestLogger`, before route groups:
 
 ```
-if migrator.State() != Ready && !strings.HasPrefix(path, "/migrate") {
+if migrator.State() != Ready && !isBypassedPath(path) {
     redirect to /migrate (302)
 }
 ```
+
+The bypass check is implemented as a configurable prefix list (initially `["/migrate"]`) rather than a hardcoded string comparison. This allows the setup zone (`/api/auth/setup*`) to be added to the bypass list when that feature is built in Phase 1, without restructuring the middleware.
 
 Migration routes are registered before this middleware so they always pass through.
 
@@ -144,9 +146,10 @@ func New(cfg *config.Config, migrator *migrate.Migrator) *echo.Echo
 
 1. Migration zone: `/migrate` (GET), `/api/migrate/*` (GET/POST)
 2. App-state middleware (inserted here — only runs for non-migration paths)
-3. Health: `/health`
-4. Static files: `/static/cover_art/*`, `/static/logos/*` (Echo `Static` — directories must exist at startup or routes are no-ops)
-5. SPA catch-all: serves `ui.UIBox` (`ui/dist/`); unknown paths fall back to `index.html`
+3. CORS middleware — uses `cfg.CORSOrigins`; in production both API and frontend are same-origin so this is a no-op unless `CORS_ORIGINS` is set (development use)
+4. Health: `/health`
+5. Static files: `/static/cover_art/*`, `/static/logos/*` (Echo `Static` — directories must exist at startup or routes are no-ops)
+6. SPA catch-all: serves `ui.UIBox` (`ui/dist/`); unknown paths fall back to `index.html`
 
 ---
 
