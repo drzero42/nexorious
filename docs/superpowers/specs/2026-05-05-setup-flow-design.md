@@ -13,6 +13,54 @@ Scope: `needsSetup` middleware flag, `POST /api/auth/setup/admin`, seed data loa
 
 ## Components
 
+### 0. DB probe and state additions (`internal/migrate/migrator.go`)
+
+These additions are prerequisites for both the DB-unavailable gate and the setup gate. They belong to `migrator.go` alongside the existing state machine.
+
+**New struct fields:**
+
+```go
+type Migrator struct {
+    state              atomic.Int32
+    prevState          atomic.Int32  // state saved before entering DBUnavailable; restored on recovery
+    lastUnavailableAt  atomic.Value  // stores time.Time; zero if never unavailable
+    needsSetup         bool
+    mu                 sync.RWMutex  // guards needsSetup
+    // ... existing fields
+}
+```
+
+**`StartDBProbe(ctx, pool, onRecovery)`** — polls `pool.Ping()` every 5 seconds in a goroutine:
+
+```go
+func (m *Migrator) StartDBProbe(
+    ctx context.Context,
+    pool *pgxpool.Pool,
+    onRecovery func(ctx context.Context) error,
+)
+```
+
+Behaviour:
+- **Ping fails** and state ≠ `DBUnavailable` → save current state to `prevState`, atomically set state to `DBUnavailable`, store `time.Now()` in `lastUnavailableAt`, log WARN.
+- **Ping succeeds** and state == `DBUnavailable` → three sub-cases based on `prevState`:
+  1. Migrator never initialised (state is still the zero-value `DBUnavailable` with no prior operational state) → call `onRecovery(ctx)` (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
+  2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; `determineState()` re-consults the DB to find the actual current state. Log INFO.
+  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Log INFO.
+  - If the callback or `determineState()` returns an error, log ERROR and remain in `DBUnavailable` — the probe retries on the next successful ping.
+- Goroutine exits cleanly when `ctx` is cancelled (SIGTERM path).
+
+**`LastUnavailableAt()`** — accessor read by the `GET /db-error` handler at serve time:
+
+```go
+func (m *Migrator) LastUnavailableAt() time.Time
+```
+
+Returns the zero `time.Time` if the DB has never been unavailable in this process lifetime.
+
+`onRecovery` is supplied by `main.go` as the `initAppState` closure (see Component 7). This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialisation logic; `main.go` injects it as a callback.
+
+---
+
 ### 1. `needsSetup` flag (`internal/migrate/migrator.go`)
 
 A `needsSetup bool` protected by a `sync.RWMutex` lives on the `Migrator` struct (not a separate package). It is set once at startup and cleared by the setup handler on success.
@@ -26,22 +74,35 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 // Single-attempt: called only when DB is confirmed reachable (from initAppState in main.go)
 ```
 
-`InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (see the main port design spec). `InitNeedsSetup` is called from `initAppState()` in `main.go` in two situations:
-- At startup, if the initial `pool.Ping()` succeeds and state is `Ready` (already-migrated path)
-- By the probe callback on first DB recovery, after `NewMigrator()` + `determineState()` run and the state is `Ready`
+`InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (Component 0). `InitNeedsSetup` is called from `initAppState()` in `main.go` in two situations:
+- At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path)
+- By the probe's `onRecovery` callback on first DB recovery, after `determineState()` runs on the existing Migrator and the state is `Ready`
+
+---
 
 ### 2. App-state middleware (`internal/api/router.go`)
 
-The middleware has three sequential checks. The setup gate is the third (innermost) check:
+The middleware has three sequential checks. Each gate has its own bypass list. The setup gate is the third (innermost) check:
 
 ```
-if migrator.State() == DBUnavailable → redirect /db-error (existing gate — see main spec)
-if migrator.State() != Ready        → redirect /migrate   (existing gate)
-if migrator.NeedsSetup()            → redirect /setup     (new)
+// Gate 1 — DB unavailable
+if migrator.State() == DBUnavailable → redirect /db-error?from=<original-path>
+    bypass: /db-error, /health
+
+// Gate 2 — migrations pending
+if migrator.State() != Ready        → redirect /migrate
+    bypass: /migrate, /api/migrate/*
+
+// Gate 3 — setup required (new)
+if migrator.NeedsSetup()            → redirect /setup
     bypass: /setup, /api/auth/setup/*, /health, /api/migrate/*
 ```
 
 The bypass list for the setup gate is intentionally narrow. `/static/*` is **not** bypassed — the setup page is a self-contained static HTML file and needs no cover art or logos.
+
+`/health` is bypassed by Gate 1 (DB-unavailable) so liveness probes always get a response, and by Gate 3 (setup) so it remains accessible during first-run. It is **not** bypassed by Gate 2 — the health handler itself handles the `NeedsMigration`/`Migrating` states in its response body.
+
+---
 
 ### 3. `internal/seed/` package
 
@@ -88,6 +149,8 @@ ON CONFLICT DO NOTHING
 ```
 
 All three run inside a single `pgxpool` transaction. If the transaction fails, nothing is committed.
+
+---
 
 ### 4. `internal/api/setup.go`
 
@@ -165,18 +228,25 @@ Key details from the SPA source:
 
 The setup page must construct this object from the 201 response (transforming `is_admin` → `isAdmin`) and write it before redirecting to `/`.
 
+---
+
 ### 5. Router changes (`internal/api/router.go`)
 
+The embed vars are defined in `ui/ui.go` as exported package-level vars (`ui.SetupBox`, `ui.DBErrorBox`) and referenced by the router package as `ui.SetupBox` / `ui.DBErrorBox`.
+
+**Setup route:**
+
 ```go
-// In registerRoutes:
+// In registerRoutes (internal/api/router.go):
 sh := NewSetupHandler(pool, cfg, migrator)
+
 e.GET("/setup", func(c echo.Context) error {
     // If setup is already done, redirect to the app root.
     // Mirrors the middleware logic in the other direction.
     if !migrator.NeedsSetup() {
         return c.Redirect(http.StatusFound, "/")
     }
-    f, err := setupBox.Open("setup/index.html")
+    f, err := ui.SetupBox.Open("setup/index.html")
     if err != nil {
         return err
     }
@@ -186,19 +256,87 @@ e.GET("/setup", func(c echo.Context) error {
 e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
 ```
 
-`ui/setup/` is a standalone directory (not part of `ui/dist/`) containing a single self-contained `index.html` with inlined CSS and JavaScript — the same approach as the migration UI (`ui/migrate/`). It is embedded via:
+**DB-error route:**
 
 ```go
-// In ui/ui.go:
-//go:embed setup
-var SetupBox embed.FS
+dh := NewDBErrorHandler(cfg, migrator)
+e.GET("/db-error", dh.HandleDBError)
 ```
 
-This avoids the problem of the React SPA's Vite-bundled assets (`/assets/*.js`) being blocked by the setup gate — the setup page has no external asset dependencies.
+**Health route** (update existing handler):
 
-Setup endpoints are registered outside the JWT middleware group — they are public by design.
+```go
+e.GET("/health", func(c echo.Context) error {
+    switch migrator.State() {
+    case migrate.AppStateReady:
+        return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+    case migrate.AppStateDBUnavailable:
+        return c.JSON(http.StatusServiceUnavailable, map[string]string{
+            "status": "degraded",
+            "db":     "unavailable",
+        })
+    default:
+        return c.JSON(http.StatusOK, map[string]string{"status": migrator.State().String()})
+    }
+})
+```
 
-### 6. Static setup page (`ui/setup/index.html`)
+The `State().String()` method returns `"needs_migration"` or `"migrating"` for the non-Ready, non-unavailable states.
+
+**Embed declarations (`ui/ui.go`):**
+
+```go
+//go:embed setup
+var SetupBox embed.FS
+
+//go:embed db-error
+var DBErrorBox embed.FS
+```
+
+`ui/setup/` and `ui/db-error/` are standalone directories (not part of `ui/dist/`), each containing a single self-contained `index.html` with inlined CSS and JavaScript — the same approach as the migration UI (`ui/migrate/`). This avoids the problem of the React SPA's Vite-bundled assets (`/assets/*.js`) being blocked by the setup gate.
+
+Setup and DB-error endpoints are registered **outside** the JWT middleware group — they are public by design.
+
+---
+
+### 6. `GET /db-error` handler (`internal/api/db_error.go`)
+
+New file. Contains `DBErrorHandler`:
+
+```go
+type DBErrorHandler struct {
+    migrator    *migrate.Migrator
+    redactedDSN string  // computed once at construction time, reused on every serve
+}
+
+func NewDBErrorHandler(cfg *config.Config, migrator *migrate.Migrator) *DBErrorHandler
+func (h *DBErrorHandler) HandleDBError(c echo.Context) error
+```
+
+**DSN redaction** — computed once in `NewDBErrorHandler` via `net/url.Parse(cfg.DatabaseURL)`:
+- Keep: scheme, username, host, port, database name, non-sensitive query params (e.g. `sslmode`).
+- Redact password → `***`.
+- Redact any query param whose name contains `password`, `secret`, or `key` (case-insensitive) → `***`.
+- Store the resulting string as `h.redactedDSN`.
+
+Example output: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=require`
+
+**Handler logic:**
+
+1. If `migrator.State() != DBUnavailable` → redirect to `c.QueryParam("from")` (or `/` if empty). This handles the auto-reload recovery case: when the DB comes back the server no longer redirects to `/db-error`, so a direct visit to the URL after recovery sends the user home.
+2. Otherwise serve `ui.DBErrorBox`'s `db-error/index.html`, injecting two values at serve time (not at registration time) via `html/template` or `strings.ReplaceAll` on placeholder tokens:
+   - `{{.RedactedDSN}}` → `h.redactedDSN`
+   - `{{.LastUnavailableAt}}` → `h.migrator.LastUnavailableAt().UTC().Format(time.RFC3339)` (or `"unknown"` if zero)
+
+**Auto-reload** — the static page includes:
+```js
+setTimeout(() => location.reload(), 5000)
+```
+When the auto-reload fires and the DB has recovered, the server-side redirect in step 1 sends the user back to the original path supplied in the `?from=` query parameter.
+
+---
+
+### 7. Static setup page (`ui/setup/index.html`)
 
 Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirrors the migration page in structure. Behaviour:
 
@@ -209,7 +347,9 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 
 No changes to `ui/src/` (the React SPA) are required. The `RouteGuard` change from the original spec (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
 
-### 7. Worker and scheduler startup (`cmd/nexorious/main.go`)
+---
+
+### 8. Worker and scheduler startup (`cmd/nexorious/main.go`)
 
 Workers and the gocron scheduler run in the same process as the HTTP server. They must not begin processing jobs before the database is ready and setup is complete, because scheduled tasks (metadata refresh, backup) assume at least one user exists and seed data is loaded.
 
@@ -239,37 +379,55 @@ The loop runs in a goroutine so it does not block the HTTP server (the migration
 
 **Startup ordering in `main.go`:**
 
-`initAppState` (which calls `InitNeedsSetup`) runs **before** the HTTP server starts, so `needsSetup` is always set correctly before the first request is served. On the DB-unavailable startup path, the server starts in `AppStateDBUnavailable` which gates all requests to `/db-error` until the probe recovers and calls `initAppState`.
+`NewMigrator()` is called **before** the ping so the struct always exists when the HTTP server starts. `initAppState()` receives the already-created Migrator and only calls `determineState()` + `InitNeedsSetup()` on it — it does not create a new instance. This guarantees the middleware can safely dereference the Migrator from the first request onwards, even if the DB was unavailable at startup.
 
 ```
 pgxpool.New()              ← fatal only on DSN parse error
+NewMigrator()              ← struct created; state zero-values to DBUnavailable
 pool.Ping():
-  success → initAppState() → NewMigrator + determineState + InitNeedsSetup
-  failure → AppStateDBUnavailable (no exit)
-Start HTTP server
+  success → initAppState() → determineState() + InitNeedsSetup() on existing Migrator
+  failure → leave state as DBUnavailable (no exit)
+Start HTTP server          ← Migrator always exists; middleware is safe
 StartDBProbe(shutdownCtx, pool, initAppState)  ← goroutine; calls initAppState on first recovery
 Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 ```
 
-`StartDBProbe` receives `initAppState` as an `onRecovery func(ctx context.Context) error` callback (see Gap 1 in main spec notes). This avoids a circular dependency between `migrator.go` and `main.go` — the Migrator does not import `main`; `main` passes the callback in.
+---
+
+## `/health` Response Contract
+
+The health endpoint is always bypassed by both Gate 1 and Gate 3. Its response depends on the current app state:
+
+| App state | HTTP status | Body |
+|-----------|-------------|------|
+| `Ready` | `200` | `{"status": "ok"}` |
+| `DBUnavailable` | `503` | `{"status": "degraded", "db": "unavailable"}` |
+| `NeedsMigration` | `200` | `{"status": "needs_migration"}` |
+| `Migrating` | `200` | `{"status": "migrating"}` |
+
+The `503` on `DBUnavailable` allows load-balancer health checks to take the instance out of rotation when the database is unreachable.
+
+---
 
 ## File Summary
 
 | Action | File |
 |--------|------|
-| Modify | `internal/migrate/migrator.go` — add `needsSetup` field + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; also `AppStateDBUnavailable`, `prevState`, `lastUnavailableAt atomic.Value`, `StartDBProbe()` (see main spec) |
-| Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` |
+| Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()` |
+| Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
-| Modify | `internal/api/router.go` — add DB-unavailable gate + setup gate to middleware; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`; update `/health` to return 503 when degraded |
+| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`; update `/health` response contract |
 | Create | `internal/seed/data.go` — official seed data |
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
+| Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection |
 | Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin` |
 | Create | `internal/api/setup_test.go` — handler tests |
+| Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
-| Create | `ui/db-error/index.html` — standalone DB-unavailable error page; displays redacted DSN and last-failed-at timestamp injected by the handler at serve time |
-| Modify | `ui/ui.go` — add `//go:embed setup` + `SetupBox`, `//go:embed db-error` + `DBErrorBox` |
+| Create | `ui/db-error/index.html` — standalone DB-unavailable error page; placeholders for redacted DSN and last-failed-at injected at serve time |
+| Modify | `ui/ui.go` — add `//go:embed setup` + `var SetupBox embed.FS`; add `//go:embed db-error` + `var DBErrorBox embed.FS` |
 
 ---
 
@@ -301,6 +459,12 @@ Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 - `TestSetupPage_ServesPage` — GET /setup returns 200 with `text/html` content-type when `needsSetup=true`
 - `TestSetupPage_RedirectsWhenDone` — GET /setup returns 302 to `/` when `needsSetup=false`
 
+**`internal/api/db_error_test.go`**:
+- `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`; body contains redacted DSN placeholder text and a timestamp
+- `TestDBErrorPage_RedirectsOnRecovery` — `GET /db-error?from=/foo` returns 302 to `/foo` when state ≠ `DBUnavailable`
+- `TestDBErrorPage_RedirectsToRootWithNoFrom` — `GET /db-error` (no `?from=`) returns 302 to `/` when state ≠ `DBUnavailable`
+- `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`
+
 **`internal/migrate/migrator_test.go`** — add:
 - `TestInitNeedsSetup_NoUsers` — returns true on empty DB
 - `TestInitNeedsSetup_UsersExist` — returns false when users present
@@ -310,6 +474,6 @@ Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
 - `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
-- `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`
-- `TestDBErrorPage_RedirectsOnRecovery` — `GET /db-error?from=/foo` returns 302 to `/foo` when state ≠ `DBUnavailable`
+- `TestHealth_OKWhenReady` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready`
 - `TestHealth_DegradedReturns503` — `GET /health` returns 503 + `{"status":"degraded","db":"unavailable"}` when state is `DBUnavailable`
+- `TestHealth_NeedsMigrationReturns200` — `GET /health` returns 200 + `{"status":"needs_migration"}` when state is `NeedsMigration`

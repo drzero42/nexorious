@@ -47,11 +47,12 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 
 1. Parse config from env vars (+ `.env` file via `godotenv`)
 2. `pgxpool.New()` — fatal only on DSN parse error (misconfiguration); not a transient failure
-3. `pool.Ping()` — if unreachable, set `AppStateDBUnavailable` and continue (no exit); if reachable, call `initAppState()`
-4. `initAppState()` — `NewMigrator()` + `determineState()` + (if `Ready`) `InitNeedsSetup()`; sets the correct initial state
-5. Start Echo HTTP server (always — serves DB error page, migration UI, setup UI, or the app depending on state)
-6. Start `StartDBProbe(shutdownCtx, pool)` goroutine — monitors DB connectivity, drives state transitions, retries `initAppState()` on first recovery if migrator was not yet initialized
-7. Spawn worker/scheduler gate-loop goroutine — starts workers + gocron only when `State() == Ready && !NeedsSetup()`
+3. `NewMigrator()` — creates the Migrator struct; `state` zero-values to `AppStateDBUnavailable`, which is correct before any DB check
+4. `pool.Ping()` — if unreachable, leave state as `AppStateDBUnavailable` and continue (no exit); if reachable, call `initAppState()`
+5. `initAppState()` — `determineState()` + (if `Ready`) `InitNeedsSetup()` on the already-created Migrator; sets the correct operational state
+6. Start Echo HTTP server (always — serves DB error page, migration UI, setup UI, or the app depending on state; Migrator always exists so middleware is safe)
+7. Start `StartDBProbe(shutdownCtx, pool)` goroutine — monitors DB connectivity, drives state transitions, calls `initAppState()` on first recovery if state is still `DBUnavailable`
+8. Spawn worker/scheduler gate-loop goroutine — starts workers + gocron only when `State() == Ready && !NeedsSetup()`
 
 Workers and the scheduler are never started until migrations have been applied and setup is complete. Graceful shutdown on `SIGTERM`/`SIGINT` drains the worker queue before the process exits.
 
@@ -84,15 +85,20 @@ type Migrator struct {
 ```
 
 **`StartDBProbe(ctx, pool)`** — polls `pool.Ping()` every 5 seconds:
-- Ping fails + state ≠ DBUnavailable → save current state to `prevState`, set `DBUnavailable`, log WARN, record `lastUnavailableAt`
-- Ping succeeds + state == DBUnavailable → if migrator was never initialized (startup failure), call the `onRecovery` callback first; on callback success, restore `prevState`; log INFO
+
+- **Ping fails** + state ≠ `DBUnavailable` → save current state to `prevState`, set `DBUnavailable`, log WARN, record `lastUnavailableAt`.
+- **Ping succeeds** + state == `DBUnavailable` → three sub-cases based on `prevState`:
+  1. `prevState` indicates the Migrator has never been initialised (state is still the zero-value `DBUnavailable` with no prior operational state) → call `onRecovery` callback (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
+  2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator to re-consult the DB. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; the DB now holds whatever state it was in at that point, which `determineState()` will discover correctly. Log INFO.
+  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Log INFO.
+  - If the callback or `determineState()` call returns an error, log ERROR and remain in `DBUnavailable` — the probe will retry on the next successful ping.
 
 Signature:
 ```go
 func (mg *Migrator) StartDBProbe(ctx context.Context, pool *pgxpool.Pool, onRecovery func(ctx context.Context) error)
 ```
 
-`onRecovery` is passed from `main.go` as the `initAppState` closure. This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialization logic; `main.go` injects it as a callback. If `onRecovery` returns an error, the probe logs it at ERROR and remains in `DBUnavailable` — it will retry on the next successful ping.
+`onRecovery` is passed from `main.go` as the `initAppState` closure. This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialisation logic; `main.go` injects it as a callback.
 
 **Middleware** — three sequential checks on every request:
 
