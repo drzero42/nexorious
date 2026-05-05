@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
@@ -34,6 +35,7 @@ func GenerateAccessToken(secretKey string, userID string, expireMinutes int) (st
 	claims := Claims{
 		Type: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expireMinutes) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -55,6 +57,7 @@ func GenerateRefreshToken(secretKey string, userID string, expireDays int) (stri
 	claims := Claims{
 		Type: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expireDays) * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(now),

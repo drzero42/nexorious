@@ -13,7 +13,7 @@ import (
 func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 	cfg := &config.Config{}
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(cfg, m)
+	e := api.New(cfg, m, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -30,7 +30,7 @@ func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 	cfg := &config.Config{}
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(cfg, m)
+	e := api.New(cfg, m, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
@@ -44,7 +44,7 @@ func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 func TestAppStateMiddleware_ReadyStatePassesThrough(t *testing.T) {
 	cfg := &config.Config{}
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m)
+	e := api.New(cfg, m, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()

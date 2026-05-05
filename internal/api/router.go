@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 
+	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/ui"
@@ -17,7 +19,7 @@ import (
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool) *echo.Echo {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -61,12 +63,12 @@ func New(cfg *config.Config, migrator *migrate.Migrator) *echo.Echo {
 	}
 
 	mh := migrate.NewHandler(migrator)
-	registerRoutes(e, cfg, mh)
+	registerRoutes(e, cfg, mh, pool)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool *pgxpool.Pool) {
 	// Migration routes (bypass app-state middleware via prefix list)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -75,6 +77,19 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler) {
 
 	// Health check
 	e.GET("/health", handleHealth)
+
+	// Auth routes — only registered when a DB pool is available.
+	if pool != nil {
+		ah := NewAuthHandler(pool, cfg)
+
+		// Public auth routes (no JWT required)
+		e.POST("/api/auth/login", ah.HandleLogin)
+		e.POST("/api/auth/refresh", ah.HandleRefresh)
+
+		// JWT-protected auth routes
+		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, pool))
+		authGroup.POST("/logout", ah.HandleLogout)
+	}
 
 	// Static cover art files from disk
 	e.GET("/static/cover_art/*", func(c *echo.Context) error {

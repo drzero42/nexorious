@@ -130,7 +130,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg, migrator)
+	e := api.New(cfg, migrator, pool)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	sc := echo.StartConfig{

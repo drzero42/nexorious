@@ -188,7 +188,11 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open stdlib db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close stdlib db: %v", err)
+		}
+	}()
 
 	expectedTables := []string{
 		"users",
