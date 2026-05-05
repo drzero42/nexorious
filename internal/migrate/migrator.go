@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -56,7 +57,9 @@ func NewMigrator(ctx context.Context, databaseURL string) (*Migrator, error) {
 		return nil, fmt.Errorf("migrator: create iofs source: %w", err)
 	}
 
-	m, err := gmigrate.NewWithSourceInstance("iofs", src, databaseURL)
+	// golang-migrate's pgx/v5 driver registers as "pgx5://", not "postgresql://" or "postgres://".
+	migrateURL := strings.NewReplacer("postgresql://", "pgx5://", "postgres://", "pgx5://").Replace(databaseURL)
+	m, err := gmigrate.NewWithSourceInstance("iofs", src, migrateURL)
 	if err != nil {
 		return nil, fmt.Errorf("migrator: new migrate instance: %w", err)
 	}
