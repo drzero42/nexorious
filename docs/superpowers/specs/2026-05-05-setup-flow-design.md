@@ -26,6 +26,7 @@ type Migrator struct {
     lastUnavailableAt  atomic.Value  // stores time.Time; zero if never unavailable
     needsSetup         bool
     mu                 sync.RWMutex  // guards needsSetup
+    migrateMu          sync.Mutex    // guards mg.m; held by RunMigrations for its entire duration
     // ... existing fields
 }
 ```
@@ -136,7 +137,7 @@ The bypass list for the setup gate is intentionally narrow. `/static/*` is **not
 
 New package containing:
 - **`data.go`** — Go slice literals for `OfficialStorefronts`, `OfficialPlatforms`, `OfficialAssociations`. These are direct ports of the Python `OFFICIAL_STOREFRONTS`, `OFFICIAL_PLATFORMS`, `PLATFORM_STOREFRONT_ASSOCIATIONS` data structures.
-- **`seeder.go`** — `SeedAll(ctx, pool)` function that runs storefronts → platforms → associations in a single transaction.
+- **`seeder.go`** — `SeedAll(ctx, pool)` function that runs storefronts → platforms → associations in a **single transaction**. All three insert batches either commit together or roll back together — there is no partial-seed state.
 
 The SQL uses `INSERT ... ON CONFLICT (name) DO UPDATE SET ... WHERE table.source = 'official'` — this preserves custom rows (user-created) while updating official rows if display_name, icon_url, or base_url changed. Simpler and more correct than Python's row-by-row approach.
 
@@ -233,13 +234,13 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
 4. Call `seed.SeedAll(context.Background(), pool)` — outside the user transaction; use `context.Background()` (not the request context) so a client disconnect cannot abort seeding after the user row has committed; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
-5. Issue access token + refresh token by calling `issueTokensAndSession(context.Background(), pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers. Use `context.Background()` (not the request context) so a client disconnect does not leave the session row unpersisted after the user row has committed.
+5. Issue access token + refresh token by calling `issueTokensAndSession(context.Background(), pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, **created as part of this spec** (not extracted from an existing handler). It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. `HandleLogin` (implemented in the auth-handlers phase) calls this same function rather than duplicating the logic. Creating it here avoids the sequencing problem of extracting it from a handler that doesn't exist yet, and avoids duplicating the token issuance + session persistence logic between the two handlers. Use `context.Background()` (not the request context) so a client disconnect does not leave the session row unpersisted after the user row has committed.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
    - `ip`: `c.RealIP()` (Echo v5 helper). Echo's default IP extraction strategy uses `RemoteAddr` — no custom `IPExtractor` is configured for Phase 1. The `ip` field in `user_sessions` is informational; if it resolves incorrectly behind a proxy it does not affect authentication correctness. Configuring proxy-aware IP extraction (e.g. `echo.ExtractIPFromXForwardedForHeader()`) is out of scope for this spec.
 6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500.
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
-**`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. Both `HandleLogin` (password verification uses bcrypt internally when comparing) and `HandleSetupAdmin` must use this constant when hashing passwords — never hardcode the cost inline. This ensures all password hashes in the system are created at the same cost.
+**`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. All call sites that **create** password hashes must use this constant — never hardcode the cost inline. In Phase 1 that is `HandleSetupAdmin`; in later phases it is `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password`. `HandleLogin` does **not** use this constant directly: it calls `bcrypt.CompareHashAndPassword` which reads the cost from the stored hash automatically. This ensures all password hashes in the system are created at the same cost.
 
 **Why serializable instead of `FOR UPDATE`:** `SELECT COUNT(*) FROM users FOR UPDATE` on an empty table acquires no row locks (there are no rows to lock), so two concurrent requests can both pass the count check and both attempt the INSERT. Using a `SERIALIZABLE` transaction causes one of the two concurrent transactions to fail with a serialization failure (`40001`). The winner commits, and when the loser retries it finds `COUNT(*) > 0` and returns 403 — the correct outcome. Do **not** surface `40001` as a 500; retry the transaction once, then let the retry's 403 propagate normally.
 
@@ -311,7 +312,34 @@ The setup page must construct this object from the 201 response and write it bef
 
 ---
 
-### 5. Router changes (`internal/api/router.go`)
+### 4a. `GET /api/auth/me` response contract (`internal/api/auth.go`)
+
+`GET /api/auth/me` is implemented in Phase 1 as part of this spec (see File Summary). It is the first endpoint the SPA's `AuthProvider` calls after setup completes — without it the SPA breaks immediately on redirect to `/`.
+
+**Request:** JWT required (`Authorization: Bearer <access_token>`).
+
+**Response — 200:**
+
+```json
+{
+  "id": "uuid",
+  "username": "admin",
+  "is_admin": true,
+  "is_active": true,
+  "preferences": {},
+  "created_at": "2026-05-05T00:00:00Z"
+}
+```
+
+All fields are snake_case. The `AuthProvider` in `ui/src/providers/auth-provider.tsx` reads this response and transforms it into its internal `User` shape (camelCase: `isAdmin`, `preferences`), overwriting the `localStorage` entry. The handler must include `preferences` — this is the first point in the flow where the real preferences value is served (the 201 from `HandleSetupAdmin` omits it, and the setup page stores `{}` as a placeholder).
+
+**Implementation:**
+- Query: `SELECT id, username, is_admin, is_active, preferences, created_at FROM users WHERE id = $1` using the `user_id` claim from the validated JWT.
+- Return 401 if the claim is missing or the user row is not found (`pgx.ErrNoRows`).
+- Return 500 on any other DB error.
+- `preferences` is a `jsonb` column; return it as a raw JSON object (not a string). pgx scans `jsonb` into `[]byte`; marshal it directly into the response without double-encoding.
+
+---
 
 The embed vars are defined in `ui/ui.go` as exported package-level vars (`ui.SetupBox`, `ui.DBErrorBox`) and referenced by the router package as `ui.SetupBox` / `ui.DBErrorBox`.
 
@@ -567,7 +595,9 @@ func resolveDBURL(cfg *config.Config) string {
 
 ```
 resolvedDatabaseURL := resolveDBURL(cfg)
-pgxpool.New(resolvedDatabaseURL)   ← fatal on any pgxpool.New error
+pgxpool.New(resolvedDatabaseURL)   ← fatal on connection-string parse error only
+                                     (pgxpool.New is lazy — it does not dial the DB;
+                                      connectivity failures surface in the Ping loop below)
 pool.Ping() with 2s backoff, up to 30s total
     → fatal if still unreachable after timeout (log each retry at WARN)
 NewMigrator(resolvedDatabaseURL)
@@ -612,7 +642,7 @@ The loop runs in a goroutine so it does not block the HTTP server (the migration
 
 ```
 resolvedDatabaseURL := resolveDBURL(cfg)
-pgxpool.New(resolvedDatabaseURL)   ← fatal only on any pgxpool.New error
+pgxpool.New(resolvedDatabaseURL)   ← fatal on connection-string parse error only (lazy — does not dial)
 NewMigrator(resolvedDatabaseURL)   ← struct created; state zero-values to DBUnavailable
 pool.Ping():
   success → initAppState() → determineState() + InitNeedsSetup() on existing Migrator
@@ -658,7 +688,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
 | Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection |
-| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin`; define `const bcryptCost = 12` used by both `HandleLogin` (password hashing on registration/change-password) and `HandleSetupAdmin`; implement `GET /api/auth/me` (JWT-required; query `users` table by `user_id` claim; return profile — required in Phase 1 so the SPA's `AuthProvider` can validate the token immediately after setup redirects to `/`) |
+| Modify | `internal/api/auth.go` — create `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function (used by `HandleSetupAdmin` now; `HandleLogin` calls it in the auth-handlers phase); define `const bcryptCost = 12` used by all password-hash creation sites (`HandleSetupAdmin` in Phase 1; `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password` in later phases — `HandleLogin` does not use it, as `bcrypt.CompareHashAndPassword` reads the cost from the stored hash); implement `GET /api/auth/me` (JWT-required; response contract in Component 4a — required in Phase 1 so the SPA's `AuthProvider` can validate the token and hydrate `preferences` immediately after setup redirects to `/`) |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
