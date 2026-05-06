@@ -77,7 +77,7 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 `InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (Component 0). `InitNeedsSetup` is called in three situations:
 - At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path) — called from `initAppState()` in `main.go`
 - By the probe's `onRecovery` callback on first DB recovery, after `determineState()` runs on the existing Migrator and the state is `Ready`
-- After `RunMigrations()` completes successfully — called from the migration HTTP handler (`internal/migrate/handler.go`) immediately after `RunMigrations()` returns `nil`. This is the fresh-install path: on first boot the DB is `NeedsMigration`, so `initAppState()` never calls `InitNeedsSetup`; without this third call site, `needsSetup` would remain `false` (its zero value) after migration, Gate 3 would never fire, and the user would reach the React SPA with an empty `users` table. The pool is already available to the handler (it is threaded through `NewHandler`) so no architectural change is needed — add `migrator.InitNeedsSetup(ctx, pool)` after the state transitions to `Ready`; log WARN and continue if it fails (the DB is confirmed reachable at this point so failure is unlikely, and the migration UI will show the migration as complete regardless).
+- After `RunMigrations()` completes successfully — called from the migration HTTP handler (`internal/migrate/handler.go`) immediately after `RunMigrations()` returns `nil`. This is the fresh-install path: on first boot the DB is `NeedsMigration`, so `initAppState()` never calls `InitNeedsSetup`; without this third call site, `needsSetup` would remain `false` (its zero value) after migration, Gate 3 would never fire, and the user would reach the React SPA with an empty `users` table. The pool must be threaded through `NewHandler` — update `NewHandler(migrator *Migrator, pool *pgxpool.Pool)` to accept a pool parameter and store it on the handler struct; update the call site in `registerRoutes` accordingly. Add `migrator.InitNeedsSetup(context.Background(), pool)` after the state transitions to `Ready` (use `context.Background()`, not the request context — see Component 4 for rationale); log WARN and continue if it fails (the DB is confirmed reachable at this point so failure is unlikely, and the migration UI will show the migration as complete regardless).
 
 **`initAppState()` pseudocode** (for clarity — lives in `main.go` as a closure over `migrator` and `pool`):
 
@@ -97,6 +97,8 @@ func initAppState(ctx context.Context) error {
     return nil
 }
 ```
+
+> **`--migrate-only` mode:** When the binary is invoked with `--migrate-only`, `RunMigrations` is called directly from `main.go` (not via the HTTP handler), so the `InitNeedsSetup` call added to `handler.go` is never triggered. This is intentional — `--migrate-only` is designed for use as a Kubernetes initContainer that runs migrations and exits; setup is performed via the web UI on subsequent normal starts. Do **not** add an `InitNeedsSetup` call to the `--migrate-only` path in `main.go`.
 
 ---
 
@@ -122,7 +124,7 @@ The bypass list for the setup gate is intentionally narrow. `/static/*` is **not
 
 `/health` is bypassed by all three gates so liveness and readiness probes always receive a machine-readable JSON response regardless of app state. The health handler inspects `migrator.State()` and returns the appropriate body (see `/health` Response Contract below).
 
-> **`?from=` encoding (Gate 1):** The `from` value in the `/db-error` redirect must be the full original request URI (path + query string) percent-encoded as a single query parameter value. Use `url.QueryEscape(c.Request().RequestURI())` to construct the redirect target. Echo's `c.QueryParam("from")` automatically percent-decodes it when `HandleDBError` reads it back. Without encoding, a request to `/user-games?page=2&sort=title` would produce `/db-error?from=/user-games?page=2&sort=title`, where `page` and `sort` are misinterpreted as top-level query params on the `/db-error` URL — `c.QueryParam("from")` would return only `/user-games`, silently discarding the original query.
+> **`?from=` encoding (Gate 1):** The `from` value in the `/db-error` redirect must be the full original request URI (path + query string) percent-encoded as a single query parameter value. Use `url.QueryEscape(c.Request().RequestURI)` to construct the redirect target (`RequestURI` is a string field on `*http.Request`, not a method). Echo's `c.QueryParam("from")` automatically percent-decodes it when `HandleDBError` reads it back. Without encoding, a request to `/user-games?page=2&sort=title` would produce `/db-error?from=/user-games?page=2&sort=title`, where `page` and `sort` are misinterpreted as top-level query params on the `/db-error` URL — `c.QueryParam("from")` would return only `/user-games`, silently discarding the original query.
 
 > **Gate 3 does not use `?from=`:** Gate 3 redirects to `/setup` without preserving the original path. This is intentional — Gate 3 only fires on first boot before any admin exists. Once an admin is created `needsSetup` is permanently `false` and the gate never fires again. There is no meaningful "original destination" to return to: the user has no authenticated session and the app has no data. After setup completes, the setup page redirects to `/` and the SPA handles navigation from there.
 
@@ -228,11 +230,11 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    c. `INSERT INTO users (id, username, password_hash, is_admin, ...)` with `uuid.NewString()`
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
-4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
-5. Issue access token + refresh token by calling `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers.
+4. Call `seed.SeedAll(context.Background(), pool)` — outside the user transaction; use `context.Background()` (not the request context) so a client disconnect cannot abort seeding after the user row has committed; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
+5. Issue access token + refresh token by calling `issueTokensAndSession(context.Background(), pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers. Use `context.Background()` (not the request context) so a client disconnect does not leave the session row unpersisted after the user row has committed.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
    - `ip`: `c.RealIP()` (Echo v5 helper). Echo's default IP extraction strategy uses `RemoteAddr` — no custom `IPExtractor` is configured for Phase 1. The `ip` field in `user_sessions` is informational; if it resolves incorrectly behind a proxy it does not affect authentication correctness. Configuring proxy-aware IP extraction (e.g. `echo.ExtractIPFromXForwardedForHeader()`) is out of scope for this spec.
-6. Call `h.migrator.SetNeedsSetup(false)`
+6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500.
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
 **Why serializable instead of `FOR UPDATE`:** `SELECT COUNT(*) FROM users FOR UPDATE` on an empty table acquires no row locks (there are no rows to lock), so two concurrent requests can both pass the count check and both attempt the INSERT. Using a `SERIALIZABLE` transaction causes one of the two concurrent transactions to fail with a serialization failure (`40001`). The winner commits, and when the loser retries it finds `COUNT(*) > 0` and returns 403 — the correct outcome. Do **not** surface `40001` as a 500; retry the transaction once, then let the retry's 403 propagate normally.
@@ -444,7 +446,7 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 
 No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
 
-**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1; the route is accessible while `needsSetup=true` (before any admin exists) and returns 403 via Gate 3 once setup is complete. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
+**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1. The route returns `501 Not Implemented` in all app states — Gate 3 never applies to it because `/api/auth/setup/*` is in Gate 3's bypass list. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
 
 ---
 
@@ -591,10 +593,10 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Action | File |
 |--------|------|
 | Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()`; **refactor `NewMigrator`** to not connect at construction time (store `databaseURL` + `iofs.Source`, lazy-init `mg.m` in `determineState()`; remove `ctx` param; nil-check in `Close()`) — see Component 9a |
-| Modify | `internal/migrate/handler.go` — call `migrator.InitNeedsSetup(ctx, pool)` after `RunMigrations()` succeeds (fresh-install path; see Component 1) |
+| Modify | `internal/migrate/handler.go` — update `NewHandler` to accept `pool *pgxpool.Pool` as a second parameter and store it on the handler struct; call `migrator.InitNeedsSetup(context.Background(), pool)` after `RunMigrations()` succeeds (fresh-install path; see Component 1) |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
-| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract |
+| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract; pass `pool` to `migrate.NewHandler` |
 | Create | `internal/seed/data.go` — official seed data |
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
@@ -648,6 +650,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 - `TestDBErrorPage_RedirectsToRootWithNoFrom` — `GET /db-error` (no `?from=`) returns 302 to `/` when state ≠ `DBUnavailable`
 - `TestDBErrorPage_RejectsExternalFrom` — `GET /db-error?from=https://evil.com` returns 302 to `/` (not to the external URL) when state ≠ `DBUnavailable`
 - `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`
+- `TestDBErrorHandler_InjectsUnknownWhenNeverUnavailable` — unit test: construct a `DBErrorHandler` whose Migrator has never entered `DBUnavailable` state; verify `LastUnavailableAt()` returns the zero `time.Time` and the served HTML contains the literal string `"unknown"` in the last-failed-at field
 
 **`internal/migrate/handler_test.go`** — add:
 - `TestRunMigrations_SetsNeedsSetupAfterSuccess` — after `RunMigrations()` succeeds on a fresh DB, verify `migrator.NeedsSetup()` returns `true` (no users exist yet, so the setup gate must be armed)
@@ -662,7 +665,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
 - `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
-- `TestDBUnavailable_EncodesFromParam` — request to `/user-games?page=2&sort=title` while `DBUnavailable` produces a redirect `Location` of `/db-error?from=%2Fuser-games%3Fpage%3D2%26sort%3Dtitle`; verifies `url.QueryEscape(RequestURI())` is used rather than the bare path
+- `TestDBUnavailable_EncodesFromParam` — request to `/user-games?page=2&sort=title` while `DBUnavailable` produces a redirect `Location` of `/db-error?from=%2Fuser-games%3Fpage%3D2%26sort%3Dtitle`; verifies `url.QueryEscape(c.Request().RequestURI)` is used rather than the bare path
 - `TestSetupGate_RedirectsArbitraryRoutes` — `GET /api/games` while `needsSetup=true` returns 302 to `/setup`
 - `TestSetupGate_BypassesHealthEndpoint` — `GET /health` while `needsSetup=true` returns 200 (not redirected)
 - `TestSetupGate_BypassesMigrateRoutes` — `GET /api/migrate/status` while `needsSetup=true` is not redirected to `/setup`
