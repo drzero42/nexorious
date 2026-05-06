@@ -80,7 +80,7 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 `InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (Component 0). `InitNeedsSetup` is called in three situations:
 - At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path) — called from `initAppState()` in `main.go`
 - By the probe's `onRecovery` callback on first DB recovery, after `determineState()` runs on the existing Migrator and the state is `Ready`
-- After `RunMigrations()` completes successfully — called from the migration HTTP handler (`internal/migrate/handler.go`) immediately after `RunMigrations()` returns `nil`. This is the fresh-install path: on first boot the DB is `NeedsMigration`, so `initAppState()` never calls `InitNeedsSetup`; without this third call site, `needsSetup` would remain `false` (its zero value) after migration, Gate 3 would never fire, and the user would reach the React SPA with an empty `users` table. The pool must be threaded through `NewHandler` — update `NewHandler(migrator *Migrator, pool *pgxpool.Pool)` to accept a pool parameter and store it on the handler struct; update the call site in `registerRoutes` accordingly. Add `migrator.InitNeedsSetup(context.Background(), pool)` after the state transitions to `Ready` (use `context.Background()`, not the request context — see Component 4 for rationale); log WARN and continue if it fails (the DB is confirmed reachable at this point so failure is unlikely, and the migration UI will show the migration as complete regardless).
+- After `RunMigrations()` completes successfully — called from the migration HTTP handler (`internal/migrate/handler.go`) **before** the state is transitioned to `Ready`. This ordering is required to eliminate the race with the gate-loop goroutine (Component 9): the loop polls `State() == Ready && !NeedsSetup()` every 2 seconds; if state became `Ready` first and the loop ticked before `InitNeedsSetup` completed, workers would start against an empty database. By calling `InitNeedsSetup` while state is still `Migrating`, the gate loop never sees the unsafe `Ready && false` window. Concretely, `handler.go` must: (1) call `migrator.InitNeedsSetup(context.Background(), pool)` — log WARN and continue if it fails; (2) then transition state to `Ready`. `RunMigrations()` itself must leave state as `Migrating` on success and leave the `Ready` transition to the handler. This is the fresh-install path: on first boot the DB is `NeedsMigration`, so `initAppState()` never calls `InitNeedsSetup`; without this third call site, `needsSetup` would remain `false` (its zero value) after migration, Gate 3 would never fire, and the user would reach the React SPA with an empty `users` table. The pool must be threaded through `NewHandler` — update `NewHandler(migrator *Migrator, pool *pgxpool.Pool)` to accept a pool parameter and store it on the handler struct; update the call site in `registerRoutes` accordingly. Use `context.Background()` (not the request context — see Component 4 for rationale).
 
 **`initAppState()` pseudocode** (for clarity — lives in `main.go` as a closure over `migrator` and `pool`):
 
@@ -232,7 +232,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 2. In a serializable transaction:
    a. `SELECT COUNT(*) FROM users` — if > 0, return 403
    b. Bcrypt-hash the password using the shared `bcryptCost` constant (see below)
-   c. `INSERT INTO users (id, username, password_hash, is_admin, ...)` with `uuid.NewString()`
+   c. `INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES ($1, $2, $3, true, now()) RETURNING created_at` — capture `created_at` from the `RETURNING` clause for use in the 201 response body. `id` is `uuid.NewString()` generated before the transaction.
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
 4. Call `seed.SeedAll(context.Background(), pool)` — outside the user transaction; use `context.Background()` (not the request context) so a client disconnect cannot abort seeding after the user row has committed; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
@@ -271,7 +271,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    - `token_hash`: `auth.HashToken(accessToken)` — SHA-256 hex digest (from `internal/auth`)
    - `refresh_token_hash`: `auth.HashToken(refreshToken)` — SHA-256 hex digest
    - `user_agent`, `ip_address`: passed in from the caller
-6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500 with `{"error": "setup succeeded but session could not be created — please log in"}`. The setup page must treat a 500 response as a redirect to `/login` (not a generic retry prompt — the admin account was created, retrying setup would return 403).
+6. Call `h.migrator.SetNeedsSetup(false)` — called unconditionally after step 5, whether it succeeded or failed. The user row has been committed; the setup gate must not remain active indefinitely. If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500 with `{"error": "setup succeeded but session could not be created — please log in"}`. The setup page must treat a 500 response as a redirect to `/login` (not a generic retry prompt — the admin account was created, retrying setup would return 403).
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
 **`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. All call sites that **create** password hashes must use this constant — never hardcode the cost inline. Use `golang.org/x/crypto/bcrypt` (`bcrypt.GenerateFromPassword`). In Phase 1 that is `HandleSetupAdmin`; in later phases it is `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password`. `HandleLogin` does **not** use this constant directly: it calls `bcrypt.CompareHashAndPassword` which reads the cost from the stored hash automatically. This ensures all password hashes in the system are created at the same cost.
@@ -296,6 +296,8 @@ There is no need to handle `23505` (unique violation on `username`) — that cas
 ```
 
 `is_active` is not set explicitly in the INSERT — the `users.is_active` column defaults to `true` at the DB level. The handler relies on this default; do not set it explicitly in the INSERT statement. Return `is_active: true` as a **hardcoded literal** in the 201 response body — do not read it back from the DB via `RETURNING is_active` (the default is guaranteed for a freshly created row and the extra round-trip is unnecessary).
+
+`created_at` is captured from the `RETURNING created_at` clause of the INSERT (step 2c above) and returned verbatim in the 201 response body, formatted as RFC 3339 UTC.
 
 `preferences` is **not included** in this response — the column defaults to `'{}'::jsonb` for a newly created user, but the handler does not need to read it back from the DB and include it in the 201 body. The setup page supplies the `{}` fallback directly (see transformation below).
 
@@ -742,7 +744,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Action | File |
 |--------|------|
 | Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()`; **refactor `NewMigrator`** to not connect at construction time (store `databaseURL` + `iofs.Source`, lazy-init `mg.m` in `determineState()`; remove `ctx` param; nil-check in `Close()`) — see Component 9a |
-| Modify | `internal/migrate/handler.go` — update `NewHandler` to accept `pool *pgxpool.Pool` as a second parameter and store it on the handler struct; call `migrator.InitNeedsSetup(context.Background(), pool)` after `RunMigrations()` succeeds (fresh-install path; see Component 1) |
+| Modify | `internal/migrate/handler.go` — update `NewHandler` to accept `pool *pgxpool.Pool` as a second parameter and store it on the handler struct; after `RunMigrations()` succeeds, call `migrator.InitNeedsSetup(context.Background(), pool)` **before** transitioning state to `Ready` (ordering is critical — see Component 1); `RunMigrations()` must leave state as `Migrating` on success, delegating the `Ready` transition to the handler |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
 | Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract; pass `pool` to `migrate.NewHandler` — see Component 5 |
@@ -805,7 +807,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 - `TestDBErrorHandler_InjectsUnknownWhenNeverUnavailable` — unit test: construct a `DBErrorHandler` whose Migrator has never entered `DBUnavailable` state; verify `LastUnavailableAt()` returns the zero `time.Time` and the served HTML contains the literal string `"unknown"` in the last-failed-at field
 
 **`internal/migrate/handler_test.go`** — add:
-- `TestRunMigrations_SetsNeedsSetupAfterSuccess` — after `RunMigrations()` succeeds on a fresh DB, verify `migrator.NeedsSetup()` returns `true` (no users exist yet, so the setup gate must be armed)
+- `TestRunMigrations_SetsNeedsSetupBeforeReady` — after the handler processes a successful `RunMigrations()`, verify `migrator.NeedsSetup()` returns `true` and `migrator.State()` returns `AppStateReady`. This validates that `InitNeedsSetup` ran before the `Ready` transition (so the gate loop never sees the unsafe `Ready && needsSetup==false` window).
 - Update all existing `NewHandler(...)` call sites in this file to pass the `pool` parameter added in Component 1.
 
 **`internal/migrate/migrator_test.go`** — add:

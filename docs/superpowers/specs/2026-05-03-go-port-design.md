@@ -870,7 +870,7 @@ The `rate_limiter_tokens` table is always created by the initial migration regar
 
 JWT access + refresh tokens via `golang-jwt/jwt/v5`:
 
-- **Access token**: short-lived (default 15 min, configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`), carries `user_id` and `role` claims, validated by Echo middleware on protected routes
+- **Access token**: short-lived (default 15 min, configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`), carries `{type, sub, exp, iat}` claims (`sub` = user ID); no `role` or `is_admin` in the token — admin status is loaded from the DB on each authenticated request; validated by Echo middleware on protected routes
 - **Refresh token**: longer-lived (default 30 days, configurable via `REFRESH_TOKEN_EXPIRE_DAYS`), stored as a hash in the `user_sessions` table, cleaned up every 30 minutes by the scheduler
 - **Logout**: deletes the `UserSession` row; subsequent refresh attempts with that token return 401
 
