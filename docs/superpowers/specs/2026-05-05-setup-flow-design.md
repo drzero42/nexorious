@@ -234,7 +234,7 @@ There is no need to handle `23505` (unique violation on `username`) — that cas
 }
 ```
 
-`is_active` is not set explicitly in the INSERT — the `users.is_active` column defaults to `true` at the DB level. The handler relies on this default; do not set it explicitly in the INSERT statement.
+`is_active` is not set explicitly in the INSERT — the `users.is_active` column defaults to `true` at the DB level. The handler relies on this default; do not set it explicitly in the INSERT statement. Return `is_active: true` as a **hardcoded literal** in the 201 response body — do not read it back from the DB via `RETURNING is_active` (the default is guaranteed for a freshly created row and the extra round-trip is unnecessary).
 
 `preferences` is **not included** in this response — the column defaults to `'{}'::jsonb` for a newly created user, but the handler does not need to read it back from the DB and include it in the 201 body. The setup page supplies the `{}` fallback directly (see transformation below).
 
@@ -597,6 +597,8 @@ The `status` field in the body provides the actual state for monitoring and obse
 
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
 - `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
-- `TestHealth_OKWhenReady` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready`
+- `TestDBUnavailable_EncodesFromParam` — request to `/user-games?page=2&sort=title` while `DBUnavailable` produces a redirect `Location` of `/db-error?from=%2Fuser-games%3Fpage%3D2%26sort%3Dtitle`; verifies `url.QueryEscape(RequestURI())` is used rather than the bare path
+- `TestHealth_OKWhenReady` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready` and `needsSetup=false`
+- `TestHealth_OKWhenSetupPending` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready` but `needsSetup=true` (setup gate is active; health still reports `ok` because the HTTP server is fully functional)
 - `TestHealth_DBUnavailableReturns200` — `GET /health` returns 200 + `{"status":"db_unavailable"}` when state is `DBUnavailable`
 - `TestHealth_NeedsMigrationReturns200` — `GET /health` returns 200 + `{"status":"needs_migration"}` when state is `NeedsMigration`
