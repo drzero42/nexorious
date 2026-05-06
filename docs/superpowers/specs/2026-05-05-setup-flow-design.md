@@ -44,6 +44,8 @@ func (m *Migrator) StartDBProbe(
 Behaviour:
 - **Ping fails** and state ≠ `DBUnavailable` → save current state to `prevState`, atomically set state to `DBUnavailable`, store `time.Now()` in `lastUnavailableAt`, log WARN.
 - **Ping succeeds** and state == `DBUnavailable` → three sub-cases based on `prevState`. Sub-case detection: `prevState` is set to the state the app was in *before* entering `DBUnavailable`. Sub-case 1 is identified by `prevState == AppStateDBUnavailable` (the zero value of the `atomic.Int32`), which is a valid sentinel because `StartDBProbe` only writes `prevState` when transitioning *out of* a non-unavailable state — i.e. `prevState` remains the zero value if and only if the Migrator was never in an operational state.
+
+  > **Invariant: `AppStateDBUnavailable` must be iota = 0.** The entire sentinel logic above depends on `AppStateDBUnavailable` being the zero value of `int32`. It must be declared first in the `AppState` const block in `internal/migrate/migrator.go` — no other constant may precede it in that block. Do not reorder or insert constants before it. If the ordering ever changes, `prevState`'s zero value would no longer mean "never initialised" and Sub-case 1 would silently misfire.
   1. `prevState == AppStateDBUnavailable` (Migrator never initialised — no prior operational state) → call `onRecovery(ctx)` (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
   2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; `determineState()` re-consults the DB to find the actual current state. Log INFO.
   3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Then: if the restored state is `Ready` **and** `NeedsSetup()` is still `true`, call `InitNeedsSetup()` to re-check the user count. This handles the race where `POST /api/auth/setup/admin` committed the user row but the DB went unavailable before `SetNeedsSetup(false)` was called — without this check `needsSetup` would remain `true` indefinitely, blocking all non-setup routes even though an admin exists. If `InitNeedsSetup()` fails, log ERROR and remain in `DBUnavailable`. Log INFO on success.
@@ -256,9 +258,9 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    ```
 
    Token generation (via `internal/auth` package, `github.com/golang-jwt/jwt/v5`):
-   - **Access token**: HS256 JWT, `type="access"`, `sub=userID`, TTL = `cfg.AccessTokenMinutes` (default 15 minutes). Claims shape: `{type, sub, exp, iat}` — no `is_admin`, no role; admin status is loaded from the DB on every authenticated request.
-   - **Refresh token**: HS256 JWT, `type="refresh"`, `sub=userID`, TTL = `cfg.RefreshTokenDays` (default 30 days).
-   - Both signed with `cfg.JWTSecret`.
+   - **Access token**: HS256 JWT, `type="access"`, `sub=userID`, TTL = `cfg.AccessTokenExpireMinutes` (default 15 minutes). Claims shape: `{type, sub, exp, iat}` — no `is_admin`, no role; admin status is loaded from the DB on every authenticated request.
+   - **Refresh token**: HS256 JWT, `type="refresh"`, `sub=userID`, TTL = `cfg.RefreshTokenExpireDays` (default 30 days).
+   - Both signed with `cfg.SecretKey`.
 
    `user_sessions` row inserted:
    ```sql
