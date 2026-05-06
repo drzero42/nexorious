@@ -892,6 +892,8 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 
 **No React SPA changes** are required for this feature. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) should be confirmed during Phase 2 frontend work if that call exists in the Python code being ported.
 
+> **`GET /api/auth/me` is a Phase 1 endpoint.** The setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls `GET /api/auth/me` to validate the token and populate the user object. If this endpoint is deferred to Phase 2, the SPA breaks immediately after setup completes. It must be implemented alongside the setup flow in Phase 1. See the Phase 1 roadmap entry and Profile and Credential Management section.
+
 ### Profile and Credential Management
 
 - `GET /api/auth/me` — returns current user profile; used by the frontend as a token-validity probe on app load
@@ -1085,6 +1087,33 @@ type Config struct {
 
 **Database URL resolution:** At startup, if `DATABASE_URL` is set (non-empty), it is used as-is. If it is empty or absent, the binary constructs a URL from `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`, URL-encoding the user and password components. `DATABASE_URL` must be set or the individual `DB_*` vars must produce a valid URL — the binary fails to start if neither is usable.
 
+**Resolved URL construction** (the single authoritative snippet used across `main.go`, `NewMigrator`, `NewDBErrorHandler`, and `--migrate-only`):
+
+```go
+// resolveDBURL returns the connection string to pass to pgxpool.New and
+// golang-migrate. It is computed once in main() and passed everywhere.
+func resolveDBURL(cfg *config.Config) string {
+    if cfg.DatabaseURL != "" {
+        return cfg.DatabaseURL
+    }
+    // Construct from individual DB_* vars. URL-encode user and password so
+    // special characters (@ : / etc.) in the values do not break URL parsing.
+    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+        url.QueryEscape(cfg.DBUser),
+        url.QueryEscape(cfg.DBPassword),
+        cfg.DBHost,
+        cfg.DBPort,
+        cfg.DBName,
+    )
+}
+```
+
+`resolveDBURL` is called once in `main()` before `pgxpool.New`. The returned string is stored as `resolvedDatabaseURL` and passed to:
+- `pgxpool.New(ctx, resolvedDatabaseURL)` — pool creation
+- `NewMigrator(resolvedDatabaseURL)` — stored for lazy `gmigrate.NewWithSourceInstance` call
+- `NewDBErrorHandler(resolvedDatabaseURL, migrator)` — DSN redaction at construction time
+- Both the normal and `--migrate-only` paths use the same `resolveDBURL` call; there is no second resolution site.
+
 **IGDB credential note:** `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are marked `required` — the binary will refuse to start without them. The Python implementation marks them `Optional` and emits a startup warning instead, which was a mistake: IGDB credentials are load-bearing for game search, import, and the sync matching pipeline. Allowing the app to start without them produces a degraded-but-plausible-looking state where those features silently fail at runtime. The Go port treats them as required to make the dependency explicit at startup.
 
 **Storage path notes:**
@@ -1108,6 +1137,31 @@ Implemented using stdlib `flag` (no new dependency for Phase 1). Cobra subcomman
 | `--version`, `-v` | — | Print `nexorious <version> (<commit>)` and exit; version and commit are injected at build time via `-ldflags` |
 | `--config` | `""` | Path to a `.env` file; loaded before env vars are parsed by `caarlos0/env`. When empty, the binary checks for a `.env` file in the working directory (matching `godotenv`'s default behaviour) |
 | `--migrate-only` | `false` | Run pending migrations then exit with code 0 (or non-zero on failure). Does not start the HTTP server or workers. The standard pattern for Kubernetes `initContainers` |
+
+**`--migrate-only` startup sequence** (explicit — differs meaningfully from the normal server path):
+
+```
+Parse config
+Resolve DATABASE_URL (see Configuration section)
+pgxpool.New(resolvedURL)   ← fatal on any error (DSN parse or TLS config; these are always misconfigurations)
+pool.Ping()                ← retry with 2s backoff for up to 30 seconds; fatal if DB unreachable after timeout
+NewMigrator(resolvedURL)   ← cheap constructor; state = DBUnavailable
+migrator.determineState()  ← connects golang-migrate to DB; fatal on error
+if state == Ready:
+    print "No pending migrations." and exit 0
+migrator.RunMigrations()   ← runs all pending migrations; streams log lines to stderr
+if RunMigrations() fails:
+    print error and exit 1
+exit 0
+```
+
+Key differences from the normal server path:
+- **No HTTP server is started.** The browser migration UI is irrelevant.
+- **No `StartDBProbe` goroutine.** `--migrate-only` is not a long-running process; transient DB unavailability is fatal after the retry window (no self-healing needed).
+- **No `InitNeedsSetup` call.** Setup is intentionally skipped — this mode is for Kubernetes `initContainers` that run migrations and exit; the web UI handles setup on the next normal start.
+- **No worker/scheduler gate loop.** Workers are never started.
+- **`pgxpool.New` errors are always fatal** in `--migrate-only` mode (same as normal mode; any `pgxpool.New` error is a misconfiguration, not a transient failure).
+- **`pool.Ping()` retry:** normal mode leaves state as `DBUnavailable` and continues; `--migrate-only` must actually reach the DB to run migrations, so it retries with a short backoff (2s × 15 = 30s) and fatals on timeout. Log each retry attempt at WARN level.
 
 ### Build-time version injection
 
@@ -1256,10 +1310,11 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
 - Static file routes: `/static/cover_art/*` and `/static/logos/*`
 - JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin, seed data); `needsSetup` flag cleared after first admin created
+- `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim, return profile. Shares the same raw `pgxpool` approach as other auth endpoints (not sqlc; see Database Layer).
 - Health/status endpoint
 - `internal/filter/` package: filterBuilder + criterion handlers
 
-**Checkpoint:** binary starts, browser shows migration UI on first run, React app loads after migration, login works.
+**Checkpoint:** binary starts, browser shows migration UI on first run, React app loads after migration, setup completes end-to-end (including SPA redirect), login works.
 
 ---
 
@@ -1272,6 +1327,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
 - Platforms, tags, and user-games filter-options / genres / stats / ids endpoints
 - IGDB service (rate-limited HTTP client, cover art + logos storage)
+- Remaining auth profile endpoints: `PUT /api/auth/me`, `PUT /api/auth/change-password`, `GET /api/auth/username/check/:username`, `PUT /api/auth/username` (`GET /api/auth/me` is Phase 1 — see above)
 
 **Checkpoint:** React frontend fully usable for browsing and managing game collection.
 

@@ -98,7 +98,7 @@ func initAppState(ctx context.Context) error {
 }
 ```
 
-> **`--migrate-only` mode:** When the binary is invoked with `--migrate-only`, `RunMigrations` is called directly from `main.go` (not via the HTTP handler), so the `InitNeedsSetup` call added to `handler.go` is never triggered. This is intentional — `--migrate-only` is designed for use as a Kubernetes initContainer that runs migrations and exits; setup is performed via the web UI on subsequent normal starts. Do **not** add an `InitNeedsSetup` call to the `--migrate-only` path in `main.go`.
+> **`--migrate-only` mode:** When the binary is invoked with `--migrate-only`, `RunMigrations` is called directly from `main.go` (not via the HTTP handler), so the `InitNeedsSetup` call added to `handler.go` is never triggered. This is intentional — `--migrate-only` is designed for use as a Kubernetes initContainer that runs migrations and exits; setup is performed via the web UI on subsequent normal starts. Do **not** add an `InitNeedsSetup` call to the `--migrate-only` path in `main.go`. See Component 9 for the full `--migrate-only` startup sequence.
 
 ---
 
@@ -190,12 +190,14 @@ WHERE platforms.source = 'official'
 ```sql
 INSERT INTO platform_storefronts (platform, storefront, created_at)
 VALUES ($1, $2, now())
-ON CONFLICT DO NOTHING
+ON CONFLICT (platform, storefront) DO NOTHING
 ```
 
 All three run inside a single `pgxpool` transaction. If the transaction fails, nothing is committed.
 
-> **`SeedResult.Associations` count note:** `ON CONFLICT DO NOTHING` returns `RowsAffected() == 0` for rows that conflict and are skipped. The `Associations int` field therefore counts only newly inserted rows, not pre-existing ones. This is intentional — the field reports what changed, not what exists.
+> **`SeedResult` count semantics:** Count semantics differ by table due to the different conflict strategies:
+> - `Storefronts` and `Platforms` use `ON CONFLICT DO UPDATE SET`. PostgreSQL returns `RowsAffected() == 1` for **both** inserted rows and updated rows (when the SET clause changes at least one column). If an existing official row's data matches the seed data exactly, the DO UPDATE still fires but `RowsAffected()` may be 0 in some PostgreSQL versions (when no column value actually changes). In practice, treat these counts as "rows inserted or updated" — not a pure insert count.
+> - `Associations` uses `ON CONFLICT (platform, storefront) DO NOTHING`. PostgreSQL returns `RowsAffected() == 0` for rows that conflict and are skipped. The `Associations int` field therefore counts only newly inserted rows. This is intentional — the field reports what changed, not what exists.
 
 ---
 
@@ -511,6 +513,11 @@ Changes:
 func (mg *Migrator) determineState() error {
     // MUST NOT be called concurrently with RunMigrations.
     // Both modify mg.m; callers must ensure mutual exclusion at a higher level.
+    // The existing mg.mu (sync.RWMutex that guards needsSetup) is NOT used here —
+    // mg.m is guarded by the separate mg.migrateMu (sync.Mutex) that RunMigrations holds
+    // for its entire duration. determineState() must only be called from initAppState()
+    // (which runs before HTTP serving begins or inside StartDBProbe on recovery) and
+    // from the --migrate-only path, all of which are serialised at a higher level.
     if mg.m == nil {
         migrateURL := strings.NewReplacer("postgresql://", "pgx5://", "postgres://", "pgx5://").Replace(mg.databaseURL)
         m, err := gmigrate.NewWithSourceInstance("iofs", mg.src, migrateURL)
@@ -523,7 +530,7 @@ func (mg *Migrator) determineState() error {
 }
 ```
 
-`mg.src` is the `iofs.Source` created in `NewMigrator` and stored on the struct. `mg.m` is guarded by the same mutex used by `RunMigrations` — `determineState` is always called while the Migrator is not yet running migrations, so no lock contention occurs in practice, but document that `determineState` must not be called concurrently with `RunMigrations`.
+`mg.src` is the `iofs.Source` created in `NewMigrator` and stored on the struct. `mg.m` is guarded by `mg.migrateMu` (a `sync.Mutex` on the Migrator struct, separate from `mg.mu` which guards `needsSetup`). `RunMigrations` holds `mg.migrateMu` for its entire duration. `determineState` is always called while the Migrator is not running migrations (see the concurrency note in the code comment above), so no lock contention occurs in practice — but the mutex must exist to make that guarantee explicit.
 
 **`Close()` update:** currently calls `mg.m.Close()`. Add a nil-check — if the DB was never reachable and `mg.m` was never created, `Close()` is a no-op.
 
@@ -535,7 +542,47 @@ This refactor also removes the `ctx` from `NewMigrator`'s call site in `main.go`
 
 Workers and the gocron scheduler run in the same process as the HTTP server. They must not begin processing jobs before the database is ready and setup is complete, because scheduled tasks (metadata refresh, backup) assume at least one user exists and seed data is loaded.
 
-**Startup gate loop:**
+**Resolved database URL** — computed once at the top of `main()` before any other DB call:
+
+```go
+// resolveDBURL returns the connection string to pass to pgxpool.New,
+// NewMigrator, and NewDBErrorHandler.
+func resolveDBURL(cfg *config.Config) string {
+    if cfg.DatabaseURL != "" {
+        return cfg.DatabaseURL
+    }
+    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+        url.QueryEscape(cfg.DBUser),
+        url.QueryEscape(cfg.DBPassword),
+        cfg.DBHost,
+        cfg.DBPort,
+        cfg.DBName,
+    )
+}
+```
+
+`resolvedDatabaseURL := resolveDBURL(cfg)` is called once. The same string is passed to `pgxpool.New`, `NewMigrator`, and `NewDBErrorHandler`. It is never re-computed. `cfg.DatabaseURL` is **not** passed directly to any of those callers — it may be empty when the URL was assembled from individual `DB_*` vars.
+
+**`--migrate-only` startup sequence** (no HTTP server, no workers, no `StartDBProbe`):
+
+```
+resolvedDatabaseURL := resolveDBURL(cfg)
+pgxpool.New(resolvedDatabaseURL)   ← fatal on any pgxpool.New error
+pool.Ping() with 2s backoff, up to 30s total
+    → fatal if still unreachable after timeout (log each retry at WARN)
+NewMigrator(resolvedDatabaseURL)
+migrator.determineState()          ← fatal on error
+if state == Ready:
+    print "No pending migrations." and exit 0
+migrator.RunMigrations()           ← streams log lines to stderr
+if error: print error and exit 1
+pool.Close()                       ← explicit; deferred Close() is not safe before os.Exit
+exit 0
+```
+
+`InitNeedsSetup` is **not** called — see Component 1. No gate loop, no `StartDBProbe`, no HTTP server.
+
+**Normal server startup gate loop:**
 
 ```go
 go func(ctx context.Context) {
@@ -559,13 +606,14 @@ go func(ctx context.Context) {
 
 The loop runs in a goroutine so it does not block the HTTP server (the migration and setup UI must remain responsive while the gate is spinning). The HTTP server starts immediately; only workers and scheduler are deferred.
 
-**Startup ordering in `main.go`:**
+**Normal server startup ordering in `main.go`:**
 
 `NewMigrator()` is called **before** the ping so the struct always exists when the HTTP server starts. `initAppState()` receives the already-created Migrator and only calls `determineState()` + `InitNeedsSetup()` on it — it does not create a new instance. This guarantees the middleware can safely dereference the Migrator from the first request onwards, even if the DB was unavailable at startup.
 
 ```
-pgxpool.New()              ← fatal only on DSN parse error
-NewMigrator()              ← struct created; state zero-values to DBUnavailable
+resolvedDatabaseURL := resolveDBURL(cfg)
+pgxpool.New(resolvedDatabaseURL)   ← fatal only on any pgxpool.New error
+NewMigrator(resolvedDatabaseURL)   ← struct created; state zero-values to DBUnavailable
 pool.Ping():
   success → initAppState() → determineState() + InitNeedsSetup() on existing Migrator
             if initAppState() fails → log ERROR, leave state as DBUnavailable, continue
@@ -610,7 +658,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
 | Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection |
-| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin`; define `const bcryptCost = 12` used by both `HandleLogin` (password hashing on registration/change-password) and `HandleSetupAdmin` |
+| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin`; define `const bcryptCost = 12` used by both `HandleLogin` (password hashing on registration/change-password) and `HandleSetupAdmin`; implement `GET /api/auth/me` (JWT-required; query `users` table by `user_id` claim; return profile — required in Phase 1 so the SPA's `AuthProvider` can validate the token immediately after setup redirects to `/`) |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
@@ -651,6 +699,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 - `TestSetupAdmin_ConcurrentRace` — fire two simultaneous `POST /api/auth/setup/admin` requests; assert exactly one 201 and one 403, and exactly one user row in the DB. Verifies the SERIALIZABLE transaction correctly serializes concurrent setup attempts.
 - `TestSetupPage_ServesPage` — GET /setup returns 200 with `text/html` content-type when `needsSetup=true`
 - `TestSetupPage_RedirectsWhenDone` — GET /setup returns 302 to `/` when `needsSetup=false`
+- `TestSetupAdmin_GetMeAfterSetup` — after a successful `POST /api/auth/setup/admin`, use the returned access token to call `GET /api/auth/me`; assert 200 with the correct user profile. Verifies the end-to-end flow that the SPA's `AuthProvider` depends on.
 
 **`internal/api/db_error_test.go`**:
 - `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`; body contains redacted DSN placeholder text and a timestamp
