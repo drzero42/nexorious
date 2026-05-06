@@ -882,7 +882,7 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 
 **Key decisions:**
 
-1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window.
+1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window. If `initAppState()` itself fails (e.g. `determineState()` errors immediately after a successful ping), log the error and continue with state as `DBUnavailable`; `StartDBProbe` will retry on the next successful ping.
 2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
 3. `GET /setup` serves a self-contained static HTML page (inlined CSS + JS, no Vite build, same pattern as `ui/migrate/`). If `needsSetup=false`, it redirects to `/` — the gate works in both directions.
 4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race) and idempotently seeds platforms/storefronts. On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.
@@ -910,7 +910,7 @@ All `/api/auth/admin/*` endpoints require the `is_admin` claim. An admin cannot 
 
 `GET /api/auth/admin/users/:id/deletion-impact` returns a preview of what will be deleted. The response does **not** include a `total_wishlist_items` field — the Wishlist feature is not implemented in the Go port (see Out of Scope). The Python version returned this field; the frontend will be updated to remove that count from the deletion-impact display.
 
-`UserSession` stores `token_hash` and `refresh_token_hash` (bcrypt), plus `user_agent` and `ip_address` for audit purposes.
+`UserSession` stores `token_hash` and `refresh_token_hash` (bcrypt cost 12, defined as `const bcryptCost = 12` in `internal/api/auth.go` and shared by all password-hashing call sites), plus `user_agent` and `ip_address` for audit purposes.
 
 ---
 

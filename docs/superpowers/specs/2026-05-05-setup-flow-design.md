@@ -42,8 +42,8 @@ func (m *Migrator) StartDBProbe(
 
 Behaviour:
 - **Ping fails** and state ≠ `DBUnavailable` → save current state to `prevState`, atomically set state to `DBUnavailable`, store `time.Now()` in `lastUnavailableAt`, log WARN.
-- **Ping succeeds** and state == `DBUnavailable` → three sub-cases based on `prevState`:
-  1. Migrator never initialised (state is still the zero-value `DBUnavailable` with no prior operational state) → call `onRecovery(ctx)` (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
+- **Ping succeeds** and state == `DBUnavailable` → three sub-cases based on `prevState`. Sub-case detection: `prevState` is set to the state the app was in *before* entering `DBUnavailable`. Sub-case 1 is identified by `prevState == AppStateDBUnavailable` (the zero value of the `atomic.Int32`), which is a valid sentinel because `StartDBProbe` only writes `prevState` when transitioning *out of* a non-unavailable state — i.e. `prevState` remains the zero value if and only if the Migrator was never in an operational state.
+  1. `prevState == AppStateDBUnavailable` (Migrator never initialised — no prior operational state) → call `onRecovery(ctx)` (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
   2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; `determineState()` re-consults the DB to find the actual current state. Log INFO.
   3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Then: if the restored state is `Ready` **and** `NeedsSetup()` is still `true`, call `InitNeedsSetup()` to re-check the user count. This handles the race where `POST /api/auth/setup/admin` committed the user row but the DB went unavailable before `SetNeedsSetup(false)` was called — without this check `needsSetup` would remain `true` indefinitely, blocking all non-setup routes even though an admin exists. If `InitNeedsSetup()` fails, log ERROR and remain in `DBUnavailable`. Log INFO on success.
   - If the callback or `determineState()` returns an error, log ERROR and remain in `DBUnavailable` — the probe retries on the next successful ping.
@@ -226,7 +226,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    - `password`: minimum 8 characters
 2. In a serializable transaction:
    a. `SELECT COUNT(*) FROM users` — if > 0, return 403
-   b. Bcrypt-hash the password (cost 12)
+   b. Bcrypt-hash the password using the shared `bcryptCost` constant (see below)
    c. `INSERT INTO users (id, username, password_hash, is_admin, ...)` with `uuid.NewString()`
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
@@ -236,6 +236,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    - `ip`: `c.RealIP()` (Echo v5 helper). Echo's default IP extraction strategy uses `RemoteAddr` — no custom `IPExtractor` is configured for Phase 1. The `ip` field in `user_sessions` is informational; if it resolves incorrectly behind a proxy it does not affect authentication correctness. Configuring proxy-aware IP extraction (e.g. `echo.ExtractIPFromXForwardedForHeader()`) is out of scope for this spec.
 6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500.
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
+
+**`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. Both `HandleLogin` (password verification uses bcrypt internally when comparing) and `HandleSetupAdmin` must use this constant when hashing passwords — never hardcode the cost inline. This ensures all password hashes in the system are created at the same cost.
 
 **Why serializable instead of `FOR UPDATE`:** `SELECT COUNT(*) FROM users FOR UPDATE` on an empty table acquires no row locks (there are no rows to lock), so two concurrent requests can both pass the count check and both attempt the INSERT. Using a `SERIALIZABLE` transaction causes one of the two concurrent transactions to fail with a serialization failure (`40001`). The winner commits, and when the loser retries it finds `COUNT(*) > 0` and returns 403 — the correct outcome. Do **not** surface `40001` as a 500; retry the transaction once, then let the retry's 403 propagate normally.
 
@@ -347,6 +349,8 @@ dh := NewDBErrorHandler(resolvedDatabaseURL, migrator)
 e.GET("/db-error", dh.HandleDBError)
 ```
 
+> **Threading `resolvedDatabaseURL`:** `registerRoutes` (or `router.New`) must accept the resolved database URL as an explicit parameter — it cannot read it from `cfg.DatabaseURL` directly because that field is empty when the URL was assembled from individual `DB_*` env vars. `main.go` computes the resolved URL once (before calling `pgxpool.New`) and passes the same string to both `pgxpool.New` and `NewDBErrorHandler`.
+
 **Health route** (update existing handler):
 
 ```go
@@ -446,7 +450,7 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 
 No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
 
-**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1. The route returns `501 Not Implemented` in all app states — Gate 3 never applies to it because `/api/auth/setup/*` is in Gate 3's bypass list. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
+**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1. When the app is in `Ready` state the route returns `501 Not Implemented` — in `DBUnavailable` or pre-migration states the standard gates apply (Gate 1 redirects to `/db-error`, Gate 2 redirects to `/migrate`) before the handler is ever reached. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
 
 ---
 
@@ -505,6 +509,8 @@ Changes:
 
 ```go
 func (mg *Migrator) determineState() error {
+    // MUST NOT be called concurrently with RunMigrations.
+    // Both modify mg.m; callers must ensure mutual exclusion at a higher level.
     if mg.m == nil {
         migrateURL := strings.NewReplacer("postgresql://", "pgx5://", "postgres://", "pgx5://").Replace(mg.databaseURL)
         m, err := gmigrate.NewWithSourceInstance("iofs", mg.src, migrateURL)
@@ -562,6 +568,8 @@ pgxpool.New()              ← fatal only on DSN parse error
 NewMigrator()              ← struct created; state zero-values to DBUnavailable
 pool.Ping():
   success → initAppState() → determineState() + InitNeedsSetup() on existing Migrator
+            if initAppState() fails → log ERROR, leave state as DBUnavailable, continue
+            (StartDBProbe will retry initAppState on the next successful ping)
   failure → leave state as DBUnavailable (no exit)
 Start HTTP server          ← Migrator always exists; middleware is safe
 StartDBProbe(shutdownCtx, pool, initAppState)  ← goroutine; calls initAppState on first recovery
@@ -602,7 +610,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
 | Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection |
-| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin` |
+| Modify | `internal/api/auth.go` — extract `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function shared by the login handler and `HandleSetupAdmin`; define `const bcryptCost = 12` used by both `HandleLogin` (password hashing on registration/change-password) and `HandleSetupAdmin` |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
@@ -654,8 +662,10 @@ The `status` field in the body provides the actual state for monitoring and obse
 
 **`internal/migrate/handler_test.go`** — add:
 - `TestRunMigrations_SetsNeedsSetupAfterSuccess` — after `RunMigrations()` succeeds on a fresh DB, verify `migrator.NeedsSetup()` returns `true` (no users exist yet, so the setup gate must be armed)
+- Update all existing `NewHandler(...)` call sites in this file to pass the `pool` parameter added in Component 1.
 
 **`internal/migrate/migrator_test.go`** — add:
+- `TestNewMigrator_SucceedsWhenDBUnreachable` — construct a `Migrator` with an unreachable database URL; verify `NewMigrator` returns no error and `State()` is `AppStateDBUnavailable`. Directly validates the non-connecting constructor contract from Component 9a.
 - `TestInitNeedsSetup_NoUsers` — returns true on empty DB
 - `TestInitNeedsSetup_UsersExist` — returns false when users present
 - `TestStartDBProbe_SetsUnavailableOnPingFail` — probe sets `AppStateDBUnavailable` and saves `prevState` when ping fails
