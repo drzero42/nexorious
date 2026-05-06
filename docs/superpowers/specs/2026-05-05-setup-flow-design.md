@@ -211,7 +211,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
 5. Issue access token + refresh token by calling `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
-   - `ip`: `c.RealIP()` (Echo v5 helper; respects `X-Real-IP` / `X-Forwarded-For` headers)
+   - `ip`: `c.RealIP()` (Echo v5 helper; respects `X-Real-IP` / `X-Forwarded-For` headers). Note: `c.RealIP()` returns the correct client IP only when Echo is configured to trust the proxy's forwarding headers (e.g. `echo.IPExtractor` set to `echo.ExtractIPFromXForwardedForHeader()` or similar). On a direct connection with no proxy, it falls back to `RemoteAddr`. The `ip` field in `user_sessions` is informational; if it resolves incorrectly in a given deployment it does not affect authentication correctness.
 6. Call `h.migrator.SetNeedsSetup(false)`
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
@@ -234,6 +234,10 @@ There is no need to handle `23505` (unique violation on `username`) — that cas
 }
 ```
 
+`is_active` is not set explicitly in the INSERT — the `users.is_active` column defaults to `true` at the DB level. The handler relies on this default; do not set it explicitly in the INSERT statement.
+
+`preferences` is **not included** in this response — the column defaults to `'{}'::jsonb` for a newly created user, but the handler does not need to read it back from the DB and include it in the 201 body. The setup page supplies the `{}` fallback directly (see transformation below).
+
 The setup page JavaScript writes the tokens to `localStorage` under the key `'auth'`, matching the exact storage format used by the React SPA's `AuthProvider` (`ui/src/providers/auth-provider.tsx`). The stored object shape must be:
 
 ```json
@@ -253,7 +257,7 @@ Key details from the SPA source (`ui/src/providers/auth-provider.tsx`, `ui/src/t
 - Storage key: `'auth'` (constant `STORAGE_KEY` in `auth-provider.tsx`)
 - All fields are **camelCase**: `access_token` → `accessToken`, `refresh_token` → `refreshToken`, `is_admin` → `isAdmin`
 - `is_active` and `created_at` from the API response are **not stored** — the `User` type (`ui/src/types/auth.ts`) only has `id`, `username`, `isAdmin`, and optional `preferences`
-- `preferences` is a **client-side field**: `AuthProvider` stores it in auth state and the SPA reads it when rendering user settings. It is not returned by `POST /api/auth/setup/admin` for a newly created user (the column defaults to `'{}'::jsonb`). The setup page must supply `preferences: {}` as a fallback — this is load-bearing, not just defensive. On the next page load `AuthProvider` calls `GET /api/auth/me` and overwrites the stored user with the live response (which does include `preferences`), so the empty fallback is only observed for the duration of the initial redirect.
+- `preferences` is a **client-side field**: `AuthProvider` stores it in auth state and the SPA reads it when rendering user settings. It is not returned by `POST /api/auth/setup/admin` (see above); the setup page must supply `preferences: {}` as an explicit constant — this is load-bearing, not just defensive. On the next page load `AuthProvider` calls `GET /api/auth/me` and overwrites the stored user with the live response (which does include `preferences`), so the empty fallback is only observed for the duration of the initial redirect.
 - The `user` object is the transformed shape, not the raw API response
 - On page load, `AuthProvider` reads `localStorage.getItem('auth')`, validates the token via `GET /api/auth/me`, and updates the stored user with the fresh response — if the key is present and valid, the user is immediately authenticated without a login prompt
 
@@ -271,7 +275,7 @@ const storedAuth = {
     id: user.id,
     username: user.username,
     isAdmin: user.is_admin,
-    preferences: user.preferences ?? {},
+    preferences: {},  // not in 201 response; GET /api/auth/me overwrites on next page load
   },
 };
 localStorage.setItem('auth', JSON.stringify(storedAuth));
@@ -555,6 +559,8 @@ The `status` field in the body provides the actual state for monitoring and obse
 | DB error (other) | 500 `{"error": "internal server error"}` (logged) |
 | Seed error | Logged at WARN level; 201 still returned (admin created, seeding retried via `POST /api/platforms/seed`) |
 
+**Rate limiting:** Setup endpoints are **not** rate-limited. Once any user exists the endpoints return 403 permanently — they are not a viable brute-force surface. Adding rate limiting would require bootstrapping the limiter before setup is complete, which adds complexity for no practical benefit.
+
 ---
 
 ## Testing
@@ -592,5 +598,5 @@ The `status` field in the body provides the actual state for monitoring and obse
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
 - `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
 - `TestHealth_OKWhenReady` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready`
-- `TestHealth_DegradedReturns503` — `GET /health` returns 503 + `{"status":"degraded","db":"unavailable"}` when state is `DBUnavailable`
+- `TestHealth_DBUnavailableReturns200` — `GET /health` returns 200 + `{"status":"db_unavailable"}` when state is `DBUnavailable`
 - `TestHealth_NeedsMigrationReturns200` — `GET /health` returns 200 + `{"status":"needs_migration"}` when state is `NeedsMigration`
