@@ -106,7 +106,7 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, pool *pgxpool.Pool, onReco
 1. if State() == DBUnavailable → 302 /db-error?from=<original path>
        bypass: /db-error, /health
 2. if State() != Ready         → 302 /migrate
-       bypass: /migrate, /api/migrate/*
+       bypass: /migrate, /api/migrate/*, /health
 3. if NeedsSetup()             → 302 /setup
        bypass: /setup, /api/auth/setup/*, /health, /api/migrate/*
 ```
@@ -121,10 +121,20 @@ Example display: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=re
 
 The handler uses `html/template` (or simple `strings.ReplaceAll` on placeholder tokens) to inject both values into the static HTML — no JavaScript fetch required.
 
-**`GET /health`** — always bypasses all middleware gates:
+**`AppState.String()` mapping:**
+
+| `AppState` constant | `String()` return value | Used in |
+|---|---|---|
+| `AppStateDBUnavailable` | `"unknown"` (default case) | Not surfaced in `/health` (503 body uses a fixed string) |
+| `AppStateNeedsMigration` | `"needs_migration"` | `/health` body |
+| `AppStateMigrating` | `"migrating"` | `/health` body |
+| `AppStateReady` | `"ready"` | `/health` body |
+
+**`GET /health`** — bypasses all three middleware gates (always reachable):
 - `200 {"status": "ok"}` when `Ready`
 - `503 {"status": "degraded", "db": "unavailable"}` when `DBUnavailable`
-- `200 {"status": "needs_migration" | "migrating"}` otherwise
+- `200 {"status": "needs_migration"}` when `NeedsMigration`
+- `200 {"status": "migrating"}` when `Migrating`
 
 `needsSetup` remains a bool on the Migrator (not a state machine state), checked inline in the `Ready` branch of the middleware and cleared once by the setup handler.
 

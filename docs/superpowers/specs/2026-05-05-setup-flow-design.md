@@ -110,7 +110,7 @@ if migrator.State() == DBUnavailable → redirect /db-error?from=<original-path>
 
 // Gate 2 — migrations pending
 if migrator.State() != Ready        → redirect /migrate
-    bypass: /migrate, /api/migrate/*
+    bypass: /migrate, /api/migrate/*, /health
 
 // Gate 3 — setup required (new)
 if migrator.NeedsSetup()            → redirect /setup
@@ -119,7 +119,7 @@ if migrator.NeedsSetup()            → redirect /setup
 
 The bypass list for the setup gate is intentionally narrow. `/static/*` is **not** bypassed — the setup page is a self-contained static HTML file and needs no cover art or logos.
 
-`/health` is bypassed by Gate 1 (DB-unavailable) so liveness probes always get a response, and by Gate 3 (setup) so it remains accessible during first-run. It is **not** bypassed by Gate 2 — the health handler itself handles the `NeedsMigration`/`Migrating` states in its response body.
+`/health` is bypassed by all three gates so liveness and readiness probes always receive a machine-readable JSON response regardless of app state. The health handler inspects `migrator.State()` and returns the appropriate body (see `/health` Response Contract below).
 
 > **Gate ordering note:** A request to `/setup` while state is `NeedsMigration` hits Gate 2 first and is redirected to `/migrate` — `/setup` is not in Gate 2's bypass list. This is intentional: migrations must complete before setup can run. The user will be sent through `/migrate` → state becomes `Ready` → subsequent requests to `/` hit Gate 3 → redirected to `/setup`.
 
@@ -207,7 +207,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    d. On `40001` (serialization failure): retry the transaction once. On the retry the `COUNT(*) > 0` check will catch the winner's committed row and return 403 normally.
 3. Commit transaction
 4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
-5. Issue access token + refresh token by calling a shared helper `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — the same function called by `POST /api/auth/login`. This function generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the login and setup handlers.
+5. Issue access token + refresh token by calling `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
    - `ip`: `c.RealIP()` (Echo v5 helper; respects `X-Real-IP` / `X-Forwarded-For` headers)
 6. Call `h.migrator.SetNeedsSetup(false)`
@@ -251,9 +251,9 @@ Key details from the SPA source (`ui/src/providers/auth-provider.tsx`, `ui/src/t
 - Storage key: `'auth'` (constant `STORAGE_KEY` in `auth-provider.tsx`)
 - All fields are **camelCase**: `access_token` → `accessToken`, `refresh_token` → `refreshToken`, `is_admin` → `isAdmin`
 - `is_active` and `created_at` from the API response are **not stored** — the `User` type (`ui/src/types/auth.ts`) only has `id`, `username`, `isAdmin`, and optional `preferences`
-- `preferences` is not returned by `POST /api/auth/setup/admin` for a newly created user (the `users.preferences` column defaults to `'{}'::jsonb` in the DB, so `GET /api/auth/me` will return a valid empty object on the next load); the setup page must supply `preferences: {}` as a fallback when constructing the stored object
+- `preferences` is a **client-side field**: `AuthProvider` stores it in auth state and the SPA reads it when rendering user settings. It is not returned by `POST /api/auth/setup/admin` for a newly created user (the column defaults to `'{}'::jsonb`). The setup page must supply `preferences: {}` as a fallback — this is load-bearing, not just defensive. On the next page load `AuthProvider` calls `GET /api/auth/me` and overwrites the stored user with the live response (which does include `preferences`), so the empty fallback is only observed for the duration of the initial redirect.
 - The `user` object is the transformed shape, not the raw API response
-- On page load, `AuthProvider` reads `localStorage.getItem('auth')`, validates the token via `GET /api/auth/me`, and sets up the auth context — if the key is present and valid, the user is immediately authenticated without a login prompt
+- On page load, `AuthProvider` reads `localStorage.getItem('auth')`, validates the token via `GET /api/auth/me`, and updates the stored user with the fresh response — if the key is present and valid, the user is immediately authenticated without a login prompt
 
 **Complete transformation the setup page must perform:**
 
@@ -330,7 +330,14 @@ e.GET("/health", func(c echo.Context) error {
 })
 ```
 
-The `State().String()` method returns `"needs_migration"` or `"migrating"` for the non-Ready, non-unavailable states.
+The `State().String()` method returns the following strings (already implemented in `internal/migrate/migrator.go`):
+
+| `AppState` constant | `String()` return value |
+|---|---|
+| `AppStateDBUnavailable` | `"unknown"` (default case — not surfaced in `/health`) |
+| `AppStateNeedsMigration` | `"needs_migration"` |
+| `AppStateMigrating` | `"migrating"` |
+| `AppStateReady` | `"ready"` |
 
 **Embed declarations (`ui/ui.go`):**
 
@@ -420,7 +427,41 @@ This matches the pattern used by the GOG sync route and ensures the endpoint ret
 
 ---
 
-### 8. Worker and scheduler startup (`cmd/nexorious/main.go`)
+### 8. Static DB-error page (`ui/db-error/index.html`)
+
+Self-contained HTML/CSS/JS file (no build step, no external dependencies). Same approach as `ui/setup/index.html` and `ui/migrate/migrate.html`.
+
+**Content:** A minimal error page communicating that the database is unreachable and the server is retrying. Two server-injected values are inserted via `html/template` placeholder tokens at serve time (not embedded literally in the file — see Component 6):
+
+- A redacted database connection string, shown so an operator can verify the DSN without leaking the password. Displayed verbatim as pre-formatted text.
+- The UTC timestamp of the last failed connection attempt, formatted as RFC 3339.
+
+**Copy:**
+```
+Nexorious — Database Unavailable
+
+The server cannot reach the database.
+
+Connection: <redacted-dsn>
+Last failed: <timestamp>
+
+The page will automatically refresh every 5 seconds.
+If this problem persists, check that your database is running and the connection
+string is correct.
+```
+
+**Behaviour:**
+- Displays the two injected values clearly (e.g. in a `<pre>` or labelled `<code>` block).
+- Auto-reloads every 5 seconds via `setTimeout(() => location.reload(), 5000)`. When the DB recovers, the server-side redirect in `HandleDBError` (step 1 of Component 6) sends the user back to the path stored in the `?from=` query parameter — they do not land back on the error page.
+- No form, no user input.
+
+**Placeholder tokens** (replaced by `HandleDBError` at serve time):
+- `{{.RedactedDSN}}` — the pre-computed redacted DSN string.
+- `{{.LastUnavailableAt}}` — UTC RFC 3339 timestamp, or the literal string `"unknown"` if the DB has never been reported unavailable in this process lifetime.
+
+---
+
+### 9. Worker and scheduler startup (`cmd/nexorious/main.go`)
 
 Workers and the gocron scheduler run in the same process as the HTTP server. They must not begin processing jobs before the database is ready and setup is complete, because scheduled tasks (metadata refresh, backup) assume at least one user exists and seed data is loaded.
 
@@ -467,7 +508,7 @@ Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 
 ## `/health` Response Contract
 
-The health endpoint is always bypassed by both Gate 1 and Gate 3. Its response depends on the current app state:
+The health endpoint is bypassed by all three middleware gates — it is always reachable regardless of DB availability, migration state, or setup state. Its response depends on the current app state:
 
 | App state | HTTP status | Body |
 |-----------|-------------|------|
@@ -497,7 +538,7 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
-| Create | `ui/db-error/index.html` — standalone DB-unavailable error page; placeholders for redacted DSN and last-failed-at injected at serve time |
+| Create | `ui/db-error/index.html` — standalone DB-unavailable error page; displays redacted DSN + last-failed-at timestamp (injected by the Go handler at serve time via `html/template`); auto-reloads every 5 s; see Component 8 for copy and placeholder tokens |
 | Modify | `ui/ui.go` — add `//go:embed setup` + `var SetupBox embed.FS`; add `//go:embed db-error` + `var DBErrorBox embed.FS` |
 
 ---
