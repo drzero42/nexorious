@@ -90,7 +90,7 @@ type Migrator struct {
 - **Ping succeeds** + state == `DBUnavailable` → three sub-cases based on `prevState`:
   1. `prevState` indicates the Migrator has never been initialised (state is still the zero-value `DBUnavailable` with no prior operational state) → call `onRecovery` callback (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
   2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator to re-consult the DB. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; the DB now holds whatever state it was in at that point, which `determineState()` will discover correctly. Log INFO.
-  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Log INFO.
+  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Then: if the restored state is `Ready` **and** `NeedsSetup()` is still `true`, call `InitNeedsSetup()` to re-check the user count. This handles the race where `POST /api/auth/setup/admin` committed the user row but the DB went unavailable before `SetNeedsSetup(false)` was called — without this check `needsSetup` would remain `true` indefinitely, blocking all non-setup routes even though an admin exists. If `InitNeedsSetup()` fails, log ERROR and remain in `DBUnavailable`. Log INFO on success.
   - If the callback or `determineState()` call returns an error, log ERROR and remain in `DBUnavailable` — the probe will retry on the next successful ping.
 
 Signature:
@@ -125,16 +125,18 @@ The handler uses `html/template` (or simple `strings.ReplaceAll` on placeholder 
 
 | `AppState` constant | `String()` return value | Used in |
 |---|---|---|
-| `AppStateDBUnavailable` | `"unknown"` (default case) | Not surfaced in `/health` (503 body uses a fixed string) |
+| `AppStateDBUnavailable` | `"db_unavailable"` | `/health` body |
 | `AppStateNeedsMigration` | `"needs_migration"` | `/health` body |
 | `AppStateMigrating` | `"migrating"` | `/health` body |
 | `AppStateReady` | `"ready"` | `/health` body |
 
-**`GET /health`** — bypasses all three middleware gates (always reachable):
-- `200 {"status": "ok"}` when `Ready`
-- `503 {"status": "degraded", "db": "unavailable"}` when `DBUnavailable`
+**`GET /health`** — bypasses all three middleware gates (always reachable), always returns `200`:
+- `200 {"status": "ok"}` when `Ready` (including when `needsSetup=true`)
+- `200 {"status": "db_unavailable"}` when `DBUnavailable`
 - `200 {"status": "needs_migration"}` when `NeedsMigration`
 - `200 {"status": "migrating"}` when `Migrating`
+
+Always `200` because the HTTP server can always serve meaningful content to the user in every state — the db-error page, the migration UI, the setup page, or the app itself. A non-`200` would cause a Kubernetes readiness probe to stop routing traffic (or a liveness probe to kill the process), preventing users from reaching the server-driven state pages. The `status` field carries state information for monitoring tools without affecting traffic routing.
 
 `needsSetup` remains a bool on the Migrator (not a state machine state), checked inline in the `Ready` branch of the middleware and cleared once by the setup handler.
 

@@ -105,7 +105,7 @@ The middleware has three sequential checks. Each gate has its own bypass list. T
 
 ```
 // Gate 1 — DB unavailable
-if migrator.State() == DBUnavailable → redirect /db-error?from=<original-path>
+if migrator.State() == DBUnavailable → redirect /db-error?from=<url-encoded original path+query>
     bypass: /db-error, /health
 
 // Gate 2 — migrations pending
@@ -120,6 +120,8 @@ if migrator.NeedsSetup()            → redirect /setup
 The bypass list for the setup gate is intentionally narrow. `/static/*` is **not** bypassed — the setup page is a self-contained static HTML file and needs no cover art or logos.
 
 `/health` is bypassed by all three gates so liveness and readiness probes always receive a machine-readable JSON response regardless of app state. The health handler inspects `migrator.State()` and returns the appropriate body (see `/health` Response Contract below).
+
+> **`?from=` encoding (Gate 1):** The `from` value in the `/db-error` redirect must be the full original request URI (path + query string) percent-encoded as a single query parameter value. Use `url.QueryEscape(c.Request().RequestURI())` to construct the redirect target. Echo's `c.QueryParam("from")` automatically percent-decodes it when `HandleDBError` reads it back. Without encoding, a request to `/user-games?page=2&sort=title` would produce `/db-error?from=/user-games?page=2&sort=title`, where `page` and `sort` are misinterpreted as top-level query params on the `/db-error` URL — `c.QueryParam("from")` would return only `/user-games`, silently discarding the original query.
 
 > **Gate ordering note:** A request to `/setup` while state is `NeedsMigration` hits Gate 2 first and is redirected to `/migrate` — `/setup` is not in Gate 2's bypass list. This is intentional: migrations must complete before setup can run. The user will be sent through `/migrate` → state becomes `Ready` → subsequent requests to `/` hit Gate 3 → redirected to `/setup`.
 
@@ -303,6 +305,13 @@ e.GET("/setup", func(c echo.Context) error {
     return c.Stream(http.StatusOK, "text/html; charset=utf-8", f)
 })
 e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
+
+// Phase 3 — deferred; registered now so callers get a deterministic 501 instead of 404
+e.POST("/api/auth/setup/restore", func(c echo.Context) error {
+    return c.JSON(http.StatusNotImplemented, map[string]string{
+        "error": "not implemented — deferred to Phase 3",
+    })
+})
 ```
 
 **DB-error route:**
@@ -319,22 +328,20 @@ e.GET("/health", func(c echo.Context) error {
     switch migrator.State() {
     case migrate.AppStateReady:
         return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-    case migrate.AppStateDBUnavailable:
-        return c.JSON(http.StatusServiceUnavailable, map[string]string{
-            "status": "degraded",
-            "db":     "unavailable",
-        })
     default:
         return c.JSON(http.StatusOK, map[string]string{"status": migrator.State().String()})
     }
 })
 ```
 
+All states return `200`. The `status` field carries the machine-readable state string for monitoring. See `/health` Response Contract for the full rationale.
+```
+
 The `State().String()` method returns the following strings (already implemented in `internal/migrate/migrator.go`):
 
 | `AppState` constant | `String()` return value |
 |---|---|
-| `AppStateDBUnavailable` | `"unknown"` (default case — not surfaced in `/health`) |
+| `AppStateDBUnavailable` | `"db_unavailable"` |
 | `AppStateNeedsMigration` | `"needs_migration"` |
 | `AppStateMigrating` | `"migrating"` |
 | `AppStateReady` | `"ready"` |
@@ -413,17 +420,7 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 
 No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
 
-**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route but returns `501 Not Implemented`. The route is in the setup zone (JWT-exempt, only accessible while `needsSetup=true`):
-
-```go
-e.POST("/api/auth/setup/restore", func(c *echo.Context) error {
-    return c.JSON(http.StatusNotImplemented, map[string]string{
-        "error": "not implemented — deferred to Phase 3",
-    })
-})
-```
-
-This matches the pattern used by the GOG sync route and ensures the endpoint returns a deterministic 501 rather than a 404 if anything calls it before Phase 3.
+**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route in Component 5 (router changes) returning `501 Not Implemented`. The route is in the setup zone (JWT-exempt, only accessible while `needsSetup=true`). This matches the pattern used by the GOG sync route and ensures the endpoint returns a deterministic 501 rather than a 404 if anything calls it before Phase 3.
 
 ---
 
@@ -476,7 +473,7 @@ go func(ctx context.Context) {
         default:
         }
         if migrator.State() == Ready && !migrator.NeedsSetup() {
-            pool.Start()
+            workerPool.Start()   // internal/worker.Pool — not the pgxpool DB connection pool
             scheduler.Start()
             return
         }
@@ -508,16 +505,19 @@ Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 
 ## `/health` Response Contract
 
-The health endpoint is bypassed by all three middleware gates — it is always reachable regardless of DB availability, migration state, or setup state. Its response depends on the current app state:
+The health endpoint is bypassed by all three middleware gates — it is always reachable regardless of DB availability, migration state, or setup state. It always returns `200`:
 
 | App state | HTTP status | Body |
 |-----------|-------------|------|
-| `Ready` | `200` | `{"status": "ok"}` |
-| `DBUnavailable` | `503` | `{"status": "degraded", "db": "unavailable"}` |
+| `Ready` (setup complete) | `200` | `{"status": "ok"}` |
+| `Ready` + `needsSetup=true` | `200` | `{"status": "ok"}` |
+| `DBUnavailable` | `200` | `{"status": "db_unavailable"}` |
 | `NeedsMigration` | `200` | `{"status": "needs_migration"}` |
 | `Migrating` | `200` | `{"status": "migrating"}` |
 
-The `503` on `DBUnavailable` allows load-balancer health checks to take the instance out of rotation when the database is unreachable.
+**Why always `200`:** The HTTP server is always able to serve meaningful content to the user regardless of app state — the db-error page, the migration UI, the setup page, or the authenticated app. Traffic must always be routable to the instance. A non-`200` response would cause a Kubernetes readiness probe to stop routing traffic, or a liveness probe to kill the process — both of which defeat the purpose of server-driven state pages. For example, returning `503` when the DB is unavailable would prevent users from ever seeing the `/db-error` page that explains what is wrong and auto-recovers when the DB comes back.
+
+The `status` field in the body provides the actual state for monitoring and observability tooling without affecting traffic routing.
 
 ---
 
