@@ -594,6 +594,18 @@ func (mg *Migrator) determineState() error {
 
 `mg.src` is the `iofs.Source` created in `NewMigrator` and stored on the struct. `mg.m` is guarded by `mg.migrateMu` (a `sync.Mutex` on the Migrator struct, separate from `mg.mu` which guards `needsSetup`). `RunMigrations` holds `mg.migrateMu` for its entire duration. `determineState` is always called while the Migrator is not running migrations (see the concurrency note in the code comment above), so no lock contention occurs in practice — but the mutex must exist to make that guarantee explicit.
 
+**`RunMigrations()` update:** add the lock at the very top of the function body — this is an explicit required change, not just a design note:
+
+```go
+func (mg *Migrator) RunMigrations(ctx context.Context) error {
+    mg.migrateMu.Lock()
+    defer mg.migrateMu.Unlock()
+    // ... existing body unchanged
+}
+```
+
+Without this, a data race exists between `RunMigrations` and `determineState` (called from `StartDBProbe` on DB recovery) — both access `mg.m`. The race only manifests when the DB recovers mid-migration and is invisible to the test suite unless the race detector is enabled.
+
 **`Close()` update:** currently calls `mg.m.Close()`. Add a nil-check — if the DB was never reachable and `mg.m` was never created, `Close()` is a no-op.
 
 This refactor also removes the `ctx` from `NewMigrator`'s call site in `main.go`. Update `NewMigratorForTest` (test helper) accordingly.
