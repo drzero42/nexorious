@@ -453,6 +453,18 @@ The `State().String()` method returns the following strings (already implemented
 
 Setup and DB-error endpoints are registered **outside** the JWT middleware group — they are public by design.
 
+**`GET /api/auth/me` route** (JWT-required; registered inside the JWT middleware group):
+
+```go
+// Inside the JWT-protected group in registerRoutes:
+authHandler := NewAuthHandler(pool, cfg)
+jwtGroup.GET("/api/auth/me", authHandler.HandleGetMe)
+```
+
+This endpoint is in-scope for Phase 1 (see Component 4a and File Summary). It must be registered here — in the same file that wires up the JWT middleware — because `registerRoutes` owns the JWT group. The `AuthHandler` struct is created in `internal/api/auth.go` alongside `issueTokensAndSession` and `bcryptCost`; it holds `pool *pgxpool.Pool` and `cfg *config.Config`. Additional auth routes (`HandleLogin`, `HandleRefresh`, `HandleLogout`, etc.) are added to `jwtGroup` in the auth-handlers phase.
+
+> **JWT middleware group:** Phase 1 must create the JWT-protected `e.Group` even though only one handler is registered to it now. The group applies `auth.JWTMiddleware(cfg.SecretKey)` to all routes registered under it. See `docs/superpowers/specs/2026-05-05-jwt-auth-package-design.md` for the `internal/auth` package that provides the middleware.
+
 ---
 
 ### 6. `GET /db-error` handler (`internal/api/db_error.go`)
@@ -625,12 +637,13 @@ func resolveDBURL(cfg *config.Config) string {
     if cfg.DatabaseURL != "" {
         return cfg.DatabaseURL
     }
-    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
         url.QueryEscape(cfg.DBUser),
         url.QueryEscape(cfg.DBPassword),
         cfg.DBHost,
         cfg.DBPort,
         cfg.DBName,
+        cfg.DBSSLMode,
     )
 }
 ```

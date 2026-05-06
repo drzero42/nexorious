@@ -1037,6 +1037,7 @@ type Config struct {
     DBUser      string `env:"DB_USER" envDefault:"nexorious"`
     DBPassword  string `env:"DB_PASSWORD" envDefault:"nexorious"`
     DBName      string `env:"DB_NAME" envDefault:"nexorious"`
+    DBSSLMode   string `env:"DB_SSLMODE" envDefault:"disable"`
 
     // Security
     SecretKey string `env:"SECRET_KEY,required"` // used for JWT signing and credential encryption
@@ -1085,7 +1086,7 @@ type Config struct {
 }
 ```
 
-**Database URL resolution:** At startup, if `DATABASE_URL` is set (non-empty), it is used as-is. If it is empty or absent, the binary constructs a URL from `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`, URL-encoding the user and password components. `DATABASE_URL` must be set or the individual `DB_*` vars must produce a valid URL — the binary fails to start if neither is usable.
+**Database URL resolution:** At startup, if `DATABASE_URL` is set (non-empty), it is used as-is. If it is empty or absent, the binary constructs a URL from `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_SSLMODE`, URL-encoding the user and password components. `DATABASE_URL` must be set or the individual `DB_*` vars must produce a valid URL — the binary fails to start if neither is usable.
 
 **Resolved URL construction** (the single authoritative snippet used across `main.go`, `NewMigrator`, `NewDBErrorHandler`, and `--migrate-only`):
 
@@ -1098,12 +1099,13 @@ func resolveDBURL(cfg *config.Config) string {
     }
     // Construct from individual DB_* vars. URL-encode user and password so
     // special characters (@ : / etc.) in the values do not break URL parsing.
-    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+    return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
         url.QueryEscape(cfg.DBUser),
         url.QueryEscape(cfg.DBPassword),
         cfg.DBHost,
         cfg.DBPort,
         cfg.DBName,
+        cfg.DBSSLMode,
     )
 }
 ```
