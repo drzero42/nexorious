@@ -45,7 +45,7 @@ Behaviour:
 - **Ping succeeds** and state == `DBUnavailable` → three sub-cases based on `prevState`:
   1. Migrator never initialised (state is still the zero-value `DBUnavailable` with no prior operational state) → call `onRecovery(ctx)` (`initAppState`: runs `determineState()` + `InitNeedsSetup()`); on success the callback sets the correct state; log INFO.
   2. `prevState == Migrating` → call `determineState()` directly on the existing Migrator. Do **not** blindly restore `Migrating`: the migration goroutine that was running when the DB dropped has since failed; `determineState()` re-consults the DB to find the actual current state. Log INFO.
-  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Log INFO.
+  3. `prevState == NeedsMigration` or `prevState == Ready` → restore `prevState` directly (safe; these are stable states that cannot have changed during the outage). Then: if the restored state is `Ready` **and** `NeedsSetup()` is still `true`, call `InitNeedsSetup()` to re-check the user count. This handles the race where `POST /api/auth/setup/admin` committed the user row but the DB went unavailable before `SetNeedsSetup(false)` was called — without this check `needsSetup` would remain `true` indefinitely, blocking all non-setup routes even though an admin exists. If `InitNeedsSetup()` fails, log ERROR and remain in `DBUnavailable`. Log INFO on success.
   - If the callback or `determineState()` returns an error, log ERROR and remain in `DBUnavailable` — the probe retries on the next successful ping.
 - Goroutine exits cleanly when `ctx` is cancelled (SIGTERM path).
 
@@ -78,6 +78,25 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 - At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path)
 - By the probe's `onRecovery` callback on first DB recovery, after `determineState()` runs on the existing Migrator and the state is `Ready`
 
+**`initAppState()` pseudocode** (for clarity — lives in `main.go` as a closure over `migrator` and `pool`):
+
+```go
+func initAppState(ctx context.Context) error {
+    if err := migrator.determineState(ctx, pool); err != nil {
+        return err
+    }
+    // Only call InitNeedsSetup when migrations are already applied.
+    // NeedsMigration and Migrating states have no users table yet (or it is
+    // being modified), so a COUNT(*) query would fail or be meaningless.
+    if migrator.State() == AppStateReady {
+        if err := migrator.InitNeedsSetup(ctx, pool); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
 ---
 
 ### 2. App-state middleware (`internal/api/router.go`)
@@ -101,6 +120,8 @@ if migrator.NeedsSetup()            → redirect /setup
 The bypass list for the setup gate is intentionally narrow. `/static/*` is **not** bypassed — the setup page is a self-contained static HTML file and needs no cover art or logos.
 
 `/health` is bypassed by Gate 1 (DB-unavailable) so liveness probes always get a response, and by Gate 3 (setup) so it remains accessible during first-run. It is **not** bypassed by Gate 2 — the health handler itself handles the `NeedsMigration`/`Migrating` states in its response body.
+
+> **Gate ordering note:** A request to `/setup` while state is `NeedsMigration` hits Gate 2 first and is redirected to `/migrate` — `/setup` is not in Gate 2's bypass list. This is intentional: migrations must complete before setup can run. The user will be sent through `/migrate` → state becomes `Ready` → subsequent requests to `/` hit Gate 3 → redirected to `/setup`.
 
 ---
 
@@ -211,7 +232,7 @@ There is no need to handle `23505` (unique violation on `username`) — that cas
 }
 ```
 
-The setup page JavaScript writes the tokens to `localStorage` under the key `'auth'`, matching the exact storage format used by the React SPA's `AuthProvider` (`frontend/src/providers/auth-provider.tsx`). The stored object shape must be:
+The setup page JavaScript writes the tokens to `localStorage` under the key `'auth'`, matching the exact storage format used by the React SPA's `AuthProvider` (`ui/src/providers/auth-provider.tsx`). The stored object shape must be:
 
 ```json
 {
@@ -226,11 +247,11 @@ The setup page JavaScript writes the tokens to `localStorage` under the key `'au
 }
 ```
 
-Key details from the SPA source (`frontend/src/providers/auth-provider.tsx`, `frontend/src/types/auth.ts`):
+Key details from the SPA source (`ui/src/providers/auth-provider.tsx`, `ui/src/types/auth.ts`):
 - Storage key: `'auth'` (constant `STORAGE_KEY` in `auth-provider.tsx`)
 - All fields are **camelCase**: `access_token` → `accessToken`, `refresh_token` → `refreshToken`, `is_admin` → `isAdmin`
-- `is_active` and `created_at` from the API response are **not stored** — the `User` type (`frontend/src/types/auth.ts`) only has `id`, `username`, `isAdmin`, and optional `preferences`
-- `preferences` is not returned by `POST /api/auth/setup/admin` for a newly created user; the setup page must supply `preferences: {}` (empty object) when constructing the stored object
+- `is_active` and `created_at` from the API response are **not stored** — the `User` type (`ui/src/types/auth.ts`) only has `id`, `username`, `isAdmin`, and optional `preferences`
+- `preferences` is not returned by `POST /api/auth/setup/admin` for a newly created user (the `users.preferences` column defaults to `'{}'::jsonb` in the DB, so `GET /api/auth/me` will return a valid empty object on the next load); the setup page must supply `preferences: {}` as a fallback when constructing the stored object
 - The `user` object is the transformed shape, not the raw API response
 - On page load, `AuthProvider` reads `localStorage.getItem('auth')`, validates the token via `GET /api/auth/me`, and sets up the auth context — if the key is present and valid, the user is immediately authenticated without a login prompt
 
@@ -351,7 +372,7 @@ Example output: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=req
 
 **Handler logic:**
 
-1. If `migrator.State() != DBUnavailable` → redirect to `c.QueryParam("from")` (or `/` if empty). This handles the auto-reload recovery case: when the DB comes back the server no longer redirects to `/db-error`, so a direct visit to the URL after recovery sends the user home.
+1. If `migrator.State() != DBUnavailable` → redirect to the `?from=` parameter, or `/` if absent. **Validate that `from` starts with `/` before using it** — if it is empty, absent, or does not start with `/`, redirect to `/` instead. This prevents an open-redirect attack where a crafted link such as `/db-error?from=https://evil.com` would forward users to an external site on DB recovery.
 2. Otherwise serve `ui.DBErrorBox`'s `db-error/index.html`, injecting two values at serve time (not at registration time) via `html/template` or `strings.ReplaceAll` on placeholder tokens:
    - `{{.RedactedDSN}}` → `h.redactedDSN`
    - `{{.LastUnavailableAt}}` → `h.migrator.LastUnavailableAt().UTC().Format(time.RFC3339)` (or `"unknown"` if zero)
@@ -516,6 +537,7 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 - `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`; body contains redacted DSN placeholder text and a timestamp
 - `TestDBErrorPage_RedirectsOnRecovery` — `GET /db-error?from=/foo` returns 302 to `/foo` when state ≠ `DBUnavailable`
 - `TestDBErrorPage_RedirectsToRootWithNoFrom` — `GET /db-error` (no `?from=`) returns 302 to `/` when state ≠ `DBUnavailable`
+- `TestDBErrorPage_RejectsExternalFrom` — `GET /db-error?from=https://evil.com` returns 302 to `/` (not to the external URL) when state ≠ `DBUnavailable`
 - `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`
 
 **`internal/migrate/migrator_test.go`** — add:
@@ -523,6 +545,7 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 - `TestInitNeedsSetup_UsersExist` — returns false when users present
 - `TestStartDBProbe_SetsUnavailableOnPingFail` — probe sets `AppStateDBUnavailable` and saves `prevState` when ping fails
 - `TestStartDBProbe_RestoresPrevStateOnRecovery` — probe restores previous state when ping succeeds after unavailability
+- `TestStartDBProbe_RechecksNeedsSetupOnReadyRecovery` — when `prevState == Ready` and `needsSetup` is still `true` at recovery time, probe calls `InitNeedsSetup()`; if a user now exists (race scenario), `NeedsSetup()` returns `false` after recovery
 - `TestStartDBProbe_RespectsContext` — probe goroutine exits cleanly when context is cancelled
 
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
