@@ -139,7 +139,7 @@ ON CONFLICT (name) DO UPDATE SET
 WHERE storefronts.source = 'official'
 ```
 
-**Platforms SQL:** identical pattern; `default_storefront` FK is set in the same INSERT (storefronts are committed first so the FK resolves).
+**Platforms SQL:** identical pattern; `default_storefront` FK is set in the same INSERT (storefronts are inserted earlier within the same open transaction, so the FK resolves without a separate commit — PostgreSQL resolves FKs to uncommitted rows within the same transaction).
 
 **Associations SQL:**
 ```sql
@@ -149,6 +149,8 @@ ON CONFLICT DO NOTHING
 ```
 
 All three run inside a single `pgxpool` transaction. If the transaction fails, nothing is committed.
+
+> **`SeedResult.Associations` count note:** `ON CONFLICT DO NOTHING` returns `RowsAffected() == 0` for rows that conflict and are skipped. The `Associations int` field therefore counts only newly inserted rows, not pre-existing ones. This is intentional — the field reports what changed, not what exists.
 
 ---
 
@@ -174,7 +176,9 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 ```
 
 **Handler logic:**
-1. Bind + validate request (`username` non-empty, `password` >= 8 chars)
+1. Bind + validate request. Validation rules (matching the Python frontend's `setup.tsx`):
+   - `username`: non-empty, minimum 3 characters (the `users.username` column is `TEXT NOT NULL UNIQUE` with no DB-level length cap; the 3-char minimum is enforced by the handler)
+   - `password`: minimum 8 characters
 2. In a serializable transaction:
    a. `SELECT COUNT(*) FROM users` — if > 0, return 403
    b. Bcrypt-hash the password (cost 12)
@@ -183,6 +187,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 3. Commit transaction
 4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
 5. Issue access token + refresh token by calling a shared helper `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — the same function called by `POST /api/auth/login`. This function generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the login and setup handlers.
+   - `userAgent`: `c.Request().Header.Get("User-Agent")`
+   - `ip`: `c.RealIP()` (Echo v5 helper; respects `X-Real-IP` / `X-Forwarded-For` headers)
 6. Call `h.migrator.SetNeedsSetup(false)`
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
@@ -220,13 +226,35 @@ The setup page JavaScript writes the tokens to `localStorage` under the key `'au
 }
 ```
 
-Key details from the SPA source:
+Key details from the SPA source (`frontend/src/providers/auth-provider.tsx`, `frontend/src/types/auth.ts`):
 - Storage key: `'auth'` (constant `STORAGE_KEY` in `auth-provider.tsx`)
-- All fields are **camelCase** (`accessToken`, `refreshToken`, `isAdmin`) — the SPA transforms snake_case API responses before storing
+- All fields are **camelCase**: `access_token` → `accessToken`, `refresh_token` → `refreshToken`, `is_admin` → `isAdmin`
+- `is_active` and `created_at` from the API response are **not stored** — the `User` type (`frontend/src/types/auth.ts`) only has `id`, `username`, `isAdmin`, and optional `preferences`
+- `preferences` is not returned by `POST /api/auth/setup/admin` for a newly created user; the setup page must supply `preferences: {}` (empty object) when constructing the stored object
 - The `user` object is the transformed shape, not the raw API response
 - On page load, `AuthProvider` reads `localStorage.getItem('auth')`, validates the token via `GET /api/auth/me`, and sets up the auth context — if the key is present and valid, the user is immediately authenticated without a login prompt
 
-The setup page must construct this object from the 201 response (transforming `is_admin` → `isAdmin`) and write it before redirecting to `/`.
+**Complete transformation the setup page must perform:**
+
+```js
+// API 201 response (snake_case)
+const { user, access_token, refresh_token } = response;
+
+// Object written to localStorage under key 'auth'
+const storedAuth = {
+  accessToken: access_token,
+  refreshToken: refresh_token,
+  user: {
+    id: user.id,
+    username: user.username,
+    isAdmin: user.is_admin,
+    preferences: user.preferences ?? {},
+  },
+};
+localStorage.setItem('auth', JSON.stringify(storedAuth));
+```
+
+The setup page must construct this object from the 201 response and write it before redirecting to `/`.
 
 ---
 
@@ -338,14 +366,36 @@ When the auto-reload fires and the DB has recovered, the server-side redirect in
 
 ### 7. Static setup page (`ui/setup/index.html`)
 
-Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirrors the migration page in structure. Behaviour:
+Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirrors the migration page in structure.
 
-1. Renders a username + password form.
-2. On submit, `POST /api/auth/setup/admin`.
-3. On **201**: constructs the `localStorage` auth object (transforming `is_admin` → `isAdmin`), writes it to `localStorage` under key `'auth'`, then redirects to `/`. The SPA's `AuthProvider` reads this on load and the user is immediately authenticated.
-4. On **400**: displays the error message inline.
+**Form fields:** username, password, confirm password. Client-side validation (matching the Python frontend) before submit:
+- Username ≥ 3 characters
+- Password ≥ 8 characters
+- Password and confirm-password must match
 
-No changes to `ui/src/` (the React SPA) are required. The `RouteGuard` change from the original spec (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
+**Behaviour:**
+
+1. Renders username + password + confirm-password form.
+2. Validates fields client-side; displays error inline on failure (no network call made).
+3. On submit, `POST /api/auth/setup/admin` with `{"username": ..., "password": ...}`.
+4. On **201**: constructs the `localStorage` auth object (see transformation in Component 4), writes it under key `'auth'`, then redirects to `/`. The SPA's `AuthProvider` reads this on load and the user is immediately authenticated.
+5. On **400**: displays the server error message inline.
+6. On **403** (`"setup already complete"`): redirects to `/login`. This handles the edge case where a user manually navigates to `/setup` after setup is done and the middleware redirect somehow didn't fire (e.g. a direct API call).
+7. On any other error: displays a generic "Setup failed, please try again" message inline.
+
+No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
+
+**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route but returns `501 Not Implemented`. The route is in the setup zone (JWT-exempt, only accessible while `needsSetup=true`):
+
+```go
+e.POST("/api/auth/setup/restore", func(c *echo.Context) error {
+    return c.JSON(http.StatusNotImplemented, map[string]string{
+        "error": "not implemented — deferred to Phase 3",
+    })
+})
+```
+
+This matches the pattern used by the GOG sync route and ensures the endpoint returns a deterministic 501 rather than a 404 if anything calls it before Phase 3.
 
 ---
 
@@ -416,7 +466,7 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 | Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()` |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
-| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`; update `/health` response contract |
+| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract |
 | Create | `internal/seed/data.go` — official seed data |
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
@@ -436,6 +486,7 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 | Condition | Response |
 |-----------|----------|
 | Missing/empty username or password | 400 `{"error": "username and password are required"}` |
+| Username < 3 chars | 400 `{"error": "username must be at least 3 characters"}` |
 | Password < 8 chars | 400 `{"error": "password must be at least 8 characters"}` |
 | Users already exist | 403 `{"error": "setup already complete"}` |
 | PG `40001` — serialization failure (concurrent setup race), after one retry | 403 `{"error": "setup already complete"}` — the retry's count check catches the winner's row |
@@ -455,7 +506,9 @@ The `503` on `DBUnavailable` allows load-balancer health checks to take the inst
 - `TestSetupAdmin_Success` — 201, user in DB, tokens in response, `needsSetup` cleared
 - `TestSetupAdmin_AlreadySetup` — 403 when user exists
 - `TestSetupAdmin_InvalidBody` — 400 for missing fields
+- `TestSetupAdmin_ShortUsername` — 400 for username < 3 chars
 - `TestSetupAdmin_ShortPassword` — 400 for password < 8 chars
+- `TestSetupAdmin_ConcurrentRace` — fire two simultaneous `POST /api/auth/setup/admin` requests; assert exactly one 201 and one 403, and exactly one user row in the DB. Verifies the SERIALIZABLE transaction correctly serializes concurrent setup attempts.
 - `TestSetupPage_ServesPage` — GET /setup returns 200 with `text/html` content-type when `needsSetup=true`
 - `TestSetupPage_RedirectsWhenDone` — GET /setup returns 302 to `/` when `needsSetup=false`
 
