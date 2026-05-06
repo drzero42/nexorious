@@ -74,15 +74,16 @@ func (m *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error
 // Single-attempt: called only when DB is confirmed reachable (from initAppState in main.go)
 ```
 
-`InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (Component 0). `InitNeedsSetup` is called from `initAppState()` in `main.go` in two situations:
-- At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path)
+`InitNeedsSetup` is a single-attempt call — it does **not** contain an internal retry loop. DB unavailability is handled at the state-machine level by `StartDBProbe` (Component 0). `InitNeedsSetup` is called in three situations:
+- At startup, if `pool.Ping()` succeeds and `determineState()` resolves to `Ready` (already-migrated path) — called from `initAppState()` in `main.go`
 - By the probe's `onRecovery` callback on first DB recovery, after `determineState()` runs on the existing Migrator and the state is `Ready`
+- After `RunMigrations()` completes successfully — called from the migration HTTP handler (`internal/migrate/handler.go`) immediately after `RunMigrations()` returns `nil`. This is the fresh-install path: on first boot the DB is `NeedsMigration`, so `initAppState()` never calls `InitNeedsSetup`; without this third call site, `needsSetup` would remain `false` (its zero value) after migration, Gate 3 would never fire, and the user would reach the React SPA with an empty `users` table. The pool is already available to the handler (it is threaded through `NewHandler`) so no architectural change is needed — add `migrator.InitNeedsSetup(ctx, pool)` after the state transitions to `Ready`; log WARN and continue if it fails (the DB is confirmed reachable at this point so failure is unlikely, and the migration UI will show the migration as complete regardless).
 
 **`initAppState()` pseudocode** (for clarity — lives in `main.go` as a closure over `migrator` and `pool`):
 
 ```go
 func initAppState(ctx context.Context) error {
-    if err := migrator.determineState(ctx, pool); err != nil {
+    if err := migrator.determineState(); err != nil {
         return err
     }
     // Only call InitNeedsSetup when migrations are already applied.
@@ -162,7 +163,22 @@ ON CONFLICT (name) DO UPDATE SET
 WHERE storefronts.source = 'official'
 ```
 
-**Platforms SQL:** identical pattern; `default_storefront` FK is set in the same INSERT (storefronts are inserted earlier within the same open transaction, so the FK resolves without a separate commit — PostgreSQL resolves FKs to uncommitted rows within the same transaction).
+**Platforms SQL:** identical pattern to storefronts, with one addition — `default_storefront` is a nullable FK to `storefronts.name`. It is safe to reference a storefront by name in the same INSERT because storefronts are inserted earlier within the same open transaction; PostgreSQL resolves FKs to uncommitted rows within the same transaction:
+
+```sql
+INSERT INTO platforms (name, display_name, igdb_platform_id, igdb_platform_version_id, is_active, source, version_added, default_storefront, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, 'official', $6, $7, now(), now())
+ON CONFLICT (name) DO UPDATE SET
+    display_name              = EXCLUDED.display_name,
+    igdb_platform_id          = EXCLUDED.igdb_platform_id,
+    igdb_platform_version_id  = EXCLUDED.igdb_platform_version_id,
+    default_storefront        = EXCLUDED.default_storefront,
+    version_added             = EXCLUDED.version_added,
+    updated_at                = now()
+WHERE platforms.source = 'official'
+```
+
+`$7` is the `default_storefront` slug (e.g. `"steam"`) or `nil` for platforms with no default storefront; pgx handles `nil` as a SQL `NULL`.
 
 **Associations SQL:**
 ```sql
@@ -321,7 +337,7 @@ e.POST("/api/auth/setup/restore", func(c echo.Context) error {
 **DB-error route:**
 
 ```go
-dh := NewDBErrorHandler(cfg, migrator)
+dh := NewDBErrorHandler(resolvedDatabaseURL, migrator)
 e.GET("/db-error", dh.HandleDBError)
 ```
 
@@ -376,11 +392,11 @@ type DBErrorHandler struct {
     redactedDSN string  // computed once at construction time, reused on every serve
 }
 
-func NewDBErrorHandler(cfg *config.Config, migrator *migrate.Migrator) *DBErrorHandler
+func NewDBErrorHandler(resolvedDatabaseURL string, migrator *migrate.Migrator) *DBErrorHandler
 func (h *DBErrorHandler) HandleDBError(c echo.Context) error
 ```
 
-**DSN redaction** — computed once in `NewDBErrorHandler` via `net/url.Parse(cfg.DatabaseURL)`:
+**DSN redaction** — computed once in `NewDBErrorHandler` via `net/url.Parse(resolvedDatabaseURL)`. The caller passes the **resolved URL** — i.e. the URL that was actually handed to the connection pool — rather than `cfg.DatabaseURL` directly, because `cfg.DatabaseURL` is empty when the URL was constructed from individual `DB_*` env vars. `main.go` computes the resolved URL once (for `pgxpool.New`) and passes the same string here.
 - Keep: scheme, username, host, port, database name, non-sensitive query params (e.g. `sslmode`).
 - Redact password → `***`.
 - Redact any query param whose name contains `password`, `secret`, or `key` (case-insensitive) → `***`.
@@ -462,6 +478,47 @@ string is correct.
 
 ---
 
+### 9a. `NewMigrator` refactor (`internal/migrate/migrator.go`)
+
+The current `NewMigrator(ctx, databaseURL)` connects to the DB eagerly: it calls `gmigrate.NewWithSourceInstance(...)` (which opens a DB connection) and then `determineState()` (which queries the DB). If the DB is unreachable at startup, `NewMigrator` returns an error and `main.go` fatals — making the `DBUnavailable` gate permanently unreachable.
+
+The spec's startup model (Component 9 below) requires `NewMigrator` to be a **cheap constructor** that never touches the DB:
+
+```go
+// NewMigrator creates a Migrator ready to use.
+// It does NOT connect to the database — state is DBUnavailable (zero value)
+// until initAppState() is called from main.go after a successful pool.Ping().
+func NewMigrator(databaseURL string) (*Migrator, error)
+```
+
+Changes:
+- Remove the `ctx` parameter (not needed without a DB call).
+- `iofs.New(migrations.FS, ".")` is kept — it reads from the embedded FS, no DB contact. Fail fast here (returns error) since a missing FS means the binary is broken, not that the DB is down.
+- Do **not** call `gmigrate.NewWithSourceInstance` or `determineState()`. Store `databaseURL` on the struct for later use.
+- The golang-migrate `*migrate.Migrate` instance (`mg.m`) starts as `nil` and is created lazily inside `determineState()` on first call:
+
+```go
+func (mg *Migrator) determineState() error {
+    if mg.m == nil {
+        migrateURL := strings.NewReplacer("postgresql://", "pgx5://", "postgres://", "pgx5://").Replace(mg.databaseURL)
+        m, err := gmigrate.NewWithSourceInstance("iofs", mg.src, migrateURL)
+        if err != nil {
+            return fmt.Errorf("determine state: connect: %w", err)
+        }
+        mg.m = m
+    }
+    // ... existing version/pending-count logic unchanged
+}
+```
+
+`mg.src` is the `iofs.Source` created in `NewMigrator` and stored on the struct. `mg.m` is guarded by the same mutex used by `RunMigrations` — `determineState` is always called while the Migrator is not yet running migrations, so no lock contention occurs in practice, but document that `determineState` must not be called concurrently with `RunMigrations`.
+
+**`Close()` update:** currently calls `mg.m.Close()`. Add a nil-check — if the DB was never reachable and `mg.m` was never created, `Close()` is a no-op.
+
+This refactor also removes the `ctx` from `NewMigrator`'s call site in `main.go`. Update `NewMigratorForTest` (test helper) accordingly.
+
+---
+
 ### 9. Worker and scheduler startup (`cmd/nexorious/main.go`)
 
 Workers and the gocron scheduler run in the same process as the HTTP server. They must not begin processing jobs before the database is ready and setup is complete, because scheduled tasks (metadata refresh, backup) assume at least one user exists and seed data is loaded.
@@ -529,7 +586,8 @@ The `status` field in the body provides the actual state for monitoring and obse
 
 | Action | File |
 |--------|------|
-| Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()` |
+| Modify | `internal/migrate/migrator.go` — add `needsSetup` + `NeedsSetup()`, `SetNeedsSetup()`, `InitNeedsSetup()`; add `prevState atomic.Int32`, `lastUnavailableAt atomic.Value`, `LastUnavailableAt()`, `StartDBProbe()`; **refactor `NewMigrator`** to not connect at construction time (store `databaseURL` + `iofs.Source`, lazy-init `mg.m` in `determineState()`; remove `ctx` param; nil-check in `Close()`) — see Component 9a |
+| Modify | `internal/migrate/handler.go` — call `migrator.InitNeedsSetup(ctx, pool)` after `RunMigrations()` succeeds (fresh-install path; see Component 1) |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
 | Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract |
@@ -586,6 +644,9 @@ The `status` field in the body provides the actual state for monitoring and obse
 - `TestDBErrorPage_RedirectsToRootWithNoFrom` — `GET /db-error` (no `?from=`) returns 302 to `/` when state ≠ `DBUnavailable`
 - `TestDBErrorPage_RejectsExternalFrom` — `GET /db-error?from=https://evil.com` returns 302 to `/` (not to the external URL) when state ≠ `DBUnavailable`
 - `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`
+
+**`internal/migrate/handler_test.go`** — add:
+- `TestRunMigrations_SetsNeedsSetupAfterSuccess` — after `RunMigrations()` succeeds on a fresh DB, verify `migrator.NeedsSetup()` returns `true` (no users exist yet, so the setup gate must be armed)
 
 **`internal/migrate/migrator_test.go`** — add:
 - `TestInitNeedsSetup_NoUsers` — returns true on empty DB
