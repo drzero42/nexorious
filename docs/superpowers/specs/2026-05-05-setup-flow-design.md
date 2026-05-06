@@ -124,6 +124,8 @@ The bypass list for the setup gate is intentionally narrow. `/static/*` is **not
 
 > **`?from=` encoding (Gate 1):** The `from` value in the `/db-error` redirect must be the full original request URI (path + query string) percent-encoded as a single query parameter value. Use `url.QueryEscape(c.Request().RequestURI())` to construct the redirect target. Echo's `c.QueryParam("from")` automatically percent-decodes it when `HandleDBError` reads it back. Without encoding, a request to `/user-games?page=2&sort=title` would produce `/db-error?from=/user-games?page=2&sort=title`, where `page` and `sort` are misinterpreted as top-level query params on the `/db-error` URL — `c.QueryParam("from")` would return only `/user-games`, silently discarding the original query.
 
+> **Gate 3 does not use `?from=`:** Gate 3 redirects to `/setup` without preserving the original path. This is intentional — Gate 3 only fires on first boot before any admin exists. Once an admin is created `needsSetup` is permanently `false` and the gate never fires again. There is no meaningful "original destination" to return to: the user has no authenticated session and the app has no data. After setup completes, the setup page redirects to `/` and the SPA handles navigation from there.
+
 > **Gate ordering note:** A request to `/setup` while state is `NeedsMigration` hits Gate 2 first and is redirected to `/migrate` — `/setup` is not in Gate 2's bypass list. This is intentional: migrations must complete before setup can run. The user will be sent through `/migrate` → state becomes `Ready` → subsequent requests to `/` hit Gate 3 → redirected to `/setup`.
 
 ---
@@ -135,6 +137,8 @@ New package containing:
 - **`seeder.go`** — `SeedAll(ctx, pool)` function that runs storefronts → platforms → associations in a single transaction.
 
 The SQL uses `INSERT ... ON CONFLICT (name) DO UPDATE SET ... WHERE table.source = 'official'` — this preserves custom rows (user-created) while updating official rows if display_name, icon_url, or base_url changed. Simpler and more correct than Python's row-by-row approach.
+
+> **sqlc exception:** The seed SQL is intentionally not routed through sqlc. The `INSERT ON CONFLICT DO UPDATE WHERE source = 'official'` pattern requires filtering on a non-key column, which sqlc does not handle cleanly. Raw `pgxpool` queries are used instead. No changes to `internal/db/queries/` are needed for this feature.
 
 ```go
 // SeedAll seeds storefronts, platforms, and platform-storefront associations.
@@ -227,7 +231,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 4. Call `seed.SeedAll(ctx, pool)` — outside the user transaction; log at WARN but do not fail if seeding errors (admin can reseed via `POST /api/platforms/seed` later)
 5. Issue access token + refresh token by calling `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, extracted from the `HandleLogin` body and shared with `HandleSetupAdmin`. It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. Extracting it avoids duplicating the token issuance + session persistence logic between the two handlers.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
-   - `ip`: `c.RealIP()` (Echo v5 helper; respects `X-Real-IP` / `X-Forwarded-For` headers). Note: `c.RealIP()` returns the correct client IP only when Echo is configured to trust the proxy's forwarding headers (e.g. `echo.IPExtractor` set to `echo.ExtractIPFromXForwardedForHeader()` or similar). On a direct connection with no proxy, it falls back to `RemoteAddr`. The `ip` field in `user_sessions` is informational; if it resolves incorrectly in a given deployment it does not affect authentication correctness.
+   - `ip`: `c.RealIP()` (Echo v5 helper). Echo's default IP extraction strategy uses `RemoteAddr` — no custom `IPExtractor` is configured for Phase 1. The `ip` field in `user_sessions` is informational; if it resolves incorrectly behind a proxy it does not affect authentication correctness. Configuring proxy-aware IP extraction (e.g. `echo.ExtractIPFromXForwardedForHeader()`) is out of scope for this spec.
 6. Call `h.migrator.SetNeedsSetup(false)`
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
@@ -440,7 +444,7 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 
 No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
 
-**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route in Component 5 (router changes) returning `501 Not Implemented`. The route is in the setup zone (JWT-exempt, only accessible while `needsSetup=true`). This matches the pattern used by the GOG sync route and ensures the endpoint returns a deterministic 501 rather than a 404 if anything calls it before Phase 3.
+**`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1; the route is accessible while `needsSetup=true` (before any admin exists) and returns 403 via Gate 3 once setup is complete. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
 
 ---
 
@@ -659,7 +663,12 @@ The `status` field in the body provides the actual state for monitoring and obse
 **`internal/api/router_test.go`** (or `internal/api/setup_test.go`) — add:
 - `TestDBUnavailable_RedirectsToErrorPage` — middleware returns 302 to `/db-error?from=<path>` when state is `DBUnavailable`
 - `TestDBUnavailable_EncodesFromParam` — request to `/user-games?page=2&sort=title` while `DBUnavailable` produces a redirect `Location` of `/db-error?from=%2Fuser-games%3Fpage%3D2%26sort%3Dtitle`; verifies `url.QueryEscape(RequestURI())` is used rather than the bare path
+- `TestSetupGate_RedirectsArbitraryRoutes` — `GET /api/games` while `needsSetup=true` returns 302 to `/setup`
+- `TestSetupGate_BypassesHealthEndpoint` — `GET /health` while `needsSetup=true` returns 200 (not redirected)
+- `TestSetupGate_BypassesMigrateRoutes` — `GET /api/migrate/status` while `needsSetup=true` is not redirected to `/setup`
 - `TestHealth_OKWhenReady` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready` and `needsSetup=false`
 - `TestHealth_OKWhenSetupPending` — `GET /health` returns 200 + `{"status":"ok"}` when state is `Ready` but `needsSetup=true` (setup gate is active; health still reports `ok` because the HTTP server is fully functional)
 - `TestHealth_DBUnavailableReturns200` — `GET /health` returns 200 + `{"status":"db_unavailable"}` when state is `DBUnavailable`
 - `TestHealth_NeedsMigrationReturns200` — `GET /health` returns 200 + `{"status":"needs_migration"}` when state is `NeedsMigration`
+
+> **`POST /api/auth/setup/restore` testing:** No test is specified for the 501 placeholder — the full implementation and its tests are deferred to Phase 3.
