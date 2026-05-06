@@ -58,7 +58,7 @@ func (m *Migrator) LastUnavailableAt() time.Time
 
 Returns the zero `time.Time` if the DB has never been unavailable in this process lifetime.
 
-`onRecovery` is supplied by `main.go` as the `initAppState` closure (see Component 7). This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialisation logic; `main.go` injects it as a callback.
+`onRecovery` is supplied by `main.go` as the `initAppState` closure (see Component 9). This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialisation logic; `main.go` injects it as a callback.
 
 ---
 
@@ -237,10 +237,42 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
 5. Issue access token + refresh token by calling `issueTokensAndSession(context.Background(), pool, cfg, userID, userAgent, ip)` — a package-level function in `internal/api/auth.go`, **created as part of this spec** (not extracted from an existing handler). It generates both tokens, inserts a `user_sessions` row, and returns `(accessToken, refreshToken string, error)`. `HandleLogin` (implemented in the auth-handlers phase) calls this same function rather than duplicating the logic. Creating it here avoids the sequencing problem of extracting it from a handler that doesn't exist yet, and avoids duplicating the token issuance + session persistence logic between the two handlers. Use `context.Background()` (not the request context) so a client disconnect does not leave the session row unpersisted after the user row has committed.
    - `userAgent`: `c.Request().Header.Get("User-Agent")`
    - `ip`: `c.RealIP()` (Echo v5 helper). Echo's default IP extraction strategy uses `RemoteAddr` — no custom `IPExtractor` is configured for Phase 1. The `ip` field in `user_sessions` is informational; if it resolves incorrectly behind a proxy it does not affect authentication correctness. Configuring proxy-aware IP extraction (e.g. `echo.ExtractIPFromXForwardedForHeader()`) is out of scope for this spec.
-6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500.
+
+   **`issueTokensAndSession` contract** (see also `docs/superpowers/specs/2026-05-05-jwt-auth-package-design.md` for the `internal/auth` package it calls):
+
+   ```go
+   // issueTokensAndSession generates an access + refresh token pair, persists a
+   // user_sessions row, and returns both token strings.
+   // Uses context.Background() at all three call sites (setup, login, refresh) so
+   // a client disconnect cannot abort DB writes after a user row has committed.
+   func issueTokensAndSession(
+       ctx       context.Context,
+       pool      *pgxpool.Pool,
+       cfg       *config.Config,
+       userID    string,
+       userAgent string,
+       ip        string,
+   ) (accessToken, refreshToken string, err error)
+   ```
+
+   Token generation (via `internal/auth` package, `github.com/golang-jwt/jwt/v5`):
+   - **Access token**: HS256 JWT, `type="access"`, `sub=userID`, TTL = `cfg.AccessTokenMinutes` (default 15 minutes). Claims shape: `{type, sub, exp, iat}` — no `is_admin`, no role; admin status is loaded from the DB on every authenticated request.
+   - **Refresh token**: HS256 JWT, `type="refresh"`, `sub=userID`, TTL = `cfg.RefreshTokenDays` (default 30 days).
+   - Both signed with `cfg.JWTSecret`.
+
+   `user_sessions` row inserted:
+   ```sql
+   INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, user_agent, ip_address, created_at, updated_at)
+   VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+   ```
+   - `id`: `uuid.NewString()`
+   - `token_hash`: `auth.HashToken(accessToken)` — SHA-256 hex digest (from `internal/auth`)
+   - `refresh_token_hash`: `auth.HashToken(refreshToken)` — SHA-256 hex digest
+   - `user_agent`, `ip_address`: passed in from the caller
+6. Call `h.migrator.SetNeedsSetup(false)` — must be called even if step 5 fails (the user exists; the setup gate must not remain active indefinitely). If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500 with `{"error": "setup succeeded but session could not be created — please log in"}`. The setup page must treat a 500 response as a redirect to `/login` (not a generic retry prompt — the admin account was created, retrying setup would return 403).
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
-**`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. All call sites that **create** password hashes must use this constant — never hardcode the cost inline. In Phase 1 that is `HandleSetupAdmin`; in later phases it is `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password`. `HandleLogin` does **not** use this constant directly: it calls `bcrypt.CompareHashAndPassword` which reads the cost from the stored hash automatically. This ensures all password hashes in the system are created at the same cost.
+**`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. All call sites that **create** password hashes must use this constant — never hardcode the cost inline. Use `golang.org/x/crypto/bcrypt` (`bcrypt.GenerateFromPassword`). In Phase 1 that is `HandleSetupAdmin`; in later phases it is `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password`. `HandleLogin` does **not** use this constant directly: it calls `bcrypt.CompareHashAndPassword` which reads the cost from the stored hash automatically. This ensures all password hashes in the system are created at the same cost.
 
 **Why serializable instead of `FOR UPDATE`:** `SELECT COUNT(*) FROM users FOR UPDATE` on an empty table acquires no row locks (there are no rows to lock), so two concurrent requests can both pass the count check and both attempt the INSERT. Using a `SERIALIZABLE` transaction causes one of the two concurrent transactions to fail with a serialization failure (`40001`). The winner commits, and when the loser retries it finds `COUNT(*) > 0` and returns 403 — the correct outcome. Do **not** surface `40001` as a 500; retry the transaction once, then let the retry's 403 propagate normally.
 
@@ -337,11 +369,25 @@ All fields are snake_case. The `AuthProvider` in `ui/src/providers/auth-provider
 - Query: `SELECT id, username, is_admin, is_active, preferences, created_at FROM users WHERE id = $1` using the `user_id` claim from the validated JWT.
 - Return 401 if the claim is missing or the user row is not found (`pgx.ErrNoRows`).
 - Return 500 on any other DB error.
-- `preferences` is a `jsonb` column; return it as a raw JSON object (not a string). pgx scans `jsonb` into `[]byte`; marshal it directly into the response without double-encoding.
+- `preferences` is a `jsonb` column; return it as a raw JSON object (not a string). pgx scans `jsonb` into `[]byte`; marshal it directly into the response without double-encoding. **If the scanned `[]byte` is `nil` (the column is NULL in the DB), substitute `json.RawMessage("{}")` before marshalling** — this guarantees the response always contains `"preferences": {}`, never `"preferences": null`. The column defaults to `'{}'::jsonb` so this should only occur for rows created outside the normal flow, but the handler must be defensive.
 
 ---
 
+### 5. Route registrations (`internal/api/router.go`)
+
 The embed vars are defined in `ui/ui.go` as exported package-level vars (`ui.SetupBox`, `ui.DBErrorBox`) and referenced by the router package as `ui.SetupBox` / `ui.DBErrorBox`.
+
+**Embed declarations (`ui/ui.go`):**
+
+```go
+//go:embed setup
+var SetupBox embed.FS
+
+//go:embed db-error
+var DBErrorBox embed.FS
+```
+
+`ui/setup/` and `ui/db-error/` are standalone directories (not part of `ui/dist/`), each containing a single self-contained `index.html` with inlined CSS and JavaScript — the same approach as the migration UI (`ui/migrate/`). This avoids the problem of the React SPA's Vite-bundled assets (`/assets/*.js`) being blocked by the setup gate.
 
 **Setup route:**
 
@@ -395,7 +441,6 @@ e.GET("/health", func(c echo.Context) error {
 ```
 
 All states return `200`. The `status` field carries the machine-readable state string for monitoring. See `/health` Response Contract for the full rationale.
-```
 
 The `State().String()` method returns the following strings (already implemented in `internal/migrate/migrator.go`):
 
@@ -405,18 +450,6 @@ The `State().String()` method returns the following strings (already implemented
 | `AppStateNeedsMigration` | `"needs_migration"` |
 | `AppStateMigrating` | `"migrating"` |
 | `AppStateReady` | `"ready"` |
-
-**Embed declarations (`ui/ui.go`):**
-
-```go
-//go:embed setup
-var SetupBox embed.FS
-
-//go:embed db-error
-var DBErrorBox embed.FS
-```
-
-`ui/setup/` and `ui/db-error/` are standalone directories (not part of `ui/dist/`), each containing a single self-contained `index.html` with inlined CSS and JavaScript — the same approach as the migration UI (`ui/migrate/`). This avoids the problem of the React SPA's Vite-bundled assets (`/assets/*.js`) being blocked by the setup gate.
 
 Setup and DB-error endpoints are registered **outside** the JWT middleware group — they are public by design.
 
@@ -447,7 +480,7 @@ Example output: `postgres://myuser:***@db.example.com:5432/nexorious?sslmode=req
 **Handler logic:**
 
 1. If `migrator.State() != DBUnavailable` → redirect to the `?from=` parameter, or `/` if absent. **Validate that `from` starts with `/` before using it** — if it is empty, absent, or does not start with `/`, redirect to `/` instead. This prevents an open-redirect attack where a crafted link such as `/db-error?from=https://evil.com` would forward users to an external site on DB recovery.
-2. Otherwise serve `ui.DBErrorBox`'s `db-error/index.html`, injecting two values at serve time (not at registration time) via `html/template` or `strings.ReplaceAll` on placeholder tokens:
+2. Otherwise serve `ui.DBErrorBox`'s `db-error/index.html`, injecting two values at serve time (not at registration time) via `html/template` — **not** `strings.ReplaceAll`. The redacted DSN and timestamp both contain user-supplied or system-generated characters (database usernames, hostnames) that could contain `<`, `>`, `"`, or `&`; `html/template` escapes these safely. Use `template.Must(template.ParseFS(ui.DBErrorBox, "db-error/index.html"))` cached at `NewDBErrorHandler` construction time and execute it per-request:
    - `{{.RedactedDSN}}` → `h.redactedDSN`
    - `{{.LastUnavailableAt}}` → `h.migrator.LastUnavailableAt().UTC().Format(time.RFC3339)` (or `"unknown"` if zero)
 
@@ -476,9 +509,10 @@ Self-contained HTML/CSS/JS file (no build step, no external dependencies). Mirro
 4. On **201**: constructs the `localStorage` auth object (see transformation in Component 4), writes it under key `'auth'`, then redirects to `/`. The SPA's `AuthProvider` reads this on load and the user is immediately authenticated.
 5. On **400**: displays the server error message inline.
 6. On **403** (`"setup already complete"`): redirects to `/login`. This handles the edge case where a user manually navigates to `/setup` after setup is done and the middleware redirect somehow didn't fire (e.g. a direct API call).
-7. On any other error: displays a generic "Setup failed, please try again" message inline.
+7. On **500**: redirects to `/login`. A 500 from this endpoint means the admin account was created but the session could not be issued — retrying setup would produce a 403. The user should log in normally.
+8. On any other network/unexpected error: displays a generic "Setup failed, please try again" message inline.
 
-No changes to `ui/src/` (the React SPA) are required for the setup page itself. The `RouteGuard` simplification (removing the `GET /api/auth/setup/status` call) is still needed if that call exists in the Python frontend code being ported — confirm during Phase 2 frontend work.
+No changes to `ui/src/` (the React SPA) are required for the setup page itself. **`GET /api/auth/setup/status` is not registered in the Go port** — the server enforces the setup gate via middleware redirect, so the frontend does not need to poll for setup state. If the Python frontend being ported calls this endpoint, that call must be removed from the ported frontend code.
 
 **`POST /api/auth/setup/restore` placeholder:** Phase 1 registers this route returning `501 Not Implemented`. Full implementation is deferred to Phase 3 alongside the backup/restore system. No auth check is added in Phase 1. When the app is in `Ready` state the route returns `501 Not Implemented` — in `DBUnavailable` or pre-migration states the standard gates apply (Gate 1 redirects to `/db-error`, Gate 2 redirects to `/migrate`) before the handler is ever reached. Auth requirements and the full handler are Phase 3 concerns — do not add anything further to this endpoint now.
 
@@ -644,15 +678,17 @@ The loop runs in a goroutine so it does not block the HTTP server (the migration
 resolvedDatabaseURL := resolveDBURL(cfg)
 pgxpool.New(resolvedDatabaseURL)   ← fatal on connection-string parse error only (lazy — does not dial)
 NewMigrator(resolvedDatabaseURL)   ← struct created; state zero-values to DBUnavailable
-pool.Ping():
+pool.Ping() — single attempt, no retry loop:
   success → initAppState() → determineState() + InitNeedsSetup() on existing Migrator
             if initAppState() fails → log ERROR, leave state as DBUnavailable, continue
             (StartDBProbe will retry initAppState on the next successful ping)
-  failure → leave state as DBUnavailable (no exit)
+  failure → leave state as DBUnavailable (no exit; StartDBProbe handles all retries)
 Start HTTP server          ← Migrator always exists; middleware is safe
 StartDBProbe(shutdownCtx, pool, initAppState)  ← goroutine; calls initAppState on first recovery
 Spawn worker/scheduler gate-loop goroutine(shutdownCtx)
 ```
+
+> **Single ping vs. `--migrate-only` retry loop:** Normal server startup performs exactly one `pool.Ping()` attempt. If the DB is unreachable, the server starts immediately in `DBUnavailable` state and `StartDBProbe` handles all subsequent retries. Unlike `--migrate-only` (which must connect before it can do anything useful), the normal server can serve the `/db-error` page and wait for recovery without blocking startup.
 
 ---
 
@@ -682,13 +718,13 @@ The `status` field in the body provides the actual state for monitoring and obse
 | Modify | `internal/migrate/handler.go` — update `NewHandler` to accept `pool *pgxpool.Pool` as a second parameter and store it on the handler struct; call `migrator.InitNeedsSetup(context.Background(), pool)` after `RunMigrations()` succeeds (fresh-install path; see Component 1) |
 | Modify | `internal/migrate/migrator_test.go` — tests for `InitNeedsSetup` and `StartDBProbe` |
 | Modify | `cmd/nexorious/main.go` — `initAppState()` helper; remove fatal ping exit; `StartDBProbe` goroutine; worker/scheduler gate-loop |
-| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract; pass `pool` to `migrate.NewHandler` |
+| Modify | `internal/api/router.go` — add all three middleware gates; register `GET /setup`, `GET /db-error`, `POST /api/auth/setup/admin`, `POST /api/auth/setup/restore` (501 placeholder); update `/health` response contract; pass `pool` to `migrate.NewHandler` — see Component 5 |
 | Create | `internal/seed/data.go` — official seed data |
 | Create | `internal/seed/seeder.go` — `SeedAll` function |
 | Create | `internal/seed/seeder_test.go` — integration test (testcontainers) |
 | Create | `internal/api/setup.go` — `SetupHandler` + `HandleSetupAdmin` |
-| Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection |
-| Modify | `internal/api/auth.go` — create `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function (used by `HandleSetupAdmin` now; `HandleLogin` calls it in the auth-handlers phase); define `const bcryptCost = 12` used by all password-hash creation sites (`HandleSetupAdmin` in Phase 1; `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password` in later phases — `HandleLogin` does not use it, as `bcrypt.CompareHashAndPassword` reads the cost from the stored hash); implement `GET /api/auth/me` (JWT-required; response contract in Component 4a — required in Phase 1 so the SPA's `AuthProvider` can validate the token and hydrate `preferences` immediately after setup redirects to `/`) |
+| Create | `internal/api/db_error.go` — `DBErrorHandler` + `HandleDBError`; DSN redaction + timestamp injection via `html/template` (not `strings.ReplaceAll` — DSN contains user-supplied characters that must be HTML-escaped) |
+| Modify | `internal/api/auth.go` — create `issueTokensAndSession(ctx, pool, cfg, userID, userAgent, ip) (accessToken, refreshToken string, err error)` as a package-level function (used by `HandleSetupAdmin` now; `HandleLogin` calls it in the auth-handlers phase); define `const bcryptCost = 12` and import `golang.org/x/crypto/bcrypt` for all password-hash creation sites (`HandleSetupAdmin` in Phase 1; `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password` in later phases — `HandleLogin` does not use it, as `bcrypt.CompareHashAndPassword` reads the cost from the stored hash); implement `GET /api/auth/me` (JWT-required; response contract in Component 4a — required in Phase 1 so the SPA's `AuthProvider` can validate the token and hydrate `preferences` immediately after setup redirects to `/`) |
 | Create | `internal/api/setup_test.go` — handler tests |
 | Create | `internal/api/db_error_test.go` — DB-error handler tests |
 | Create | `ui/setup/index.html` — standalone static setup page (no build step) |
@@ -708,6 +744,7 @@ The `status` field in the body provides the actual state for monitoring and obse
 | PG `40001` — serialization failure (concurrent setup race), after one retry | 403 `{"error": "setup already complete"}` — the retry's count check catches the winner's row |
 | DB error (other) | 500 `{"error": "internal server error"}` (logged) |
 | Seed error | Logged at WARN level; 201 still returned (admin created, seeding retried via `POST /api/platforms/seed`) |
+| `issueTokensAndSession` error after user committed | 500 `{"error": "setup succeeded but session could not be created — please log in"}`; `SetNeedsSetup(false)` still called; setup page redirects to `/login` |
 
 **Rate limiting:** Setup endpoints are **not** rate-limited. Once any user exists the endpoints return 403 permanently — they are not a viable brute-force surface. Adding rate limiting would require bootstrapping the limiter before setup is complete, which adds complexity for no practical benefit.
 
@@ -729,14 +766,15 @@ The `status` field in the body provides the actual state for monitoring and obse
 - `TestSetupAdmin_ConcurrentRace` — fire two simultaneous `POST /api/auth/setup/admin` requests; assert exactly one 201 and one 403, and exactly one user row in the DB. Verifies the SERIALIZABLE transaction correctly serializes concurrent setup attempts.
 - `TestSetupPage_ServesPage` — GET /setup returns 200 with `text/html` content-type when `needsSetup=true`
 - `TestSetupPage_RedirectsWhenDone` — GET /setup returns 302 to `/` when `needsSetup=false`
-- `TestSetupAdmin_GetMeAfterSetup` — after a successful `POST /api/auth/setup/admin`, use the returned access token to call `GET /api/auth/me`; assert 200 with the correct user profile. Verifies the end-to-end flow that the SPA's `AuthProvider` depends on.
+- `TestSetupAdmin_GetMeAfterSetup` — after a successful `POST /api/auth/setup/admin`, use the returned access token to call `GET /api/auth/me`; assert 200 with the correct user profile including `"preferences": {}`. Verifies the end-to-end flow that the SPA's `AuthProvider` depends on.
+- `TestSetupAdmin_PreferencesNullCoercion` — if the `users.preferences` column is somehow NULL (e.g. an admin-inserted row bypassing the default), `GET /api/auth/me` still returns `"preferences": {}` not `"preferences": null`.
 
 **`internal/api/db_error_test.go`**:
-- `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`; body contains redacted DSN placeholder text and a timestamp
+- `TestDBErrorPage_ServesHTML` — `GET /db-error` returns 200 with `text/html` when state is `DBUnavailable`; body contains the redacted DSN and a timestamp injected by the `html/template` executor
 - `TestDBErrorPage_RedirectsOnRecovery` — `GET /db-error?from=/foo` returns 302 to `/foo` when state ≠ `DBUnavailable`
 - `TestDBErrorPage_RedirectsToRootWithNoFrom` — `GET /db-error` (no `?from=`) returns 302 to `/` when state ≠ `DBUnavailable`
 - `TestDBErrorPage_RejectsExternalFrom` — `GET /db-error?from=https://evil.com` returns 302 to `/` (not to the external URL) when state ≠ `DBUnavailable`
-- `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`
+- `TestDBErrorHandler_RedactsDSN` — unit test: verifies password and sensitive query params are replaced with `***`; also verifies special HTML characters in the DSN (e.g. `<`, `>`, `&`) are escaped in the rendered output
 - `TestDBErrorHandler_InjectsUnknownWhenNeverUnavailable` — unit test: construct a `DBErrorHandler` whose Migrator has never entered `DBUnavailable` state; verify `LastUnavailableAt()` returns the zero `time.Time` and the served HTML contains the literal string `"unknown"` in the last-failed-at field
 
 **`internal/migrate/handler_test.go`** — add:
