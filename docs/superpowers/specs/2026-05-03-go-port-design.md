@@ -541,6 +541,16 @@ Both tables are **static reference data** — they are populated entirely by mig
 
 **Frontend change required:** The Python frontend includes admin UI for managing platforms and storefronts (creating, editing, deleting entries, uploading logos, managing associations). These screens must be **removed entirely** when porting the frontend. Any navigation links, routes, API client methods (`src/api/platforms.ts` mutations, logo upload calls), and TypeScript types relating to platform/storefront write operations should be deleted. The read-only API calls (listing platforms, listing storefronts for a platform, fetching a single platform/storefront for display in dropdowns) are kept.
 
+**Frontend change required — logos and icon field:** The Python backend stores full paths in `icon_url` (e.g. `/static/logos/platforms/pc-windows/pc-windows-icon-light.svg`) served from the backend. The Go port changes this in two ways:
+
+1. **Field rename:** `icon_url` → `icon`, which holds only the filename (e.g. `pc-windows-icon-light.svg`). Update `src/api/games.ts` (the `Platform` and `Storefront` API types and their mapping functions) accordingly.
+
+2. **Logo location:** Logos move from `backend/static/logos/` to `ui/public/logos/`, preserving the `platforms/` and `storefronts/` subdirectory structure. Vite copies `ui/public/` into `ui/dist/` verbatim, so logos are served at `/logos/platforms/<slug>/` and `/logos/storefronts/<slug>/` without any Go-side route. The `src/components/ui/platform-icon.tsx` component currently prepends `config.staticUrl` + the full `icon_url` path — replace this with a helper that constructs the path from the logo base dir + slug subdirectory + `icon` filename. The `config.staticUrl` prefix is **not** used for logos (they're same-origin frontend assets); it remains only for cover art.
+
+3. **Hardcoded paths in `src/types/sync.ts`:** The sync platform info map hardcodes full `/static/logos/storefronts/...` paths for Steam, Epic, GOG, and PlayStation. Update these to use the new `/logos/storefronts/<slug>/` base path + filename convention, consistent with how `platform-icon.tsx` resolves icons.
+
+4. **Vite proxy:** The existing `vite.config.ts` proxies both `/api` and `/static` to the Go backend. Since logos are now frontend assets, only `/static/cover_art` needs proxying. Update the proxy to target `/static/cover_art` specifically (or keep `/static` proxied — it will simply 404 for `/static/logos/` requests in dev, which is fine since the dev server serves them directly from `ui/public/`).
+
 #### External Games
 
 `external_games` is load-bearing for the sync system. Each row represents a game seen from an external source (Steam, PSN, Epic) for a given user. It stores:
@@ -1312,7 +1322,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - User games API (list with dynamic filtering via filterBuilder + goqu, sort, CRUD, platform associations)
 - IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
 - Platforms, tags, and user-games filter-options / genres / stats / ids endpoints
-- IGDB service (rate-limited HTTP client, cover art + logos storage)
+- IGDB service (rate-limited HTTP client, cover art storage)
 - Remaining auth profile endpoints: `PUT /api/auth/me`, `PUT /api/auth/change-password`, `GET /api/auth/username/check/:username`, `PUT /api/auth/username` (`GET /api/auth/me` is Phase 1 — see above)
 
 **Checkpoint:** React frontend fully usable for browsing and managing game collection.
