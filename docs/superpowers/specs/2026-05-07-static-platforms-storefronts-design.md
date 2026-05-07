@@ -29,6 +29,8 @@ CREATE TABLE platforms (
 );
 ```
 
+> `default_storefront` FK has no explicit `ON DELETE` clause (defaults to `NO ACTION`/`RESTRICT`). A platform's `default_storefront` must be set to `NULL` before deleting the referenced storefront.
+
 ### `storefronts` — remove columns
 
 **Remove:** `is_active`, `source`, `version_added`, `created_at`, `updated_at`
@@ -155,14 +157,13 @@ The stats endpoints (`GET /api/platforms/stats`, `GET /api/platforms/storefronts
 
 **Adding:** Create a new numbered migration (e.g. `0010_add_sega_platform.up.sql`) with the `INSERT` statement. The down migration is `DELETE FROM platforms WHERE name = 'sega-genesis'`.
 
-**Retiring a storefront** (rare): Write a migration that:
-1. Updates any `user_game_platforms` rows referencing the storefront (e.g. set `storefront = 'physical'` or use the platform's `default_storefront`)
-2. Deletes from `platform_storefronts` where `storefront = 'retiring-storefront'`
-3. Deletes from `storefronts` where `name = 'retiring-storefront'`
+**Retiring a storefront** (rare): Write a migration that handles FKs in order:
+1. Updates any `user_game_platforms` rows that reference the storefront (e.g. `SET storefront = 'physical'`), because `user_game_platforms.storefront` has `ON DELETE RESTRICT`
+2. Nulls out any `platforms.default_storefront` pointing at it (`UPDATE platforms SET default_storefront = NULL WHERE default_storefront = 'retiring-storefront'`), because `platforms.default_storefront` is a nullable FK into `storefronts`
+3. Deletes from `platform_storefronts` where `storefront = 'retiring-storefront'` (the `ON DELETE CASCADE` on this table would handle it automatically when `storefronts` is deleted, but doing it explicitly makes intent clear)
+4. Deletes from `storefronts` where `name = 'retiring-storefront'`
 
-The FK constraint (`ON DELETE CASCADE` on `platform_storefronts`, `ON DELETE RESTRICT` on `user_game_platforms`) enforces the correct ordering.
-
-**Retiring a platform** is expected to be vanishingly rare but follows the same pattern — migrate user data first, then delete.
+**Retiring a platform** is expected to be vanishingly rare but follows the same pattern — clear `user_game_platforms` rows first, then delete.
 
 ## Out of Scope
 

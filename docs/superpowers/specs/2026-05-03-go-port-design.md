@@ -1317,7 +1317,9 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - Games API (`/api/games`, `/api/games/:id`, search, IGDB import, metadata endpoints)
 - User games API (list with dynamic filtering via filterBuilder + goqu, sort, CRUD, platform associations)
 - IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
-- Platforms, tags, and user-games filter-options / genres / stats / ids endpoints
+- Platforms and tags read endpoints (JWT required; read-only — no write/admin endpoints; see static platforms spec)
+- User-games filter-options / genres / stats (`GET /api/user-games/stats`) / ids endpoints
+  - Note: `GET /api/platforms/stats` and `GET /api/platforms/storefronts/stats` are **not implemented** — cancelled per the static platforms spec
 - IGDB service (rate-limited HTTP client, cover art storage)
 - Remaining auth profile endpoints: `PUT /api/auth/me`, `PUT /api/auth/change-password`, `GET /api/auth/username/check/:username`, `PUT /api/auth/username` (`GET /api/auth/me` is Phase 1 — see above)
 
