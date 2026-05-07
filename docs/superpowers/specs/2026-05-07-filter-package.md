@@ -5,7 +5,7 @@
 
 ## Overview
 
-Implement `internal/filter/` — a reusable SQL query builder used by the `GET /api/user-games` list endpoint and related endpoints (`/ids`, `/filter-options`, `/genres`, `/stats`). The package accumulates JOINs, WHERE conditions, and HAVING conditions into a single `goqu` SELECT expression, following the Stash-style filterBuilder pattern described in the design spec.
+Implement `internal/filter/` — a reusable SQL query builder used by the `GET /api/user-games` list endpoint and the `GET /api/user-games/ids` endpoint. The package accumulates JOINs, WHERE conditions, and HAVING conditions into a single `goqu` SELECT expression, following the Stash-style filterBuilder pattern described in the design spec.
 
 This package has no API surface and no HTTP handlers. It is pure query-building logic.
 
@@ -46,7 +46,7 @@ These are the filter parameters accepted by `GET /api/user-games` in the Python 
 | `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE '%' \|\| ? \|\| '%'` for each value |
 | `theme` | `[]string` | `games` | OR of `games.themes ILIKE '%' \|\| ? \|\| '%'` for each value |
 | `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE '%' \|\| ? \|\| '%'` for each value |
-| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
+| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` — values are UUID strings sent directly by the frontend; no name resolution needed |
 | `q` | `string` | `games` | `games.title ILIKE '%' \|\| ? \|\| '%' OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE '%' \|\| ? \|\| '%')` |
 
 **`fuzzy_threshold` is NOT implemented.** The Python parameter was never wired to the frontend; the Go port uses ILIKE only.
@@ -186,6 +186,7 @@ func ApplyPlayerPerspective(f *filterBuilder, perspectives []string)
 func ApplyTag(f *filterBuilder, tagIDs []string)
 
 // ApplyTextSearch adds title/notes ILIKE WHERE clauses (with games JOIN) if q is non-empty.
+// Use goqu.I(...).ILike(...) expressions — do not use goqu.L() with ? placeholders.
 func ApplyTextSearch(f *filterBuilder, q string)
 ```
 
