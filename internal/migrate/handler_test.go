@@ -17,16 +17,19 @@ import (
 func newTestHandler(t *testing.T) *migrate.Handler {
 	t.Helper()
 	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(t.Context(), connStr)
+	m, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := m.Close(); err != nil {
 			t.Logf("close migrator: %v", err)
 		}
 	})
-	return migrate.NewHandler(m)
+	return migrate.NewHandler(m, nil)
 }
 
 func TestHandleStatus_NeedsMigration(t *testing.T) {
@@ -97,9 +100,12 @@ func TestHandleRun_202_ThenReady(t *testing.T) {
 
 func TestHandleRun_409_WhenMigrating(t *testing.T) {
 	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(t.Context(), connStr)
+	m, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := m.Close(); err != nil {
@@ -110,7 +116,7 @@ func TestHandleRun_409_WhenMigrating(t *testing.T) {
 	// Manually set state to Migrating.
 	m.SetStateForTest(migrate.AppStateMigrating)
 
-	h := migrate.NewHandler(m)
+	h := migrate.NewHandler(m, nil)
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/api/migrate/run", nil)
 	rec := httptest.NewRecorder()
@@ -126,9 +132,12 @@ func TestHandleRun_409_WhenMigrating(t *testing.T) {
 
 func TestHandleRun_400_WhenReady(t *testing.T) {
 	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(t.Context(), connStr)
+	m, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := m.Close(); err != nil {
@@ -138,7 +147,7 @@ func TestHandleRun_400_WhenReady(t *testing.T) {
 
 	m.SetStateForTest(migrate.AppStateReady)
 
-	h := migrate.NewHandler(m)
+	h := migrate.NewHandler(m, nil)
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/api/migrate/run", nil)
 	rec := httptest.NewRecorder()

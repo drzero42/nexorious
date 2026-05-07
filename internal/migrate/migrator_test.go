@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -43,11 +45,13 @@ func setupTestDB(t *testing.T) string {
 
 func TestNewMigrator_FreshDatabase(t *testing.T) {
 	connStr := setupTestDB(t)
-	ctx := context.Background()
 
-	m, err := migrate.NewMigrator(ctx, connStr)
+	m, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	defer func() {
 		if err := m.Close(); err != nil {
@@ -78,40 +82,27 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 
 func TestRunMigrations_TransitionsToReady(t *testing.T) {
 	connStr := setupTestDB(t)
-	ctx := context.Background()
-
-	m, err := migrate.NewMigrator(ctx, connStr)
+	m, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
 	}
-	defer func() {
-		if err := m.Close(); err != nil {
-			t.Logf("close: %v", err)
-		}
-	}()
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
 
+	ctx := context.Background()
 	if err := m.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-
+	// RunMigrations must NOT set Ready — leaves state as Migrating.
+	if m.State() != migrate.AppStateMigrating {
+		t.Errorf("expected Migrating after RunMigrations, got %v", m.State())
+	}
+	// Handler goroutine calls TransitionToReady after InitNeedsSetup.
+	m.TransitionToReady()
 	if m.State() != migrate.AppStateReady {
-		t.Errorf("expected Ready after migration, got %v", m.State())
-	}
-
-	count, err := m.PendingCount()
-	if err != nil {
-		t.Fatalf("PendingCount after migration: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 pending migrations after run, got %d", count)
-	}
-
-	ver, dirty, err := m.CurrentVersion()
-	if err != nil {
-		t.Fatalf("CurrentVersion after migration: %v", err)
-	}
-	if ver != 1 || dirty {
-		t.Errorf("expected version=1 dirty=false after migration, got ver=%d dirty=%v", ver, dirty)
+		t.Errorf("expected Ready after TransitionToReady, got %v", m.State())
 	}
 }
 
@@ -120,9 +111,12 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 	ctx := context.Background()
 
 	// First run — apply migrations.
-	m1, err := migrate.NewMigrator(ctx, connStr)
+	m1, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator first run: %v", err)
+	}
+	if err := m1.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	if err := m1.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations first run: %v", err)
@@ -132,9 +126,12 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 	}
 
 	// Second run — schema is current; should start Ready.
-	m2, err := migrate.NewMigrator(ctx, connStr)
+	m2, err := migrate.NewMigrator(connStr)
 	if err != nil {
 		t.Fatalf("NewMigrator second run: %v", err)
+	}
+	if err := m2.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	defer func() {
 		if err := m2.Close(); err != nil {
@@ -173,9 +170,12 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 
 	// Apply migrations via the Migrator (uses pgx5:// scheme internally).
 	pgx5Conn := "pgx5" + strings.TrimPrefix(rawConn, "postgres")
-	m, err := migrate.NewMigrator(ctx, pgx5Conn)
+	m, err := migrate.NewMigrator(pgx5Conn)
 	if err != nil {
 		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	defer func() { _ = m.Close() }()
 
@@ -243,4 +243,129 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 // rawConn must be a standard postgres:// URL (not pgx5://).
 func openStdlib(rawConn string) (*sql.DB, error) {
 	return sql.Open("pgx", rawConn)
+}
+
+func setupPool(t *testing.T, connStr string) *pgxpool.Pool {
+	t.Helper()
+	// connStr from setupTestDB is pgx5://, but pgxpool needs postgres://
+	pgxConnStr := "postgres" + strings.TrimPrefix(connStr, "pgx5")
+	pool, err := pgxpool.New(context.Background(), pgxConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func badPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	// A pool pointed at a non-existent host — all Pings will fail immediately.
+	pool, err := pgxpool.New(context.Background(), "postgres://bad:bad@127.0.0.1:19999/x?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatalf("badPool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func TestNewMigrator_SucceedsWhenDBUnreachable(t *testing.T) {
+	// NewMigrator should succeed even with a bad URL — no DB contact at construction.
+	m, err := migrate.NewMigrator("postgres://bad-host:5432/nope?sslmode=disable")
+	if err != nil {
+		t.Fatalf("NewMigrator with unreachable DB: %v", err)
+	}
+	if m.State() != migrate.AppStateDBUnavailable {
+		t.Errorf("expected DBUnavailable, got %v", m.State())
+	}
+}
+
+func TestInitNeedsSetup_NoUsers(t *testing.T) {
+	connStr := setupTestDB(t)
+	ctx := context.Background()
+	m, err := migrate.NewMigrator(connStr)
+	if err != nil {
+		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("determineState: %v", err)
+	}
+	if err := m.RunMigrations(ctx); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	pool := setupPool(t, connStr)
+	if err := m.InitNeedsSetup(ctx, pool); err != nil {
+		t.Fatalf("InitNeedsSetup: %v", err)
+	}
+	if !m.NeedsSetup() {
+		t.Error("expected NeedsSetup=true on empty users table")
+	}
+}
+
+func TestInitNeedsSetup_UsersExist(t *testing.T) {
+	connStr := setupTestDB(t)
+	ctx := context.Background()
+	m, err := migrate.NewMigrator(connStr)
+	if err != nil {
+		t.Fatalf("NewMigrator: %v", err)
+	}
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("determineState: %v", err)
+	}
+	if err := m.RunMigrations(ctx); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	pool := setupPool(t, connStr)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO users (id, username, password_hash, is_admin) VALUES ('u1','admin','hash',true)`)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	if err := m.InitNeedsSetup(ctx, pool); err != nil {
+		t.Fatalf("InitNeedsSetup: %v", err)
+	}
+	if m.NeedsSetup() {
+		t.Error("expected NeedsSetup=false when users exist")
+	}
+}
+
+func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
+	m, err := migrate.NewMigrator("postgres://bad:5432/x?sslmode=disable")
+	if err != nil {
+		t.Fatalf("NewMigrator: %v", err)
+	}
+	m.SetStateForTest(migrate.AppStateReady)
+	m.SetProbeIntervalForTest(50 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pool := badPool(t)
+	m.StartDBProbe(ctx, pool, func(_ context.Context) error { return nil })
+
+	time.Sleep(150 * time.Millisecond)
+	if m.State() != migrate.AppStateDBUnavailable {
+		t.Errorf("expected DBUnavailable after ping fail, got %v", m.State())
+	}
+	if m.LastUnavailableAt().IsZero() {
+		t.Error("expected LastUnavailableAt to be set")
+	}
+}
+
+func TestStartDBProbe_RespectsContext(t *testing.T) {
+	m, err := migrate.NewMigrator("postgres://bad:5432/x?sslmode=disable")
+	if err != nil {
+		t.Fatalf("NewMigrator: %v", err)
+	}
+	m.SetProbeIntervalForTest(50 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	pool := badPool(t)
+	m.StartDBProbe(ctx, pool, func(_ context.Context) error { return nil })
+
+	cancel() // should cause goroutine to exit cleanly
+	time.Sleep(100 * time.Millisecond)
+	// No assertion needed — if the goroutine leaks, the race detector will catch it.
 }

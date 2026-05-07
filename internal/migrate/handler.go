@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 
 	"github.com/drzero42/nexorious-go/ui"
@@ -14,16 +15,17 @@ import (
 // Handler holds the Echo handlers for migration routes.
 type Handler struct {
 	migrator *Migrator
+	pool     *pgxpool.Pool
 	tmpl     *template.Template
 }
 
 // NewHandler creates a Handler. Panics if the migration template cannot be parsed.
-func NewHandler(m *Migrator) *Handler {
+func NewHandler(m *Migrator, pool *pgxpool.Pool) *Handler {
 	tmpl, err := template.ParseFS(ui.MigrateBox, "migrate/migrate.html")
 	if err != nil {
 		panic(fmt.Sprintf("migrate: failed to parse template: %v", err))
 	}
-	return &Handler{migrator: m, tmpl: tmpl}
+	return &Handler{migrator: m, pool: pool, tmpl: tmpl}
 }
 
 // Migrator exposes the underlying Migrator for tests.
@@ -85,9 +87,16 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 
 	go func() {
 		if err := h.migrator.RunMigrations(context.Background()); err != nil {
-			// Error already recorded in logCh by RunMigrations.
 			_ = err
+			return
 		}
+		if h.pool != nil {
+			if err := h.migrator.InitNeedsSetup(context.Background(), h.pool); err != nil {
+				// Non-fatal: log and continue. Gate will re-check on next request.
+				_ = err
+			}
+		}
+		h.migrator.TransitionToReady()
 	}()
 
 	return c.JSON(http.StatusAccepted, map[string]string{"status": "migration started"})

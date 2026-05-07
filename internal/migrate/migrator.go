@@ -9,10 +9,13 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gmigrate "github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	migsource "github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
 )
@@ -21,13 +24,16 @@ import (
 type AppState int32
 
 const (
-	AppStateNeedsMigration AppState = iota
+	AppStateDBUnavailable  AppState = iota // MUST be 0 — sentinel for prevState
+	AppStateNeedsMigration
 	AppStateMigrating
 	AppStateReady
 )
 
 func (s AppState) String() string {
 	switch s {
+	case AppStateDBUnavailable:
+		return "db_unavailable"
 	case AppStateNeedsMigration:
 		return "needs_migration"
 	case AppStateMigrating:
@@ -41,43 +47,47 @@ func (s AppState) String() string {
 
 // Migrator manages migration state.
 type Migrator struct {
-	state       atomic.Int32
-	databaseURL string
-	m           *gmigrate.Migrate
-	logCh       chan string
-	logWriter   io.Writer
-	mu          sync.Mutex
+	state             atomic.Int32
+	prevState         atomic.Int32 // state before DBUnavailable; zero == never operational
+	lastUnavailableAt atomic.Value // stores time.Time
+	needsSetup        bool
+	mu                sync.RWMutex // guards needsSetup
+	migrateMu         sync.Mutex   // guards mg.m; held by RunMigrations for its entire duration
+	probeInterval     time.Duration // 0 = use default 5s; set via SetProbeIntervalForTest
+	databaseURL       string
+	src               migsource.Driver  // created in NewMigrator, reused in determineState
+	m                 *gmigrate.Migrate // nil until determineState() first called
+	logCh             chan string
+	logWriter         io.Writer
 }
 
-// NewMigrator creates a Migrator, connects to the database, and determines
-// the current migration state.
-func NewMigrator(ctx context.Context, databaseURL string) (*Migrator, error) {
+// NewMigrator creates a Migrator ready to use.
+// It does NOT connect to the database — state is DBUnavailable (zero value)
+// until DetermineStateForTest() or determineState() is called.
+func NewMigrator(databaseURL string) (*Migrator, error) {
 	src, err := iofs.New(migrations.FS, ".")
 	if err != nil {
 		return nil, fmt.Errorf("migrator: create iofs source: %w", err)
 	}
-
-	// golang-migrate's pgx/v5 driver registers as "pgx5://", not "postgresql://" or "postgres://".
-	migrateURL := strings.NewReplacer("postgresql://", "pgx5://", "postgres://", "pgx5://").Replace(databaseURL)
-	m, err := gmigrate.NewWithSourceInstance("iofs", src, migrateURL)
-	if err != nil {
-		return nil, fmt.Errorf("migrator: new migrate instance: %w", err)
-	}
-
-	mg := &Migrator{
+	return &Migrator{
 		databaseURL: databaseURL,
-		m:           m,
-	}
-
-	if err := mg.determineState(); err != nil {
-		_, _ = m.Close()
-		return nil, err
-	}
-
-	return mg, nil
+		src:         src,
+	}, nil
 }
 
 func (mg *Migrator) determineState() error {
+	if mg.m == nil {
+		migrateURL := strings.NewReplacer(
+			"postgresql://", "pgx5://",
+			"postgres://", "pgx5://",
+		).Replace(mg.databaseURL)
+		m, err := gmigrate.NewWithSourceInstance("iofs", mg.src, migrateURL)
+		if err != nil {
+			return fmt.Errorf("determine state: connect: %w", err)
+		}
+		mg.m = m
+	}
+
 	ver, dirty, err := mg.m.Version()
 	if errors.Is(err, gmigrate.ErrNilVersion) {
 		mg.state.Store(int32(AppStateNeedsMigration))
@@ -86,7 +96,6 @@ func (mg *Migrator) determineState() error {
 	if err != nil {
 		return fmt.Errorf("determine state: %w", err)
 	}
-
 	if dirty {
 		slog.Error("database is in dirty state",
 			"version", ver,
@@ -94,7 +103,6 @@ func (mg *Migrator) determineState() error {
 		mg.state.Store(int32(AppStateNeedsMigration))
 		return nil
 	}
-
 	count, err := mg.PendingCount()
 	if err != nil {
 		return fmt.Errorf("determine state: %w", err)
@@ -105,6 +113,17 @@ func (mg *Migrator) determineState() error {
 		mg.state.Store(int32(AppStateReady))
 	}
 	return nil
+}
+
+// DetermineStateForTest calls determineState and is intended for tests only.
+func (mg *Migrator) DetermineStateForTest() error {
+	return mg.determineState()
+}
+
+// TransitionToReady atomically sets state to Ready. Called by the migration
+// handler after InitNeedsSetup completes successfully.
+func (mg *Migrator) TransitionToReady() {
+	mg.state.Store(int32(AppStateReady))
 }
 
 // State returns the current AppState atomically.
@@ -166,8 +185,8 @@ func (mg *Migrator) CurrentVersion() (uint, bool, error) {
 
 // LogCh returns the current log channel (nil if RunMigrations has not been called).
 func (mg *Migrator) LogCh() <-chan string {
-	mg.mu.Lock()
-	defer mg.mu.Unlock()
+	mg.migrateMu.Lock()
+	defer mg.migrateMu.Unlock()
 	return mg.logCh
 }
 
@@ -178,9 +197,10 @@ func (mg *Migrator) SetLogWriter(w io.Writer) {
 
 // RunMigrations applies all pending migrations and transitions state accordingly.
 func (mg *Migrator) RunMigrations(ctx context.Context) error {
-	mg.mu.Lock()
+	mg.migrateMu.Lock()
+	defer mg.migrateMu.Unlock()
+
 	if AppState(mg.state.Load()) == AppStateMigrating {
-		mg.mu.Unlock()
 		return fmt.Errorf("migrations already in progress")
 	}
 
@@ -190,13 +210,10 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	adapter := &logAdapter{ch: ch, writer: mg.logWriter}
 	mg.m.Log = adapter
-	mg.mu.Unlock()
 
 	err := mg.m.Up()
 	if err == nil || errors.Is(err, gmigrate.ErrNoChange) {
-		mg.state.Store(int32(AppStateReady))
 		close(ch)
-		// Phase 3 extension point: call OnReady() here when workers/scheduler are added.
 		return nil
 	}
 
@@ -208,6 +225,9 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 // Close releases resources held by the Migrator.
 func (mg *Migrator) Close() error {
+	if mg.m == nil {
+		return nil
+	}
 	srcErr, dbErr := mg.m.Close()
 	if srcErr != nil {
 		return srcErr
@@ -226,6 +246,125 @@ func NewMigratorForTest(s AppState) *Migrator {
 	mg := &Migrator{}
 	mg.state.Store(int32(s))
 	return mg
+}
+
+// NeedsSetup returns true if no admin user has been created yet.
+func (mg *Migrator) NeedsSetup() bool {
+	mg.mu.RLock()
+	defer mg.mu.RUnlock()
+	return mg.needsSetup
+}
+
+// SetNeedsSetup sets the needsSetup flag.
+func (mg *Migrator) SetNeedsSetup(v bool) {
+	mg.mu.Lock()
+	defer mg.mu.Unlock()
+	mg.needsSetup = v
+}
+
+// InitNeedsSetup queries the users table and sets needsSetup = (count == 0).
+func (mg *Migrator) InitNeedsSetup(ctx context.Context, pool *pgxpool.Pool) error {
+	var count int
+	err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		return fmt.Errorf("InitNeedsSetup: %w", err)
+	}
+	mg.SetNeedsSetup(count == 0)
+	return nil
+}
+
+// LastUnavailableAt returns the time the DB was last detected as unavailable.
+// Returns the zero time.Time if the DB has never been unavailable.
+func (mg *Migrator) LastUnavailableAt() time.Time {
+	v := mg.lastUnavailableAt.Load()
+	if v == nil {
+		return time.Time{}
+	}
+	return v.(time.Time)
+}
+
+// SetProbeIntervalForTest overrides the probe ticker interval for unit tests.
+// Must be called before StartDBProbe.
+func (mg *Migrator) SetProbeIntervalForTest(d time.Duration) {
+	mg.probeInterval = d
+}
+
+// StartDBProbe polls pool.Ping() on a configurable interval and manages the
+// DBUnavailable state. onRecovery is called (with the probe's context) when
+// the DB first comes back from unavailable.
+func (mg *Migrator) StartDBProbe(ctx context.Context, pool *pgxpool.Pool, onRecovery func(context.Context) error) {
+	interval := mg.probeInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := pool.Ping(pingCtx)
+			cancel()
+
+			if err != nil {
+				if AppState(mg.state.Load()) != AppStateDBUnavailable {
+					mg.prevState.Store(mg.state.Load())
+					mg.state.Store(int32(AppStateDBUnavailable))
+					mg.lastUnavailableAt.Store(time.Now())
+					slog.Warn("database unavailable", "err", err)
+				}
+			} else {
+				if AppState(mg.state.Load()) == AppStateDBUnavailable {
+					prev := AppState(mg.prevState.Load())
+					if err := mg.recoverFromUnavailable(ctx, pool, prev, onRecovery); err != nil {
+						slog.Error("db probe: recovery failed, remaining in DBUnavailable", "err", err)
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (mg *Migrator) recoverFromUnavailable(ctx context.Context, pool *pgxpool.Pool, prev AppState, onRecovery func(context.Context) error) error {
+	switch prev {
+	case AppStateDBUnavailable:
+		// Never had an operational state — run full init.
+		if err := onRecovery(ctx); err != nil {
+			return err
+		}
+		slog.Info("db probe: recovery complete (first init)")
+
+	case AppStateMigrating:
+		// Migration goroutine died — re-consult DB for actual state.
+		if err := mg.determineState(); err != nil {
+			return err
+		}
+		slog.Info("db probe: recovery complete (re-determined state after migrating)", "state", mg.State())
+
+	default:
+		// NeedsMigration or Ready — re-determine state with a fresh connection.
+		// mg.m may hold a stale connection (e.g. the DB socket was removed and
+		// recreated on restart), so close it and let determineState reconnect.
+		if mg.m != nil {
+			_, _ = mg.m.Close()
+			mg.m = nil
+		}
+		if err := mg.determineState(); err != nil {
+			return err
+		}
+		if prev == AppStateReady && mg.NeedsSetup() {
+			if err := mg.InitNeedsSetup(ctx, pool); err != nil {
+				mg.state.Store(int32(AppStateDBUnavailable))
+				return fmt.Errorf("re-check needsSetup: %w", err)
+			}
+		}
+		slog.Info("db probe: recovery complete (re-determined state)", "state", mg.State())
+	}
+	return nil
 }
 
 // logAdapter implements migrate.Logger.

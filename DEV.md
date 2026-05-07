@@ -22,6 +22,16 @@ To verify the database is up:
 psql nexorious
 ```
 
+## Stopping the database
+
+Due to a [known devenv bug](https://github.com/cachix/devenv/issues/2619), Ctrl+C on `devenv up` kills the process manager but leaves PostgreSQL running. Use the dedicated task to stop it cleanly:
+
+```bash
+devenv tasks run db:stop
+```
+
+This is useful when testing the DB-unavailability path in the app (Gate 1 redirects to `/db-error` within ~5 seconds of the DB going down).
+
 ## Resetting the database
 
 ### Option 1: Drop and recreate the database (keeps the cluster running)

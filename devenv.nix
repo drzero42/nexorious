@@ -38,6 +38,35 @@
     initialDatabases = [{ name = "nexorious"; }];
   };
 
+  # https://devenv.sh/tasks/
+  tasks = {
+    "db:stop" = {
+      description = "Stop PostgreSQL without wiping data (workaround for devenv not killing postgres on Ctrl+C)";
+      exec = ''
+        pg_ctl stop -D "$DEVENV_STATE/postgres" -m fast
+        echo "PostgreSQL stopped."
+      '';
+    };
+
+    "db:reset" = {
+      description = "Drop and recreate the nexorious database (cluster keeps running)";
+      exec = ''
+        dropdb nexorious
+        createdb nexorious
+        echo "Done. Restart the Go binary to re-run migrations."
+      '';
+    };
+
+    "db:wipe" = {
+      description = "Stop PostgreSQL, delete the entire cluster, and prompt to restart (re-triggers initialDatabases on next devenv up)";
+      exec = ''
+        pg_ctl stop -D "$DEVENV_STATE/postgres" -m fast 2>/dev/null || true
+        rm -rf "$DEVENV_STATE/postgres"
+        echo "Cluster wiped. Run 'devenv up' to recreate it."
+      '';
+    };
+  };
+
   # Podman socket for testcontainers-go integration tests.
   # Ryuk doesn't work with rootless Podman; tests use defer container.Terminate() instead.
   enterShell = ''

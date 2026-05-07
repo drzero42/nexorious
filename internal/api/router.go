@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,7 +20,7 @@ import (
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool, resolvedDatabaseURL string) *echo.Echo {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -39,18 +40,47 @@ func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool) *ec
 		},
 	}))
 
-	// App-state middleware: redirect to /migrate unless state is Ready or path is bypassed.
-	bypassPrefixes := []string{"/migrate", "/api/migrate"}
+	// Gate 1: DB unavailable — redirect everything except /db-error and /health
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			if migrator.State() != migrate.AppStateReady {
+			state := migrator.State()
+			if state == migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
-				for _, prefix := range bypassPrefixes {
-					if strings.HasPrefix(path, prefix) {
-						return next(c)
-					}
+				if path == "/db-error" || path == "/health" {
+					return next(c)
+				}
+				return c.Redirect(http.StatusFound,
+					"/db-error?from="+url.QueryEscape(c.Request().RequestURI))
+			}
+			return next(c)
+		}
+	})
+
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			state := migrator.State()
+			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
+				path := c.Request().URL.Path
+				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") || path == "/health" {
+					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/migrate")
+			}
+			return next(c)
+		}
+	})
+
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if migrator.NeedsSetup() {
+				path := c.Request().URL.Path
+				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
+					path == "/health" || strings.HasPrefix(path, "/api/migrate") {
+					return next(c)
+				}
+				return c.Redirect(http.StatusFound, "/setup")
 			}
 			return next(c)
 		}
@@ -62,21 +92,53 @@ func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool) *ec
 		}))
 	}
 
-	mh := migrate.NewHandler(migrator)
-	registerRoutes(e, cfg, mh, pool)
+	mh := migrate.NewHandler(migrator, pool)
+	registerRoutes(e, cfg, mh, pool, migrator, resolvedDatabaseURL)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool *pgxpool.Pool) {
-	// Migration routes (bypass app-state middleware via prefix list)
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool *pgxpool.Pool, migrator *migrate.Migrator, resolvedDatabaseURL string) {
+	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
 	e.POST("/api/migrate/run", mh.HandleRun)
 	e.GET("/api/migrate/progress", mh.HandleProgress)
 
-	// Health check
-	e.GET("/health", handleHealth)
+	// Health check — bypassed by all gates
+	e.GET("/health", func(c *echo.Context) error {
+		state := migrator.State()
+		if state == migrate.AppStateReady {
+			return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": state.String()})
+	})
+
+	// DB-error route (bypassed by Gate 1)
+	dh := NewDBErrorHandler(resolvedDatabaseURL, migrator)
+	e.GET("/db-error", dh.HandleDBError)
+
+	// Setup page (bypassed by Gate 3)
+	e.GET("/setup", func(c *echo.Context) error {
+		if !migrator.NeedsSetup() {
+			return c.Redirect(http.StatusFound, "/")
+		}
+		f, err := ui.SetupBox.Open("setup/index.html")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		return c.Stream(http.StatusOK, "text/html; charset=utf-8", f)
+	})
+
+	// Setup API routes (bypassed by Gate 3)
+	sh := NewSetupHandler(pool, cfg, migrator)
+	e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
+	e.POST("/api/auth/setup/restore", func(c *echo.Context) error {
+		return c.JSON(http.StatusNotImplemented, map[string]string{
+			"error": "not implemented — deferred to Phase 3",
+		})
+	})
 
 	// Auth routes — only registered when a DB pool is available.
 	if pool != nil {
@@ -89,6 +151,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool 
 		// JWT-protected auth routes
 		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, pool))
 		authGroup.POST("/logout", ah.HandleLogout)
+		authGroup.GET("/me", ah.HandleGetMe)
 	}
 
 	// Static cover art files from disk
@@ -100,12 +163,6 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool 
 
 	// SPA catch-all — serves ui.UIBox; falls back to index.html
 	e.GET("/*", spaHandler())
-}
-
-// handleHealth returns 200 OK with a JSON body.
-// GET /health
-func handleHealth(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func spaHandler() echo.HandlerFunc {

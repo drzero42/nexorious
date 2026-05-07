@@ -15,6 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/labstack/echo/v5"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -121,15 +122,16 @@ func newTestEcho(t *testing.T, pool *pgxpool.Pool, cfg *config.Config) interface
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, pool)
+	return api.New(cfg, m, pool, "")
 }
 
-// testCfg returns a minimal config suitable for auth tests.
+// testCfg returns a minimal config suitable for api_test tests.
 func testCfg() *config.Config {
 	return &config.Config{
 		SecretKey:                "test-secret-key-at-least-32-bytes!",
 		AccessTokenExpireMinutes: 15,
 		RefreshTokenExpireDays:   30,
+		Port:                     8000,
 	}
 }
 
@@ -327,7 +329,7 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	pool := setupAuthTestDB(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m, pool)
+	e := api.New(cfg, m, pool, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -600,5 +602,72 @@ func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+// ─── GetMe tests ─────────────────────────────────────────────────────────────
+
+func TestGetMe_Success(t *testing.T) {
+	pool := setupAuthTestDB(t)
+	cfg := testCfg()
+	userID := "user-me-001"
+	insertAuthTestUser(t, pool, userID, "admin", "password123", true, true)
+
+	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
+	if err != nil {
+		t.Fatalf("GenerateAccessToken: %v", err)
+	}
+	insertAuthTestSession(t, pool, userID, accessToken, "", 30)
+
+	e := echo.New()
+	ah := api.NewAuthHandler(pool, cfg)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set("user_id", userID)
+
+	if err := ah.HandleGetMe(c); err != nil {
+		t.Fatalf("HandleGetMe: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body)
+	}
+
+	var body struct {
+		ID          string          `json:"id"`
+		Username    string          `json:"username"`
+		IsAdmin     bool            `json:"is_admin"`
+		IsActive    bool            `json:"is_active"`
+		Preferences json.RawMessage `json:"preferences"`
+		CreatedAt   string          `json:"created_at"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.ID != userID {
+		t.Errorf("id mismatch: got %q want %q", body.ID, userID)
+	}
+	if body.Username != "admin" {
+		t.Errorf("username mismatch: got %q want %q", body.Username, "admin")
+	}
+	if string(body.Preferences) == "" || string(body.Preferences) == "null" {
+		t.Errorf("preferences must not be null, got %q", string(body.Preferences))
+	}
+}
+
+func TestGetMe_Unauthorized_NoUserID(t *testing.T) {
+	pool := setupAuthTestDB(t)
+	cfg := testCfg()
+	ah := api.NewAuthHandler(pool, cfg)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	if err := ah.HandleGetMe(c); err != nil {
+		t.Fatalf("HandleGetMe: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
 	}
 }

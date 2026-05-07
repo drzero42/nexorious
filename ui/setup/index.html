@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexorious — Setup</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f3f4f6; }
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.1); padding: 40px; width: 100%; max-width: 420px; }
+  h1 { margin: 0 0 8px; font-size: 1.5rem; }
+  p { color: #555; margin: 0 0 24px; }
+  label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: 4px; }
+  input { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px 12px; font-size: 1rem; margin-bottom: 16px; }
+  input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  button { width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 12px; font-size: 1rem; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .error { color: #dc2626; font-size: .875rem; margin-bottom: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Welcome to Nexorious</h1>
+  <p>Create your admin account to get started.</p>
+  <div class="error" id="err"></div>
+  <form id="form">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" autocomplete="username" required minlength="3">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
+    <label for="confirm">Confirm Password</label>
+    <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="8">
+    <button type="submit" id="btn">Create Admin Account</button>
+  </form>
+</div>
+<script>
+const form = document.getElementById('form');
+const errEl = document.getElementById('err');
+const btn = document.getElementById('btn');
+
+function showError(msg) {
+  errEl.textContent = msg;
+  errEl.style.display = 'block';
+}
+function clearError() {
+  errEl.style.display = 'none';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const confirm = document.getElementById('confirm').value;
+
+  if (username.length < 3) return showError('Username must be at least 3 characters.');
+  if (password.length < 8) return showError('Password must be at least 8 characters.');
+  if (password !== confirm) return showError('Passwords do not match.');
+
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+
+  try {
+    const res = await fetch('/api/auth/setup/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (res.status === 201) {
+      const data = await res.json();
+      const storedAuth = {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        user: {
+          id: data.user.id,
+          username: data.user.username,
+          isAdmin: data.user.is_admin,
+          preferences: {},
+        },
+      };
+      localStorage.setItem('auth', JSON.stringify(storedAuth));
+      window.location.href = '/';
+    } else if (res.status === 400) {
+      const body = await res.json();
+      showError(body.error || 'Validation error.');
+    } else if (res.status === 403) {
+      window.location.href = '/login';
+    } else if (res.status === 500) {
+      window.location.href = '/login';
+    } else {
+      showError('Setup failed. Please try again.');
+    }
+  } catch (err) {
+    showError('Setup failed. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create Admin Account';
+  }
+});
+</script>
+</body>
+</html>

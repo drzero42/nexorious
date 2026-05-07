@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,6 +18,9 @@ import (
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
 )
+
+// bcryptCost is the work factor used for all password hash creation sites.
+const bcryptCost = 12
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
@@ -249,4 +254,83 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Successfully logged out"})
+}
+
+// issueTokensAndSession generates an access + refresh token pair and persists a session row.
+// Always uses context.Background() so client disconnect cannot abort DB writes.
+func issueTokensAndSession(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	cfg *config.Config,
+	userID string,
+	userAgent string,
+	ip string,
+) (accessToken, refreshToken string, err error) {
+	accessToken, err = auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
+	if err != nil {
+		return "", "", fmt.Errorf("issueTokens: generate access token: %w", err)
+	}
+	refreshToken, err = auth.GenerateRefreshToken(cfg.SecretKey, userID, cfg.RefreshTokenExpireDays)
+	if err != nil {
+		return "", "", fmt.Errorf("issueTokens: generate refresh token: %w", err)
+	}
+
+	sessionID := uuid.NewString()
+	expiresAt := time.Now().Add(time.Duration(cfg.RefreshTokenExpireDays) * 24 * time.Hour)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, user_agent, ip_address, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		sessionID,
+		userID,
+		auth.HashToken(accessToken),
+		auth.HashToken(refreshToken),
+		userAgent,
+		ip,
+		expiresAt,
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("issueTokens: insert session: %w", err)
+	}
+	return accessToken, refreshToken, nil
+}
+
+// meResponse is returned by GET /api/auth/me.
+type meResponse struct {
+	ID          string          `json:"id"`
+	Username    string          `json:"username"`
+	IsAdmin     bool            `json:"is_admin"`
+	IsActive    bool            `json:"is_active"`
+	Preferences json.RawMessage `json:"preferences"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+// HandleGetMe handles GET /api/auth/me.
+func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	}
+
+	var resp meResponse
+	var prefs []byte
+	err := h.pool.QueryRow(context.Background(),
+		`SELECT id, username, is_admin, is_active, preferences, created_at
+		 FROM users WHERE id = $1`,
+		userID,
+	).Scan(&resp.ID, &resp.Username, &resp.IsAdmin, &resp.IsActive, &prefs, &resp.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found"})
+		}
+		slog.Error("get me: query user", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+	}
+
+	if prefs == nil {
+		resp.Preferences = json.RawMessage("{}")
+	} else {
+		resp.Preferences = json.RawMessage(prefs)
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }

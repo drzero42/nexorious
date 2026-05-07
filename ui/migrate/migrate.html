@@ -72,7 +72,33 @@
   </div>
 
   <script>
+    // Poll /api/migrate/status every 5s so the page reacts to server-side state
+    // changes (DB going down → Gate 1 redirects, DB recovery → redirect to /).
+    // Polling is stopped once the user kicks off a migration so the live log
+    // stream is never interrupted by a reload.
+    var pollTimer = setInterval(function() {
+      fetch('/api/migrate/status')
+        .then(function(res) {
+          // Gate 1 redirects /api/migrate/status to /db-error when DB is down;
+          // fetch follows the redirect and we land on HTML, not JSON.
+          var ct = res.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) {
+            window.location.reload();
+            return;
+          }
+          return res.json();
+        })
+        .then(function(data) {
+          if (!data) return;
+          if (data.state === 'ready') {
+            window.location.href = '/';
+          }
+        })
+        .catch(function() { /* network blip — keep polling */ });
+    }, 5000);
+
     function runMigrations() {
+      clearInterval(pollTimer);
       const btn = document.getElementById('btn');
       const log = document.getElementById('log');
       const status = document.getElementById('status');
