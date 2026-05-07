@@ -389,10 +389,10 @@ GET    /api/platforms/stats                        Platform usage statistics
 GET    /api/platforms/storefronts/stats            Storefront usage statistics
 ```
 
-**Static files zone** — served directly by the Go server, NOT embedded in the binary:
+**Static files zone** — served directly by the Go server:
 ```
-/static/cover_art/*     Local cover art files from StoragePath/cover_art/
-/static/logos/*         Platform and storefront logo files from static/logos/
+/static/cover_art/*     Local cover art files from StoragePath/cover_art/ (on-disk, NOT embedded)
+/static/logos/*         Platform and storefront logo files embedded in the binary (see Services: Static Files)
 ```
 
 **Frontend zone** — catch-all, gated by app-state middleware:
@@ -519,7 +519,7 @@ The initial migration must create all of the following tables (derived from Pyth
 | `games` | INT PK (IGDB ID); `title`, `description`, `genre`, `developer`, `publisher`, `release_date`; `cover_art_url`; `rating_average` (NUMERIC 5,2), `rating_count`; `estimated_playtime_hours`; `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` (hours, converted from IGDB seconds); `igdb_slug`, `igdb_platform_ids` (JSON array), `igdb_platform_names` (JSON array); `game_modes`, `themes`, `player_perspectives` (comma-separated strings); `game_metadata` (JSON text); `last_updated` (IGDB metadata refresh timestamp); `created_at` (TIMESTAMPTZ, NOT NULL DEFAULT now() — when the game was first inserted into this database; passed explicitly on upsert to preserve the value across metadata refreshes, which only update `last_updated`). **HowLongToBeat field mapping:** IGDB's `game_time_to_beats` endpoint returns fields named `hastily`, `normally`, `completely` (in seconds). These map to `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` respectively (converted to hours). This mapping is non-obvious and must be replicated exactly from the Python `map_igdb_time_to_beat_to_db_fields()` function. |
 | `user_games` | UUID PK; `play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`; UNIQUE(user_id, game_id) |
 | `user_game_platforms` | UUID PK; `platform`, `storefront`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront) |
-| `platforms` | TEXT PK (slug); `display_name`, `icon_url`, `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
+| `platforms` | TEXT PK (slug); `display_name`, `icon_url`, `igdb_platform_id` (nullable INT — IGDB's numeric platform identifier, for linking platform records to IGDB data), `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
 | `storefronts` | TEXT PK (slug); `display_name`, `icon_url`, `base_url`; data inserted by migration |
 | `platform_storefronts` | Composite PK (`platform` TEXT FK, `storefront` TEXT FK); many-to-many join table between platforms and storefronts |
 | `tags` | UUID PK; per-user |
@@ -914,7 +914,7 @@ Two internal services that the sync system depends on, not exposed as API endpoi
 **`services/storage.go`** manages two on-disk directories:
 
 - **Cover art**: `{STORAGE_PATH}/cover_art/` — downloaded from IGDB during game import. Served at `/static/cover_art/*`.
-- **Platform/storefront logos**: `static/logos/` (relative to binary working directory, matching Python) — static assets bundled with the deployment. Served at `/static/logos/*`.
+- **Platform/storefront logos**: committed to the repository under `static/logos/` and **embedded in the Go binary** via `//go:embed`. Served at `/static/logos/*`. Because logos ship with the code, no logo upload/download API is needed and logos are not included in backup archives.
 
 Both paths are registered as Echo `Static` routes before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
 
@@ -927,14 +927,14 @@ backup-{id}.tar.gz
 └── backup-{id}/
     ├── manifest.json       # Metadata: backup ID, type, timestamps, file checksums, DB stats
     ├── database.sql        # Full pg_dump output (plain SQL format)
-    ├── cover_art/          # Copy of {STORAGE_PATH}/cover_art/ directory
-    └── logos/              # Copy of static/logos/ directory (relative to binary working dir)
+    └── cover_art/          # Copy of {STORAGE_PATH}/cover_art/ directory
 ```
 
 **Restore** (`POST /api/admin/backups/:id/restore`, `POST /api/admin/backups/restore/upload`, `POST /api/auth/setup/restore`) extracts the archive and:
 1. Runs `psql` (or equivalent) to restore `database.sql` into the database.
 2. Copies `cover_art/` back to `{STORAGE_PATH}/cover_art/`.
-3. Copies `logos/` back to `static/logos/` (relative to binary working directory).
+
+Platform/storefront logos are embedded in the binary and are not included in backup archives.
 
 **Manifest** (`manifest.json`) includes: `backup_id`, `backup_type` (`manual`|`scheduled`), `created_at`, per-file checksums and sizes, and DB stats (user count, game count, tag count). The `backup_type` field uses the same enum values as the Python version.
 

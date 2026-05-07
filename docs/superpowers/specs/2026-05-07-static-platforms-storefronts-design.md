@@ -22,6 +22,7 @@ CREATE TABLE platforms (
     name               TEXT PRIMARY KEY,   -- slug: "pc-windows", "ps5", etc.
     display_name       TEXT NOT NULL,
     icon_url           TEXT,
+    igdb_platform_id   INTEGER,            -- nullable; IGDB's numeric platform ID for data linking
     default_storefront TEXT               -- FK → storefronts.name, nullable; added after storefronts
 );
 ```
@@ -60,6 +61,31 @@ CREATE TABLE platform_storefronts (
 The `INSERT` statements for all official storefronts, platforms, and associations (currently in `internal/seed/data.go`) move into `0001_initial.up.sql` (after the table DDL). The down migration (`0001_initial.down.sql`) already drops the tables so no additional down steps are needed.
 
 ## Code Deletions
+
+### Logo files — embed in the binary
+
+Platform and storefront logo files are committed to the repository under `static/logos/` and served at `/static/logos/*`. They must be **embedded in the Go binary** via `//go:embed`, not served from disk. Add a `logos.go` (or equivalent) file with the embed directive:
+
+```go
+//go:embed all:logos
+var LogosBox embed.FS
+```
+
+Register the embedded FS as an Echo static route before the SPA catch-all. Because logos are embedded, they are not included in backup archives — remove the `logos/` entry from the backup archive format.
+
+### sqlc read queries — remove `is_active` filter
+
+`ListActivePlatforms` and `ListActiveStorefronts` currently filter on `WHERE is_active = true`. Since the column is dropped, update both to plain selects:
+
+```sql
+-- name: ListPlatforms :many
+SELECT * FROM platforms ORDER BY display_name;
+
+-- name: ListStorefronts :many
+SELECT * FROM storefronts ORDER BY display_name;
+```
+
+Rename the queries accordingly (dropping the `Active` qualifier since all rows are always active).
 
 ### Delete `internal/seed/` entirely
 
