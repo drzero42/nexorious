@@ -142,6 +142,10 @@ The FK constraint (`ON DELETE CASCADE` on `platform_storefronts`, `ON DELETE RES
 
 **Retiring a platform** is expected to be vanishingly rare but follows the same pattern — migrate user data first, then delete.
 
+## Out of Scope
+
+Frontend work is out of scope for this spec. The removal of platform/storefront admin UI from the React SPA is tracked in `docs/superpowers/specs/2026-05-03-go-port-design.md` under the "Platforms and Storefronts" section.
+
 ## Affected Specs and Plans
 
 The following existing docs were written against the old design and contain stale references to seed/admin concepts. They should not be implemented as written — the implementation spec for this change supersedes them for the platform/storefront portions:

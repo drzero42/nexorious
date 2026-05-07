@@ -538,6 +538,8 @@ The initial migration must create all of the following tables (derived from Pyth
 
 Both tables are **static reference data** — they are populated entirely by migration `INSERT` statements and are never modified at runtime. There is no admin API for managing them and no seed mechanism. To add a new platform or storefront, add a migration. To retire one (rare), write a migration that migrates any affected `user_game_platforms` rows first, then deletes the entry. All users are read-only consumers of this data.
 
+**Frontend change required:** The Python frontend includes admin UI for managing platforms and storefronts (creating, editing, deleting entries, uploading logos, managing associations). These screens must be **removed entirely** when porting the frontend. Any navigation links, routes, API client methods (`src/api/platforms.ts` mutations, logo upload calls), and TypeScript types relating to platform/storefront write operations should be deleted. The read-only API calls (listing platforms, listing storefronts for a platform, fetching a single platform/storefront for display in dropdowns) are kept.
+
 #### External Games
 
 `external_games` is load-bearing for the sync system. Each row represents a game seen from an external source (Steam, PSN, Epic) for a given user. It stores:
