@@ -31,6 +31,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 | Type check (frontend)    | `npm run check`  (from `ui/`)                            |
 | Run frontend tests       | `npm run test`   (from `ui/`)                            |
 | Lint Go                  | `golangci-lint run`                                      |
+| Run API client           | `slumber`                                                |
 
 ### Environment Validation
 ```bash
@@ -172,6 +173,14 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 - Zero Go build errors and zero `golangci-lint` errors before committing
 - Zero TypeScript errors (`npm run check`) before committing
 - All tests must pass before committing
+
+### Slumber Collection Maintenance
+When adding a new API route, always add a corresponding request to `slumber.yaml`:
+- Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
+- If the route requires JWT, add the `authentication: type: bearer` block with `"{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"`
+- If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
+- Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
+- Run `slumber show collection` to verify the collection loads without errors after any change
 
 ## Known Gotchas
 

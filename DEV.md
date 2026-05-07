@@ -61,4 +61,27 @@ rm -rf .devenv/state/postgres
 devenv up
 ```
 
-`initialDatabases` only runs on first start (when the data directory does not exist), so this is the only way to re-trigger it.
+## API Client (Slumber)
+
+The project includes a [Slumber](https://github.com/LucasPickering/slumber) collection for testing the API from the terminal. Slumber is included in the devenv shell — no separate install needed.
+
+**Starting Slumber:**
+
+```bash
+slumber
+```
+
+**First-time setup (fresh database):**
+
+Run these requests in order from the `bootstrap/` folder:
+
+1. `bootstrap/run_migrations` — applies all pending database migrations
+2. `bootstrap/migration_status` — check until status shows `ready` (run a few times if needed)
+3. `bootstrap/create_admin` — creates the admin user (`admin` / `abcd1234`)
+
+After that, any request requiring authentication will automatically log in on first use — no manual token handling.
+
+**Day-to-day use:**
+
+Open `slumber`, select the `local` profile, and run any request. JWT-protected routes auto-login when needed using the cached credentials from the `local` profile.
+
