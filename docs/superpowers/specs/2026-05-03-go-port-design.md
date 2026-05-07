@@ -392,8 +392,9 @@ GET    /api/platforms/storefronts/stats            Storefront usage statistics
 **Static files zone** — served directly by the Go server:
 ```
 /static/cover_art/*     Local cover art files from StoragePath/cover_art/ (on-disk, NOT embedded)
-/static/logos/*         Platform and storefront logo files embedded in the binary (see Services: Static Files)
 ```
+
+Platform/storefront logo files live in `ui/public/logos/` and are served as part of the frontend SPA — no separate route needed. The `icon` column in `platforms` and `storefronts` stores only the filename (e.g. `steam.svg`); the frontend constructs the full path.
 
 **Frontend zone** — catch-all, gated by app-state middleware:
 - Serves `ui.UIBox` (`ui/dist/`) via `embed.FS`
@@ -430,7 +431,7 @@ export const config = {
 
 **Development (npm run dev):** Vite's dev server runs on port 3000 and proxies `/api` and `/static` to the Go backend on port 8000 — matching the Python dev setup exactly. No `.env` file is required for local dev either; the defaults and proxy config in `vite.config.ts` handle it. The Go backend must be running separately (`go run ./cmd/nexorious`) for the proxy to resolve.
 
-`VITE_STATIC_URL` must remain empty string for the embedded production build. Cover art and logos are served from `/static/cover_art/` and `/static/logos/` on the same origin (see Static Files Zone above).
+`VITE_STATIC_URL` must remain empty string for the embedded production build. Cover art is served from `/static/cover_art/` on the same origin (see Static Files Zone above).
 
 ---
 
@@ -519,8 +520,8 @@ The initial migration must create all of the following tables (derived from Pyth
 | `games` | INT PK (IGDB ID); `title`, `description`, `genre`, `developer`, `publisher`, `release_date`; `cover_art_url`; `rating_average` (NUMERIC 5,2), `rating_count`; `estimated_playtime_hours`; `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` (hours, converted from IGDB seconds); `igdb_slug`, `igdb_platform_ids` (JSON array), `igdb_platform_names` (JSON array); `game_modes`, `themes`, `player_perspectives` (comma-separated strings); `game_metadata` (JSON text); `last_updated` (IGDB metadata refresh timestamp); `created_at` (TIMESTAMPTZ, NOT NULL DEFAULT now() — when the game was first inserted into this database; passed explicitly on upsert to preserve the value across metadata refreshes, which only update `last_updated`). **HowLongToBeat field mapping:** IGDB's `game_time_to_beats` endpoint returns fields named `hastily`, `normally`, `completely` (in seconds). These map to `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` respectively (converted to hours). This mapping is non-obvious and must be replicated exactly from the Python `map_igdb_time_to_beat_to_db_fields()` function. |
 | `user_games` | UUID PK; `play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`; UNIQUE(user_id, game_id) |
 | `user_game_platforms` | UUID PK; `platform`, `storefront`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront) |
-| `platforms` | TEXT PK (slug); `display_name`, `icon_url`, `igdb_platform_id` (nullable INT — IGDB's numeric platform identifier, for linking platform records to IGDB data), `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
-| `storefronts` | TEXT PK (slug); `display_name`, `icon_url`, `base_url`; data inserted by migration |
+| `platforms` | TEXT PK (slug); `display_name`, `icon` (filename only, e.g. `steam.svg` — frontend builds the full path), `igdb_platform_id` (nullable INT — IGDB's numeric platform identifier, for linking platform records to IGDB data), `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
+| `storefronts` | TEXT PK (slug); `display_name`, `icon` (filename only — frontend builds the full path), `base_url`; data inserted by migration |
 | `platform_storefronts` | Composite PK (`platform` TEXT FK, `storefront` TEXT FK); many-to-many join table between platforms and storefronts |
 | `tags` | UUID PK; per-user |
 | `user_game_tags` | UUID PK; join table for user_games ↔ tags |
@@ -914,7 +915,7 @@ Two internal services that the sync system depends on, not exposed as API endpoi
 **`services/storage.go`** manages two on-disk directories:
 
 - **Cover art**: `{STORAGE_PATH}/cover_art/` — downloaded from IGDB during game import. Served at `/static/cover_art/*`.
-- **Platform/storefront logos**: committed to the repository under `static/logos/` and **embedded in the Go binary** via `//go:embed`. Served at `/static/logos/*`. Because logos ship with the code, no logo upload/download API is needed and logos are not included in backup archives.
+- **Platform/storefront logos**: committed to the repository under `ui/public/logos/` and served as part of the frontend SPA. The `icon` column in `platforms` and `storefronts` stores the filename only (e.g. `steam.svg`); the frontend constructs the full path. No Go-side route or embed is needed for logos.
 
 Both paths are registered as Echo `Static` routes before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
 

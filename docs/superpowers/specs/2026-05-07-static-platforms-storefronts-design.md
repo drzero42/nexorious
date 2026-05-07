@@ -14,6 +14,8 @@ Platforms and storefronts are **static reference data**. They belong in migratio
 
 **Remove:** `is_active`, `source`, `version_added`, `created_at`, `updated_at`
 
+**Rename:** `icon_url` → `icon` (stores filename only, e.g. `steam.svg`; frontend builds the full path)
+
 **Remove indexes:** `platforms_is_active_idx`, `platforms_source_idx`
 
 **Final shape:**
@@ -21,8 +23,8 @@ Platforms and storefronts are **static reference data**. They belong in migratio
 CREATE TABLE platforms (
     name               TEXT PRIMARY KEY,   -- slug: "pc-windows", "ps5", etc.
     display_name       TEXT NOT NULL,
-    icon_url           TEXT,
-    igdb_platform_id   INTEGER,            -- nullable; IGDB's numeric platform ID for data linking
+    icon               TEXT,              -- filename only, e.g. "pc-windows.svg"
+    igdb_platform_id   INTEGER,           -- nullable; IGDB's numeric platform ID for data linking
     default_storefront TEXT               -- FK → storefronts.name, nullable; added after storefronts
 );
 ```
@@ -31,6 +33,8 @@ CREATE TABLE platforms (
 
 **Remove:** `is_active`, `source`, `version_added`, `created_at`, `updated_at`
 
+**Rename:** `icon_url` → `icon` (stores filename only, e.g. `steam.svg`; frontend builds the full path)
+
 **Remove indexes:** `storefronts_is_active_idx`, `storefronts_source_idx`
 
 **Final shape:**
@@ -38,7 +42,7 @@ CREATE TABLE platforms (
 CREATE TABLE storefronts (
     name         TEXT PRIMARY KEY,   -- slug: "steam", "epic-games-store", etc.
     display_name TEXT NOT NULL,
-    icon_url     TEXT,
+    icon         TEXT,              -- filename only, e.g. "steam.svg"
     base_url     TEXT
 );
 ```
@@ -62,16 +66,9 @@ The `INSERT` statements for all official storefronts, platforms, and association
 
 ## Code Deletions
 
-### Logo files — embed in the binary
+### Logo files — frontend assets
 
-Platform and storefront logo files are committed to the repository under `static/logos/` and served at `/static/logos/*`. They must be **embedded in the Go binary** via `//go:embed`, not served from disk. Add a `logos.go` (or equivalent) file with the embed directive:
-
-```go
-//go:embed all:logos
-var LogosBox embed.FS
-```
-
-Register the embedded FS as an Echo static route before the SPA catch-all. Because logos are embedded, they are not included in backup archives — remove the `logos/` entry from the backup archive format.
+Platform and storefront logo files live in `ui/public/logos/` and are served as part of the frontend SPA (Vite copies `ui/public/` verbatim into `ui/dist/`). No Go-side embed, route, or FS is needed. The `icon` column stores only the filename (e.g. `steam.svg`); the frontend constructs the full path at render time.
 
 ### sqlc read queries — remove `is_active` filter
 
@@ -116,7 +113,7 @@ After removing queries, run `make sqlc` to regenerate `internal/db/gen/`.
 
 ### sqlc query column references
 
-The generated sqlc types for `Platform` and `Storefront` will no longer include the removed columns. Scan any usages across the codebase and remove references to `IsActive`, `Source`, `VersionAdded`, `CreatedAt`, `UpdatedAt` on these types.
+The generated sqlc types for `Platform` and `Storefront` will no longer include the removed columns, and `IconUrl` becomes `Icon`. Scan any usages across the codebase and remove references to `IsActive`, `Source`, `VersionAdded`, `CreatedAt`, `UpdatedAt` on these types, and update `IconUrl` → `Icon`.
 
 ## Phase 2 API — what doesn't get built
 
