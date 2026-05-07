@@ -21,11 +21,10 @@ Add a [Slumber](https://github.com/LucasPickering/slumber) TUI API client collec
 ## File Structure
 
 ```
-slumber/
-  slumber.yaml     ← entire collection: profiles and all requests
+slumber.yaml     ← project root; entire collection: profiles and all requests
 ```
 
-A single file is idiomatic Slumber and easier to maintain than split files. All future domains are appended to this file.
+Placing the file at the project root means Slumber auto-discovers it — no flags needed, just `slumber`. A single file is idiomatic Slumber and easier to maintain than split files. All future domains are appended to this file.
 
 ---
 
@@ -113,7 +112,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 ## Typical Developer Workflow
 
 1. Start the server: `make && ./nexorious`
-2. Open Slumber: `slumber -f slumber/slumber.yaml`
+2. Open Slumber: `slumber` (auto-discovers `slumber.yaml` at project root)
 3. Select `local` profile
 4. Run `bootstrap/run-migrations`
 5. Run `bootstrap/migration-status` until status is `ready`
@@ -128,17 +127,49 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 
 | Task | Command |
 |------|---------|
-| Run API client | `slumber -f slumber/slumber.yaml` |
+| Run API client | `slumber` |
 
 ### New section: Slumber Collection Maintenance
 
-> When adding a new API route, always add a corresponding request to `slumber/slumber.yaml`:
+> When adding a new API route, always add a corresponding request to `slumber.yaml`:
 >
 > - Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
 > - If the route requires JWT, add the `authentication: type: bearer` block with `response('auth/login', trigger='no_history') | jsonpath('$.access_token')`
 > - If it's a new domain with no existing folder, create the folder in alphabetical order after `bootstrap/`
 > - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
-> - Run `slumber -f slumber/slumber.yaml` to verify the collection loads without errors after any change
+> - Run `slumber` to verify the collection loads without errors after any change
+
+---
+
+## DEV.md Updates
+
+Add a new section to `DEV.md` after the database section:
+
+### API Client (Slumber)
+
+The project includes a [Slumber](https://github.com/LucasPickering/slumber) collection for testing the API from the terminal. Slumber is included in the devenv shell — no separate install needed.
+
+**Starting Slumber:**
+
+```bash
+slumber
+```
+
+Run from the project root. Slumber auto-discovers `slumber.yaml`.
+
+**First-time setup (fresh database):**
+
+Run these requests in order from the `bootstrap/` folder:
+
+1. `bootstrap/run-migrations` — applies all pending database migrations
+2. `bootstrap/migration-status` — check until status shows `ready` (run a few times if needed)
+3. `bootstrap/create-admin` — creates the admin user (`admin` / `abcd1234`)
+
+After that, any request requiring authentication will automatically log in on first use — no manual token handling.
+
+**Day-to-day use:**
+
+Open `slumber`, select the `local` profile, and run any request. JWT-protected routes auto-login when needed using the cached credentials from the `local` profile.
 
 ---
 
