@@ -137,6 +137,8 @@ ORDER BY title
 LIMIT $2;
 ```
 
+**No OFFSET:** `SearchGamesByTitle` is used for the local database search in the games list view. The Python implementation uses `ILIKE` with a fixed limit and no pagination — it returns the top N matches and the user refines their query if needed. This is intentional; no pagination is required here.
+
 ---
 
 ### `internal/db/queries/user_games.sql`
