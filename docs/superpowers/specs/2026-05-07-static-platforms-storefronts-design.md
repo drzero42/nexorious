@@ -86,8 +86,7 @@ Rename the queries accordingly (dropping the `Active` qualifier since all rows a
 
 ### Delete `internal/seed/` entirely
 
-- `internal/seed/data.go`
-- `internal/seed/seeder.go`
+`internal/seed/data.go` and `internal/seed/seeder.go` exist in the codebase and must be deleted.
 
 ### Update `internal/api/setup.go`
 
@@ -138,7 +137,7 @@ GET    /api/platforms/storefronts/:storefront/logos
 POST   /api/platforms/seed
 ```
 
-The read endpoints remain (they're part of Phase 2):
+The read endpoints remain (they're part of Phase 2, require user-level JWT):
 ```
 GET  /api/platforms
 GET  /api/platforms/simple-list
@@ -148,9 +147,9 @@ GET  /api/platforms/:platform/default-storefront
 GET  /api/platforms/storefronts/
 GET  /api/platforms/storefronts/simple-list
 GET  /api/platforms/storefronts/:storefront
-GET  /api/platforms/stats
-GET  /api/platforms/storefronts/stats
 ```
+
+The stats endpoints (`GET /api/platforms/stats`, `GET /api/platforms/storefronts/stats`) are also **cancelled**. They existed in the Python implementation as admin-only endpoints returning aggregate `user_game_platforms` row counts per platform/storefront. No frontend UI ever called them, and their only conceivable consumer was the admin platform-management UI — which is also being cancelled. Do not implement them.
 
 ## Adding / Retiring Platforms and Storefronts
 

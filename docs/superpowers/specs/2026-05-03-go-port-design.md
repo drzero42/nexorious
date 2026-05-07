@@ -383,10 +383,6 @@ DELETE /api/admin/backups/:id        Delete a backup
 GET    /api/admin/backups/:id/download   Download backup archive
 POST   /api/admin/backups/:id/restore   Restore from a stored backup — drops all in-flight requests (see Restore Behaviour below)
 POST   /api/admin/backups/restore/upload   Upload and restore an external .tar.gz archive — same
-
-GET    /api/platforms/stats                        Platform usage statistics
-
-GET    /api/platforms/storefronts/stats            Storefront usage statistics
 ```
 
 **Static files zone** — served directly by the Go server:
@@ -519,7 +515,7 @@ The initial migration must create all of the following tables (derived from Pyth
 | `user_sessions` | UUID PK; `token_hash`, `refresh_token_hash`, `user_agent`, `ip_address` |
 | `games` | INT PK (IGDB ID); `title`, `description`, `genre`, `developer`, `publisher`, `release_date`; `cover_art_url`; `rating_average` (NUMERIC 5,2), `rating_count`; `estimated_playtime_hours`; `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` (hours, converted from IGDB seconds); `igdb_slug`, `igdb_platform_ids` (JSON array), `igdb_platform_names` (JSON array); `game_modes`, `themes`, `player_perspectives` (comma-separated strings); `game_metadata` (JSON text); `last_updated` (IGDB metadata refresh timestamp); `created_at` (TIMESTAMPTZ, NOT NULL DEFAULT now() — when the game was first inserted into this database; passed explicitly on upsert to preserve the value across metadata refreshes, which only update `last_updated`). **HowLongToBeat field mapping:** IGDB's `game_time_to_beats` endpoint returns fields named `hastily`, `normally`, `completely` (in seconds). These map to `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` respectively (converted to hours). This mapping is non-obvious and must be replicated exactly from the Python `map_igdb_time_to_beat_to_db_fields()` function. |
 | `user_games` | UUID PK; `play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`; UNIQUE(user_id, game_id) |
-| `user_game_platforms` | UUID PK; `platform`, `storefront`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront) |
+| `user_game_platforms` | UUID PK; `platform TEXT REFERENCES platforms(name) ON DELETE RESTRICT`, `storefront TEXT REFERENCES storefronts(name) ON DELETE RESTRICT`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront). The `ON DELETE RESTRICT` FKs enforce that a platform or storefront cannot be deleted while any user still has games on it — the retirement migration must migrate user data first. |
 | `platforms` | TEXT PK (slug); `display_name`, `icon` (filename only, e.g. `steam.svg` — frontend builds the full path), `igdb_platform_id` (nullable INT — IGDB's numeric platform identifier, for linking platform records to IGDB data), `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
 | `storefronts` | TEXT PK (slug); `display_name`, `icon` (filename only — frontend builds the full path), `base_url`; data inserted by migration |
 | `platform_storefronts` | Composite PK (`platform` TEXT FK, `storefront` TEXT FK); many-to-many join table between platforms and storefronts |
@@ -1304,7 +1300,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - `pgxpool` connection + initial schema migration (`0001_initial.up.sql`) — full table list including all models
 - golang-migrate + migration state machine + browser migration UI (SSE)
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
-- Static file routes: `/static/cover_art/*` and `/static/logos/*`
+- Static file route: `/static/cover_art/*` (logos are frontend assets in `ui/public/logos/` — no Go route needed)
 - JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
 - `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim, return profile. Shares the same raw `pgxpool` approach as other auth endpoints (not sqlc; see Database Layer).
 - Health/status endpoint
