@@ -42,12 +42,12 @@ These are the filter parameters accepted by `GET /api/user-games` in the Python 
 | `has_notes` | `bool` | none | `personal_notes IS NOT NULL AND personal_notes != ''` (true) or `IS NULL OR = ''` (false) |
 | `platform` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL; see below |
 | `storefront` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL; see below |
-| `genre` | `[]string` | `games` | OR of `games.genre ILIKE ?` for each value |
-| `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE ?` for each value |
-| `theme` | `[]string` | `games` | OR of `games.themes ILIKE ?` for each value |
-| `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE ?` for each value |
-| `tag` | `[]int32` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
-| `q` | `string` | `games` | `games.title ILIKE ? OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE ?)` |
+| `genre` | `[]string` | `games` | OR of `games.genre ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `theme` | `[]string` | `games` | OR of `games.themes ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
+| `q` | `string` | `games` | `games.title ILIKE '%' \|\| ? \|\| '%' OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE '%' \|\| ? \|\| '%')` |
 
 **`fuzzy_threshold` is NOT implemented.** The Python parameter was never wired to the frontend; the Go port uses ILIKE only.
 
@@ -63,7 +63,21 @@ Same logic applies to `storefront`.
 
 ### Duplicate row prevention
 
-When `user_game_platforms` is joined and a user game has multiple platform entries, the JOIN produces multiple rows for the same `user_games.id`. The caller must apply `DISTINCT` on `user_games.id` — or wrap using a subquery — to deduplicate. The filterBuilder itself does not deduplicate; this is documented as a caller responsibility.
+When `user_game_platforms` is joined and a user game has multiple platform entries, the JOIN produces multiple rows for the same `user_games.id`. The caller must use `DISTINCT ON (user_games.id)` in an inner query to pick one platform row per game, then wrap it in an outer query to apply the user-chosen `ORDER BY` freely:
+
+```sql
+SELECT * FROM (
+    SELECT DISTINCT ON (ug.id) ug.*
+    FROM user_games ug
+    LEFT JOIN user_game_platforms ugp ON ugp.user_game_id = ug.id
+    -- WHERE / HAVING from filterBuilder
+    ORDER BY ug.id   -- required by DISTINCT ON; picks an arbitrary platform row
+) sub
+ORDER BY <user-chosen sort field>
+LIMIT ? OFFSET ?
+```
+
+The filterBuilder itself does not apply deduplication; this is documented as a caller responsibility (the user-games handler).
 
 ---
 
@@ -169,7 +183,7 @@ func ApplyPlayerPerspective(f *filterBuilder, perspectives []string)
 
 // ApplyTag adds a tag subquery WHERE clause if tagIDs is non-empty.
 // user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))
-func ApplyTag(f *filterBuilder, tagIDs []int32)
+func ApplyTag(f *filterBuilder, tagIDs []string)
 
 // ApplyTextSearch adds title/notes ILIKE WHERE clauses (with games JOIN) if q is non-empty.
 func ApplyTextSearch(f *filterBuilder, q string)
@@ -210,7 +224,7 @@ Tests live in `internal/filter/` alongside the implementation. Use table-driven 
 - Platform `["steam", "unknown"]` → `OR` between `= 'steam'` and `IS NULL`
 - Storefront same as platform
 - Multi-value genre → `OR` of ILIKE conditions
-- Tag → subquery `IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` with int32 IDs
+- Tag → subquery `IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` with string (UUID) IDs
 - Two criteria requiring the same JOIN → JOIN appears only once in SQL
 - Text search → title ILIKE and personal_notes ILIKE with OR
 
