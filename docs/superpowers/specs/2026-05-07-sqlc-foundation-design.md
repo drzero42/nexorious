@@ -39,7 +39,7 @@ sql:
 - `schema` points at `internal/db/migrations/` — sqlc natively understands the golang-migrate `.up.sql` / `.down.sql` naming convention and automatically ignores down files when given a directory path. The existing `0001_initial.up.sql` contains the complete table definitions. As future migrations are added (always following the `NNNN_name.up.sql` pattern), sqlc picks them up automatically in lexicographic order — zero-padded numbering (already in use) ensures lexicographic order matches migration order.
 - `queries` points at `internal/db/queries/` — one file per domain (see below).
 
-**`pgtype.Numeric` note:** pgx/v5 maps PostgreSQL `NUMERIC` columns to `pgtype.Numeric` in generated structs by default. Columns affected: `rating_average`, `hours_played`, `howlongtobeat_main/extra/completionist`, `personal_rating` (INT, not affected), `confidence` (Phase 3). Handler code must convert `pgtype.Numeric` to `float64` (or `*float64`) when projecting into JSON response types. This is expected and is handled at the response-projection layer, not in the query layer.
+**`pgtype.Numeric` note:** pgx/v5 maps PostgreSQL `NUMERIC` columns to `pgtype.Numeric` in generated structs by default. Columns affected: `rating_average`, `hours_played`, `howlongtobeat_main/extra/completionist`, `personal_rating` (INT, not affected). Handler code must convert `pgtype.Numeric` to `float64` (or `*float64`) when projecting into JSON response types. This is expected and is handled at the response-projection layer, not in the query layer.
 
 ---
 
@@ -52,6 +52,7 @@ Phase 2 tables only: `games`, `user_games`, `user_game_platforms`, `platforms`, 
 **Excluded from this spec:**
 - `users`, `user_sessions` — auth uses raw `pool.QueryRow` per the master spec and must not depend on the generated package.
 - `jobs`, `job_items`, `pending_tasks`, `external_games`, `user_sync_configs`, `backup_config` — Phase 3+.
+- `rate_limiter_tokens` — internal implementation detail of the PostgreSQL rate limiter backend; no sqlc queries needed (the rate limiter manages this table directly via raw SQL).
 
 ---
 
@@ -185,6 +186,9 @@ SELECT COUNT(*) FROM user_games WHERE game_id = $1;
 ### `internal/db/queries/user_game_platforms.sql`
 
 ```sql
+-- name: GetUserGamePlatform :one
+SELECT * FROM user_game_platforms WHERE id = $1 AND user_game_id = $2;
+
 -- name: ListUserGamePlatforms :many
 SELECT * FROM user_game_platforms
 WHERE user_game_id = $1
@@ -226,6 +230,8 @@ DELETE FROM user_game_platforms WHERE id = $1;
 
 ### `internal/db/queries/platforms.sql`
 
+Read-only queries only. Admin write queries (Create, Update, Delete, Upsert for seed) are deferred to the Platform Admin API spec.
+
 ```sql
 -- name: ListActivePlatforms :many
 SELECT * FROM platforms WHERE is_active = true ORDER BY display_name;
@@ -237,6 +243,8 @@ SELECT * FROM platforms WHERE name = $1;
 ---
 
 ### `internal/db/queries/storefronts.sql`
+
+Read-only queries only. Admin write queries are deferred to the Platform Admin API spec.
 
 ```sql
 -- name: ListActiveStorefronts :many
@@ -329,6 +337,8 @@ The generated code is committed to the repo. Contributors do not need sqlc insta
 
 - Handlers that only need static queries receive `*db.Queries`.
 - Handlers that also need dynamic queries (user-games list, built later with goqu) additionally receive `*pgxpool.Pool`.
+
+**DBTX interface:** sqlc generates a `DBTX` interface satisfied by both `*pgxpool.Pool` and `pgx.Tx`. `db.New(tx)` produces a transaction-scoped `*db.Queries`, enabling handlers that need atomic multi-statement operations to call `pool.BeginTx()` and pass the resulting `pgx.Tx` directly. The interface is automatically generated — no manual wiring is required.
 
 No handler code is written in this step. This pattern is established here so the next spec (games API) can assume it without re-litigating the design.
 
