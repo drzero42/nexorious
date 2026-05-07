@@ -24,6 +24,7 @@ This package has no API surface and no HTTP handlers. It is pure query-building 
 - No sorting — callers apply `ORDER BY` after building the expression
 - No execution — callers run the built query themselves via `sqlx`
 - No fuzzy matching — the `q` (text search) criterion uses `ILIKE` only
+- No user scoping — **the caller is responsible for adding `WHERE user_games.user_id = ?` to the base `SelectDataset` before calling `Apply()`**. The filter package never touches `user_id`; omitting this clause would expose all users' games to any authenticated user.
 
 ---
 
@@ -45,7 +46,7 @@ These are the filter parameters accepted by `GET /api/user-games` in the Python 
 | `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE ?` for each value |
 | `theme` | `[]string` | `games` | OR of `games.themes ILIKE ?` for each value |
 | `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE ?` for each value |
-| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
+| `tag` | `[]int32` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
 | `q` | `string` | `games` | `games.title ILIKE ? OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE ?)` |
 
 **`fuzzy_threshold` is NOT implemented.** The Python parameter was never wired to the frontend; the Go port uses ILIKE only.
@@ -72,7 +73,7 @@ When `user_game_platforms` is joined and a user game has multiple platform entri
 
 ```
 internal/filter/
-    builder.go      # filterBuilder struct + Join/Where/Having accumulation + Build()
+    builder.go      # filterBuilder struct + Join/Where/Having accumulation + Apply()
     criteria.go     # One function per filter criterion; all take *filterBuilder and add to it
 ```
 
@@ -168,7 +169,7 @@ func ApplyPlayerPerspective(f *filterBuilder, perspectives []string)
 
 // ApplyTag adds a tag subquery WHERE clause if tagIDs is non-empty.
 // user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))
-func ApplyTag(f *filterBuilder, tagIDs []string)
+func ApplyTag(f *filterBuilder, tagIDs []int32)
 
 // ApplyTextSearch adds title/notes ILIKE WHERE clauses (with games JOIN) if q is non-empty.
 func ApplyTextSearch(f *filterBuilder, q string)
@@ -209,7 +210,7 @@ Tests live in `internal/filter/` alongside the implementation. Use table-driven 
 - Platform `["steam", "unknown"]` → `OR` between `= 'steam'` and `IS NULL`
 - Storefront same as platform
 - Multi-value genre → `OR` of ILIKE conditions
-- Tag → subquery `IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))`
+- Tag → subquery `IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` with int32 IDs
 - Two criteria requiring the same JOIN → JOIN appears only once in SQL
 - Text search → title ILIKE and personal_notes ILIKE with OR
 

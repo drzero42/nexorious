@@ -527,14 +527,18 @@ The `internal/filter/` package provides a Stash-style `filterBuilder`:
 ```go
 // builder.go
 type filterBuilder struct {
-    joins         joins         // accumulated JOINs, deduplicated
-    whereClauses  []sqlClause   // ANDed WHERE conditions
-    havingClauses []sqlClause   // ANDed HAVING conditions
+    joins         []join           // accumulated JOINs, deduplicated by table name
+    whereClauses  []goqu.Expression // ANDed WHERE conditions
+    havingClauses []goqu.Expression // ANDed HAVING conditions
+    joinSeen      map[string]bool
 }
 
-// Add only if criterion is non-nil; join deduplication prevents bloat
-func (f *filterBuilder) addJoin(j join) { f.joins.addUnique(j) }
-func (f *filterBuilder) addWhere(clause string, args ...any) { ... }
+// AddJoin adds a LEFT JOIN if the table has not already been joined.
+func (f *filterBuilder) AddJoin(table string, condition goqu.Expression)
+// AddWhere appends a WHERE condition.
+func (f *filterBuilder) AddWhere(expr goqu.Expression)
+// Apply applies accumulated JOINs, WHERE, and HAVING to the provided dataset.
+func (f *filterBuilder) Apply(ds *goqu.SelectDataset) *goqu.SelectDataset
 ```
 
 Each filter criterion gets its own handler (a small function that adds JOINs/WHERE/HAVING only if the criterion is non-nil). The `user_games` list handler composes ~12 such handlers. This gives full control over generated SQL without ORM overhead and avoids the N-variant sqlc anti-pattern.
