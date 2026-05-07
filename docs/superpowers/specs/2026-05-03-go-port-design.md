@@ -518,7 +518,7 @@ The initial migration must create all of the following tables (derived from Pyth
 | `user_game_platforms` | UUID PK; `platform TEXT REFERENCES platforms(name) ON DELETE RESTRICT`, `storefront TEXT REFERENCES storefronts(name) ON DELETE RESTRICT`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront). The `ON DELETE RESTRICT` FKs enforce that a platform or storefront cannot be deleted while any user still has games on it — the retirement migration must migrate user data first. |
 | `platforms` | TEXT PK (slug); `display_name`, `icon` (filename only, e.g. `steam.svg` — frontend builds the full path), `igdb_platform_id` (nullable INT — IGDB's numeric platform identifier, for linking platform records to IGDB data), `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
 | `storefronts` | TEXT PK (slug); `display_name`, `icon` (filename only — frontend builds the full path), `base_url`; data inserted by migration |
-| `platform_storefronts` | Composite PK (`platform` TEXT FK, `storefront` TEXT FK); many-to-many join table between platforms and storefronts |
+| `platform_storefronts` | Composite PK (`platform` TEXT FK `ON DELETE CASCADE`, `storefront` TEXT FK `ON DELETE CASCADE`); many-to-many join table between platforms and storefronts; rows auto-delete when the referenced platform or storefront is deleted |
 | `tags` | UUID PK; per-user |
 | `user_game_tags` | UUID PK; join table for user_games ↔ tags |
 | `external_games` | UUID PK; UNIQUE(user_id, storefront, external_id); stores IGDB resolution cache; `is_skipped` flag replaces the old `ignored_external_games` table |
@@ -533,7 +533,14 @@ The initial migration must create all of the following tables (derived from Pyth
 
 `platforms` and `storefronts` use a TEXT slug as their primary key (e.g. `"pc-windows"`, `"steam"`). The `platform_storefronts` join table records which storefronts are valid for a given platform (many-to-many). `platforms.default_storefront` is a nullable FK into `storefronts` for the most common storefront for that platform.
 
-Both tables are **static reference data** — they are populated entirely by migration `INSERT` statements and are never modified at runtime. There is no admin API for managing them and no seed mechanism. To add a new platform or storefront, add a migration. To retire one (rare), write a migration that migrates any affected `user_game_platforms` rows first, then deletes the entry. All users are read-only consumers of this data.
+Both tables are **static reference data** — they are populated entirely by migration `INSERT` statements and are never modified at runtime. There is no admin API for managing them and no seed mechanism. To add a new platform or storefront, add a migration. To retire one (rare), write a migration in this order:
+
+1. Migrate any affected `user_game_platforms` rows first (the `ON DELETE RESTRICT` FKs will block deletion otherwise), e.g. `SET storefront = 'physical'`.
+2. Null out any `platforms.default_storefront` pointing at the retiring storefront (`UPDATE platforms SET default_storefront = NULL WHERE default_storefront = 'retiring-storefront'`), because that FK has no `ON DELETE` clause and defaults to `RESTRICT`.
+3. Delete from `platform_storefronts` where the storefront/platform matches (the `ON DELETE CASCADE` on that table would handle it automatically, but explicit is clearer).
+4. Delete from `storefronts` (or `platforms`) where `name = 'retiring-entry'`.
+
+All users are read-only consumers of this data.
 
 **Frontend change required:** The Python frontend includes admin UI for managing platforms and storefronts (creating, editing, deleting entries, uploading logos, managing associations). These screens must be **removed entirely** when porting the frontend. Any navigation links, routes, API client methods (`src/api/platforms.ts` mutations, logo upload calls), and TypeScript types relating to platform/storefront write operations should be deleted. The read-only API calls (listing platforms, listing storefronts for a platform, fetching a single platform/storefront for display in dropdowns) are kept.
 
@@ -918,12 +925,13 @@ Two internal services that the sync system depends on, not exposed as API endpoi
 
 ## Services: Static Files
 
-**`services/storage.go`** manages two on-disk directories:
+**`services/storage.go`** manages one on-disk directory:
 
 - **Cover art**: `{STORAGE_PATH}/cover_art/` — downloaded from IGDB during game import. Served at `/static/cover_art/*`.
-- **Platform/storefront logos**: committed to the repository under `ui/public/logos/` and served as part of the frontend SPA. The `icon` column in `platforms` and `storefronts` stores the filename only (e.g. `steam.svg`); the frontend constructs the full path. No Go-side route or embed is needed for logos.
 
-Both paths are registered as Echo `Static` routes before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
+Platform/storefront logos are **not** managed by `storage.go`. They are committed to the repository under `ui/public/logos/` and served as part of the frontend SPA — no Go-side route, embed, or filesystem management is needed. The `icon` column in `platforms` and `storefronts` stores the filename only (e.g. `steam.svg`); the frontend constructs the full path.
+
+Cover art is registered as an Echo `Static` route before the SPA catch-all. URLs stored in the database for cover art use the `/static/cover_art/` prefix, matching the Python version — no URL migration is required when importing data.
 
 ### Backup Archive Format
 
