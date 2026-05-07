@@ -13,7 +13,7 @@ Add a [Slumber](https://github.com/LucasPickering/slumber) TUI API client collec
 
 - Zero-friction API testing from the terminal (no browser, no Postman)
 - Bootstrap flow: trigger migrations → create admin → log in automatically
-- JWT auth handled transparently via Slumber chains (no manual token copy-paste)
+- JWT auth handled transparently via Slumber's `response()` chaining (no manual token copy-paste)
 - Collection stays in sync with the codebase via CLAUDE.md rules
 
 ---
@@ -22,7 +22,7 @@ Add a [Slumber](https://github.com/LucasPickering/slumber) TUI API client collec
 
 ```
 slumber/
-  slumber.yaml     ← entire collection: profiles, chains, all requests
+  slumber.yaml     ← entire collection: profiles and all requests
 ```
 
 A single file is idiomatic Slumber and easier to maintain than split files. All future domains are appended to this file.
@@ -47,18 +47,18 @@ All requests reference `{{base_url}}`, `{{username}}`, and `{{password}}`. Addin
 
 ---
 
-## Authentication Chain
+## Authentication
+
+Slumber v4 has no `chains:` key. Request chaining is done inline via the `response()` template function. All JWT-protected requests use Slumber's first-class `authentication` field:
 
 ```yaml
-chains:
-  login:
-    source:
-      request: auth/login
-    selector: $.access_token
+authentication:
+  type: bearer
+  token: "{{ response('auth/login', trigger='no_history') | jsonpath('$.access_token') }}"
 ```
 
-- The chain is evaluated lazily: the first time a protected request is triggered, Slumber fires `auth/login` automatically and caches the token for the session.
-- All JWT-protected requests use: `Authorization: Bearer {{chains.login}}`
+- `response('auth/login', trigger='no_history')` — fires `auth/login` automatically the first time a protected request is triggered if no prior response exists in history; uses the cached response thereafter.
+- `| jsonpath('$.access_token')` — extracts the token from the login response body.
 - The `refresh_token` is not chained — it is visible in the `auth/login` response body in the TUI when needed.
 
 ---
@@ -86,7 +86,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 | 3 | `logout` | `POST` | `/api/auth/logout` | JWT |
 | 4 | `me` | `GET` | `/api/auth/me` | JWT |
 
-`login` is the chain source — all protected requests in any folder reference `{{chains.login}}`.
+`login` is the upstream source — all protected requests in any folder use the `authentication: type: bearer` block shown above, referencing `response('auth/login', trigger='no_history')`.
 
 ### `health/`
 
@@ -135,7 +135,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 > When adding a new API route, always add a corresponding request to `slumber/slumber.yaml`:
 >
 > - Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
-> - If the route requires JWT, add `Authorization: Bearer {{chains.login}}` header
+> - If the route requires JWT, add the `authentication: type: bearer` block with `response('auth/login', trigger='no_history') | jsonpath('$.access_token')`
 > - If it's a new domain with no existing folder, create the folder in alphabetical order after `bootstrap/`
 > - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 > - Run `slumber --config slumber/slumber.yaml` to verify the collection loads without errors after any change
