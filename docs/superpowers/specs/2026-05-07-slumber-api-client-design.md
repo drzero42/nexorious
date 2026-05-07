@@ -113,7 +113,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 ## Typical Developer Workflow
 
 1. Start the server: `make && ./nexorious`
-2. Open Slumber: `slumber --config slumber/slumber.yaml`
+2. Open Slumber: `slumber -f slumber/slumber.yaml`
 3. Select `local` profile
 4. Run `bootstrap/run-migrations`
 5. Run `bootstrap/migration-status` until status is `ready`
@@ -128,7 +128,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 
 | Task | Command |
 |------|---------|
-| Run API client | `slumber --config slumber/slumber.yaml` |
+| Run API client | `slumber -f slumber/slumber.yaml` |
 
 ### New section: Slumber Collection Maintenance
 
@@ -138,7 +138,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 > - If the route requires JWT, add the `authentication: type: bearer` block with `response('auth/login', trigger='no_history') | jsonpath('$.access_token')`
 > - If it's a new domain with no existing folder, create the folder in alphabetical order after `bootstrap/`
 > - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
-> - Run `slumber --config slumber/slumber.yaml` to verify the collection loads without errors after any change
+> - Run `slumber -f slumber/slumber.yaml` to verify the collection loads without errors after any change
 
 ---
 
