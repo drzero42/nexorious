@@ -601,6 +601,10 @@ The Python backend accepts a `fuzzy_threshold` query parameter on both `GET /api
 
 The Go port uses `ILIKE` for text search on both list endpoints. The `fuzzy_threshold` parameter is not implemented on either. `pg_trgm` is not needed and is not enabled.
 
+**`GET /api/games` (`q` parameter):** handled by the `SearchGamesByTitle` sqlc query, which searches `title OR description` (OR logic, description null-guarded) with a fixed limit and no pagination. The query is defined in `internal/db/queries/games.sql`. **Not** used by `GET /api/user-games` — that endpoint is handled entirely by the goqu `filterBuilder`.
+
+**`GET /api/user-games` (`q` parameter):** handled by the goqu `filterBuilder` in `internal/filter/`. The filter criterion adds a `WHERE (Game.title ILIKE q OR (UserGame.personal_notes IS NOT NULL AND UserGame.personal_notes ILIKE q))` condition (title and personal notes; description is not searched on this endpoint).
+
 ### Context 2: IGDB search result ranking (`POST /api/games/search/igdb`)
 
 The IGDB search endpoint calls the IGDB API and receives a candidate list. It then **post-ranks those results in-process** using the fuzzy algorithm — `pg_trgm` cannot help here because the data comes from an external HTTP response, not our database.

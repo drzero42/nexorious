@@ -138,11 +138,12 @@ DELETE FROM games WHERE id = $1;
 -- name: SearchGamesByTitle :many
 SELECT * FROM games
 WHERE title ILIKE '%' || $1 || '%'
+   OR (description IS NOT NULL AND description ILIKE '%' || $1 || '%')
 ORDER BY title
 LIMIT $2;
 ```
 
-**No OFFSET:** `SearchGamesByTitle` is used for the local database search in the games list view. The Python implementation uses `ILIKE` with a fixed limit and no pagination — it returns the top N matches and the user refines their query if needed. This is intentional; no pagination is required here.
+**No OFFSET:** `SearchGamesByTitle` powers the `q` search parameter on `GET /api/games` — the global game catalog endpoint (IGDB records cached in the local DB), which is the mechanism users use to add games to their collection. It does **not** back the user-games collection list (`GET /api/user-games`), which is handled entirely by the goqu dynamic `filterBuilder` and has no sqlc query. The Python `list_games` handler searches title OR description (OR logic, with a null guard on description) via ILIKE; the query above replicates that exactly. No pagination: the handler passes a fixed limit and the user refines their query if needed.
 
 ---
 
