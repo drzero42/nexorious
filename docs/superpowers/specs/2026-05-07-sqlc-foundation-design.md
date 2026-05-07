@@ -113,24 +113,31 @@ RETURNING *;
 
 -- name: UpdateGameMetadata :one
 UPDATE games SET
-    description                 = $2,
-    genre                       = $3,
-    developer                   = $4,
-    publisher                   = $5,
-    release_date                = $6,
-    rating_average              = $7,
-    rating_count                = $8,
-    estimated_playtime_hours    = $9,
-    howlongtobeat_main          = $10,
-    howlongtobeat_extra         = $11,
-    howlongtobeat_completionist = $12,
-    game_modes                  = $13,
-    themes                      = $14,
-    player_perspectives         = $15,
-    game_metadata               = $16,
+    title                       = $2,
+    description                 = $3,
+    genre                       = $4,
+    developer                   = $5,
+    publisher                   = $6,
+    release_date                = $7,
+    rating_average              = $8,
+    rating_count                = $9,
+    estimated_playtime_hours    = $10,
+    howlongtobeat_main          = $11,
+    howlongtobeat_extra         = $12,
+    howlongtobeat_completionist = $13,
+    game_modes                  = $14,
+    themes                      = $15,
+    player_perspectives         = $16,
+    game_metadata               = $17,
+    igdb_slug                   = $18,
+    igdb_platform_ids           = $19,
+    igdb_platform_names         = $20,
     last_updated                = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: UpdateGameCoverArtUrl :exec
+UPDATE games SET cover_art_url = $2 WHERE id = $1;
 
 -- name: DeleteGame :exec
 DELETE FROM games WHERE id = $1;
@@ -180,9 +187,6 @@ RETURNING *;
 -- name: DeleteUserGame :exec
 DELETE FROM user_games WHERE id = $1 AND user_id = $2;
 
--- name: CountUserGamesByUser :one
-SELECT COUNT(*) FROM user_games WHERE user_id = $1;
-
 -- name: CountUserGamesByGameID :one
 -- Used by unreferenced-game cleanup: after deleting a user_game, the handler
 -- checks this count; if zero, the games row and its cover art file are deleted.
@@ -220,18 +224,18 @@ RETURNING *;
 
 -- name: UpdateUserGamePlatform :one
 UPDATE user_game_platforms SET
-    store_game_id    = $2,
-    store_url        = $3,
-    is_available     = $4,
-    hours_played     = $5,
-    ownership_status = $6,
-    acquired_date    = $7,
+    store_game_id    = $3,
+    store_url        = $4,
+    is_available     = $5,
+    hours_played     = $6,
+    ownership_status = $7,
+    acquired_date    = $8,
     updated_at       = now()
-WHERE id = $1
+WHERE id = $1 AND user_game_id = $2
 RETURNING *;
 
 -- name: DeleteUserGamePlatform :exec
-DELETE FROM user_game_platforms WHERE id = $1;
+DELETE FROM user_game_platforms WHERE id = $1 AND user_game_id = $2;
 ```
 
 ---
