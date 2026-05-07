@@ -1,0 +1,17 @@
+GOG Storefront Logo
+==================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/330531/gog-dot-com
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free GOG.com SVG Vector Icon
+
+License Details:
+Logo License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- gog.svg: Original GOG logo
+- gog-icon-light.svg: Light variant (black) for light backgrounds
+- gog-icon-dark.svg: Dark variant (white) for dark backgrounds

@@ -1,0 +1,17 @@
+Nintendo eShop Logo
+==================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/306473/nintendo
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free Nintendo Vector Icon in SVG format (used for Nintendo eShop)
+
+License Details:
+Logo License - Please check the specific terms and conditions for logo usage.
+
+Files:
+- nintendo-eshop.svg: Original Nintendo logo
+- nintendo-eshop-icon-light.svg: Light variant (black) for light backgrounds
+- nintendo-eshop-icon-dark.svg: Dark variant (white) for dark backgrounds

@@ -1,0 +1,17 @@
+Nintendo Switch 2 Platform Logo
+===============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/500713/switch-filled
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Switch Filled SVG Vector Icon
+
+License Details:
+MIT License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- nintendo-switch-2.svg: Original Nintendo Switch 2 logo
+- nintendo-switch-2-icon-light.svg: Light variant (black) for light backgrounds
+- nintendo-switch-2-icon-dark.svg: Dark variant (white) for dark backgrounds

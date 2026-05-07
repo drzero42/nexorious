@@ -1,0 +1,17 @@
+Nintendo Wii Platform Logo
+=========================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/306968/wii
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free Wii SVG Vector Icon
+
+License Details:
+Logo License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- nintendo-wii.svg: Original Nintendo Wii logo
+- nintendo-wii-icon-light.svg: Light variant (black) for light backgrounds
+- nintendo-wii-icon-dark.svg: Dark variant (white) for dark backgrounds

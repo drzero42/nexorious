@@ -16,7 +16,6 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
-	"github.com/drzero42/nexorious-go/internal/seed"
 )
 
 // SetupHandler handles the one-time admin setup endpoint.
@@ -78,7 +77,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	}
 
 	var createdAt time.Time
-	for attempt := 0; attempt <= 1; attempt++ {
+	for attempt := range 2 {
 		createdAt, err = h.tryCreateAdmin(context.Background(), userID, req.Username, string(hash))
 		if err == nil {
 			break
@@ -91,10 +90,6 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		}
 		slog.Error("setup admin: create user", "err", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-	}
-
-	if _, seedErr := seed.SeedAll(context.Background(), h.pool); seedErr != nil {
-		slog.Warn("setup admin: seed failed", "err", seedErr)
 	}
 
 	accessToken, refreshToken, tokenErr := issueTokensAndSession(

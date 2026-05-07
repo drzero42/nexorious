@@ -1,0 +1,17 @@
+Microsoft Store Storefront Logo
+===============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/310022/store-microsoft
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Microsoft Store SVG Vector Icon
+
+License Details:
+MIT License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- microsoft-store.svg: Original Microsoft Store logo
+- microsoft-store-icon-light.svg: Light variant (black) for light backgrounds
+- microsoft-store-icon-dark.svg: Dark variant (white) for dark backgrounds

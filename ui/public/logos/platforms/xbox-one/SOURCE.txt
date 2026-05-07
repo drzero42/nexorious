@@ -1,0 +1,17 @@
+Xbox One Platform Logo
+======================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/303464/xbox-one-3-logo
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free Xbox One 3 Logo SVG Vector Icon
+
+License Details:
+Logo License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- xbox-one.svg: Original Xbox One logo
+- xbox-one-icon-light.svg: Light variant (black) for light backgrounds
+- xbox-one-icon-dark.svg: Dark variant (white) for dark backgrounds

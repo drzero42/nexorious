@@ -1,0 +1,17 @@
+EA App (Origin) Storefront Logo
+===============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/394324/origin
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Origin SVG Vector Icon
+
+License Details:
+MIT License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- ea-app.svg: Original EA App (Origin) logo
+- origin-ea-app-icon-light.svg: Light variant (black) for light backgrounds
+- origin-ea-app-icon-dark.svg: Dark variant (white) for dark backgrounds

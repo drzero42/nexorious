@@ -1,0 +1,17 @@
+Humble Bundle Storefront Logo
+=============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/443151/brand-humblebundle
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Humble Bundle Brand SVG Vector Icon
+
+License Details:
+MIT License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- humble-bundle.svg: Original Humble Bundle logo
+- humble-bundle-icon-light.svg: Light variant (black) for light backgrounds
+- humble-bundle-icon-dark.svg: Dark variant (white) for dark backgrounds

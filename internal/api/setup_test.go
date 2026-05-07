@@ -151,10 +151,8 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 		codes []int
 		wg    sync.WaitGroup
 	)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 2 {
+		wg.Go(func() {
 			body, _ := json.Marshal(map[string]string{"username": "admin", "password": "supersecret"})
 			req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/admin", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -164,7 +162,7 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 			mu.Lock()
 			codes = append(codes, rec.Code)
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -236,5 +234,63 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 	}
 	if string(meBody.Preferences) == "null" || string(meBody.Preferences) == "" {
 		t.Errorf("expected preferences={}, got %q", string(meBody.Preferences))
+	}
+}
+
+func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
+	pool := setupAuthTestDB(t)
+
+	var sfCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM storefronts").Scan(&sfCount); err != nil {
+		t.Fatalf("count storefronts: %v", err)
+	}
+	if sfCount != 14 {
+		t.Errorf("expected 14 storefronts from migration, got %d", sfCount)
+	}
+
+	var pfCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM platforms").Scan(&pfCount); err != nil {
+		t.Fatalf("count platforms: %v", err)
+	}
+	if pfCount != 19 {
+		t.Errorf("expected 19 platforms from migration, got %d", pfCount)
+	}
+
+	var assocCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM platform_storefronts").Scan(&assocCount); err != nil {
+		t.Fatalf("count platform_storefronts: %v", err)
+	}
+	if assocCount != 42 {
+		t.Errorf("expected 42 platform-storefront associations from migration, got %d", assocCount)
+	}
+
+	// Spot-check: pc-windows default_storefront
+	var defaultSF *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT default_storefront FROM platforms WHERE name = 'pc-windows'").Scan(&defaultSF); err != nil {
+		t.Fatalf("query pc-windows default_storefront: %v", err)
+	}
+	if defaultSF == nil || *defaultSF != "steam" {
+		t.Errorf("expected pc-windows default_storefront='steam', got %v", defaultSF)
+	}
+
+	// Spot-check: steam icon uses light-variant filename, no path prefix
+	var icon *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT icon FROM storefronts WHERE name = 'steam'").Scan(&icon); err != nil {
+		t.Fatalf("query steam icon: %v", err)
+	}
+	if icon == nil || *icon != "steam-icon-light.svg" {
+		t.Errorf("expected steam icon='steam-icon-light.svg', got %v", icon)
+	}
+
+	// Spot-check: platforms with no logo have NULL icon
+	var vitaIcon *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT icon FROM platforms WHERE name = 'playstation-vita'").Scan(&vitaIcon); err != nil {
+		t.Fatalf("query playstation-vita icon: %v", err)
+	}
+	if vitaIcon != nil {
+		t.Errorf("expected playstation-vita icon=NULL, got %q", *vitaIcon)
 	}
 }

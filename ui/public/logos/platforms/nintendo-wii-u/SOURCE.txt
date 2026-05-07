@@ -1,0 +1,17 @@
+Nintendo Wii U Platform Logo
+============================
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/306969/wiiu
+License: Logo License
+Downloaded: 2025-08-03
+
+Description: Free Wii U SVG Vector Icon
+
+License Details:
+Logo License - Free to use for personal and commercial projects with no attribution required.
+
+Files:
+- nintendo-wii-u.svg: Original Nintendo Wii U logo
+- nintendo-wii-u-icon-light.svg: Light variant (black) for light backgrounds
+- nintendo-wii-u-icon-dark.svg: Dark variant (white) for dark backgrounds

@@ -1,0 +1,13 @@
+PlayStation Store Storefront Logo
+=================================
+
+Source: Brandlogos.net
+Original File: playstation-store-logo-brandlogos.net_trj4r2512.svg
+URL: https://brandlogos.net/
+Downloaded: 2025-08-04
+
+Description: PlayStation Store logo from Brandlogos.net
+
+Files:
+- playstation-store-icon-light.svg: Light variant for light backgrounds
+- playstation-store-icon-dark.svg: Dark variant for dark backgrounds

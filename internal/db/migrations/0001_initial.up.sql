@@ -64,53 +64,33 @@ CREATE INDEX games_release_date_idx ON games (release_date);
 
 -- Platforms table (TEXT slug as PK)
 CREATE TABLE platforms (
-    name               TEXT PRIMARY KEY,           -- slug: "pc-windows", "ps5", etc.
+    name               TEXT PRIMARY KEY,   -- slug: "pc-windows", "ps5", etc.
     display_name       TEXT NOT NULL,
-    icon_url           TEXT,
-    default_storefront TEXT,                       -- FK added after storefronts table
-    is_active          BOOLEAN NOT NULL DEFAULT true,
-    source             TEXT NOT NULL,              -- 'official' | 'custom'
-    version_added      TEXT,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    icon               TEXT,              -- light-variant filename, e.g. "pc-windows-icon-light.svg"; NULL if no logo
+    igdb_platform_id   INTEGER,           -- nullable; IGDB's numeric platform ID
+    default_storefront TEXT               -- FK → storefronts.name (added after storefronts)
 );
-
-CREATE INDEX platforms_is_active_idx ON platforms (is_active) WHERE is_active = true;
-CREATE INDEX platforms_source_idx ON platforms (source);
 
 -- Storefronts table (TEXT slug as PK)
 CREATE TABLE storefronts (
-    name          TEXT PRIMARY KEY,                -- slug: "steam", "epic", etc.
-    display_name  TEXT NOT NULL,
-    icon_url      TEXT,
-    base_url      TEXT,
-    is_active     BOOLEAN NOT NULL DEFAULT true,
-    source        TEXT NOT NULL,                   -- 'official' | 'custom'
-    version_added TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    name         TEXT PRIMARY KEY,   -- slug: "steam", "epic-games-store", etc.
+    display_name TEXT NOT NULL,
+    icon         TEXT,              -- light-variant filename, e.g. "steam-icon-light.svg"; NULL if no logo
+    base_url     TEXT
 );
-
-CREATE INDEX storefronts_is_active_idx ON storefronts (is_active) WHERE is_active = true;
-CREATE INDEX storefronts_source_idx ON storefronts (source);
 
 -- Platform-Storefront many-to-many join table
 CREATE TABLE platform_storefronts (
     platform   TEXT NOT NULL REFERENCES platforms(name) ON DELETE CASCADE,
     storefront TEXT NOT NULL REFERENCES storefronts(name) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (platform, storefront)
 );
-
-CREATE INDEX platform_storefronts_platform_idx ON platform_storefronts (platform);
-CREATE INDEX platform_storefronts_storefront_idx ON platform_storefronts (storefront);
 
 -- Add FK constraint for platforms.default_storefront (deferred until after storefronts exists)
 ALTER TABLE platforms
     ADD CONSTRAINT platforms_default_storefront_fkey
     FOREIGN KEY (default_storefront)
-    REFERENCES storefronts(name)
-    ON DELETE SET NULL;
+    REFERENCES storefronts(name);
 
 -- User games (user's personal collection entries)
 CREATE TABLE user_games (
@@ -302,6 +282,110 @@ CREATE TABLE backup_config (
 -- Seed the singleton row (daily at 2 AM UTC)
 INSERT INTO backup_config (id, schedule_cron, retention_mode, retention_value)
 VALUES (1, '0 2 * * *', 'days', 30);
+
+-- Reference data: storefronts
+INSERT INTO storefronts (name, display_name, icon, base_url) VALUES
+    ('steam',             'Steam',             'steam-icon-light.svg',             'https://store.steampowered.com'),
+    ('epic-games-store',  'Epic Games Store',  'epic-games-store-icon-light.svg',  'https://store.epicgames.com'),
+    ('gog',               'GOG',               'gog-icon-light.svg',               'https://www.gog.com'),
+    ('playstation-store', 'PlayStation Store', 'playstation-store-icon-light.svg', 'https://store.playstation.com'),
+    ('microsoft-store',   'Microsoft Store',   'microsoft-store-icon-light.svg',   'https://www.microsoft.com/store'),
+    ('nintendo-eshop',    'Nintendo eShop',    'nintendo-eshop-icon-light.svg',    'https://www.nintendo.com/us/store'),
+    ('itch-io',           'Itch.io',           'itch-io-icon-light.svg',           'https://itch.io'),
+    ('origin-ea-app',     'Origin/EA App',     'origin-ea-app-icon-light.svg',     'https://www.ea.com/ea-app'),
+    ('apple-app-store',   'Apple App Store',   'apple-app-store-icon-light.svg',   'https://apps.apple.com'),
+    ('google-play-store', 'Google Play Store', 'google-play-store-icon-light.svg', 'https://play.google.com/store'),
+    ('humble-bundle',     'Humble Bundle',     'humble-bundle-icon-light.svg',     'https://www.humblebundle.com'),
+    ('physical',          'Physical',          'physical-icon-light.svg',          ''),
+    ('uplay',             'UPlay',             'uplay-icon-light.svg',             'https://store.ubi.com'),
+    ('gamersgate',        'GamersGate',        NULL,                               'https://www.gamersgate.com');
+
+-- Reference data: platforms
+-- icon is NULL for platforms with no logo file (playstation-vita, playstation-psp)
+INSERT INTO platforms (name, display_name, icon, default_storefront) VALUES
+    ('pc-windows',        'PC (Windows)',               'pc-windows-icon-light.svg',        'steam'),
+    ('playstation-5',     'PlayStation 5',              'playstation-5-icon-light.svg',      'playstation-store'),
+    ('playstation-4',     'PlayStation 4',              'playstation-4-icon-light.svg',      'playstation-store'),
+    ('playstation-3',     'PlayStation 3',              'playstation-3-icon-light.svg',      'playstation-store'),
+    ('playstation-vita',  'PlayStation Vita',           NULL,                                'playstation-store'),
+    ('playstation-psp',   'PlayStation Portable (PSP)', NULL,                                'playstation-store'),
+    ('xbox-series',       'Xbox Series X/S',            'xbox-series-icon-light.svg',        'microsoft-store'),
+    ('xbox-one',          'Xbox One',                   'xbox-one-icon-light.svg',           'microsoft-store'),
+    ('xbox-360',          'Xbox 360',                   'xbox-360-icon-light.svg',           'microsoft-store'),
+    ('nintendo-switch',   'Nintendo Switch',            'nintendo-switch-icon-light.svg',    'nintendo-eshop'),
+    ('nintendo-wii',      'Nintendo Wii',               'nintendo-wii-icon-light.svg',       'nintendo-eshop'),
+    ('ios',               'iOS',                        'ios-icon-light.svg',                'apple-app-store'),
+    ('android',           'Android',                    'android-icon-light.svg',            'google-play-store'),
+    ('playstation-2',     'PlayStation 2',              'playstation-2-icon-light.svg',      'physical'),
+    ('playstation',       'PlayStation',                'playstation-icon-light.svg',        'physical'),
+    ('nintendo-wii-u',    'Nintendo Wii U',             'nintendo-wii-u-icon-light.svg',     'nintendo-eshop'),
+    ('pc-linux',          'PC (Linux)',                 'pc-linux-icon-light.svg',           'steam'),
+    ('mac',               'Mac',                        'mac-icon-light.svg',                'steam'),
+    ('nintendo-switch-2', 'Nintendo Switch 2',          'nintendo-switch-2-icon-light.svg',  'nintendo-eshop');
+
+-- Reference data: platform-storefront associations
+INSERT INTO platform_storefronts (platform, storefront) VALUES
+    -- PC (Windows)
+    ('pc-windows',        'steam'),
+    ('pc-windows',        'epic-games-store'),
+    ('pc-windows',        'gog'),
+    ('pc-windows',        'origin-ea-app'),
+    ('pc-windows',        'microsoft-store'),
+    ('pc-windows',        'itch-io'),
+    ('pc-windows',        'gamersgate'),
+    ('pc-windows',        'physical'),
+    -- PlayStation 5
+    ('playstation-5',     'playstation-store'),
+    ('playstation-5',     'physical'),
+    -- PlayStation 4
+    ('playstation-4',     'playstation-store'),
+    ('playstation-4',     'physical'),
+    -- PlayStation 3
+    ('playstation-3',     'playstation-store'),
+    ('playstation-3',     'physical'),
+    -- PlayStation Vita
+    ('playstation-vita',  'playstation-store'),
+    ('playstation-vita',  'physical'),
+    -- PlayStation Portable (PSP)
+    ('playstation-psp',   'playstation-store'),
+    ('playstation-psp',   'physical'),
+    -- Xbox Series X/S
+    ('xbox-series',       'microsoft-store'),
+    ('xbox-series',       'physical'),
+    -- Xbox One
+    ('xbox-one',          'microsoft-store'),
+    ('xbox-one',          'physical'),
+    -- Xbox 360
+    ('xbox-360',          'microsoft-store'),
+    ('xbox-360',          'physical'),
+    -- Nintendo Switch
+    ('nintendo-switch',   'nintendo-eshop'),
+    ('nintendo-switch',   'physical'),
+    -- Nintendo Wii
+    ('nintendo-wii',      'nintendo-eshop'),
+    ('nintendo-wii',      'physical'),
+    -- iOS
+    ('ios',               'apple-app-store'),
+    ('ios',               'epic-games-store'),
+    -- Android
+    ('android',           'google-play-store'),
+    ('android',           'epic-games-store'),
+    -- PC (Linux)
+    ('pc-linux',          'steam'),
+    ('pc-linux',          'gog'),
+    ('pc-linux',          'humble-bundle'),
+    -- PlayStation 2
+    ('playstation-2',     'physical'),
+    -- PlayStation
+    ('playstation',       'physical'),
+    -- Nintendo Wii U
+    ('nintendo-wii-u',    'nintendo-eshop'),
+    ('nintendo-wii-u',    'physical'),
+    -- Nintendo Switch 2
+    ('nintendo-switch-2', 'nintendo-eshop'),
+    ('nintendo-switch-2', 'physical'),
+    -- Mac
+    ('mac',               'steam');
 
 -- Rate limiter tokens (used by the PostgreSQL rate-limiter backend)
 CREATE TABLE rate_limiter_tokens (

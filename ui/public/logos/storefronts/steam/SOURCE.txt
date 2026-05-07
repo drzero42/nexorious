@@ -1,0 +1,17 @@
+Steam Logo
+==========
+
+Source: SVG Repo
+URL: https://www.svgrepo.com/svg/349516/steam
+License: MIT License
+Downloaded: 2025-08-03
+
+Description: Free Steam Vector Icon in SVG format
+
+License Details:
+MIT License - Free to use for commercial and personal projects with attribution.
+
+Files:
+- steam.svg: Original Steam logo
+- steam-icon-light.svg: Light variant (black) for light backgrounds
+- steam-icon-dark.svg: Dark variant (white) for dark backgrounds
