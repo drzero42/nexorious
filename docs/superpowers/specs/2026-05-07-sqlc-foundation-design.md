@@ -36,8 +36,10 @@ sql:
 - `sql_package: "pgx/v5"` — consistent with the rest of the project; no additional driver wrappers needed.
 - `emit_pointers_for_null_fields: true` — nullable columns become `*string`, `*time.Time`, etc. rather than `sql.NullString`. Cleaner to work with in handler code.
 - `emit_json_tags: true` — adds `json:"..."` struct tags. Handlers will usually project into dedicated response types rather than return generated structs directly, but the tags aid debugging.
-- `schema` points at `internal/db/migrations/` — sqlc reads all `.sql` files in that directory to infer the full schema. The existing `0001_initial.up.sql` contains the complete table definitions.
+- `schema` points at `internal/db/migrations/` — sqlc natively understands the golang-migrate `.up.sql` / `.down.sql` naming convention and automatically ignores down files when given a directory path. The existing `0001_initial.up.sql` contains the complete table definitions. As future migrations are added (always following the `NNNN_name.up.sql` pattern), sqlc picks them up automatically in lexicographic order — zero-padded numbering (already in use) ensures lexicographic order matches migration order.
 - `queries` points at `internal/db/queries/` — one file per domain (see below).
+
+**`pgtype.Numeric` note:** pgx/v5 maps PostgreSQL `NUMERIC` columns to `pgtype.Numeric` in generated structs by default. Columns affected: `rating_average`, `hours_played`, `howlongtobeat_main/extra/completionist`, `personal_rating` (INT, not affected), `confidence` (Phase 3). Handler code must convert `pgtype.Numeric` to `float64` (or `*float64`) when projecting into JSON response types. This is expected and is handled at the response-projection layer, not in the query layer.
 
 ---
 
@@ -45,7 +47,7 @@ sql:
 
 ### Scope
 
-Phase 2 tables only: `games`, `user_games`, `user_game_platforms`, `platforms`, `storefronts`, `tags`, `user_game_tags`.
+Phase 2 tables only: `games`, `user_games`, `user_game_platforms`, `platforms`, `storefronts`, `platform_storefronts`, `tags`, `user_game_tags`.
 
 **Excluded from this spec:**
 - `users`, `user_sessions` — auth uses raw `pool.QueryRow` per the master spec and must not depend on the generated package.
@@ -77,7 +79,7 @@ INSERT INTO games (
     $11, $12, $13,
     $14, $15, $16,
     $17, $18, $19, $20,
-    $21, $22, $23
+    $21, $22, $23  -- $23 = created_at; passed explicitly to preserve the IGDB creation timestamp across metadata refreshes
 )
 ON CONFLICT (id) DO UPDATE SET
     title                       = EXCLUDED.title,
@@ -171,6 +173,11 @@ DELETE FROM user_games WHERE id = $1 AND user_id = $2;
 
 -- name: CountUserGamesByUser :one
 SELECT COUNT(*) FROM user_games WHERE user_id = $1;
+
+-- name: CountUserGamesByGameID :one
+-- Used by unreferenced-game cleanup: after deleting a user_game, the handler
+-- checks this count; if zero, the games row and its cover art file are deleted.
+SELECT COUNT(*) FROM user_games WHERE game_id = $1;
 ```
 
 ---
@@ -199,6 +206,18 @@ INSERT INTO user_game_platforms (
 )
 RETURNING *;
 
+-- name: UpdateUserGamePlatform :one
+UPDATE user_game_platforms SET
+    store_game_id    = $2,
+    store_url        = $3,
+    is_available     = $4,
+    hours_played     = $5,
+    ownership_status = $6,
+    acquired_date    = $7,
+    updated_at       = now()
+WHERE id = $1
+RETURNING *;
+
 -- name: DeleteUserGamePlatform :exec
 DELETE FROM user_game_platforms WHERE id = $1;
 ```
@@ -225,6 +244,24 @@ SELECT * FROM storefronts WHERE is_active = true ORDER BY display_name;
 
 -- name: GetStorefront :one
 SELECT * FROM storefronts WHERE name = $1;
+```
+
+---
+
+### `internal/db/queries/platform_storefronts.sql`
+
+```sql
+-- name: ListStorefrontsForPlatform :many
+SELECT s.* FROM storefronts s
+JOIN platform_storefronts ps ON ps.storefront = s.name
+WHERE ps.platform = $1
+ORDER BY s.display_name;
+
+-- name: AddPlatformStorefront :exec
+INSERT INTO platform_storefronts (platform, storefront) VALUES ($1, $2);
+
+-- name: RemovePlatformStorefront :exec
+DELETE FROM platform_storefronts WHERE platform = $1 AND storefront = $2;
 ```
 
 ---
@@ -298,6 +335,8 @@ No handler code is written in this step. This pattern is established here so the
 ---
 
 ## Verification
+
+The `sqlc` binary is already present in `devenv.nix` under `packages` — no changes to the devenv configuration are needed.
 
 After `make sqlc` succeeds:
 
