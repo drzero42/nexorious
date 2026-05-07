@@ -251,7 +251,7 @@ GET  /api/migrate/progress       SSE stream: live log lines + completion event
 
 **Setup zone** — requires `Ready` state (migrations must have run); bypasses JWT (no users exist yet during first-run); all other routes redirect to `/setup` while `needsSetup` is true:
 ```
-POST /api/auth/setup/admin       Create initial admin + load seed data; 403 if any user exists
+POST /api/auth/setup/admin       Create initial admin; 403 if any user exists
 POST /api/auth/setup/restore     Restore from .tar.gz backup archive during setup; 403 if any user exists
                                  (deferred to Phase 3 — implement alongside backup/restore system)
 ```
@@ -384,26 +384,9 @@ GET    /api/admin/backups/:id/download   Download backup archive
 POST   /api/admin/backups/:id/restore   Restore from a stored backup — drops all in-flight requests (see Restore Behaviour below)
 POST   /api/admin/backups/restore/upload   Upload and restore an external .tar.gz archive — same
 
-POST   /api/platforms                              Create platform
-PUT    /api/platforms/:platform                    Update platform
-DELETE /api/platforms/:platform                    Delete platform
-POST   /api/platforms/:platform/storefronts/:storefront    Add storefront association
-DELETE /api/platforms/:platform/storefronts/:storefront    Remove storefront association
-PUT    /api/platforms/:platform/default-storefront         Set default storefront
-POST   /api/platforms/:platform/logo               Upload platform logo
-DELETE /api/platforms/:platform/logo               Delete platform logo
-GET    /api/platforms/:platform/logos              List available logo files for platform
 GET    /api/platforms/stats                        Platform usage statistics
 
-POST   /api/platforms/storefronts/                         Create storefront
-PUT    /api/platforms/storefronts/:storefront              Update storefront
-DELETE /api/platforms/storefronts/:storefront              Delete storefront
-POST   /api/platforms/storefronts/:storefront/logo        Upload storefront logo
-DELETE /api/platforms/storefronts/:storefront/logo        Delete storefront logo
-GET    /api/platforms/storefronts/:storefront/logos       List available logo files for storefront
-GET    /api/platforms/storefronts/stats                   Storefront usage statistics
-
-POST   /api/platforms/seed   Load or reload official seed data for platforms and storefronts
+GET    /api/platforms/storefronts/stats            Storefront usage statistics
 ```
 
 **Static files zone** — served directly by the Go server, NOT embedded in the binary:
@@ -536,8 +519,8 @@ The initial migration must create all of the following tables (derived from Pyth
 | `games` | INT PK (IGDB ID); `title`, `description`, `genre`, `developer`, `publisher`, `release_date`; `cover_art_url`; `rating_average` (NUMERIC 5,2), `rating_count`; `estimated_playtime_hours`; `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` (hours, converted from IGDB seconds); `igdb_slug`, `igdb_platform_ids` (JSON array), `igdb_platform_names` (JSON array); `game_modes`, `themes`, `player_perspectives` (comma-separated strings); `game_metadata` (JSON text); `last_updated` (IGDB metadata refresh timestamp); `created_at` (TIMESTAMPTZ, NOT NULL DEFAULT now() — when the game was first inserted into this database; passed explicitly on upsert to preserve the value across metadata refreshes, which only update `last_updated`). **HowLongToBeat field mapping:** IGDB's `game_time_to_beats` endpoint returns fields named `hastily`, `normally`, `completely` (in seconds). These map to `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` respectively (converted to hours). This mapping is non-obvious and must be replicated exactly from the Python `map_igdb_time_to_beat_to_db_fields()` function. |
 | `user_games` | UUID PK; `play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`; UNIQUE(user_id, game_id) |
 | `user_game_platforms` | UUID PK; `platform`, `storefront`; `store_game_id`, `store_url`; `is_available`, `hours_played`, `ownership_status`, `acquired_date`; `original_platform_name`, `original_storefront_name`; `external_game_id`, `sync_from_source`; UNIQUE(user_game_id, platform, storefront) |
-| `platforms` | TEXT PK (slug); `display_name`, `icon_url`, `default_storefront` (FK → storefronts.name, nullable), `is_active`, `source` (`official`\|`custom`), `version_added`; seed data loaded on first-run admin creation |
-| `storefronts` | TEXT PK (slug); `display_name`, `icon_url`, `base_url`, `is_active`, `source` (`official`\|`custom`), `version_added`; seed data loaded on first-run admin creation |
+| `platforms` | TEXT PK (slug); `display_name`, `icon_url`, `default_storefront` (FK → storefronts.name, nullable); data inserted by migration |
+| `storefronts` | TEXT PK (slug); `display_name`, `icon_url`, `base_url`; data inserted by migration |
 | `platform_storefronts` | Composite PK (`platform` TEXT FK, `storefront` TEXT FK); many-to-many join table between platforms and storefronts |
 | `tags` | UUID PK; per-user |
 | `user_game_tags` | UUID PK; join table for user_games ↔ tags |
@@ -553,9 +536,7 @@ The initial migration must create all of the following tables (derived from Pyth
 
 `platforms` and `storefronts` use a TEXT slug as their primary key (e.g. `"pc-windows"`, `"steam"`). The `platform_storefronts` join table records which storefronts are valid for a given platform (many-to-many). `platforms.default_storefront` is a nullable FK into `storefronts` for the most common storefront for that platform.
 
-Both tables have a `source` field (`official` | `custom`) to distinguish seed data from user-created entries, and a `version_added` field for official entries (used to determine whether a newer seed data push should update the row). Only rows with `source = 'official'` are touched by the seed/reseed mechanism; user-created entries are preserved.
-
-These tables are managed entirely by admin-only API endpoints (see Platform/Storefront Admin API below). Regular users can read them but cannot modify them.
+Both tables are **static reference data** — they are populated entirely by migration `INSERT` statements and are never modified at runtime. There is no admin API for managing them and no seed mechanism. To add a new platform or storefront, add a migration. To retire one (rare), write a migration that migrates any affected `user_game_platforms` rows first, then deletes the entry. All users are read-only consumers of this data.
 
 #### External Games
 
@@ -885,7 +866,7 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window. If `initAppState()` itself fails (e.g. `determineState()` errors immediately after a successful ping), log the error and continue with state as `DBUnavailable`; `StartDBProbe` will retry on the next successful ping.
 2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
 3. `GET /setup` serves a self-contained static HTML page (inlined CSS + JS, no Vite build, same pattern as `ui/migrate/`). If `needsSetup=false`, it redirects to `/` — the gate works in both directions.
-4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race) and idempotently seeds platforms/storefronts. On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.
+4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race). On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.
 5. `POST /api/auth/setup/restore` — **deferred to Phase 3**.
 6. Setup endpoints are JWT-exempt (no user exists yet to authenticate as).
 7. Workers and the gocron scheduler are held in a gate-loop goroutine (same `shutdownCtx` as HTTP graceful shutdown) that polls `State() == Ready && !NeedsSetup()` every 2 seconds. They start only after setup is complete. This prevents scheduled tasks from running against an empty database.
@@ -1311,7 +1292,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - golang-migrate + migration state machine + browser migration UI (SSE)
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
 - Static file routes: `/static/cover_art/*` and `/static/logos/*`
-- JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin, seed data); `needsSetup` flag cleared after first admin created
+- JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
 - `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim, return profile. Shares the same raw `pgxpool` approach as other auth endpoints (not sqlc; see Database Layer).
 - Health/status endpoint
 - `internal/filter/` package: filterBuilder + criterion handlers
