@@ -14,6 +14,7 @@
     git
     go-task
     gnumake
+    slumber
     sqlc
     golangci-lint
     nodejs_24
