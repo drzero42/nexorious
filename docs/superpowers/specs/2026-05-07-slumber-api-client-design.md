@@ -112,7 +112,7 @@ Six folders. `bootstrap` sorts first; the remainder are alphabetical by domain.
 ## Typical Developer Workflow
 
 1. Start the server: `make && ./nexorious`
-2. Open Slumber: `slumber` (auto-discovers `slumber.yaml` at project root)
+2. Open Slumber: `slumber`
 3. Select `local` profile
 4. Run `bootstrap/run-migrations`
 5. Run `bootstrap/migration-status` until status is `ready`
@@ -154,8 +154,6 @@ The project includes a [Slumber](https://github.com/LucasPickering/slumber) coll
 ```bash
 slumber
 ```
-
-Run from the project root. Slumber auto-discovers `slumber.yaml`.
 
 **First-time setup (fresh database):**
 
