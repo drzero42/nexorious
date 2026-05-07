@@ -41,6 +41,11 @@ sql:
 
 **`pgtype.Numeric` note:** pgx/v5 maps PostgreSQL `NUMERIC` columns to `pgtype.Numeric` in generated structs by default. Columns affected: `rating_average`, `hours_played`, `howlongtobeat_main/extra/completionist`, `personal_rating` (INT, not affected). Handler code must convert `pgtype.Numeric` to `float64` (or `*float64`) when projecting into JSON response types. This is expected and is handled at the response-projection layer, not in the query layer.
 
+**`Platform` and `Storefront` field shape note:** Platforms and storefronts are static reference data. Their generated structs reflect the slimmed-down schema from the static-platforms-storefronts design spec. Key points for handler code:
+- The field is `Icon *string` (filename only, e.g. `"pc-windows.svg"`), **not** `IconUrl`. Handlers that return platform/storefront data must construct the full URL as `/logos/platforms/<slug>/<icon>` (or `/logos/storefronts/<slug>/<icon>`). Do **not** prefix with `config.StaticURL` — logos are frontend assets served by Vite/the embedded SPA, not by the Go static file route. `config.StaticURL` is for cover art only.
+- `IgdbPlatformId *int32` — nullable; used by the sync service (Phase 3+) to map IGDB platform IDs to local platform slugs. Phase 2 handlers do not need to read or write this field.
+- The following columns from the original Python schema **do not exist** in the generated structs: `IsActive`, `Source`, `VersionAdded`, `CreatedAt`, `UpdatedAt`. Do not reference them.
+
 ---
 
 ## Query files
@@ -232,11 +237,11 @@ DELETE FROM user_game_platforms WHERE id = $1;
 
 ### `internal/db/queries/platforms.sql`
 
-Read-only queries only. Admin write queries (Create, Update, Delete, Upsert for seed) are deferred to the Platform Admin API spec.
+Read-only queries only. Platforms are static reference data — all write operations happen via migrations, not at runtime.
 
 ```sql
--- name: ListActivePlatforms :many
-SELECT * FROM platforms WHERE is_active = true ORDER BY display_name;
+-- name: ListPlatforms :many
+SELECT * FROM platforms ORDER BY display_name;
 
 -- name: GetPlatform :one
 SELECT * FROM platforms WHERE name = $1;
@@ -246,11 +251,11 @@ SELECT * FROM platforms WHERE name = $1;
 
 ### `internal/db/queries/storefronts.sql`
 
-Read-only queries only. Admin write queries are deferred to the Platform Admin API spec.
+Read-only queries only. Storefronts are static reference data — all write operations happen via migrations, not at runtime.
 
 ```sql
--- name: ListActiveStorefronts :many
-SELECT * FROM storefronts WHERE is_active = true ORDER BY display_name;
+-- name: ListStorefronts :many
+SELECT * FROM storefronts ORDER BY display_name;
 
 -- name: GetStorefront :one
 SELECT * FROM storefronts WHERE name = $1;
@@ -260,18 +265,14 @@ SELECT * FROM storefronts WHERE name = $1;
 
 ### `internal/db/queries/platform_storefronts.sql`
 
+Read-only. The `platform_storefronts` join table is static reference data populated by the initial migration — there are no runtime mutation queries.
+
 ```sql
 -- name: ListStorefrontsForPlatform :many
 SELECT s.* FROM storefronts s
 JOIN platform_storefronts ps ON ps.storefront = s.name
 WHERE ps.platform = $1
 ORDER BY s.display_name;
-
--- name: AddPlatformStorefront :exec
-INSERT INTO platform_storefronts (platform, storefront) VALUES ($1, $2);
-
--- name: RemovePlatformStorefront :exec
-DELETE FROM platform_storefronts WHERE platform = $1 AND storefront = $2;
 ```
 
 ---
@@ -364,3 +365,4 @@ After `make sqlc` succeeds:
 - Any API handler code.
 - Phase 3+ query files (`jobs`, `job_items`, `pending_tasks`, `external_games`, `user_sync_configs`, `backup_config`).
 - Auth query files (`users`, `user_sessions`) — auth uses raw `pool.QueryRow` per the master spec.
+- Platform/storefront write queries — there are none. Platforms and storefronts are static reference data managed exclusively via migrations.
