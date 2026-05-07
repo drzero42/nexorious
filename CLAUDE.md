@@ -183,3 +183,6 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 - **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
+- **`emit_pointers_for_null_fields` not supported in sqlc v1.30.0** — causes a yaml parse failure; nullable columns use `pgtype.Text`/`pgtype.Numeric`/etc. instead of `*string`/`*float64`. Handle the conversion at the response-projection layer in handlers.
+- **sqlc ILIKE concatenations need named params** — `'%' || $1 || '%'` generates an anonymous `Column1 pgtype.Text` field. Use `@paramname` syntax: `'%' || @query || '%'` (positional `$N` params after named ones reset to `$1`).
+- **`internal/db/gen/models.go` contains ALL schema tables** — sqlc scans the full migration schema, so Phase 3+ structs (`Job`, `BackupConfig`, etc.) appear in the generated package even without query files. Expected behavior.
