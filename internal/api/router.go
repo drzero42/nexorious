@@ -152,6 +152,10 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
+		authGroup.PUT("/me", ah.HandleUpdateMe)
+		authGroup.PUT("/change-password", ah.HandleChangePassword)
+		authGroup.GET("/username/check/:username", ah.HandleCheckUsername)
+		authGroup.PUT("/username", ah.HandleChangeUsername)
 
 		// Platform and storefront routes (all JWT-protected)
 		ph := NewPlatformsHandler(db)

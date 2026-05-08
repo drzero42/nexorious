@@ -74,6 +74,53 @@ requests:
           type: bearer
           token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
 
+      update_me:
+        name: Update Preferences
+        method: PUT
+        url: "{{base_url}}/api/auth/me"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            preferences:
+              theme: dark
+              language: en
+
+      change_password:
+        name: Change Password
+        method: PUT
+        url: "{{base_url}}/api/auth/change-password"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            current_password: "{{password}}"
+            new_password: newpass1234
+
+      check_username:
+        name: Check Username
+        method: GET
+        url: "{{base_url}}/api/auth/username/check/newname"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      change_username:
+        name: Change Username
+        method: PUT
+        url: "{{base_url}}/api/auth/username"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            new_username: newadmin
+
   health:
     name: Health
     requests:
