@@ -171,7 +171,7 @@ type messageResponse struct {
 }
 ```
 
-**Username uniqueness:** Usernames are case-sensitive (stored and displayed as entered) but unique case-insensitively. The `users` table needs a `UNIQUE(LOWER(username))` constraint. The initial migration has a plain `UNIQUE(username)` — add a migration to drop that and create `CREATE UNIQUE INDEX users_username_lower_idx ON users (LOWER(username))` instead. All availability checks use `LOWER()` comparison, and the handler catches the unique constraint violation on UPDATE as a fallback for TOCTOU races.
+**Username uniqueness:** Usernames are case-sensitive (stored and displayed as entered) but unique case-insensitively. The `users` table needs a `UNIQUE(LOWER(username))` constraint. The initial migration currently has a plain `UNIQUE(username)` — update it in-place to use `CREATE UNIQUE INDEX users_username_lower_idx ON users (LOWER(username))` instead (no separate migration needed since the initial migration hasn't shipped). All availability checks use `LOWER()` comparison, and the handler catches the unique constraint violation on UPDATE as a fallback for TOCTOU races.
 
 ## Testing
 

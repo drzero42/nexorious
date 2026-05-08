@@ -337,7 +337,7 @@ POST /api/auth/logout            Invalidates server-side UserSession row
 GET  /api/auth/me                Current user profile; also used by frontend as token-validity check on load
 PUT  /api/auth/me                Update user preferences
 
-PUT  /api/auth/change-password   Invalidates all sessions on success; user must re-login
+PUT  /api/auth/change-password   Invalidates all other sessions; current session is preserved
 GET  /api/auth/username/check/:username   Returns {available: bool}; no side effects
 PUT  /api/auth/username
 
@@ -1027,7 +1027,7 @@ All `/api/auth/admin/*` endpoints require the `is_admin` claim. An admin cannot 
 
 `GET /api/auth/admin/users/:id/deletion-impact` returns a preview of what will be deleted. The response does **not** include a `total_wishlist_items` field — the Wishlist feature is not implemented in the Go port (see Out of Scope). The Python version returned this field; the frontend will be updated to remove that count from the deletion-impact display.
 
-`UserSession` stores `token_hash` and `refresh_token_hash` (bcrypt cost 12, defined as `const bcryptCost = 12` in `internal/api/auth.go` and shared by all password-hashing call sites), plus `user_agent` and `ip_address` for audit purposes.
+`UserSession` stores `token_hash` and `refresh_token_hash` (SHA-256 hex digests via `auth.HashToken`), plus `user_agent` and `ip_address` for audit purposes. Bcrypt (`const bcryptCost = 12` in `internal/api/auth.go`) is used only for password hashing.
 
 ---
 
