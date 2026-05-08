@@ -12,3 +12,5 @@ ui/dist/
 
 # Worktrees
 .worktrees/
+
+storage

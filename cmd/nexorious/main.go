@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
 // Injected at build time via -ldflags.
@@ -171,7 +172,8 @@ func main() {
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg, migrator, db, resolvedDatabaseURL)
+	igdbClient := igdb.NewClient(cfg)
+	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient)
 
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

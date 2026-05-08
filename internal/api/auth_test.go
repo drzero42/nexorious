@@ -113,7 +113,7 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "")
+	return api.New(cfg, m, db, "", nil)
 }
 
 // testCfg returns a minimal config suitable for api_test tests.
@@ -320,7 +320,7 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	db := setupAuthTestDB(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m, db, "")
+	e := api.New(cfg, m, db, "", nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")

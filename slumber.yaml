@@ -214,6 +214,59 @@ requests:
           type: bearer
           token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
 
+  games:
+    name: Games
+    requests:
+      list_games:
+        name: List Games
+        method: GET
+        url: "{{base_url}}/api/games?page=1&per_page=20"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      get_game:
+        name: Get Game
+        method: GET
+        url: "{{base_url}}/api/games/0"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      search_igdb:
+        name: Search IGDB
+        method: POST
+        url: "{{base_url}}/api/games/search/igdb"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            query: "The Witcher 3"
+            limit: 10
+
+      get_igdb_game:
+        name: Get IGDB Game
+        method: GET
+        url: "{{base_url}}/api/games/igdb/1942"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      import_igdb:
+        name: Import from IGDB
+        method: POST
+        url: "{{base_url}}/api/games/igdb-import"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            igdb_id: 1942
+            download_cover_art: true
+
   tags:
     name: Tags
     requests:

@@ -1,0 +1,391 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
+)
+
+// GamesHandler handles /api/games endpoints.
+type GamesHandler struct {
+	db   *bun.DB
+	igdb *igdb.Client
+	cfg  *config.Config
+}
+
+// NewGamesHandler creates a GamesHandler.
+func NewGamesHandler(db *bun.DB, igdbClient *igdb.Client, cfg *config.Config) *GamesHandler {
+	return &GamesHandler{db: db, igdb: igdbClient, cfg: cfg}
+}
+
+// GameListResponse is the paginated response for game listings.
+type GameListResponse struct {
+	Games   []models.Game `json:"games"`
+	Total   int           `json:"total"`
+	Page    int           `json:"page"`
+	PerPage int           `json:"per_page"`
+	Pages   int           `json:"pages"`
+}
+
+// IGDBGameCandidate is the response shape for IGDB search results.
+type IGDBGameCandidate struct {
+	IgdbID                      int      `json:"igdb_id"`
+	IgdbSlug                    string   `json:"igdb_slug"`
+	Title                       string   `json:"title"`
+	ReleaseDate                 *string  `json:"release_date"`
+	CoverArtUrl                 *string  `json:"cover_art_url"`
+	Description                 *string  `json:"description"`
+	Platforms                   []string `json:"platforms"`
+	HowlongtobeatMain           *float64 `json:"howlongtobeat_main"`
+	HowlongtobeatExtra          *float64 `json:"howlongtobeat_extra"`
+	HowlongtobeatCompletionist  *float64 `json:"howlongtobeat_completionist"`
+}
+
+// IGDBSearchResponse wraps IGDB search results.
+type IGDBSearchResponse struct {
+	Games []IGDBGameCandidate `json:"games"`
+	Total int                 `json:"total"`
+}
+
+// IGDBSearchRequest is the request body for POST /api/games/search/igdb.
+type IGDBSearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+// IGDBImportRequest is the request body for POST /api/games/igdb-import.
+type IGDBImportRequest struct {
+	IgdbID          int                    `json:"igdb_id"`
+	CustomOverrides map[string]any `json:"custom_overrides"`
+	DownloadCoverArt *bool                 `json:"download_cover_art"`
+}
+
+// allowedSortFields is the whitelist of sortable columns.
+var allowedSortFields = map[string]bool{
+	"title":          true,
+	"release_date":   true,
+	"created_at":     true,
+	"rating_average": true,
+}
+
+// HandleListGames handles GET /api/games.
+func (h *GamesHandler) HandleListGames(c *echo.Context) error {
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+
+	q := c.QueryParam("q")
+	genre := c.QueryParam("genre")
+	developer := c.QueryParam("developer")
+	publisher := c.QueryParam("publisher")
+	releaseYearStr := c.QueryParam("release_year")
+	sortBy := c.QueryParam("sort_by")
+	sortOrder := c.QueryParam("sort_order")
+
+	if sortBy == "" {
+		sortBy = "title"
+	}
+	if !allowedSortFields[sortBy] {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "invalid sort_by field: " + sortBy,
+		})
+	}
+	if sortOrder == "" {
+		sortOrder = "asc"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "sort_order must be 'asc' or 'desc'",
+		})
+	}
+
+	ctx := c.Request().Context()
+	query := h.db.NewSelect().Model((*models.Game)(nil))
+
+	if q != "" {
+		likeQ := "%" + q + "%"
+		query = query.Where("title ILIKE ? OR description ILIKE ?", likeQ, likeQ)
+	}
+	if genre != "" {
+		query = query.Where("genre ILIKE ?", "%"+genre+"%")
+	}
+	if developer != "" {
+		query = query.Where("developer ILIKE ?", "%"+developer+"%")
+	}
+	if publisher != "" {
+		query = query.Where("publisher ILIKE ?", "%"+publisher+"%")
+	}
+	if releaseYearStr != "" {
+		if year, err := strconv.Atoi(releaseYearStr); err == nil {
+			query = query.Where("EXTRACT(year FROM release_date) = ?", year)
+		}
+	}
+
+	total, err := query.Count(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+	}
+
+	orderExpr := sortBy + " " + strings.ToUpper(sortOrder)
+	offset := (page - 1) * perPage
+
+	var games []models.Game
+	err = query.OrderExpr(orderExpr).Offset(offset).Limit(perPage).Scan(ctx, &games)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+	}
+	if games == nil {
+		games = []models.Game{}
+	}
+
+	pages := (total + perPage - 1) / perPage
+
+	return c.JSON(http.StatusOK, GameListResponse{
+		Games:   games,
+		Total:   total,
+		Page:    page,
+		PerPage: perPage,
+		Pages:   pages,
+	})
+}
+
+// HandleGetGame handles GET /api/games/:id.
+func (h *GamesHandler) HandleGetGame(c *echo.Context) error {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid game ID"})
+	}
+
+	var game models.Game
+	err = h.db.NewSelect().Model(&game).Where("id = ?", id).Scan(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Game not found"})
+	}
+
+	return c.JSON(http.StatusOK, game)
+}
+
+// HandleSearchIGDB handles POST /api/games/search/igdb.
+func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
+	var req IGDBSearchRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.Query == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "query is required"})
+	}
+	if req.Limit <= 0 {
+		req.Limit = 10
+	}
+	if req.Limit > 50 {
+		req.Limit = 50
+	}
+
+	results, err := h.igdb.SearchGames(c.Request().Context(), req.Query, req.Limit)
+	if err != nil {
+		return h.mapIGDBError(c, err)
+	}
+
+	candidates := make([]IGDBGameCandidate, len(results))
+	for i, md := range results {
+		candidates[i] = metadataToCandidate(md)
+	}
+
+	return c.JSON(http.StatusOK, IGDBSearchResponse{
+		Games: candidates,
+		Total: len(candidates),
+	})
+}
+
+// HandleGetIGDBGame handles GET /api/games/igdb/:igdb_id.
+func (h *GamesHandler) HandleGetIGDBGame(c *echo.Context) error {
+	igdbIDStr := c.Param("igdb_id")
+	igdbID, err := strconv.Atoi(igdbIDStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid IGDB ID"})
+	}
+
+	md, err := h.igdb.GetGameByID(c.Request().Context(), igdbID)
+	if err != nil {
+		return h.mapIGDBError(c, err)
+	}
+
+	candidate := metadataToCandidate(*md)
+	return c.JSON(http.StatusOK, IGDBSearchResponse{
+		Games: []IGDBGameCandidate{candidate},
+		Total: 1,
+	})
+}
+
+// HandleImportFromIGDB handles POST /api/games/igdb-import.
+func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
+	var req IGDBImportRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.IgdbID == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "igdb_id is required"})
+	}
+
+	ctx := c.Request().Context()
+
+	md, err := h.igdb.FetchFullMetadata(ctx, req.IgdbID)
+	if err != nil {
+		return h.mapIGDBError(c, err)
+	}
+
+	// Check if game already exists by igdb_slug
+	var existing models.Game
+	existsErr := h.db.NewSelect().Model(&existing).Where("igdb_slug = ?", md.IgdbSlug).Scan(ctx)
+	isNew := existsErr != nil
+
+	game := h.metadataToGame(md)
+
+	// Apply custom overrides
+	if req.CustomOverrides != nil {
+		if title, ok := req.CustomOverrides["title"].(string); ok && title != "" {
+			game.Title = title
+		}
+		if desc, ok := req.CustomOverrides["description"].(string); ok {
+			game.Description = &desc
+		}
+		if genre, ok := req.CustomOverrides["genre"].(string); ok {
+			game.Genre = &genre
+		}
+		if dev, ok := req.CustomOverrides["developer"].(string); ok {
+			game.Developer = &dev
+		}
+		if pub, ok := req.CustomOverrides["publisher"].(string); ok {
+			game.Publisher = &pub
+		}
+	}
+
+	// Download cover art
+	downloadCover := req.DownloadCoverArt == nil || *req.DownloadCoverArt
+	if downloadCover && h.igdb != nil && md.CoverArtURL != nil {
+		imageID := extractImageID(*md.CoverArtURL)
+		if imageID != "" {
+			localURL, dlErr := h.igdb.DownloadCoverArt(ctx, imageID, h.cfg.StoragePath)
+			if dlErr == nil && localURL != "" {
+				game.CoverArtUrl = &localURL
+			}
+		}
+	}
+
+	if isNew {
+		_, err = h.db.NewInsert().Model(game).Returning("id").Exec(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create game"})
+		}
+		return c.JSON(http.StatusCreated, game)
+	}
+
+	game.ID = existing.ID
+	game.CreatedAt = existing.CreatedAt
+	_, err = h.db.NewUpdate().Model(game).WherePK().Exec(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update game"})
+	}
+	return c.JSON(http.StatusOK, game)
+}
+
+func (h *GamesHandler) mapIGDBError(c *echo.Context, err error) error {
+	switch {
+	case errors.Is(err, igdb.ErrIGDBNotConfigured):
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+	case errors.Is(err, igdb.ErrGameNotFound):
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Game not found in IGDB"})
+	case errors.Is(err, igdb.ErrTwitchAuth):
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "IGDB authentication failed"})
+	default:
+		return c.JSON(http.StatusBadGateway, map[string]string{"error": "IGDB API error: " + err.Error()})
+	}
+}
+
+func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
+	platforms := md.PlatformNames
+	if platforms == nil {
+		platforms = []string{}
+	}
+	return IGDBGameCandidate{
+		IgdbID:                     md.IgdbID,
+		IgdbSlug:                   md.IgdbSlug,
+		Title:                      md.Title,
+		ReleaseDate:                md.ReleaseDate,
+		CoverArtUrl:                md.CoverArtURL,
+		Description:                md.Description,
+		Platforms:                  platforms,
+		HowlongtobeatMain:          md.HowlongtobeatMain,
+		HowlongtobeatExtra:         md.HowlongtobeatExtra,
+		HowlongtobeatCompletionist: md.HowlongtobeatCompletionist,
+	}
+}
+
+func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
+	now := time.Now()
+	game := &models.Game{
+		Title:                      md.Title,
+		Description:                md.Description,
+		Genre:                      md.Genre,
+		Developer:                  md.Developer,
+		Publisher:                  md.Publisher,
+		CoverArtUrl:                md.CoverArtURL,
+		RatingAverage:              md.RatingAverage,
+		RatingCount:                md.RatingCount,
+		HowlongtobeatMain:          md.HowlongtobeatMain,
+		HowlongtobeatExtra:         md.HowlongtobeatExtra,
+		HowlongtobeatCompletionist: md.HowlongtobeatCompletionist,
+		IgdbSlug:                   &md.IgdbSlug,
+		GameModes:                  md.GameModes,
+		Themes:                     md.Themes,
+		PlayerPerspectives:         md.PlayerPerspectives,
+		LastUpdated:                now,
+		CreatedAt:                  now,
+	}
+
+	if md.ReleaseDate != nil {
+		t, err := time.Parse("2006-01-02", *md.ReleaseDate)
+		if err == nil {
+			game.ReleaseDate = &t
+		}
+	}
+
+	if len(md.PlatformIDs) > 0 {
+		ids := make([]string, len(md.PlatformIDs))
+		for i, id := range md.PlatformIDs {
+			ids[i] = strconv.Itoa(id)
+		}
+		s := strings.Join(ids, ",")
+		game.IgdbPlatformIds = &s
+	}
+	if len(md.PlatformNames) > 0 {
+		s := strings.Join(md.PlatformNames, ",")
+		game.IgdbPlatformNames = &s
+	}
+
+	return game
+}
+
+func extractImageID(coverURL string) string {
+	parts := strings.Split(coverURL, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	last := parts[len(parts)-1]
+	return strings.TrimSuffix(last, ".jpg")
+}

@@ -15,12 +15,13 @@ import (
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/ui"
 )
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client) *echo.Echo {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -93,12 +94,12 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL)
+	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -176,6 +177,15 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		tagsGroup.POST("", th.HandleCreateTag)
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
+
+		// Games routes (all JWT-protected)
+		gh := NewGamesHandler(db, igdbClient, cfg)
+		gamesGroup := e.Group("/api/games", auth.JWTMiddleware(cfg.SecretKey, db))
+		gamesGroup.GET("", gh.HandleListGames)
+		gamesGroup.GET("/:id", gh.HandleGetGame)
+		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
+		gamesGroup.GET("/igdb/:igdb_id", gh.HandleGetIGDBGame)
+		gamesGroup.POST("/igdb-import", gh.HandleImportFromIGDB)
 	}
 
 	// Static cover art files from disk
