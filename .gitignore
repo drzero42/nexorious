@@ -9,3 +9,6 @@ ui/dist/
 .devenv.flake.nix
 
 .env
+
+# Worktrees
+.worktrees/
