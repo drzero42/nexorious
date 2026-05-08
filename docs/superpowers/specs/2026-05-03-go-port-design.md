@@ -271,7 +271,7 @@ nexorious-go/
 │   ├── auth/
 │   │   └── jwt.go               # Token generation, validation, Echo middleware
 │   ├── filter/
-│   │   ├── builder.go           # filterBuilder: accumulates JOINs, WHERE, HAVING
+│   │   ├── builder.go           # query builder: accumulates JOINs, WHERE, HAVING via Bun SelectQuery
 │   │   └── handlers.go          # Criterion handlers for each filter type
 │   └── ratelimit/
 │       ├── limiter.go           # Interface: Acquire(ctx context.Context) error
@@ -560,7 +560,37 @@ if len(f.Tags) > 0 {
 }
 ```
 
-The `internal/filter/` package provides a `filterBuilder` abstraction that accumulates Bun `SelectQuery` modifiers. Each criterion handler is a small function that conditionally calls `.Where()`, `.Join()`, or `.Having()` on the query.
+Dynamic filter queries for `GET /api/user-games` are built by composing criterion functions in `internal/filter/`. Each function conditionally calls `.Where()`, `.Join()`, or `.Having()` on the Bun `SelectQuery`. The full list of supported filter parameters is below.
+
+### User-Games Filter Criteria
+
+`GET /api/user-games` accepts the following optional filter parameters:
+
+| Parameter | Type | Join required | SQL logic |
+|---|---|---|---|
+| `play_status` | `string` | none | `user_games.play_status = ?` |
+| `ownership_status` | `string` | `user_game_platforms` | `user_game_platforms.ownership_status = ?` |
+| `is_loved` | `bool` | none | `user_games.is_loved = ?` |
+| `rating_min` | `float` | none | `user_games.personal_rating >= ?` |
+| `rating_max` | `float` | none | `user_games.personal_rating <= ?` |
+| `has_notes` | `bool` | none | `personal_notes IS NOT NULL AND personal_notes != ''` (true) or `IS NULL OR = ''` (false) |
+| `platform` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL (see below) |
+| `storefront` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL (see below) |
+| `genre` | `[]string` | `games` | OR of `games.genre ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `theme` | `[]string` | `games` | OR of `games.themes ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE '%' \|\| ? \|\| '%'` for each value |
+| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` — values are UUID strings |
+| `q` | `string` | `games` | `games.title ILIKE ? OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE ?)` |
+
+**`"unknown"` sentinel for platform/storefront:** The value `"unknown"` means "games with no platform/storefront set":
+- `platform=["unknown"]` → `user_game_platforms.platform IS NULL`
+- `platform=["steam"]` → `user_game_platforms.platform IN ('steam')`
+- `platform=["steam","unknown"]` → `user_game_platforms.platform = 'steam' OR user_game_platforms.platform IS NULL`
+
+Same logic applies to `storefront`.
+
+**Security:** The `internal/filter/` package never adds a `user_id` scope. The caller (user-games handler) is responsible for adding `WHERE user_games.user_id = ?` to the base query before applying filters. Omitting this would expose all users' games to any authenticated user.
 
 **Auth queries** use `db.NewRaw(...)` directly — same isolation rationale as before; auth must not be coupled to the model structs package.
 
@@ -581,7 +611,7 @@ The `resolveDBURL` function (see Configuration) produces the DSN passed to `pgdr
 
 ### Sort Field Note
 
-The Python version has a known issue where sort fields requiring a JOIN must be kept in sync between backend and frontend manually. In the Go version, dynamic sort fields in the user_games list (which uses the filterBuilder) are validated against an allowlist at handler entry. Bun's query builder makes sort field injection safe — only allowlisted field names are passed to `.OrderExpr()`.
+The Python version has a known issue where sort fields requiring a JOIN must be kept in sync between backend and frontend manually. In the Go version, dynamic sort fields in the user_games list are validated against an allowlist at handler entry. Bun's query builder makes sort field injection safe — only allowlisted field names are passed to `.OrderExpr()`.
 
 ### Schema: Key ID Types
 
@@ -685,9 +715,9 @@ The Python backend accepts a `fuzzy_threshold` query parameter on both `GET /api
 
 The Go port uses `ILIKE` for text search on both list endpoints. The `fuzzy_threshold` parameter is not implemented on either. `pg_trgm` is not needed and is not enabled.
 
-**`GET /api/games` (`q` parameter):** handled by a Bun `db.NewSelect()` query on the `games` table, searching `title OR description` (OR logic, description null-guarded) with a fixed limit and no pagination. **Not** used by `GET /api/user-games` — that endpoint is handled entirely by the Bun `filterBuilder`.
+**`GET /api/games` (`q` parameter):** handled by a Bun `db.NewSelect()` query on the `games` table, searching `title OR description` (OR logic, description null-guarded) with a fixed limit and no pagination. **Not** used by `GET /api/user-games` — that endpoint is handled entirely by the `internal/filter/` criteria functions.
 
-**`GET /api/user-games` (`q` parameter):** handled by the Bun `filterBuilder` in `internal/filter/`. The filter criterion adds a `WHERE (game.title ILIKE q OR (user_game.personal_notes IS NOT NULL AND user_game.personal_notes ILIKE q))` condition (title and personal notes; description is not searched on this endpoint).
+**`GET /api/user-games` (`q` parameter):** handled by the `q` criterion in `internal/filter/`. Adds a `WHERE (game.title ILIKE q OR (user_game.personal_notes IS NOT NULL AND user_game.personal_notes ILIKE q))` condition (title and personal notes; description is not searched on this endpoint).
 
 ### Context 2: IGDB search result ranking (`POST /api/games/search/igdb`)
 
@@ -1394,7 +1424,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
 - `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim via `db.NewRaw(...)`, return profile. Auth queries use raw Bun SQL (not model-layer ORM) to keep auth isolated from the models package.
 - Health/status endpoint
-- `internal/filter/` package: filterBuilder + criterion handlers
+- `internal/filter/` package: query builder + criterion handlers
 
 **Checkpoint:** binary starts, browser shows migration UI on first run, React app loads after migration, setup completes end-to-end (including SPA redirect), login works.
 
@@ -1405,7 +1435,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 
 - Bun model structs (`internal/db/models/`) for all Phase 2 tables: games, user_games, user_game_platforms, platforms, storefronts, platform_storefronts, tags, user_game_tags
 - Games API (`/api/games`, `/api/games/:id`, search, IGDB import, metadata endpoints)
-- User games API (list with dynamic filtering via filterBuilder + Bun SelectQuery, sort, CRUD, platform associations)
+- User games API (list with dynamic filtering via `internal/filter/` criteria functions, sort, CRUD, platform associations)
 - IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
 - Platforms and tags read endpoints (JWT required; read-only — no write/admin endpoints; see static platforms spec)
 - User-games filter-options / genres / stats (`GET /api/user-games/stats`) / ids endpoints

@@ -423,6 +423,40 @@ func applyPlayStatusFilter(fb *filterBuilder, status string) {
 }
 ```
 
+### Criteria to implement (`criteria.go`)
+
+One function per filter in `internal/filter/criteria.go`. Each receives a `*filterBuilder` and the criterion value. If the value is zero/nil/empty it must be a no-op.
+
+| Parameter | Type | Join required | SQL logic |
+|---|---|---|---|
+| `play_status` | `string` | none | `user_games.play_status = ?` |
+| `ownership_status` | `string` | `user_game_platforms` | `user_game_platforms.ownership_status = ?` |
+| `is_loved` | `*bool` | none | `user_games.is_loved = ?` |
+| `rating_min` | `*float64` | none | `user_games.personal_rating >= ?` |
+| `rating_max` | `*float64` | none | `user_games.personal_rating <= ?` |
+| `has_notes` | `*bool` | none | `personal_notes IS NOT NULL AND personal_notes != ''` (true) or `IS NULL OR = ''` (false) |
+| `platform` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL (see below) |
+| `storefront` | `[]string` | `user_game_platforms` | Multi-value; `"unknown"` maps to NULL (see below) |
+| `genre` | `[]string` | `games` | OR of `games.genre ILIKE '%' || ? || '%'` for each value |
+| `game_mode` | `[]string` | `games` | OR of `games.game_modes ILIKE '%' || ? || '%'` for each value |
+| `theme` | `[]string` | `games` | OR of `games.themes ILIKE '%' || ? || '%'` for each value |
+| `player_perspective` | `[]string` | `games` | OR of `games.player_perspectives ILIKE '%' || ? || '%'` for each value |
+| `tag` | `[]string` | none (subquery) | `user_games.id IN (SELECT user_game_id FROM user_game_tags WHERE tag_id IN (...))` |
+| `q` | `string` | `games` | `games.title ILIKE ? OR (user_games.personal_notes IS NOT NULL AND user_games.personal_notes ILIKE ?)` |
+
+JOIN conditions:
+- `user_game_platforms`: `LEFT JOIN user_game_platforms ugp ON ugp.user_game_id = ug.id`
+- `games`: `LEFT JOIN games g ON g.id = ug.game_id`
+
+**`"unknown"` sentinel for platform/storefront:** The value `"unknown"` means "games with no platform/storefront set":
+- `platform=["unknown"]` → `ugp.platform IS NULL`
+- `platform=["steam"]` → `ugp.platform IN ('steam')`
+- `platform=["steam","unknown"]` → `ugp.platform = 'steam' OR ugp.platform IS NULL`
+
+Same logic applies to `storefront`. Use `WhereGroup` with `WhereOr` inside for the mixed case.
+
+**Security:** The filterBuilder never adds a `user_id` scope. The caller (user-games handler) is responsible for adding `WHERE ug.user_id = ?` to the base query before calling `Apply()`. Omitting this would expose all users' games to any authenticated user.
+
 ### Transactions
 
 ```go
@@ -488,6 +522,7 @@ internal/db/models/user_game_tag.go
 internal/db/models/user.go
 internal/db/models/user_session.go
 internal/filter/builder.go       (new — see Dynamic filter queries section)
+internal/filter/criteria.go      (new — see Criteria to implement section)
 ```
 
 ## Files to Modify
