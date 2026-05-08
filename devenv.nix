@@ -5,7 +5,6 @@
   env = {
     ENABLE_LSP_TOOL = 1; # Claude Code workaround for LSPs
     CGO_ENABLED = 0;
-    DATABASE_URL = "postgresql:///nexorious";
     SECRET_KEY = "dev-only-insecure-secret-do-not-use-in-production";
   };
 
@@ -73,6 +72,8 @@
     export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
     export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="/run/user/$(id -u)/podman/podman.sock"
     export TESTCONTAINERS_RYUK_DISABLED="true"
+    # Bun pgdriver doesn't inherit PGHOST/PGUSER like libpq — build the full DSN at shell time.
+    export DATABASE_URL="postgresql://$USER@/nexorious?host=$PGHOST/.s.PGSQL.5432&sslmode=disable"
   '';
 
   # See full reference at https://devenv.sh/reference/options/
