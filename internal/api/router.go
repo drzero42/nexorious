@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
@@ -20,7 +20,7 @@ import (
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool, resolvedDatabaseURL string) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string) *echo.Echo {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -92,13 +92,13 @@ func New(cfg *config.Config, migrator *migrate.Migrator, pool *pgxpool.Pool, res
 		}))
 	}
 
-	mh := migrate.NewHandler(migrator, pool)
-	registerRoutes(e, cfg, mh, pool, migrator, resolvedDatabaseURL)
+	mh := migrate.NewHandler(migrator, db)
+	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool *pgxpool.Pool, migrator *migrate.Migrator, resolvedDatabaseURL string) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -132,7 +132,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool 
 	})
 
 	// Setup API routes (bypassed by Gate 3)
-	sh := NewSetupHandler(pool, cfg, migrator)
+	sh := NewSetupHandler(db, cfg, migrator)
 	e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
 	e.POST("/api/auth/setup/restore", func(c *echo.Context) error {
 		return c.JSON(http.StatusNotImplemented, map[string]string{
@@ -140,16 +140,16 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, pool 
 		})
 	})
 
-	// Auth routes — only registered when a DB pool is available.
-	if pool != nil {
-		ah := NewAuthHandler(pool, cfg)
+	// Auth routes — only registered when a DB is available.
+	if db != nil {
+		ah := NewAuthHandler(db, cfg)
 
 		// Public auth routes (no JWT required)
 		e.POST("/api/auth/login", ah.HandleLogin)
 		e.POST("/api/auth/refresh", ah.HandleRefresh)
 
 		// JWT-protected auth routes
-		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, pool))
+		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
 	}

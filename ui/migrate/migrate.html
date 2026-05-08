@@ -62,8 +62,6 @@
   <div class="card">
     <h1>Database Migration Required</h1>
     <p class="meta">
-      {{if .CurrentVersion}}Current version: {{.CurrentVersion}}{{else}}Current version: –{{end}}
-      &nbsp;·&nbsp;
       {{.PendingCount}} migration{{if ne .PendingCount 1}}s{{end}} pending
     </p>
     <div class="log" id="log"></div>

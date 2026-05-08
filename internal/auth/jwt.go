@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,9 +12,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
 )
 
 // Claims represents the JWT payload for both access and refresh tokens.
@@ -135,7 +135,7 @@ type AuthUser struct {
 // JWTMiddleware returns middleware that validates the access token JWT,
 // checks the session exists in user_sessions, loads the user from users,
 // and sets user_id, is_admin, and user on the Echo context.
-func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc {
+func JWTMiddleware(secretKey string, db *bun.DB) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			// Step 1-2: Read and validate Authorization header.
@@ -166,12 +166,12 @@ func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc {
 			// Step 5: Check session in DB (must exist and not be expired).
 			tokenHash := HashToken(tokenString)
 			var one int
-			err = pool.QueryRow(c.Request().Context(),
-				"SELECT 1 FROM user_sessions WHERE user_id = $1 AND token_hash = $2 AND expires_at > now()",
+			err = db.QueryRowContext(c.Request().Context(),
+				"SELECT 1 FROM user_sessions WHERE user_id = ? AND token_hash = ? AND expires_at > now()",
 				userID, tokenHash,
 			).Scan(&one)
 			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
+				if errors.Is(err, sql.ErrNoRows) {
 					return c.JSON(http.StatusUnauthorized, map[string]string{
 						"error": "session not found or expired",
 					})
@@ -183,12 +183,12 @@ func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc {
 
 			// Step 6: Load user from DB.
 			var user AuthUser
-			err = pool.QueryRow(c.Request().Context(),
-				"SELECT id, username, is_active, is_admin FROM users WHERE id = $1",
+			err = db.QueryRowContext(c.Request().Context(),
+				"SELECT id, username, is_active, is_admin FROM users WHERE id = ?",
 				userID,
 			).Scan(&user.ID, &user.Username, &user.IsActive, &user.IsAdmin)
 			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
+				if errors.Is(err, sql.ErrNoRows) {
 					return c.JSON(http.StatusUnauthorized, map[string]string{
 						"error": "user not found",
 					})

@@ -16,19 +16,11 @@ import (
 // newTestHandler creates a Handler backed by a real migrator against a test DB.
 func newTestHandler(t *testing.T) *migrate.Handler {
 	t.Helper()
-	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := m.Close(); err != nil {
-			t.Logf("close migrator: %v", err)
-		}
-	})
 	return migrate.NewHandler(m, nil)
 }
 
@@ -48,10 +40,8 @@ func TestHandleStatus_NeedsMigration(t *testing.T) {
 	}
 
 	var body struct {
-		PendingCount   int    `json:"pending_count"`
-		CurrentVersion uint   `json:"current_version"`
-		Dirty          bool   `json:"dirty"`
-		State          string `json:"state"`
+		PendingCount int    `json:"pending_count"`
+		State        string `json:"state"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -61,9 +51,6 @@ func TestHandleStatus_NeedsMigration(t *testing.T) {
 	}
 	if body.PendingCount != 1 {
 		t.Errorf("expected pending_count=1, got %d", body.PendingCount)
-	}
-	if body.CurrentVersion != 0 {
-		t.Errorf("expected current_version=0 on fresh DB, got %d", body.CurrentVersion)
 	}
 }
 
@@ -99,19 +86,11 @@ func TestHandleRun_202_ThenReady(t *testing.T) {
 }
 
 func TestHandleRun_409_WhenMigrating(t *testing.T) {
-	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := m.Close(); err != nil {
-			t.Logf("close migrator: %v", err)
-		}
-	})
 
 	// Manually set state to Migrating.
 	m.SetStateForTest(migrate.AppStateMigrating)
@@ -131,19 +110,11 @@ func TestHandleRun_409_WhenMigrating(t *testing.T) {
 }
 
 func TestHandleRun_400_WhenReady(t *testing.T) {
-	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := m.Close(); err != nil {
-			t.Logf("close migrator: %v", err)
-		}
-	})
 
 	m.SetStateForTest(migrate.AppStateReady)
 

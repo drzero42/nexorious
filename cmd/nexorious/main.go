@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/config"
@@ -73,33 +76,21 @@ func main() {
 	})))
 
 	// -------------------------------------------------------------------------
-	// Database pool
+	// Database
 	// -------------------------------------------------------------------------
 	ctx := context.Background()
 
 	resolvedDatabaseURL := cfg.DatabaseURL
-	pool, err := pgxpool.New(ctx, resolvedDatabaseURL)
-	if err != nil {
-		// pgxpool.New is lazy — this only fails on DSN parse errors.
-		slog.Error("failed to parse database URL", "err", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(resolvedDatabaseURL)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	defer func() { _ = db.Close() }()
 
 	// -------------------------------------------------------------------------
-	// Migrator (lazy — no DB contact at construction)
+	// Migrator
 	// -------------------------------------------------------------------------
-	migrator, err := migrate.NewMigrator(resolvedDatabaseURL)
-	if err != nil {
-		slog.Error("failed to create migrator", "err", err)
-		pool.Close()
-		os.Exit(1)
-	}
-	defer func() {
-		if err := migrator.Close(); err != nil {
-			slog.Error("migrator close error", "err", err)
-		}
-	}()
+	migrator := migrate.NewMigrator(db)
 
 	// initAppState runs determineState + InitNeedsSetup.
 	// Called once at startup (if DB is reachable) and as StartDBProbe's onRecovery.
@@ -108,7 +99,7 @@ func main() {
 			return fmt.Errorf("initAppState: determineState: %w", err)
 		}
 		if migrator.State() == migrate.AppStateReady {
-			if err := migrator.InitNeedsSetup(ctx, pool); err != nil {
+			if err := migrator.InitNeedsSetup(ctx, db); err != nil {
 				return fmt.Errorf("initAppState: InitNeedsSetup: %w", err)
 			}
 		}
@@ -122,7 +113,7 @@ func main() {
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
 			pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := pool.Ping(pingCtx)
+			err := db.PingContext(pingCtx)
 			cancel()
 			if err == nil {
 				break
@@ -132,33 +123,33 @@ func main() {
 		}
 
 		pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
-		if err := pool.Ping(pingCtx); err != nil {
+		if err := db.PingContext(pingCtx); err != nil {
 			pingCancel()
 			slog.Error("migrate-only: database unreachable after 30s", "err", err)
-			pool.Close()
+			_ = db.Close()
 			os.Exit(1)
 		}
 		pingCancel()
 
 		if err := migrator.DetermineStateForTest(); err != nil {
 			slog.Error("migrate-only: determineState failed", "err", err)
-			pool.Close()
+			_ = db.Close()
 			os.Exit(1)
 		}
 		if migrator.State() == migrate.AppStateReady {
 			slog.Info("migrate-only: no pending migrations")
-			pool.Close()
+			_ = db.Close()
 			os.Exit(0)
 		}
 
 		migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
 		if err := migrator.RunMigrations(ctx); err != nil {
 			slog.Error("migrate-only: migrations failed", "err", err)
-			pool.Close()
+			_ = db.Close()
 			os.Exit(1)
 		}
 		slog.Info("migrate-only: migrations complete")
-		pool.Close()
+		_ = db.Close()
 		os.Exit(0)
 	}
 
@@ -166,7 +157,7 @@ func main() {
 	// Single startup ping — no retry (StartDBProbe handles retries).
 	// -------------------------------------------------------------------------
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-	pingErr := pool.Ping(pingCtx)
+	pingErr := db.PingContext(pingCtx)
 	pingCancel()
 	if pingErr == nil {
 		slog.Info("database connected")
@@ -180,13 +171,13 @@ func main() {
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg, migrator, pool, resolvedDatabaseURL)
+	e := api.New(cfg, migrator, db, resolvedDatabaseURL)
 
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
-	migrator.StartDBProbe(shutdownCtx, pool, initAppState)
+	migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
 	// Worker/scheduler gate — starts after Ready && !NeedsSetup.
 	// Extend this goroutine when workers/scheduler are wired in.

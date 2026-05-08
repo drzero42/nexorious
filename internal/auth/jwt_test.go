@@ -2,21 +2,21 @@ package auth_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
-	gmigrate "github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
+	bunmigrate "github.com/uptrace/bun/migrate"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
@@ -419,7 +419,7 @@ func TestJWTMiddleware_RefreshTokenRejected(t *testing.T) {
 
 // --- JWTMiddleware DB-backed tests ---
 
-func setupTestPool(t *testing.T) *pgxpool.Pool {
+func setupTestDB(t *testing.T) *bun.DB {
 	t.Helper()
 	ctx := context.Background()
 
@@ -443,40 +443,27 @@ func setupTestPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
 
-	// Run migrations using the same pgx5:// scheme as the rest of the project.
-	migrateConnStr := "pgx5" + strings.TrimPrefix(connStr, "postgres")
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		t.Fatalf("iofs.New: %v", err)
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Run migrations using bun/migrate.
+	migrator := bunmigrate.NewMigrator(db, migrations.Migrations)
+	if err := migrator.Init(ctx); err != nil {
+		t.Fatalf("migrator init: %v", err)
 	}
-	m, err := gmigrate.NewWithSourceInstance("iofs", src, migrateConnStr)
-	if err != nil {
-		t.Fatalf("NewWithSourceInstance: %v", err)
-	}
-	if err := m.Up(); err != nil && err != gmigrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
-	srcErr, dbErr := m.Close()
-	if srcErr != nil {
-		t.Fatalf("migrate close source: %v", srcErr)
-	}
-	if dbErr != nil {
-		t.Fatalf("migrate close db: %v", dbErr)
+	if _, err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
+	return db
 }
 
-func insertTestUser(t *testing.T, pool *pgxpool.Pool, userID, username string, isActive, isAdmin bool) {
+func insertTestUser(t *testing.T, db *bun.DB, userID, username string, isActive, isAdmin bool) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO users (id, username, password_hash, is_active, is_admin)
-		 VALUES ($1, $2, '$2a$12$dummyhashvalue000000000000000000000000000000000000000000', $3, $4)`,
+		 VALUES (?, ?, '$2a$12$dummyhashvalue000000000000000000000000000000000000000000', ?, ?)`,
 		userID, username, isActive, isAdmin,
 	)
 	if err != nil {
@@ -484,11 +471,11 @@ func insertTestUser(t *testing.T, pool *pgxpool.Pool, userID, username string, i
 	}
 }
 
-func insertTestSession(t *testing.T, pool *pgxpool.Pool, userID, tokenHash string) {
+func insertTestSession(t *testing.T, db *bun.DB, userID, tokenHash string) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES (gen_random_uuid()::text, $1, $2, 'unused_refresh_hash', now() + interval '30 days')`,
+		 VALUES (gen_random_uuid()::text, ?, ?, 'unused_refresh_hash', now() + interval '30 days')`,
 		userID, tokenHash,
 	)
 	if err != nil {
@@ -497,16 +484,16 @@ func insertTestSession(t *testing.T, pool *pgxpool.Pool, userID, tokenHash strin
 }
 
 func TestJWTMiddleware_ValidSession(t *testing.T) {
-	pool := setupTestPool(t)
+	db := setupTestDB(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440000"
 
-	insertTestUser(t, pool, userID, "testuser", true, true)
+	insertTestUser(t, db, userID, "testuser", true, true)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
-	insertTestSession(t, pool, userID, auth.HashToken(accessToken))
+	insertTestSession(t, db, userID, auth.HashToken(accessToken))
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -537,7 +524,7 @@ func TestJWTMiddleware_ValidSession(t *testing.T) {
 		return c.String(http.StatusOK, "ok")
 	}
 
-	mw := auth.JWTMiddleware(secret, pool)(handler)
+	mw := auth.JWTMiddleware(secret, db)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("middleware error: %v", err)
 	}
@@ -550,11 +537,11 @@ func TestJWTMiddleware_ValidSession(t *testing.T) {
 }
 
 func TestJWTMiddleware_RevokedSession(t *testing.T) {
-	pool := setupTestPool(t)
+	db := setupTestDB(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440001"
 
-	insertTestUser(t, pool, userID, "revokeduser", true, false)
+	insertTestUser(t, db, userID, "revokeduser", true, false)
 	// No session inserted — simulates a revoked/logged-out token.
 
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
@@ -573,7 +560,7 @@ func TestJWTMiddleware_RevokedSession(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, pool)(handler)
+	mw := auth.JWTMiddleware(secret, db)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -583,16 +570,16 @@ func TestJWTMiddleware_RevokedSession(t *testing.T) {
 }
 
 func TestJWTMiddleware_InactiveUser(t *testing.T) {
-	pool := setupTestPool(t)
+	db := setupTestDB(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440002"
 
-	insertTestUser(t, pool, userID, "inactiveuser", false, false)
+	insertTestUser(t, db, userID, "inactiveuser", false, false)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
-	insertTestSession(t, pool, userID, auth.HashToken(accessToken))
+	insertTestSession(t, db, userID, auth.HashToken(accessToken))
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -605,7 +592,7 @@ func TestJWTMiddleware_InactiveUser(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, pool)(handler)
+	mw := auth.JWTMiddleware(secret, db)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -615,20 +602,20 @@ func TestJWTMiddleware_InactiveUser(t *testing.T) {
 }
 
 func TestJWTMiddleware_ExpiredSession(t *testing.T) {
-	pool := setupTestPool(t)
+	db := setupTestDB(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440003"
 
-	insertTestUser(t, pool, userID, "expireduser", true, false)
+	insertTestUser(t, db, userID, "expireduser", true, false)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
 	// Insert session with past expires_at — simulates a force-expired session.
-	_, err = pool.Exec(context.Background(),
+	_, err = db.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES (gen_random_uuid()::text, $1, $2, 'unused_refresh_hash', now() - interval '1 second')`,
+		 VALUES (gen_random_uuid()::text, ?, ?, 'unused_refresh_hash', now() - interval '1 second')`,
 		userID, auth.HashToken(accessToken),
 	)
 	if err != nil {
@@ -646,7 +633,7 @@ func TestJWTMiddleware_ExpiredSession(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, pool)(handler)
+	mw := auth.JWTMiddleware(secret, db)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

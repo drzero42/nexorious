@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
@@ -24,13 +24,13 @@ const bcryptCost = 12
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
-	pool *pgxpool.Pool
-	cfg  *config.Config
+	db  *bun.DB
+	cfg *config.Config
 }
 
 // NewAuthHandler returns a new AuthHandler.
-func NewAuthHandler(pool *pgxpool.Pool, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{pool: pool, cfg: cfg}
+func NewAuthHandler(db *bun.DB, cfg *config.Config) *AuthHandler {
+	return &AuthHandler{db: db, cfg: cfg}
 }
 
 // loginRequest is the JSON body for POST /api/auth/login.
@@ -72,13 +72,13 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 		passwordHash string
 		isActive     bool
 	)
-	err := h.pool.QueryRow(
+	err := h.db.QueryRowContext(
 		context.Background(),
-		"SELECT id, password_hash, is_active FROM users WHERE username = $1",
+		"SELECT id, password_hash, is_active FROM users WHERE username = ?",
 		req.Username,
 	).Scan(&userID, &passwordHash, &isActive)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "incorrect username or password"})
 		}
 		slog.Error("login: query user", "err", err)
@@ -109,10 +109,10 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 	// Persist the session.
 	sessionID := uuid.NewString()
 	expiresAt := time.Now().Add(time.Duration(h.cfg.RefreshTokenExpireDays) * 24 * time.Hour)
-	_, err = h.pool.Exec(
+	_, err = h.db.ExecContext(
 		context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, user_agent, ip_address, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		sessionID,
 		userID,
 		auth.HashToken(accessToken),
@@ -157,13 +157,13 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	// Look up the session.
 	refreshHash := auth.HashToken(req.RefreshToken)
 	var sessionID string
-	err = h.pool.QueryRow(
+	err = h.db.QueryRowContext(
 		context.Background(),
-		"SELECT id FROM user_sessions WHERE user_id = $1 AND refresh_token_hash = $2 AND expires_at > now()",
+		"SELECT id FROM user_sessions WHERE user_id = ? AND refresh_token_hash = ? AND expires_at > now()",
 		userID, refreshHash,
 	).Scan(&sessionID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid or expired refresh token"})
 		}
 		slog.Error("refresh: query session", "err", err)
@@ -172,13 +172,13 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 
 	// Check the user is still active.
 	var isActive bool
-	err = h.pool.QueryRow(
+	err = h.db.QueryRowContext(
 		context.Background(),
-		"SELECT is_active FROM users WHERE id = $1",
+		"SELECT is_active FROM users WHERE id = ?",
 		userID,
 	).Scan(&isActive)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found or disabled"})
 		}
 		slog.Error("refresh: query user", "err", err)
@@ -196,9 +196,9 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	}
 
 	// Update the session's access token hash.
-	_, err = h.pool.Exec(
+	_, err = h.db.ExecContext(
 		context.Background(),
-		"UPDATE user_sessions SET token_hash = $1 WHERE id = $2",
+		"UPDATE user_sessions SET token_hash = ? WHERE id = ?",
 		auth.HashToken(newAccessToken), sessionID,
 	)
 	if err != nil {
@@ -243,9 +243,9 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 	}
 
 	// Delete the session. Ignore "not found" — idempotent.
-	_, err = h.pool.Exec(
+	_, err = h.db.ExecContext(
 		context.Background(),
-		"DELETE FROM user_sessions WHERE user_id = $1 AND refresh_token_hash = $2",
+		"DELETE FROM user_sessions WHERE user_id = ? AND refresh_token_hash = ?",
 		userID, auth.HashToken(req.RefreshToken),
 	)
 	if err != nil {
@@ -260,7 +260,7 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 // Always uses context.Background() so client disconnect cannot abort DB writes.
 func issueTokensAndSession(
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	db *bun.DB,
 	cfg *config.Config,
 	userID string,
 	userAgent string,
@@ -277,9 +277,9 @@ func issueTokensAndSession(
 
 	sessionID := uuid.NewString()
 	expiresAt := time.Now().Add(time.Duration(cfg.RefreshTokenExpireDays) * 24 * time.Hour)
-	_, err = pool.Exec(ctx,
+	_, err = db.ExecContext(ctx,
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, user_agent, ip_address, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		sessionID,
 		userID,
 		auth.HashToken(accessToken),
@@ -313,13 +313,13 @@ func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
 
 	var resp meResponse
 	var prefs []byte
-	err := h.pool.QueryRow(context.Background(),
+	err := h.db.QueryRowContext(context.Background(),
 		`SELECT id, username, is_admin, is_active, preferences, created_at
-		 FROM users WHERE id = $1`,
+		 FROM users WHERE id = ?`,
 		userID,
 	).Scan(&resp.ID, &resp.Username, &resp.IsAdmin, &resp.IsActive, &prefs, &resp.CreatedAt)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found"})
 		}
 		slog.Error("get me: query user", "err", err)

@@ -2,16 +2,16 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/driver/pgdriver"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious-go/internal/config"
@@ -20,14 +20,14 @@ import (
 
 // SetupHandler handles the one-time admin setup endpoint.
 type SetupHandler struct {
-	pool     *pgxpool.Pool
+	db       *bun.DB
 	cfg      *config.Config
 	migrator *migrate.Migrator
 }
 
 // NewSetupHandler returns a new SetupHandler.
-func NewSetupHandler(pool *pgxpool.Pool, cfg *config.Config, migrator *migrate.Migrator) *SetupHandler {
-	return &SetupHandler{pool: pool, cfg: cfg, migrator: migrator}
+func NewSetupHandler(db *bun.DB, cfg *config.Config, migrator *migrate.Migrator) *SetupHandler {
+	return &SetupHandler{db: db, cfg: cfg, migrator: migrator}
 }
 
 type setupAdminRequest struct {
@@ -93,7 +93,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	}
 
 	accessToken, refreshToken, tokenErr := issueTokensAndSession(
-		context.Background(), h.pool, h.cfg, userID,
+		context.Background(), h.db, h.cfg, userID,
 		c.Request().Header.Get("User-Agent"),
 		c.RealIP(),
 	)
@@ -121,14 +121,14 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 
 // tryCreateAdmin opens a serializable transaction, checks users is empty, and inserts the admin row.
 func (h *SetupHandler) tryCreateAdmin(ctx context.Context, userID, username, passwordHash string) (time.Time, error) {
-	tx, err := h.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return time.Time{}, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
 	var count int
-	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		return time.Time{}, err
 	}
 	if count > 0 {
@@ -136,15 +136,15 @@ func (h *SetupHandler) tryCreateAdmin(ctx context.Context, userID, username, pas
 	}
 
 	var createdAt time.Time
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO users (id, username, password_hash, is_admin)
-		 VALUES ($1, $2, $3, true) RETURNING created_at`,
+		 VALUES (?, ?, ?, true) RETURNING created_at`,
 		userID, username, passwordHash,
 	).Scan(&createdAt)
 	if err != nil {
 		return time.Time{}, err
 	}
-	return createdAt, tx.Commit(ctx)
+	return createdAt, tx.Commit()
 }
 
 var errUserExists = errors.New("users already exist")
@@ -154,6 +154,9 @@ func isUserExistsError(err error) bool {
 }
 
 func isSerializationFailure(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "40001"
+	var pgErr pgdriver.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Field('C') == "40001"
+	}
+	return false
 }

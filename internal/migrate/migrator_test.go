@@ -3,20 +3,21 @@ package migrate_test
 import (
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
 )
 
-func setupTestDB(t *testing.T) string {
+// setupTestContainer starts a postgres container and returns the postgres:// connection string.
+func setupTestContainer(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
 	ctr, err := postgres.Run(ctx,
@@ -38,26 +39,31 @@ func setupTestDB(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
-	// golang-migrate's pgx/v5 driver registers under the "pgx5" scheme.
-	connStr = "pgx5" + strings.TrimPrefix(connStr, "postgres")
-	return connStr
+	return connStr // postgres:// URL
+}
+
+// makeBunDB creates a bun.DB from a postgres:// connection string.
+func makeBunDB(t *testing.T, connStr string) *bun.DB {
+	t.Helper()
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// setupTestDB starts a postgres container and returns a ready *bun.DB.
+func setupTestDB(t *testing.T) *bun.DB {
+	t.Helper()
+	return makeBunDB(t, setupTestContainer(t))
 }
 
 func TestNewMigrator_FreshDatabase(t *testing.T) {
-	connStr := setupTestDB(t)
+	db := setupTestDB(t)
 
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	defer func() {
-		if err := m.Close(); err != nil {
-			t.Logf("close: %v", err)
-		}
-	}()
 
 	if m.State() != migrate.AppStateNeedsMigration {
 		t.Errorf("expected NeedsMigration, got %v", m.State())
@@ -70,26 +76,14 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 	if count != 1 {
 		t.Errorf("expected 1 pending migration, got %d", count)
 	}
-
-	ver, dirty, err := m.CurrentVersion()
-	if err != nil {
-		t.Fatalf("CurrentVersion: %v", err)
-	}
-	if ver != 0 || dirty {
-		t.Errorf("expected version=0 dirty=false on fresh DB, got ver=%d dirty=%v", ver, dirty)
-	}
 }
 
 func TestRunMigrations_TransitionsToReady(t *testing.T) {
-	connStr := setupTestDB(t)
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	t.Cleanup(func() { _ = m.Close() })
 
 	ctx := context.Background()
 	if err := m.RunMigrations(ctx); err != nil {
@@ -107,37 +101,23 @@ func TestRunMigrations_TransitionsToReady(t *testing.T) {
 }
 
 func TestNewMigrator_AlreadyMigrated(t *testing.T) {
-	connStr := setupTestDB(t)
+	db := setupTestDB(t)
 	ctx := context.Background()
 
 	// First run — apply migrations.
-	m1, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator first run: %v", err)
-	}
+	m1 := migrate.NewMigrator(db)
 	if err := m1.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
 	if err := m1.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations first run: %v", err)
 	}
-	if err := m1.Close(); err != nil {
-		t.Logf("close: %v", err)
-	}
 
-	// Second run — schema is current; should start Ready.
-	m2, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator second run: %v", err)
-	}
+	// Second migrator on same DB — schema is current; should start Ready.
+	m2 := migrate.NewMigrator(db)
 	if err := m2.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	defer func() {
-		if err := m2.Close(); err != nil {
-			t.Logf("close: %v", err)
-		}
-	}()
 
 	if m2.State() != migrate.AppStateReady {
 		t.Errorf("expected Ready on already-migrated DB, got %v", m2.State())
@@ -146,53 +126,16 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 
 func TestRunMigrations_AllTablesExist(t *testing.T) {
 	ctx := context.Background()
+	connStr := setupTestContainer(t)
+	db := makeBunDB(t, connStr)
 
-	// Need a raw postgres:// URL for database/sql; spin up a second container.
-	ctr, err := postgres.Run(ctx,
-		"postgres:18-alpine",
-		postgres.WithDatabase("nexorious_test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
-
-	rawConn, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-
-	// Apply migrations via the Migrator (uses pgx5:// scheme internally).
-	pgx5Conn := "pgx5" + strings.TrimPrefix(rawConn, "postgres")
-	m, err := migrate.NewMigrator(pgx5Conn)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("DetermineStateForTest: %v", err)
 	}
-	defer func() { _ = m.Close() }()
-
 	if err := m.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-
-	// Inspect tables via database/sql + pgx stdlib driver.
-	db, err := openStdlib(rawConn)
-	if err != nil {
-		t.Fatalf("open stdlib db: %v", err)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Errorf("close stdlib db: %v", err)
-		}
-	}()
 
 	expectedTables := []string{
 		"users",
@@ -219,7 +162,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		if err := db.QueryRowContext(ctx, `
 			SELECT EXISTS (
 				SELECT FROM information_schema.tables
-				WHERE table_schema = 'public' AND table_name = $1
+				WHERE table_schema = 'public' AND table_name = ?
 			)`, table).Scan(&exists); err != nil {
 			t.Fatalf("checking table %s: %v", table, err)
 		}
@@ -239,53 +182,33 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 	}
 }
 
-// openStdlib opens a *sql.DB using the pgx stdlib driver.
-// rawConn must be a standard postgres:// URL (not pgx5://).
-func openStdlib(rawConn string) (*sql.DB, error) {
-	return sql.Open("pgx", rawConn)
-}
-
-func setupPool(t *testing.T, connStr string) *pgxpool.Pool {
+func badBunDB(t *testing.T) *bun.DB {
 	t.Helper()
-	// connStr from setupTestDB is pgx5://, but pgxpool needs postgres://
-	pgxConnStr := "postgres" + strings.TrimPrefix(connStr, "pgx5")
-	pool, err := pgxpool.New(context.Background(), pgxConnStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
-
-func badPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	// A pool pointed at a non-existent host — all Pings will fail immediately.
-	pool, err := pgxpool.New(context.Background(), "postgres://bad:bad@127.0.0.1:19999/x?sslmode=disable&connect_timeout=1")
-	if err != nil {
-		t.Fatalf("badPool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
+	// A db pointed at a non-existent host — all pings will fail immediately.
+	sqldb := sql.OpenDB(pgdriver.NewConnector(
+		pgdriver.WithDSN("postgres://bad:bad@127.0.0.1:19999/x?sslmode=disable&connect_timeout=1"),
+	))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
 func TestNewMigrator_SucceedsWhenDBUnreachable(t *testing.T) {
-	// NewMigrator should succeed even with a bad URL — no DB contact at construction.
-	m, err := migrate.NewMigrator("postgres://bad-host:5432/nope?sslmode=disable")
-	if err != nil {
-		t.Fatalf("NewMigrator with unreachable DB: %v", err)
-	}
+	// NewMigrator should succeed even with a bad DB — no DB contact at construction.
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN("postgres://bad-host:5432/nope?sslmode=disable")))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	defer func() { _ = db.Close() }()
+
+	m := migrate.NewMigrator(db)
 	if m.State() != migrate.AppStateDBUnavailable {
 		t.Errorf("expected DBUnavailable, got %v", m.State())
 	}
 }
 
 func TestInitNeedsSetup_NoUsers(t *testing.T) {
-	connStr := setupTestDB(t)
+	db := setupTestDB(t)
 	ctx := context.Background()
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("determineState: %v", err)
 	}
@@ -293,8 +216,7 @@ func TestInitNeedsSetup_NoUsers(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
-	pool := setupPool(t, connStr)
-	if err := m.InitNeedsSetup(ctx, pool); err != nil {
+	if err := m.InitNeedsSetup(ctx, db); err != nil {
 		t.Fatalf("InitNeedsSetup: %v", err)
 	}
 	if !m.NeedsSetup() {
@@ -303,12 +225,9 @@ func TestInitNeedsSetup_NoUsers(t *testing.T) {
 }
 
 func TestInitNeedsSetup_UsersExist(t *testing.T) {
-	connStr := setupTestDB(t)
+	db := setupTestDB(t)
 	ctx := context.Background()
-	m, err := migrate.NewMigrator(connStr)
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	m := migrate.NewMigrator(db)
 	if err := m.DetermineStateForTest(); err != nil {
 		t.Fatalf("determineState: %v", err)
 	}
@@ -316,14 +235,13 @@ func TestInitNeedsSetup_UsersExist(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
-	pool := setupPool(t, connStr)
-	_, err = pool.Exec(ctx,
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO users (id, username, password_hash, is_admin) VALUES ('u1','admin','hash',true)`)
 	if err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
-	if err := m.InitNeedsSetup(ctx, pool); err != nil {
+	if err := m.InitNeedsSetup(ctx, db); err != nil {
 		t.Fatalf("InitNeedsSetup: %v", err)
 	}
 	if m.NeedsSetup() {
@@ -332,9 +250,13 @@ func TestInitNeedsSetup_UsersExist(t *testing.T) {
 }
 
 func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
-	m, err := migrate.NewMigrator("postgres://bad:5432/x?sslmode=disable")
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineStateForTest(); err != nil {
+		t.Fatalf("DetermineStateForTest: %v", err)
+	}
+	if err := m.RunMigrations(context.Background()); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
 	}
 	m.SetStateForTest(migrate.AppStateReady)
 	m.SetProbeIntervalForTest(50 * time.Millisecond)
@@ -342,8 +264,8 @@ func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool := badPool(t)
-	m.StartDBProbe(ctx, pool, func(_ context.Context) error { return nil })
+	badDB := badBunDB(t)
+	m.StartDBProbe(ctx, badDB, func(_ context.Context) error { return nil })
 
 	time.Sleep(150 * time.Millisecond)
 	if m.State() != migrate.AppStateDBUnavailable {
@@ -355,15 +277,16 @@ func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
 }
 
 func TestStartDBProbe_RespectsContext(t *testing.T) {
-	m, err := migrate.NewMigrator("postgres://bad:5432/x?sslmode=disable")
-	if err != nil {
-		t.Fatalf("NewMigrator: %v", err)
-	}
+	badDB := badBunDB(t)
+	sqldb2 := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN("postgres://bad:5432/x?sslmode=disable")))
+	db2 := bun.NewDB(sqldb2, pgdialect.New())
+	defer func() { _ = db2.Close() }()
+
+	m := migrate.NewMigrator(db2)
 	m.SetProbeIntervalForTest(50 * time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	pool := badPool(t)
-	m.StartDBProbe(ctx, pool, func(_ context.Context) error { return nil })
+	m.StartDBProbe(ctx, badDB, func(_ context.Context) error { return nil })
 
 	cancel() // should cause goroutine to exit cleanly
 	time.Sleep(100 * time.Millisecond)

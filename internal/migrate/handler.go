@@ -6,77 +6,56 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/ui"
 )
 
-// Handler holds the Echo handlers for migration routes.
 type Handler struct {
 	migrator *Migrator
-	pool     *pgxpool.Pool
+	db       *bun.DB
 	tmpl     *template.Template
 }
 
-// NewHandler creates a Handler. Panics if the migration template cannot be parsed.
-func NewHandler(m *Migrator, pool *pgxpool.Pool) *Handler {
+func NewHandler(m *Migrator, db *bun.DB) *Handler {
 	tmpl, err := template.ParseFS(ui.MigrateBox, "migrate/migrate.html")
 	if err != nil {
 		panic(fmt.Sprintf("migrate: failed to parse template: %v", err))
 	}
-	return &Handler{migrator: m, pool: pool, tmpl: tmpl}
+	return &Handler{migrator: m, db: db, tmpl: tmpl}
 }
 
-// Migrator exposes the underlying Migrator for tests.
 func (h *Handler) Migrator() *Migrator { return h.migrator }
 
-// HandleMigrateUI renders the migration UI page.
-// GET /migrate
 func (h *Handler) HandleMigrateUI(c *echo.Context) error {
 	pending, err := h.migrator.PendingCount()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get pending count")
 	}
-	ver, _, err := h.migrator.CurrentVersion()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get current version")
-	}
 
 	data := struct {
-		PendingCount   int
-		CurrentVersion uint
+		PendingCount int
 	}{
-		PendingCount:   pending,
-		CurrentVersion: ver,
+		PendingCount: pending,
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "text/html; charset=utf-8")
 	return h.tmpl.Execute(c.Response(), data)
 }
 
-// HandleStatus returns migration status as JSON.
-// GET /api/migrate/status
 func (h *Handler) HandleStatus(c *echo.Context) error {
 	pending, err := h.migrator.PendingCount()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get pending count")
 	}
-	ver, dirty, err := h.migrator.CurrentVersion()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get current version")
-	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"pending_count":   pending,
-		"current_version": ver,
-		"dirty":           dirty,
-		"state":           h.migrator.State().String(),
+		"pending_count": pending,
+		"state":         h.migrator.State().String(),
 	})
 }
 
-// HandleRun triggers migration asynchronously.
-// POST /api/migrate/run
 func (h *Handler) HandleRun(c *echo.Context) error {
 	switch h.migrator.State() {
 	case AppStateMigrating:
@@ -90,9 +69,8 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 			_ = err
 			return
 		}
-		if h.pool != nil {
-			if err := h.migrator.InitNeedsSetup(context.Background(), h.pool); err != nil {
-				// Non-fatal: log and continue. Gate will re-check on next request.
+		if h.db != nil {
+			if err := h.migrator.InitNeedsSetup(context.Background(), h.db); err != nil {
 				_ = err
 			}
 		}
@@ -102,8 +80,6 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	return c.JSON(http.StatusAccepted, map[string]string{"status": "migration started"})
 }
 
-// HandleProgress streams migration log lines as Server-Sent Events.
-// GET /api/migrate/progress
 func (h *Handler) HandleProgress(c *echo.Context) error {
 	ch := h.migrator.LogCh()
 	if ch == nil {

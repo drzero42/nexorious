@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,16 +11,17 @@ import (
 	"testing"
 	"time"
 
-	gmigrate "github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 	"golang.org/x/crypto/bcrypt"
+
+	bunmigrate "github.com/uptrace/bun/migrate"
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/auth"
@@ -30,7 +32,7 @@ import (
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
 
-func setupAuthTestDB(t *testing.T) *pgxpool.Pool {
+func setupAuthTestDB(t *testing.T) *bun.DB {
 	t.Helper()
 	ctx := context.Background()
 
@@ -54,43 +56,31 @@ func setupAuthTestDB(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
 
-	migrateConnStr := "pgx5" + strings.TrimPrefix(connStr, "postgres")
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		t.Fatalf("iofs.New: %v", err)
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Run migrations using bun/migrate.
+	migrator := bunmigrate.NewMigrator(db, migrations.Migrations)
+	if err := migrator.Init(ctx); err != nil {
+		t.Fatalf("migrator init: %v", err)
 	}
-	m, err := gmigrate.NewWithSourceInstance("iofs", src, migrateConnStr)
-	if err != nil {
-		t.Fatalf("NewWithSourceInstance: %v", err)
-	}
-	if err := m.Up(); err != nil && err != gmigrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
-	srcErr, dbErr := m.Close()
-	if srcErr != nil {
-		t.Fatalf("migrate close source: %v", srcErr)
-	}
-	if dbErr != nil {
-		t.Fatalf("migrate close db: %v", dbErr)
+	if _, err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
+	return db
 }
 
 // insertAuthTestUser inserts a user with a real bcrypt hash (cost 12).
-func insertAuthTestUser(t *testing.T, pool *pgxpool.Pool, id, username, password string, isActive, isAdmin bool) {
+func insertAuthTestUser(t *testing.T, db *bun.DB, id, username, password string, isActive, isAdmin bool) {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		t.Fatalf("bcrypt: %v", err)
 	}
-	_, err = pool.Exec(context.Background(),
-		"INSERT INTO users (id, username, password_hash, is_active, is_admin) VALUES ($1, $2, $3, $4, $5)",
+	_, err = db.ExecContext(context.Background(),
+		"INSERT INTO users (id, username, password_hash, is_active, is_admin) VALUES (?, ?, ?, ?, ?)",
 		id, username, string(hash), isActive, isAdmin,
 	)
 	if err != nil {
@@ -100,15 +90,15 @@ func insertAuthTestUser(t *testing.T, pool *pgxpool.Pool, id, username, password
 
 // insertAuthTestSession inserts a user_session for testing.
 // expiredDays < 0 means the session is already expired.
-func insertAuthTestSession(t *testing.T, pool *pgxpool.Pool, userID, accessToken, refreshToken string, expiredDays int) {
+func insertAuthTestSession(t *testing.T, db *bun.DB, userID, accessToken, refreshToken string, expiredDays int) {
 	t.Helper()
 	expiresExpr := "now() + interval '30 days'"
 	if expiredDays < 0 {
 		expiresExpr = "now() - interval '1 second'"
 	}
-	_, err := pool.Exec(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES (gen_random_uuid()::text, $1, $2, $3, `+expiresExpr+`)`,
+		 VALUES (gen_random_uuid()::text, ?, ?, ?, `+expiresExpr+`)`,
 		userID, auth.HashToken(accessToken), auth.HashToken(refreshToken),
 	)
 	if err != nil {
@@ -116,13 +106,13 @@ func insertAuthTestSession(t *testing.T, pool *pgxpool.Pool, userID, accessToken
 	}
 }
 
-// newTestEcho returns an Echo instance wired with a real pool and a ready migrator.
-func newTestEcho(t *testing.T, pool *pgxpool.Pool, cfg *config.Config) interface {
+// newTestEcho returns an Echo instance wired with a real db and a ready migrator.
+func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, pool, "")
+	return api.New(cfg, m, db, "")
 }
 
 // testCfg returns a minimal config suitable for api_test tests.
@@ -182,11 +172,11 @@ func jwtSign(t *testing.T, claims auth.Claims, secret string) string {
 // ─── Login tests ─────────────────────────────────────────────────────────────
 
 func TestHandleLogin_ValidCredentials(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-001", "alice", "password123", true, false)
+	insertAuthTestUser(t, db, "user-001", "alice", "password123", true, false)
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "alice",
@@ -227,8 +217,8 @@ func TestHandleLogin_ValidCredentials(t *testing.T) {
 
 	// Verify session was created in DB.
 	var count int
-	if err := pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = $1 AND token_hash = $2",
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
 		"user-001", auth.HashToken(accessToken),
 	).Scan(&count); err != nil {
 		t.Fatalf("session query: %v", err)
@@ -239,9 +229,9 @@ func TestHandleLogin_ValidCredentials(t *testing.T) {
 }
 
 func TestHandleLogin_WrongPassword(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
-	insertAuthTestUser(t, pool, "user-002", "bob", "correctpassword", true, false)
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
+	insertAuthTestUser(t, db, "user-002", "bob", "correctpassword", true, false)
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "bob",
@@ -259,8 +249,8 @@ func TestHandleLogin_WrongPassword(t *testing.T) {
 }
 
 func TestHandleLogin_NonExistentUser(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "nobody",
@@ -278,9 +268,9 @@ func TestHandleLogin_NonExistentUser(t *testing.T) {
 }
 
 func TestHandleLogin_DisabledUser(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
-	insertAuthTestUser(t, pool, "user-003", "carol", "password123", false, false)
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
+	insertAuthTestUser(t, db, "user-003", "carol", "password123", false, false)
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "carol",
@@ -298,8 +288,8 @@ func TestHandleLogin_DisabledUser(t *testing.T) {
 }
 
 func TestHandleLogin_MissingUsername(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "",
@@ -312,8 +302,8 @@ func TestHandleLogin_MissingUsername(t *testing.T) {
 }
 
 func TestHandleLogin_MissingPassword(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
 		"username": "alice",
@@ -326,10 +316,10 @@ func TestHandleLogin_MissingPassword(t *testing.T) {
 }
 
 func TestHandleLogin_MalformedJSON(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m, pool, "")
+	e := api.New(cfg, m, db, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -344,15 +334,15 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 // ─── Refresh tests ────────────────────────────────────────────────────────────
 
 func TestHandleRefresh_Valid(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-010", "dave", "pw", true, false)
+	insertAuthTestUser(t, db, "user-010", "dave", "pw", true, false)
 
 	oldAccess, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-010", cfg.AccessTokenExpireMinutes)
 	refreshToken, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-010", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, pool, "user-010", oldAccess, refreshToken, 30)
+	insertAuthTestSession(t, db, "user-010", oldAccess, refreshToken, 30)
 
 	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
 		"refresh_token": refreshToken,
@@ -380,15 +370,15 @@ func TestHandleRefresh_Valid(t *testing.T) {
 
 	// Old token_hash must be replaced in DB.
 	var count int
-	_ = pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = $1 AND token_hash = $2",
+	_ = db.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
 		"user-010", auth.HashToken(oldAccess),
 	).Scan(&count)
 	if count != 0 {
 		t.Error("old token_hash was not removed from session")
 	}
-	_ = pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = $1 AND token_hash = $2",
+	_ = db.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
 		"user-010", auth.HashToken(newAccess),
 	).Scan(&count)
 	if count != 1 {
@@ -397,11 +387,11 @@ func TestHandleRefresh_Valid(t *testing.T) {
 }
 
 func TestHandleRefresh_ExpiredJWT(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-011", "eve", "pw", true, false)
+	insertAuthTestUser(t, db, "user-011", "eve", "pw", true, false)
 
 	expiredClaims := auth.Claims{
 		Type: "refresh",
@@ -423,11 +413,11 @@ func TestHandleRefresh_ExpiredJWT(t *testing.T) {
 }
 
 func TestHandleRefresh_NoMatchingSession(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-012", "frank", "pw", true, false)
+	insertAuthTestUser(t, db, "user-012", "frank", "pw", true, false)
 	refreshToken, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-012", cfg.RefreshTokenExpireDays)
 	// Intentionally do NOT insert a session.
 
@@ -446,14 +436,14 @@ func TestHandleRefresh_NoMatchingSession(t *testing.T) {
 }
 
 func TestHandleRefresh_DisabledUser(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-013", "grace", "pw", false, false)
+	insertAuthTestUser(t, db, "user-013", "grace", "pw", false, false)
 	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-013", cfg.AccessTokenExpireMinutes)
 	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-013", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, pool, "user-013", access, refresh, 30)
+	insertAuthTestSession(t, db, "user-013", access, refresh, 30)
 
 	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
 		"refresh_token": refresh,
@@ -465,11 +455,11 @@ func TestHandleRefresh_DisabledUser(t *testing.T) {
 }
 
 func TestHandleRefresh_AccessTokenPassedInstead(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-014", "heidi", "pw", true, false)
+	insertAuthTestUser(t, db, "user-014", "heidi", "pw", true, false)
 	accessToken, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-014", cfg.AccessTokenExpireMinutes)
 
 	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
@@ -482,8 +472,8 @@ func TestHandleRefresh_AccessTokenPassedInstead(t *testing.T) {
 }
 
 func TestHandleRefresh_MissingField(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
 
 	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{})
 
@@ -495,14 +485,14 @@ func TestHandleRefresh_MissingField(t *testing.T) {
 // ─── Logout tests ─────────────────────────────────────────────────────────────
 
 func TestHandleLogout_Valid(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-020", "ivan", "pw", true, false)
+	insertAuthTestUser(t, db, "user-020", "ivan", "pw", true, false)
 	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-020", cfg.AccessTokenExpireMinutes)
 	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-020", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, pool, "user-020", access, refresh, 30)
+	insertAuthTestSession(t, db, "user-020", access, refresh, 30)
 
 	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{
 		"refresh_token": refresh,
@@ -514,8 +504,8 @@ func TestHandleLogout_Valid(t *testing.T) {
 
 	// Session must be deleted.
 	var count int
-	_ = pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = $1",
+	_ = db.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?",
 		"user-020",
 	).Scan(&count)
 	if count != 0 {
@@ -524,16 +514,16 @@ func TestHandleLogout_Valid(t *testing.T) {
 }
 
 func TestHandleLogout_WrongUserRefreshToken(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-021", "judy", "pw", true, false)
-	insertAuthTestUser(t, pool, "user-022", "ken", "pw", true, false)
+	insertAuthTestUser(t, db, "user-021", "judy", "pw", true, false)
+	insertAuthTestUser(t, db, "user-022", "ken", "pw", true, false)
 
 	judyAccess, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-021", cfg.AccessTokenExpireMinutes)
 	judyRefresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-021", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, pool, "user-021", judyAccess, judyRefresh, 30)
+	insertAuthTestSession(t, db, "user-021", judyAccess, judyRefresh, 30)
 
 	kenRefresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-022", cfg.RefreshTokenExpireDays)
 
@@ -552,13 +542,13 @@ func TestHandleLogout_WrongUserRefreshToken(t *testing.T) {
 }
 
 func TestHandleLogout_MalformedRefreshToken(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-023", "lena", "pw", true, false)
+	insertAuthTestUser(t, db, "user-023", "lena", "pw", true, false)
 	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-023", cfg.AccessTokenExpireMinutes)
-	insertAuthTestSession(t, pool, "user-023", access, "unused-hash-placeholder", 30)
+	insertAuthTestSession(t, db, "user-023", access, "unused-hash-placeholder", 30)
 
 	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{
 		"refresh_token": "not-a-jwt",
@@ -570,14 +560,14 @@ func TestHandleLogout_MalformedRefreshToken(t *testing.T) {
 }
 
 func TestHandleLogout_DoubleLogout(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	e := newTestEcho(t, pool, cfg)
+	e := newTestEcho(t, db, cfg)
 
-	insertAuthTestUser(t, pool, "user-024", "mike", "pw", true, false)
+	insertAuthTestUser(t, db, "user-024", "mike", "pw", true, false)
 	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-024", cfg.AccessTokenExpireMinutes)
 	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-024", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, pool, "user-024", access, refresh, 30)
+	insertAuthTestSession(t, db, "user-024", access, refresh, 30)
 
 	// First logout.
 	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{"refresh_token": refresh}, access)
@@ -593,8 +583,8 @@ func TestHandleLogout_DoubleLogout(t *testing.T) {
 }
 
 func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
-	pool := setupAuthTestDB(t)
-	e := newTestEcho(t, pool, testCfg())
+	db := setupAuthTestDB(t)
+	e := newTestEcho(t, db, testCfg())
 
 	rec := postJSON(t, e, "/api/auth/logout", map[string]string{
 		"refresh_token": "anything",
@@ -608,19 +598,19 @@ func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
 // ─── GetMe tests ─────────────────────────────────────────────────────────────
 
 func TestGetMe_Success(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
 	userID := "user-me-001"
-	insertAuthTestUser(t, pool, userID, "admin", "password123", true, true)
+	insertAuthTestUser(t, db, userID, "admin", "password123", true, true)
 
 	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
-	insertAuthTestSession(t, pool, userID, accessToken, "", 30)
+	insertAuthTestSession(t, db, userID, accessToken, "", 30)
 
 	e := echo.New()
-	ah := api.NewAuthHandler(pool, cfg)
+	ah := api.NewAuthHandler(db, cfg)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	rec := httptest.NewRecorder()
@@ -657,9 +647,9 @@ func TestGetMe_Success(t *testing.T) {
 }
 
 func TestGetMe_Unauthorized_NoUserID(t *testing.T) {
-	pool := setupAuthTestDB(t)
+	db := setupAuthTestDB(t)
 	cfg := testCfg()
-	ah := api.NewAuthHandler(pool, cfg)
+	ah := api.NewAuthHandler(db, cfg)
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()
