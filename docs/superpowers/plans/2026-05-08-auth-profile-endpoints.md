@@ -10,6 +10,16 @@
 
 ---
 
+### Task 0: Create Feature Branch
+
+- [ ] **Step 1: Create and switch to feature branch**
+
+```bash
+git checkout -b feat/auth-profile-endpoints
+```
+
+---
+
 ### Task 1: Test Helpers — Add `putJSONAuth` and `getAuth`
 
 **Files:**
@@ -1040,6 +1050,39 @@ Run: `golangci-lint run`
 Expected: no errors
 
 - [ ] **Step 3: Fix any issues and commit if needed**
+
+---
+
+### Task 8: Push and Create Pull Request
+
+- [ ] **Step 1: Push the feature branch**
+
+```bash
+git push -u origin feat/auth-profile-endpoints
+```
+
+- [ ] **Step 2: Create pull request**
+
+```bash
+gh pr create --title "feat: auth profile endpoints (Phase 2)" --body "$(cat <<'EOF'
+## Summary
+- Add `PUT /api/auth/me` — update user preferences
+- Add `PUT /api/auth/change-password` — change password, invalidates other sessions
+- Add `GET /api/auth/username/check/:username` — username availability check
+- Add `PUT /api/auth/username` — change username
+
+## Test plan
+- [ ] `go test ./internal/api/... -run TestHandleUpdateMe -v`
+- [ ] `go test ./internal/api/... -run TestHandleChangePassword -v`
+- [ ] `go test ./internal/api/... -run TestHandleCheckUsername -v`
+- [ ] `go test ./internal/api/... -run TestHandleChangeUsername -v`
+- [ ] `golangci-lint run`
+- [ ] `slumber show collection`
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
 
 ---
 
