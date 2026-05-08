@@ -128,7 +128,7 @@ When no default storefront is configured, `default_storefront` is `null`.
 
 ## Error Responses
 
-All errors follow the existing pattern: `{"error": "message"}`.
+All errors use Echo's `echo.NewHTTPError()` which returns `{"message": "error text"}`.
 
 | Condition | Status | Error |
 |---|---|---|

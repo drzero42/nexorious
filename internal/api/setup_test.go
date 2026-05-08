@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -97,11 +98,16 @@ func TestSetupAdmin_AlreadySetup(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	if err := sh.HandleSetupAdmin(c); err != nil {
-		t.Fatalf("HandleSetupAdmin: %v", err)
+	err = sh.HandleSetupAdmin(c)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", rec.Code, rec.Body)
+	var he *echo.HTTPError
+	if !errors.As(err, &he) {
+		t.Fatalf("expected *echo.HTTPError, got %T: %v", err, err)
+	}
+	if he.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", he.Code)
 	}
 }
 
@@ -128,11 +134,16 @@ func TestSetupAdmin_InvalidBody(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			if err := sh.HandleSetupAdmin(c); err != nil {
-				t.Fatalf("HandleSetupAdmin: %v", err)
+			err := sh.HandleSetupAdmin(c)
+			if err == nil {
+				t.Fatal("expected error, got nil")
 			}
-			if rec.Code != tc.want {
-				t.Errorf("expected %d, got %d: %s", tc.want, rec.Code, rec.Body)
+			var he *echo.HTTPError
+			if !errors.As(err, &he) {
+				t.Fatalf("expected *echo.HTTPError, got %T: %v", err, err)
+			}
+			if he.Code != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, he.Code)
 			}
 		})
 	}
@@ -158,9 +169,19 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			_ = sh.HandleSetupAdmin(c)
+			var code int
+			if err := sh.HandleSetupAdmin(c); err != nil {
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
+					code = he.Code
+				} else {
+					code = http.StatusInternalServerError
+				}
+			} else {
+				code = rec.Code
+			}
 			mu.Lock()
-			codes = append(codes, rec.Code)
+			codes = append(codes, code)
 			mu.Unlock()
 		})
 	}

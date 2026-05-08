@@ -54,26 +54,26 @@ type setupAdminResponse struct {
 func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	var req setupAdminRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 	if req.Username == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "username and password are required"})
+		return echo.NewHTTPError(http.StatusBadRequest, "username and password are required")
 	}
 	if req.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "username and password are required"})
+		return echo.NewHTTPError(http.StatusBadRequest, "username and password are required")
 	}
 	if len(req.Username) < 3 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "username must be at least 3 characters"})
+		return echo.NewHTTPError(http.StatusBadRequest, "username must be at least 3 characters")
 	}
 	if len(req.Password) < 8 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "password must be at least 8 characters"})
+		return echo.NewHTTPError(http.StatusBadRequest, "password must be at least 8 characters")
 	}
 
 	userID := uuid.NewString()
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
 	if err != nil {
 		slog.Error("setup admin: bcrypt", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	var createdAt time.Time
@@ -86,10 +86,10 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 			continue
 		}
 		if isUserExistsError(err) {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "setup already complete"})
+			return echo.NewHTTPError(http.StatusForbidden, "setup already complete")
 		}
 		slog.Error("setup admin: create user", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	accessToken, refreshToken, tokenErr := issueTokensAndSession(

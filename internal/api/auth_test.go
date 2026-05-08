@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -243,8 +244,8 @@ func TestHandleLogin_WrongPassword(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["error"] != "incorrect username or password" {
-		t.Errorf("error = %q, want %q", resp["error"], "incorrect username or password")
+	if resp["message"] != "incorrect username or password" {
+		t.Errorf("error = %q, want %q", resp["message"], "incorrect username or password")
 	}
 }
 
@@ -262,8 +263,8 @@ func TestHandleLogin_NonExistentUser(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["error"] != "incorrect username or password" {
-		t.Errorf("error = %q, want %q", resp["error"], "incorrect username or password")
+	if resp["message"] != "incorrect username or password" {
+		t.Errorf("error = %q, want %q", resp["message"], "incorrect username or password")
 	}
 }
 
@@ -282,8 +283,8 @@ func TestHandleLogin_DisabledUser(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["error"] != "user account is disabled" {
-		t.Errorf("error = %q, want %q", resp["error"], "user account is disabled")
+	if resp["message"] != "user account is disabled" {
+		t.Errorf("error = %q, want %q", resp["message"], "user account is disabled")
 	}
 }
 
@@ -430,8 +431,8 @@ func TestHandleRefresh_NoMatchingSession(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["error"] != "invalid or expired refresh token" {
-		t.Errorf("error = %q, want %q", resp["error"], "invalid or expired refresh token")
+	if resp["message"] != "invalid or expired refresh token" {
+		t.Errorf("error = %q, want %q", resp["message"], "invalid or expired refresh token")
 	}
 }
 
@@ -536,8 +537,8 @@ func TestHandleLogout_WrongUserRefreshToken(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["error"] != "invalid refresh token for authenticated user" {
-		t.Errorf("error = %q, want %q", resp["error"], "invalid refresh token for authenticated user")
+	if resp["message"] != "invalid refresh token for authenticated user" {
+		t.Errorf("error = %q, want %q", resp["message"], "invalid refresh token for authenticated user")
 	}
 }
 
@@ -654,10 +655,15 @@ func TestGetMe_Unauthorized_NoUserID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	if err := ah.HandleGetMe(c); err != nil {
-		t.Fatalf("HandleGetMe: %v", err)
+	err := ah.HandleGetMe(c)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
+	var he *echo.HTTPError
+	if !errors.As(err, &he) {
+		t.Fatalf("expected *echo.HTTPError, got %T: %v", err, err)
+	}
+	if he.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", he.Code)
 	}
 }

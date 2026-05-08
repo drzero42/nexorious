@@ -100,6 +100,118 @@ requests:
         method: GET
         url: "{{base_url}}/api/migrate/progress"
 
+  platforms:
+    name: Platforms
+    requests:
+      list_platforms:
+        name: List Platforms
+        method: GET
+        url: "{{base_url}}/api/platforms"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      platforms_simple_list:
+        name: Platforms Simple List
+        method: GET
+        url: "{{base_url}}/api/platforms/simple-list"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      get_platform:
+        name: Get Platform
+        method: GET
+        url: "{{base_url}}/api/platforms/pc-windows"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      platform_storefronts:
+        name: Platform Storefronts
+        method: GET
+        url: "{{base_url}}/api/platforms/pc-windows/storefronts"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      platform_default_storefront:
+        name: Platform Default Storefront
+        method: GET
+        url: "{{base_url}}/api/platforms/pc-windows/default-storefront"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      list_storefronts:
+        name: List Storefronts
+        method: GET
+        url: "{{base_url}}/api/platforms/storefronts/"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      storefronts_simple_list:
+        name: Storefronts Simple List
+        method: GET
+        url: "{{base_url}}/api/platforms/storefronts/simple-list"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      get_storefront:
+        name: Get Storefront
+        method: GET
+        url: "{{base_url}}/api/platforms/storefronts/steam"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+  tags:
+    name: Tags
+    requests:
+      list_tags:
+        name: List Tags
+        method: GET
+        url: "{{base_url}}/api/tags"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      create_tag:
+        name: Create Tag
+        method: POST
+        url: "{{base_url}}/api/tags"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            name: Favorites
+            color: "#ff0000"
+
+      update_tag:
+        name: Update Tag
+        method: PUT
+        url: "{{base_url}}/api/tags/TAG_ID_HERE"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            name: Updated Name
+            color: "#00ff00"
+
+      delete_tag:
+        name: Delete Tag
+        method: DELETE
+        url: "{{base_url}}/api/tags/TAG_ID_HERE"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
   setup:
     name: Setup
     requests:

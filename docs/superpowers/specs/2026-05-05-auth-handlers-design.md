@@ -86,9 +86,9 @@ New Go dependency: `golang.org/x/crypto/bcrypt`
 `expires_in` is the access token lifetime in seconds (derived from `cfg.AccessTokenExpireMinutes * 60`).
 
 **Error responses:**
-- `400` — `{"error": "invalid request body"}` — malformed JSON or missing required fields
-- `401` — `{"error": "incorrect username or password"}` — wrong credentials OR user not found (same message to prevent user enumeration)
-- `401` — `{"error": "user account is disabled"}` — `is_active = false`
+- `400` — `{"message": "invalid request body"}` — malformed JSON or missing required fields
+- `401` — `{"message": "incorrect username or password"}` — wrong credentials OR user not found (same message to prevent user enumeration)
+- `401` — `{"message": "user account is disabled"}` — `is_active = false`
 
 **Logic:**
 
@@ -138,10 +138,10 @@ New Go dependency: `golang.org/x/crypto/bcrypt`
 The refresh token is **not rotated** — the same refresh token is echoed back. Only the access token is new. This matches the Python implementation.
 
 **Error responses:**
-- `400` — `{"error": "invalid request body"}` — malformed JSON or missing refresh_token
-- `401` — `{"error": "invalid refresh token"}` — malformed, expired, wrong type, or missing subject
-- `401` — `{"error": "invalid or expired refresh token"}` — no matching `user_sessions` row (deleted session or expired)
-- `401` — `{"error": "user not found or disabled"}` — user row missing or `is_active = false`
+- `400` — `{"message": "invalid request body"}` — malformed JSON or missing refresh_token
+- `401` — `{"message": "invalid refresh token"}` — malformed, expired, wrong type, or missing subject
+- `401` — `{"message": "invalid or expired refresh token"}` — no matching `user_sessions` row (deleted session or expired)
+- `401` — `{"message": "user not found or disabled"}` — user row missing or `is_active = false`
 
 **Logic:**
 
@@ -177,7 +177,7 @@ The refresh token is **not rotated** — the same refresh token is echoed back. 
 
 **Error responses:**
 - `401` — from JWTMiddleware (missing/invalid/expired access token)
-- `400` — `{"error": "invalid refresh token for authenticated user"}` — refresh token's subject doesn't match the authenticated user
+- `400` — `{"message": "invalid refresh token for authenticated user"}` — refresh token's subject doesn't match the authenticated user
 
 **Logic:**
 

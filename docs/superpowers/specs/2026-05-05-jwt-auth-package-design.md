@@ -80,21 +80,21 @@ func JWTMiddleware(secretKey string, pool *pgxpool.Pool) echo.MiddlewareFunc
 Behavior (matches Python `get_current_user` exactly):
 
 1. Read `Authorization` header; expect `Bearer <token>`
-2. If missing or malformed → `401 {"error": "missing or invalid authorization header"}`
-3. Call `ParseToken(secretKey, token, "access")` → if error → `401 {"error": "invalid or expired token"}`
+2. If missing or malformed → `401 {"message": "missing or invalid authorization header"}`
+3. Call `ParseToken(secretKey, token, "access")` → if error → `401 {"message": "invalid or expired token"}`
 4. Extract `sub` (user ID) from claims
 5. Hash the token with `HashToken` and look up in `user_sessions`:
    ```sql
    SELECT id FROM user_sessions
    WHERE user_id = $1 AND token_hash = $2
    ```
-   If no row found → `401 {"error": "session not found or expired"}`
+   If no row found → `401 {"message": "session not found or expired"}`
 6. Load user from `users` table:
    ```sql
    SELECT id, username, is_active, is_admin FROM users WHERE id = $1
    ```
-   If not found → `401 {"error": "user not found"}`
-   If `is_active = false` → `401 {"error": "user account is disabled"}`
+   If not found → `401 {"message": "user not found"}`
+   If `is_active = false` → `401 {"message": "user account is disabled"}`
 7. Set on Echo context:
    - `c.Set("user_id", user.ID)`
    - `c.Set("is_admin", user.IsAdmin)`
@@ -109,7 +109,7 @@ Behavior (matches Python `get_current_user` exactly):
 func AdminMiddleware() echo.MiddlewareFunc
 ```
 
-Stacks after `JWTMiddleware`. Reads `is_admin` from context → `403 {"error": "admin access required"}` if false or absent.
+Stacks after `JWTMiddleware`. Reads `is_admin` from context → `403 {"message": "admin access required"}` if false or absent.
 
 ### Context Helpers
 
@@ -157,7 +157,7 @@ Not implemented in this package — these are handler-level concerns documented 
 All error responses use a consistent JSON shape:
 
 ```json
-{"error": "message here"}
+{"message": "message here"}
 ```
 
 - `401` — missing/malformed/expired token, revoked session, inactive user

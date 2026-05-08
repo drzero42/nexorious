@@ -99,11 +99,12 @@ type UserGamePlatform struct {
 type Platform struct {
 	bun.BaseModel `bun:"table:platforms"`
 
-	Name              string  `bun:"name,pk"               json:"name"`
-	DisplayName       string  `bun:"display_name,notnull"  json:"display_name"`
-	Icon              *string `bun:"icon"                  json:"icon"`
-	IgdbPlatformID    *int32  `bun:"igdb_platform_id"      json:"igdb_platform_id"`
-	DefaultStorefront *string `bun:"default_storefront"    json:"default_storefront"`
+	Name              string       `bun:"name,pk"               json:"name"`
+	DisplayName       string       `bun:"display_name,notnull"  json:"display_name"`
+	Icon              *string      `bun:"icon"                  json:"icon"`
+	IgdbPlatformID    *int32       `bun:"igdb_platform_id"      json:"igdb_platform_id"`
+	DefaultStorefront *string      `bun:"default_storefront"    json:"default_storefront"`
+	Storefronts       []Storefront `bun:"m2m:platform_storefronts,join:Platform=Storefront" json:"storefronts,omitempty"`
 }
 
 type Storefront struct {
@@ -118,8 +119,10 @@ type Storefront struct {
 type PlatformStorefront struct {
 	bun.BaseModel `bun:"table:platform_storefronts"`
 
-	Platform   string `bun:"platform,pk"   json:"platform"`
-	Storefront string `bun:"storefront,pk" json:"storefront"`
+	PlatformName   string      `bun:"platform,pk"`
+	StorefrontName string      `bun:"storefront,pk"`
+	Platform       *Platform   `bun:"rel:belongs-to,join:platform=name"`
+	Storefront     *Storefront `bun:"rel:belongs-to,join:storefront=name"`
 }
 
 type Tag struct {

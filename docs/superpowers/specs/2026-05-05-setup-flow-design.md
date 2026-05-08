@@ -271,7 +271,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error
    - `token_hash`: `auth.HashToken(accessToken)` — SHA-256 hex digest (from `internal/auth`)
    - `refresh_token_hash`: `auth.HashToken(refreshToken)` — SHA-256 hex digest
    - `user_agent`, `ip_address`: passed in from the caller
-6. Call `h.migrator.SetNeedsSetup(false)` — called unconditionally after step 5, whether it succeeded or failed. The user row has been committed; the setup gate must not remain active indefinitely. If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500 with `{"error": "setup succeeded but session could not be created — please log in"}`. The setup page must treat a 500 response as a redirect to `/login` (not a generic retry prompt — the admin account was created, retrying setup would return 403).
+6. Call `h.migrator.SetNeedsSetup(false)` — called unconditionally after step 5, whether it succeeded or failed. The user row has been committed; the setup gate must not remain active indefinitely. If `issueTokensAndSession` errors, call `SetNeedsSetup(false)`, log the error, and return 500 with `{"message": "setup succeeded but session could not be created — please log in"}`. The setup page must treat a 500 response as a redirect to `/login` (not a generic retry prompt — the admin account was created, retrying setup would return 403).
 7. Return 201 with user profile + tokens (auto-login — no separate `/login` round-trip needed)
 
 **`bcryptCost` constant:** Define `const bcryptCost = 12` in `internal/api/auth.go`. All call sites that **create** password hashes must use this constant — never hardcode the cost inline. Use `golang.org/x/crypto/bcrypt` (`bcrypt.GenerateFromPassword`). In Phase 1 that is `HandleSetupAdmin`; in later phases it is `PUT /api/auth/admin/users/:id/password` and `PUT /api/auth/change-password`. `HandleLogin` does **not** use this constant directly: it calls `bcrypt.CompareHashAndPassword` which reads the cost from the stored hash automatically. This ensures all password hashes in the system are created at the same cost.
@@ -766,14 +766,14 @@ The `status` field in the body provides the actual state for monitoring and obse
 
 | Condition | Response |
 |-----------|----------|
-| Missing/empty username or password | 400 `{"error": "username and password are required"}` |
-| Username < 3 chars | 400 `{"error": "username must be at least 3 characters"}` |
-| Password < 8 chars | 400 `{"error": "password must be at least 8 characters"}` |
-| Users already exist | 403 `{"error": "setup already complete"}` |
-| PG `40001` — serialization failure (concurrent setup race), after one retry | 403 `{"error": "setup already complete"}` — the retry's count check catches the winner's row |
-| DB error (other) | 500 `{"error": "internal server error"}` (logged) |
+| Missing/empty username or password | 400 `{"message": "username and password are required"}` |
+| Username < 3 chars | 400 `{"message": "username must be at least 3 characters"}` |
+| Password < 8 chars | 400 `{"message": "password must be at least 8 characters"}` |
+| Users already exist | 403 `{"message": "setup already complete"}` |
+| PG `40001` — serialization failure (concurrent setup race), after one retry | 403 `{"message": "setup already complete"}` — the retry's count check catches the winner's row |
+| DB error (other) | 500 `{"message": "internal server error"}` (logged) |
 | Seed error | Logged at WARN level; 201 still returned (admin created, seeding retried via `POST /api/platforms/seed`) |
-| `issueTokensAndSession` error after user committed | 500 `{"error": "setup succeeded but session could not be created — please log in"}`; `SetNeedsSetup(false)` still called; setup page redirects to `/login` |
+| `issueTokensAndSession` error after user committed | 500 `{"message": "setup succeeded but session could not be created — please log in"}`; `SetNeedsSetup(false)` still called; setup page redirects to `/login` |
 
 **Rate limiting:** Setup endpoints are **not** rate-limited. Once any user exists the endpoints return 403 permanently — they are not a viable brute-force surface. Adding rate limiting would require bootstrapping the limiter before setup is complete, which adds complexity for no practical benefit.
 

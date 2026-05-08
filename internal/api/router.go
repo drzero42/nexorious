@@ -152,6 +152,26 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
+
+		// Platform and storefront routes (all JWT-protected)
+		ph := NewPlatformsHandler(db)
+		platformsGroup := e.Group("/api/platforms", auth.JWTMiddleware(cfg.SecretKey, db))
+		platformsGroup.GET("", ph.HandleListPlatforms)
+		platformsGroup.GET("/simple-list", ph.HandleSimpleList)
+		platformsGroup.GET("/storefronts/simple-list", ph.HandleStorefrontSimpleList)
+		platformsGroup.GET("/storefronts/:storefront", ph.HandleGetStorefront)
+		platformsGroup.GET("/storefronts/", ph.HandleListStorefronts)
+		platformsGroup.GET("/:platform/storefronts", ph.HandlePlatformStorefronts)
+		platformsGroup.GET("/:platform/default-storefront", ph.HandleDefaultStorefront)
+		platformsGroup.GET("/:platform", ph.HandleGetPlatform)
+
+		// Tag routes (all JWT-protected)
+		th := NewTagsHandler(db)
+		tagsGroup := e.Group("/api/tags", auth.JWTMiddleware(cfg.SecretKey, db))
+		tagsGroup.GET("", th.HandleListTags)
+		tagsGroup.POST("", th.HandleCreateTag)
+		tagsGroup.PUT("/:id", th.HandleUpdateTag)
+		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
 	}
 
 	// Static cover art files from disk

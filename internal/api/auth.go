@@ -63,7 +63,7 @@ type tokenResponse struct {
 func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 	var req loginRequest
 	if err := c.Bind(&req); err != nil || req.Username == "" || req.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	// Look up the user by username.
@@ -79,31 +79,31 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 	).Scan(&userID, &passwordHash, &isActive)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "incorrect username or password"})
+			return echo.NewHTTPError(http.StatusUnauthorized, "incorrect username or password")
 		}
 		slog.Error("login: query user", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	// Verify the password before checking is_active (prevents timing-based user enumeration).
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "incorrect username or password"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "incorrect username or password")
 	}
 
 	if !isActive {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user account is disabled"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "user account is disabled")
 	}
 
 	// Generate tokens.
 	accessToken, err := auth.GenerateAccessToken(h.cfg.SecretKey, userID, h.cfg.AccessTokenExpireMinutes)
 	if err != nil {
 		slog.Error("login: generate access token", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	refreshToken, err := auth.GenerateRefreshToken(h.cfg.SecretKey, userID, h.cfg.RefreshTokenExpireDays)
 	if err != nil {
 		slog.Error("login: generate refresh token", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	// Persist the session.
@@ -123,7 +123,7 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 	)
 	if err != nil {
 		slog.Error("login: insert session", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	return c.JSON(http.StatusOK, tokenResponse{
@@ -141,17 +141,17 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	var req refreshRequest
 	if err := c.Bind(&req); err != nil || req.RefreshToken == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	// Validate the refresh JWT.
 	claims, err := auth.ParseToken(h.cfg.SecretKey, req.RefreshToken, "refresh")
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid refresh token"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
 	}
 	userID := claims.Subject
 	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid refresh token"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
 	}
 
 	// Look up the session.
@@ -164,10 +164,10 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	).Scan(&sessionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid or expired refresh token"})
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid or expired refresh token")
 		}
 		slog.Error("refresh: query session", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	// Check the user is still active.
@@ -179,20 +179,20 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	).Scan(&isActive)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found or disabled"})
+			return echo.NewHTTPError(http.StatusUnauthorized, "user not found or disabled")
 		}
 		slog.Error("refresh: query user", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if !isActive {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found or disabled"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "user not found or disabled")
 	}
 
 	// Issue a new access token.
 	newAccessToken, err := auth.GenerateAccessToken(h.cfg.SecretKey, userID, h.cfg.AccessTokenExpireMinutes)
 	if err != nil {
 		slog.Error("refresh: generate access token", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	// Update the session's access token hash.
@@ -203,7 +203,7 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 	)
 	if err != nil {
 		slog.Error("refresh: update session", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	return c.JSON(http.StatusOK, tokenResponse{
@@ -239,7 +239,7 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 
 	// Guard against logging out another user's session.
 	if claims.Subject != userID {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid refresh token for authenticated user"})
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid refresh token for authenticated user")
 	}
 
 	// Delete the session. Ignore "not found" — idempotent.
@@ -308,7 +308,7 @@ type meResponse struct {
 func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
 	var resp meResponse
@@ -320,10 +320,10 @@ func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
 	).Scan(&resp.ID, &resp.Username, &resp.IsAdmin, &resp.IsActive, &prefs, &resp.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not found"})
+			return echo.NewHTTPError(http.StatusUnauthorized, "user not found")
 		}
 		slog.Error("get me: query user", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	if prefs == nil {
