@@ -625,7 +625,7 @@ The initial migration must create all of the following tables (derived from Pyth
 
 | Table | Notes |
 |---|---|
-| `users` | UUID PK; `username`, `password_hash`; `is_active`, `is_admin`; `preferences` (JSON text) |
+| `users` | UUID PK; `username` (UNIQUE via `UNIQUE(LOWER(username))`), `password_hash`; `is_active`, `is_admin`; `preferences` (JSON text) |
 | `user_sessions` | UUID PK; `token_hash`, `refresh_token_hash`, `user_agent`, `ip_address` |
 | `games` | INT PK (IGDB ID); `title`, `description`, `genre`, `developer`, `publisher`, `release_date`; `cover_art_url`; `rating_average` (NUMERIC 5,2), `rating_count`; `estimated_playtime_hours`; `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` (hours, converted from IGDB seconds); `igdb_slug`, `igdb_platform_ids` (JSON array), `igdb_platform_names` (JSON array); `game_modes`, `themes`, `player_perspectives` (comma-separated strings); `game_metadata` (JSON text); `last_updated` (IGDB metadata refresh timestamp); `created_at` (TIMESTAMPTZ, NOT NULL DEFAULT now() — when the game was first inserted into this database; passed explicitly on upsert to preserve the value across metadata refreshes, which only update `last_updated`). **HowLongToBeat field mapping:** IGDB's `game_time_to_beats` endpoint returns fields named `hastily`, `normally`, `completely` (in seconds). These map to `howlongtobeat_main`, `howlongtobeat_extra`, `howlongtobeat_completionist` respectively (converted to hours). This mapping is non-obvious and must be replicated exactly from the Python `map_igdb_time_to_beat_to_db_fields()` function. |
 | `user_games` | UUID PK; `play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`; UNIQUE(user_id, game_id) |
@@ -1013,7 +1013,7 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 
 - `GET /api/auth/me` — returns current user profile; used by the frontend as a token-validity probe on app load
 - `PUT /api/auth/me` — update user preferences (stored as JSON in `users.preferences`)
-- `PUT /api/auth/change-password` — changes password, invalidates **all** existing sessions for that user, forcing re-login on all devices
+- `PUT /api/auth/change-password` — changes password, invalidates all **other** sessions for that user (preserves the current session)
 - `GET /api/auth/username/check/:username` — availability check, no side effects
 - `PUT /api/auth/username` — change username
 

@@ -89,7 +89,7 @@ Four JWT-protected endpoints that complete the Phase 2 auth surface: profile upd
 **Behaviour:**
 1. Extract `username` from path param
 2. Validate length: 3–100 characters
-3. Query: `SELECT 1 FROM users WHERE username = ? LIMIT 1`
+3. Query: `SELECT 1 FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1`
 4. Return availability result
 
 **Errors:**
@@ -117,8 +117,8 @@ Four JWT-protected endpoints that complete the Phase 2 auth surface: profile upd
 1. Bind JSON to `changeUsernameRequest` struct
 2. Validate `new_username` length: 3–100 characters
 3. Query current username for the user; if same as `new_username`, return 400
-4. Check availability: `SELECT 1 FROM users WHERE username = ? LIMIT 1`
-5. Execute: `UPDATE users SET username = ?, updated_at = NOW() WHERE id = ?`
+4. Check availability: `SELECT 1 FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1`
+5. Execute: `UPDATE users SET username = ?, updated_at = NOW() WHERE id = ?` — catch unique constraint violation (concurrent race) and return 400 `"username already taken"`
 6. Re-query user row and return `meResponse`
 
 **Errors:**
@@ -171,7 +171,7 @@ type messageResponse struct {
 }
 ```
 
-`meResponse` already exists and is reused for `PUT /me` and `PUT /username`.
+**Username uniqueness:** Usernames are case-sensitive (stored and displayed as entered) but unique case-insensitively. The `users` table needs a `UNIQUE(LOWER(username))` constraint. The initial migration has a plain `UNIQUE(username)` — add a migration to drop that and create `CREATE UNIQUE INDEX users_username_lower_idx ON users (LOWER(username))` instead. All availability checks use `LOWER()` comparison, and the handler catches the unique constraint violation on UPDATE as a fallback for TOCTOU races.
 
 ## Testing
 
