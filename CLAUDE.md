@@ -27,7 +27,6 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 | Run tests (Go)           | `go test ./...`                                          |
 | Run single test          | `go test ./internal/api/... -run TestGamesList -v`       |
 | Run tests with coverage  | `go test -cover ./...`                                   |
-| Generate sqlc code       | `make sqlc`                                              |
 | Type check (frontend)    | `npm run check`  (from `ui/`)                            |
 | Run frontend tests       | `npm run test`   (from `ui/`)                            |
 | Lint Go                  | `golangci-lint run`                                      |
@@ -37,29 +36,25 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 ```bash
 devenv shell
 go version   # expect go 1.23+
-sqlc version
 make --version
 ```
 
 ## Setup & Development
 
 ### Development Environment
-Uses devenv for a reproducible shell (Go 1.25, sqlc, golangci-lint, make, Node 24, TypeScript):
+Uses devenv for a reproducible shell (Go 1.25, golangci-lint, make, Node 24, TypeScript):
 ```bash
 devenv shell
 ```
 
 ### Build
 ```bash
-make             # frontend → sqlc generate → go build
+make             # frontend → go build
 make frontend    # builds React SPA into ui/dist/
-make sqlc        # regenerates internal/db/gen/ from SQL queries
 make build       # compiles the Go binary
 ```
 
 `ui/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds `ui/dist` and `ui/migrate` via `//go:embed`.
-
-`internal/db/gen/` is committed — run `make sqlc` only when query files under `internal/db/queries/` change.
 
 ### Initial Setup
 ```bash
@@ -75,14 +70,13 @@ export DATABASE_URL="postgres://..."
 - `internal/api/` — Echo route handlers per domain (games, user_games, auth, platforms, tags, jobs, import, export, backup, sync, status)
 - `internal/db/` — database layer
   - `migrations/` — golang-migrate SQL files (`0001_initial.up.sql`, etc.)
-  - `queries/` — sqlc input SQL (hand-edited)
-  - `gen/` — sqlc output (generated, committed, never hand-edited)
+  - `models/` — Bun model structs (hand-edited)
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
 - `internal/worker/` — goroutine pool with buffered `chan TaskFunc`; tasks under `worker/tasks/`
 - `internal/scheduler/` — gocron v2 job definitions (scheduled maintenance)
 - `internal/services/` — IGDB client, Steam/PSN/Epic sync, cover art storage, game matching, platform resolution
 - `internal/auth/` — JWT generation/validation + Echo middleware
-- `internal/filter/` — dynamic query builder (goqu + sqlx) for user-game list filtering
+- `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
 - `internal/config/` — config struct via `caarlos0/env`
 - `ui/` — React SPA source (`ui/src/`) + build output (`ui/dist/`) + migration HTML (`ui/migrate/`)
@@ -96,10 +90,10 @@ NeedsMigration → Migrating → Ready
 Echo middleware blocks all non-migration routes until state is `Ready`. Workers and the gocron scheduler start only after migrations complete. Graceful shutdown drains the worker queue on `SIGTERM`/`SIGINT`.
 
 ### Database Layer
-- **Static queries**: `sqlc` generates type-safe Go from SQL in `internal/db/queries/`. Never edit `internal/db/gen/` by hand.
-- **Exception**: `internal/auth` uses raw `pool.QueryRow` directly (not sqlc) to avoid coupling auth to `internal/db/gen`.
-- **Dynamic filter queries**: `goqu/v9` + `sqlx` used in `internal/filter/` for user-game list filtering (JOINs, WHERE, HAVING accumulate via `filterBuilder`).
-- **Driver**: `pgx/v5` with `pgxpool`.
+- **ORM**: Bun (`uptrace/bun`) with model structs in `internal/db/models/`. Queries use Bun's query builder.
+- **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
+- **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
+- **Driver**: `pgx/v5` via Bun's `pgdriver` adapter (`bunpgx`).
 - **Migrations**: `golang-migrate/v4`; migration SQL lives in `internal/db/migrations/`.
 
 ### Frontend Embedding (Stash pattern)
@@ -146,9 +140,8 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 ### Essential Workflow
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
-3. **sqlc**: Run `make sqlc` after editing query files; commit the generated `internal/db/gen/` output
-4. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/`; never hand-edit generated code
-5. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run test` after any frontend changes
+3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/`; never hand-edit generated code
+4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run test` after any frontend changes
 
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
@@ -162,7 +155,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 - Standard Go conventions: `camelCase` unexported, `PascalCase` exported, `UPPER_CASE` constants
 - Errors returned, not panicked; wrap with `fmt.Errorf("context: %w", err)`
 - Echo handler signature: `func (h *Handler) ListGames(c *echo.Context) error` — note `*echo.Context` (pointer) in v5; middleware is `func(echo.HandlerFunc) echo.HandlerFunc`
-- Use `pgxpool` for DB; pass `*db.Queries` via dependency injection
+- Use `*bun.DB` for DB access; pass via dependency injection
 
 **TypeScript (Frontend)**
 - Same conventions as nexorious: external → internal (`@/...`) → types import order
@@ -192,6 +185,3 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
-- **`emit_pointers_for_null_fields` not supported in sqlc v1.30.0** — causes a yaml parse failure; nullable columns use `pgtype.Text`/`pgtype.Numeric`/etc. instead of `*string`/`*float64`. Handle the conversion at the response-projection layer in handlers.
-- **sqlc ILIKE concatenations need named params** — `'%' || $1 || '%'` generates an anonymous `Column1 pgtype.Text` field. Use `@paramname` syntax: `'%' || @query || '%'` (positional `$N` params after named ones reset to `$1`).
-- **`internal/db/gen/models.go` contains ALL schema tables** — sqlc scans the full migration schema, so Phase 3+ structs (`Job`, `BackupConfig`, etc.) appear in the generated package even without query files. Expected behavior.
