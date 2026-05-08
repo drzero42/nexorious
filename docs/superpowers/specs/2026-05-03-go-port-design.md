@@ -27,11 +27,9 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 | Concern | Library |
 |---|---|
 | HTTP framework | `echo/v5` |
-| DB driver | `pgx/v5` (`pgxpool`) |
-| Type-safe static queries | `sqlc` (code generation) |
-| Dynamic filter queries | `sqlx` + `goqu/v9` (see Database Layer) |
+| DB + ORM + migrations | `uptrace/bun` (replaces sqlc + goqu/sqlx + golang-migrate) |
+| DB driver | `bun/driver/pgdriver` (Bun's own PostgreSQL driver) |
 | Fuzzy matching (IGDB) | `github.com/paul-mannino/go-fuzzywuzzy` (IGDB ranking only — local DB search uses ILIKE) |
-| Migrations | `golang-migrate/v4` |
 | JWT | `golang-jwt/jwt/v5` |
 | Rate limiting | `golang.org/x/time/rate` + PostgreSQL table (optional) |
 | Scheduled tasks | `go-co-op/gocron/v2` |
@@ -46,12 +44,12 @@ The React frontend source is moved into the Go repository under `ui/` (matching 
 ### Startup Sequence
 
 1. Parse config from env vars (+ `.env` file via `godotenv`)
-2. `pgxpool.New()` — fatal only on DSN parse error (misconfiguration); not a transient failure
+2. Open Bun DB (`bun.NewDB` with `pgdriver.NewConnector`) — fatal only on DSN parse error (misconfiguration); not a transient failure
 3. `NewMigrator()` — creates the Migrator struct; `state` zero-values to `AppStateDBUnavailable`, which is correct before any DB check
-4. `pool.Ping()` — if unreachable, leave state as `AppStateDBUnavailable` and continue (no exit); if reachable, call `initAppState()`
+4. `db.PingContext()` — if unreachable, leave state as `AppStateDBUnavailable` and continue (no exit); if reachable, call `initAppState()`
 5. `initAppState()` — `determineState()` + (if `Ready`) `InitNeedsSetup()` on the already-created Migrator; sets the correct operational state
 6. Start Echo HTTP server (always — serves DB error page, migration UI, setup UI, or the app depending on state; Migrator always exists so middleware is safe)
-7. Start `StartDBProbe(shutdownCtx, pool)` goroutine — monitors DB connectivity, drives state transitions, calls `initAppState()` on first recovery if state is still `DBUnavailable`
+7. Start `StartDBProbe(shutdownCtx, db)` goroutine — monitors DB connectivity, drives state transitions, calls `initAppState()` on first recovery if state is still `DBUnavailable`
 8. Spawn worker/scheduler gate-loop goroutine — starts workers + gocron only when `State() == Ready && !NeedsSetup()`
 
 Workers and the scheduler are never started until migrations have been applied and setup is complete. Graceful shutdown on `SIGTERM`/`SIGINT` drains the worker queue before the process exits.
@@ -84,7 +82,7 @@ type Migrator struct {
 }
 ```
 
-**`StartDBProbe(ctx, pool)`** — polls `pool.Ping()` every 5 seconds:
+**`StartDBProbe(ctx, db)`** — polls `db.PingContext()` every 5 seconds:
 
 - **Ping fails** + state ≠ `DBUnavailable` → save current state to `prevState`, set `DBUnavailable`, log WARN, record `lastUnavailableAt`.
 - **Ping succeeds** + state == `DBUnavailable` → three sub-cases based on `prevState`:
@@ -95,7 +93,7 @@ type Migrator struct {
 
 Signature:
 ```go
-func (mg *Migrator) StartDBProbe(ctx context.Context, pool *pgxpool.Pool, onRecovery func(ctx context.Context) error)
+func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery func(ctx context.Context) error)
 ```
 
 `onRecovery` is passed from `main.go` as the `initAppState` closure. This avoids a circular import: `migrator.go` does not need to know about `main.go`'s initialisation logic; `main.go` injects it as a callback.
@@ -241,14 +239,14 @@ nexorious-go/
 │   │   ├── backup.go
 │   │   └── tags.go
 │   ├── db/
-│   │   ├── migrations/          # golang-migrate SQL files: 0001_initial.up.sql, etc.
-│   │   ├── queries/             # sqlc input SQL: games.sql, user_games.sql, etc.
-│   │   └── gen/                 # sqlc output (generated, committed, never hand-edited)
-│   │       ├── db.go
-│   │       ├── models.go
-│   │       └── *.sql.go
+│   │   ├── migrations/          # Bun SQL migration files: 00000000000001_initial.up.sql, etc.
+│   │   └── models/              # Bun model structs (one file per domain)
+│   │       ├── game.go
+│   │       ├── user_game.go
+│   │       ├── user.go
+│   │       └── ...
 │   ├── migrate/
-│   │   ├── migrator.go          # State machine + golang-migrate wrapper
+│   │   ├── migrator.go          # State machine + Bun migrate wrapper
 │   │   └── handler.go           # Echo handlers for /migrate and /api/migrate/*
 │   ├── worker/
 │   │   ├── pool.go              # Goroutine pool + buffered chan TaskFunc
@@ -288,13 +286,10 @@ nexorious-go/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── ...                      # remainder of React project files
-├── sqlc.yaml
-├── Makefile                     # frontend build → sqlc generate → go build
+├── Makefile                     # frontend build → go build
 ├── go.mod
 └── go.sum
 ```
-
-`internal/db/gen/` is committed to the repository. `sqlc generate` only needs to be run when query files change, not on every build.
 
 `ui/dist/` is gitignored; it is populated by `make frontend` before `go build`. `ui/ui.go` follows the Stash pattern exactly:
 
@@ -508,81 +503,91 @@ export const config = {
 
 ## Database Layer
 
-### Migrations (golang-migrate)
+### Migrations (Bun migrate)
 
-SQL migration files live in `internal/db/migrations/` and are embedded in the binary via `embed.FS`. The first migration (`0001_initial.up.sql`) is a clean schema derived from the current Python models — no Alembic history is ported. The migrator wraps `golang-migrate` and drives the app state machine.
+SQL migration files live in `internal/db/migrations/` and are embedded in the binary via `embed.FS`. Bun's migrate package discovers them via `Migrations.Discover(sqlMigrations)`. Migration files follow Bun's timestamp-based naming convention: `20260503000001_initial.up.sql` / `20260503000001_initial.down.sql`. The first migration is a clean schema derived from the current Python models — no Alembic history is ported. The migrator wraps `bun/migrate` and drives the app state machine.
 
 Existing users migrate their data using the nexorious JSON export from the Python version, imported via `POST /api/import` (nexorious format handler).
 
-### Static vs. Dynamic Queries: Hybrid Approach
+### Single Database Layer: Bun
 
-The database layer uses two complementary approaches, following the pattern used by [Stash](https://github.com/stashapp/stash):
+The database layer uses Bun exclusively. This replaces the previous three-tool combo (sqlc + goqu/sqlx + golang-migrate) with a single library that handles migrations, ORM-style queries, and raw SQL.
 
-**sqlc** (static queries): Used for all CRUD operations where the query shape is fixed — auth, games fetch-by-id, jobs, scheduler tasks, external_games upsert, etc. Generated code is committed. Run `sqlc generate` only when query files change.
-
-**sqlx + goqu** (dynamic filter queries): Used for list endpoints with optional multi-value filters and conditional JOINs. These queries cannot be expressed statically. `sqlx` handles query execution and struct scanning; `goqu` builds the SQL programmatically.
-
-The `internal/filter/` package provides a Stash-style `filterBuilder`:
+**Model structs** live in `internal/db/models/` (one file per domain). Each struct has `bun:""` struct tags:
 
 ```go
-// builder.go
-type filterBuilder struct {
-    joins         []join           // accumulated JOINs, deduplicated by table name
-    whereClauses  []goqu.Expression // ANDed WHERE conditions
-    havingClauses []goqu.Expression // ANDed HAVING conditions
-    joinSeen      map[string]bool
-}
+type UserGame struct {
+    bun.BaseModel `bun:"table:user_games"`
 
-// AddJoin adds a LEFT JOIN if the table has not already been joined.
-func (f *filterBuilder) AddJoin(table string, condition goqu.Expression)
-// AddWhere appends a WHERE condition.
-func (f *filterBuilder) AddWhere(expr goqu.Expression)
-// Apply applies accumulated JOINs, WHERE, and HAVING to the provided dataset.
-func (f *filterBuilder) Apply(ds *goqu.SelectDataset) *goqu.SelectDataset
+    ID             string     `bun:"id,pk"           json:"id"`
+    UserID         string     `bun:"user_id,notnull" json:"user_id"`
+    GameID         int32      `bun:"game_id,notnull" json:"game_id"`
+    PlayStatus     *string    `bun:"play_status"     json:"play_status"`
+    PersonalRating *int32     `bun:"personal_rating" json:"personal_rating"`
+    IsLoved        bool       `bun:"is_loved"        json:"is_loved"`
+    HoursPlayed    *float64   `bun:"hours_played"    json:"hours_played"`
+    PersonalNotes  *string    `bun:"personal_notes"  json:"personal_notes"`
+    CreatedAt      time.Time  `bun:"created_at"      json:"created_at"`
+    UpdatedAt      time.Time  `bun:"updated_at"      json:"updated_at"`
+}
 ```
 
-Each filter criterion gets its own handler (a small function that adds JOINs/WHERE/HAVING only if the criterion is non-nil). The `user_games` list handler composes ~12 such handlers. This gives full control over generated SQL without ORM overhead and avoids the N-variant sqlc anti-pattern.
+Nullable columns use standard Go pointer types (`*string`, `*float64`, `*int32`, `*time.Time`) — no `pgtype.*` wrappers in model structs. No code generation; model files are hand-written and hand-maintained.
 
-**Why not GORM?** GORM adds a heavy ORM layer, trades type-safety for flexibility, and generates SQL that is harder to reason about. The Stash project (our reference implementation) deliberately chose custom filter building over GORM for these reasons.
+**Static queries** (fixed shape — auth, game fetch-by-id, tag CRUD, etc.) use Bun's query builder or `db.NewRaw(...)`:
+
+```go
+var game db_models.Game
+err := db.NewSelect().Model(&game).Where("id = ?", id).Scan(ctx)
+
+// or raw SQL for complex cases:
+err := db.NewRaw("SELECT * FROM games WHERE id = ?", id).Scan(ctx, &game)
+```
+
+**Dynamic filter queries** (user-games list with optional multi-value filters and conditional JOINs) use Bun's composable `SelectQuery`:
+
+```go
+q := db.NewSelect().Model(&results).
+    Where("ug.user_id = ?", userID)
+
+if f.PlayStatus != "" {
+    q = q.Where("ug.play_status = ?", f.PlayStatus)
+}
+if len(f.Tags) > 0 {
+    q = q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
+        return q.Where("tag_id IN (?)", bun.In(f.Tags))
+    })
+}
+```
+
+The `internal/filter/` package provides a `filterBuilder` abstraction that accumulates Bun `SelectQuery` modifiers. Each criterion handler is a small function that conditionally calls `.Where()`, `.Join()`, or `.Having()` on the query.
+
+**Auth queries** use `db.NewRaw(...)` directly — same isolation rationale as before; auth must not be coupled to the model structs package.
+
+**Transactions**: handlers that need atomic multi-statement operations call `db.BeginTx(ctx, nil)` to get a `bun.Tx`, then pass it to query builders. Bun's query builders accept both `*bun.DB` and `bun.Tx` via the same interface.
+
+### Connection
+
+A single `*bun.DB` created at startup is injected into all handlers, workers, and the scheduler. No separate `pgxpool.Pool` is needed — Bun manages its own connection pool internally via `database/sql`.
+
+```go
+sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(resolvedDatabaseURL)))
+db := bun.NewDB(sqldb, pgdialect.New())
+db.SetMaxOpenConns(25)
+db.SetMaxIdleConns(5)
+```
+
+The `resolveDBURL` function (see Configuration) produces the DSN passed to `pgdriver.NewConnector`. The `pgx5://` scheme rewriting hack used with golang-migrate is no longer needed — pgdriver accepts standard `postgres://` URLs.
+
+### Sort Field Note
+
+The Python version has a known issue where sort fields requiring a JOIN must be kept in sync between backend and frontend manually. In the Go version, dynamic sort fields in the user_games list (which uses the filterBuilder) are validated against an allowlist at handler entry. Bun's query builder makes sort field injection safe — only allowlisted field names are passed to `.OrderExpr()`.
 
 ### Schema: Key ID Types
 
 - `games.id`: `INT` — the IGDB ID is used directly as the primary key
 - `users.id`, `user_games.id`, `user_game_platforms.id`, `jobs.id`, `job_items.id`, `external_games.id`, `user_sync_configs.id`, `tags.id`, `user_game_tags.id`: `TEXT` (UUID v4 string)
 - `platforms.name`, `storefronts.name`: `TEXT` — slug used as primary key (e.g. `"steam"`, `"pc-windows"`)
-
-Echo route params that bind to UUID IDs are treated as `string` in handlers. Game IDs bind as `int`.
-
-### sqlc Workflow
-
-`sqlc.yaml` points at `internal/db/migrations/` for schema and `internal/db/queries/` for query definitions. Query files use sqlc annotations:
-
-```sql
--- name: ListUserGames :many
-SELECT g.*, ug.play_status, ug.personal_rating
-FROM user_games ug
-JOIN games g ON g.id = ug.game_id
-WHERE ug.user_id = $1
-ORDER BY g.title
-LIMIT $2 OFFSET $3;
-```
-
-Running `sqlc generate` produces fully typed Go functions in `internal/db/gen/`. The generated code is committed so contributors do not need sqlc installed to build.
-
-### Connection Pool
-
-A single `*pgxpool.Pool` created at startup is injected into handlers, workers, and the scheduler via `*db.Queries` (sqlc's query runner). Handlers that need transactions call `pool.BeginTx()` and construct a transaction-scoped `*db.Queries` from the `pgx.Tx`.
-
-Dynamic-query handlers receive the `*pgxpool.Pool` directly and use `sqlx.NewDb(stdlib.OpenDBFromPool(pool), "postgres")` to create an `*sqlx.DB` for goqu execution.
-
-**sqlx/pgx bridge note:** `stdlib.OpenDBFromPool` wraps the pgx pool in a `database/sql` adapter so that `sqlx` (which requires `database/sql`) can share the same physical connections. The same underlying connections are used by both paths — there is no second pool. The practical gotchas to be aware of:
-- pgx-native error types (e.g. `*pgconn.PgError`) surface through the `database/sql` path as wrapped errors; use `errors.As` rather than type-asserting directly
-- `database/sql` and pgx account for idle connections slightly differently — monitor pool metrics (pgxpool exposes `Stat()`) if connection exhaustion is suspected
-- The bridge is a well-established pattern (used by Stash and others); it is documented here so future contributors understand why both `pgx` and `sqlx` imports coexist
-
-### Sort Field Note
-
-The Python version has a known issue where sort fields requiring a JOIN must be kept in sync between backend and frontend manually. In the Go version this is addressed by defining explicit named queries per sort variant in sqlc, making sort field mismatches a compile-time rather than runtime problem. Dynamic sort fields in the user_games list (which uses the filterBuilder) are validated against an allowlist at handler entry.
 
 ### Schema: Full Table List
 
@@ -680,9 +685,9 @@ The Python backend accepts a `fuzzy_threshold` query parameter on both `GET /api
 
 The Go port uses `ILIKE` for text search on both list endpoints. The `fuzzy_threshold` parameter is not implemented on either. `pg_trgm` is not needed and is not enabled.
 
-**`GET /api/games` (`q` parameter):** handled by the `SearchGamesByTitle` sqlc query, which searches `title OR description` (OR logic, description null-guarded) with a fixed limit and no pagination. The query is defined in `internal/db/queries/games.sql`. **Not** used by `GET /api/user-games` — that endpoint is handled entirely by the goqu `filterBuilder`.
+**`GET /api/games` (`q` parameter):** handled by a Bun `db.NewSelect()` query on the `games` table, searching `title OR description` (OR logic, description null-guarded) with a fixed limit and no pagination. **Not** used by `GET /api/user-games` — that endpoint is handled entirely by the Bun `filterBuilder`.
 
-**`GET /api/user-games` (`q` parameter):** handled by the goqu `filterBuilder` in `internal/filter/`. The filter criterion adds a `WHERE (Game.title ILIKE q OR (UserGame.personal_notes IS NOT NULL AND UserGame.personal_notes ILIKE q))` condition (title and personal notes; description is not searched on this endpoint).
+**`GET /api/user-games` (`q` parameter):** handled by the Bun `filterBuilder` in `internal/filter/`. The filter criterion adds a `WHERE (game.title ILIKE q OR (user_game.personal_notes IS NOT NULL AND user_game.personal_notes ILIKE q))` condition (title and personal notes; description is not searched on this endpoint).
 
 ### Context 2: IGDB search result ranking (`POST /api/games/search/igdb`)
 
@@ -814,7 +819,7 @@ Workers poll the table on a short interval (default 1s) and are additionally wok
 
 ```go
 type Pool struct {
-    db      *pgxpool.Pool
+    db      *bun.DB
     notify  chan struct{}   // capacity 1; sending is non-blocking (drop if already pending)
     wg      sync.WaitGroup
 }
@@ -866,7 +871,7 @@ This mirrors the Python/NATS pattern exactly — in the Python version, `job_id`
 
 ### Job Progress
 
-Job state (`pending`, `running`, `completed`, `failed`, `cancelled`) is persisted in the `jobs` table via sqlc queries. Individual item progress is tracked in the `job_items` table. Workers write progress updates during execution. The `/api/jobs` and `/api/job-items` endpoints read directly from the tables — no in-memory state.
+Job state (`pending`, `running`, `completed`, `failed`, `cancelled`) is persisted in the `jobs` table via Bun queries. Individual item progress is tracked in the `job_items` table. Workers write progress updates during execution. The `/api/jobs` and `/api/job-items` endpoints read directly from the tables — no in-memory state.
 
 ### Horizontal Scaling Note
 
@@ -962,7 +967,7 @@ The Go port uses **server-driven setup gating**, matching the same pattern as th
 
 **Key decisions:**
 
-1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window. If `initAppState()` itself fails (e.g. `determineState()` errors immediately after a successful ping), log the error and continue with state as `DBUnavailable`; `StartDBProbe` will retry on the next successful ping.
+1. `InitNeedsSetup` queries `SELECT COUNT(*) FROM users` at startup (after migrations) via `db.NewRaw(...)` and sets a `needsSetup bool` on the `Migrator` struct. It is a **single-attempt call** — if the DB is unreachable, the `StartDBProbe` goroutine handles state transitions at the state-machine level; there is no internal retry loop in `InitNeedsSetup`. `InitNeedsSetup` is called from `initAppState()` only when the DB is confirmed reachable. Must complete **before** the HTTP server starts accepting requests — the zero value `false` would incorrectly bypass the gate during the startup window. If `initAppState()` itself fails (e.g. `determineState()` errors immediately after a successful ping), log the error and continue with state as `DBUnavailable`; `StartDBProbe` will retry on the next successful ping.
 2. While `needsSetup` is true, the app-state middleware redirects all requests (except `/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`) to `/setup`.
 3. `GET /setup` serves a self-contained static HTML page (inlined CSS + JS, no Vite build, same pattern as `ui/migrate/`). If `needsSetup=false`, it redirects to `/` — the gate works in both directions.
 4. `POST /api/auth/setup/admin` creates the first admin user (SERIALIZABLE transaction to handle concurrent-request race). On success: issues access + refresh tokens via a shared `issueTokensAndSession` helper (same as login), clears `needsSetup`, and returns 201 with the user profile + tokens. The static setup page writes these to `localStorage` under key `'auth'` (camelCase shape expected by `AuthProvider`) then redirects to `/` — the user is immediately authenticated without a separate login step.
@@ -1172,8 +1177,8 @@ type Config struct {
 **Resolved URL construction** (the single authoritative snippet used across `main.go`, `NewMigrator`, `NewDBErrorHandler`, and `--migrate-only`):
 
 ```go
-// resolveDBURL returns the connection string to pass to pgxpool.New and
-// golang-migrate. It is computed once in main() and passed everywhere.
+// resolveDBURL returns the connection string to pass to bun/pgdriver and
+// the Bun migrator. It is computed once in main() and passed everywhere.
 func resolveDBURL(cfg *config.Config) string {
     if cfg.DatabaseURL != "" {
         return cfg.DatabaseURL
@@ -1191,9 +1196,9 @@ func resolveDBURL(cfg *config.Config) string {
 }
 ```
 
-`resolveDBURL` is called once in `main()` before `pgxpool.New`. The returned string is stored as `resolvedDatabaseURL` and passed to:
-- `pgxpool.New(ctx, resolvedDatabaseURL)` — pool creation
-- `NewMigrator(resolvedDatabaseURL)` — stored for lazy `gmigrate.NewWithSourceInstance` call
+`resolveDBURL` is called once in `main()` before opening the Bun DB. The returned string is stored as `resolvedDatabaseURL` and passed to:
+- `pgdriver.NewConnector(pgdriver.WithDSN(resolvedDatabaseURL))` — Bun DB creation
+- `NewMigrator(db)` — stored for Bun migrate calls
 - `NewDBErrorHandler(resolvedDatabaseURL, migrator)` — DSN redaction at construction time
 - Both the normal and `--migrate-only` paths use the same `resolveDBURL` call; there is no second resolution site.
 
@@ -1226,10 +1231,10 @@ Implemented using stdlib `flag` (no new dependency for Phase 1). Cobra subcomman
 ```
 Parse config
 Resolve DATABASE_URL (see Configuration section)
-pgxpool.New(resolvedURL)   ← fatal on any error (DSN parse or TLS config; these are always misconfigurations)
-pool.Ping()                ← retry with 2s backoff for up to 30 seconds; fatal if DB unreachable after timeout
-NewMigrator(resolvedURL)   ← cheap constructor; state = DBUnavailable
-migrator.determineState()  ← connects golang-migrate to DB; fatal on error
+Open Bun DB            ← fatal on any error (DSN parse or TLS config; these are always misconfigurations)
+db.PingContext()       ← retry with 2s backoff for up to 30 seconds; fatal if DB unreachable after timeout
+NewMigrator(db)        ← cheap constructor; state = DBUnavailable
+migrator.determineState()  ← connects Bun migrator; fatal on error
 if state == Ready:
     print "No pending migrations." and exit 0
 migrator.RunMigrations()   ← runs all pending migrations; streams log lines to stderr
@@ -1302,9 +1307,7 @@ The Go repo uses a single flat `devenv.nix` at the root — no subdirectory deve
 
 {
   packages = with pkgs; [
-    sqlc           # Query code generation (run when queries/*.sql changes)
     golangci-lint  # Go linter (equivalent of ruff)
-    go-migrate     # golang-migrate CLI for manual migration inspection
     legendary-gl   # Epic Games Store sync (optional, may be absent)
   ];
 
@@ -1347,9 +1350,7 @@ No `imports:` — unlike the Python version which merged `backend/` and `fronten
 |---|---|
 | `go` | Go toolchain (build, test, vet) |
 | `node` / `npm` | React frontend build (`cd ui && npm run build`) |
-| `sqlc` | Regenerate `internal/db/gen/` from query files |
 | `golangci-lint` | Linting (`golangci-lint run ./...`) |
-| `migrate` | Inspect migration state manually |
 | `legendary` | Epic sync (if available in nixpkgs) |
 | `psql` | Direct DB access; `$DATABASE_URL` is pre-set |
 
@@ -1360,21 +1361,18 @@ PostgreSQL runs as a devenv service. **Services are not started by `devenv shell
 ## Build Process (Makefile)
 
 ```makefile
-.PHONY: all frontend generate build
+.PHONY: all frontend build
 
-all: frontend generate build
+all: frontend build
 
 frontend:
 	cd ui && npm install && npm run build
-
-generate:
-	sqlc generate
 
 build:
 	go build ./cmd/nexorious
 ```
 
-The React source lives in `ui/` inside the Go repo (Stash-style). `make frontend` builds it in place; `go build` then embeds `ui/dist/` via the `//go:embed` directive in `ui/ui.go`. No cross-repo file copying required.
+The React source lives in `ui/` inside the Go repo (Stash-style). `make frontend` builds it in place; `go build` then embeds `ui/dist/` via the `//go:embed` directive in `ui/ui.go`. No cross-repo file copying required. There is no code generation step — Bun model structs are hand-written, and migrations are plain SQL files.
 
 ---
 
@@ -1388,13 +1386,13 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - Project scaffolding: `go.mod`, directory structure, Makefile
 - CLI flags: `--help`, `--version`, `--config`, `--migrate-only` (stdlib `flag`; build-time version injection via `-ldflags`)
 - Config (`caarlos0/env`)
-- `pgxpool` connection + initial schema migration (`0001_initial.up.sql`) — full table list including all models
-- golang-migrate + migration state machine + browser migration UI (SSE)
+- Bun DB connection + initial schema migration (`00000000000001_initial.up.sql`) — full table list including all models
+- Bun migrate + migration state machine + browser migration UI (SSE)
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
 - Misconfiguration gate: detect missing `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` at startup; serve `/misconfigured` page with actionable instructions; `GET /health` reports `{"status": "misconfigured", "misconfigurations": [...]}`
 - Static file route: `/static/cover_art/*` (logos are frontend assets in `ui/public/logos/` — no Go route needed)
 - JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
-- `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim, return profile. Shares the same raw `pgxpool` approach as other auth endpoints (not sqlc; see Database Layer).
+- `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim via `db.NewRaw(...)`, return profile. Auth queries use raw Bun SQL (not model-layer ORM) to keep auth isolated from the models package.
 - Health/status endpoint
 - `internal/filter/` package: filterBuilder + criterion handlers
 
@@ -1405,9 +1403,9 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 ### Phase 2 — Core Game API
 *Goal: full read/write game collection functionality via the existing React UI.*
 
-- sqlc schema definitions (from Python models) + generated code
+- Bun model structs (`internal/db/models/`) for all Phase 2 tables: games, user_games, user_game_platforms, platforms, storefronts, platform_storefronts, tags, user_game_tags
 - Games API (`/api/games`, `/api/games/:id`, search, IGDB import, metadata endpoints)
-- User games API (list with dynamic filtering via filterBuilder + goqu, sort, CRUD, platform associations)
+- User games API (list with dynamic filtering via filterBuilder + Bun SelectQuery, sort, CRUD, platform associations)
 - IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
 - Platforms and tags read endpoints (JWT required; read-only — no write/admin endpoints; see static platforms spec)
 - User-games filter-options / genres / stats (`GET /api/user-games/stats`) / ids endpoints
@@ -1423,7 +1421,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 *Goal: data migration path from Python version, plus export/backup.*
 
 - Worker pool (database-backed task queue: `pending_tasks` table, `SELECT FOR UPDATE SKIP LOCKED`, goroutine workers with in-process notify channel for zero-latency wake-up)
-- Job tracking (jobs + job_items tables, full `/api/jobs` and `/api/job-items` endpoints including review workflow)
+- Job tracking (jobs + job_items tables, full `/api/jobs` and `/api/job-items` endpoints including review workflow; Bun model structs for these tables)
 - gocron scheduler (cleanup jobs wired up)
 - Import handler (`POST /api/import/nexorious` — nexorious JSON format, the upgrade path from Python)
 - Export handler
