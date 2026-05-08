@@ -211,16 +211,3 @@ requests:
         authentication:
           type: bearer
           token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
-
-  setup:
-    name: Setup
-    requests:
-      setup_create_admin:
-        name: Create Admin
-        method: POST
-        url: "{{base_url}}/api/auth/setup/admin"
-        body:
-          type: json
-          data:
-            username: "{{username}}"
-            password: "{{password}}"
