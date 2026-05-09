@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -963,4 +964,377 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// ── Utility endpoint types ──────────────────────────────────────────────
+
+// UserGameIDsResponse is the response for GET /api/user-games/ids.
+type UserGameIDsResponse struct {
+	IDs []string `json:"ids"`
+}
+
+// GenresResponse is the response for GET /api/user-games/genres.
+type GenresResponse struct {
+	Genres []string `json:"genres"`
+}
+
+// FilterOptionsResponse is the response for GET /api/user-games/filter-options.
+type FilterOptionsResponse struct {
+	Genres             []string `json:"genres"`
+	GameModes          []string `json:"game_modes"`
+	Themes             []string `json:"themes"`
+	PlayerPerspectives []string `json:"player_perspectives"`
+}
+
+// CollectionStatsResponse is the response for GET /api/user-games/stats.
+type CollectionStatsResponse struct {
+	TotalGames       int            `json:"total_games"`
+	CompletionStats  map[string]int `json:"completion_stats"`
+	OwnershipStats   map[string]int `json:"ownership_stats"`
+	PlatformStats    map[string]int `json:"platform_stats"`
+	GenreStats       map[string]int `json:"genre_stats"`
+	PileOfShame      int            `json:"pile_of_shame"`
+	CompletionRate   float64        `json:"completion_rate"`
+	AverageRating    *float64       `json:"average_rating"`
+	TotalHoursPlayed float64        `json:"total_hours_played"`
+}
+
+// ── Utility helpers ─────────────────────────────────────────────────────
+
+// splitAndCollect splits a comma-separated string and adds trimmed non-empty
+// values to the provided set.
+func splitAndCollect(s *string, set map[string]bool) {
+	if s == nil {
+		return
+	}
+	splitAndCollectStr(*s, set)
+}
+
+// splitAndCollectStr splits a comma-separated string and adds trimmed non-empty
+// values to the provided set.
+func splitAndCollectStr(s string, set map[string]bool) {
+	for v := range strings.SplitSeq(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			set[v] = true
+		}
+	}
+}
+
+// splitAndCount splits a comma-separated string and increments counts for each
+// trimmed non-empty value.
+func splitAndCount(s string, counts map[string]int) {
+	for v := range strings.SplitSeq(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			counts[v]++
+		}
+	}
+}
+
+// sortedKeys returns the keys of a map sorted alphabetically.
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// ── Utility endpoint handlers ───────────────────────────────────────────
+
+// HandleListUserGameIDs handles GET /api/user-games/ids.
+func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	fb := filter.NewFilterBuilder()
+	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
+	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
+	filter.ApplySearch(fb, c.QueryParam("q"))
+
+	if str := c.QueryParam("is_loved"); str != "" {
+		v := str == "true"
+		filter.ApplyIsLoved(fb, &v)
+	}
+	if str := c.QueryParam("has_notes"); str != "" {
+		v := str == "true"
+		filter.ApplyHasNotes(fb, &v)
+	}
+	if str := c.QueryParam("rating_min"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			filter.ApplyRatingMin(fb, &v)
+		}
+	}
+	if str := c.QueryParam("rating_max"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			filter.ApplyRatingMax(fb, &v)
+		}
+	}
+	filter.ApplyPlatform(fb, c.QueryParams()["platform"])
+	filter.ApplyStorefront(fb, c.QueryParams()["storefront"])
+	filter.ApplyGenre(fb, c.QueryParams()["genre"])
+	filter.ApplyGameMode(fb, c.QueryParams()["game_mode"])
+	filter.ApplyTheme(fb, c.QueryParams()["theme"])
+	filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
+	filter.ApplyTag(fb, c.QueryParams()["tag"])
+
+	ctx := context.Background()
+
+	q := h.db.NewSelect().
+		TableExpr("user_games AS ug").
+		ColumnExpr("DISTINCT ug.id").
+		Where("ug.user_id = ?", userID)
+	q = fb.Apply(q)
+
+	var ids []string
+	if err := q.Scan(ctx, &ids); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+
+	return c.JSON(http.StatusOK, UserGameIDsResponse{IDs: ids})
+}
+
+// HandleListGenres handles GET /api/user-games/genres.
+func (h *UserGamesHandler) HandleListGenres(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx := context.Background()
+
+	var rawGenres []string
+	err := h.db.NewSelect().
+		TableExpr("games AS g").
+		Join("JOIN user_games AS ug ON g.id = ug.game_id").
+		ColumnExpr("g.genre").
+		Where("ug.user_id = ?", userID).
+		Where("g.genre IS NOT NULL").
+		Scan(ctx, &rawGenres)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	set := make(map[string]bool)
+	for _, raw := range rawGenres {
+		splitAndCollectStr(raw, set)
+	}
+
+	return c.JSON(http.StatusOK, GenresResponse{Genres: sortedKeys(set)})
+}
+
+// HandleFilterOptions handles GET /api/user-games/filter-options.
+func (h *UserGamesHandler) HandleFilterOptions(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx := context.Background()
+
+	type row struct {
+		Genre              *string `bun:"genre"`
+		GameModes          *string `bun:"game_modes"`
+		Themes             *string `bun:"themes"`
+		PlayerPerspectives *string `bun:"player_perspectives"`
+	}
+
+	var rows []row
+	err := h.db.NewSelect().
+		TableExpr("games AS g").
+		Join("JOIN user_games AS ug ON g.id = ug.game_id").
+		ColumnExpr("g.genre, g.game_modes, g.themes, g.player_perspectives").
+		Where("ug.user_id = ?", userID).
+		Scan(ctx, &rows)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	genres := make(map[string]bool)
+	gameModes := make(map[string]bool)
+	themes := make(map[string]bool)
+	perspectives := make(map[string]bool)
+
+	for _, r := range rows {
+		splitAndCollect(r.Genre, genres)
+		splitAndCollect(r.GameModes, gameModes)
+		splitAndCollect(r.Themes, themes)
+		splitAndCollect(r.PlayerPerspectives, perspectives)
+	}
+
+	return c.JSON(http.StatusOK, FilterOptionsResponse{
+		Genres:             sortedKeys(genres),
+		GameModes:          sortedKeys(gameModes),
+		Themes:             sortedKeys(themes),
+		PlayerPerspectives: sortedKeys(perspectives),
+	})
+}
+
+// HandleCollectionStats handles GET /api/user-games/stats.
+func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx := context.Background()
+	resp := CollectionStatsResponse{
+		CompletionStats: map[string]int{
+			"not_started": 0, "in_progress": 0, "completed": 0, "mastered": 0,
+			"dominated": 0, "shelved": 0, "dropped": 0, "replay": 0,
+		},
+		OwnershipStats: map[string]int{
+			"owned": 0, "borrowed": 0, "rented": 0, "subscription": 0, "no_longer_owned": 0,
+		},
+		PlatformStats: map[string]int{},
+		GenreStats:    map[string]int{},
+	}
+
+	// 1. total_games
+	total, err := h.db.NewSelect().
+		TableExpr("user_games").
+		Where("user_id = ?", userID).
+		Count(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	resp.TotalGames = total
+
+	// 2. completion_stats
+	type statusCount struct {
+		PlayStatus string `bun:"play_status"`
+		Count      int    `bun:"count"`
+	}
+	var statusCounts []statusCount
+	err = h.db.NewSelect().
+		TableExpr("user_games").
+		ColumnExpr("COALESCE(play_status, 'not_started') AS play_status, COUNT(*) AS count").
+		Where("user_id = ?", userID).
+		GroupExpr("play_status").
+		Scan(ctx, &statusCounts)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	for _, sc := range statusCounts {
+		resp.CompletionStats[sc.PlayStatus] = sc.Count
+	}
+
+	// 3. ownership_stats
+	type ownershipCount struct {
+		OwnershipStatus string `bun:"ownership_status"`
+		Count           int    `bun:"count"`
+	}
+	var ownershipCounts []ownershipCount
+	err = h.db.NewSelect().
+		TableExpr("user_game_platforms AS ugp").
+		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
+		ColumnExpr("COALESCE(ugp.ownership_status, 'owned') AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count").
+		Where("ug.user_id = ?", userID).
+		GroupExpr("ugp.ownership_status").
+		Scan(ctx, &ownershipCounts)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	for _, oc := range ownershipCounts {
+		resp.OwnershipStats[oc.OwnershipStatus] = oc.Count
+	}
+
+	// 4. platform_stats
+	type platformCount struct {
+		DisplayName string `bun:"display_name"`
+		Count       int    `bun:"count"`
+	}
+	var platformCounts []platformCount
+	err = h.db.NewSelect().
+		TableExpr("user_game_platforms AS ugp").
+		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
+		Join("JOIN platforms AS p ON p.name = ugp.platform").
+		ColumnExpr("p.display_name, COUNT(*) AS count").
+		Where("ug.user_id = ?", userID).
+		GroupExpr("p.name, p.display_name").
+		Scan(ctx, &platformCounts)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	for _, pc := range platformCounts {
+		resp.PlatformStats[pc.DisplayName] = pc.Count
+	}
+
+	// 5. genre_stats
+	var rawGenres []string
+	err = h.db.NewSelect().
+		TableExpr("games AS g").
+		Join("JOIN user_games AS ug ON g.id = ug.game_id").
+		ColumnExpr("g.genre").
+		Where("ug.user_id = ?", userID).
+		Where("g.genre IS NOT NULL").
+		Scan(ctx, &rawGenres)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	for _, raw := range rawGenres {
+		splitAndCount(raw, resp.GenreStats)
+	}
+
+	// 6. pile_of_shame
+	resp.PileOfShame = resp.CompletionStats["not_started"]
+
+	// 7. completion_rate
+	if total > 0 {
+		completed := resp.CompletionStats["completed"] + resp.CompletionStats["mastered"] + resp.CompletionStats["dominated"]
+		resp.CompletionRate = math.Round(float64(completed)/float64(total)*10000) / 100
+	}
+
+	// 8. average_rating
+	var avgRating sql.NullFloat64
+	err = h.db.NewSelect().
+		TableExpr("user_games").
+		ColumnExpr("AVG(personal_rating)").
+		Where("user_id = ?", userID).
+		Where("personal_rating IS NOT NULL").
+		Scan(ctx, &avgRating)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if avgRating.Valid {
+		v := math.Round(avgRating.Float64*100) / 100
+		resp.AverageRating = &v
+	}
+
+	// 9. total_hours_played
+	type hoursRow struct {
+		UserGameID    string          `bun:"id"`
+		LegacyHours   sql.NullFloat64 `bun:"hours_played"`
+		PlatformHours sql.NullFloat64 `bun:"platform_hours"`
+	}
+	var hoursRows []hoursRow
+	err = h.db.NewSelect().
+		TableExpr("user_games AS ug").
+		ColumnExpr("ug.id, ug.hours_played, COALESCE(SUM(ugp.hours_played), 0) AS platform_hours").
+		Join("LEFT JOIN user_game_platforms AS ugp ON ugp.user_game_id = ug.id").
+		Where("ug.user_id = ?", userID).
+		GroupExpr("ug.id, ug.hours_played").
+		Scan(ctx, &hoursRows)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	var totalHours float64
+	for _, hr := range hoursRows {
+		ph := hr.PlatformHours.Float64
+		if ph > 0 {
+			totalHours += ph
+		} else if hr.LegacyHours.Valid {
+			totalHours += hr.LegacyHours.Float64
+		}
+	}
+	resp.TotalHoursPlayed = totalHours
+
+	return c.JSON(http.StatusOK, resp)
 }

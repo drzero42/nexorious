@@ -731,3 +731,380 @@ func TestPlatformCRUD(t *testing.T) {
 		}
 	})
 }
+
+// ── Utility endpoint test helpers ───────────────────────────────────────
+
+func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int32 {
+	t.Helper()
+	gameID := insertTestGame(t, db, title)
+	_, err := db.ExecContext(context.Background(),
+		`UPDATE games SET genre = ? WHERE id = ?`, genre, gameID)
+	if err != nil {
+		t.Fatalf("insertTestGameWithGenre: %v", err)
+	}
+	return gameID
+}
+
+func insertTestGameWithMetadata(t *testing.T, db *bun.DB, title, genre, gameModes, themes, playerPerspectives string) int32 {
+	t.Helper()
+	gameID := insertTestGame(t, db, title)
+	_, err := db.ExecContext(context.Background(),
+		`UPDATE games SET genre = ?, game_modes = ?, themes = ?, player_perspectives = ? WHERE id = ?`,
+		genre, gameModes, themes, playerPerspectives, gameID)
+	if err != nil {
+		t.Fatalf("insertTestGameWithMetadata: %v", err)
+	}
+	return gameID
+}
+
+// ── TestListUserGameIDs ─────────────────────────────────────────────────
+
+func TestListUserGameIDs(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "ids")
+
+	g1 := insertTestGame(t, db, "IDs Game 1")
+	g2 := insertTestGame(t, db, "IDs Game 2")
+	g3 := insertTestGame(t, db, "IDs Game 3")
+	insertTestUserGame(t, db, "ug-ids-1", userID, int(g1))
+	insertTestUserGame(t, db, "ug-ids-2", userID, int(g2))
+	insertTestUserGame(t, db, "ug-ids-3", userID, int(g3))
+
+	// Set play_status on one for filter test
+	_, err := db.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'completed' WHERE id = 'ug-ids-1'`)
+	if err != nil {
+		t.Fatalf("update play_status: %v", err)
+	}
+
+	t.Run("basic", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ids", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		ids := resp["ids"].([]any)
+		if len(ids) != 3 {
+			t.Fatalf("expected 3 ids, got %d", len(ids))
+		}
+	})
+
+	t.Run("with filter", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ids?play_status=completed", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		ids := resp["ids"].([]any)
+		if len(ids) != 1 {
+			t.Fatalf("expected 1 id, got %d", len(ids))
+		}
+	})
+
+	t.Run("user scoped", func(t *testing.T) {
+		_, token2 := setupUserGamesUser(t, db, e, "ids-other")
+		rec := getAuth(t, e, "/api/user-games/ids", token2)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		ids := resp["ids"].([]any)
+		if len(ids) != 0 {
+			t.Fatalf("expected 0 ids, got %d", len(ids))
+		}
+	})
+
+	t.Run("empty collection", func(t *testing.T) {
+		_, token3 := setupUserGamesUser(t, db, e, "ids-empty")
+		rec := getAuth(t, e, "/api/user-games/ids", token3)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		// Verify we get an array, not null
+		body := rec.Body.String()
+		if !bytes.Contains([]byte(body), []byte(`"ids":[]`)) {
+			t.Fatalf("expected empty array, got %s", body)
+		}
+	})
+}
+
+// ── TestListGenres ──────────────────────────────────────────────────────
+
+func TestListGenres(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "genres")
+
+	t.Run("basic", func(t *testing.T) {
+		g1 := insertTestGameWithGenre(t, db, "Genre Game 1", "Action, RPG")
+		g2 := insertTestGameWithGenre(t, db, "Genre Game 2", "RPG, Simulation")
+		insertTestUserGame(t, db, "ug-genre-1", userID, int(g1))
+		insertTestUserGame(t, db, "ug-genre-2", userID, int(g2))
+
+		rec := getAuth(t, e, "/api/user-games/genres", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		genres := resp["genres"].([]any)
+		if len(genres) != 3 {
+			t.Fatalf("expected 3 genres, got %d: %v", len(genres), genres)
+		}
+		// Check alphabetical order
+		if genres[0] != "Action" || genres[1] != "RPG" || genres[2] != "Simulation" {
+			t.Fatalf("expected [Action, RPG, Simulation], got %v", genres)
+		}
+	})
+
+	t.Run("comma separation", func(t *testing.T) {
+		// "Action, RPG" on g1 should produce both Action and RPG individually
+		rec := getAuth(t, e, "/api/user-games/genres", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		var resp struct {
+			Genres []string `json:"genres"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		found := map[string]bool{}
+		for _, g := range resp.Genres {
+			found[g] = true
+		}
+		if !found["Action"] || !found["RPG"] {
+			t.Fatalf("expected both Action and RPG from comma-separated genre, got %v", resp.Genres)
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		_, token2 := setupUserGamesUser(t, db, e, "genres-empty")
+		rec := getAuth(t, e, "/api/user-games/genres", token2)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if !bytes.Contains([]byte(body), []byte(`"genres":[]`)) {
+			t.Fatalf("expected empty array, got %s", body)
+		}
+	})
+
+	t.Run("null genres excluded", func(t *testing.T) {
+		_, token3 := setupUserGamesUser(t, db, e, "genres-null")
+		userID3 := "u-ug-genres-null"
+		gNull := insertTestGame(t, db, "No Genre Game")
+		insertTestUserGame(t, db, "ug-genre-null", userID3, int(gNull))
+
+		rec := getAuth(t, e, "/api/user-games/genres", token3)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Genres []string `json:"genres"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if len(resp.Genres) != 0 {
+			t.Fatalf("expected empty genres for user with only null-genre game, got %v", resp.Genres)
+		}
+	})
+}
+
+// ── TestFilterOptions ───────────────────────────────────────────────────
+
+func TestFilterOptions(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "filteropts")
+
+	t.Run("basic", func(t *testing.T) {
+		g1 := insertTestGameWithMetadata(t, db, "Filter Game 1", "Action, RPG", "Single player", "Fantasy", "Third person")
+		g2 := insertTestGameWithMetadata(t, db, "Filter Game 2", "RPG, Strategy", "Multiplayer", "Sci-fi", "First person")
+		insertTestUserGame(t, db, "ug-fo-1", userID, int(g1))
+		insertTestUserGame(t, db, "ug-fo-2", userID, int(g2))
+
+		rec := getAuth(t, e, "/api/user-games/filter-options", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+
+		genres := resp["genres"].([]any)
+		if len(genres) != 3 {
+			t.Fatalf("expected 3 genres, got %d: %v", len(genres), genres)
+		}
+		gameModes := resp["game_modes"].([]any)
+		if len(gameModes) != 2 {
+			t.Fatalf("expected 2 game_modes, got %d", len(gameModes))
+		}
+		themes := resp["themes"].([]any)
+		if len(themes) != 2 {
+			t.Fatalf("expected 2 themes, got %d", len(themes))
+		}
+		perspectives := resp["player_perspectives"].([]any)
+		if len(perspectives) != 2 {
+			t.Fatalf("expected 2 player_perspectives, got %d", len(perspectives))
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		_, token2 := setupUserGamesUser(t, db, e, "filteropts-empty")
+		rec := getAuth(t, e, "/api/user-games/filter-options", token2)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if len(resp["genres"].([]any)) != 0 {
+			t.Fatal("expected empty genres")
+		}
+	})
+
+	t.Run("deduplication", func(t *testing.T) {
+		// RPG appears in both games from "basic" subtest but should appear once.
+		rec := getAuth(t, e, "/api/user-games/filter-options", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		var resp struct {
+			Genres []string `json:"genres"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		count := 0
+		for _, g := range resp.Genres {
+			if g == "RPG" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("expected RPG to appear once, appeared %d times in %v", count, resp.Genres)
+		}
+	})
+}
+
+// ── TestCollectionStats ─────────────────────────────────────────────────
+
+func TestCollectionStats(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+
+	t.Run("empty collection", func(t *testing.T) {
+		_, token := setupUserGamesUser(t, db, e, "stats-empty")
+		rec := getAuth(t, e, "/api/user-games/stats", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if int(resp["total_games"].(float64)) != 0 {
+			t.Fatal("expected total_games=0")
+		}
+		if resp["completion_rate"].(float64) != 0 {
+			t.Fatal("expected completion_rate=0")
+		}
+		if resp["average_rating"] != nil {
+			t.Fatal("expected average_rating=null")
+		}
+		if resp["total_hours_played"].(float64) != 0 {
+			t.Fatal("expected total_hours_played=0")
+		}
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		userID, token := setupUserGamesUser(t, db, e, "stats-basic")
+
+		g1 := insertTestGameWithGenre(t, db, "Stats Game 1", "RPG")
+		g2 := insertTestGameWithGenre(t, db, "Stats Game 2", "RPG, Action")
+		g3 := insertTestGameWithGenre(t, db, "Stats Game 3", "Action")
+		insertTestUserGame(t, db, "ug-stats-1", userID, int(g1))
+		insertTestUserGame(t, db, "ug-stats-2", userID, int(g2))
+		insertTestUserGame(t, db, "ug-stats-3", userID, int(g3))
+
+		// Set statuses and ratings
+		_, _ = db.ExecContext(context.Background(),
+			`UPDATE user_games SET play_status = 'completed', personal_rating = 4 WHERE id = 'ug-stats-1'`)
+		_, _ = db.ExecContext(context.Background(),
+			`UPDATE user_games SET play_status = 'not_started', personal_rating = 3 WHERE id = 'ug-stats-2'`)
+		_, _ = db.ExecContext(context.Background(),
+			`UPDATE user_games SET play_status = 'in_progress' WHERE id = 'ug-stats-3'`)
+
+		rec := getAuth(t, e, "/api/user-games/stats", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+
+		if int(resp["total_games"].(float64)) != 3 {
+			t.Fatalf("expected total_games=3, got %v", resp["total_games"])
+		}
+
+		completionStats := resp["completion_stats"].(map[string]any)
+		if int(completionStats["completed"].(float64)) != 1 {
+			t.Fatalf("expected completed=1, got %v", completionStats["completed"])
+		}
+
+		if int(resp["pile_of_shame"].(float64)) != 1 {
+			t.Fatalf("expected pile_of_shame=1, got %v", resp["pile_of_shame"])
+		}
+
+		cr := resp["completion_rate"].(float64)
+		if cr < 33.3 || cr > 33.34 {
+			t.Fatalf("expected completion_rate≈33.33, got %v", cr)
+		}
+
+		avg := resp["average_rating"].(float64)
+		if avg != 3.5 {
+			t.Fatalf("expected average_rating=3.5, got %v", avg)
+		}
+
+		genreStats := resp["genre_stats"].(map[string]any)
+		if int(genreStats["RPG"].(float64)) != 2 {
+			t.Fatalf("expected RPG=2, got %v", genreStats["RPG"])
+		}
+		if int(genreStats["Action"].(float64)) != 2 {
+			t.Fatalf("expected Action=2, got %v", genreStats["Action"])
+		}
+	})
+
+	t.Run("hours fallback", func(t *testing.T) {
+		userID, token := setupUserGamesUser(t, db, e, "stats-hours")
+
+		g1 := insertTestGame(t, db, "Hours Game 1")
+		g2 := insertTestGame(t, db, "Hours Game 2")
+		insertTestUserGame(t, db, "ug-hours-1", userID, int(g1))
+		insertTestUserGame(t, db, "ug-hours-2", userID, int(g2))
+
+		// Game 1: platform hours = 50.5
+		_, _ = db.ExecContext(context.Background(),
+			`INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING`)
+		pc := "pc"
+		steam := "steam"
+		insertTestUserGamePlatform(t, db, "ugp-hours-1", "ug-hours-1", &pc, &steam)
+		_, _ = db.ExecContext(context.Background(),
+			`UPDATE user_game_platforms SET hours_played = 50.5 WHERE id = 'ugp-hours-1'`)
+
+		// Game 2: no platform hours, legacy hours = 10.0
+		_, _ = db.ExecContext(context.Background(),
+			`UPDATE user_games SET hours_played = 10.0 WHERE id = 'ug-hours-2'`)
+
+		rec := getAuth(t, e, "/api/user-games/stats", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+
+		hours := resp["total_hours_played"].(float64)
+		if hours != 60.5 {
+			t.Fatalf("expected total_hours_played=60.5, got %v", hours)
+		}
+	})
+}

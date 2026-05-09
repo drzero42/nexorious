@@ -326,6 +326,38 @@ requests:
           page: "1"
           per_page: "20"
 
+      ids:
+        name: List User Game IDs
+        method: GET
+        url: "{{base_url}}/api/user-games/ids"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      genres:
+        name: List Genres
+        method: GET
+        url: "{{base_url}}/api/user-games/genres"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      filter_options:
+        name: Filter Options
+        method: GET
+        url: "{{base_url}}/api/user-games/filter-options"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      stats:
+        name: Collection Stats
+        method: GET
+        url: "{{base_url}}/api/user-games/stats"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
       get:
         name: Get User Game
         method: GET
