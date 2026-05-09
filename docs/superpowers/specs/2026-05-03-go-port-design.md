@@ -138,81 +138,24 @@ Always `200` because the HTTP server can always serve meaningful content to the 
 
 `needsSetup` remains a bool on the Migrator (not a state machine state), checked inline in the `Ready` branch of the middleware and cleared once by the setup handler.
 
-### Misconfiguration Gate
+### IGDB Optional Credentials
 
-Certain configuration problems cannot be resolved at runtime and would cause IGDB-dependent features to fail silently if the app were allowed to serve normally. Rather than aborting startup (which leaves an operator staring at a log file with no guidance) or letting the app limp along with broken features, the binary detects these problems at startup and enters a **misconfiguration state** that gates all routes to a human-readable error page.
+`IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are optional. The app starts and runs normally without them — all non-IGDB features (browsing the local collection, managing user games, auth, etc.) work fine. Only IGDB-dependent endpoints (game search, IGDB import, metadata refresh) are gated.
 
-**Conditions that trigger the misconfiguration gate:**
+**Startup validation:** At startup (after `config.Load()`, before the HTTP server), the app checks IGDB credentials in two stages:
 
-| Problem | Detected at |
-|---|---|
-| `IGDB_CLIENT_ID` is empty or missing | Startup — after config parse |
-| `IGDB_CLIENT_SECRET` is empty or missing | Startup — after config parse |
-| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` are present but rejected by Twitch OAuth | Startup — IGDB credential probe |
+1. **Presence** — are both env vars set and non-empty? If not, `igdbConfigured` is `false`, a warning is logged, and no IGDB client is created.
+2. **Validity** — if both are present, attempt a Twitch OAuth token fetch. On auth failure (HTTP 400/401/403), `igdbConfigured` is `false` and a warning is logged with the specific error. Network/transient errors are **not** treated as invalid — a WARN is logged and the IGDB client is created normally (the per-request auth will surface the problem if it persists).
 
-**Detection sequence:**
+**IGDB endpoint gating:** Handlers that require IGDB (`HandleSearchIGDB`, `HandleGetIGDBGame`, `HandleImportFromIGDB`, and future sync/metadata endpoints) check whether the IGDB client is available. If not, they return `503 Service Unavailable` with `{"error": "IGDB is not configured", "detail": "Set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables and restart."}`.
 
-1. **Config check** (immediate, after `config.Load()`, before DB pool): if either `IGDB_CLIENT_ID` or `IGDB_CLIENT_SECRET` is empty, add a descriptive entry to `misconfigurations []string` and skip the probe below.
-2. **IGDB credential probe** (only if both vars are present): attempt a Twitch OAuth2 client-credentials token fetch (`POST https://id.twitch.tv/oauth2/token`). This is the same call `IGDBAuthManager.GetAccessToken()` makes at runtime, issued once at startup as a validation step. Three outcomes:
-   - **Success** (HTTP 200, token returned) — IGDB credentials are valid; no misconfiguration.
-   - **Auth failure** (HTTP 400/401/403 from Twitch) — credentials are present but wrong; add an entry: *`IGDB_CLIENT_ID` or `IGDB_CLIENT_SECRET` is invalid — Twitch rejected the credentials. Verify both values at the Twitch Developer Console.*
-   - **Network/transient error** (timeout, DNS failure, etc.) — do **not** add a misconfiguration entry; log a WARN and continue. A transient failure at startup should not permanently gate the app. The IGDB client's normal per-request auth will surface the problem if it persists.
-
-The probe uses a short timeout (5 seconds). It runs in the main goroutine before the HTTP server starts — the startup sequence is:
-
-```
-config.Load()
-→ config check (populate misconfigurations if IGDB vars absent)
-→ IGDB probe (if vars present — populate misconfigurations on auth failure)
-→ pgxpool.New / Migrator / HTTP server (always — even if misconfigurations non-empty)
-```
-
-A `misconfigurations []string` slice (non-nil when any check failed) is passed to the HTTP server and the misconfiguration middleware. If the slice is non-empty the middleware gates all traffic; otherwise it is a no-op.
-
-**Misconfiguration middleware** — runs as the outermost application middleware gate, before the DB-unavailable and migration checks. When `len(misconfigurations) > 0`, every request is redirected to `GET /misconfigured` — with two exceptions handled inside the middleware itself:
-
-- `GET /misconfigured` — passes through (prevents an infinite redirect loop)
-- `GET /health` — passes through (monitoring must always be reachable)
-
-No other route zone needs to know about `/misconfigured` or add it to a bypass list. When the app is healthy (no misconfigurations), the middleware is a no-op and `GET /misconfigured` redirects to `/` — so the page is unreachable in normal operation.
-
-**`GET /misconfigured`** — serves a standalone static HTML page (same pattern as `/db-error` and `/migrate`: Go template, no SPA, no bundler). The handler checks `len(misconfigurations) == 0` and redirects to `/` immediately in that case. When misconfigurations are present, the page:
-
-- Lists each misconfiguration as a clear, actionable bullet. The two possible IGDB messages are:
-  - *`IGDB_CLIENT_ID` is not set (or `IGDB_CLIENT_SECRET` is not set)*
-  - *`IGDB_CLIENT_ID` or `IGDB_CLIENT_SECRET` is invalid — Twitch rejected the credentials*
-- Includes a **"How to get IGDB credentials"** block with step-by-step instructions:
-  1. Go to [https://dev.twitch.tv/console](https://dev.twitch.tv/console) and log in with a Twitch account.
-  2. Click **Register Your Application**. Name it anything (e.g. "Nexorious"), set the OAuth redirect URL to `http://localhost`, and set the Category to **Application Integration**.
-  3. After creating the app, copy the **Client ID** shown on the app detail page.
-  4. Click **New Secret** to generate a **Client Secret** and copy it immediately (it is only shown once).
-  5. Set `IGDB_CLIENT_ID=<your client id>` and `IGDB_CLIENT_SECRET=<your client secret>` in the environment (or `.env` file) and restart Nexorious.
-- Includes a "Check again" button that reloads the page (or a `setTimeout` auto-reload every 10 seconds).
-- Displays the current timestamp (injected at serve time) so operators can confirm they are looking at a fresh render after restarting the process.
-
-**Recovery:** The misconfiguration state is **static** — it is computed once at startup from the config and never changes. To clear it, the operator must fix the missing env vars and restart the process. There is no runtime re-check. This is intentional: IGDB credentials are not hot-reloadable; a restart is always required anyway.
-
-**`GET /health`** — still returns `200` in misconfiguration state, with `{"status": "misconfigured"}`. The `misconfigurations` array is included so monitoring tools can surface the specific problems:
+**`GET /health`** includes an `igdb_configured` boolean:
 
 ```json
-{
-  "status": "misconfigured",
-  "misconfigurations": [
-    "IGDB_CLIENT_ID is not set",
-    "IGDB_CLIENT_SECRET is not set"
-  ]
-}
+{"status": "ok", "igdb_configured": false}
 ```
 
-**`AppState.String()` addition:**
-
-| `AppState` constant | `String()` return value | Used in |
-|---|---|---|
-| `AppStateMisconfigured` | `"misconfigured"` | `/health` body |
-
-`AppStateMisconfigured` is a separate constant (not part of the DB-state machine). The check is independent: the app can be simultaneously `AppStateReady` (DB fine, migrations done) and misconfigured (IGDB creds absent). The misconfiguration gate is checked first in the middleware chain so the user always sees the actionable error page rather than the normal app.
-
-**`--migrate-only` mode:** The misconfiguration gate is **skipped** in `--migrate-only` mode. Migration does not require IGDB credentials; a Kubernetes `initContainer` should not fail because IGDB vars are not set.
+**No middleware gate, no `/misconfigured` page.** The app is fully usable for local collection management without IGDB. This matches the Python version's approach (log a warning, let the app run) while adding clearer error responses on IGDB endpoints.
 
 ---
 
@@ -469,12 +412,11 @@ Platform/storefront logo files live in `ui/public/logos/` and are served as part
 
 1. `recover` — panic recovery
 2. `logger` — request logging
-3. `misconfiguration` — if any misconfigurations were detected at startup: redirects all requests to `GET /misconfigured` (passes through `GET /misconfigured` itself and `GET /health` only); no-op when app is correctly configured
-4. `app-state` — two sequential checks:
+3. `app-state` — two sequential checks:
    - Migration check: redirect to `/migrate` unless state is `Ready` or path is `/migrate*`
    - Setup check: redirect to `/setup` unless `needsSetup` is false or path is in the setup bypass list (`/setup`, `/api/auth/setup/*`, `/health`, `/api/migrate/*`)
-5. `cors` — same origins as Python version; in production both API and frontend are same-origin so CORS is only needed in development
-6. `jwt` — on protected route groups only
+4. `cors` — same origins as Python version; in production both API and frontend are same-origin so CORS is only needed in development
+5. `jwt` — on protected route groups only
 
 ### Frontend Configuration
 
@@ -498,6 +440,13 @@ export const config = {
 **Development (npm run dev):** Vite's dev server runs on port 3000 and proxies `/api` and `/static` to the Go backend on port 8000 — matching the Python dev setup exactly. No `.env` file is required for local dev either; the defaults and proxy config in `vite.config.ts` handle it. The Go backend must be running separately (`go run ./cmd/nexorious`) for the proxy to resolve.
 
 `VITE_STATIC_URL` must remain empty string for the embedded production build. Cover art is served from `/static/cover_art/` on the same origin (see Static Files Zone above).
+
+**IGDB availability in the frontend:** When the React frontend is brought over, it must gracefully handle IGDB being unavailable. The backend's `/health` endpoint includes an `igdb_configured` boolean. The frontend should:
+
+- Check `igdb_configured` (e.g. via the health response or a dedicated status endpoint) and hide or disable IGDB-dependent UI elements (game search, IGDB import button) when it is `false`.
+- Display a user-facing banner or notice explaining that IGDB features are unavailable because credentials are not configured, with a brief note that the administrator needs to set `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET`.
+- Handle `503 Service Unavailable` responses from IGDB endpoints gracefully — show a clear message rather than a generic error.
+- Non-IGDB features (browsing the local collection, editing user games, managing tags/platforms) must work normally regardless of IGDB state.
 
 ---
 
@@ -1232,7 +1181,7 @@ func resolveDBURL(cfg *config.Config) string {
 - `NewDBErrorHandler(resolvedDatabaseURL, migrator)` — DSN redaction at construction time
 - Both the normal and `--migrate-only` paths use the same `resolveDBURL` call; there is no second resolution site.
 
-**IGDB credential note:** `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are **not** marked `required` in the config struct — the binary will start without them. However, missing or empty values are detected during startup and handled via the Misconfiguration Gate (see Architecture section): the app starts, but all routes redirect to `/misconfigured` which renders a human-readable page explaining exactly what is wrong and how to fix it. This is strictly better than a fatal exit: an operator can visit the page, read the instructions, set the missing vars, and restart — without needing to inspect logs or documentation. The Python implementation marks them `Optional` and emits a startup warning, allowing the app to reach a broken-but-plausible-looking state where IGDB-dependent features silently fail at runtime. The Go port catches the problem at startup and makes it impossible to miss.
+**IGDB credential note:** `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` are **not** marked `required` in the config struct — the binary starts and runs normally without them. Non-IGDB features (browsing the local collection, managing user games, auth, etc.) work fine. IGDB-dependent endpoints (game search, IGDB import, metadata refresh) return `503 Service Unavailable` with a clear error message when credentials are missing or invalid. At startup, if both vars are present, a Twitch OAuth probe validates them — auth failures log a warning and disable the IGDB client; network/transient errors are ignored (the per-request auth will surface the problem if it persists). See the "IGDB Optional Credentials" section in Architecture for details.
 
 **Storage path notes:**
 
@@ -1419,7 +1368,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - Bun DB connection + initial schema migration (`00000000000001_initial.up.sql`) — full table list including all models
 - Bun migrate + migration state machine + browser migration UI (SSE)
 - Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
-- Misconfiguration gate: detect missing `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` at startup; serve `/misconfigured` page with actionable instructions; `GET /health` reports `{"status": "misconfigured", "misconfigurations": [...]}`
+- IGDB optional credentials: make `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` optional; validate at startup via Twitch token probe; IGDB endpoints return 503 when not configured; `GET /health` reports `igdb_configured` boolean
 - Static file route: `/static/cover_art/*` (logos are frontend assets in `ui/public/logos/` — no Go route needed)
 - JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
 - `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim via `db.NewRaw(...)`, return profile. Auth queries use raw Bun SQL (not model-layer ORM) to keep auth isolated from the models package.

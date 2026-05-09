@@ -170,9 +170,31 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
-	// HTTP server
+	// IGDB client (optional)
 	// -------------------------------------------------------------------------
 	igdbClient := igdb.NewClient(cfg)
+
+	if !igdbClient.Configured() {
+		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable")
+	} else {
+		validateCtx, validateCancel := context.WithTimeout(ctx, 10*time.Second)
+		err := igdbClient.ValidateCredentials(validateCtx)
+		validateCancel()
+		if err != nil {
+			if igdb.IsAuthError(err) {
+				slog.Warn("IGDB credentials are invalid — disabling IGDB features", "err", err)
+				igdbClient = igdb.NewClient(&config.Config{}) // unconfigured client
+			} else {
+				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", "err", err)
+			}
+		} else {
+			slog.Info("IGDB credentials validated successfully")
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// HTTP server
+	// -------------------------------------------------------------------------
 	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient)
 
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)

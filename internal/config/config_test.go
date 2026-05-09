@@ -49,28 +49,38 @@ func TestLoad_DatabaseURLExplicit(t *testing.T) {
 }
 
 func TestLoad_RequiredFieldsMissing(t *testing.T) {
-	// os.Unsetenv is required here because caarlos0/env distinguishes between
-	// an unset variable and an empty string when checking `required` fields.
-	// t.Setenv("KEY", "") would set the var to empty string, not unset it.
-	keys := []string{"SECRET_KEY", "IGDB_CLIENT_ID", "IGDB_CLIENT_SECRET"}
-	saved := make(map[string]string)
-	for _, k := range keys {
-		saved[k] = os.Getenv(k)
-		os.Unsetenv(k) //nolint:errcheck
-	}
+	// Only SECRET_KEY is required now — IGDB vars are optional.
+	saved := os.Getenv("SECRET_KEY")
+	os.Unsetenv("SECRET_KEY") //nolint:errcheck
 	t.Cleanup(func() {
-		for _, k := range keys {
-			if v := saved[k]; v != "" {
-				os.Setenv(k, v) //nolint:errcheck
-			} else {
-				os.Unsetenv(k) //nolint:errcheck
-			}
+		if saved != "" {
+			os.Setenv("SECRET_KEY", saved) //nolint:errcheck
+		} else {
+			os.Unsetenv("SECRET_KEY") //nolint:errcheck
 		}
 	})
 
 	_, err := config.Load()
 	if err == nil {
-		t.Fatal("expected error when required fields are missing, got nil")
+		t.Fatal("expected error when SECRET_KEY is missing, got nil")
+	}
+}
+
+func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
+	t.Setenv("SECRET_KEY", "testsecretkey")
+	// Explicitly unset IGDB vars to ensure they're not inherited.
+	os.Unsetenv("IGDB_CLIENT_ID")   //nolint:errcheck
+	os.Unsetenv("IGDB_CLIENT_SECRET") //nolint:errcheck
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() should succeed without IGDB vars, got error: %v", err)
+	}
+	if cfg.IGDBClientID != "" {
+		t.Errorf("IGDBClientID = %q; want empty string", cfg.IGDBClientID)
+	}
+	if cfg.IGDBClientSecret != "" {
+		t.Errorf("IGDBClientSecret = %q; want empty string", cfg.IGDBClientSecret)
 	}
 }
 

@@ -52,6 +52,32 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
+// Configured reports whether the client has IGDB credentials.
+func (c *Client) Configured() bool {
+	return c.configured
+}
+
+// ValidateCredentials verifies the IGDB credentials by fetching a Twitch token.
+// Returns ErrIGDBNotConfigured if credentials are absent, or an error (possibly
+// wrapping ErrTwitchAuth) if authentication fails.
+func (c *Client) ValidateCredentials(ctx context.Context) error {
+	if !c.configured {
+		return ErrIGDBNotConfigured
+	}
+	_, err := c.auth.GetAccessToken(ctx)
+	return err
+}
+
+// NewClientWithTokenURL creates an IGDB client with a custom Twitch token URL.
+// Used in tests to point at a local httptest server.
+func NewClientWithTokenURL(cfg *config.Config, tokenURL string) *Client {
+	c := NewClient(cfg)
+	if c.auth != nil {
+		c.auth.tokenURL = tokenURL
+	}
+	return c
+}
+
 type scoredCandidate struct {
 	metadata GameMetadata
 	score    float64
@@ -224,7 +250,7 @@ func (c *Client) DownloadCoverArt(ctx context.Context, imageID string, storagePa
 	if err != nil {
 		return "", fmt.Errorf("download cover art: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("cover art download returned status %d", resp.StatusCode)
@@ -234,7 +260,7 @@ func (c *Client) DownloadCoverArt(ctx context.Context, imageID string, storagePa
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return "", err
@@ -284,7 +310,7 @@ func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatRe
 	if err != nil {
 		return nil, fmt.Errorf("IGDB time-to-beat request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("IGDB time-to-beat returned status %d", resp.StatusCode)
@@ -337,7 +363,7 @@ func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameRespons
 	if err != nil {
 		return nil, fmt.Errorf("IGDB request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Handle 401 — invalidate token and retry once
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -360,7 +386,7 @@ func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameRespons
 		if err != nil {
 			return nil, fmt.Errorf("IGDB retry failed: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	if resp.StatusCode != http.StatusOK {

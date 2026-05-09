@@ -1,14 +1,5 @@
 package igdb
 
-import "errors"
-
-// Sentinel errors for IGDB service operations.
-var (
-	ErrIGDBNotConfigured = errors.New("IGDB credentials not configured")
-	ErrGameNotFound      = errors.New("game not found in IGDB")
-	ErrTwitchAuth        = errors.New("Twitch authentication failed")
-)
-
 // GameMetadata is the internal representation of an IGDB game result.
 type GameMetadata struct {
 	IgdbID                     int

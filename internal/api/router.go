@@ -107,12 +107,17 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	e.GET("/api/migrate/progress", mh.HandleProgress)
 
 	// Health check — bypassed by all gates
+	igdbConfigured := igdbClient != nil && igdbClient.Configured()
 	e.GET("/health", func(c *echo.Context) error {
 		state := migrator.State()
-		if state == migrate.AppStateReady {
-			return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		status := "ok"
+		if state != migrate.AppStateReady {
+			status = state.String()
 		}
-		return c.JSON(http.StatusOK, map[string]string{"status": state.String()})
+		return c.JSON(http.StatusOK, map[string]any{
+			"status":          status,
+			"igdb_configured": igdbConfigured,
+		})
 	})
 
 	// DB-error route (bypassed by Gate 1)

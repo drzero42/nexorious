@@ -88,23 +88,25 @@ func (am *AuthManager) fetchToken(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, am.tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTwitchAuth, err)
+		return fmt.Errorf("create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := am.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTwitchAuth, err)
+		// Network/DNS/timeout — NOT an auth error.
+		return fmt.Errorf("twitch token request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		// HTTP error from Twitch — this IS an auth error
 		return fmt.Errorf("%w: Twitch returned status %d", ErrTwitchAuth, resp.StatusCode)
 	}
 
 	var tokenResp twitchTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return fmt.Errorf("%w: failed to decode token response: %v", ErrTwitchAuth, err)
+		return fmt.Errorf("decode Twitch token response: %w", err)
 	}
 
 	am.accessToken = tokenResp.AccessToken

@@ -9,6 +9,7 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
 func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
@@ -132,7 +133,7 @@ func TestHealth_OKWhenReady(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestHealth_OKWhenSetupPending(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestHealth_DBUnavailableReturns200(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -187,11 +188,63 @@ func TestHealth_NeedsMigrationReturns200(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
 	if body["status"] != "needs_migration" {
 		t.Errorf("expected needs_migration, got %q", body["status"])
+	}
+}
+
+func TestHealth_ReportsIGDBConfiguredTrue(t *testing.T) {
+	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.IGDBClientID = "test-id"
+	cfg.IGDBClientSecret = "test-secret"
+	igdbClient := igdb.NewClient(cfg)
+	e := api.New(cfg, migrator, nil, "", igdbClient)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	igdbConfigured, ok := body["igdb_configured"]
+	if !ok {
+		t.Fatal("response missing igdb_configured field")
+	}
+	if igdbConfigured != true {
+		t.Errorf("igdb_configured = %v; want true", igdbConfigured)
+	}
+}
+
+func TestHealth_ReportsIGDBConfiguredFalse(t *testing.T) {
+	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
+	e := api.New(testCfg(), migrator, nil, "", nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	igdbConfigured, ok := body["igdb_configured"]
+	if !ok {
+		t.Fatal("response missing igdb_configured field")
+	}
+	if igdbConfigured != false {
+		t.Errorf("igdb_configured = %v; want false", igdbConfigured)
 	}
 }

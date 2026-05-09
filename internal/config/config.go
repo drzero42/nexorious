@@ -40,8 +40,8 @@ type Config struct {
 	// IGDB
 	// -------------------------------------------------------------------------
 
-	IGDBClientID          string  `env:"IGDB_CLIENT_ID,required"`
-	IGDBClientSecret      string  `env:"IGDB_CLIENT_SECRET,required"`
+	IGDBClientID          string  `env:"IGDB_CLIENT_ID"`
+	IGDBClientSecret      string  `env:"IGDB_CLIENT_SECRET"`
 	IGDBAccessToken       string  `env:"IGDB_ACCESS_TOKEN"`
 	IGDBRequestsPerSecond float64 `env:"IGDB_REQUESTS_PER_SECOND" envDefault:"4.0"`
 	IGDBBurstCapacity     int     `env:"IGDB_BURST_CAPACITY"      envDefault:"8"`

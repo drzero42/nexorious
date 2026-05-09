@@ -18,7 +18,7 @@ func TestAuthManager_FetchesToken(t *testing.T) {
 	var callCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
-		json.NewEncoder(w).Encode(twitchTokenResponse{
+		_ = json.NewEncoder(w).Encode(twitchTokenResponse{
 			AccessToken: "test-token-123",
 			ExpiresIn:   3600,
 			TokenType:   "bearer",
@@ -61,7 +61,7 @@ func TestAuthManager_RefreshesExpiredToken(t *testing.T) {
 	var callCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
-		json.NewEncoder(w).Encode(twitchTokenResponse{
+		_ = json.NewEncoder(w).Encode(twitchTokenResponse{
 			AccessToken: "refreshed-token",
 			ExpiresIn:   3600,
 			TokenType:   "bearer",
@@ -150,7 +150,7 @@ func TestAuthManager_UsesPreConfiguredToken(t *testing.T) {
 
 func TestClient_SearchGames(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]igdbGameResponse{
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
 			{
 				ID:   1942,
 				Name: "The Witcher 3: Wild Hunt",
@@ -192,7 +192,7 @@ func TestClient_SearchGames(t *testing.T) {
 
 func TestClient_GetGameByID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]igdbGameResponse{
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
 			{
 				ID:   1942,
 				Name: "The Witcher 3: Wild Hunt",
@@ -228,7 +228,7 @@ func TestClient_GetGameByID(t *testing.T) {
 
 func TestClient_GetGameByID_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]igdbGameResponse{})
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{})
 	}))
 	defer srv.Close()
 
