@@ -177,7 +177,7 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 
 ## Known Gotchas
 
-- **`pgx.ErrNoRows` vs DB errors** — always `errors.Is(err, pgx.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"github.com/jackc/pgx/v5"` for the sentinel
+- **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
 
 - **`//go:embed all:dir`** — use `all:` prefix when the directory contains dot-files (e.g. `.gitkeep`); without it, Go silently excludes them and the build fails
 - **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists. Connection string must use `pgx5://` scheme: `"pgx5" + strings.TrimPrefix(connStr, "postgres")`

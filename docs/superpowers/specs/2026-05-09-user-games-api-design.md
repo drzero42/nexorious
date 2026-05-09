@@ -44,6 +44,8 @@ Tag *Tag `bun:"rel:belongs-to,join:tag_id=id" json:"tag,omitempty"`
 
 These enable Bun's `Relation()` eager loading for get/list responses.
 
+**Nullability fix on `UserGamePlatform`:** The current Go model has `Platform` and `Storefront` as `string` (notnull), but the Python model and DB schema have them as nullable (`Optional[str]`). This must be fixed to `*string` (no `notnull` tag) during implementation to support the `"unknown"` filter sentinel which maps to `IS NULL`.
+
 ## Endpoints
 
 ### Single-Item CRUD
@@ -312,11 +314,12 @@ Returns all `user_game_platforms` rows for the given user game.
 ```
 
 - Generates UUID, sets timestamps
+- Returns 409 if `UNIQUE(user_game_id, platform, storefront)` constraint violation (platform+storefront combo already exists for this game)
 - Returns 201 with the created platform association
 
 #### `PUT /api/user-games/:id/platforms/:platform_id`
 
-Updates mutable fields on the platform association. Sets `updated_at` to `now`. Returns 200 with updated platform.
+All fields from the create body are accepted. `platform` and `storefront` are mutable — changing them is allowed (matching the Python implementation). If the new `platform`+`storefront` combo would collide with another existing association on the same user game, returns 409. Validates that the referenced `platform` exists in the `platforms` table (→ 404 if not) and `storefront` exists in the `storefronts` table if provided (→ 404 if not). Sets `updated_at` to `now`. Returns 200 with updated platform.
 
 #### `DELETE /api/user-games/:id/platforms/:platform_id`
 
@@ -332,6 +335,7 @@ Follows the existing codebase pattern — `map[string]string{"error": "message"}
 | User game not found / not owned | 404 | `"user game not found"` |
 | Game ID doesn't exist | 400 | `"game not found"` |
 | Duplicate user+game | 409 | `"game already in collection"` |
+| Duplicate platform+storefront on user game | 409 | `"platform and storefront association already exists"` |
 | Platform association not found | 404 | `"platform not found"` |
 | Database error | 500 | `"database error"` |
 
