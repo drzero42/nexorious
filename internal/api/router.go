@@ -191,6 +191,24 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
 		gamesGroup.GET("/igdb/:igdb_id", gh.HandleGetIGDBGame)
 		gamesGroup.POST("/igdb-import", gh.HandleImportFromIGDB)
+
+		// User Games routes (all JWT-protected)
+		ugh := NewUserGamesHandler(db, cfg)
+		userGamesGroup := e.Group("/api/user-games", auth.JWTMiddleware(cfg.SecretKey, db))
+		userGamesGroup.GET("", ugh.HandleListUserGames)
+		userGamesGroup.POST("", ugh.HandleCreateUserGame)
+		userGamesGroup.PUT("/bulk-update", ugh.HandleBulkUpdate)
+		userGamesGroup.DELETE("/bulk-delete", ugh.HandleBulkDelete)
+		userGamesGroup.POST("/bulk-add-platforms", ugh.HandleBulkAddPlatforms)
+		userGamesGroup.DELETE("/bulk-remove-platforms", ugh.HandleBulkRemovePlatforms)
+		userGamesGroup.GET("/:id", ugh.HandleGetUserGame)
+		userGamesGroup.PUT("/:id", ugh.HandleUpdateUserGame)
+		userGamesGroup.DELETE("/:id", ugh.HandleDeleteUserGame)
+		userGamesGroup.PUT("/:id/progress", ugh.HandleUpdateProgress)
+		userGamesGroup.GET("/:id/platforms", ugh.HandleListPlatforms)
+		userGamesGroup.POST("/:id/platforms", ugh.HandleCreatePlatform)
+		userGamesGroup.PUT("/:id/platforms/:platform_id", ugh.HandleUpdatePlatform)
+		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 	}
 
 	// Static cover art files from disk

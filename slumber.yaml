@@ -311,3 +311,123 @@ requests:
         authentication:
           type: bearer
           token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+  user_games:
+    name: User Games
+    requests:
+      list:
+        name: List User Games
+        method: GET
+        url: "{{base_url}}/api/user-games"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        query:
+          page: "1"
+          per_page: "20"
+
+      get:
+        name: Get User Game
+        method: GET
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      create:
+        name: Create User Game
+        method: POST
+        url: "{{base_url}}/api/user-games"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            game_id: 1
+            play_status: not_started
+
+      update:
+        name: Update User Game
+        method: PUT
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            play_status: completed
+            is_loved: true
+
+      update_progress:
+        name: Update Progress
+        method: PUT
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID/progress"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            hours_played: 12.5
+            play_status: in_progress
+
+      delete:
+        name: Delete User Game
+        method: DELETE
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      bulk_update:
+        name: Bulk Update
+        method: PUT
+        url: "{{base_url}}/api/user-games/bulk-update"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            ids:
+              - "REPLACE_WITH_ID_1"
+              - "REPLACE_WITH_ID_2"
+            updates:
+              play_status: completed
+
+      bulk_delete:
+        name: Bulk Delete
+        method: DELETE
+        url: "{{base_url}}/api/user-games/bulk-delete"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            ids:
+              - "REPLACE_WITH_ID_1"
+
+      ug_list_platforms:
+        name: List Platforms
+        method: GET
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID/platforms"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      ug_create_platform:
+        name: Create Platform
+        method: POST
+        url: "{{base_url}}/api/user-games/REPLACE_WITH_ID/platforms"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            platform: pc-windows
+            storefront: steam
+            ownership_status: owned

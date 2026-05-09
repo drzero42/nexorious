@@ -73,6 +73,10 @@ type UserGame struct {
 	PersonalNotes  *string   `bun:"personal_notes"     json:"personal_notes"`
 	CreatedAt      time.Time `bun:"created_at,notnull" json:"created_at"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull" json:"updated_at"`
+
+	Game      *Game              `bun:"rel:belongs-to,join:game_id=id"       json:"game,omitempty"`
+	Platforms []UserGamePlatform `bun:"rel:has-many,join:id=user_game_id"    json:"platforms,omitempty"`
+	Tags      []UserGameTag      `bun:"rel:has-many,join:id=user_game_id"    json:"tags,omitempty"`
 }
 
 type UserGamePlatform struct {
@@ -80,8 +84,8 @@ type UserGamePlatform struct {
 
 	ID                     string     `bun:"id,pk"                        json:"id"`
 	UserGameID             string     `bun:"user_game_id,notnull"         json:"user_game_id"`
-	Platform               string     `bun:"platform,notnull"             json:"platform"`
-	Storefront             string     `bun:"storefront,notnull"           json:"storefront"`
+	Platform               *string    `bun:"platform"                     json:"platform"`
+	Storefront             *string    `bun:"storefront"                   json:"storefront"`
 	StoreGameID            *string    `bun:"store_game_id"                json:"store_game_id"`
 	StoreUrl               *string    `bun:"store_url"                    json:"store_url"`
 	IsAvailable            bool       `bun:"is_available,notnull"         json:"is_available"`
@@ -143,4 +147,6 @@ type UserGameTag struct {
 	UserGameID string    `bun:"user_game_id,notnull"  json:"user_game_id"`
 	TagID      string    `bun:"tag_id,notnull"        json:"tag_id"`
 	CreatedAt  time.Time `bun:"created_at,notnull"    json:"created_at"`
+
+	Tag *Tag `bun:"rel:belongs-to,join:tag_id=id" json:"tag,omitempty"`
 }
