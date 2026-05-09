@@ -846,12 +846,12 @@ This mirrors the Python/NATS pattern exactly — in the Python version, `job_id`
 
 1. Handler creates a `jobs` row (`status = pending`)
 2. Handler calls `pool.Submit(ctx, taskType, payload{job_id: ...}, priority)`
-3. Worker claims the task, sets `jobs.status = running`, proceeds
+3. Worker claims the task, sets `jobs.status = processing`, proceeds
 4. Worker marks `jobs.status = completed` (or `failed`) on exit
 
 ### Job Progress
 
-Job state (`pending`, `running`, `completed`, `failed`, `cancelled`) is persisted in the `jobs` table via Bun queries. Individual item progress is tracked in the `job_items` table. Workers write progress updates during execution. The `/api/jobs` and `/api/job-items` endpoints read directly from the tables — no in-memory state.
+Job state (`pending`, `processing`, `completed`, `failed`, `cancelled`) is persisted in the `jobs` table via Bun queries. Individual item progress is tracked in the `job_items` table. Workers write progress updates during execution. The `/api/jobs` and `/api/job-items` endpoints read directly from the tables — no in-memory state.
 
 ### Horizontal Scaling Note
 

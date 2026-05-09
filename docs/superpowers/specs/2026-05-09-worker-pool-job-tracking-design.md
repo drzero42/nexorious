@@ -263,9 +263,21 @@ Constructor: `NewJobItemsHandler(db *bun.DB, pool *worker.Pool)`. Takes the pool
 | Endpoint | Method | Description |
 |---|---|---|
 | `/api/job-items/:id` | GET | Single job item detail including `igdb_candidates` for the review UI. |
-| `/api/job-items/:id/resolve` | POST | Resolve a `pending_review` item. Request: `{ "igdb_id": 12345 }`. Sets `resolved_igdb_id`, status → `completed`, `resolved_at = now()`. The actual game creation and user-game linking logic will be implemented by the consumer spec that handles sync/import — this endpoint is the hook point for it. Returns 409 if item is not `pending_review`. |
+| `/api/job-items/:id/resolve` | POST | Resolve a `pending_review` item. Request: `{ "igdb_id": 12345 }`. Sets `resolved_igdb_id`, resets status → `pending`, and re-queues the item for worker processing via `pool.Submit()` using the task type derived from the parent job's `job_type` (see Retry Task Type Mapping below). The worker's "Flow B" uses the pre-resolved `resolved_igdb_id` for a direct import — no IGDB search needed. Returns 409 if item is not `pending_review`. |
 | `/api/job-items/:id/skip` | POST | Skip a review item. Request: `{ "reason": "optional" }`. Sets status → `skipped`. Returns 409 if item is not `pending_review`. |
 | `/api/job-items/:id/retry` | POST | Retry a single failed item: reset status → `pending`, create a new `pending_tasks` row via `pool.Submit()`. Returns 409 if item is not `failed`. |
+
+### Retry Task Type Mapping
+
+Both retry endpoints (`/api/jobs/:id/retry-failed`, `/api/job-items/:id/retry`) and the resolve endpoint need to re-queue items for worker processing. The task type submitted to `pool.Submit()` is derived from the parent job's `job_type`:
+
+| `job.job_type` | Task type submitted | Notes |
+|---|---|---|
+| `sync` | `process_sync_item` | Processes a single sync item (IGDB matching or direct import via resolved ID) |
+| `metadata_refresh` | `metadata_refresh_process` | Refreshes IGDB metadata for a single game |
+| `import` (and any other type) | `process_import_item` | Default fallback — processes a single import item |
+
+This mapping mirrors the Python implementation exactly. The resolve endpoint uses the same mapping — after setting `resolved_igdb_id` and resetting to `pending`, it submits a task using the parent job's type.
 
 ### Ownership Enforcement
 
