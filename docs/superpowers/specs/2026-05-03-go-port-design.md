@@ -200,6 +200,7 @@ nexorious-go/
 │   │       └── maintenance.go   # BackupCreateTask, MetadataRefreshDispatchTask,
 │   │                            # MetadataRefreshProcessTask, CleanupJobResultsTask,
 │   │                            # CleanupExportsTask, CleanupSessionsTask,
+│   │                            # CleanupUnreferencedGamesTask
 │   │                            # BackupScheduledTask
 │   ├── scheduler/
 │   │   └── scheduler.go         # gocron v2 job definitions
@@ -826,7 +827,7 @@ Failed tasks (handler returned error) are marked `status = 'failed'` with `last_
 | `tasks/export.go` | `ExportTask` |
 | `tasks/maintenance.go` | `BackupCreateTask`, `BackupScheduledTask`, `MetadataRefreshDispatchTask`, `MetadataRefreshProcessTask` |
 
-Cleanup tasks (`CleanupJobResultsTask`, `CleanupExportsTask`, `CleanupSessionsTask`) run inline in the gocron goroutine — they are fast DB operations with no external I/O and do not go through the task queue.
+Cleanup tasks (`CleanupJobResultsTask`, `CleanupExportsTask`, `CleanupSessionsTask`, `CleanupUnreferencedGamesTask`) run inline in the gocron goroutine — they are fast DB operations with no external I/O and do not go through the task queue.
 
 ### Linking pending_tasks to jobs
 
@@ -866,12 +867,13 @@ The `SELECT FOR UPDATE SKIP LOCKED` claim pattern is safe for multiple concurren
 |---|---|---|
 | Cleanup job results | Daily at 3:00 AM UTC | Inline in gocron goroutine (fast DB op) |
 | Cleanup exports | Daily at 4:00 AM UTC | Inline in gocron goroutine (fast DB op) |
+| Cleanup unreferenced games | Daily at 5:00 AM UTC | Inline in gocron goroutine (single anti-join query + cover art file removal) |
 | Cleanup sessions | Every 30 minutes | Inline in gocron goroutine (fast DB op) |
 | Scheduled backup | Cron expression from `backup_config.schedule_cron` (default `"0 2 * * *"`; empty string = disabled) | Submits `BackupScheduledTask` to worker pool |
 | Metadata refresh dispatch | Configurable interval (`METADATA_REFRESH_INTERVAL`, default 24h) | Submits `MetadataRefreshDispatchTask` to pool |
 | Check pending syncs | Every 15 minutes | Submits `DispatchSyncTask` to pool |
 
-Jobs that generate significant work (metadata refresh dispatch, sync check, scheduled backup) submit tasks to the worker pool rather than executing inline. Cleanup jobs (job results, exports, sessions) run inline in the gocron goroutine — they are fast single-query operations with no external I/O.
+Jobs that generate significant work (metadata refresh dispatch, sync check, scheduled backup) submit tasks to the worker pool rather than executing inline. Cleanup jobs (job results, exports, sessions, unreferenced games) run inline in the gocron goroutine — they are fast single-query operations with no external I/O.
 
 ---
 
@@ -1020,11 +1022,23 @@ Platform/storefront logos are embedded in the binary and are not included in bac
 
 **Manifest** (`manifest.json`) includes: `backup_id`, `backup_type` (`manual`|`scheduled`), `created_at`, per-file checksums and sizes, and DB stats (user count, game count, tag count). The `backup_type` field uses the same enum values as the Python version.
 
-### Unreferenced Game Cleanup (via `DELETE /api/user-games/:id` or bulk delete), the handler checks whether any other user has the same `game_id` in their collection. If no other `user_games` row references that game, the `games` row is deleted and its cover art file on disk is removed. This mirrors the Python `cleanup_unreferenced_game()` behaviour.
+### Unreferenced Game Cleanup
 
-The check and cleanup run within the same transaction as the user-game deletion. No separate worker task is needed — the operation is fast (single indexed lookup + conditional delete).
+When a user removes a game from their collection (single or bulk delete), the `games` row may become orphaned — no `user_games` row references it. Rather than checking inline during every delete (which is expensive for bulk operations), orphaned games are cleaned up by a **scheduled maintenance task**.
 
-The Go port does **not** check the wishlists table (which is dropped), simplifying the reference check to `user_games` only.
+**`CleanupUnreferencedGamesTask`** — runs inline in the gocron goroutine (same as other cleanup tasks):
+
+```sql
+DELETE FROM games
+WHERE id NOT IN (SELECT DISTINCT game_id FROM user_games)
+RETURNING id, cover_art_url;
+```
+
+For each deleted game, the task removes the corresponding cover art file from `{STORAGE_PATH}/cover_art/` (best-effort — log warning on file-removal error, don't fail the task).
+
+**Schedule:** Daily at 5:00 AM UTC (after job results and export cleanup). The task is fast — a single indexed anti-join query — and safe to run frequently. It does not go through the worker pool.
+
+Delete handlers (`DELETE /api/user-games/:id`, `DELETE /api/user-games/bulk-delete`) do **not** perform inline cleanup. They delete the `user_games` row and return immediately; orphaned games are collected by the next scheduled run.
 
 ---
 

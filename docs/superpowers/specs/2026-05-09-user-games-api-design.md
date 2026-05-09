@@ -152,6 +152,7 @@ Fetches one user game by ID with ownership check (`user_id` must match JWT claim
 
 - Generates UUID for `id`, sets `user_id` from JWT, sets `created_at`/`updated_at` to `now`
 - Validates `game_id` exists in `games` table (→ 400 if not)
+- Validates `play_status` against the allowed enum (see Enum Validation below) if provided
 - Returns 409 if `UNIQUE(user_id, game_id)` constraint violation (game already in collection)
 - Returns 201 with the created user game (no relations loaded — it's a fresh entry)
 
@@ -168,11 +169,27 @@ Fetches one user game by ID with ownership check (`user_id` must match JWT claim
 }
 ```
 
+**Partial update semantics — distinguishing absent vs. null:**
+
+The Python implementation uses Pydantic's `model_dump(exclude_unset=True)` to distinguish between "field not sent" (absent → not touched) and "field explicitly set to null" (→ cleared to NULL in DB). The Go handler must replicate this behaviour.
+
+**Implementation:** Decode the request body into a `map[string]any` (not a struct). Only keys present in the map are applied to the DB row. This correctly handles all three cases:
+
+| JSON body | Effect |
+|---|---|
+| Field absent | Row field untouched |
+| `"personal_rating": null` | Row field set to NULL |
+| `"personal_rating": 9` | Row field updated to 9 |
+
+Validate the map keys against an allowlist (`play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`). Reject unknown keys with 400. Build a Bun `UPDATE ... SET` using only the provided columns plus `updated_at = now()`.
+
 - Ownership check: must belong to current user (→ 404 if not)
+- Validates `play_status` against the allowed enum (see Enum Validation below) if provided
+- Validates `personal_rating` is between 1 and 5 (inclusive) if provided and non-null
 - Sets `updated_at` to `now`
 - Returns 200 with updated user game + eager-loaded relations
 
-`game_id` and `user_id` are immutable — not accepted in update body.
+`game_id` and `user_id` are immutable — not accepted in update body (reject with 400 if present).
 
 #### `PUT /api/user-games/:id/progress` — Update Progress
 
@@ -192,11 +209,10 @@ Both fields are optional but at least one must be provided (→ 400 if empty). S
 
 Within a single transaction:
 
-1. Fetch the user game to get `game_id` (also verifies ownership → 404 if not found/not owned)
+1. Fetch the user game to verify ownership (→ 404 if not found/not owned)
 2. Delete the `user_games` row — `user_game_platforms` and `user_game_tags` cascade via FK
-3. Unreferenced game cleanup: `SELECT COUNT(*) FROM user_games WHERE game_id = ?` — if 0:
-   - Delete the `games` row
-   - Remove cover art file from `cfg.StoragePath + "/cover_art/"` (best-effort — log warning on error, don't fail the request)
+
+Unreferenced game cleanup (removing orphaned `games` rows and their cover art) is **not** performed inline. It runs as a scheduled maintenance task — see the go-port design spec's "Unreferenced Game Cleanup" section.
 
 Returns 204 No Content on success.
 
@@ -234,9 +250,9 @@ All bulk operations run within a single transaction. All verify ownership (only 
 }
 ```
 
-- Fetches all matching user games (scoped to current user) to collect `game_id`s
+- Fetches all matching user games (scoped to current user)
 - Deletes all matching `user_games` rows (cascades platforms + tags)
-- Runs unreferenced game cleanup for each distinct `game_id`
+- Unreferenced game cleanup runs separately as a scheduled maintenance task
 - Returns 200 with `{"deleted": <count>}`
 
 #### `POST /api/user-games/bulk-add-platforms`
@@ -314,6 +330,8 @@ Returns all `user_game_platforms` rows for the given user game.
 ```
 
 - Generates UUID, sets timestamps
+- Validates that the referenced `platform` exists in the `platforms` table (→ 404 if not) and `storefront` exists in the `storefronts` table if provided (→ 404 if not)
+- Validates `ownership_status` against the allowed enum (see Enum Validation) if provided
 - Returns 409 if `UNIQUE(user_game_id, platform, storefront)` constraint violation (platform+storefront combo already exists for this game)
 - Returns 201 with the created platform association
 
@@ -324,6 +342,18 @@ All fields from the create body are accepted. `platform` and `storefront` are mu
 #### `DELETE /api/user-games/:id/platforms/:platform_id`
 
 Deletes the platform association. Returns 204 No Content.
+
+## Enum Validation
+
+The following enum values are validated by handlers. Invalid values return 400.
+
+**`PlayStatus`** (used on `user_games.play_status`):
+`not_started`, `in_progress`, `completed`, `mastered`, `dominated`, `shelved`, `dropped`, `replay`
+
+**`OwnershipStatus`** (used on `user_game_platforms.ownership_status`):
+`owned`, `borrowed`, `rented`, `subscription`, `no_longer_owned`
+
+Define these as string constants in `internal/db/models/` (or a shared `internal/enum/` package) with a `Valid()` method. Handlers validate before writing to the DB.
 
 ## Error Handling
 
@@ -349,7 +379,7 @@ Tests in `internal/api/user_games_test.go` using the existing `testcontainers-go
 - Helper: `insertTestUserGamePlatform(t, db, userGameID, platform, storefront)` creates a platform association
 - Test cases for each endpoint covering: happy path, ownership enforcement, not-found, validation errors, constraint violations
 - Bulk operation tests: multiple IDs, mixed ownership (should skip non-owned), empty arrays
-- Delete test: verify unreferenced game cleanup occurs and cover art file is removed
+- Delete test: verify `user_games` row and cascaded associations are removed (unreferenced game cleanup is a separate scheduled task — not tested here)
 - Filter integration: verify filter builder criteria work end-to-end through the list endpoint
 
 ## File Map
