@@ -138,13 +138,26 @@ PUT  /api/sync/config/:storefront   → SyncConfigResponse
 
 Valid `:storefront` values: `steam`, `psn`, `epic`. Anything else → 400.
 
-`GET /api/sync/config` returns one entry per supported storefront. For storefronts with no DB row, a virtual default is returned (not persisted): `frequency: "manual"`, `auto_add: false`, `is_configured: false`, `id` set to a freshly generated UUID (not stored).
+`GET /api/sync/config` returns one entry per supported storefront. For storefronts with no DB row, a virtual default is returned (not persisted): `frequency: "manual"`, `auto_add: false`, `is_configured: false`, `id` set to a freshly generated UUID (not stored), `created_at`/`updated_at` set to `time.Now()`.
 
 `PUT` body (all fields optional, partial update):
 ```json
 { "frequency": "manual|hourly|daily|weekly", "auto_add": true }
 ```
-Upserts the row; creates it if missing.
+Upserts the row; creates it if missing. Conflict target is `(user_id, storefront)`.
+
+**`SyncConfigListResponse`** — always a wrapped object, never a bare array (confirmed from Python):
+```json
+{
+  "configs": [
+    { "id": "uuid", "storefront": "steam", "frequency": "manual", "auto_add": false, "last_synced_at": null, "is_configured": false, "created_at": "2026-05-10T...", "updated_at": "2026-05-10T..." },
+    { "id": "uuid", "storefront": "psn",   "frequency": "manual", "auto_add": false, "last_synced_at": null, "is_configured": false, "created_at": "2026-05-10T...", "updated_at": "2026-05-10T..." },
+    { "id": "uuid", "storefront": "epic",  "frequency": "manual", "auto_add": false, "last_synced_at": null, "is_configured": false, "created_at": "2026-05-10T...", "updated_at": "2026-05-10T..." }
+  ],
+  "total": 3
+}
+```
+`total` is always 3 (one per supported storefront).
 
 **`SyncConfigResponse`:**
 ```json
@@ -285,6 +298,86 @@ Register static-segment routes (`/steam/verify`, `/psn/configure`, `/psn/status`
 | PSN configure: PSN rejects token | 400 |
 | Disconnect with no row | 204 (idempotent) |
 | Skip/un-skip: external game not found or wrong user | 404 |
+
+---
+
+## Implementation Notes
+
+### PSN Client Library
+
+Use `github.com/sizovilya/go-psn-api` (21 stars, updated March 2026, passing CI — the most maintained Go PSN library). The other Go options (`FrostBreker/go-playstation-api`, `m-nt/go-psn-api`) are forks with no additional adoption.
+
+**Auth flow for `POST /api/sync/psn/configure`:**
+
+```go
+opts := &psn.Options{Npsso: npssoToken, Lang: "en", Region: "us"}
+client, err := psn.NewClient(opts)
+// AuthWithNPSSO hits ca.account.sony.com — no region needed for the auth exchange itself.
+// Returns ErrInvalidNPSSOToken (or wraps a PSN rejection) if the token is bad.
+if err := client.AuthWithNPSSO(ctx, npssoToken); err != nil {
+    return 400 invalid_npsso_token
+}
+// GetProfile(ctx, "me") fetches the authenticated user's own profile.
+profile, err := client.GetProfile(ctx, "me")
+// profile.OnlineID → online_id
+// profile.NpID     → account_id (Sony's stable per-account identifier)
+// Region stored as "us" (the configured default); refinable by sync worker later if needed.
+```
+
+The auth exchange (`AuthWithNPSSO`) is purely against `ca.account.sony.com` and does not require a region. The `Options.Region` field is used only for the profile endpoint URL prefix; "us" works for global users' own profile lookup via the "me" identifier.
+
+### Handler Interfaces
+
+External HTTP calls are hidden behind interfaces injected into the handler, so test stubs replace them without any HTTP mocking framework.
+
+```go
+// SteamClient abstracts the Steam Web API call used during credential verification.
+// Steam ID and API key format validation happens before this is called.
+type SteamClient interface {
+    GetPlayerSummaries(ctx context.Context, apiKey, steamID string) (*SteamPlayerSummary, error)
+}
+
+type SteamPlayerSummary struct {
+    PersonaName              string
+    CommunityVisibilityState int // 3 = public profile
+}
+
+// PSNClient abstracts the PSN NPSSO exchange and account info retrieval.
+type PSNClient interface {
+    GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAccountInfo, error)
+}
+
+type PSNAccountInfo struct {
+    OnlineID  string
+    AccountID string // Sony NpID — stable account identifier
+    Region    string // e.g. "us", "gb" — stored for sync worker use
+}
+
+// Sentinel errors the handler maps to specific API error codes.
+var (
+    ErrInvalidNPSSOToken = errors.New("invalid npsso token") // → 400 invalid_npsso_token
+    ErrSteamRateLimited  = errors.New("steam rate limited")  // → 200 rate_limited
+    ErrSteamNetwork      = errors.New("steam network error") // → 200 network_error
+    // Non-sentinel Steam errors map via SteamPlayerSummary fields:
+    // communityvisibilitystate != 3 → private_profile
+    // empty result → invalid_steam_id
+)
+```
+
+Production implementations live in `internal/services/steam/` and `internal/services/psn/`, using `sizovilya/go-psn-api` for PSN and direct HTTP to `api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002` for Steam. Test stubs are inline structs in `sync_test.go`.
+
+The handler constructor:
+
+```go
+type SyncHandler struct {
+    db          *bun.DB
+    pool        *worker.Pool
+    steamClient SteamClient
+    psnClient   PSNClient
+}
+
+func NewSyncHandler(db *bun.DB, pool *worker.Pool, steam SteamClient, psn PSNClient) *SyncHandler
+```
 
 ---
 
