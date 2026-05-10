@@ -650,7 +650,7 @@ The Python `Wishlist` model is also **not included** in the Go schema. No user-f
 - `storefront_credentials` — plain JSON text; shape is storefront-specific (see `2026-05-10-sync-api-design.md`)
 - `last_synced_at`
 
-The sync config API (`GET/PUT /api/sync/config/:storefront`) lets users configure these settings. Credentials are written by the storefront-specific verify/configure endpoints (`POST /api/sync/steam/verify`, `POST /api/sync/psn/configure`) and stored as plain JSON — no encryption at rest.
+The sync config API (`GET/PUT /api/sync/config/:storefront`) lets users configure these settings. Credentials are written by the storefront-specific verify/configure endpoints (`POST /api/sync/steam/verify`, `POST /api/sync/psn/configure`) and stored as plain JSON — no encryption at rest. The PSN credentials JSON additionally includes `is_verified` (bool) and `token_expired_at` (ISO timestamp | null) fields, which are written by the PSN sync worker when PSN rejects the token; these are never exposed directly in API responses. See `2026-05-10-sync-api-design.md` for the full credential shapes.
 
 **`is_configured` field:** The `SyncConfigResponse` includes an `is_configured` boolean — `true` when `storefront_credentials IS NOT NULL`. In the Python version credentials were stored in `users.preferences`; the Go port reads from `user_sync_configs.storefront_credentials` exclusively.
 

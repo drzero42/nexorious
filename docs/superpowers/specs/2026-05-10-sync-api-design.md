@@ -102,8 +102,10 @@ type UserSyncConfig struct {
 
 **PSN:**
 ```json
-{ "npsso_token": "abc...64chars", "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE" }
+{ "npsso_token": "abc...64chars", "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE", "is_verified": true, "token_expired_at": null }
 ```
+
+`is_verified` is set to `true` at configure time. The PSN sync worker sets it to `false` and writes the current UTC timestamp to `token_expired_at` when PSN rejects the token. `token_expired_at` is `null` until the first expiry event.
 
 **Epic:** deferred; row may exist with `storefront_credentials = NULL`.
 
@@ -227,7 +229,7 @@ On PSN rejection: 400 `{ "error": "invalid_npsso_token" }`.
 ```json
 { "is_configured": true, "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE", "token_expired": false }
 ```
-`token_expired` is always `false` at configure time; the sync worker sets it when PSN rejects the token. Returns zeroed response if no row exists.
+`token_expired` is derived as `is_verified == false AND token_expired_at != null` from the stored credentials JSON — this distinguishes "token expired" from "never configured". At configure time `is_verified` is set to `true` and `token_expired_at` to `null`. When the PSN sync worker receives a token rejection, it updates the credentials row: `is_verified = false`, `token_expired_at = <current UTC timestamp>`. Returns zeroed response if no row exists.
 
 **`DELETE /api/sync/psn/disconnect`** — clears `storefront_credentials` on the psn row. 204, idempotent.
 
