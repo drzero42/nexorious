@@ -149,11 +149,13 @@ Always `200` because the HTTP server can always serve meaningful content to the 
 
 **IGDB endpoint gating:** Handlers that require IGDB (`HandleSearchIGDB`, `HandleGetIGDBGame`, `HandleImportFromIGDB`, and future sync/metadata endpoints) check whether the IGDB client is available. If not, they return `503 Service Unavailable` with `{"error": "IGDB is not configured", "detail": "Set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables and restart."}`.
 
-**`GET /health`** includes an `igdb_configured` boolean:
+**`GET /health`** includes an `igdb_configured` boolean and a `backup_available` boolean:
 
 ```json
-{"status": "ok", "igdb_configured": false}
+{"status": "ok", "igdb_configured": false, "backup_available": true}
 ```
+
+`backup_available` is `true` only when both `pg_dump` and `psql` are found on the host system (checked once at startup via `exec.LookPath`).
 
 **No middleware gate, no `/misconfigured` page.** The app is fully usable for local collection management without IGDB. This matches the Python version's approach (log a warning, let the app run) while adding clearer error responses on IGDB endpoints.
 
@@ -653,6 +655,8 @@ The `schedule_cron` field stores a standard 5-field cron expression (e.g. `"0 2 
 
 **Frontend change required:** The backup admin UI (`/admin/backups`) must be updated to replace the `schedule`/`schedule_time`/`schedule_day` dropdowns with a single cron expression text input. The frontend API client (`src/api/backup.ts`) and types (`src/types/backup.ts`) must likewise be updated to use `schedule_cron` instead of the three-field model. This is an explicit in-scope frontend change for the Go port.
 
+**Frontend: backup_available banner:** When the user navigates to the backup/restore admin page, the UI reads `backup_available` from the health response. If `false`, show a persistent banner: "Backup and restore are unavailable because PostgreSQL client tools (pg_dump/psql) are not installed on the server." Disable the "Create Backup", "Restore", and "Upload & Restore" buttons. List and download remain functional. The setup page restore option (`POST /api/auth/setup/restore`) should also check and show a similar message if `psql` is unavailable.
+
 ---
 
 ## Fuzzy Search
@@ -1004,7 +1008,9 @@ Cover art is registered as an Echo `Static` route before the SPA catch-all. URLs
 
 ### Backup Archive Format
 
-Backup archives are `.tar.gz` files created by `BackupCreateTask` and the manual `POST /api/admin/backups` endpoint. Each archive contains:
+Backup and restore depend on PostgreSQL client tools (`pg_dump` for export, `psql` for import). These are **not bundled** with the Go binary — they must be present on the host system. At startup, both tools are probed via `exec.LookPath`; the results are cached as package-level booleans. Backup-create endpoints return 503 when `pg_dump` is missing; restore endpoints return 503 when `psql` is missing. List, download, delete, and config endpoints work regardless.
+
+Backup archives are `.tar.gz` files created by `BackupService.CreateBackup` and the manual `POST /api/admin/backups` endpoint. Each archive contains:
 
 ```
 backup-{id}.tar.gz
@@ -1427,8 +1433,10 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - gocron scheduler (cleanup jobs wired up)
 - Import handler (`POST /api/import/nexorious` — nexorious JSON format, the upgrade path from Python)
 - Export handler
-- Backup create + scheduled backup
+- Backup create + scheduled backup + full restore with rollback — see `2026-05-10-backup-restore-design.md` for detailed design
 - `POST /api/auth/setup/restore` — deferred from Phase 1; shares restore logic with the backup system implemented here
+- Admin backup endpoints: list, create, delete, download, restore, upload-restore, config get/put
+- Maintenance mode middleware for restore operations
 
 **Checkpoint:** existing Python users can export their data and import it into the Go version.
 
