@@ -353,22 +353,17 @@ POST /api/job-items/:id/resolve   Resolve item to an IGDB game (review workflow)
 POST /api/job-items/:id/skip      Skip item during review
 POST /api/job-items/:id/retry
 
-POST /api/sync/:platform          Trigger manual sync (GOG returns 501 Not Implemented)
-GET  /api/sync/:platform/status   Current sync status
-POST /api/sync/steam/verify       Verify Steam credentials
+POST /api/sync/:storefront          Trigger manual sync
+GET  /api/sync/:storefront/status   Current sync status (is_syncing, last_synced_at, active_job_id)
+POST /api/sync/steam/verify         Verify Steam credentials (always 200, valid: bool)
 DELETE /api/sync/steam/connection
-POST /api/sync/epic/auth/start
-POST /api/sync/epic/auth/complete
-GET  /api/sync/epic/auth/check
-DELETE /api/sync/epic/connection
 POST /api/sync/psn/configure
-GET  /api/sync/psn/status
+GET  /api/sync/psn/status           PSN account metadata (is_configured, online_id, region, token_expired)
 DELETE /api/sync/psn/disconnect
-GET  /api/sync/config             All sync configs for current user
-GET  /api/sync/config/:platform
-PUT  /api/sync/config/:platform
-GET  /api/sync/ignored            List skipped external games (is_skipped=true in external_games)
-DELETE /api/sync/ignored/:id      Un-skip (clears is_skipped flag on external_games row)
+GET  /api/sync/config               All sync configs for current user
+GET  /api/sync/config/:storefront
+PUT  /api/sync/config/:storefront
+# Epic sync auth endpoints deferred — legendary-gl OAuth flow; see 2026-05-10-sync-api-design.md
 
 GET  /health
 
@@ -588,7 +583,7 @@ The initial migration must create all of the following tables (derived from Pyth
 | `tags` | UUID PK; per-user |
 | `user_game_tags` | UUID PK; join table for user_games ↔ tags |
 | `external_games` | UUID PK; UNIQUE(user_id, storefront, external_id); stores IGDB resolution cache; `is_skipped` flag replaces the old `ignored_external_games` table |
-| `user_sync_configs` | UUID PK; UNIQUE(user_id, platform); stores credentials as JSON text |
+| `user_sync_configs` | UUID PK; UNIQUE(user_id, storefront); stores credentials as plain JSON text in `storefront_credentials` |
 | `jobs` | UUID PK |
 | `job_items` | UUID PK; FK → jobs |
 | `pending_tasks` | UUID PK; DB-backed task queue; `task_type`, `payload` (JSONB), `priority`, `status`, `attempts`, `last_error`, `claimed_at`, `done_at` |
@@ -620,6 +615,18 @@ All users are read-only consumers of this data.
 
 4. **Vite proxy:** The existing `vite.config.ts` proxies both `/api` and `/static` to the Go backend. Since logos are now frontend assets, only `/static/cover_art` needs proxying. Update the proxy to target `/static/cover_art` specifically (or keep `/static` proxied — it will simply 404 for `/static/logos/` requests in dev, which is fine since the dev server serves them directly from `ui/public/`).
 
+**Frontend change required — sync `platform` → `storefront` rename:** The Go port renames the `platform` field to `storefront` throughout the sync API wire format. When porting `src/api/sync.ts` and the associated types, apply the following mechanical renames:
+
+- `SyncConfigApiResponse.platform` → `storefront`
+- `SyncStatusApiResponse.platform` → `storefront`
+- `ManualSyncApiResponse.platform` → `storefront`
+- Update the three `transform*` functions in `sync.ts` to read from `storefront`
+- In `src/types`: rename `SyncConfig.platform` → `storefront`, `SyncStatus.platform` → `storefront`, `ManualSyncResponse.platform` → `storefront`
+- Rename the `SyncPlatform` type to `SyncStorefront` (enum values `steam`, `psn`, `epic` are unchanged)
+- Update all component files that reference `config.platform`, `status.platform`, or the `SyncPlatform` type
+
+No logic changes — this is a field-name rename only. See `2026-05-10-sync-api-design.md` for the full sync API specification.
+
 #### External Games
 
 `external_games` is load-bearing for the sync system. Each row represents a game seen from an external source (Steam, PSN, Epic) for a given user. It stores:
@@ -630,22 +637,22 @@ All users are read-only consumers of this data.
 
 `UserGamePlatform` rows reference `external_games.id` via `external_game_id` to link collection entries back to their sync source.
 
-The Python codebase previously had a separate `ignored_external_games` table. An Alembic migration (Mar 2026) migrated all ignored-game data to `external_games.is_skipped = true` and dropped the old table. **The Go port does not include an `ignored_external_games` table.** Skip/un-skip functionality is exposed via the sync router (`GET /api/sync/ignored`, `DELETE /api/sync/ignored/:id`), which reads/writes `external_games.is_skipped`.
+The Python codebase previously had a separate `ignored_external_games` table. An Alembic migration (Mar 2026) migrated all ignored-game data to `external_games.is_skipped = true` and dropped the old table. **The Go port does not include an `ignored_external_games` table, and there is no API to set `is_skipped`.** The flag exists for backward-compatibility with migrated data; when true, the sync worker skips the row silently. Users cannot set or clear this flag via any API endpoint — "skipping" a sync result is done via the job-items review flow (`POST /api/job-items/:id/skip`), which marks the job item terminal without writing to `external_games.is_skipped`.
 
 The Python `Wishlist` model is also **not included** in the Go schema. No user-facing API endpoints for wishlists exist, the frontend calls no wishlist API, and the table is not brought forward. The Go schema starts clean without it.
 
 #### User Sync Configs
 
-`user_sync_configs` stores per-user, per-platform sync settings:
-- `platform` (slug: `"steam"`, `"psn"`, `"epic"`)
+`user_sync_configs` stores per-user, per-storefront sync settings:
+- `storefront` (sync-source identifier: `"steam"`, `"psn"`, `"epic"` — not a FK to the `storefronts` table; this is a fixed enumeration of sync-capable sources)
 - `frequency` (enum: `manual` | `hourly` | `daily` | `weekly`)
 - `auto_add` — if true, matched games are added automatically; otherwise queued for review
-- `platform_credentials` — JSON text; for Steam: API key; for Epic: legendary user.json content
+- `storefront_credentials` — plain JSON text; shape is storefront-specific (see `2026-05-10-sync-api-design.md`)
 - `last_synced_at`
 
-The sync config API (`GET/PUT /api/sync/config/:platform`) lets users configure these settings and supply credentials. Credentials are stored encrypted at rest (AES-GCM, key derived from `SECRET_KEY`).
+The sync config API (`GET/PUT /api/sync/config/:storefront`) lets users configure these settings. Credentials are written by the storefront-specific verify/configure endpoints (`POST /api/sync/steam/verify`, `POST /api/sync/psn/configure`) and stored as plain JSON — no encryption at rest.
 
-**`is_configured` field:** The `SyncConfigResponse` includes an `is_configured` boolean indicating whether the user has working credentials stored for that platform. In the Go port this is determined by checking whether `user_sync_configs.platform_credentials` is non-null and non-empty for the row (after decryption). In the Python version, credentials were stored in `users.preferences` rather than `user_sync_configs`, so the Python `_is_platform_configured()` logic reads from a different location. The Go implementation reads from `user_sync_configs.platform_credentials` exclusively.
+**`is_configured` field:** The `SyncConfigResponse` includes an `is_configured` boolean — `true` when `storefront_credentials IS NOT NULL`. In the Python version credentials were stored in `users.preferences`; the Go port reads from `user_sync_configs.storefront_credentials` exclusively.
 
 #### Backup Config
 
