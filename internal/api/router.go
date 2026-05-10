@@ -13,7 +13,9 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious-go/internal/backup"
 	"github.com/drzero42/nexorious-go/internal/config"
+	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/worker"
@@ -22,7 +24,7 @@ import (
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, pool ...*worker.Pool) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, pool ...*worker.Pool) *echo.Echo {
 	e := echo.New()
 
 	var wp *worker.Pool
@@ -93,6 +95,9 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
+	// Gate 4: Maintenance mode — blocks most requests during restore
+	e.Use(maint.MaintenanceMiddleware())
+
 	if len(cfg.CORSOrigins) > 0 {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 			AllowOrigins: cfg.CORSOrigins,
@@ -100,12 +105,12 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, wp)
+	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, wp)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, pool *worker.Pool) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, pool *worker.Pool) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -121,8 +126,9 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 			status = state.String()
 		}
 		return c.JSON(http.StatusOK, map[string]any{
-			"status":          status,
-			"igdb_configured": igdbConfigured,
+			"status":           status,
+			"igdb_configured":  igdbConfigured,
+			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
 		})
 	})
 
@@ -146,11 +152,10 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	// Setup API routes (bypassed by Gate 3)
 	sh := NewSetupHandler(db, cfg, migrator)
 	e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
-	e.POST("/api/auth/setup/restore", func(c *echo.Context) error {
-		return c.JSON(http.StatusNotImplemented, map[string]string{
-			"error": "not implemented — deferred to Phase 3",
-		})
-	})
+
+	// Backup handler — used by both setup restore and admin routes
+	bh := NewBackupHandler(backupSvc, db, restoreCallbacks)
+	e.POST("/api/auth/setup/restore", bh.HandleSetupRestore)
 
 	// Auth routes — only registered when a DB is available.
 	if db != nil {
@@ -253,6 +258,18 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)
 		exportGroup.GET("/:id/download", exh.HandleDownload)
+
+		// Admin backup routes (JWT + admin required)
+		adminGroup := e.Group("", auth.JWTMiddleware(cfg.SecretKey, db), auth.AdminMiddleware())
+		adminBackups := adminGroup.Group("/api/admin/backups")
+		adminBackups.GET("/config", bh.HandleGetConfig)
+		adminBackups.PUT("/config", bh.HandleUpdateConfig)
+		adminBackups.GET("", bh.HandleListBackups)
+		adminBackups.POST("", bh.HandleCreateBackup)
+		adminBackups.DELETE("/:id", bh.HandleDeleteBackup)
+		adminBackups.GET("/:id/download", bh.HandleDownloadBackup)
+		adminBackups.POST("/:id/restore", bh.HandleRestore)
+		adminBackups.POST("/restore/upload", bh.HandleRestoreUpload)
 	}
 
 	// Static cover art files from disk

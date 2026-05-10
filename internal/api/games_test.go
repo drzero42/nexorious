@@ -179,7 +179,7 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 	cfg := testCfg() // no IGDB credentials
 	igdbClient := igdb.NewClient(cfg)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", igdbClient)
+	return api.New(cfg, m, db, "", igdbClient, nil, nil)
 }
 
 func TestSearchIGDB_NotConfigured(t *testing.T) {

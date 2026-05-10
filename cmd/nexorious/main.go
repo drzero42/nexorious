@@ -20,8 +20,10 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious-go/internal/api"
+	"github.com/drzero42/nexorious-go/internal/backup"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/worker"
@@ -90,6 +92,22 @@ func main() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	defer func() { _ = db.Close() }()
+
+	// Tool detection for backup/restore
+	backup.CheckTools()
+	if backup.PgDumpAvailable() {
+		slog.Info("pg_dump available — backups enabled")
+	} else {
+		slog.Warn("pg_dump not found — backup creation disabled")
+	}
+	if backup.PsqlAvailable() {
+		slog.Info("psql available — restore enabled")
+	} else {
+		slog.Warn("psql not found — restore disabled")
+	}
+
+	// Backup service
+	backupSvc := backup.NewService(db, resolvedDatabaseURL, cfg.BackupPath, cfg.StoragePath, version)
 
 	// -------------------------------------------------------------------------
 	// Migrator
@@ -208,17 +226,63 @@ func main() {
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, pool)
+	var sched *scheduler.Scheduler
 
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	restoreCallbacks := &api.RestoreCallbacks{
+		SetMaintenance: maint.SetMaintenanceMode,
+		ShutdownPool:   func() { pool.Shutdown() },
+		StopScheduler:  func() { if sched != nil { sched.Stop() } },
+		CloseDB: func() error {
+			// psql terminates PostgreSQL connections via pg_terminate_backend before restore;
+			// keeping *bun.DB open lets all handlers auto-reconnect after restore completes.
+			return nil
+		},
+		ReconnectDB: func() (*bun.DB, error) {
+			// Existing *bun.DB auto-reconnects; no need to create a new instance.
+			backupSvc.SetDB(db)
+			return db, nil
+		},
+		RebuildServices: func(newDB *bun.DB) error {
+			newPool := worker.NewPool(newDB)
+			newPool.Register("import_item", tasks.NewImportItemHandler(newDB))
+			newPool.Register("export_json", tasks.NewExportJSONHandler(newDB, cfg.StoragePath))
+			newPool.Register("export_csv", tasks.NewExportCSVHandler(newDB, cfg.StoragePath))
+			newPool.Start(shutdownCtx, cfg.WorkerCount)
+			pool = newPool
+
+			newSched := scheduler.NewScheduler(newDB, newPool, backupSvc)
+			sched = newSched
+			if err := newSched.Start(shutdownCtx); err != nil {
+				slog.Error("failed to restart scheduler after restore", "err", err)
+				slog.Info("worker pool restarted after restore; scheduler did not start")
+				return fmt.Errorf("restart scheduler after restore: %w", err)
+			}
+
+			slog.Info("workers and scheduler restarted after restore")
+			return nil
+		},
+		ReinitMigrator:  func() error { return migrator.DetermineStateForTest() },
+		SetAppState: func(state string) {
+			if state == "db_unavailable" {
+				migrator.SetStateForTest(migrate.AppStateDBUnavailable)
+			}
+		},
+		RebuildBackupJob: func(ctx context.Context, cron, retentionMode string, retentionValue int) {
+			if sched != nil {
+				sched.RebuildBackupJob(ctx, cron, retentionMode, retentionValue)
+			}
+		},
+	}
+
+	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, pool)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
 	// Worker/scheduler gate — starts after Ready && !NeedsSetup.
-	var sched *scheduler.Scheduler
-
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -228,7 +292,7 @@ func main() {
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
 				pool.Start(ctx, cfg.WorkerCount)
-				sched = scheduler.NewScheduler(db, pool)
+				sched = scheduler.NewScheduler(db, pool, backupSvc)
 				if err := sched.Start(ctx); err != nil {
 					slog.Error("failed to start scheduler", "err", err)
 				}

@@ -39,6 +39,71 @@ requests:
             username: "{{username}}"
             password: "{{password}}"
 
+  admin:
+    name: Admin
+    requests:
+      get_backup_config:
+        name: Get Backup Config
+        method: GET
+        url: "{{base_url}}/api/admin/backups/config"
+        $ref: "#/.authenticated"
+
+      update_backup_config:
+        name: Update Backup Config
+        method: PUT
+        url: "{{base_url}}/api/admin/backups/config"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            schedule_cron: "0 2 * * *"
+            retention_mode: "{{select(['days', 'count'])}}"
+            retention_value: 7
+
+      list_backups:
+        name: List Backups
+        method: GET
+        url: "{{base_url}}/api/admin/backups"
+        $ref: "#/.authenticated"
+
+      create_backup:
+        name: Create Backup
+        method: POST
+        url: "{{base_url}}/api/admin/backups"
+        $ref: "#/.authenticated"
+
+      delete_backup:
+        name: Delete Backup
+        method: DELETE
+        url: "{{base_url}}/api/admin/backups/{{response('list_backups', trigger='no_history') | jsonpath('$.backups[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+
+      download_backup:
+        name: Download Backup
+        method: GET
+        url: "{{base_url}}/api/admin/backups/{{response('list_backups', trigger='no_history') | jsonpath('$.backups[*].id', mode='array') | select()}}/download"
+        $ref: "#/.authenticated"
+
+      restore_backup:
+        name: Restore Backup
+        method: POST
+        url: "{{base_url}}/api/admin/backups/{{response('list_backups', trigger='no_history') | jsonpath('$.backups[*].id', mode='array') | select()}}/restore"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            confirm: true
+
+      restore_upload:
+        name: Restore from Upload
+        method: POST
+        url: "{{base_url}}/api/admin/backups/restore/upload"
+        $ref: "#/.authenticated"
+        body:
+          type: form_multipart
+          data:
+            file: "{{file(prompt(message='Path to backup .tar.gz file'))}}"
+
   auth:
     name: Auth
     requests:
@@ -135,9 +200,7 @@ requests:
         body:
           type: form_multipart
           data:
-            file:
-              type: file
-              path: "{{prompt(message='Path to nexorious export JSON file')}}"
+            file: "{{file(prompt(message='Path to nexorious export JSON file'))}}"
 
   job_items:
     name: Job Items

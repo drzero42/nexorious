@@ -114,7 +114,7 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil)
+	return api.New(cfg, m, db, "", nil, nil, nil)
 }
 
 // newTestEchoPool returns an Echo instance wired with a real db, ready migrator, and worker pool.
@@ -123,7 +123,7 @@ func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config, pool *worker.
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil, pool)
+	return api.New(cfg, m, db, "", nil, nil, nil, pool)
 }
 
 // testCfg returns a minimal config suitable for api_test tests.
@@ -330,7 +330,7 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	db := setupAuthTestDB(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m, db, "", nil)
+	e := api.New(cfg, m, db, "", nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")

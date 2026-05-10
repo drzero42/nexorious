@@ -8,17 +8,21 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious-go/internal/backup"
+	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 type Scheduler struct {
 	db        *bun.DB
 	pool      *worker.Pool
+	backupSvc *backup.Service
 	scheduler gocron.Scheduler
+	backupJob gocron.Job
 }
 
-func NewScheduler(db *bun.DB, pool *worker.Pool) *Scheduler {
-	return &Scheduler{db: db, pool: pool}
+func NewScheduler(db *bun.DB, pool *worker.Pool, backupSvc *backup.Service) *Scheduler {
+	return &Scheduler{db: db, pool: pool, backupSvc: backupSvc}
 }
 
 func (s *Scheduler) Start(ctx context.Context) error {
@@ -60,9 +64,56 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		}),
 	)
 
+	// Scheduled backup job — reads config from DB.
+	if s.backupSvc != nil && backup.PgDumpAvailable() {
+		var cfg models.BackupConfig
+		if err := s.db.NewSelect().Model(&cfg).Where("id = 1").Scan(ctx); err != nil {
+			slog.Warn("scheduler: could not read backup_config", "err", err)
+		} else if cfg.ScheduleCron != "" {
+			s.registerBackupJob(ctx, cfg.ScheduleCron, cfg.RetentionMode, cfg.RetentionValue)
+		}
+	} else if s.backupSvc != nil {
+		slog.Warn("scheduler: pg_dump not available — skipping scheduled backup job")
+	}
+
 	s.scheduler.Start()
 	slog.Info("scheduler started")
 	return nil
+}
+
+func (s *Scheduler) registerBackupJob(_ context.Context, cron, retentionMode string, retentionValue int) {
+	job, err := s.scheduler.NewJob(
+		gocron.CronJob(cron, false),
+		gocron.NewTask(func() {
+			id, err := s.backupSvc.CreateBackup("scheduled")
+			if err != nil {
+				slog.Error("scheduled backup failed", "err", err)
+				return
+			}
+			slog.Info("scheduled backup created", "id", id)
+			if err := s.backupSvc.ApplyRetention(retentionMode, retentionValue); err != nil {
+				slog.Warn("scheduled backup retention cleanup failed", "err", err)
+			}
+		}),
+	)
+	if err != nil {
+		slog.Error("scheduler: failed to register backup job", "err", err)
+		return
+	}
+	s.backupJob = job
+	slog.Info("scheduler: backup job registered", "cron", cron)
+}
+
+// RebuildBackupJob removes the existing backup job and registers a new one with updated config.
+// Call this after the backup config is updated via the API.
+func (s *Scheduler) RebuildBackupJob(ctx context.Context, cron, retentionMode string, retentionValue int) {
+	if s.backupJob != nil {
+		_ = s.scheduler.RemoveJob(s.backupJob.ID())
+		s.backupJob = nil
+	}
+	if cron != "" && backup.PgDumpAvailable() {
+		s.registerBackupJob(ctx, cron, retentionMode, retentionValue)
+	}
 }
 
 func (s *Scheduler) Stop() {
