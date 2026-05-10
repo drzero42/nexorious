@@ -129,6 +129,132 @@ requests:
         method: GET
         url: "{{base_url}}/health"
 
+  job_items:
+    name: Job Items
+    requests:
+      get_job_item:
+        name: Get Job Item
+        method: GET
+        url: "{{base_url}}/api/job-items/REPLACE_WITH_ITEM_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      resolve_item:
+        name: Resolve Item
+        method: POST
+        url: "{{base_url}}/api/job-items/REPLACE_WITH_ITEM_ID/resolve"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            igdb_id: 12345
+
+      skip_item:
+        name: Skip Item
+        method: POST
+        url: "{{base_url}}/api/job-items/REPLACE_WITH_ITEM_ID/skip"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+        body:
+          type: json
+          data:
+            reason: "not interested"
+
+      retry_item:
+        name: Retry Item
+        method: POST
+        url: "{{base_url}}/api/job-items/REPLACE_WITH_ITEM_ID/retry"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+  jobs:
+    name: Jobs
+    requests:
+      list_jobs:
+        name: List Jobs
+        method: GET
+        url: "{{base_url}}/api/jobs?per_page=10"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      jobs_summary:
+        name: Jobs Summary
+        method: GET
+        url: "{{base_url}}/api/jobs/summary"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      pending_review_count:
+        name: Pending Review Count
+        method: GET
+        url: "{{base_url}}/api/jobs/pending-review-count"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      active_job:
+        name: Active Job
+        method: GET
+        url: "{{base_url}}/api/jobs/active/sync"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      recent_jobs:
+        name: Recent Jobs
+        method: GET
+        url: "{{base_url}}/api/jobs/recent/steam?limit=5"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      get_job:
+        name: Get Job
+        method: GET
+        url: "{{base_url}}/api/jobs/REPLACE_WITH_JOB_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      get_job_items:
+        name: Get Job Items
+        method: GET
+        url: "{{base_url}}/api/jobs/REPLACE_WITH_JOB_ID/items?per_page=10"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      cancel_job:
+        name: Cancel Job
+        method: POST
+        url: "{{base_url}}/api/jobs/REPLACE_WITH_JOB_ID/cancel"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      delete_job:
+        name: Delete Job
+        method: DELETE
+        url: "{{base_url}}/api/jobs/REPLACE_WITH_JOB_ID"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
+      retry_failed:
+        name: Retry Failed Items
+        method: POST
+        url: "{{base_url}}/api/jobs/REPLACE_WITH_JOB_ID/retry-failed"
+        authentication:
+          type: bearer
+          token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+
   migrate:
     name: Migrate
     requests:

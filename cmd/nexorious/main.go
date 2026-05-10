@@ -22,7 +22,9 @@ import (
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 // Injected at build time via -ldflags.
@@ -193,9 +195,18 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
+	// Worker pool — created early so the Echo server can reference it.
+	// -------------------------------------------------------------------------
+	pool := worker.NewPool(db)
+	// Register handlers here when consumer specs are implemented:
+	// pool.Register("process_sync_item", syncHandler)
+	// pool.Register("process_import_item", importHandler)
+	// pool.Register("metadata_refresh_process", metadataHandler)
+
+	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient)
+	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, pool)
 
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -204,7 +215,8 @@ func main() {
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
 	// Worker/scheduler gate — starts after Ready && !NeedsSetup.
-	// Extend this goroutine when workers/scheduler are wired in.
+	var sched *scheduler.Scheduler
+
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -213,7 +225,12 @@ func main() {
 			default:
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
-				slog.Info("app ready — workers and scheduler would start here (Phase N)")
+				pool.Start(ctx, cfg.WorkerCount)
+				sched = scheduler.NewScheduler(db, pool)
+				if err := sched.Start(ctx); err != nil {
+					slog.Error("failed to start scheduler", "err", err)
+				}
+				slog.Info("app ready — workers and scheduler started")
 				return
 			}
 			time.Sleep(2 * time.Second)
@@ -232,6 +249,13 @@ func main() {
 	if err := sc.Start(shutdownCtx, e); err != nil {
 		slog.Info("server stopped", "err", err)
 	}
+
+	// Graceful shutdown sequence.
+	if sched != nil {
+		sched.Stop()
+	}
+	pool.Shutdown()
+
 	slog.Info("shutdown complete")
 }
 

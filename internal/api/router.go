@@ -16,13 +16,19 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/ui"
 )
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, pool ...*worker.Pool) *echo.Echo {
 	e := echo.New()
+
+	var wp *worker.Pool
+	if len(pool) > 0 {
+		wp = pool[0]
+	}
 
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -94,12 +100,12 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient)
+	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, wp)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, pool *worker.Pool) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -213,6 +219,28 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		userGamesGroup.POST("/:id/platforms", ugh.HandleCreatePlatform)
 		userGamesGroup.PUT("/:id/platforms/:platform_id", ugh.HandleUpdatePlatform)
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
+
+		// Jobs routes (all JWT-protected)
+		jh := NewJobsHandler(db, pool)
+		jobsGroup := e.Group("/api/jobs", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobsGroup.GET("", jh.HandleListJobs)
+		jobsGroup.GET("/summary", jh.HandleJobsSummary)
+		jobsGroup.GET("/pending-review-count", jh.HandlePendingReviewCount)
+		jobsGroup.GET("/active/:job_type", jh.HandleActiveJob)
+		jobsGroup.GET("/recent/:source", jh.HandleRecentJobs)
+		jobsGroup.GET("/:id", jh.HandleGetJob)
+		jobsGroup.GET("/:id/items", jh.HandleGetJobItems)
+		jobsGroup.POST("/:id/cancel", jh.HandleCancelJob)
+		jobsGroup.DELETE("/:id", jh.HandleDeleteJob)
+		jobsGroup.POST("/:id/retry-failed", jh.HandleRetryFailed)
+
+		// Job Items routes (all JWT-protected)
+		jih := NewJobItemsHandler(db, pool)
+		jobItemsGroup := e.Group("/api/job-items", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
+		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
+		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
+		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 	}
 
 	// Static cover art files from disk

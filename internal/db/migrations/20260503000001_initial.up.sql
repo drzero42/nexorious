@@ -212,44 +212,47 @@ CREATE INDEX user_sync_configs_platform_idx ON user_sync_configs (platform);
 
 -- Jobs (user-visible background task tracking)
 CREATE TABLE jobs (
-    id            TEXT PRIMARY KEY,                -- UUID v4
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    job_type      TEXT NOT NULL,                   -- 'sync', 'import', 'export', 'metadata_refresh'
-    status        TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-    total_items   INTEGER NOT NULL DEFAULT 0,
-    processed     INTEGER NOT NULL DEFAULT 0,
-    succeeded     INTEGER NOT NULL DEFAULT 0,
-    failed        INTEGER NOT NULL DEFAULT 0,
-    source        TEXT,                            -- platform/source name for sync/import jobs
-    error_message TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at    TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    job_type        TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    priority        TEXT NOT NULL DEFAULT 'high',
+    file_path       TEXT,
+    total_items     INTEGER NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    auto_retry_done BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ
 );
-
 CREATE INDEX jobs_user_id_idx ON jobs (user_id);
-CREATE INDEX jobs_status_idx ON jobs (status);
 CREATE INDEX jobs_job_type_idx ON jobs (job_type);
-CREATE INDEX jobs_created_at_idx ON jobs (created_at DESC);
+CREATE INDEX jobs_source_idx ON jobs (source);
+CREATE INDEX jobs_status_idx ON jobs (status);
 
 -- Job items (individual items within a job)
 CREATE TABLE job_items (
-    id             TEXT PRIMARY KEY,               -- UUID v4
-    job_id         TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    external_id    TEXT,                           -- platform's game ID
-    external_title TEXT,
-    igdb_id        INTEGER REFERENCES games(id) ON DELETE SET NULL,
-    igdb_title     TEXT,
-    status         TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'matched' | 'pending_review' | 'skipped' | 'failed' | 'no_match'
-    confidence     NUMERIC(4,3),                   -- fuzzy match confidence 0.0–1.0
-    error_message  TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    processed_at   TIMESTAMPTZ
+    id                  TEXT PRIMARY KEY,
+    job_id              TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_key            TEXT NOT NULL,
+    source_title        TEXT NOT NULL,
+    source_metadata     JSONB NOT NULL DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'pending',
+    result              JSONB NOT NULL DEFAULT '{}',
+    error_message       TEXT,
+    igdb_candidates     JSONB NOT NULL DEFAULT '[]',
+    resolved_igdb_id    INTEGER,
+    match_confidence    NUMERIC(5,4),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processed_at        TIMESTAMPTZ,
+    resolved_at         TIMESTAMPTZ,
+    UNIQUE(job_id, item_key)
 );
-
 CREATE INDEX job_items_job_id_idx ON job_items (job_id);
+CREATE INDEX job_items_user_id_idx ON job_items (user_id);
 CREATE INDEX job_items_status_idx ON job_items (status);
-CREATE INDEX job_items_igdb_id_idx ON job_items (igdb_id);
 
 -- Pending tasks (database-backed worker queue)
 CREATE TABLE pending_tasks (
