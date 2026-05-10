@@ -173,7 +173,7 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - If the route requires JWT, add the `authentication: type: bearer` block with `"{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"`
 - If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
-- Run `slumber show collection` to verify the collection loads without errors after any change
+- Run `slumber collection` to verify the collection loads without errors after any change
 
 ## Known Gotchas
 
