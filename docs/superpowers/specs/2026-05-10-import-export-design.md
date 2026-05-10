@@ -87,14 +87,16 @@ Accepts `multipart/form-data` with a `file` field.
 1. Check content type (`application/json`, `text/json`, `application/octet-stream` accepted)
 2. Read file body; reject if >50 MB (413)
 3. Parse JSON; reject if malformed (400)
-4. Validate top-level structure: must be an object with a `games` array (400)
-5. Reject if `games` is empty (400)
-6. Check for active nexorious import for this user (409 Conflict)
+4. Validate `export_version`: must be `"1.2"` exactly; reject with 400 and `"Unsupported export version. Only version 1.2 is supported."` if missing or different
+5. Validate top-level structure: must be an object with a `games` array (400)
+6. Reject if `games` is empty (400)
+7. Check for active nexorious import for this user (409 Conflict)
 
 **Job creation:**
 
-1. Create a `Job` row: `job_type="import"`, `source="nexorious"`, `status="pending"`, `priority="high"`, `total_items=len(games)`
+1. Create a `Job` row: `job_type="import"`, `source="nexorious"`, `status="pending"`, `priority="high"`, `total_items=len(games)`, `user_id=current_user.id`
 2. Create one `JobItem` per game entry:
+   - `user_id`: `current_user.id` (duplicated from Job for direct access in the worker — matches the Python pattern where each JobItem carries its own `user_id` to avoid a join back to the parent Job)
    - `item_key`: `"igdb_{igdb_id}"` if the game has an `igdb_id`, otherwise `"game_{index}"`
    - `source_title`: game's `title` field (fallback `"Game {index}"`)
    - `source_metadata`: `{"item_type": "game", "data": <full game object>}`
@@ -119,7 +121,7 @@ Registered on the worker pool as `"import_item"`. Receives a `pending_task` whos
 
 **Processing sequence:**
 
-1. Load the `JobItem` by ID; extract game data from `source_metadata.data`
+1. Load the `JobItem` by ID; read `user_id` directly from the JobItem row (no join to the parent Job needed); extract game data from `source_metadata.data`
 2. **Upsert game:** Use `igdb_id` as the game's PK (the `games.id` column is the IGDB ID). If the game already exists, update metadata fields only if the existing values are null (don't overwrite richer data from a previous IGDB fetch). If no `igdb_id`, skip — mark item `failed` with `"missing igdb_id"`.
 3. **Create UserGame:** Insert with the user's data (`play_status`, `personal_rating`, `is_loved`, `hours_played`, `personal_notes`, timestamps). Preserve `created_at` and `updated_at` from the export data when present; fall back to `now()` if absent. This is an intentional improvement over the Python version (which always uses DB defaults) — it ensures users migrating from Python retain their original "added on" dates. The export format's `personal_rating` is a float; truncate to `int32` for the Go model (e.g. `9.5` → `9`). If the user already has a `user_game` for this `game_id`, skip — mark item `completed` with a result noting `"already_exists": true` (idempotent).
 4. **Platforms:** For each platform entry in the game data:
@@ -190,7 +192,7 @@ Same handler flow but enqueues `task_type="export_csv"`.
 
 Writes to `{StoragePath}/exports/{user_id}_{timestamp}.csv`. Updates Job same as JSON export.
 
-CSV is not re-importable.
+CSV is not re-importable. Nullable fields (`personal_rating`, `hours_played`, `personal_notes`) are emitted as empty strings when nil.
 
 ### Download (`GET /api/export/:id/download`)
 
@@ -210,6 +212,12 @@ CSV is not re-importable.
 Export files stored in `{StoragePath}/exports/`. This directory is **not** exposed via any static route — the existing `/static/cover_art/*` route is scoped to `{StoragePath}/cover_art/` only. Export files are accessible exclusively through the download handler, which enforces ownership.
 
 Files retained for 24 hours. The existing `CleanupExports` scheduler job handles deletion. The exports directory is created on first export if it doesn't exist.
+
+## Job and JobItem Model Fields
+
+Both `Job` and `JobItem` carry a `user_id` column (TEXT FK → `users.id`). This redundancy is intentional — it matches the Python pattern and lets the `import_item` worker read `user_id` directly from the `JobItem` row without joining to the parent Job.
+
+`Job` also has a nullable `file_path *string` column, set only by export tasks to record the output file location. Import jobs leave it nil.
 
 ## File Structure
 
@@ -273,6 +281,7 @@ All with JWT bearer auth following the existing pattern.
 | Invalid content type | 400 |
 | File too large (>50 MB) | 413 |
 | Invalid JSON | 400 |
+| Unsupported or missing `export_version` | 400 |
 | Missing/empty `games` array | 400 |
 | Active import already running | 409 |
 
