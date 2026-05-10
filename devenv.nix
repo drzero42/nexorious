@@ -13,7 +13,7 @@
     git
     go-task
     gnumake
-    slumber
+    inputs.drzero42.packages.${system}.slumber
     golangci-lint
     nodejs_24
     uv
