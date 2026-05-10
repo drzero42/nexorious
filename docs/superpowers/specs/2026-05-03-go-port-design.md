@@ -582,7 +582,7 @@ The initial migration must create all of the following tables (derived from Pyth
 | `platform_storefronts` | Composite PK (`platform` TEXT FK `ON DELETE CASCADE`, `storefront` TEXT FK `ON DELETE CASCADE`); many-to-many join table between platforms and storefronts; rows auto-delete when the referenced platform or storefront is deleted |
 | `tags` | UUID PK; per-user |
 | `user_game_tags` | UUID PK; join table for user_games ↔ tags |
-| `external_games` | UUID PK; UNIQUE(user_id, storefront, external_id); stores IGDB resolution cache; `is_skipped` flag replaces the old `ignored_external_games` table |
+| `external_games` | UUID PK; UNIQUE(user_id, storefront, external_id); `storefront` uses sync-source identifiers (`'steam'`, `'psn'`, `'epic'`), not a FK to `storefronts`; stores IGDB resolution cache; `is_skipped` manageable via `POST/DELETE /api/sync/ignored/:id` |
 | `user_sync_configs` | UUID PK; UNIQUE(user_id, storefront); stores credentials as plain JSON text in `storefront_credentials` |
 | `jobs` | UUID PK |
 | `job_items` | UUID PK; FK → jobs |
@@ -630,14 +630,16 @@ No logic changes — this is a field-name rename only. See `2026-05-10-sync-api-
 #### External Games
 
 `external_games` is load-bearing for the sync system. Each row represents a game seen from an external source (Steam, PSN, Epic) for a given user. It stores:
-- The raw `external_id` and `title` from the platform
+- The raw `external_id` and `title` from the storefront
 - `resolved_igdb_id` — set once after IGDB matching; never re-computed on subsequent syncs
 - `is_skipped` — user-controlled flag; when true the game is excluded from future syncs
 - Current source state: `is_available`, `is_subscription`, `playtime_hours`, `ownership_status`
 
+`external_games.storefront` uses the sync-source identifier (`'steam'`, `'psn'`, `'epic'`) — the same enum as `user_sync_configs.storefront`. It is **not** a FK to the `storefronts` table (which uses different slugs like `'playstation-store'`). There is no `platform` column; external games belong to a storefront, not a platform.
+
 `UserGamePlatform` rows reference `external_games.id` via `external_game_id` to link collection entries back to their sync source.
 
-The Python codebase previously had a separate `ignored_external_games` table. An Alembic migration (Mar 2026) migrated all ignored-game data to `external_games.is_skipped = true` and dropped the old table. **The Go port does not include an `ignored_external_games` table, and there is no API to set `is_skipped`.** The flag exists for backward-compatibility with migrated data; when true, the sync worker skips the row silently. Users cannot set or clear this flag via any API endpoint — "skipping" a sync result is done via the job-items review flow (`POST /api/job-items/:id/skip`), which marks the job item terminal without writing to `external_games.is_skipped`.
+The Python codebase previously had a separate `ignored_external_games` table. An Alembic migration (Mar 2026) migrated all ignored-game data to `external_games.is_skipped = true` and dropped the old table. The Go port does not include an `ignored_external_games` table. Users can manage `is_skipped` via the sync router: `POST /api/sync/ignored/:id` (skip) and `DELETE /api/sync/ignored/:id` (un-skip). See `2026-05-10-sync-api-design.md` for the full endpoint spec.
 
 The Python `Wishlist` model is also **not included** in the Go schema. No user-facing API endpoints for wishlists exist, the frontend calls no wishlist API, and the table is not brought forward. The Go schema starts clean without it.
 

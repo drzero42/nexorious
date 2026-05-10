@@ -38,6 +38,18 @@ CREATE INDEX user_sync_configs_user_id_idx    ON user_sync_configs (user_id);
 CREATE INDEX user_sync_configs_storefront_idx ON user_sync_configs (storefront);
 ```
 
+**Changes in `external_games`:**
+
+- Drop the `REFERENCES storefronts(name) ON DELETE CASCADE` FK on `storefront`. External games use the sync-source identifiers (`'steam'`, `'psn'`, `'epic'`) which are not rows in the `storefronts` table (storefronts uses slugs like `'playstation-store'`, `'epic-games-store'`). Make it a plain `TEXT NOT NULL` column.
+- Change `playtime_hours` from `NUMERIC(10,2)` (nullable) to `INTEGER NOT NULL DEFAULT 0`.
+
+The affected columns after change:
+
+```sql
+storefront       TEXT NOT NULL,                               -- 'steam', 'psn', 'epic'
+playtime_hours   INTEGER NOT NULL DEFAULT 0,
+```
+
 ---
 
 ## Bun Models
@@ -61,7 +73,6 @@ type ExternalGame struct {
     IsSubscription  bool       `bun:"is_subscription,notnull"  json:"is_subscription"`
     PlaytimeHours   int        `bun:"playtime_hours,notnull"   json:"playtime_hours"`
     OwnershipStatus *string    `bun:"ownership_status"         json:"ownership_status"`
-    Platform        *string    `bun:"platform"                 json:"platform"`
     CreatedAt       time.Time  `bun:"created_at,notnull"       json:"created_at"`
     UpdatedAt       time.Time  `bun:"updated_at,notnull"       json:"updated_at"`
 }
@@ -233,9 +244,32 @@ On PSN rejection: 400 `{ "error": "invalid_npsso_token" }`.
 
 **`DELETE /api/sync/psn/disconnect`** — clears `storefront_credentials` on the psn row. 204, idempotent.
 
+### Ignored (skip/un-skip)
+
+```
+GET    /api/sync/ignored       → IgnoredExternalGamesResponse
+POST   /api/sync/ignored/:id   → 204
+DELETE /api/sync/ignored/:id   → 204
+```
+
+Operates on `external_games.is_skipped`. When `is_skipped = true` the sync worker silently skips the row on subsequent syncs.
+
+**`GET /api/sync/ignored`** — returns all `external_games` rows for the authenticated user where `is_skipped = true`.
+
+**`POST /api/sync/ignored/:id`** — sets `is_skipped = true` on the external game. `:id` is `external_games.id`. Returns 404 if the row does not exist or belongs to a different user.
+
+**`DELETE /api/sync/ignored/:id`** — sets `is_skipped = false`. Returns 404 if not found or wrong user. 204 on success.
+
+**`IgnoredExternalGamesResponse`** — array of `ExternalGame` objects (all public fields, no credentials):
+```json
+[
+  { "id": "uuid", "user_id": "uuid", "storefront": "steam", "external_id": "12345", "title": "Half-Life 2", "resolved_igdb_id": 232, "is_skipped": true, "is_available": true, "is_subscription": false, "playtime_hours": 14, "ownership_status": "owned", "created_at": "...", "updated_at": "..." }
+]
+```
+
 ### Route ordering
 
-Register storefront-specific routes (`/steam/verify`, `/psn/configure`, `/psn/status`, `/steam/connection`) before the `:storefront` parameterised routes. Echo v5 resolves static segments first but explicit ordering avoids surprises.
+Register static-segment routes (`/steam/verify`, `/psn/configure`, `/psn/status`, `/steam/connection`, `/ignored`, `/ignored/:id`) before the `:storefront` parameterised routes. Echo v5 resolves static segments first but explicit ordering avoids surprises.
 
 ---
 
@@ -250,6 +284,7 @@ Register storefront-specific routes (`/steam/verify`, `/psn/configure`, `/psn/st
 | PSN configure: token wrong length | 400 |
 | PSN configure: PSN rejects token | 400 |
 | Disconnect with no row | 204 (idempotent) |
+| Skip/un-skip: external game not found or wrong user | 404 |
 
 ---
 
@@ -269,6 +304,10 @@ Coverage:
 - Trigger `POST /api/sync/steam` → job created
 - Trigger again → 409
 - `GET /api/sync/steam/status` → reflects active job
+- `GET /api/sync/ignored` → empty list when no rows skipped
+- `POST /api/sync/ignored/:id` → 404 for unknown ID; 204 on success; second POST is idempotent
+- `DELETE /api/sync/ignored/:id` → 404 for unknown ID; 204 on success
+- Skip/un-skip round-trip: POST then DELETE then verify `is_skipped = false`
 
 ---
 
