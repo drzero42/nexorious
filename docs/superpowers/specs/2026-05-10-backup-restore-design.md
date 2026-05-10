@@ -113,6 +113,8 @@ Platform/storefront logos are embedded in the binary (in `ui/public/logos/`) and
 
 New package: `internal/backup/service.go`. Stateless service struct holding config references (backup path, storage path, database URL). Injected into handlers via the router.
 
+A `sync.Mutex` on the service guards all restore and backup-create operations. `RestoreBackup`, `RestoreFromUpload`, and `CreateBackup` acquire the lock at entry and return **409 Conflict** (`{"error": "A backup or restore operation is already in progress"}`) if the lock is held. This prevents concurrent restores from destroying the database and concurrent backup-creates from colliding on temp directories and archive naming.
+
 ### BackupService Methods
 
 **`CheckTools()`** — called at startup, sets package-level `pgDumpAvailable` and `psqlAvailable` booleans. Exported via `PgDumpAvailable()` and `PsqlAvailable()` accessors.
@@ -133,7 +135,9 @@ New package: `internal/backup/service.go`. Stateless service struct holding conf
 
 **`GetBackupPath(backupID string) string`** — returns full path for a backup archive.
 
-**`ValidateArchive(archivePath string, verifyChecksums bool) (*Manifest, error)`** — opens archive, reads manifest, checks `database.sql` exists, optionally verifies SHA-256 checksums.
+**`ValidateArchive(archivePath string, verifyChecksums bool) (*Manifest, error)`** — opens archive, reads manifest, checks `database.sql` exists, optionally verifies SHA-256 checksums. Additionally:
+- Rejects archives with an unknown `manifest.version` (> current supported version).
+- Rejects archives whose `migration_version` is higher than the highest migration known to the running binary. This prevents restoring a backup created by a newer app version whose schema the current binary cannot understand. Error: `"Backup was created by a newer version of Nexorious (migration %s). This binary only supports up to migration %s. Upgrade before restoring."`
 
 **`DeleteBackup(backupID string) error`** — removes the `.tar.gz` file.
 
@@ -169,6 +173,22 @@ New package: `internal/backup/service.go`. Stateless service struct holding conf
     - If restored DB is current → state goes straight to `Ready` → restart workers + scheduler immediately
 
 **No `os.Exit`** — the process stays alive and the existing state machine handles the transition.
+
+### Rollback on Failure
+
+If any step from 5–8 fails (terminate connections, drop schema, psql restore, or cover art copy), the restore handler attempts an automatic rollback:
+
+1. Log the original error at ERROR level.
+2. If a pre-restore backup was created (step 3), attempt to restore it using the same steps 5–8 with `skipPreRestore=true` (no infinite recursion).
+3. If the rollback restore succeeds → continue to steps 10–13 as normal. The database is back to its pre-attempt state. Log a WARN: `"Restore of <backup-id> failed: <error>. Successfully rolled back to pre-restore backup."`
+4. If the rollback restore also fails → the database is in an unrecoverable state. The handler:
+   - Logs FATAL: `"Restore failed AND rollback failed. Database is in an inconsistent state. Manual intervention required. Original error: <err1>. Rollback error: <err2>. Pre-restore backup is at: <path>."`
+   - Leaves maintenance mode **on** (prevents the app from serving requests against a broken DB).
+   - Sets the app state to `DBUnavailable` so the middleware redirects all requests to `/db-error`.
+   - The `/db-error` page (which bypasses all middleware gates) is already visible. Its auto-reload will show the user a meaningful error. The pre-restore backup path is included in the log so an operator can manually restore via `psql`.
+   - Returns the error to the HTTP caller (the admin who triggered the restore).
+
+If no pre-restore backup exists (setup restore or restoring a pre-restore backup), there is nothing to roll back to — the handler logs FATAL with the same detail and transitions to `DBUnavailable` + maintenance mode.
 
 ### Setup Restore
 
