@@ -141,9 +141,9 @@ A `sync.Mutex` on the service guards all restore and backup-create operations. `
 
 **`DeleteBackup(backupID string) error`** — removes the `.tar.gz` file.
 
-**`RestoreBackup(backupID string, adminUserID string, adminSession *SessionData, skipPreRestore bool) error`** — see Restore Behaviour below.
+**`RestoreBackup(backupID string, skipPreRestore bool) error`** — see Restore Behaviour below.
 
-**`RestoreFromUpload(archivePath string, adminUserID string, adminSession *SessionData) error`** — validates uploaded archive, moves to backup dir, then delegates to `RestoreBackup`.
+**`RestoreFromUpload(archivePath string) error`** — validates uploaded archive, moves to backup dir, then delegates to `RestoreBackup`.
 
 **`ApplyRetention(config BackupConfig) error`** — deletes backups exceeding retention policy. Called after each successful backup creation. Supports two modes:
 - `days` — delete backups older than `retention_value` days
@@ -164,8 +164,8 @@ A `sync.Mutex` on the service guards all restore and backup-create operations. `
 6. **Drop and recreate schema** — `psql --command="DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`
 7. **Restore database** — `psql --file=database.sql`
 8. **Restore cover art** — replace `{STORAGE_PATH}/cover_art/` with archive contents
-9. **Restore admin session** — if the admin user exists in the restored data, ensure their current session token is preserved (INSERT if missing, no-op if already present). This keeps the admin logged in after restore.
-10. **Re-create Bun DB pool** — open new connection
+9. **Re-create Bun DB pool** — open new connection via `ReconnectDB`; update `DBHolder`
+10. **Create fresh Worker Pool and Scheduler** — new instances with the new `*bun.DB`; old instances were shut down in step 2 and are discarded
 11. **Re-initialize Migrator** — checks pending migrations against the restored DB
 12. **Clear maintenance mode** — `middleware.SetMaintenanceMode(false)`
 13. **App state machine takes over:**
@@ -180,7 +180,7 @@ If any step from 5–8 fails (terminate connections, drop schema, psql restore, 
 
 1. Log the original error at ERROR level.
 2. If a pre-restore backup was created (step 3), attempt to restore it using the same steps 5–8 with `skipPreRestore=true` (no infinite recursion).
-3. If the rollback restore succeeds → continue to steps 10–13 as normal. The database is back to its pre-attempt state. Log a WARN: `"Restore of <backup-id> failed: <error>. Successfully rolled back to pre-restore backup."`
+3. If the rollback restore succeeds → continue to steps 9–13 as normal. The database is back to its pre-attempt state. Log a WARN: `"Restore of <backup-id> failed: <error>. Successfully rolled back to pre-restore backup."`
 4. If the rollback restore also fails → the database is in an unrecoverable state. The handler:
    - Logs FATAL: `"Restore failed AND rollback failed. Database is in an inconsistent state. Manual intervention required. Original error: <err1>. Rollback error: <err2>. Pre-restore backup is at: <path>."`
    - Leaves maintenance mode **on** (prevents the app from serving requests against a broken DB).
@@ -196,10 +196,9 @@ If no pre-restore backup exists (setup restore or restoring a pre-restore backup
 - No JWT required (no users exist yet)
 - Returns 403 if any user already exists
 - Returns 503 if `psql` is unavailable
-- Accepts `.tar.gz` file upload
+- Accepts `.tar.gz` file upload (max 2 GB)
 - Validates archive (including checksum verification)
 - Skips pre-restore backup (database is empty)
-- No admin session preservation (no session exists)
 - After restore, user is redirected to login with their restored credentials (or migration UI if the backup is older)
 
 ---
@@ -324,17 +323,17 @@ Response:
 ```json
 {
   "success": true,
-  "message": "Restore completed from: backup-20260510-020000"
+  "message": "Restore completed from: backup-20260510-020000. All sessions have been cleared — please log in again."
 }
 ```
 
 **POST /api/admin/backups/restore/upload**
 
-Multipart form upload with a `.tar.gz` file. Same response as restore.
+Multipart form upload with a `.tar.gz` file. Maximum upload size: **2 GB**. Same response as restore.
 
 **POST /api/auth/setup/restore**
 
-Multipart form upload with a `.tar.gz` file.
+Multipart form upload with a `.tar.gz` file. Maximum upload size: **2 GB**.
 ```json
 {
   "success": true,
@@ -421,12 +420,13 @@ Gate 1/2/3 in the router must also allow `/api/admin/backups/*` through during m
 
 `BackupHandler` needs access to several components for restore orchestration:
 
-- `*bun.DB` — for DB stats queries and closing/reopening the pool
+- `*DBHolder` — shared `atomic.Pointer[bun.DB]` wrapper owned by `main.go`; all handlers read through this so the pool reference stays current after restore
 - `*backup.Service` — the backup service itself
 - `*migrate.Migrator` — for re-initialization after restore
-- `*worker.Pool` — for shutdown during restore
-- `*scheduler.Scheduler` — for shutdown and restart during restore
-- A `ReconnectDB func() (*bun.DB, error)` callback — provided by `main.go` at wiring time, encapsulates the logic to create a fresh Bun connection from the config. The handler calls this after psql restore completes, then updates its own `db` reference and passes the new pool to the Migrator.
+- `*worker.Pool` — for shutdown during restore (old instance is discarded; a new one is created)
+- `*scheduler.Scheduler` — for shutdown during restore (old instance is discarded; a new one is created)
+- A `ReconnectDB func() (*bun.DB, error)` callback — provided by `main.go` at wiring time, encapsulates the logic to create a fresh Bun connection from the config. The handler calls this after psql restore completes, then calls `DBHolder.Set(newDB)` to update the shared reference
+- A `RebuildPoolAndScheduler func(db *bun.DB) (*worker.Pool, *scheduler.Scheduler, error)` callback — provided by `main.go`; constructs fresh worker pool and scheduler instances with the new DB connection
 
 This is a wider dependency set than other handlers, but restore is inherently an orchestration operation that touches the entire system.
 
@@ -443,6 +443,7 @@ Add requests to `slumber.yaml` under a new `admin/backups/` folder:
 - `DELETE /api/admin/backups/:id` (admin JWT)
 - `GET /api/admin/backups/:id/download` (admin JWT)
 - `POST /api/admin/backups/:id/restore` (admin JWT, body with `confirm: true`)
+- `POST /api/admin/backups/restore/upload` (admin JWT, multipart file upload)
 
 ---
 

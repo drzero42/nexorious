@@ -1046,13 +1046,22 @@ Delete handlers (`DELETE /api/user-games/:id`, `DELETE /api/user-games/bulk-dele
 
 `POST /api/admin/backups/:id/restore` and `POST /api/admin/backups/restore/upload` reset the database to a previous state. Because the database is being replaced wholesale, all in-flight application state becomes invalid the moment the restore starts.
 
-**Approach:** the restore handler:
-1. Sets a process-level **maintenance mode** flag before touching the pool.
-2. While maintenance mode is active, the maintenance middleware returns `503 Service Unavailable` for all requests except `/health` and the backup admin endpoints (`/api/admin/backups/*`, `/api/auth/me`). This gives in-flight requests a clean failure rather than a connection-reset error.
-3. Closes the pgxpool connection pool, waits for active connections to drain (10-second timeout; forced close if exceeded).
-4. Shuts down the worker pool (same `Shutdown()` path as graceful SIGTERM). In-flight worker tasks will fail; their `pending_tasks` rows remain in `running` state and are orphaned by the restore (the restored DB has different data). This is correct.
-5. Runs the restore (pg_restore + file copy from archive).
-6. Calls `os.Exit(0)`. The process manager (systemd, Kubernetes, Docker) restarts the binary; on restart the app re-runs its startup sequence and transitions to `Ready`.
+**Approach — in-process restart (no `os.Exit`):** the restore handler performs all steps without terminating the process. The existing app state machine handles the transition back to `Ready`. See the backup-restore design spec (`2026-05-10-backup-restore-design.md`) for the full step-by-step sequence including rollback-on-failure behaviour.
+
+**Shared DB pool:** All handlers access the database through a shared `DBHolder` (wrapping `atomic.Pointer[bun.DB]`) owned by `main.go`. After restore creates a fresh Bun connection, `DBHolder.Set(newDB)` updates the reference for all handlers atomically. This avoids stale pool references after restore.
+
+**Worker pool + scheduler:** After restore, the handler constructs entirely new `Pool` and `Scheduler` instances (with the new `*bun.DB`) rather than attempting to restart the old ones. The old instances are shut down and discarded.
+
+High-level sequence:
+1. Set maintenance mode.
+2. Shut down worker pool and scheduler.
+3. Create pre-restore backup (unless skipped).
+4. Close Bun DB pool.
+5. Terminate other DB connections, drop/recreate schema, run `psql` restore, restore cover art.
+6. Re-create Bun DB pool via `ReconnectDB`; update `DBHolder`.
+7. Create fresh `Pool` and `Scheduler` instances.
+8. Re-initialize Migrator; clear maintenance mode.
+9. App state machine takes over — if migrations are pending, the migration UI appears; otherwise state goes to `Ready` and the new workers + scheduler start.
 
 ### Maintenance Mode Middleware
 
