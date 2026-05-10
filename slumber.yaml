@@ -354,7 +354,7 @@ requests:
       get_game:
         name: Get Game
         method: GET
-        url: "{{base_url}}/api/games/0"
+        url: "{{base_url}}/api/games/1942"
         authentication:
           type: bearer
           token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
@@ -502,7 +502,7 @@ requests:
         body:
           type: json
           data:
-            game_id: 1
+            game_id: 1942
             play_status: not_started
 
       update:

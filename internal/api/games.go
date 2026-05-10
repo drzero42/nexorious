@@ -249,9 +249,9 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 		return h.mapIGDBError(c, err)
 	}
 
-	// Check if game already exists by igdb_slug
+	// Check if game already exists by IGDB ID (which is the primary key)
 	var existing models.Game
-	existsErr := h.db.NewSelect().Model(&existing).Where("igdb_slug = ?", md.IgdbSlug).Scan(ctx)
+	existsErr := h.db.NewSelect().Model(&existing).Where("id = ?", req.IgdbID).Scan(ctx)
 	isNew := existsErr != nil
 
 	game := h.metadataToGame(md)
@@ -288,14 +288,13 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 	}
 
 	if isNew {
-		_, err = h.db.NewInsert().Model(game).Returning("id").Exec(ctx)
+		_, err = h.db.NewInsert().Model(game).Exec(ctx)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create game"})
 		}
 		return c.JSON(http.StatusCreated, game)
 	}
 
-	game.ID = existing.ID
 	game.CreatedAt = existing.CreatedAt
 	_, err = h.db.NewUpdate().Model(game).WherePK().Exec(ctx)
 	if err != nil {
@@ -339,6 +338,7 @@ func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
 func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now()
 	game := &models.Game{
+		ID:                         int32(md.IgdbID),
 		Title:                      md.Title,
 		Description:                md.Description,
 		Genre:                      md.Genre,
