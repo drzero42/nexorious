@@ -553,9 +553,11 @@ func retryTaskType(jobType string) string {
 	switch jobType {
 	case models.JobTypeSync:
 		return "process_sync_item"
+	case models.JobTypeImport:
+		return "import_item"
 	case models.JobTypeMetadataRefresh:
 		return "metadata_refresh_process"
 	default:
-		return "process_import_item"
+		return "import_item"
 	}
 }

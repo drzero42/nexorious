@@ -124,6 +124,21 @@ requests:
         method: GET
         url: "{{base_url}}/health"
 
+  import:
+    name: Import
+    requests:
+      nexorious:
+        name: Import Nexorious
+        method: POST
+        url: "{{base_url}}/api/import/nexorious"
+        $ref: "#/.authenticated"
+        body:
+          type: form_multipart
+          data:
+            file:
+              type: file
+              path: "{{prompt(message='Path to nexorious export JSON file')}}"
+
   job_items:
     name: Job Items
     requests:
@@ -289,6 +304,27 @@ requests:
         name: Get Storefront
         method: GET
         url: "{{base_url}}/api/platforms/storefronts/{{response('storefronts_simple_list', trigger='1d') | jsonpath('$[*].name', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+
+  export:
+    name: Export
+    requests:
+      export_json:
+        name: Export JSON
+        method: POST
+        url: "{{base_url}}/api/export/json"
+        $ref: "#/.authenticated"
+
+      export_csv:
+        name: Export CSV
+        method: POST
+        url: "{{base_url}}/api/export/csv"
+        $ref: "#/.authenticated"
+
+      download:
+        name: Download Export
+        method: GET
+        url: "{{base_url}}/api/export/{{prompt(message='Export Job ID')}}/download"
         $ref: "#/.authenticated"
 
   games:

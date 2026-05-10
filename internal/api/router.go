@@ -241,6 +241,18 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
 		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
+
+		// Import routes (all JWT-protected)
+		imh := NewImportHandler(db, pool)
+		importGroup := e.Group("/api/import", auth.JWTMiddleware(cfg.SecretKey, db))
+		importGroup.POST("/nexorious", imh.HandleImportNexorious)
+
+		// Export routes (all JWT-protected)
+		exh := NewExportHandler(db, pool, cfg)
+		exportGroup := e.Group("/api/export", auth.JWTMiddleware(cfg.SecretKey, db))
+		exportGroup.POST("/json", exh.HandleExportJSON)
+		exportGroup.POST("/csv", exh.HandleExportCSV)
+		exportGroup.GET("/:id/download", exh.HandleDownload)
 	}
 
 	// Static cover art files from disk

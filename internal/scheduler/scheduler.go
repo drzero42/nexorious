@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/uptrace/bun"
@@ -88,10 +89,42 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 	}
 }
 
-// CleanupExports deletes expired export files and their job rows.
-// Placeholder — full implementation comes in the export consumer spec.
+// CleanupExports deletes expired export files (>24h) and clears their file_path.
 func CleanupExports(ctx context.Context, db *bun.DB) {
-	slog.Debug("cleanup: export cleanup ran (no-op until export consumer is implemented)")
+	var jobs []struct {
+		ID       string  `bun:"id"`
+		FilePath *string `bun:"file_path"`
+	}
+	err := db.NewRaw(`
+		SELECT id, file_path FROM jobs
+		WHERE job_type = 'export' AND status = 'completed'
+		  AND file_path IS NOT NULL AND completed_at < now() - interval '24 hours'`,
+	).Scan(ctx, &jobs)
+	if err != nil {
+		slog.Error("cleanup: failed to query expired exports", "err", err)
+		return
+	}
+	if len(jobs) == 0 {
+		return
+	}
+
+	for _, j := range jobs {
+		if j.FilePath != nil {
+			if err := os.Remove(*j.FilePath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("cleanup: failed to remove export file", "path", *j.FilePath, "err", err)
+			}
+		}
+	}
+
+	ids := make([]string, len(jobs))
+	for i, j := range jobs {
+		ids[i] = j.ID
+	}
+	_, _ = db.NewRaw(
+		`UPDATE jobs SET file_path = NULL WHERE id IN (?)`,
+		bun.List(ids),
+	).Exec(ctx)
+	slog.Info("cleanup: cleaned expired exports", "count", len(jobs))
 }
 
 // CleanupUnreferencedGames deletes games with no user_games rows.

@@ -25,6 +25,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
 // Injected at build time via -ldflags.
@@ -198,9 +199,10 @@ func main() {
 	// Worker pool — created early so the Echo server can reference it.
 	// -------------------------------------------------------------------------
 	pool := worker.NewPool(db)
-	// Register handlers here when consumer specs are implemented:
+	pool.Register("import_item", tasks.NewImportItemHandler(db))
+	pool.Register("export_json", tasks.NewExportJSONHandler(db, cfg.StoragePath))
+	pool.Register("export_csv", tasks.NewExportCSVHandler(db, cfg.StoragePath))
 	// pool.Register("process_sync_item", syncHandler)
-	// pool.Register("process_import_item", importHandler)
 	// pool.Register("metadata_refresh_process", metadataHandler)
 
 	// -------------------------------------------------------------------------
