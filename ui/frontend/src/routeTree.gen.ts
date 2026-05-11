@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as PublicRouteImport } from './routes/_public'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as PublicSetupRouteImport } from './routes/_public/setup'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as AuthenticatedTagsRouteImport } from './routes/_authenticated/tags'
 import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
@@ -50,11 +49,6 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const PublicSetupRoute = PublicSetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => PublicRoute,
 } as any)
 const PublicLoginRoute = PublicLoginRouteImport.update({
   id: '/login',
@@ -197,7 +191,6 @@ export interface FileRoutesByFullPath {
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
   '/login': typeof PublicLoginRoute
-  '/setup': typeof PublicSetupRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
   '/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
@@ -225,7 +218,6 @@ export interface FileRoutesByTo {
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
   '/login': typeof PublicLoginRoute
-  '/setup': typeof PublicSetupRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
   '/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
@@ -254,7 +246,6 @@ export interface FileRoutesById {
   '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/tags': typeof AuthenticatedTagsRoute
   '/_public/login': typeof PublicLoginRoute
-  '/_public/setup': typeof PublicSetupRoute
   '/_authenticated/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/_authenticated/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
   '/_authenticated/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
@@ -284,7 +275,6 @@ export interface FileRouteTypes {
     | '/review'
     | '/tags'
     | '/login'
-    | '/setup'
     | '/admin/backups'
     | '/admin/maintenance'
     | '/admin/platforms'
@@ -312,7 +302,6 @@ export interface FileRouteTypes {
     | '/review'
     | '/tags'
     | '/login'
-    | '/setup'
     | '/admin/backups'
     | '/admin/maintenance'
     | '/admin/platforms'
@@ -340,7 +329,6 @@ export interface FileRouteTypes {
     | '/_authenticated/review'
     | '/_authenticated/tags'
     | '/_public/login'
-    | '/_public/setup'
     | '/_authenticated/admin/backups'
     | '/_authenticated/admin/maintenance'
     | '/_authenticated/admin/platforms'
@@ -389,13 +377,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_public/setup': {
-      id: '/_public/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof PublicSetupRouteImport
-      parentRoute: typeof PublicRoute
     }
     '/_public/login': {
       id: '/_public/login'
@@ -646,12 +627,10 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 interface PublicRouteChildren {
   PublicLoginRoute: typeof PublicLoginRoute
-  PublicSetupRoute: typeof PublicSetupRoute
 }
 
 const PublicRouteChildren: PublicRouteChildren = {
   PublicLoginRoute: PublicLoginRoute,
-  PublicSetupRoute: PublicSetupRoute,
 }
 
 const PublicRouteWithChildren =
