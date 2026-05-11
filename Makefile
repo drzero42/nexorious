@@ -8,6 +8,7 @@ all: frontend build
 
 frontend:
 	cd ui/frontend && npm install && npm run build
+	touch ui/frontend/dist/.gitkeep
 
 build:
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
