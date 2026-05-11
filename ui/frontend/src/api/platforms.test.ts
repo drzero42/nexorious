@@ -85,7 +85,7 @@ describe('platforms.ts', () => {
   describe('getPlatforms', () => {
     it('returns paginated platforms list', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, ({ request }) => {
+        http.get(`${API_URL}/platforms`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('true');
           expect(url.searchParams.get('page')).toBe('1');
@@ -136,7 +136,7 @@ describe('platforms.ts', () => {
 
     it('passes custom parameters', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, ({ request }) => {
+        http.get(`${API_URL}/platforms`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');
@@ -177,7 +177,7 @@ describe('platforms.ts', () => {
   describe('getAllPlatforms', () => {
     it('returns all platforms array', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, () => {
+        http.get(`${API_URL}/platforms`, () => {
           return HttpResponse.json({
             platforms: [mockPlatformApi, mockPlatform2Api],
             total: 2,
@@ -198,7 +198,7 @@ describe('platforms.ts', () => {
 
     it('passes optional parameters', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, ({ request }) => {
+        http.get(`${API_URL}/platforms`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');
@@ -308,7 +308,7 @@ describe('platforms.ts', () => {
   describe('getStorefronts', () => {
     it('returns paginated storefronts list', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, ({ request }) => {
+        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('true');
           expect(url.searchParams.get('page')).toBe('1');
@@ -333,7 +333,7 @@ describe('platforms.ts', () => {
 
     it('passes custom parameters', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, ({ request }) => {
+        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');
@@ -362,7 +362,7 @@ describe('platforms.ts', () => {
   describe('getAllStorefronts', () => {
     it('returns all storefronts array', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, () => {
+        http.get(`${API_URL}/platforms/storefronts`, () => {
           return HttpResponse.json({
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total: 2,
@@ -381,7 +381,7 @@ describe('platforms.ts', () => {
 
     it('passes optional parameters', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, ({ request }) => {
+        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');

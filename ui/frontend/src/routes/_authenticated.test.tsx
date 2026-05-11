@@ -21,6 +21,14 @@ vi.mock('@/components/navigation', () => ({
   MobileNav: () => null,
 }));
 
+vi.mock('@/hooks', () => ({
+  useActiveJob: () => ({ data: undefined }),
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
+
 describe('AuthenticatedLayout IGDB banner', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -184,7 +184,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		platformsGroup.GET("", ph.HandleListPlatforms)
 		platformsGroup.GET("/simple-list", ph.HandleSimpleList)
 		platformsGroup.GET("/storefronts/simple-list", ph.HandleStorefrontSimpleList)
-		platformsGroup.GET("/storefronts/", ph.HandleListStorefronts)
+		platformsGroup.GET("/storefronts", ph.HandleListStorefronts)
 		platformsGroup.GET("/storefronts/:storefront", ph.HandleGetStorefront)
 		platformsGroup.GET("/:platform/storefronts", ph.HandlePlatformStorefronts)
 		platformsGroup.GET("/:platform/default-storefront", ph.HandleDefaultStorefront)

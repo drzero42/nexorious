@@ -459,7 +459,7 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
     })),
   };
 
-  const response = await api.post<UserGameApiResponse>('/user-games/', requestBody);
+  const response = await api.post<UserGameApiResponse>('/user-games', requestBody);
   return transformUserGame(response);
 }
 

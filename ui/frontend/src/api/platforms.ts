@@ -130,7 +130,7 @@ export async function getPlatforms(
     per_page: params?.perPage ?? 100, // Default to 100 for dropdown use cases
   };
 
-  const response = await api.get<PlatformListApiResponse>('/platforms/', {
+  const response = await api.get<PlatformListApiResponse>('/platforms', {
     params: queryParams,
   });
 
@@ -198,7 +198,7 @@ export async function getStorefronts(
   };
 
   const response = await api.get<StorefrontListApiResponse>(
-    '/platforms/storefronts/',
+    '/platforms/storefronts',
     {
       params: queryParams,
     }

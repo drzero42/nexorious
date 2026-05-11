@@ -42,7 +42,14 @@ func (h *PlatformsHandler) HandleListPlatforms(c *echo.Context) error {
 	for i, p := range platforms {
 		resp[i] = toPlatformResponse(p)
 	}
-	return c.JSON(http.StatusOK, resp)
+	n := len(resp)
+	return c.JSON(http.StatusOK, map[string]any{
+		"platforms": resp,
+		"total":     n,
+		"page":      1,
+		"per_page":  n,
+		"pages":     1,
+	})
 }
 
 // simpleItem is a minimal name/display_name pair used by simple-list endpoints.
@@ -222,7 +229,7 @@ func (h *PlatformsHandler) HandleDefaultStorefront(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-// HandleListStorefronts handles GET /api/platforms/storefronts/.
+// HandleListStorefronts handles GET /api/platforms/storefronts.
 // Returns all storefronts ordered by display_name.
 func (h *PlatformsHandler) HandleListStorefronts(c *echo.Context) error {
 	var storefronts []models.Storefront
@@ -237,7 +244,14 @@ func (h *PlatformsHandler) HandleListStorefronts(c *echo.Context) error {
 	for i, sf := range storefronts {
 		resp[i] = toStorefrontResponse(sf)
 	}
-	return c.JSON(http.StatusOK, resp)
+	n := len(resp)
+	return c.JSON(http.StatusOK, map[string]any{
+		"storefronts": resp,
+		"total":       n,
+		"page":        1,
+		"per_page":    n,
+		"pages":       1,
+	})
 }
 
 // HandleStorefrontSimpleList handles GET /api/platforms/storefronts/simple-list.

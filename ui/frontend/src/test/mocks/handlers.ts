@@ -154,7 +154,7 @@ export const handlers = [
   }),
 
   // Platform endpoints
-  http.get(`${API_URL}/platforms/`, () => {
+  http.get(`${API_URL}/platforms`, () => {
     return HttpResponse.json({
       platforms: mockPlatforms,
       total: mockPlatforms.length,
@@ -240,7 +240,7 @@ export const handlers = [
     });
   }),
 
-  http.get(`${API_URL}/user-games/`, () => {
+  http.get(`${API_URL}/user-games`, () => {
     return HttpResponse.json([]);
   }),
 
@@ -304,6 +304,11 @@ export const handlers = [
       },
       created: true,
     });
+  }),
+
+  // Jobs endpoints
+  http.get(`${API_URL}/jobs/active/:job_type`, () => {
+    return HttpResponse.json(null);
   }),
 
   // IGDB endpoints

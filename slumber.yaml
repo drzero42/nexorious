@@ -354,7 +354,7 @@ requests:
       list_storefronts:
         name: List Storefronts
         method: GET
-        url: "{{base_url}}/api/platforms/storefronts/"
+        url: "{{base_url}}/api/platforms/storefronts"
         $ref: "#/.authenticated"
 
       storefronts_simple_list:

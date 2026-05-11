@@ -130,7 +130,7 @@ describe('use-platforms hooks', () => {
   describe('usePlatforms', () => {
     it('fetches paginated platforms list', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, () => {
+        http.get(`${API_URL}/platforms`, () => {
           return HttpResponse.json({
             platforms: [mockPlatformApi, mockPlatform2Api],
             total: 2,
@@ -159,7 +159,7 @@ describe('use-platforms hooks', () => {
 
     it('passes parameters correctly', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, ({ request }) => {
+        http.get(`${API_URL}/platforms`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');
@@ -186,7 +186,7 @@ describe('use-platforms hooks', () => {
 
     it('handles error state', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, () => {
+        http.get(`${API_URL}/platforms`, () => {
           return HttpResponse.json({ detail: 'Server error' }, { status: 500 });
         })
       );
@@ -206,7 +206,7 @@ describe('use-platforms hooks', () => {
   describe('useAllPlatforms', () => {
     it('fetches all platforms as array', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, () => {
+        http.get(`${API_URL}/platforms`, () => {
           return HttpResponse.json({
             platforms: [mockPlatformApi, mockPlatform2Api],
             total: 2,
@@ -231,7 +231,7 @@ describe('use-platforms hooks', () => {
 
     it('passes optional parameters', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/`, ({ request }) => {
+        http.get(`${API_URL}/platforms`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
 
@@ -373,7 +373,7 @@ describe('use-platforms hooks', () => {
   describe('useStorefronts', () => {
     it('fetches paginated storefronts list', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, () => {
+        http.get(`${API_URL}/platforms/storefronts`, () => {
           return HttpResponse.json({
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total: 2,
@@ -398,7 +398,7 @@ describe('use-platforms hooks', () => {
 
     it('passes parameters correctly', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, ({ request }) => {
+        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('active_only')).toBe('false');
           expect(url.searchParams.get('source')).toBe('custom');
@@ -427,7 +427,7 @@ describe('use-platforms hooks', () => {
   describe('useAllStorefronts', () => {
     it('fetches all storefronts as array', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/`, () => {
+        http.get(`${API_URL}/platforms/storefronts`, () => {
           return HttpResponse.json({
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total: 2,
@@ -517,7 +517,7 @@ describe('use-platforms hooks', () => {
       let fetchCount = 0;
 
       server.use(
-        http.get(`${API_URL}/platforms/`, () => {
+        http.get(`${API_URL}/platforms`, () => {
           fetchCount++;
           return HttpResponse.json({
             platforms: [mockPlatformApi],

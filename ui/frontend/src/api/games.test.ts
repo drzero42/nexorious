@@ -134,7 +134,7 @@ describe('games.ts', () => {
   describe('getUserGames', () => {
     it('returns paginated user games list', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({
             user_games: [mockUserGameApi],
             total: 1,
@@ -166,7 +166,7 @@ describe('games.ts', () => {
 
     it('passes filter parameters correctly', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('play_status')).toBe(PlayStatus.IN_PROGRESS);
           expect(url.searchParams.get('ownership_status')).toBe(OwnershipStatus.OWNED);
@@ -216,7 +216,7 @@ describe('games.ts', () => {
 
     it('handles multiple platform values', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const platforms = url.searchParams.getAll('platform');
           expect(platforms).toEqual(['windows', 'playstation_5']);
@@ -240,7 +240,7 @@ describe('games.ts', () => {
 
     it('handles multiple storefront values', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const storefronts = url.searchParams.getAll('storefront');
           expect(storefronts).toEqual(['steam', 'epic']);
@@ -264,7 +264,7 @@ describe('games.ts', () => {
 
     it('handles multiple genre values', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const genres = url.searchParams.getAll('genre');
           expect(genres).toEqual(['RPG', 'Action']);
@@ -288,7 +288,7 @@ describe('games.ts', () => {
 
     it('handles multiple tag values', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const tags = url.searchParams.getAll('tag');
           expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
@@ -312,7 +312,7 @@ describe('games.ts', () => {
 
     it('handles single platform as string', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('platform')).toBe('windows');
           // Should only have one platform value
@@ -336,7 +336,7 @@ describe('games.ts', () => {
 
     it('handles mixed array and single value params', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           // Array params
           expect(url.searchParams.getAll('platform')).toEqual(['windows', 'ps5']);
@@ -397,7 +397,7 @@ describe('games.ts', () => {
   describe('createUserGame', () => {
     it('creates a new user game', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+        http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as Record<string, unknown>;
           expect(body.game_id).toBe(12345);
           expect(body.play_status).toBe(PlayStatus.NOT_STARTED);
@@ -417,7 +417,7 @@ describe('games.ts', () => {
 
     it('creates user game with platforms', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+        http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as {
             platforms?: Array<{
               platform: string;
@@ -449,7 +449,7 @@ describe('games.ts', () => {
 
     it('handles all optional fields', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+        http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as Record<string, unknown>;
           expect(body.personal_rating).toBe(8);
           expect(body.is_loved).toBe(true);
@@ -471,7 +471,7 @@ describe('games.ts', () => {
 
     it('creates user game with platform-level ownership status and acquired date', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+        http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as {
             platforms?: Array<{
               platform: string;

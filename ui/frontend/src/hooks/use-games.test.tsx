@@ -187,7 +187,7 @@ describe('use-games hooks', () => {
   describe('useUserGames', () => {
     it('fetches user games list successfully', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({
             user_games: [mockUserGameApi],
             total: 1,
@@ -216,7 +216,7 @@ describe('use-games hooks', () => {
 
     it('passes filter parameters correctly', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('play_status')).toBe('in_progress');
           expect(url.searchParams.get('ownership_status')).toBe('owned');
@@ -253,7 +253,7 @@ describe('use-games hooks', () => {
 
     it('handles error state', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({ detail: 'Failed to fetch games' }, { status: 500 });
         })
       );
@@ -557,7 +557,7 @@ describe('use-games hooks', () => {
   describe('useCreateUserGame', () => {
     it('creates a new user game successfully', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, async ({ request }) => {
+        http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as { game_id: number };
           expect(body.game_id).toBe(12345);
           return HttpResponse.json(mockUserGameApi);
@@ -585,7 +585,7 @@ describe('use-games hooks', () => {
 
     it('handles creation error', async () => {
       server.use(
-        http.post(`${API_URL}/user-games/`, () => {
+        http.post(`${API_URL}/user-games`, () => {
           return HttpResponse.json({ detail: 'Game already in collection' }, { status: 400 });
         })
       );
@@ -965,7 +965,7 @@ describe('use-games hooks', () => {
       let replayCalled = false;
 
       server.use(
-        http.get(`${API_URL}/user-games/`, ({ request }) => {
+        http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const playStatus = url.searchParams.get('play_status');
 
@@ -1019,7 +1019,7 @@ describe('use-games hooks', () => {
 
     it('returns empty array when no active games exist', async () => {
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({
             user_games: [],
             total: 0,
@@ -1046,7 +1046,7 @@ describe('use-games hooks', () => {
       const queryClient = createTestQueryClient();
 
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({
             user_games: [],
             total: 0,
@@ -1080,7 +1080,7 @@ describe('use-games hooks', () => {
       let fetchCount = 0;
 
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           fetchCount++;
           return HttpResponse.json({
             user_games: [mockUserGameApi],
@@ -1122,7 +1122,7 @@ describe('use-games hooks', () => {
       let fetchCount = 0;
 
       server.use(
-        http.get(`${API_URL}/user-games/`, () => {
+        http.get(`${API_URL}/user-games`, () => {
           fetchCount++;
           return HttpResponse.json({
             user_games: [],
