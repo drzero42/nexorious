@@ -380,6 +380,136 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 	}
 }
 
+func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 1)
+
+	// No platform/storefront seed data — tables are empty.
+	gameData := map[string]any{
+		"igdb_id": int32(66666),
+		"title":   "Unseeded Platform Game",
+		"platforms": []any{
+			map[string]any{
+				"platform_id":      "pc",
+				"storefront_id":    "steam",
+				"ownership_status": "owned",
+				"is_available":     true,
+			},
+		},
+	}
+	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// UserGame is still created even when platforms are skipped.
+	var ug models.UserGame
+	if err := db.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(66666)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+
+	// Platform entry should NOT exist — seed data must be loaded first.
+	var count int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ?", ug.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count platforms: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("platform count = %d, want 0 (seed data not loaded)", count)
+	}
+}
+
+func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 2)
+
+	gameData := map[string]any{
+		"igdb_id": int32(88888),
+		"title":   "Merge Game",
+		"platforms": []any{
+			map[string]any{
+				"platform_id":      "pc",
+				"storefront_id":    "steam",
+				"ownership_status": "owned",
+				"is_available":     true,
+			},
+		},
+	}
+
+	// First import — no seed, platforms stored via original name.
+	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// Seed platform and storefront.
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING",
+	); err != nil {
+		t.Fatalf("insert platform: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING",
+	); err != nil {
+		t.Fatalf("insert storefront: %v", err)
+	}
+
+	// Second import of same game — should not duplicate platforms.
+	itemID2 := insertTestJobItem(t, db, jobID, userID, gameData)
+	if err := handler(ctx, makePendingTask(t, itemID2)); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+
+	var item2 models.JobItem
+	if err := db.NewSelect().Model(&item2).Where("id = ?", itemID2).Scan(ctx); err != nil {
+		t.Fatalf("item2 not found: %v", err)
+	}
+	if item2.Status != models.JobItemStatusCompleted {
+		t.Errorf("status = %q, want completed", item2.Status)
+	}
+
+	// Still only one UserGame.
+	var ugCount int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?",
+		userID, int32(88888),
+	).Scan(&ugCount); err != nil {
+		t.Fatalf("count user_games: %v", err)
+	}
+	if ugCount != 1 {
+		t.Errorf("user_game count = %d, want 1", ugCount)
+	}
+
+	// Only one platform entry (no duplicate from re-import).
+	var ugpCount int
+	var ug models.UserGame
+	if err := db.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(88888)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ?", ug.ID,
+	).Scan(&ugpCount); err != nil {
+		t.Fatalf("count platforms: %v", err)
+	}
+	if ugpCount != 1 {
+		t.Errorf("user_game_platform count = %d, want 1 (no duplicates)", ugpCount)
+	}
+}
+
 func TestImportItem_JobCompletion(t *testing.T) {
 	db := setupTasksTestDB(t)
 	ctx := context.Background()

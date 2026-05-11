@@ -173,90 +173,122 @@ func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath strin
 		err = db.NewSelect().Model(&existingUG).
 			Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
 			Scan(ctx)
-		if err == nil {
-			// Already exists — idempotent.
-			result := map[string]any{
-				"already_exists": true,
-				"game_id":        gd.IGDBID,
-				"user_game_id":   existingUG.ID,
-			}
-			markItemCompleted(ctx, db, &item, result)
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			markItemFailed(ctx, db, &item, fmt.Sprintf("check existing user_game: %v", err))
 			checkJobCompletion(ctx, db, item.JobID)
 			return nil
 		}
+		alreadyExists := err == nil
 
-		// ── 7. Build and insert UserGame ──────────────────────────────────────
+		// ── 7. Build and insert UserGame (skip if already exists) ────────────
 		now := time.Now().UTC()
-		createdAt := now
-		updatedAt := now
-		if gd.CreatedAt != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.CreatedAt); err == nil {
-				createdAt = t.UTC()
+		var ug *models.UserGame
+		if alreadyExists {
+			ug = &existingUG
+		} else {
+			createdAt := now
+			updatedAt := now
+			if gd.CreatedAt != nil {
+				if t, err := time.Parse(time.RFC3339, *gd.CreatedAt); err == nil {
+					createdAt = t.UTC()
+				}
 			}
-		}
-		if gd.UpdatedAt != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
-				updatedAt = t.UTC()
+			if gd.UpdatedAt != nil {
+				if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
+					updatedAt = t.UTC()
+				}
 			}
-		}
 
-		var personalRating *int32
-		if gd.PersonalRating != nil {
-			r := int32(*gd.PersonalRating)
-			personalRating = &r
-		}
+			var personalRating *int32
+			if gd.PersonalRating != nil {
+				r := int32(*gd.PersonalRating)
+				personalRating = &r
+			}
 
-		ug := &models.UserGame{
-			ID:             uuid.NewString(),
-			UserID:         item.UserID,
-			GameID:         gd.IGDBID,
-			PlayStatus:     gd.PlayStatus,
-			PersonalRating: personalRating,
-			IsLoved:        gd.IsLoved,
-			HoursPlayed:    gd.HoursPlayed,
-			PersonalNotes:  gd.PersonalNotes,
-			CreatedAt:      createdAt,
-			UpdatedAt:      updatedAt,
-		}
-		_, err = db.NewInsert().Model(ug).Exec(ctx)
-		if err != nil {
-			markItemFailed(ctx, db, &item, fmt.Sprintf("insert user_game: %v", err))
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
+			ug = &models.UserGame{
+				ID:             uuid.NewString(),
+				UserID:         item.UserID,
+				GameID:         gd.IGDBID,
+				PlayStatus:     gd.PlayStatus,
+				PersonalRating: personalRating,
+				IsLoved:        gd.IsLoved,
+				HoursPlayed:    gd.HoursPlayed,
+				PersonalNotes:  gd.PersonalNotes,
+				CreatedAt:      createdAt,
+				UpdatedAt:      updatedAt,
+			}
+			_, err = db.NewInsert().Model(ug).Exec(ctx)
+			if err != nil {
+				markItemFailed(ctx, db, &item, fmt.Sprintf("insert user_game: %v", err))
+				checkJobCompletion(ctx, db, item.JobID)
+				return nil
+			}
 		}
 
 		// ── 8. Platforms ──────────────────────────────────────────────────────
+		// Build a set of existing (platform, storefront) pairs to avoid duplicates
+		// when merging into an existing UserGame.
+		type platformKey struct{ platform, storefront string }
+		existingPlatforms := map[platformKey]bool{}
+		if alreadyExists {
+			var existingUGPs []models.UserGamePlatform
+			if err := db.NewSelect().Model(&existingUGPs).
+				Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
+				for _, ugp := range existingUGPs {
+					p := ""
+					if ugp.Platform != nil {
+						p = *ugp.Platform
+					}
+					s := ""
+					if ugp.Storefront != nil {
+						s = *ugp.Storefront
+					}
+					existingPlatforms[platformKey{p, s}] = true
+				}
+			}
+		}
+
 		for _, pd := range gd.Platforms {
-			// Look up platform slug.
+			if pd.PlatformID == "" {
+				continue
+			}
+
+			// Verify platform exists (must be seeded via seed data or migration).
 			var platformName string
 			if err := db.QueryRowContext(ctx,
 				"SELECT name FROM platforms WHERE name = ?", pd.PlatformID,
 			).Scan(&platformName); err != nil {
-				slog.Warn("import_item: platform not found, skipping", "platform", pd.PlatformID)
+				slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.PlatformID)
 				continue
 			}
 
-			// Look up storefront slug (nullable).
-			var storefrontSlug *string
-			var storefrontName string
-			if err := db.QueryRowContext(ctx,
-				"SELECT name FROM storefronts WHERE name = ?", pd.StorefrontID,
-			).Scan(&storefrontName); err == nil {
-				storefrontSlug = &storefrontName
-			} else if pd.StorefrontID != "" {
-				slog.Warn("import_item: storefront not found, setting null", "storefront", pd.StorefrontID)
+			// Verify storefront exists (nullable — store NULL if blank or not yet seeded).
+			var storefrontPtr *string
+			if pd.StorefrontID != "" {
+				var storefrontName string
+				if err := db.QueryRowContext(ctx,
+					"SELECT name FROM storefronts WHERE name = ?", pd.StorefrontID,
+				).Scan(&storefrontName); err == nil {
+					storefrontPtr = &storefrontName
+				} else {
+					slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.StorefrontID)
+				}
+			}
+
+			// Skip if this (platform, storefront) pair is already recorded.
+			sStr := ""
+			if storefrontPtr != nil {
+				sStr = *storefrontPtr
+			}
+			if existingPlatforms[platformKey{platformName, sStr}] {
+				continue
 			}
 
 			ugp := &models.UserGamePlatform{
 				ID:              uuid.NewString(),
 				UserGameID:      ug.ID,
 				Platform:        &platformName,
-				Storefront:      storefrontSlug,
+				Storefront:      storefrontPtr,
 				StoreGameID:     pd.StoreGameID,
 				StoreUrl:        pd.StoreUrl,
 				IsAvailable:     pd.IsAvailable,
@@ -272,12 +304,27 @@ func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath strin
 		}
 
 		// ── 9. Tags ───────────────────────────────────────────────────────────
+		// Build existing tag set to avoid duplicates when merging.
+		existingTagIDs := map[string]bool{}
+		if alreadyExists {
+			var existingUGTs []models.UserGameTag
+			if err := db.NewSelect().Model(&existingUGTs).
+				Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
+				for _, ugt := range existingUGTs {
+					existingTagIDs[ugt.TagID] = true
+				}
+			}
+		}
+
 		for _, td := range gd.Tags {
 			tagID, err := findOrCreateTag(ctx, db, item.UserID, td.Name, td.Color)
 			if err != nil {
 				markItemFailed(ctx, db, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err))
 				checkJobCompletion(ctx, db, item.JobID)
 				return nil
+			}
+			if existingTagIDs[tagID] {
+				continue
 			}
 
 			ugt := &models.UserGameTag{
@@ -295,7 +342,8 @@ func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath strin
 		result := map[string]any{
 			"game_id":         gd.IGDBID,
 			"user_game_id":    ug.ID,
-			"is_new_addition": true,
+			"is_new_addition": !alreadyExists,
+			"already_exists":  alreadyExists,
 		}
 		markItemCompleted(ctx, db, &item, result)
 		checkJobCompletion(ctx, db, item.JobID)

@@ -38,19 +38,21 @@ func TestListPlatforms(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var platforms []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &platforms); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(platforms) == 0 {
+	platforms, ok := resp["platforms"].([]any)
+	if !ok || len(platforms) == 0 {
 		t.Fatal("expected platforms, got empty list")
 	}
 
 	// Find pc-windows and check it has storefronts
 	var pcWindows map[string]any
 	for _, p := range platforms {
-		if p["name"] == "pc-windows" {
-			pcWindows = p
+		pm := p.(map[string]any)
+		if pm["name"] == "pc-windows" {
+			pcWindows = pm
 			break
 		}
 	}
@@ -233,16 +235,17 @@ func TestListStorefronts(t *testing.T) {
 
 	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
 
-	rec := getAuth(t, e, "/api/platforms/storefronts/", token)
+	rec := getAuth(t, e, "/api/platforms/storefronts", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var storefronts []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &storefronts); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(storefronts) == 0 {
+	storefronts, ok := resp["storefronts"].([]any)
+	if !ok || len(storefronts) == 0 {
 		t.Fatal("expected storefronts")
 	}
 }
@@ -351,15 +354,17 @@ func TestListPlatforms_HasIconURL(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var platforms []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &platforms); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	platforms, _ := resp["platforms"].([]any)
 
 	var pcWindows map[string]any
 	for _, p := range platforms {
-		if p["name"] == "pc-windows" {
-			pcWindows = p
+		pm := p.(map[string]any)
+		if pm["name"] == "pc-windows" {
+			pcWindows = pm
 			break
 		}
 	}
@@ -397,19 +402,21 @@ func TestListStorefronts_HasIconURL(t *testing.T) {
 	e := newTestEcho(t, db, cfg)
 	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
 
-	rec := getAuth(t, e, "/api/platforms/storefronts/", token)
+	rec := getAuth(t, e, "/api/platforms/storefronts", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var storefronts []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &storefronts); err != nil {
+	var sfResp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &sfResp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	storefronts, _ := sfResp["storefronts"].([]any)
 
 	var steam map[string]any
 	for _, s := range storefronts {
-		if s["name"] == "steam" {
-			steam = s
+		sm := s.(map[string]any)
+		if sm["name"] == "steam" {
+			steam = sm
 			break
 		}
 	}

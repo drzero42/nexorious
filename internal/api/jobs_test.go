@@ -71,9 +71,9 @@ func TestListJobs(t *testing.T) {
 		t.Fatalf("expected total=2, got %v", resp["total"])
 	}
 
-	items, ok := resp["items"].([]any)
+	items, ok := resp["jobs"].([]any)
 	if !ok || len(items) != 2 {
-		t.Fatalf("expected 2 items, got %v", resp["items"])
+		t.Fatalf("expected 2 items, got %v", resp["jobs"])
 	}
 
 	if resp["page"].(float64) != 1 {
@@ -104,8 +104,8 @@ func TestGetJob(t *testing.T) {
 	if resp["id"] != "job-get-1" {
 		t.Fatalf("expected id=job-get-1, got %v", resp["id"])
 	}
-	if resp["item_counts"] == nil {
-		t.Fatal("expected item_counts field")
+	if resp["progress"] == nil {
+		t.Fatal("expected progress field")
 	}
 }
 

@@ -117,7 +117,7 @@ CREATE TABLE user_game_platforms (
     id                       TEXT PRIMARY KEY,     -- UUID v4
     user_game_id             TEXT NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
     platform                 TEXT NOT NULL REFERENCES platforms(name) ON DELETE RESTRICT,
-    storefront               TEXT NOT NULL REFERENCES storefronts(name) ON DELETE RESTRICT,
+    storefront               TEXT      REFERENCES storefronts(name) ON DELETE RESTRICT,  -- nullable: physical/direct purchases have no storefront
     store_game_id            TEXT,                 -- external platform's game ID
     store_url                TEXT,
     is_available             BOOLEAN NOT NULL DEFAULT true,
@@ -129,9 +129,13 @@ CREATE TABLE user_game_platforms (
     external_game_id         TEXT,                 -- FK to external_games (added after that table)
     sync_from_source         BOOLEAN NOT NULL DEFAULT false,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(user_game_id, platform, storefront)
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- NULLS NOT DISTINCT ensures (user_game_id, platform, NULL) is also treated as unique,
+-- so a game can have at most one storefront-less entry per platform.
+CREATE UNIQUE INDEX user_game_platforms_uniq
+    ON user_game_platforms (user_game_id, platform, storefront) NULLS NOT DISTINCT;
 
 CREATE INDEX user_game_platforms_user_game_id_idx ON user_game_platforms (user_game_id);
 CREATE INDEX user_game_platforms_platform_idx ON user_game_platforms (platform);
