@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { User, LoginResponse, SetupStatusResponse } from "@/types";
+import type { User, LoginResponse } from "@/types";
 
 // Match the API URL format from env.ts
 // In test mode, NODE_ENV is 'test' so apiUrl is '/api'
@@ -134,23 +134,6 @@ export const handlers = [
     }
 
     return HttpResponse.json({ detail: "Invalid refresh token" }, { status: 401 });
-  }),
-
-  http.get(`${API_URL}/auth/setup/status`, () => {
-    return HttpResponse.json<SetupStatusResponse>({ needs_setup: false });
-  }),
-
-  http.post(`${API_URL}/auth/setup/admin`, async ({ request }) => {
-    const body = (await request.json()) as { username: string; password: string };
-
-    if (body.username && body.password) {
-      return HttpResponse.json(mockAdminUser);
-    }
-
-    return HttpResponse.json(
-      { detail: "Invalid setup data" },
-      { status: 400 }
-    );
   }),
 
   // Platform endpoints

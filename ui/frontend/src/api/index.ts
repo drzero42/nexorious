@@ -14,8 +14,6 @@ export {
   login,
   getMe,
   refreshToken,
-  checkSetupStatus,
-  createInitialAdmin,
   changeUsername,
   changePassword,
   checkUsernameAvailability,

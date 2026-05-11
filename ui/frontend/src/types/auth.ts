@@ -26,11 +26,3 @@ export interface LoginResponse {
   expires_in: number;
 }
 
-export interface SetupStatusResponse {
-  needs_setup: boolean;
-}
-
-export interface CreateAdminRequest {
-  username: string;
-  password: string;
-}

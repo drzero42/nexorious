@@ -1,7 +1,5 @@
 import { api } from './client';
-import type { User, LoginResponse, SetupStatusResponse } from '@/types';
-import { config } from '@/lib/env';
-
+import type { User, LoginResponse } from '@/types';
 interface UserApiResponse {
   id: string;
   username: string;
@@ -40,19 +38,6 @@ export async function refreshToken(refreshTokenValue: string): Promise<LoginResp
   );
 }
 
-export async function checkSetupStatus(): Promise<SetupStatusResponse> {
-  return api.get<SetupStatusResponse>('/auth/setup/status', { skipAuth: true });
-}
-
-export async function createInitialAdmin(username: string, password: string): Promise<User> {
-  const response = await api.post<UserApiResponse>(
-    '/auth/setup/admin',
-    { username, password },
-    { skipAuth: true }
-  );
-  return transformUser(response);
-}
-
 export async function changeUsername(newUsername: string): Promise<User> {
   const response = await api.put<UserApiResponse>('/auth/username', {
     new_username: newUsername,
@@ -85,25 +70,3 @@ export async function updatePreferences(
   return transformUser(response);
 }
 
-interface SetupRestoreResponse {
-  success: boolean;
-  message: string;
-}
-
-export async function setupRestore(file: File): Promise<SetupRestoreResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`${config.apiUrl}/auth/setup/restore`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const message = errorData.detail || `HTTP ${response.status}: ${response.statusText}`;
-    throw new Error(message);
-  }
-
-  return response.json();
-}

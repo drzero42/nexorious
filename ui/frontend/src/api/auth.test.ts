@@ -6,8 +6,6 @@ import {
   login,
   getMe,
   refreshToken,
-  checkSetupStatus,
-  createInitialAdmin,
   changeUsername,
   changePassword,
   checkUsernameAvailability,
@@ -190,101 +188,6 @@ describe('auth.ts', () => {
       await expect(refreshToken('bad-token')).rejects.toMatchObject({
         message: 'Invalid refresh token',
         status: 401,
-      });
-    });
-  });
-
-  describe('checkSetupStatus', () => {
-    it('returns setup status when setup is needed', async () => {
-      server.use(
-        http.get(`${API_URL}/auth/setup/status`, () => {
-          return HttpResponse.json({ needs_setup: true });
-        })
-      );
-
-      const result = await checkSetupStatus();
-
-      expect(result).toEqual({ needs_setup: true });
-    });
-
-    it('returns setup status when setup is complete', async () => {
-      server.use(
-        http.get(`${API_URL}/auth/setup/status`, () => {
-          return HttpResponse.json({ needs_setup: false });
-        })
-      );
-
-      const result = await checkSetupStatus();
-
-      expect(result).toEqual({ needs_setup: false });
-    });
-
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      server.use(
-        http.get(`${API_URL}/auth/setup/status`, () => {
-          return HttpResponse.json({ needs_setup: true });
-        })
-      );
-
-      const result = await checkSetupStatus();
-      expect(result.needs_setup).toBe(true);
-    });
-  });
-
-  describe('createInitialAdmin', () => {
-    it('creates admin user and returns transformed user', async () => {
-      server.use(
-        http.post(`${API_URL}/auth/setup/admin`, async ({ request }) => {
-          const body = (await request.json()) as { username: string; password: string };
-          expect(body.username).toBe('admin');
-          expect(body.password).toBe('securepass');
-          return HttpResponse.json({
-            id: 'admin-123',
-            username: 'admin',
-            is_admin: true,
-          });
-        })
-      );
-
-      const result = await createInitialAdmin('admin', 'securepass');
-
-      expect(result).toEqual({
-        id: 'admin-123',
-        username: 'admin',
-        isAdmin: true,
-        preferences: undefined,
-      });
-    });
-
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      server.use(
-        http.post(`${API_URL}/auth/setup/admin`, () => {
-          return HttpResponse.json({
-            id: 'admin-123',
-            username: 'admin',
-            is_admin: true,
-          });
-        })
-      );
-
-      const result = await createInitialAdmin('admin', 'pass');
-      expect(result.username).toBe('admin');
-    });
-
-    it('throws error on invalid setup data', async () => {
-      server.use(
-        http.post(`${API_URL}/auth/setup/admin`, () => {
-          return HttpResponse.json({ detail: 'Invalid setup data' }, { status: 400 });
-        })
-      );
-
-      await expect(createInitialAdmin('', '')).rejects.toMatchObject({
-        message: 'Invalid setup data',
-        status: 400,
       });
     });
   });

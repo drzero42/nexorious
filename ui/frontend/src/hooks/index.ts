@@ -48,9 +48,6 @@ export {
   useRemoveTagsFromGame,
 } from './use-tags';
 
-// Setup hooks
-export { useSetupStatus } from './use-setup-status';
-
 // Sync hooks
 export {
   syncKeys,
