@@ -2,9 +2,17 @@
 
 ## Overview
 
-Phase 4 first task: the full sync configuration and trigger surface for Steam, PSN, and (eventually) Epic. Covers Bun models for `external_games` and `user_sync_configs`, the generic config/trigger/status endpoints, and the storefront-specific credential verification and disconnect endpoints.
+Phase 4 first task: the full sync configuration and trigger surface for Steam and PSN. Covers Bun models for `external_games` and `user_sync_configs`, the generic config/trigger/status endpoints, and the storefront-specific credential verification and disconnect endpoints.
 
-Epic authentication is deferred — the legendary-gl OAuth flow is unreliable and will be addressed in a later spec.
+**Epic is not implemented in the Go port.** The Python version uses the `legendary-gl` library directly (not a CLI shell-out), which has no Go equivalent. Epic sync is deferred to a later task. No Epic sync endpoints are registered (`POST /api/sync/epic`, `GET /api/sync/epic/status`, `POST /api/sync/epic/configure`, `DELETE /api/sync/epic/disconnect` all return 404). The epic storefront remains in the config list (`GET /api/sync/config` always returns all three supported storefronts), but triggering a sync does nothing. The frontend will hit dead endpoints for Epic-related actions, which is acceptable for now.
+
+**GOG is not implemented and has no special handling.** It is not a valid `:storefront` value; any request using `gog` returns 400 like any other unknown storefront. GOG is not in the frontend.
+
+**Storefront identifier vs. collection slug — two distinct namespaces:**
+- **Sync-source identifiers** (`"steam"`, `"psn"`, `"epic"`) — used in `user_sync_configs.storefront` and `external_games.storefront`. These identify the sync source.
+- **Storefront slugs** (`"steam"`, `"playstation-store"`, `"epic-games-store"`) — used in the `storefronts` table and `user_game_platforms.storefront`. These identify the collection entry's store.
+
+For Steam the values happen to coincide (`"steam"` is both). For PSN they differ: `"psn"` is the sync-source identifier, `"playstation-store"` is the storefronts-table slug used on `UserGamePlatform`. The `platform_resolution.go` service is responsible for mapping sync-source identifiers to the correct collection slugs when creating `UserGamePlatform` rows.
 
 ---
 
@@ -136,7 +144,7 @@ GET  /api/sync/config/:storefront   → SyncConfigResponse
 PUT  /api/sync/config/:storefront   → SyncConfigResponse
 ```
 
-Valid `:storefront` values: `steam`, `psn`, `epic`. Anything else → 400.
+Valid `:storefront` values for config endpoints: `steam`, `psn`, `epic`. Anything else → 400. (Epic config rows can be created and updated, but there are no Epic sync endpoints to use them.)
 
 `GET /api/sync/config` returns one entry per supported storefront. For storefronts with no DB row, a virtual default is returned (not persisted): `frequency: "manual"`, `auto_add: false`, `is_configured: false`, `id` set to a freshly generated UUID (not stored), `created_at`/`updated_at` set to `time.Now()`.
 
@@ -180,6 +188,8 @@ Upserts the row; creates it if missing. Conflict target is `(user_id, storefront
 POST /api/sync/:storefront          → ManualSyncTriggerResponse
 GET  /api/sync/:storefront/status   → SyncStatusResponse
 ```
+
+Valid `:storefront` values for trigger and status: `steam`, `psn` only. `epic` and anything else → 400. (Epic endpoints are not registered.)
 
 `POST /api/sync/:storefront` — creates a high-priority sync job. Sequence:
 
@@ -261,7 +271,7 @@ On PSN rejection: 400 `{ "error": "invalid_npsso_token" }`.
 ```
 `token_expired` is derived as `is_verified == false AND token_expired_at != null` from the stored credentials JSON — this distinguishes "token expired" from "never configured". At configure time `is_verified` is set to `true` and `token_expired_at` to `null`. When the PSN sync worker receives a token rejection, it updates the credentials row: `is_verified = false`, `token_expired_at = <current UTC timestamp>`. Returns zeroed response if no row exists.
 
-**`DELETE /api/sync/psn/disconnect`** — clears `storefront_credentials` on the psn row. 204, idempotent.
+**`DELETE /api/sync/psn/disconnect`** — clears `storefront_credentials` on the psn row. 204, idempotent: returns 204 even if no row exists.
 
 ### Ignored (skip/un-skip)
 
@@ -296,7 +306,9 @@ Register static-segment routes (`/steam/verify`, `/psn/configure`, `/psn/status`
 
 | Situation | Response |
 |---|---|
-| Invalid `:storefront` param | 400 |
+| Invalid `:storefront` param (config endpoints) | 400 |
+| Invalid `:storefront` param (trigger/status — anything not `steam`/`psn`) | 400 |
+| `epic` storefront on trigger/status | 400 (not registered) |
 | Active sync job exists (trigger) | 409 |
 | Steam verify: bad format | 200 `{ valid: false }` |
 | Steam verify: API failure | 200 `{ valid: false, error: "network_error" }` |
@@ -309,6 +321,59 @@ Register static-segment routes (`/steam/verify`, `/psn/configure`, `/psn/status`
 ---
 
 ## Implementation Notes
+
+### Worker Task Algorithms
+
+#### CheckPendingSyncsTask (scheduler, every 15 minutes)
+
+Runs inline in the gocron goroutine (not via the worker pool). Algorithm derived from the Python `check_pending_syncs` task:
+
+1. Query all `user_sync_configs` WHERE `frequency != 'manual'`.
+2. For each config, evaluate `needs_sync`:
+   - `last_synced_at IS NULL` → `true` (first auto-sync — trigger immediately)
+   - `frequency = 'hourly'` → `elapsed >= 3600s`
+   - `frequency = 'daily'` → `elapsed >= 86400s`
+   - `frequency = 'weekly'` → `elapsed >= 604800s`
+   - `frequency = 'manual'` → `false` (already filtered out in step 1)
+3. If `needs_sync = true`, check for an existing `jobs` row WHERE `user_id = :uid AND job_type = 'sync' AND source = :storefront AND status IN ('pending', 'processing')`. If found, skip (don't create a duplicate).
+4. If no active job, create a **low-priority** `jobs` row and submit a `DispatchSyncTask` to the worker pool. (Manual triggers use high priority; scheduled checks use low priority.)
+
+Only `steam` and `psn` storefronts are dispatched. If a config row exists with `storefront = 'epic'`, skip it — there is no epic sync implementation.
+
+#### DispatchSyncTask (worker pool task)
+
+Called by both the manual trigger endpoint and the scheduler check. Same code path regardless of priority.
+
+Payload: `{ "job_id": "...", "user_id": "...", "storefront": "steam"|"psn" }`
+
+Phases:
+1. **Mark job processing.** Set `jobs.status = 'processing'`, `jobs.started_at = now()`.
+2. **Read credentials.** Load the `user_sync_configs` row for `(user_id, storefront)`. Parse `storefront_credentials`. If credentials are missing or `is_verified = false` (PSN), fail the job immediately with a descriptive error.
+3. **Fetch library from adapter.** Call the storefront-specific adapter (Steam or PSN) to retrieve the current game library. Returns a list of `ExternalLibraryEntry` structs, each with: `external_id`, `title`, `raw_platform` (e.g. `"pc-windows"` for Steam, `"playstation-5"` for PSN), `playtime_hours`, `ownership_status`, `is_subscription`.
+4. **Upsert `ExternalGame` rows.** For each entry, upsert by `(user_id, storefront, external_id)`. Always update `title`, `playtime_hours`, `is_subscription`, `ownership_status`, `is_available = true`.
+5. **Mark removed games.** Query all `ExternalGame` rows for `(user_id, storefront)` WHERE `is_available = true`. Any row whose `external_id` was not in the fetched set is set to `is_available = false`. If `is_subscription = true`, downgrade linked `UserGamePlatform.ownership_status` to `'no_longer_owned'`.
+6. **Dispatch `ProcessSyncItemTask`** for each `ExternalGame` WHERE `is_available = true AND is_skipped = false`. Each job item's `source_metadata_json` carries `{ "external_game_id": "...", "raw_platform": "pc-windows" }` (the `raw_platform` comes from the adapter entry — NOT stored on `ExternalGame`).
+7. **Update `last_synced_at`.** After successfully dispatching all items, set `user_sync_configs.last_synced_at = now()`. This ensures the next scheduler check uses the correct elapsed time. (The Python implementation omitted this update, which was a bug. The Go port always writes `last_synced_at` after a successful dispatch.)
+
+**PSN token expiry during fetch:** If the PSN adapter gets a token-rejected error, update the credentials row: `is_verified = false`, `token_expired_at = <current UTC timestamp>`. Then fail the job with `"psn_token_expired"`.
+
+#### ProcessSyncItemTask (worker pool task)
+
+Payload: carried in `job_items.source_metadata_json = { "external_game_id": "...", "raw_platform": "..." }`.
+
+Platform and storefront resolution for `UserGamePlatform`:
+
+- `raw_platform` (from `source_metadata_json`) is passed to `platform_resolution.go` → resolved to a canonical `platforms.name` slug (e.g. `"playstation-5"` → `"ps5"`, `"pc-windows"` → `"pc-windows"`).
+- The sync-source storefront identifier (from `ExternalGame.storefront`, e.g. `"psn"`) is mapped to the collection storefront slug (e.g. `"playstation-store"`) — this mapping is also in `platform_resolution.go`. Steam: `"steam"` → `"steam"` (same). PSN: `"psn"` → `"playstation-store"`.
+
+**Why `ExternalGame` has no `platform` field:** The Python model had `ExternalGame.platform` as an FK to `platforms.name`, populated by the sync adapter. This was incorrect — the canonical platform for a collection entry is a property of how the game appears in the user's collection (`UserGamePlatform`), not a permanent attribute of the external game record. The Go port intentionally omits this field. The platform flows through `source_metadata_json` on the job item and is resolved at processing time, not stored redundantly on `ExternalGame`.
+
+Phases:
+1. Read `external_game_id` and `raw_platform` from `source_metadata_json`. Load `ExternalGame`.
+2. If `eg.is_skipped`, mark item `SKIPPED`.
+3. **Phase 4 — IGDB resolution.** If `eg.resolved_igdb_id` is null, run IGDB matching. Score ≥ 0.85 → auto-match, store `resolved_igdb_id`. Score < 0.85 → `PENDING_REVIEW`. No candidates → `PENDING_REVIEW`.
+4. **Phase 5 — Collection sync.** Resolve `raw_platform` → platform slug and sync-source storefront → storefront slug via `platform_resolution.go`. Find existing `UserGamePlatform` by `external_game_id`, or by `(user_game_id, platform, storefront)`. Create if missing. Update `hours_played` and `ownership_status` (never downgrade ownership rank: `owned > borrowed/rented > subscription > no_longer_owned`).
+5. **Job completion check.** After each item is processed, count remaining non-terminal items (`pending`, `processing`, `pending_review`). If zero, mark `jobs.status = 'completed'`. `PENDING_REVIEW` items block completion — user must resolve them first via the job-items UI.
 
 ### PSN Client Library
 
@@ -398,14 +463,19 @@ Coverage:
 - `GET /api/sync/config` returns virtual defaults for all three storefronts when no rows exist
 - `PUT /api/sync/config/steam` creates row; second PUT updates it
 - `PUT /api/sync/config/invalid` → 400
+- `PUT /api/sync/config/epic` → 200 (config can be set, no trigger available)
 - Steam verify: bad Steam ID format → 200 `valid: false`, no network call
 - Steam verify: bad API key format → 200 `valid: false`, no network call
 - Steam verify: stub returns success → credentials stored, 200 `valid: true`
 - PSN configure: 63-char token → 400 immediately
 - PSN configure: stub returns success → credentials stored
-- Trigger `POST /api/sync/steam` → job created
-- Trigger again → 409
+- Trigger `POST /api/sync/steam` → job created (high priority)
+- Trigger `POST /api/sync/epic` → 400
+- Trigger again (steam) → 409
 - `GET /api/sync/steam/status` → reflects active job
+- `GET /api/sync/psn/status` → zeroed response (`is_configured: false, token_expired: false, online_id: "", account_id: "", region: ""`) when no row exists
+- `DELETE /api/sync/steam/connection` → 204 even with no row
+- `DELETE /api/sync/psn/disconnect` → 204 even with no row
 - `GET /api/sync/ignored` → empty list when no rows skipped
 - `POST /api/sync/ignored/:id` → 404 for unknown ID; 204 on success; second POST is idempotent
 - `DELETE /api/sync/ignored/:id` → 404 for unknown ID; 204 on success

@@ -639,7 +639,9 @@ No logic changes — this is a field-name rename only. See `2026-05-10-sync-api-
 - `is_skipped` — user-controlled flag; when true the game is excluded from future syncs
 - Current source state: `is_available`, `is_subscription`, `playtime_hours`, `ownership_status`
 
-`external_games.storefront` uses the sync-source identifier (`'steam'`, `'psn'`, `'epic'`) — the same enum as `user_sync_configs.storefront`. It is **not** a FK to the `storefronts` table (which uses different slugs like `'playstation-store'`). There is no `platform` column; external games belong to a storefront, not a platform.
+`external_games.storefront` uses the sync-source identifier (`'steam'`, `'psn'`, `'epic'`) — the same enum as `user_sync_configs.storefront`. It is **not** a FK to the `storefronts` table (which uses different slugs like `'playstation-store'`). There is no `platform` column on `external_games`; external games belong to a storefront, not a platform.
+
+**Why no `platform` field:** The Python `ExternalGame` model had a `platform: Optional[str]` field (FK to `platforms.name`) that the sync adapter populated (e.g. `"pc-windows"` for Steam, `"playstation-5"` for PSN). This was incorrect design — the canonical platform is a property of how the game appears in the user's collection (`UserGamePlatform`), not a permanent attribute of the external game record. The Go port intentionally omits this field. Instead, the `DispatchSyncTask` carries the raw platform string in each `job_item.source_metadata_json`, and `ProcessSyncItemTask` resolves it to the canonical platform slug via `platform_resolution.go` at processing time. See `2026-05-10-sync-api-design.md` § Worker Task Algorithms for the full flow.
 
 `UserGamePlatform` rows reference `external_games.id` via `external_game_id` to link collection entries back to their sync source.
 
@@ -1003,7 +1005,13 @@ All `/api/auth/admin/*` endpoints require the `is_admin` claim. An admin cannot 
 
 Two internal services that the sync system depends on, not exposed as API endpoints:
 
-**`services/platform_resolution.go`** — maps raw platform name strings arriving from external sync sources (e.g. `"PC"`, `"PlayStation 5"`) to canonical `Platform` slugs in the database (e.g. `"pc-windows"`, `"ps5"`). Maintains a mapping table derived from the Python `platform_resolution` service. Used by `ProcessSyncItemTask` to fill `UserGamePlatform.platform` and `UserGamePlatform.original_platform_name`.
+**`services/platform_resolution.go`** — two responsibilities used by `ProcessSyncItemTask`:
+
+1. **Raw platform name → `platforms.name` slug** (e.g. `"PlayStation 5"` → `"ps5"`, `"PC"` → `"pc-windows"`). The raw string comes from `job_item.source_metadata_json["raw_platform"]`, put there by `DispatchSyncTask`. The resolved slug populates `UserGamePlatform.platform`; the raw string populates `UserGamePlatform.original_platform_name`.
+
+2. **Sync-source storefront identifier → `storefronts.name` slug** (e.g. `"psn"` → `"playstation-store"`, `"steam"` → `"steam"`). The sync-source identifier comes from `ExternalGame.storefront`. The resolved slug populates `UserGamePlatform.storefront`; the raw identifier populates `UserGamePlatform.original_storefront_name`.
+
+These two namespaces are distinct. For Steam both values coincide (`"steam"` is both identifier and slug). For PSN they differ. `platform_resolution.go` maintains mapping tables derived from the Python `platform_resolution` service for both conversions.
 
 **`services/matching.go`** — IGDB game lookup during sync/import. When a new `ExternalGame` is encountered with no `resolved_igdb_id`, this service searches IGDB by title, applies fuzzy confidence scoring via `FuzzyConfidence` (go-fuzzywuzzy), and returns the best candidate. Once resolved, the result is cached in `external_games.resolved_igdb_id` and never re-queried. Used by `ProcessSyncItemTask` and `ProcessImportItemTask`.
 
@@ -1301,9 +1309,9 @@ The migration to Cobra in Phase 5 is a breaking change to the CLI surface. Any t
 
 ## Epic Games Store Sync
 
-The Python version uses the `legendary-gl` Python library directly. The Go version shells out to the `legendary` CLI binary if it is present on `PATH`. If `legendary` is not found, Epic sync is disabled gracefully (the sync endpoint returns a descriptive error; other sync providers are unaffected).
+Epic sync is **not implemented in the Go port**. The Python version uses the `legendary-gl` Python library directly (an importable Python package, not a CLI tool). There is no equivalent Go library. A CLI shell-out approach was considered but deferred — it is unreliable in practice and the feature spec has not been written yet.
 
-This feature may be deferred if the shell-out approach proves unreliable in practice.
+No Epic sync endpoints are registered. The frontend will receive 404 for any Epic-related sync calls, which is acceptable. The epic storefront appears in `GET /api/sync/config` (users can configure frequency/auto_add for future use), but trigger and status endpoints do not exist. The `CheckPendingSyncsTask` scheduler skips configs with `storefront = 'epic'`.
 
 ---
 
@@ -1466,9 +1474,9 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 - `services/psn/` — `PSNClient` interface implementation using `github.com/sizovilya/go-psn-api`; calls `AuthWithNPSSO` then `GetProfile(ctx, "me")`
 - Steam sync (dispatch + process)
 - PSN sync
-- Epic Games Store sync (legendary-gl shell-out; defer if unreliable)
 - Metadata refresh (dispatch + process)
-- Remaining scheduler jobs (sync check every 15 minutes, metadata refresh interval)
+- Remaining scheduler jobs (`CheckPendingSyncsTask` every 15 minutes, metadata refresh interval)
+- Epic Games Store sync is **not in scope for Phase 4**; see Epic Games Store Sync section
 
 **Checkpoint:** sync integrations work end-to-end.
 
